@@ -16,6 +16,7 @@ import yaml
 
 from test_management.support import (
     FAIL,
+    UnmarkedWizProfile,
     WizProfile,
     compose,
     make_spec,
@@ -73,7 +74,7 @@ def test_a_plaintext_token_fix_is_automatic(_isolated_config: Path) -> None:
     )
     wiz = make_spec(
         "wiz",
-        settings=WizProfile,
+        settings=UnmarkedWizProfile,
         doctor_checks=(connection_check("wiz.connection", section="wiz"),),
     )
     row = _row(_rows(wiz), "wiz.connection")
@@ -84,7 +85,7 @@ def test_a_plaintext_token_fix_is_automatic(_isolated_config: Path) -> None:
 def test_an_online_fix_is_manual(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz: {base_url: https://w, token_command: [x]}\n",
+        "profiles:\n  default:\n    wiz: {server: {url: https://w}, token_command: [x]}\n",
     )
     FAIL.append(True)
     try:
@@ -94,7 +95,7 @@ def test_an_online_fix_is_manual(_isolated_config: Path) -> None:
         FAIL.clear()
     assert (row["status"], row["fix"][2:], row["automatic"]) == (
         "fail",
-        ["auth", "set", "wiz"],
+        ["auth", "login", "wiz"],
         False,
     )
 

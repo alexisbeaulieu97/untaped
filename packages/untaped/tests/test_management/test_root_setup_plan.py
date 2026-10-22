@@ -14,14 +14,14 @@ from typing import Annotated, Any
 
 import pytest
 import yaml
-from pydantic import BaseModel, HttpUrl, SecretStr
+from pydantic import BaseModel, HttpUrl
 
 from test_management.stores import install_fake_stores
 from test_management.support import (
     FAIL,
     PROBES,
-    LegacyProfile,
     WIZ_TOKEN,
+    LegacyProfile,
     WizProfile,
     WizServer,
     make_spec,
@@ -42,7 +42,6 @@ from untaped.sdk import (
     CredentialKey,
     NeedsSetup,
     Suggest,
-    connection_check,
     online_check,
 )
 from untaped.testing import (
@@ -91,10 +90,7 @@ def _wiz() -> PluginSpec:
     return make_spec(
         "wiz",
         settings=WizProfile,
-        doctor_checks=(
-            connection_check("wiz.connection", section="wiz"),
-            wiz_api_check(),
-        ),
+        doctor_checks=(wiz_api_check(),),
     )
 
 
@@ -133,7 +129,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
     assert [row["step"] for row in rows] == [
         "install",
         "profile",
-        "wiz.base_url",
+        "wiz.server",
         "wiz.token",
         "wiz.online.api",
     ]
@@ -145,20 +141,17 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         "run": [],
         "by": "agent",
     }
-    assert _step(rows, "wiz.base_url") | {"detail": ""} == {
-        "step": "wiz.base_url",
+    assert _step(rows, "wiz.server") | {"detail": ""} == {
+        "step": "wiz.server",
         "plugin": "wiz",
         "state": "todo",
         "detail": "",
-        "run": ["--profile", "default", "config", "set", "wiz.base_url", "<BASE_URL>"],
+        "run": ["--profile", "default", "config", "set", "wiz.server.url", "<URL>"],
         "by": "agent",
     }
     token = _step(rows, "wiz.token")
     assert (token["state"], token["by"]) == ("todo", "user")
-    assert token["run"] == [
-        *("--profile", "default", "config", "set"),
-        *("wiz.token_command", "<COMMAND>"),
-    ]
+    assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
     assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
 
@@ -183,45 +176,37 @@ def test_a_source_tree_cannot_register(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "source tree" in install["detail"]
 
 
-def test_with_a_password_store_the_token_step_is_auth_set(
+def test_the_token_step_is_auth_login_with_or_without_a_password_store(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    token = _step(_plan(), "wiz.token")
-    assert token["run"] == ["--profile", "default", "auth", "set", "wiz"]
-    assert (token["state"], token["by"]) == ("todo", "user")
-    assert "pass" in token["detail"]
+    for stores in ((), ("pass",)):
+        install_fake_stores(tmp_path, monkeypatch, *stores)
+        token = _step(_plan(), "wiz.token")
+        assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
+        assert (token["state"], token["by"]) == ("todo", "user")
+        assert token["detail"] == "no wiz token for this run's wiz settings"
 
 
-def test_a_plaintext_token_fails_and_moves_with_auth_migrate(
+def test_a_plaintext_token_fails_and_moves_with_config_migrate(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
-    result = _cli("setup", "plan", "--format", "json")
-    token = _step(json.loads(result.stdout), "wiz.token")
-    # `auth migrate` moves the token inside its own process: no secret reaches the agent.
-    assert (token["state"], token["by"]) == ("failed", "agent")
-    assert token["run"] == ["--profile", "default", "auth", "migrate"]
+    token = _step(_plan(), "wiz.token")
+    # `config migrate` asks first: an older untaped sharing the home stops reading the token.
+    assert (token["state"], token["by"]) == ("failed", "user")
+    assert token["run"] == ["--profile", "default", "config", "migrate"]
     assert token["detail"] == (
-        "support for a plain-text wiz.token in profile default is deprecated and will be"
-        " removed in 12.0; move it to pass"
+        "token from wiz.token, plain text in the config file; move it to a stored login"
     )
     for fmt in ("json", "yaml", "table", "pipe"):
         assert "s3cret" not in _cli("setup", "plan", "--format", fmt).output
 
 
-def test_a_plaintext_token_without_a_store_goes_back_to_setup(_isolated_config: Path) -> None:
-    _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
-    token = _step(_plan(), "wiz.token")
-    assert (token["state"], token["by"]) == ("failed", "user")
-    assert token["run"] == ["--profile", "default", "setup", "--only", "wiz"]
-
-
 @pytest.mark.parametrize(
     ("wiz", "env", "detail"),
     [
-        ("{server: {url: https://wiz}, token_command: [x]}", {}, "token from wiz.token_command"),
+        ("{server: {url: https://wiz}, token_command: [x]}", {}, "token from stored "),
         ("{server: {url: https://wiz}}", {"WIZ_TOKEN": "e"}, "token from $WIZ_TOKEN"),
     ],
 )
@@ -236,9 +221,30 @@ def test_a_token_outside_the_config_is_done(
         monkeypatch.setenv(name, value)
     _configure(_isolated_config, wiz)
     rows = _plan()
-    assert _step(rows, "wiz.base_url")["state"] == "done"
+    assert _step(rows, "wiz.server") | {"run": []} == {
+        "step": "wiz.server",
+        "plugin": "wiz",
+        "state": "done",
+        "detail": "url=https://wiz",
+        "run": [],
+        "by": "agent",
+    }
     token = _step(rows, "wiz.token")
-    assert (token["state"], token["detail"], token["run"]) == ("done", detail, [])
+    assert (token["state"], token["run"]) == ("done", [])
+    assert token["detail"].startswith(detail)
+
+
+def test_a_token_command_in_the_config_is_done_and_deprecated(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
+    )
+    token = _step(_plan(), "wiz.token")
+    assert (token["state"], token["run"]) == ("done", [])
+    assert token["detail"] == (
+        "token from wiz.token_command; wiz.token_command is deprecated,"
+        " `config migrate` moves it to a stored login"
+    )
 
 
 def test_a_service_without_token_command_is_told_to_export_a_variable() -> None:
@@ -264,18 +270,18 @@ def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
     profile = _step(rows, "profile")
     assert profile["state"] == "todo"
     assert profile["run"] == ["profile", "create", "work"]
-    assert _step(rows, "wiz.base_url")["run"][:2] == ["--profile", "work"]
+    assert _step(rows, "wiz.server")["run"][:2] == ["--profile", "work"]
     assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
 
 def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> None:
     hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
-    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: []}")
+    _configure(_isolated_config, "{server: {url: not a url}}")
     rows = _plan(specs=(_wiz(), hub))
     settings = _step(rows, "wiz.settings")
     assert settings["state"] == "failed"
     assert "wiz settings are invalid" in settings["detail"]
-    assert "wiz.base_url" not in {row["step"] for row in rows}
+    assert "wiz.server" not in {row["step"] for row in rows}
     assert _step(rows, "hub.token")["state"] == "todo"
 
 
@@ -312,7 +318,7 @@ def test_a_failed_online_check_carries_its_fix(_isolated_config: Path) -> None:
     FAIL.append(True)
     online = _step(_plan("--online"), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
-    assert online["run"] == ["--profile", "default", "auth", "set", "wiz"]
+    assert online["run"] == ["--profile", "default", "auth", "login", "wiz"]
 
 
 def test_online_skips_services_that_are_not_ready() -> None:
@@ -333,16 +339,16 @@ def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
 
 
 def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
-    values = {"<BASE_URL>": "https://wiz.example"}
+    values = {"<URL>": "https://wiz.example"}
     for row in _plan():
         if row["state"] == "todo" and row["by"] == "agent":
             argv = [values.get(arg, arg) for arg in row["run"]]
             assert _cli(*argv).exit_code == 0
-    assert _step(_plan(), "wiz.base_url") | {"run": []} == {
-        "step": "wiz.base_url",
+    assert _step(_plan(), "wiz.server") | {"run": []} == {
+        "step": "wiz.server",
         "plugin": "wiz",
         "state": "done",
-        "detail": "https://wiz.example",
+        "detail": "url=https://wiz.example",
         "run": [],
         "by": "agent",
     }
@@ -357,7 +363,7 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
         ("{server: {url: https://wiz}, token_command: [x]}", {}, True, True),
         (
             "{}",
-            {"UNTAPED_WIZ__BASE_URL": "https://wiz", "UNTAPED_WIZ__TOKEN_COMMAND": '["x"]'},
+            {"UNTAPED_WIZ__SERVER__URL": "https://wiz", "UNTAPED_WIZ__TOKEN_COMMAND": '["x"]'},
             True,
             False,
         ),
@@ -381,10 +387,10 @@ def test_plan_setup_screen_and_doctor_agree(
         row["check"]: row
         for row in json.loads(_cli("doctor", "--online", "--format", "json").stdout)
     }
-    connection, api = doctor["wiz.connection"], doctor["wiz.api"]
-    assert (connection["detail"] != "not configured") is configured
+    setup, api = doctor["setup"], doctor["wiz.api"]
+    assert (setup["detail"] != "not set up") is configured
     token_done = _step(rows, "wiz.token")["state"] == "done"
-    assert token_done is (connection["status"] == "pass" and configured)
+    assert token_done is (setup["status"] == "pass" and configured)
     online = _step(rows, "wiz.online.api")
     if token_done:
         assert (online["state"] == "failed") is (api["status"] == "fail")
@@ -401,10 +407,10 @@ def test_plan_setup_screen_and_doctor_agree(
 
 
 def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_WIZ__BASE_URL", "https://wiz")
-    monkeypatch.setenv("UNTAPED_WIZ__TOKEN_COMMAND", '["x"]')
+    monkeypatch.setenv("UNTAPED_WIZ__SERVER__URL", "https://wiz")
+    monkeypatch.setenv("WIZ_TOKEN", "t")
     rows = _plan()
-    assert _step(rows, "wiz.base_url")["state"] == "done"
+    assert _step(rows, "wiz.server")["state"] == "done"
     assert _step(rows, "wiz.token")["state"] == "done"
     assert _cli("setup", "register").exit_code == 0
     assert _cli("setup", "plan", "--online", "--check", "--format", "json").exit_code == 0
@@ -420,8 +426,8 @@ def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
     )
     token = _step(_plan(profile="work"), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
-    assert "in profile default" in token["detail"]
-    assert token["run"] == ["--profile", "default", "setup", "--only", "wiz"]
+    assert token["detail"].startswith("token from wiz.token, plain text")
+    assert token["run"] == ["--profile", "work", "config", "migrate"]
 
 
 def test_a_plaintext_token_without_token_command_is_exported_instead(
@@ -560,7 +566,7 @@ def test_the_table_shows_each_command_line() -> None:
     result = _cli("setup", "plan", "--format", "table")
     assert result.exit_code == 0, result.output
     # No `--profile` flag chose the profile, so the line goes without it.
-    assert "untaped config set wiz.base_url '<BASE_URL>'" in result.stdout
+    assert "untaped config set wiz.server.url '<URL>'" in result.stdout
     assert "--profile" not in result.stdout
 
 
@@ -568,7 +574,7 @@ def test_the_table_works_before_the_profile_exists() -> None:
     result = _cli("--profile", "work", "setup", "plan", "--check")
     assert result.exit_code == 3, result.output
     assert "untaped profile create work" in result.stdout
-    assert "untaped --profile work config set wiz.base_url '<BASE_URL>'" in result.stdout
+    assert "untaped --profile work config set wiz.server.url '<URL>'" in result.stdout
 
 
 def test_a_github_style_service_suggests_gh_without_running_it(
@@ -581,7 +587,10 @@ def test_a_github_style_service_suggests_gh_without_running_it(
     hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
     token = _step(_plan(specs=(hub,)), "hub.token")
     assert "after `gh auth login`, let `gh auth token` print it" in token["detail"]
-    assert """config set hub.token_command '["gh", "auth", "token"]'""" in token["detail"]
+    assert (
+        "untaped --profile default auth login hub --token-command 'gh auth token'"
+        in (token["detail"])
+    )
     assert not marker.exists()
 
 

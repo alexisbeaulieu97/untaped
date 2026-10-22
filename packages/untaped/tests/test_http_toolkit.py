@@ -346,6 +346,7 @@ def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
         config,
         section="demo",
         base_url=config.base_url,
+        bearer=config.token,
         headers={"Accept": "application/vnd.demo+json"},
     ) as client:
         payload = client.get_json_dict("/user")

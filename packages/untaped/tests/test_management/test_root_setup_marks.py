@@ -394,18 +394,24 @@ def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
 
 
 @pytest.mark.parametrize(
-    ("hook", "source"),
+    ("hook", "state", "source"),
     [
-        ("{server: {url: https://hook}, signing_key: plain}", "hook.signing_key"),
-        ("{server: {url: https://hook}, signing_key_command: [x]}", "hook.signing_key_command"),
+        ("{server: {url: https://hook}, signing_key: plain}", "failed", "hook.signing_key"),
+        (
+            "{server: {url: https://hook}, signing_key_command: [x]}",
+            "done",
+            "hook.signing_key_command",
+        ),
     ],
 )
 def test_a_credential_from_an_old_setting_names_it(
-    _isolated_config: Path, hook: str, source: str
+    _isolated_config: Path, hook: str, state: str, source: str
 ) -> None:
     write_config(_isolated_config, f"profiles:\n  default:\n    hook: {hook}\n")
     row = _plan_rows(_hook())["hook.signing_key"]
-    assert (row["state"], row["detail"]) == ("done", f"set by {source}")
+    assert row["state"] == state
+    assert row["detail"].startswith(f"signing_key from {source}")
+    assert "config migrate" in " ".join([row["detail"], *row["run"]])
 
 
 class PinProfile(BaseModel):

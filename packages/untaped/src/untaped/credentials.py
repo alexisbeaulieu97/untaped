@@ -434,6 +434,12 @@ class Credential[K: CredentialKey]:
         variable = override_variable(self.plugin, self.name)
         if variable is not None and not refused:
             return Answer("variable", f"${variable}")
+        candidate = self._candidate()
+        if candidate is not None:
+            found = next((each for each in self.env if os.environ.get(each, "").strip()), None)
+            if candidate[1] is not None:
+                return Answer("setting", candidate[0])
+            return None if found is None else Answer("env", f"${found}")
         row = find_row(self.id(key))
         if row is not None:
             return Answer("stored", f"stored {row.id[:SHORT_ID]}", row=row.id)
@@ -462,10 +468,13 @@ class Credential[K: CredentialKey]:
             return BoundSecret(
                 _override_value(self.plugin, self.name), origin=origin, source=f"${variable}"
             )
-        row = find_row(self.id(key))
+        candidate = self._candidate()
+        if candidate is not None and candidate[1] is not None:
+            return BoundSecret(candidate[1], origin=origin, source=candidate[0])
+        row = None if candidate is not None else find_row(self.id(key))
         if row is not None:
             return read_row(row, origin=origin)
-        legacy = legacy_setting(self)
+        legacy = None if candidate is not None else legacy_setting(self)
         found = next((each for each in self.env if os.environ.get(each, "").strip()), None)
         if refused and (legacy is not None or found is not None):
             raise self._refusal(key, f"{legacy[0] if legacy else found} is set")
@@ -475,6 +484,35 @@ class Credential[K: CredentialKey]:
         if found is not None:
             return BoundSecret(os.environ[found].strip(), origin=origin, source=f"${found}")
         raise self._missing(key)
+
+    def _candidate(self) -> tuple[str, str | Callable[[], str] | None] | None:
+        """What ``untaped setup`` is checking for this credential, before anything is stored.
+
+        Its settings overlay (:func:`untaped.settings.settings_overlay`) names
+        the candidate as the old ``<name>`` or ``<name>_command``; while it
+        does, that answers instead of the stored login and the old settings
+        (``(source, None)``: a variable is the candidate, so only ``env``
+        answers). ``None`` outside a check.
+        """
+        from untaped.auth import read_command  # noqa: PLC0415
+        from untaped.settings import active_overlay  # noqa: PLC0415
+
+        overlay = active_overlay()
+        if overlay is None or overlay.section != self.plugin:
+            return None
+        values = overlay.values
+        command_key = f"{self.name}_command"
+        if self.name not in values and command_key not in values:
+            return None
+        token = values.get(self.name)
+        if isinstance(token, SecretStr):
+            return "setup's candidate", token.get_secret_value().strip()
+        argv = values.get(command_key)
+        if isinstance(argv, list) and argv:
+            command = [str(part) for part in argv]
+            setting = f"setup's {self.label} command"
+            return setting, lambda: read_command(command, setting=setting)
+        return "setup's candidate", None
 
     def find(self, key: K | None) -> BoundSecret | None:
         """:meth:`get`, or ``None`` when nothing is set for ``key`` (or there is no key).
@@ -557,21 +595,42 @@ def _join(sources: dict[str, str]) -> str:
 
 
 def override_variable(plugin: str, name: str) -> str | None:
-    """``UNTAPED_<PLUGIN>__<NAME>`` (or the ``UNTAPED_<PLUGIN>`` JSON naming it) when set."""
-    from untaped.auth import token_override_env  # noqa: PLC0415
+    """``UNTAPED_<PLUGIN>__<NAME>`` (or the ``UNTAPED_<PLUGIN>`` JSON naming it) when set.
 
-    return token_override_env(plugin, field=name)
+    Matched without regard to case, as settings read variables.
+    """
+    from untaped.auth import token_override_name  # noqa: PLC0415
+    from untaped.settings import env_var_name  # noqa: PLC0415
+
+    variable = token_override_name(plugin, field=name)
+    if _env(variable).strip():
+        return variable
+    whole = env_var_name([plugin])
+    try:
+        node = json.loads(_env(whole) or "null")
+    except ValueError:
+        return None
+    value = node.get(name) if isinstance(node, dict) else None
+    return whole if isinstance(value, str) and value.strip() else None
 
 
 def _override_value(plugin: str, name: str) -> str:
     from untaped.auth import token_override_name  # noqa: PLC0415
     from untaped.settings import env_var_name  # noqa: PLC0415
 
-    direct = os.environ.get(token_override_name(plugin, field=name), "").strip()
+    direct = _env(token_override_name(plugin, field=name)).strip()
     if direct:
         return direct
-    node = json.loads(os.environ.get(env_var_name([plugin])) or "{}")
+    node = json.loads(_env(env_var_name([plugin])) or "{}")
     return str(node[name]).strip()
+
+
+def _env(name: str) -> str:
+    """The variable ``name``'s value, whatever its case; empty when unset."""
+    value = os.environ.get(name)
+    if value is not None:
+        return value
+    return next((text for key, text in os.environ.items() if key.upper() == name), "")
 
 
 def legacy_setting(credential: Credential[Any]) -> tuple[str, str | Callable[[], str]] | None:

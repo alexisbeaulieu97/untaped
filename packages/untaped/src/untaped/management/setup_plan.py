@@ -162,6 +162,8 @@ def _service_rows(
         step = f"{name}.{field.key}"
         if field.credential is not None and field.key in state.missing:
             rows.append(_login_row(spec, field, profile))
+        elif field.credential is not None:
+            rows.append(_credential_row(spec, field, state, profile))
         elif field.path == ("token",) and field.credential is None and field.is_secret:
             rows.append(_token_row(spec, state, profile, store_name=store_name))
         elif field.key not in state.missing:
@@ -201,6 +203,26 @@ def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
             f"`{command_line(shlex.join(command))}`"
         )
     return _row(f"{name}.{field.key}", name, "todo", detail, run, by="user")
+
+
+def _credential_row(spec: PluginSpec, field: MarkedField, state: ServiceState, profile: str) -> Row:
+    """A found credential: done, unless it is still plain text in its deprecated setting.
+
+    ``config migrate`` moves it to a stored login inside its own process, but
+    it asks first (an older untaped sharing the home stops reading it), so the
+    step is the user's.
+    """
+    name = spec.name
+    step = f"{name}.{field.key}"
+    source = state.sources.get(field.key, "")
+    detail = f"{field.key} from {source}"
+    if source == f"{name}.{field.key}":
+        detail = f"{detail}, plain text in the config file; move it to a stored login"
+        run = command_argv("config migrate", profile=profile)
+        return _row(step, name, "failed", detail, run, by="user")
+    if source.startswith(f"{name}."):
+        detail = f"{detail}; {source} is deprecated, `config migrate` moves it to a stored login"
+    return _row(step, name, "done", detail)
 
 
 def _token_row(

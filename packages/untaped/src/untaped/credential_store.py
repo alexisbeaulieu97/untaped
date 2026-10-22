@@ -28,12 +28,13 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
-from untaped.auth import check_program, read_command, token_override_env
+from untaped.auth import check_program, read_command
 from untaped.credentials import (
     SHORT_ID,
     BoundSecret,
     describe_key,
     key_data,
+    override_variable,
 )
 from untaped.errors import ConfigError
 from untaped.settings import DEFAULT_CONFIG_PATH, resolve_config_path
@@ -338,7 +339,7 @@ def legacy_values(
     if (
         isinstance(value, SecretStr)
         and value.get_secret_value().strip()
-        and token_override_env(plugin, field=name) is None
+        and override_variable(plugin, name) is None
     ):
         return f"{plugin}.{name}", value.get_secret_value().strip()
     command_field = f"{name}_command"

@@ -39,6 +39,7 @@ from untaped.setup_status import (
     notify_unmarked,
     plugin_marks,
     secret_source,
+    shown_value,
     unset_fields,
 )
 from untaped.token_store import TokenStore, pick_store
@@ -222,11 +223,9 @@ def service_state(
     token = marks.token
     missing = tuple(each.key for each in unset_fields(settings, marks, section=section))
     shown = {
-        each.key: _text(value)
+        each.key: shown_value(settings, each)
         for each in marks.required
-        if not each.is_secret
-        and not each.masked
-        and (value := field_value(settings, each)) is not None
+        if not each.is_secret and not each.masked and field_value(settings, each) is not None
     }
     return ServiceState(
         {each.key: _text(field_value(settings, each)) for each in form},

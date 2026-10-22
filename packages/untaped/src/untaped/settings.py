@@ -569,10 +569,17 @@ def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
     node = effective.get(overlay.section)
     section = dict(node) if isinstance(node, dict) else {}
     for key, value in overlay.values.items():
+        # A dotted key (``server.url``) is a leaf of a nested setting.
+        *parents, leaf = key.split(".")
+        target = section
+        for part in parents:
+            child = target.get(part)
+            target[part] = dict(child) if isinstance(child, dict) else {}
+            target = target[part]
         if value is None:
-            section.pop(key, None)
+            target.pop(leaf, None)
         else:
-            section[key] = value.get_secret_value() if isinstance(value, SecretStr) else value
+            target[leaf] = value.get_secret_value() if isinstance(value, SecretStr) else value
     return {**effective, overlay.section: section}
 
 

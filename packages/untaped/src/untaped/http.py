@@ -774,7 +774,6 @@ def connected_client(
     with any of those three, or ``bearer`` or ``verify`` without it,
     refuses.
     """
-    http_settings = http if http is not None else load_settings_section("http")
     override: VerifyTypes | None = None
     if base_url is _FROM_CONFIG:
         CONNECTED_BY_NAME.warn(
@@ -797,6 +796,7 @@ def connected_client(
         token = _text(bearer)
         origin = _bound_origin(bearer, url, section=section)
         override = _key_verify(verify)
+    http_settings = http if http is not None else load_settings_section("http")
     request_headers = dict(headers or {})
     credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
     base = url.rstrip("/")

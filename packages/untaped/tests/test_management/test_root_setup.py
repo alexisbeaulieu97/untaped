@@ -34,6 +34,7 @@ from untaped.testing import (
     CliResult,
     ScreenKeys,
     ScriptedPromptBackend,
+    current_memory_store,
     invoke_cli,
     plugin_candidate,
 )
@@ -122,17 +123,14 @@ def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
 def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    install_fake_stores(tmp_path, monkeypatch, "pass")
     backend = _scripted(*_keys("https://wiz", token=" tok "), "esc", "esc")
 
     result = _setup(backend)
 
     assert result.exit_code == 0, result.output
-    assert _wiz(_isolated_config) == {
-        "base_url": "https://wiz",
-        "token_command": ["pass", "show", "untaped/default/wiz"],
-    }
-    assert stores.entries() == {"untaped/default/wiz": "tok"}
+    assert _wiz(_isolated_config) == {"server": {"url": "https://wiz/"}}
+    assert list(current_memory_store().entries.values()) == ["tok"]
     assert [screen.title for screen in backend.ran] == ["Set up untaped"]
     # The record of the run is on stdout, after the screen: the doctor rows of what it set up.
     rows = {row["check"]: row for row in json.loads(result.stdout)}
@@ -180,9 +178,10 @@ def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
 
     assert result.exit_code == 1
     row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")
-    assert row["fix"] == ["--profile", "default", "auth", "set", "wiz"]
+    assert row["fix"] == ["--profile", "default", "auth", "login", "wiz"]
     assert "setup:" in result.stderr and "1 fail" in result.stderr
-    assert stores.entries() == {"untaped/default/wiz": "bad"}
+    assert stores.entries() == {}
+    assert list(current_memory_store().entries.values()) == ["bad"]
 
 
 def test_a_failed_check_cancelled_writes_nothing(
@@ -225,7 +224,7 @@ def test_ctrl_c_after_a_save_prints_what_was_saved_and_exits_130(
     result = _setup(_scripted(*_keys("https://wiz", token="tok"), "ctrl-c"))
 
     assert result.exit_code == 130
-    assert _wiz(_isolated_config)["base_url"] == "https://wiz"
+    assert _wiz(_isolated_config)["server"] == {"url": "https://wiz/"}
     assert any(row["check"] == "wiz.api" for row in json.loads(result.stdout))
 
 
@@ -277,7 +276,9 @@ def test_only_rejects_a_name_that_is_not_a_section(_isolated_config: Path) -> No
 
 
 def test_notes_print_in_order_before_the_rows(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
+    )
     done = SetupResult(
         "default",
         ("wiz",),
@@ -315,7 +316,9 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
 
 
 def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
+    )
     envy = make_spec("envy", settings=EnvProfile)
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(envy))

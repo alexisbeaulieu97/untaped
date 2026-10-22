@@ -23,6 +23,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from untaped.auth import takes_token_command, token_env_names
+from untaped.credentials import Credential
 from untaped.errors import ConfigError
 from untaped.management.setup_state import ServiceState, form_fields, service_marks
 from untaped.management.setup_write import Candidate
@@ -206,6 +207,11 @@ def token_choices(
     if current.token_source is not None:
         label = f"Keep the current token ({current.token_source})"
         choices.append(PromptChoice(value="keep", label=label))
+    token = service_marks(spec).token
+    credential = None if token is None else token.credential
+    if credential is not None:
+        # A stored login answers before any setting, default's plain text included.
+        return _login_choices(choices, credential, current, store)
     if has_command and current.inherited_token:
         return choices
     if current.plaintext is not None and store is not None:
@@ -224,4 +230,23 @@ def token_choices(
             choices.append(PromptChoice(value="env", label=label))
     else:
         choices.append(PromptChoice(value="enter", label="Enter a token (stored in config.yml)"))
+    return choices
+
+
+def _login_choices(
+    choices: list[PromptChoice[str]],
+    credential: Credential[Any],
+    current: ServiceState,
+    store: TokenStore | None,
+) -> list[PromptChoice[str]]:
+    """A declared credential's choices: each files a login for the key, as ``auth login`` does."""
+    if current.plaintext is not None and store is not None:
+        label = f"Move the current token to {store.name}"
+        choices.insert(0, PromptChoice(value="move", label=label))
+    if store is not None:
+        choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
+    choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
+    if credential.env:
+        label = f"Use ${credential.env[0]} (you export it; drops a stored token)"
+        choices.append(PromptChoice(value="env", label=label))
     return choices
