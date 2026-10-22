@@ -491,6 +491,7 @@ DOCS_PAGES = [
     "screens.md",
     "scripting.md",
     "skills.md",
+    "state.md",
     "troubleshooting.md",
     "versioning.md",
 ]

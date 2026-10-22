@@ -187,7 +187,7 @@ from untaped.stability import (
     deprecated_parameters,
     experimental,
 )
-from untaped.state import StateCollection, StateMap
+from untaped.state import ProjectStateRows, RowExists, StateCollection, StateMap, StateRows
 from untaped.stdin import (
     StdinInput,
     read_identifiers,
@@ -325,8 +325,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "unsafe_dir",
     # settings and state
     "AppContext",
+    "ProjectStateRows",
+    "RowExists",
     "StateCollection",
     "StateMap",
+    "StateRows",
     "app_context",
     "get_config_section",
     # output and records

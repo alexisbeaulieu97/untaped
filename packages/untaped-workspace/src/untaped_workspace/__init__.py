@@ -18,7 +18,13 @@ from untaped.sdk import (
     executable_check,
     experimental,
 )
-from untaped_workspace.settings import REPOS, WorkspaceSettings, WorkspaceState
+from untaped_workspace.settings import (
+    ACTIVE,
+    ARCHIVED,
+    REPOS,
+    WorkspaceSettings,
+    WorkspaceState,
+)
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -78,6 +84,7 @@ SPEC = PluginSpec(
     settings=WorkspaceSettings,
     state=WorkspaceState,
     caches=(REPOS,),
+    stores=(ACTIVE, ARCHIVED),
     skills=(
         SkillAsset(
             name="untaped-workspace",

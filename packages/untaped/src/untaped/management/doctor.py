@@ -45,7 +45,7 @@ from untaped.cli import (
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
 from untaped.deprecated_keys import key_mappings, scan_keys
-from untaped.errors import ConfigError, ExitCode, first_validation_error
+from untaped.errors import ConfigError, ExitCode, UntapedError, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_check_list, emit_isolated
 from untaped.management.records import DoctorCheckRow
@@ -74,6 +74,8 @@ from untaped.plugins.registry import (
     owns_contracts,
     run_deferred_factory,
     section_settings,
+    state_declarations,
+    state_model,
 )
 from untaped.profile_resolver import (
     classify_active_profile,
@@ -100,10 +102,12 @@ from untaped.settings import (
 from untaped.setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
 from untaped.stability import owner, removal_text
+from untaped.state import ProjectStateRows, StateRows
 from untaped.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
 from untaped.token_store import pass_problem
 
 if TYPE_CHECKING:
+    from untaped.projects import Project
     from untaped.refs import Reference, RefHolder
     from untaped.store import Layout, Store
 
@@ -125,6 +129,8 @@ class _SectionScope:
     settings_model: type[BaseModel] | None
     state_model: type[BaseModel] | None
     checks: tuple[DoctorCheck, ...]
+    rows: tuple[StateRows[Any] | ProjectStateRows[Any], ...] = ()
+    """The section's typed rows, each read by its own rules."""
 
 
 OnlineOption = Annotated[
@@ -334,8 +340,13 @@ def _plugin_scope(spec: PluginSpec) -> _SectionScope:
         plugin=spec.name,
         section=spec.name,
         settings_model=section_settings(spec),
-        state_model=spec.state,
+        state_model=state_model(spec),
         checks=tuple(spec.doctor_checks),
+        rows=tuple(
+            each
+            for each in state_declarations(spec)
+            if isinstance(each, StateRows | ProjectStateRows)
+        ),
     )
 
 
@@ -941,23 +952,59 @@ def _state_row(
     state_model: type[BaseModel],
     state: tuple[dict[str, Any], Path] | None,
 ) -> dict[str, object]:
-    """Validate a plugin's state section in ``state.yml`` (profile-independent)."""
+    """Validate a plugin's state section in ``state.yml`` (profile-independent).
+
+    Typed rows are read by their own rules (a damaged row fails with its
+    fix); inside a project, so are that project's rows.
+    """
     title = "validate state"
     if state is None:
         return _row("state", scope.plugin, _FAIL, title, "state file could not be read")
     state_raw, source = state
     node = state_raw.get(scope.section)
-    if node is None:
-        return _row("state", scope.plugin, _PASS, title, "no state")
-    if not isinstance(node, dict):
+    if node is not None and not isinstance(node, dict):
         detail = f"state section {scope.section!r} in {source} must be a mapping"
         return _row("state", scope.plugin, _FAIL, title, detail)
+    owned = {rows.name for rows in scope.rows}
     try:
-        state_model.model_validate(node)
+        state_model.model_validate({k: v for k, v in (node or {}).items() if k not in owned})
     except ValidationError as exc:
         detail = f"invalid {scope.section} state in {source}: {first_validation_error(exc)}"
         return _row("state", scope.plugin, _FAIL, title, detail)
-    return _row("state", scope.plugin, _PASS, title, "state OK")
+    try:
+        counts = _row_counts(scope.rows)
+    except ConfigError as exc:
+        detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
+        return _row("state", scope.plugin, _FAIL, title, detail)
+    if node is None and not counts:
+        return _row("state", scope.plugin, _PASS, title, "no state")
+    return _row("state", scope.plugin, _PASS, title, "; ".join(["state OK", *counts]))
+
+
+def _row_counts(declared: Sequence[StateRows[Any] | ProjectStateRows[Any]]) -> list[str]:
+    """``<plugin>.<name>: N rows`` for each declaration with rows; the first damaged one raises."""
+    project = _current_project() if any(isinstance(d, ProjectStateRows) for d in declared) else None
+    counts: list[str] = []
+    for each in declared:
+        if isinstance(each, ProjectStateRows):
+            if project is None:
+                continue
+            rows, where = each.of(project).all(), f" in project {project.name}"
+        else:
+            rows, where = each.all(), ""
+        if rows:
+            counts.append(f"{each.qualified}{where}: {len(rows)} row{'s' if len(rows) > 1 else ''}")
+    return counts
+
+
+def _current_project() -> Project | None:
+    """The project the working directory is in, when it can be read; doctor never stops on it."""
+    from untaped.projects import project_at  # noqa: PLC0415 - runs only in doctor
+
+    try:
+        return project_at(Path.cwd())
+    except UntapedError:
+        return None
 
 
 def _validate_section(

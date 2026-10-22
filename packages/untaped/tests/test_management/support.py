@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 import pytest
 from cyclopts import App
@@ -130,6 +130,7 @@ def make_spec(
     skills: tuple[SkillAsset, ...] = (),
     doctor_checks: tuple[DoctorCheck, ...] = (),
     stability: Stability | None = None,
+    stores: tuple[Any, ...] = (),
 ) -> PluginSpec:
     """Return a minimal plugin spec double mounting an empty sub-app."""
 
@@ -144,6 +145,7 @@ def make_spec(
         skills=skills,
         doctor_checks=doctor_checks,
         stability=stability,
+        stores=stores,
     )
 
 

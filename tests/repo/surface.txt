@@ -5389,6 +5389,17 @@ sdk untaped.sdk.Project.release(force=) default=[]  [experimental]
 sdk untaped.sdk.Project.release(items=) default=None  [experimental]
 sdk untaped.sdk.Project.release(store)  [experimental]
 sdk untaped.sdk.Project.root  [experimental]
+sdk untaped.sdk.ProjectStateRows(omit_none=) default=false  [experimental]
+sdk untaped.sdk.ProjectStateRows(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.ProjectStateRows(remove_hint=) default=None  [experimental]
+sdk untaped.sdk.ProjectStateRows.key_field  [experimental]
+sdk untaped.sdk.ProjectStateRows.model  [experimental]
+sdk untaped.sdk.ProjectStateRows.name  [experimental]
+sdk untaped.sdk.ProjectStateRows.of(project)  [experimental]
+sdk untaped.sdk.ProjectStateRows.omit_none  [experimental]
+sdk untaped.sdk.ProjectStateRows.plugin  [experimental]
+sdk untaped.sdk.ProjectStateRows.qualified  [experimental]
+sdk untaped.sdk.ProjectStateRows.remove_hint  [experimental]
 sdk untaped.sdk.PromptChoice(description@3=) default=None
 sdk untaped.sdk.PromptChoice(value, label)
 sdk untaped.sdk.PromptChoice.description
@@ -5449,6 +5460,18 @@ sdk untaped.sdk.RetryPolicy.retry_after_max
 sdk untaped.sdk.RetryPolicy.retry_on_transport
 sdk untaped.sdk.RetryPolicy.retry_statuses
 sdk untaped.sdk.RetryPolicy.status_delay(attempt, retry_after)
+sdk untaped.sdk.RowExists()
+sdk untaped.sdk.RowExists(*args)
+sdk untaped.sdk.RowExists(category=) default=None
+sdk untaped.sdk.RowExists(details=) default=None
+sdk untaped.sdk.RowExists(hint=) default=None
+sdk untaped.sdk.RowExists(system=) default=None
+sdk untaped.sdk.RowExists.category class
+sdk untaped.sdk.RowExists.details class
+sdk untaped.sdk.RowExists.exit_code
+sdk untaped.sdk.RowExists.hint class
+sdk untaped.sdk.RowExists.retryable
+sdk untaped.sdk.RowExists.system class
 sdk untaped.sdk.Screen(init, update, view, title, command, alternative) callback(init, 0) callback(update, 2) callback(view, 2)  [experimental]
 sdk untaped.sdk.Screen(keys@7=) default=[]  [experimental]
 sdk untaped.sdk.Screen(layout@9=) default=full  [experimental]
@@ -5619,11 +5642,34 @@ sdk untaped.sdk.StateCollection.insert(record)
 sdk untaped.sdk.StateCollection.mutate(fn) callback(fn, 1)
 sdk untaped.sdk.StateCollection.remove(ident)
 sdk untaped.sdk.StateCollection.upsert(record)
+sdk untaped.sdk.StateMap(project=) default=None
 sdk untaped.sdk.StateMap(section, key)
 sdk untaped.sdk.StateMap.entries()
 sdk untaped.sdk.StateMap.get(key)
 sdk untaped.sdk.StateMap.remove(key)
 sdk untaped.sdk.StateMap.set(key, value)
+sdk untaped.sdk.StateRows(omit_none=) default=false  [experimental]
+sdk untaped.sdk.StateRows(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.StateRows(remove_hint=) default=None  [experimental]
+sdk untaped.sdk.StateRows.add(value)  [experimental]
+sdk untaped.sdk.StateRows.all()  [experimental]
+sdk untaped.sdk.StateRows.delete(key)  [experimental]
+sdk untaped.sdk.StateRows.get(key)  [experimental]
+sdk untaped.sdk.StateRows.key_field  [experimental]
+sdk untaped.sdk.StateRows.keys()  [experimental]
+sdk untaped.sdk.StateRows.model  [experimental]
+sdk untaped.sdk.StateRows.name  [experimental]
+sdk untaped.sdk.StateRows.omit_none  [experimental]
+sdk untaped.sdk.StateRows.path()  [experimental]
+sdk untaped.sdk.StateRows.per_project(omit_none=) default=false  [experimental]
+sdk untaped.sdk.StateRows.per_project(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.StateRows.per_project(remove_hint=) default=None  [experimental]
+sdk untaped.sdk.StateRows.plugin  [experimental]
+sdk untaped.sdk.StateRows.put(value)  [experimental]
+sdk untaped.sdk.StateRows.qualified  [experimental]
+sdk untaped.sdk.StateRows.remove_hint  [experimental]
+sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental]
+sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
 sdk untaped.sdk.StdinInput(values, records)
 sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
@@ -6274,6 +6320,7 @@ sdk untaped.testing.plugin_candidate(distribution=) default=None
 sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.testing.plugin_candidate(spec)
 sdk untaped.testing.progress_clock()
+sdk untaped.testing.read_rows(rows)  [experimental]
 sdk untaped.testing.release_ask(force=) default=false  [experimental]
 sdk untaped.testing.release_ask(holder=) default=present  [experimental]
 sdk untaped.testing.release_ask(others=) default=0  [experimental]
@@ -6284,6 +6331,7 @@ sdk untaped.testing.write_reference(holder, targets)  [experimental]
 sdk untaped.testing.write_reference(moved_from=) default=[]  [experimental]
 sdk untaped.testing.write_reference(plugin=) default=None  [experimental]
 sdk untaped.testing.write_reference(version=) default=None  [experimental]
+sdk untaped.testing.write_rows(rows, raw)  [experimental]
 sdk untaped_awx.api.AwxResources base=untaped.contracts.Record  [experimental]
 sdk untaped_awx.api.AwxResources()  [experimental]
 sdk untaped_awx.api.AwxResources(items=) default=[]  [experimental]
@@ -6908,4 +6956,7 @@ state dotfiles.applied AppliedRecord[]  [experimental]
 state dotfiles.items ItemChoice[]  [experimental]
 state dotfiles.repos RepoRecord[]  [experimental]
 state workspace.active WorkspaceRecord[]  [experimental]
+state workspace.active.created_at string(format=date-time)  [experimental]
+state workspace.active.name string  [experimental]
+state workspace.active.repos RepoSpec[] default=[]  [experimental]
 state workspace.archived ArchivedRecord[]  [experimental]

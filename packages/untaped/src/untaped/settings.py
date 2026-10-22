@@ -883,17 +883,30 @@ def splice_registered_state(
 #: state names.
 RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 
+#: ``state.yml`` sections core keeps its own rows in (:func:`untaped.state.core_rows`).
+CORE_STATE_SECTIONS = frozenset({"credentials"})
+
 
 #: Config sections core owns: the ``Settings`` fields, the top-level layout
 #: keys and the keys injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
 #: No plugin section or state section may take one.
 RESERVED_SECTIONS = frozenset(
-    {*RESERVED_SECTION_KEYS, *Settings.model_fields, *RESERVED_STATE_SECTIONS}
+    {
+        *RESERVED_SECTION_KEYS,
+        *Settings.model_fields,
+        *RESERVED_STATE_SECTIONS,
+        *CORE_STATE_SECTIONS,
+    }
 )
 
 
 def check_state_section_name(section: str) -> None:
-    """Reject a state section name that collides with ``config.yml``'s own keys."""
+    """Reject a state section name that collides with ``config.yml``'s own keys.
+
+    Core's own state sections (:data:`CORE_STATE_SECTIONS`) pass.
+    """
+    if section in CORE_STATE_SECTIONS:
+        return
     if not section or section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved or invalid state section name: {section!r}")
 

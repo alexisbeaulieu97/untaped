@@ -9,12 +9,18 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Cache, Retired
+from untaped.sdk import Cache, Retired, StateCollection, StateRows
 from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
 
 #: The repos each ``RepoSource`` provider lists (``RepoSource.repos``'s answer cache);
 #: its setting is ``workspace.caches.repo_source_repos.max_age_seconds``.
 REPOS = Cache("workspace", "repo_source_repos", label="repos", max_age=timedelta(hours=6))
+
+#: Active workspaces (``state.yml`` → ``workspace.active``), one row per name. No
+#: ``remove_hint``: ``workspace remove`` plans from every record, so a damaged one is fixed by hand.
+ACTIVE = StateRows("workspace", "active", model=WorkspaceRecord, key_field="name")
+#: Archived workspaces: dict rows, since ``archive`` may keep a name twice.
+ARCHIVED = StateCollection("workspace", "archived")
 
 
 class WorkspaceSettings(BaseModel):

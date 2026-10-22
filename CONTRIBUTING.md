@@ -432,6 +432,9 @@ under the owner's `cached/<contract>_<method>/`.
 **Repo store**: the git plugin's shared bare repositories under
 `plugins/git/store/`, which every consumer's refs and worktrees depend on.
 
+**State**: data a plugin keeps as the only copy, in `state.yml`, through
+`StateRows` (typed rows) or `StateMap` (strings).
+
 **Cache**: upstream data a plugin keeps and can fetch again, checked once it
 is older than its max age; see [Caches](docs/caches.md).
 

@@ -8,10 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import StateCollection
+from untaped.sdk import ConfigError, StateRows
+from untaped.testing import read_rows, write_rows
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore
+from untaped_workspace.settings import ACTIVE
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 SPEC = RepoSpec(
@@ -103,10 +105,10 @@ def test_archive_keeps_the_history_record_when_removing_the_active_one_fails(
     store.create(WorkspaceRecord(name="w", created_at=T0))
     store.add_repos("w", [SPEC])
 
-    def fail(self: StateCollection, ident: str) -> bool:
+    def fail(self: StateRows[WorkspaceRecord], key: str) -> int:
         raise OSError("disk full")
 
-    monkeypatch.setattr(StateCollection, "remove", fail)
+    monkeypatch.setattr(StateRows, "delete", fail)
     with pytest.raises(OSError):
         store.archive("w", at=T0)
     [archived] = store.archived()
@@ -148,3 +150,35 @@ def test_a_workspace_made_before_11_from_a_url_untaped_now_refuses_still_loads()
     assert [spec.url for spec in store.get("w").repos] == ["http://git.example/acme/web.git"]  # type: ignore[union-attr]
     store.remove("other")
     assert [record.name for record in store.active()] == ["w"]
+
+
+def test_a_newer_installs_fields_survive_adding_a_repo() -> None:
+    write_rows(
+        ACTIVE,
+        [
+            {
+                "name": "w",
+                "created_at": "2026-10-01T00:00:00Z",
+                "pinned": True,
+                "repos": [{**SPEC.model_dump(mode="json"), "sparse": ["docs"]}],
+            }
+        ],
+    )
+    web = SPEC.model_copy(update={"url": "https://github.com/acme/web.git", "dir": "web"})
+
+    StateWorkspaceStore().add_repos("w", [web])
+
+    (row,) = read_rows(ACTIVE)
+    assert row["pinned"] is True
+    assert row["repos"][0]["sparse"] == ["docs"]
+    assert row["repos"][1] == web.model_dump(mode="json")
+
+
+def test_a_damaged_active_record_names_its_row() -> None:
+    write_rows(ACTIVE, [{"name": "w"}])
+
+    with pytest.raises(ConfigError, match=r"workspace\.active row w .* is damaged") as caught:
+        StateWorkspaceStore().active()
+
+    assert caught.value.exit_code == 4
+    assert caught.value.hint == "correct or remove that row by hand"

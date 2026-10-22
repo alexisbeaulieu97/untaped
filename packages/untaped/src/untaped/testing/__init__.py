@@ -34,6 +34,7 @@ kinds.
 from __future__ import annotations
 
 import ast
+import copy
 import io
 import sys
 import warnings
@@ -78,6 +79,7 @@ from untaped.prompts import (
 from untaped.refs import PROJECT, RefHolder, write_reference
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.stability import apply_marks, deprecated, experimental
+from untaped.state import StateRows
 from untaped.testing.contracts import assert_fills, compose_with
 from untaped.testing.schema import assert_schema_pinned
 from untaped.testing.screens import ScreenKeys, ScreenRun, drive_screen
@@ -122,8 +124,10 @@ __all__ = [
     "plan_release",
     "plugin_candidate",
     "progress_clock",
+    "read_rows",
     "release_ask",
     "write_reference",
+    "write_rows",
 ]
 
 
@@ -214,13 +218,40 @@ def keep_value[M](
 
 
 @experimental
-def damage(cache: Cache[Any], key: str, *, partition: str | None = None) -> None:
-    """Make ``key``'s file in ``cache`` unreadable, as a disk or an editor might."""
+def damage(cache: Cache[Any] | StateRows[Any], key: str, *, partition: str | None = None) -> None:
+    """Make ``key``'s file in ``cache`` unreadable, as a disk or an editor might.
+
+    Given :class:`~untaped.state.StateRows`, damages the row keyed ``key``
+    instead (its key repeated, which no model can read).
+    """
+    if isinstance(cache, StateRows):
+        name = cache._shape().key
+        rows = [row for row in cache._file.read() if isinstance(row, dict) and row.get(name) == key]
+        twice = (rows or [{name: key}])[:1] * 2
+        cache._file.mutate(
+            lambda current: [
+                *(row for row in current if not (isinstance(row, dict) and row.get(name) == key)),
+                *twice,
+            ]
+        )
+        return
     typing = cache._typing()
     paths = cache._paths(key, partition)
     file = paths.file(None if typing is None else versioned(typing, cache._version_now()))
     file.parent.mkdir(parents=True, exist_ok=True)
     file.write_text("{not json\n", encoding="utf-8")
+
+
+@experimental
+def write_rows(rows: StateRows[Any], raw: Sequence[object]) -> None:
+    """Write ``raw`` as ``rows``' rows, unchecked: a newer install's fields, a damaged row."""
+    rows._file.mutate(lambda _: copy.deepcopy(list(raw)))
+
+
+@experimental
+def read_rows(rows: StateRows[Any]) -> list[Any]:
+    """``rows``' rows as stored, unchecked."""
+    return rows._file.read()
 
 
 @dataclass(frozen=True)

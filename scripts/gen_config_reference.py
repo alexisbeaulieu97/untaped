@@ -215,7 +215,7 @@ def _renamed_table() -> list[str]:
     from untaped.settings import model_sections  # noqa: PLC0415
 
     rows: list[str] = []
-    for _, prefix, model, is_state, _ in collect_sections():
+    for _, prefix, model, is_state, _, _ in collect_sections():
         if is_state:
             continue
         sections = {prefix: model} if prefix else model_sections(model)

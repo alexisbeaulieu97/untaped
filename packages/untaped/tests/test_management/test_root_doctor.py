@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 from cyclopts import App
+from pydantic import BaseModel
 
 from test_management.stores import install_fake_stores
 from test_management.support import (
@@ -39,7 +40,8 @@ from untaped.plugins.registry import (
     QuarantineRecord,
 )
 from untaped.settings import FORMAT_VERSION, get_settings
-from untaped.testing import CliInvoker, plugin_candidate
+from untaped.state import StateRows
+from untaped.testing import CliInvoker, make_project, plugin_candidate, write_rows
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -543,6 +545,56 @@ def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> N
     code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 1
     assert str(state_file) in _failed(rows)["validate state"]
+
+
+class _Row(BaseModel):
+    name: str
+    created_at: str
+
+
+_ROWS = StateRows(
+    "acme", "items", model=_Row, key_field="name", remove_hint="untaped acme rm {key}"
+)
+_HERE = StateRows.per_project("acme", "here", model=_Row, key_field="name")
+
+
+def test_typed_rows_are_counted_and_a_newer_installs_fields_pass(_isolated_config: Path) -> None:
+    write_rows(_ROWS, [{"name": "a", "created_at": "x", "pinned": True}])
+
+    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
+
+    assert code == 0, _failed(rows)
+    (state,) = [row for row in rows if row["title"] == "validate state" and row["plugin"] == "acme"]
+    assert state["detail"] == "state OK; acme.items: 1 row"
+
+
+def test_a_damaged_row_fails_with_its_fix(_isolated_config: Path) -> None:
+    write_rows(_ROWS, [{"name": "a"}])
+
+    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
+
+    assert code == 1
+    assert _failed(rows)["validate state"] == (
+        f"acme.items row a in {_isolated_config.parent / 'state.yml'} is damaged: "
+        "created_at: Field required; correct that row by hand, or remove it with "
+        "`untaped acme rm a`"
+    )
+
+
+def test_the_current_projects_rows_are_checked(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = make_project(tmp_path / "PROJ-1")
+    write_rows(_HERE.of(project), [{"name": "a", "created_at": "x"}, {"name": "b"}])
+    spec = make_spec("acme", stores=(_HERE,))
+
+    code, rows = _rows(_doctor_app(spec))
+    assert code == 0, _failed(rows)
+
+    monkeypatch.chdir(project.root)
+    code, rows = _rows(_doctor_app(spec))
+    assert code == 1
+    assert "acme.here row b" in _failed(rows)["validate state"]
 
 
 def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
