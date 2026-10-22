@@ -22,7 +22,7 @@ from repo.support import FIRST_PARTY, PACKAGES
 #: Fields 11.0's private files held that no model names any more.
 LEGACY = frozenset({"fetched_at", "pushed_at"})
 #: Models the scan must find, so a change in how plugins call it can't empty it.
-EXPECTED = frozenset({"BackfillMark"})
+EXPECTED = frozenset({"BackfillMark", "CorpusMeta"})
 
 
 def _trees(plugin: str) -> dict[Path, ast.Module]:

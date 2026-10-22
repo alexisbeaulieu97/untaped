@@ -97,12 +97,12 @@ def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None
     git(source, "checkout", "-q", "main")
 
 
-def test_metadata_without_a_profile_reads_as_the_default_profile(
+def test_an_11_0_metadata_file_lists_offline_and_refetches_once(
     corpus: Callable[..., _Corpus],
 ) -> None:
     env = corpus({"README.md": "hello\n"})
     env.store.fetch(branches=["main"])
-    env.store.private_file.write_text(
+    env.store.private_file.write_text(  # 11.0's: no stamp, its freshness a field
         json.dumps(
             {
                 "repo": "acme/api",
@@ -113,13 +113,28 @@ def test_metadata_without_a_profile_reads_as_the_default_profile(
         )
     )
 
-    assert env.cache.repo_freshness(env.repo) == CorpusFreshness(
-        fetched_at=datetime(2026, 7, 6, 12, 0, tzinfo=UTC),
-        profile="default",
-        ref_globs=(),
-        archived=False,
-        default_branch="main",
+    (row,) = env.cache.list_repos()
+    assert (row.full_name, row.ref, row.profile, row.fetched_at) == (
+        "acme/api",
+        "main",
+        "default",
+        None,
     )
+    assert env.cache.repo_freshness(env.repo) is None  # the sweep refetches it once
+
+
+def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
+    corpus: Callable[..., _Corpus],
+) -> None:
+    # What git's adopt leaves: github's data kept, its freshness cleared.
+    env = corpus({"README.md": "hello\n"})
+    env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
+    data = json.loads(env.store.private_file.read_text())
+    del data["untaped"]["refreshed_at"]
+    env.store.private_file.write_text(json.dumps(data))
+
+    assert env.cache.repo_freshness(env.repo) is None
+    assert [row.full_name for row in env.cache.list_repos()] == ["acme/api"]
 
 
 def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpus]) -> None:
@@ -131,7 +146,9 @@ def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpu
     assert synced.path == str(store.path)
     assert store.path.is_relative_to(Path.home() / ".untaped/plugins/git/store")
     assert store.private_file.name == "untaped-github.json"
-    assert json.loads(store.private_file.read_text())["repo"] == "acme/api"
+    written = json.loads(store.private_file.read_text())
+    assert written["repo"] == "acme/api"
+    assert "fetched_at" not in written and "refreshed_at" in written["untaped"]
     assert set(store.refs()) == {"heads/main"}
     shown = subprocess.run(
         ["git", "--git-dir", str(store.path), "for-each-ref", "--format=%(refname)"],

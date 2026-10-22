@@ -22,14 +22,15 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import json
 import re
 import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
+
+from pydantic import BaseModel
 
 from untaped.sdk import (
     NO_PROGRESS,
@@ -38,7 +39,6 @@ from untaped.sdk import (
     GitResult,
     ProgressHandle,
     UntapedError,
-    atomic_write,
     attribution,
     plugin_dir,
     run_git,
@@ -58,6 +58,9 @@ from untaped_github.domain import (
 )
 from untaped_github.errors import GitCorpusError
 from untaped_github.records import CorpusRepoResult, WorktreeResult
+
+if TYPE_CHECKING:
+    from untaped.sdk import OtherVersion, Unreadable
 
 DEFAULT_TIMEOUT = 60.0
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
@@ -101,7 +104,7 @@ class GitCorpusCache:
         url = self._remote_url(repo)
         branch = _default_branch(repo)
         store = self._store(url)
-        stored = _freshness(store)
+        stored = _metadata(store)
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
         ref_globs = tuple(dict.fromkeys((*(stored.ref_globs if stored else ()), *selector.globs)))
         effective = RefSelector(profile=profile, globs=ref_globs)
@@ -109,21 +112,19 @@ class GitCorpusCache:
         # prune=True: refs the selector no longer covers, or the remote no longer has, go.
         store.fetch(branches=branches, tags=tags, prune=True, progress=progress)
 
-        fetched_at = datetime.now(UTC).isoformat()
-        _write_metadata(
-            store,
-            {
-                "repo": repo.full_name,
-                "ref": branch,
-                "clone_url": url,
-                "fetched_at": fetched_at,
-                "profile": effective.profile,
-                "ref_globs": list(effective.globs),
-                "archived": repo.archived,
-                # A source without pushed_at must not erase the stored one.
-                "pushed_at": repo.pushed_at or (stored.pushed_at if stored else None),
-            },
+        fetched = datetime.now(UTC)
+        meta = CorpusMeta(
+            repo=repo.full_name,
+            ref=branch,
+            clone_url=url,
+            profile=effective.profile,
+            ref_globs=effective.globs,
+            archived=repo.archived,
+            # A source without pushed_at must not erase the stored one.
+            pushed_at=repo.pushed_at or (stored.pushed_at if stored else None),
         )
+        store.write_private(meta, refreshed_at=fetched)
+        fetched_at = fetched.isoformat()
         return CorpusRepoResult(
             full_name=repo.full_name,
             ref=branch,
@@ -150,12 +151,12 @@ class GitCorpusCache:
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""
         store = self._existing(repo)
-        data = _read_metadata(store.private_file)
+        stored = _metadata(store)
+        if stored is None:
+            raise GitCorpusError(f"no stored copy of {repo.full_name} to mark current")
         fetched = datetime.now(UTC)
-        data.update(
-            fetched_at=fetched.isoformat(), archived=repo.archived, pushed_at=repo.pushed_at
-        )
-        _write_metadata(store, data)
+        meta = stored.model_copy(update={"archived": repo.archived, "pushed_at": repo.pushed_at})
+        store.write_private(meta, refreshed_at=fetched)
         return fetched
 
     def local_refs(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> tuple[LocalRef, ...]:
@@ -284,52 +285,55 @@ class GitCorpusCache:
         """List the store repos github has synced, sorted by name."""
         rows = [
             CorpusRepoResult(
-                full_name=str(data.get("repo") or ""),
-                ref=str(data.get("ref") or ""),
+                full_name=meta.repo,
+                ref=meta.ref,
                 path=str(store.path),
-                clone_url=_optional_str(data.get("clone_url")),
+                clone_url=meta.clone_url,
                 status="cached",
-                fetched_at=_optional_str(data.get("fetched_at")),
-                profile=_metadata_profile(data),
-                ref_globs=_metadata_ref_globs(data),
-                archived=_metadata_archived(data),
+                fetched_at=refreshed_at.isoformat() if refreshed_at else None,
+                profile=meta.profile,
+                ref_globs=meta.ref_globs,
+                archived=meta.archived,
             )
-            for store, data in self._entries()
+            for store, meta, refreshed_at in self._entries()
         ]
         # By name: host-less repos (`file://`, local paths) are keyed by a hash.
         return tuple(sorted((row for row in rows if row.full_name and row.ref), key=_by_name))
 
     def get_repo(self, repo: str) -> CorpusRepoTarget | None:
         """Return the stored metadata of ``repo`` if github has synced it."""
-        for _store, data in self._entries():
-            if data.get("repo") != repo:
+        for _store, meta, _refreshed_at in self._entries():
+            if meta.repo != repo:
                 continue
             return CorpusRepoTarget(
                 full_name=repo,
-                default_branch=_optional_str(data.get("ref")),
-                clone_url=_optional_str(data.get("clone_url")),
-                archived=_metadata_archived(data),
+                default_branch=meta.ref or None,
+                clone_url=meta.clone_url,
+                archived=meta.archived,
             )
         return None
 
-    def _entries(self) -> Iterator[tuple[RepoStore, dict[str, object]]]:
-        """Each store repo with github's metadata, warning on and skipping corrupt files.
+    def _entries(self) -> Iterator[tuple[RepoStore, CorpusMeta, datetime | None]]:
+        """Each store repo with github's metadata and when it was fetched.
 
-        A repo not at ``store_key`` of its recorded ``clone_url`` (moved by
-        hand, say) is not listed: no command could use it.
+        A file this release can't read is warned about and skipped. A repo not
+        at ``store_key`` of its recorded ``clone_url`` (moved by hand, say) is
+        not listed: no command could use it.
         """
+        from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
+
         for store in RepoStore.owned_by(SPEC, error=GitCorpusError):
-            try:
-                data = _read_metadata(store.private_file)
-            except GitCorpusError as exc:
-                self._warn(str(exc))
+            read = store.read_private(CorpusMeta)
+            if isinstance(read, Absent):  # released since it was listed
                 continue
-            clone_url = _optional_str(data.get("clone_url"))
-            if clone_url is None:
+            if not isinstance(read, Found):
+                self._warn(_unreadable(store, read))
                 continue
-            key = store_key(clone_url)
+            if read.value.clone_url is None:
+                continue
+            key = store_key(read.value.clone_url)
             if store.path.parts[-len(key) :] == key:
-                yield store, data
+                yield store, read.value, read.refreshed_at
 
     def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:
         """Release one repo: it goes when nobody else uses it, else github's part of it goes.
@@ -466,28 +470,64 @@ def _names(names: list[str]) -> list[str]:
     return ["*"] if "*" in names else list(dict.fromkeys(names))
 
 
-def _freshness(store: RepoStore) -> CorpusFreshness | None:
-    metadata_path = store.private_file
-    if not metadata_path.is_file():
+class CorpusMeta(BaseModel):
+    """github's private file in a store repo: what ``list_repos`` reads offline.
+
+    When the copy was fetched is the file's freshness, not a field. An 11.0
+    file kept it as ``fetched_at``, which is ignored: that copy refetches once.
+    """
+
+    repo: str = ""
+    ref: str = ""
+    clone_url: str | None = None
+    profile: RefProfile = "default"
+    ref_globs: tuple[str, ...] = ()
+    archived: bool = False
+    pushed_at: str | None = None
+
+
+def _metadata(store: RepoStore) -> CorpusMeta | None:
+    """github's metadata in ``store``, or ``None`` when there is none."""
+    from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
+
+    read = store.read_private(CorpusMeta)
+    if isinstance(read, Found):
+        return read.value
+    if isinstance(read, Absent):
         return None
-    data = _read_metadata(metadata_path)
-    fetched_at = _optional_str(data.get("fetched_at"))
+    raise GitCorpusError(_unreadable(store, read))
+
+
+def _freshness(store: RepoStore) -> CorpusFreshness | None:
+    """``store``'s copy and when it was fetched; ``None`` when it never was (or was copied)."""
+    from untaped.sdk import Absent, Found  # noqa: PLC0415  # the data file loads on first use
+
+    read = store.read_private(CorpusMeta)
+    if isinstance(read, Absent):
+        return None
+    if not isinstance(read, Found):
+        raise GitCorpusError(_unreadable(store, read))
+    meta, fetched_at = read.value, read.refreshed_at
     if fetched_at is None:
         return None
-    try:
-        fetched = datetime.fromisoformat(fetched_at)
-    except ValueError as exc:
-        raise GitCorpusError(
-            f"could not read corpus metadata {metadata_path}: invalid fetched_at"
-        ) from exc
     return CorpusFreshness(
-        fetched_at=fetched,
-        profile=_metadata_profile(data),
-        ref_globs=_metadata_ref_globs(data),
-        archived=_metadata_archived(data),
-        pushed_at=_optional_str(data.get("pushed_at")),
-        default_branch=_optional_str(data.get("ref")),
+        fetched_at=fetched_at,
+        profile=meta.profile,
+        ref_globs=meta.ref_globs,
+        archived=meta.archived,
+        pushed_at=meta.pushed_at,
+        default_branch=meta.ref or None,
     )
+
+
+def _unreadable(store: RepoStore, read: Unreadable | OtherVersion) -> str:
+    """Why github's metadata in ``store`` can't be read: damaged, or a newer untaped's."""
+    from untaped.sdk import OtherVersion  # noqa: PLC0415  # the data file loads on first use
+
+    where = f"corpus metadata in {store.path}"
+    if isinstance(read, OtherVersion):
+        return f"could not read {where}: written by a newer untaped ({read.by or 'unknown'})"
+    return f"could not read {where}: it {read.reason}"
 
 
 def _resolve_ref(store: RepoStore, ref: str) -> str | None:
@@ -593,44 +633,6 @@ def _worktree_path(repo: str, ref: str) -> Path:
     digest = hashlib.sha256(f"{repo}@{ref}".encode()).hexdigest()[:12]
     name = f"{safe_path_segment(f'{repo}-{ref}')}-{digest}"  # one capped segment
     return plugin_dir(SPEC) / "worktrees" / name
-
-
-def _write_metadata(store: RepoStore, data: dict[str, object]) -> None:
-    atomic_write(store.private_file, json.dumps(data, sort_keys=True) + "\n")
-
-
-def _read_metadata(path: Path) -> dict[str, object]:
-    try:
-        data = json.loads(path.read_text())
-    except OSError as exc:
-        raise GitCorpusError(f"could not read corpus metadata {path}: {exc}") from exc
-    except ValueError as exc:
-        raise GitCorpusError(f"could not read corpus metadata {path}: invalid JSON") from exc
-    if not isinstance(data, dict):
-        raise GitCorpusError(f"could not read corpus metadata {path}: expected object")
-    return data
-
-
-def _optional_str(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _metadata_profile(data: dict[str, object]) -> RefProfile:
-    value = data.get("profile")
-    if value in {"default", "branches", "tags", "all"}:
-        return cast(RefProfile, value)
-    return "default"
-
-
-def _metadata_ref_globs(data: dict[str, object]) -> tuple[str, ...]:
-    value = data.get("ref_globs")
-    if not isinstance(value, list):
-        return ()
-    return tuple(item for item in value if isinstance(item, str))
-
-
-def _metadata_archived(data: dict[str, object]) -> bool:
-    return bool(data.get("archived", False))
 
 
 def _by_name(row: CorpusRepoResult) -> tuple[str, str]:
