@@ -46,9 +46,12 @@ own settings: the values some layer set (never a default, never the cache max
 ages or extension ranks untaped adds to your section, never core's `http`)
 and where each secret comes from (a variable's name, the config file or a
 token command), never its value. Profiles whose section reads the same share
-the folder; a changed value or another credential source gets its own. Keep
-your own store apart the same way (by key, and by settings when a setting can
-change what a key holds), or let the cache keep the data itself (below).
+the folder; a changed value or another credential source gets its own. After
+a complete fill, the key's files in the folders of settings you no longer use
+go once they are older than 30 days and ten times the declared max age, and a
+folder left empty goes too. Keep your own store apart the same way (by key,
+and by settings when a setting can change what a key holds), or let the cache
+keep the data itself (below).
 A fill never serves its own cache; serving another one, it passes its
 `handle` as `serve(progress=)`, so the inner refresh shows as its phase.
 
@@ -123,9 +126,7 @@ deleted.
 `partition=` keeps another set of files for the same keys, for data that
 depends on a credential: it is hashed into the file names and never shown in
 a warning or an error. Another partition's files of a key go once they are
-older than 30 days and ten times the declared max age, and so do its files
-in the folders of settings you no longer use (a folder left empty goes too).
-The same variable or token command with a new value keeps its folder, so a
+older than 30 days and ten times the declared max age. The same variable or token command with a new value keeps its folder, so a
 cache whose data depends on who asks passes the credential as `partition=`.
 `split="none"` keeps one folder for every setting, when the key and the
 partition already say whose data it is (by default, `split="settings"`).

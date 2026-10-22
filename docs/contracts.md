@@ -55,7 +55,7 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
   otherwise. `shell=` is reserved for shell plugins. `@cached(CACHE)`
-  keeps answers per provider, profile and arguments in a
+  keeps answers per provider, its settings and the arguments in a
   [`Cache`](caches.md) the owner declares, names `<contract>_<method>` and
   lists in its `caches` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that

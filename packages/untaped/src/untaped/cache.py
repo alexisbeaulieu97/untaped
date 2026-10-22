@@ -367,6 +367,8 @@ _HELD: ContextVar[frozenset[Path]] = ContextVar("untaped_cache_held", default=fr
 _PARTITION_HORIZON = timedelta(days=30)
 #: A version's file of a key: ``<segment>[.p<hash>].v<hash>.json``.
 _VERSIONED = re.compile(r"(?P<stem>.+)\.v[0-9a-f]{8}\.json")
+#: Any of a key's files: a typed cache's versions, or an untyped cache's one file.
+_KEY_FILE = re.compile(r"(?P<stem>.+?)(?:\.v[0-9a-f]{8})?\.json")
 
 
 class Cache[M = None]:
@@ -810,8 +812,10 @@ class Cache[M = None]:
             version=version,
         )
         kept_it = self._keep(own, key, label, saved, typing, value)
-        if kept_it and typing is not None and saved.error is None:
-            self._sweep(paths, key, own, max_age)
+        if kept_it and saved.error is None:
+            if typing is not None:
+                self._sweep(paths, key, own, max_age)
+            self._sweep_siblings(paths, key)
         return saved, kept_it
 
     def _say_interrupted(self, freshness: Freshness) -> None:
@@ -945,6 +949,9 @@ class Cache[M = None]:
 
     def freshness(self, key: str, *, partition: str | None = None) -> Freshness:
         """What the cache knows about ``key`` now, without a lock (a status row).
+
+        Finding the folder loads the plugin's settings, so an invalid section
+        raises its :class:`ConfigError`, as :meth:`max_age` does.
 
         Reads each file's first line only: a value that no longer reads is
         found by :meth:`serve`, which refills it.
@@ -1198,70 +1205,79 @@ class Cache[M = None]:
         return True
 
     def _sweep(self, paths: _KeyPaths, key: str, own: Path, max_age: timedelta) -> None:
-        """After a complete fill, under the key's lock: drop values no reader would serve.
+        """After a typed cache's complete fill, under the key's lock: drop what no reader serves.
 
         This key and partition's files of other versions go once past
         ``max_age``: whoever reads one refills it anyway. Another
-        partition's files of the key (a rotated credential), and the key's
-        files in sibling settings folders (settings since changed), go only
-        past the longer of 30 days and ten times the declared max age, under
-        their own lock taken without waiting: a folder shared by profiles
-        may serve one whose max age is longer than this one's. A sibling
-        folder left with nothing but free locks is removed.
+        partition's files of the key (a rotated credential) go only past
+        :meth:`_horizon`, under their own lock taken without waiting: a
+        folder shared by profiles may serve one whose max age is longer
+        than this one's.
         """
         now = _utcnow()
-        horizon = max(_PARTITION_HORIZON, 10 * self.default_max_age)
-        for entry, stem, refreshed in self._key_files(paths.dir, key):
+        for entry, stem, refreshed in self._key_files(paths.dir, key, _VERSIONED):
             if entry == own:
                 continue
             if stem == paths.stem:
                 if refreshed is None or now - refreshed >= max_age:
                     entry.unlink(missing_ok=True)
                 continue
-            self._sweep_other(paths.dir, entry, stem, refreshed, now - horizon, key)
+            self._sweep_other(paths.dir, entry, stem, now - self._horizon(), key)
+
+    def _sweep_siblings(self, paths: _KeyPaths, key: str) -> None:
+        """After a complete fill, under the key's lock: the key in other settings' folders.
+
+        Its files there (settings since changed, every partition and
+        version) go past :meth:`_horizon`, under their own lock taken
+        without waiting; a folder left with nothing but free locks is
+        removed. Nothing under ``split="none"``, which has one folder.
+        """
         if self.split == "none":
             return
+        cutoff = _utcnow() - self._horizon()
         for sibling in _listed(paths.dir.parent):
             if sibling == paths.dir or not sibling.is_dir():
                 continue
-            for entry, stem, refreshed in self._key_files(sibling, key):
-                self._sweep_other(sibling, entry, stem, refreshed, now - horizon, key)
+            for entry, stem, _refreshed in self._key_files(sibling, key, _KEY_FILE):
+                self._sweep_other(sibling, entry, stem, cutoff, key)
             self._remove_if_unused(sibling)
 
-    @staticmethod
-    def _key_files(folder: Path, key: str) -> Iterator[tuple[Path, str, datetime | None]]:
-        """``key``'s files in ``folder``, every partition and version: path, stem, refreshed."""
-        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
+    def _horizon(self) -> timedelta:
+        """How long a key's files in another partition or folder stay: 30 days or 10 max ages."""
+        return max(_PARTITION_HORIZON, 10 * self.default_max_age)
 
+    @staticmethod
+    def _key_files(
+        folder: Path, key: str, names: re.Pattern[str]
+    ) -> Iterator[tuple[Path, str, datetime | None]]:
+        """``key``'s files in ``folder`` whose names match ``names``: path, stem, refreshed."""
         segment = _segment(key)
         for entry in _listed(folder):
-            matched = _VERSIONED.fullmatch(entry.name)
+            matched = names.fullmatch(entry.name)
             if matched is None:
                 continue
             stem = matched["stem"]
             if stem != segment and not stem.startswith(f"{segment}.p"):
                 continue
-            found = read_lines(entry, value=False)
-            if not isinstance(found, Lines) or found.stamp.get("key") != key:
-                continue  # unreadable, or another key whose name begins alike
-            yield entry, stem, parse_utc(found.stamp.get("refreshed_at"))
+            refreshed = _stamped(entry, key)
+            if refreshed is not False:
+                yield entry, stem, refreshed
 
     def _sweep_other(
-        self,
-        folder: Path,
-        entry: Path,
-        stem: str,
-        refreshed: datetime | None,
-        cutoff: datetime,
-        key: str,
+        self, folder: Path, entry: Path, stem: str, cutoff: datetime, key: str
     ) -> None:
-        """Delete ``entry`` when refreshed before ``cutoff`` and its lock is free."""
-        if refreshed is not None and refreshed > cutoff:
+        """Delete ``entry`` when refreshed before ``cutoff`` and its lock is free.
+
+        The stamp is read again under the lock: another process may have
+        refilled the file since it was listed.
+        """
+        if not _refreshed_before(entry, key, cutoff):
             return
         other = _KeyPaths(folder, stem, folder / f"{stem}.lock")
         try:
             with self._held(other, timeout=0.0, label=key):
-                entry.unlink(missing_ok=True)
+                if _refreshed_before(entry, key, cutoff):
+                    entry.unlink(missing_ok=True)
         except _LockError:
             pass  # busy, or its lock won't open: the next complete fill tries again
 
@@ -1277,8 +1293,11 @@ class Cache[M = None]:
                     lock.unlink(missing_ok=True)
             except _LockError:
                 return  # a fill in progress: it keeps the folder
+        # Only when empty: another process may have just written to it. One
+        # creating its first lock here in the same instant fails that fill
+        # ("could not lock"); the folder has seen no fill for the horizon.
         with contextlib.suppress(OSError):
-            folder.rmdir()  # only when empty: another process may have just written to it
+            folder.rmdir()
 
     @contextmanager
     def _task(self, text: str, parent: ProgressHandle) -> Iterator[ProgressHandle]:
@@ -1510,6 +1529,25 @@ def versioned(typing: ValueTyping, version: str | None) -> str:
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:8]
+
+
+def _stamped(entry: Path, key: str) -> datetime | None | Literal[False]:
+    """When ``entry``'s stamp says ``key`` was refreshed; ``False`` when it isn't ``key``'s file.
+
+    An unreadable file, or another key's whose name begins alike, is not.
+    """
+    from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
+
+    found = read_lines(entry, value=False)
+    if not isinstance(found, Lines) or found.stamp.get("key") != key:
+        return False
+    return parse_utc(found.stamp.get("refreshed_at"))
+
+
+def _refreshed_before(entry: Path, key: str, cutoff: datetime) -> bool:
+    """Whether ``entry`` is ``key``'s file, never refreshed or refreshed before ``cutoff``."""
+    refreshed = _stamped(entry, key)
+    return refreshed is not False and (refreshed is None or refreshed <= cutoff)
 
 
 def _listed(folder: Path) -> list[Path]:

@@ -737,9 +737,26 @@ def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
     assert TOY._paths("abc").file().name == "abc.json"
 
 
-def test_profiles_that_sanitize_alike_keep_their_own_folders() -> None:
-    folders = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
-    assert len(folders) == 4
+def test_values_that_sanitize_alike_keep_their_own_segments() -> None:
+    segments = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
+    assert len(segments) == 4
+
+
+def test_a_complete_fill_sweeps_the_key_from_old_settings_folders(clock: CacheClock) -> None:
+    _refreshed(clock, "a", "b", ago=timedelta(days=31))
+    own = TOY._paths("a").dir
+    old = own.parent / "0000000000000000"
+    own.rename(old)
+    _refreshed(clock, "a", ago=timedelta(days=1))
+    recent = own.parent / "1111111111111111"
+    own.rename(recent)
+
+    assert _show("a", "--refresh").exit_code == 0
+
+    assert [file.name for file in old.glob("*.json")] == ["b.json"]  # another key's: kept
+    assert [file.name for file in recent.glob("*.json")] == ["a.json"]  # inside the horizon
+    _show("b", "--refresh")
+    assert not old.exists()  # its last file went, then its locks and the folder
 
 
 def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheClock) -> None:

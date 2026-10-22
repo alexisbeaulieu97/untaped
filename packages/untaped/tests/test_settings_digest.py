@@ -170,3 +170,8 @@ def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch)
     assert ITEMS._paths("k").dir == folder
     shared = Cache("toy", "shared", label="shared", max_age=timedelta(hours=1), split="none")
     assert shared._paths("k").dir.name == "shared"
+
+
+def test_a_section_blob_is_named_as_the_variable_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_TOY", '{"token": "secret-value"}')
+    assert settings_terms("toy")["credentials"] == {"token": "UNTAPED_TOY"}
