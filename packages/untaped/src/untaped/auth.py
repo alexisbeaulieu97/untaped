@@ -55,7 +55,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
 from untaped.setting_marks import SetupMarks, TokenCommand, TokenSources, declared_marks
-from untaped.settings import env_var_name, resolve_config_path
+from untaped.settings import env_var_name, env_var_setting, resolve_config_path
 from untaped.stability import deprecated_behaviour
 
 _LOG = logging.getLogger("untaped.auth")
@@ -195,7 +195,7 @@ def secret_source(settings: BaseModel, *, section: str, field: str) -> str | Non
     data kept for this one.
     """
     if _explicit_token(settings, field):
-        return token_override_env(section, field=field) or f"{section}.{field}"
+        return env_var_setting((section, field)) or f"{section}.{field}"
     sources = _secret_sources(type(settings), field)
     if sources.command and getattr(settings, sources.command, None):
         return "stored"

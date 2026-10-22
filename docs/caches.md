@@ -126,8 +126,9 @@ deleted.
 `partition=` keeps another set of files for the same keys, for data that
 depends on a credential: it is hashed into the file names and never shown in
 a warning or an error. Another partition's files of a key go once they are
-older than 30 days and ten times the declared max age. The same variable or token command with a new value keeps its folder, so a
-cache whose data depends on who asks passes the credential as `partition=`.
+older than 30 days and ten times the declared max age. The same variable or
+token command with a new value keeps its folder, so a cache whose data depends
+on who asks passes the credential as `partition=`.
 `split="none"` keeps one folder for every setting, when the key and the
 partition already say whose data it is (by default, `split="settings"`).
 `cached(key)` peeks at the kept value, `forget(key)` drops every version of

@@ -79,8 +79,14 @@ def test_the_answer_is_cached_per_provider_settings(monkeypatch: pytest.MonkeyPa
     path = Path(os.environ["UNTAPED_CONFIG"])
     path.write_text(
         _CONFIG
-        + _CONFIG.removeprefix("profiles:\n  default:\n").join(["  same:\n", ""])
-        + "  other:\n    library:\n      volumes: [{shelf_mark: C3, name: Kim, pages: 9}]\n",
+        + "  same:\n"
+        + "    library:\n"
+        + "      volumes:\n"
+        + "        - {shelf_mark: A1, name: Dune, pages: 412}\n"
+        + "        - {shelf_mark: B2, name: Emma, pages: 474}\n"
+        + "  other:\n"
+        + "    library:\n"
+        + "      volumes: [{shelf_mark: C3, name: Kim, pages: 9}]\n",
         encoding="utf-8",
     )
     cached = Path(os.environ["HOME"]) / ".untaped" / "plugins" / "shelf" / "cached"

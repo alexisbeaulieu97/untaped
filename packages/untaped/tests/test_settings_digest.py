@@ -175,3 +175,8 @@ def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch)
 def test_a_section_blob_is_named_as_the_variable_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_TOY", '{"token": "secret-value"}')
     assert settings_terms("toy")["credentials"] == {"token": "UNTAPED_TOY"}
+
+
+def test_a_lowercase_override_is_named_as_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("untaped_toy__token", "secret-value")
+    assert settings_terms("toy")["credentials"]["token"].upper() == "UNTAPED_TOY__TOKEN"

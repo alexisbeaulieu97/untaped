@@ -367,8 +367,8 @@ _HELD: ContextVar[frozenset[Path]] = ContextVar("untaped_cache_held", default=fr
 _PARTITION_HORIZON = timedelta(days=30)
 #: A version's file of a key: ``<segment>[.p<hash>].v<hash>.json``.
 _VERSIONED = re.compile(r"(?P<stem>.+)\.v[0-9a-f]{8}\.json")
-#: Any of a key's files: a typed cache's versions, or an untyped cache's one file.
-_KEY_FILE = re.compile(r"(?P<stem>.+?)(?:\.v[0-9a-f]{8})?\.json")
+#: An untyped cache's one file per key and partition.
+_PLAIN = re.compile(r"(?P<stem>.+)\.json")
 
 
 class Cache[M = None]:
@@ -1222,7 +1222,7 @@ class Cache[M = None]:
                 if refreshed is None or now - refreshed >= max_age:
                     entry.unlink(missing_ok=True)
                 continue
-            self._sweep_other(paths.dir, entry, stem, now - self._horizon(), key)
+            self._sweep_other(paths.dir, entry, stem, now - self._horizon(), key, refreshed)
 
     def _sweep_siblings(self, paths: _KeyPaths, key: str) -> None:
         """After a complete fill, under the key's lock: the key in other settings' folders.
@@ -1238,8 +1238,8 @@ class Cache[M = None]:
         for sibling in _listed(paths.dir.parent):
             if sibling == paths.dir or not sibling.is_dir():
                 continue
-            for entry, stem, _refreshed in self._key_files(sibling, key, _KEY_FILE):
-                self._sweep_other(sibling, entry, stem, cutoff, key)
+            for entry, stem, refreshed in self._key_files(sibling, key, _VERSIONED, _PLAIN):
+                self._sweep_other(sibling, entry, stem, cutoff, key, refreshed)
             self._remove_if_unused(sibling)
 
     def _horizon(self) -> timedelta:
@@ -1248,30 +1248,42 @@ class Cache[M = None]:
 
     @staticmethod
     def _key_files(
-        folder: Path, key: str, names: re.Pattern[str]
+        folder: Path, key: str, *names: re.Pattern[str]
     ) -> Iterator[tuple[Path, str, datetime | None]]:
-        """``key``'s files in ``folder`` whose names match ``names``: path, stem, refreshed."""
+        """``key``'s files in ``folder``: path, stem, refreshed.
+
+        A name is read by the first of ``names`` whose stem is the key's
+        (``x.vdeadbeef.json`` is key ``x``'s version, or key ``x.vdeadbeef``'s
+        one file); the stamp says which key it holds.
+        """
         segment = _segment(key)
         for entry in _listed(folder):
-            matched = names.fullmatch(entry.name)
-            if matched is None:
-                continue
-            stem = matched["stem"]
-            if stem != segment and not stem.startswith(f"{segment}.p"):
+            stems = (each["stem"] for name in names if (each := name.fullmatch(entry.name)))
+            stem = next(
+                (each for each in stems if each == segment or each.startswith(f"{segment}.p")),
+                None,
+            )
+            if stem is None:
                 continue
             refreshed = _stamped(entry, key)
             if refreshed is not False:
                 yield entry, stem, refreshed
 
     def _sweep_other(
-        self, folder: Path, entry: Path, stem: str, cutoff: datetime, key: str
+        self,
+        folder: Path,
+        entry: Path,
+        stem: str,
+        cutoff: datetime,
+        key: str,
+        refreshed: datetime | None,
     ) -> None:
-        """Delete ``entry`` when refreshed before ``cutoff`` and its lock is free.
+        """Delete ``entry`` (listed as ``refreshed``) refreshed before ``cutoff``, its lock free.
 
         The stamp is read again under the lock: another process may have
         refilled the file since it was listed.
         """
-        if not _refreshed_before(entry, key, cutoff):
+        if refreshed is not None and refreshed > cutoff:
             return
         other = _KeyPaths(folder, stem, folder / f"{stem}.lock")
         try:

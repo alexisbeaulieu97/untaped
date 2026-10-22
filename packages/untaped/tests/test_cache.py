@@ -1229,3 +1229,14 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
         True,
         "2026-10-12T09:30:00Z",
     )
+
+
+def test_a_key_named_like_a_version_is_found_by_its_stamp(clock: CacheClock) -> None:
+    UP.items["x.vdeadbeef"] = ["x1"]
+    assert _show("x.vdeadbeef").exit_code == 0
+    folder = TOY._paths("x.vdeadbeef").dir
+    [(entry, stem, refreshed)] = TOY._key_files(
+        folder, "x.vdeadbeef", cache_module._VERSIONED, cache_module._PLAIN
+    )
+    assert (entry.name, stem, refreshed) == ("x.vdeadbeef.json", "x.vdeadbeef", START)
+    assert list(TOY._key_files(folder, "x", cache_module._VERSIONED, cache_module._PLAIN)) == []
