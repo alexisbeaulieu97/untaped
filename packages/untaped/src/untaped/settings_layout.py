@@ -7,7 +7,6 @@ resolves through it.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -161,7 +160,7 @@ def _root_tls_off(
 
     11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
     its TLS from the key alone. The key's TLS field is found by type; a key
-    with no URL (set, or by default) is left alone. A layer's own
+    with no URL (set in the file or a variable, or by default) is left alone. A layer's own
     ``verify_tls`` wins over its ``verify_ssl``, a later layer wins over an
     earlier one, and ``UNTAPED_HTTP__VERIFY_SSL`` in ``environ`` over both.
     ``effective`` is updated in place; returns the leaves turned off.
@@ -229,36 +228,17 @@ def _env_fields(
     key: type[BaseModel],
 ) -> set[str]:
     """The key's fields a variable in ``environ`` sets (old spellings and JSON objects too)."""
-    from untaped.settings import env_var_name  # noqa: PLC0415 - settings imports this module
+    from untaped.settings import env_var_setting  # noqa: PLC0415 - settings imports this module
 
     if not environ:
         return set()
-    upper = {name.upper(): value for name, value in environ.items()}
     found: set[str] = set()
     for name in key.model_fields:
         relative = ".".join((*path, name))
         for spelling in (relative, *old_spellings(model, relative)):
-            if _env_holds(upper, (section, *spelling.split(".")), env_var_name):
+            if env_var_setting((section, *spelling.split(".")), environ=environ) is not None:
                 found.add(name)
     return found
-
-
-def _env_holds(
-    upper: Mapping[str, str], path: tuple[str, ...], name_of: Callable[[tuple[str, ...]], str]
-) -> bool:
-    """Whether a variable sets ``path``: its own, or an ancestor's JSON object holding it."""
-    for depth in range(len(path), 0, -1):
-        value = upper.get(name_of(path[:depth]))
-        if value is None:
-            continue
-        if depth == len(path):
-            return True
-        try:
-            data: Any = json.loads(value)
-        except ValueError:
-            return False
-        return _dig(data, path[depth:]) is not None
-    return False
 
 
 def _url(node: Mapping[str, Any], key: type[BaseModel], name: str) -> bool:

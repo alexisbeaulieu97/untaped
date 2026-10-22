@@ -8,7 +8,7 @@ import respx
 
 from untaped import bootstrap
 from untaped.plugins.registry import PluginCandidate
-from untaped.settings import get_settings
+from untaped.settings import get_settings, load_settings_section
 from untaped.testing import CliInvoker, CliResult
 from untaped_awx.cli import app
 
@@ -474,3 +474,25 @@ def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str
     assert bare.exit_code == 2
     assert "requires an argument" in bare.stderr
     assert bare.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("UNTAPED_AWX__BASE_URL", "https://aap.example.com"),
+        ("UNTAPED_AWX", '{"server": {"url": "https://aap.example.com"}}'),
+        ("UNTAPED_AWX", '{"base_url": "https://aap.example.com"}'),
+    ],
+)
+def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    http: {verify_ssl: false}\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv(variable, value)
+    get_settings.cache_clear()
+
+    server = load_settings_section("awx").server
+
+    assert (str(server.url), server.verify_tls) == ("https://aap.example.com/", False)

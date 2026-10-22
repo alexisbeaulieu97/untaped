@@ -703,17 +703,21 @@ def env_sets_key(section: str, key: str) -> bool:
     return not isinstance(data, dict) or key in data
 
 
-def env_var_setting(path: tuple[str, ...]) -> str | None:
+def env_var_setting(
+    path: tuple[str, ...], *, environ: Mapping[str, str] | None = None
+) -> str | None:
     """The set ``UNTAPED_*`` variable that supplies the leaf at ``path``, if any.
 
     The deepest one wins: the leaf's own variable, else an ancestor's JSON
     object that holds it; an ancestor whose value (or a level inside it)
     isn't a JSON object counts, since it cannot be told apart. Old spellings
-    are not checked; ``env_var_supplying`` finds a field's.
+    are not checked; ``env_var_supplying`` finds a field's. ``environ``
+    defaults to this process's variables.
     """
+    variables = os.environ if environ is None else environ
     for depth in range(len(path), 0, -1):
         name = env_var_name(path[:depth])
-        value = next((text for key, text in os.environ.items() if key.upper() == name), None)
+        value = next((text for key, text in variables.items() if key.upper() == name), None)
         if value is None:
             continue
         if depth == len(path):
