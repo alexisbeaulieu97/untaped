@@ -864,20 +864,21 @@ class _Setup:
             return model, []  # one check at a time: a save while one runs is ignored
         name = model.name
         spec = self.services[name]
+        del values  # the form itself holds them, each in its shape's field
         try:
-            asked = candidate(spec, model.current, values)
+            asked = candidate(spec, model.current, model.forms[name], model.states[name])
         except ConfigError as exc:
             return self._fail(model, name, str(exc)), []
 
         def prime() -> object:
-            # Runs with the real terminal; the token is cached for the probe.
-            section = spec.name
-            argv = list(asked.argv or ())
-            forget_token_command(argv)  # every check runs the command, a retry included
-            try:
-                CommandToken(argv, section=section).get_secret_value()
-            except ConfigError as exc:
-                return Probed(name, (("fail", str(exc)),))
+            # Runs with the real terminal; each secret is cached for the probe.
+            for command in asked.commands:
+                argv = list(command)
+                forget_token_command(argv)  # every check runs the command, a retry included
+                try:
+                    CommandToken(argv, section=spec.name).get_secret_value()
+                except ConfigError as exc:
+                    return Probed(name, (("fail", str(exc)),))
             return Primed(name)
 
         checking = replace(
@@ -888,7 +889,7 @@ class _Setup:
             rows=_status(model.rows, name, "checking"),
             forms={**model.forms, name: reset(model.forms[name].with_error(""))},
         )
-        if asked.how == "command":
+        if asked.commands:
             return checking, [Cmd(prime, suspend=True, name="prime")]
         return checking, [self._probe(asked, model.states[name])]
 
@@ -1112,10 +1113,8 @@ class _Setup:
         state = listing.states.get(name)
         if state is None:
             return rows
-        token = service_marks(self.services[name]).token is not None
-        if not token and not state.values:
-            return rows  # its marked settings are rows of their own
-        return (connection_row(state, token=token), *rows)
+        marks = service_marks(self.services[name])
+        return (connection_row(state, marks), *rows)
 
     def _panes(self, listing: Listing, profile: str) -> dict[str, SectionPane]:
         return {

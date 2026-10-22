@@ -56,6 +56,7 @@ from untaped.screen.components.fields import Field
 from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import Cmd, Frame, Key
 from untaped.screen.fit import fit_text
+from untaped.setting_marks import SetupMarks
 from untaped.settings import section_stabilities
 from untaped.stability import stability_name
 
@@ -277,14 +278,20 @@ def _ranking_rows(
     return [*rows, add]
 
 
-def connection_row(state: ServiceState, *, token: bool = True) -> SettingRow:
-    """A service's connection row: its marked settings' values and where its token comes from.
-
-    ``token`` is whether the service has one the form edits.
-    """
-    parts = [value or f"no {key}" for key, value in state.values.items()]
-    if token:
-        parts.append(f"token from {state.token_source}" if state.token_source else "no token")
+def connection_row(state: ServiceState, marks: SetupMarks) -> SettingRow:
+    """A plugin's setup row: what its marked settings hold, and where each secret comes from."""
+    parts = [
+        state.shown.get(field.key)
+        or (f"no {field.key}" if field.key in state.missing else f"{field.key} set")
+        for field in marks.required
+        if not field.is_secret
+    ]
+    parts += [
+        f"{each.key} from {source}"
+        if (source := state.secret_sources.get(each.key))
+        else f"no {each.key}"
+        for each in marks.secrets
+    ]
     help = (
         "The settings the plugin needs, checked online before they are saved.",
         "enter opens them.",

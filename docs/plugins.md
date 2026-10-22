@@ -85,7 +85,8 @@ data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 A plugin that connects to a service marks what it can't run without, and
 `setup`, `setup plan`, doctor and `auth` read the marks: `NeedsSetup` on an
 `X | None = None` field (set means not `None`); a misplaced mark quarantines
-the plugin.
+the plugin. `setup`'s form edits each marked field in the field its type
+takes, and a marked model as its fields that have no default.
 
 How a plugin keeps a server's secret (stored with the server it is sent to,
 never in configuration) is in [Credentials](./credentials.md).

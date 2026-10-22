@@ -121,11 +121,14 @@ class Form:
     def view(
         self, frame: Frame, *, focused: bool = False, width: int | None = None
     ) -> RenderableType:
-        """The fields stacked a blank line apart, cut to the lines around the focused one."""
+        """The fields stacked a blank line apart, cut to the lines around the focused one.
+
+        The form's own error, under the fields, is kept in sight instead while it shows.
+        """
         blocks: list[RenderableType] = [
             field.view(frame, focused=focused and index == self.focus, width=width)
             for index, (_, field) in enumerate(self.fields)
         ]
         if self.error:
             blocks.append(Text(self.error, style=role_style(frame, "screen.error")))
-        return windowed(blocks, self.focus, frame.height)
+        return windowed(blocks, len(self.fields) if self.error else self.focus, frame.height)

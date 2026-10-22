@@ -63,16 +63,20 @@ editor and written as `untaped plugin rank` writes it; its `+ add a ranking`
 row takes `CONTRACT METHOD PROVIDER...` as `plugin rank` does. Any other list
 or map is one line of JSON, as `config set` takes it.
 
-A service's first row is its connection. Enter opens its form: the settings
-the plugin needs (such as the base URL) and how to get the token (tabs):
-store it with your password store (as `untaped auth login` does), move a
-plaintext one there, give a command that prints it, use an environment
-variable, or keep the current one. The token is filed for the server the form
-saves. Saving checks the service online with what you typed before anything is
-written; if the check fails, the reason is shown under the form and you can fix
-the values, or `Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for
-example `UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as
-it does in `doctor`.
+A service's first row is what it needs set up. Enter opens its form: every
+setting the plugin marks as needed (such as its server's URL), each in the
+field its type takes, then, for each of its secrets (usually one token), how
+to get it (tabs): store it with your password store (as `untaped auth login`
+does), move a plaintext one there, give a command that prints it, use an
+environment variable, or keep the current one. Each secret is filed for the
+server the form saves. Saving checks the service online with what you typed
+before anything is written; if the check fails, the reason is shown under the
+form and you can fix the values, or `Save anyway`. Only the settings you
+changed are written, in one write, so a value the profile inherits stays
+inherited; if one of them changed in the config file since the form opened,
+nothing is written and the form says so. An exported
+`UNTAPED_<SECTION>__TOKEN` (for example `UNTAPED_GITHUB__TOKEN`) wins over the
+token you type in that check, as it does in `doctor`.
 
 Esc leaves the screen; ctrl-c leaves it too and exits 130. Naming a new
 profile in the profile field shows `default`'s values and creates the profile

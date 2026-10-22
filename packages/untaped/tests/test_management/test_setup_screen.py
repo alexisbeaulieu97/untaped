@@ -120,7 +120,7 @@ def _keys(
     command: str | None = None,
     submit: bool = True,
 ) -> list[ScreenKey]:
-    """List -> rows -> connection form: the URL, the token tab (``right`` steps in), its field,
+    """List -> rows -> setup form: the URL, the token tab (``right`` steps in), its field,
     then enter."""
     keys: list[ScreenKey] = ["enter", "enter"]
     if url is not None:
@@ -205,7 +205,8 @@ def test_check_passes_then_moves_the_plaintext_token(
 
     run = drive_screen(_build(), [*_keys(), "esc", "esc"])
 
-    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
+    # The URL was not edited, so it is not rewritten.
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz"}}
     assert list(current_memory_store().entries.values()) == ["old"]
     assert "old" not in _isolated_config.read_text()
     assert _result(run).touched == ("wiz",)
@@ -838,7 +839,7 @@ def test_inherited_token_note_shows_in_the_tab(
     assert "Keep" in flat and "Command" not in flat and "pass" not in flat
 
 
-_UNSET = ServiceState(values={}, token_source=None)
+_UNSET = ServiceState(values={})
 
 
 def test_tabs_offer_the_same_choices_as_before(
@@ -853,10 +854,10 @@ def test_tabs_offer_the_same_choices_as_before(
         spec = spec or _wiz()
         return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
 
-    plain = ServiceState(values={}, token_source="wiz.token", plaintext="old")
+    plain = ServiceState(values={}, secret_sources={"token": "wiz.token"}, plaintext="old")
     assert offered(plain) == ["move", "keep", "store", "command", "env"]
     assert offered(_UNSET) == ["store", "command", "env"]
-    inherited = ServiceState(values={}, token_source="wiz.token", inherited_token=True)
+    inherited = ServiceState(values={}, secret_sources={"token": "wiz.token"}, inherited_token=True)
     # A stored login answers before default's plain text, so every choice works.
     assert offered(inherited) == ["keep", "store", "command", "env"]
     assert [c.value for c in _token_choices(_wiz(), _UNSET, None, has_command=True)] == [
@@ -866,9 +867,10 @@ def test_tabs_offer_the_same_choices_as_before(
     unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
     assert offered(inherited, unmarked) == ["keep"]
     assert offered(_UNSET, _legacy(), has_command=False) == ["store", "enter"]
-    assert offered(
-        ServiceState(values={}, token_source=None, inherited_command=True), unmarked
-    ) == ["store", "command"]
+    assert offered(ServiceState(values={}, inherited_command=True), unmarked) == [
+        "store",
+        "command",
+    ]
 
 
 def test_without_a_store_the_tabs_never_offer_plain_text() -> None:

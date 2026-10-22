@@ -15,12 +15,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel
 
 from untaped.auth import takes_token_command
+from untaped.config.repository import SettingsFileRepository
+from untaped.config.use_cases import SetSetting
 from untaped.config_file import read_config_dict
 from untaped.config_schema import walk_settings
-from untaped.credentials import CredentialKey, key_fields
 from untaped.doctor_checks import service_configured
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import inherited_from_default, plaintext_token
@@ -90,38 +91,25 @@ def service_marks(spec: PluginSpec) -> SetupMarks:
 
 
 def form_fields(spec: PluginSpec) -> tuple[MarkedField, ...]:
-    """The marked fields the connection form edits as text: scalar, not secret.
+    """The settings the setup form edits: every marked setting, each in its shape's field.
 
-    A top-level marked setting, or a required field of a marked
-    :class:`~untaped.credentials.CredentialKey` (``server.url``). Any other
-    marked field (a list, a nested one, a secret) stays a row of its own.
+    A marked model (a :class:`~untaped.credentials.CredentialKey` such as
+    ``server``) is edited as the fields it needs, those without a default
+    (``server.url``), written together; the others keep rows of their own.
+    A credential is no setting: the form's source tabs file it.
     """
-    descriptors = {d.path: d for d in walk_settings(settings_model(spec))}
+    descriptors = walk_settings(settings_model(spec), include_collections=True)
     fields: list[MarkedField] = []
     for marked in service_marks(spec).required:
         if marked.is_secret:
             continue
-        key = _marked_key(spec, marked)
-        if key is not None:
-            fields.extend(
-                MarkedField((*marked.path, name))
-                for name, each in key.model_fields.items()
-                if each.is_required() and (*marked.path, name) in descriptors
-            )
-            continue
-        descriptor = descriptors.get(marked.path)
-        if len(marked.path) == 1 and descriptor is not None and not descriptor.is_secret:
-            fields.append(marked)
+        size = len(marked.path)
+        for descriptor in descriptors:
+            if descriptor.path == marked.path:
+                fields.append(marked)
+            elif descriptor.path[:size] == marked.path and not descriptor.has_default:
+                fields.append(MarkedField(descriptor.path))
     return tuple(fields)
-
-
-def _marked_key(spec: PluginSpec, field: MarkedField) -> type[CredentialKey] | None:
-    """The key class a marked setting holds, if it is one."""
-    model = settings_model(spec)
-    for path, key in key_fields(model):
-        if path == field.path:
-            return key
-    return None
 
 
 def connection_keys(spec: PluginSpec) -> frozenset[str]:
@@ -150,12 +138,16 @@ def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
 class ServiceState:
     """What a service section currently resolves to in the profile."""
 
-    values: Mapping[str, str]
-    """Each form field's effective value (the model default when unset; ``""`` for none),
+    values: Mapping[str, object]
+    """Each form field's effective value (the model default when unset; ``None`` for none),
     the form's starting values."""
 
-    token_source: str | None
-    """Where the ``token`` would come from (``describe_token_source``), if anywhere."""
+    own: Mapping[str, object] = field(default_factory=dict)
+    """Each form field's raw value in the profile's own data (``None`` when it sets none):
+    what a save expects to find, so a value changed since the form opened is not replaced."""
+
+    secret_sources: Mapping[str, str] = field(default_factory=dict)
+    """Where each secret would come from, by name, for those found anywhere."""
 
     missing: tuple[str, ...] = ()
     """The marked fields still unset, by key within the section."""
@@ -192,6 +184,11 @@ class ServiceState:
     (:func:`~untaped.doctor_checks.service_configured`); ``None`` for a marked one."""
 
     @property
+    def token_source(self) -> str | None:
+        """Where the secret named ``token`` would come from, if anywhere."""
+        return self.secret_sources.get("token")
+
+    @property
     def configured(self) -> bool:
         """Whether every marked field is set."""
         return self.invalid is None and not self.missing
@@ -211,14 +208,24 @@ def service_state(
     form = form_fields(spec)
     plaintext = plaintext_token(own, section)
     required = len(marks.required)
+    own_node = own.get(section)
+    own_data = own_node if isinstance(own_node, dict) else {}
+    current = SetSetting(SettingsFileRepository()).current
+    owned = {each.key: current(f"{section}.{each.key}", profile=profile) for each in form}
     try:
         settings: BaseModel = check_settings_field(section, data, model=settings_model(spec))
     except ConfigError as exc:
-        values = {each.key: _text(data.get(each.key)) for each in form}
+        values = {each.key: _at(data, each.path) for each in form}
         missing = tuple(each.key for each in marks.required)
-        return ServiceState(values, None, missing, required, plaintext, invalid=str(exc))
-    own_node = own.get(section)
-    command = own_node.get("token_command") if isinstance(own_node, dict) else None
+        return ServiceState(
+            values,
+            own=owned,
+            missing=missing,
+            required=required,
+            plaintext=plaintext,
+            invalid=str(exc),
+        )
+    command = own_data.get("token_command")
     own_command = [str(part) for part in command] if isinstance(command, list) else None
     token = marks.token
     missing = tuple(each.key for each in unset_fields(settings, marks, section=section))
@@ -227,31 +234,34 @@ def service_state(
         for each in marks.required
         if not each.is_secret and not each.masked and field_value(settings, each) is not None
     }
+    found = {
+        each.key: source
+        for each in marks.secrets
+        if (source := secret_source(settings, each, section=section)) is not None
+    }
     return ServiceState(
-        {each.key: _text(field_value(settings, each)) for each in form},
-        None if token is None else secret_source(settings, token, section=section),
-        missing,
-        required,
-        plaintext,
-        own_command or None,
-        inherited_from_default(section, profile, "token", raw),
-        inherited_from_default(section, profile, "token_command", raw),
+        {each.key: field_value(settings, each) for each in form},
+        own=owned,
+        secret_sources=found,
+        missing=missing,
+        required=required,
+        plaintext=plaintext,
+        own_command=own_command or None,
+        inherited_token=inherited_from_default(section, profile, "token", raw),
+        inherited_command=inherited_from_default(section, profile, "token_command", raw),
         shown=shown,
-        sources={
-            each.key: source
-            for each in marks.secrets
-            if each.key not in missing
-            and (source := secret_source(settings, each, section=section)) is not None
-        },
+        sources={key: source for key, source in found.items() if key not in missing},
         token_only=token is not None and missing == (token.key,),
         legacy_configured=service_configured(settings, section=section) if marks.legacy else None,
     )
 
 
-def _text(value: object) -> str:
-    if value is None:
-        return ""
-    return "***" if isinstance(value, SecretStr) else str(value)
+def _at(data: dict[str, Any], path: tuple[str, ...]) -> object:
+    """The raw value at ``path`` in ``data`` (``None`` where a level is missing)."""
+    value: object = data
+    for part in path:
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
 
 
 def service_states(
