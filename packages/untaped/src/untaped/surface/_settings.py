@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from untaped.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.surface._sdk import line_mark
@@ -124,12 +124,14 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
         state = state_model(spec)
+        rows = tuple(
+            each
+            for each in state_declarations(spec)
+            if isinstance(each, StateRows | ProjectStateRows)
+        )
+        if state is None and rows:  # only a project's rows: no section in the home
+            state = create_model(spec.name.title().replace("-", "") + "State")
         if state is not None:
-            rows = tuple(
-                each
-                for each in state_declarations(spec)
-                if isinstance(each, StateRows | ProjectStateRows)
-            )
             found.append(
                 Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows)
             )

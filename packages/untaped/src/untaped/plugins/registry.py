@@ -1071,7 +1071,7 @@ def spliced_state(spec: PluginSpec) -> type[BaseModel] | None:
     if spec.state is None:
         return None
     owned = {each.name for each in state_declarations(spec)}
-    if not owned & set(spec.state.model_fields):
+    if not owned:
         return spec.state
     return _without(spec.state, frozenset(owned))
 
@@ -1085,7 +1085,9 @@ def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
         if name not in keys
     }
     # The removed keys stay in the file: a model forbidding extra keys would refuse them.
-    config = ConfigDict(**{**model.model_config, "extra": "ignore"})
+    config = ConfigDict(**model.model_config)
+    if config.get("extra") == "forbid":
+        config["extra"] = "ignore"
     without: type[BaseModel] = create_model(model.__name__, __config__=config, **fields)
     return without
 

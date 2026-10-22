@@ -193,11 +193,12 @@ def test_names_still_lists_a_damaged_record() -> None:
 def test_a_newer_installs_fields_on_an_archived_record_are_ignored() -> None:
     store = StateWorkspaceStore()
     store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.add_repos("w", [SPEC])
     store.archive("w", at=T0)
     state = Path.home() / ".untaped" / "state.yml"
-    state.write_text(state.read_text().replace("archived_at:", "pinned: true\n    archived_at:"))
-    assert "pinned: true" in state.read_text()
+    state.write_text(state.read_text().replace("base: main", "base: main\n      sparse: [docs]"))
+    assert "sparse: [docs]" in state.read_text()
 
     [archived] = store.archived()
 
-    assert (archived.name, archived.archived_at) == ("w", T0)
+    assert (archived.name, archived.repos) == ("w", (SPEC,))

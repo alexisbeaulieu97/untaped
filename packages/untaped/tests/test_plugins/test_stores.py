@@ -20,6 +20,7 @@ from untaped.plugins.registry import (
 )
 from untaped.state import StateCollection, StateMap, StateRows
 from untaped.store import Store
+from untaped.surface._settings import settings_lines
 from untaped.testing import check_plugin, make_project, plugin_candidate
 
 DATA = Store("hello", "data", base=lambda: Path("data.db"))
@@ -207,3 +208,37 @@ def test_the_state_model_leaves_out_a_projects_rows() -> None:
 
     assert model is not None
     assert list(model.model_fields) == ["rows"]
+
+
+def test_a_projects_rows_have_surface_lines_without_home_state() -> None:
+    result = compose(make_shell(), [make_candidate(_hello(stores=(EVERY_ROW,)))])
+
+    texts = [line.text for line in settings_lines(result, root=False)]
+
+    assert any(text.startswith("state hello.here.name ") for text in texts), texts
+
+
+def test_a_strict_state_model_ignores_a_declared_key_it_lacks() -> None:
+    class Cursor(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        cursor: str = ""
+
+    spliced = spliced_state(_hello(state=Cursor, stores=(ALIASES,)))
+
+    assert spliced is not None
+    assert spliced.model_validate({"aliases": {"a": "b"}, "cursor": "c"}).model_dump() == {
+        "cursor": "c"
+    }
+
+
+def test_an_open_state_model_stays_open() -> None:
+    class Open(BaseModel):
+        model_config = ConfigDict(extra="allow")
+
+        cursor: str = ""
+
+    spliced = spliced_state(_hello(state=Open, stores=(ALIASES,)))
+
+    assert spliced is not None
+    assert spliced.model_config["extra"] == "allow"
