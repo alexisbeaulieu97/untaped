@@ -520,9 +520,6 @@ deprecated.
 **Experimental**: may change or go away in a minor release; said in its
 `--help`.
 
-**Frozen**: a surface line no release renames, removes or deprecates, such
-as `untaped agents`; marked `[frozen]` in `tests/repo/surface.txt`.
-
 **Deprecated command**: a command that still works, with a warning, until
 its removal version.
 

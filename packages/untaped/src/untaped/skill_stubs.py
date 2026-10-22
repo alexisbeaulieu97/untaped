@@ -115,8 +115,8 @@ def _order(left: str, right: str) -> int:
 def render_stub(name: str, plugin: str, description: str) -> str:
     """The stub's ``SKILL.md`` for ``plugin`` (``untaped`` for core).
 
-    Only the frozen forms of ``untaped agents`` appear in it, so every stub
-    ever installed keeps working.
+    Only a few forms of ``untaped agents`` appear in it, so a release that
+    changes one knows which stubs it must update.
     """
     core = plugin == CORE
     title = CORE if core else f"untaped {plugin}"

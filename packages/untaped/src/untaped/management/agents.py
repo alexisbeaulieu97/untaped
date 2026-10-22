@@ -1,9 +1,8 @@
 """Root ``untaped agents`` command: the pages agents read before running untaped.
 
-Read-only, and frozen: every stub skill ever installed calls it, so its
-spelling and its path argument never change (``[frozen]`` in the public
-surface). The pages themselves live in :mod:`untaped.agents`, imported only
-when the command runs.
+Read-only and experimental: stub skills call it by name, and its pages and
+spelling may still change. The pages themselves live in
+:mod:`untaped.agents`, imported only when the command runs.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from cyclopts import App, Parameter
 
 from untaped.cli import create_app, echo, report_errors
 from untaped.plugins.registry import CompositionResult
-from untaped.stability import frozen
+from untaped.stability import experimental
 
 
 def build_root_agents_app(*, result: CompositionResult, root: Callable[[], App]) -> App:
@@ -23,10 +22,10 @@ def build_root_agents_app(*, result: CompositionResult, root: Callable[[], App])
     app = create_app(
         name="agents",
         help="Print what this untaped can do, as Markdown pages for coding agents.",
+        stability=experimental,
     )
 
     @app.default
-    @frozen
     def agents_command(
         *path: Annotated[
             str,

@@ -1,4 +1,4 @@
-# untaped surface 3
+# untaped surface 2
 behaviour git.nonceless-credential-helper  [deprecated, removed in 12.0]
 behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
@@ -138,8 +138,8 @@ cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
 cli untaped --version switch
-cli untaped agents  [frozen]
-cli untaped agents [PATH...]@1 default=unset  [frozen]
+cli untaped agents  [experimental]
+cli untaped agents [PATH...]@1 default=unset  [experimental]
 cli untaped ansible
 cli untaped ansible deps --all-refs switch
 cli untaped ansible deps --backend VALUE default=unset
