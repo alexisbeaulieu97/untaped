@@ -358,8 +358,8 @@ def test_save_anyway_writes(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    # After the failed check the focus is on the token field: tab goes to the buttons.
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc"])
+    # After the failed check the focus is on its buttons, Save anyway first.
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "enter", "esc", "esc"])
 
     assert run.commands_run == ("probe", "save")
     assert list(current_memory_store().entries.values()) == ["bad"]
@@ -375,7 +375,7 @@ def test_a_failed_check_is_forgotten_when_the_values_change(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "x"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "shift-tab", "x"])
 
     flat = _flat(run.frame)
     assert "Save anyway" not in flat
@@ -389,7 +389,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_rows(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "right", "enter"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "right", "enter"])
 
     assert run.model.focus == "section"
     assert run.model.failed == {}

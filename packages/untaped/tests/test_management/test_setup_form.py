@@ -19,6 +19,7 @@ from test_management.stores import install_fake_stores
 from test_management.support import compose, make_spec, write_config
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
+from untaped.management import setup_write
 from untaped.management.setup_screen import SetupModel, SetupResult, setup_screen
 from untaped.management.setup_state import ServiceState, setup_sections, setup_services
 from untaped.management.setup_write import Candidate
@@ -210,7 +211,9 @@ def test_a_value_changed_since_the_form_opened_refuses_the_whole_write(
     _send(runtime, host, _form(org="new-org"))
 
     assert _section(_isolated_config)["server"]["org"] == "other"
-    assert "changed in profile default while it was open" in runtime.model.forms["duo"].error
+    form = runtime.model.forms["duo"]
+    assert "changed in profile default while it was open" in form.error
+    assert dict(form.fields)["server.org"].value == "other"  # it opens again on the file
     assert DUO_TOKEN.find(DuoServer(url=HttpUrl("https://duo.example.com"), org="new-org")) is None
 
 
@@ -258,6 +261,36 @@ def test_a_save_that_failed_after_its_settings_were_written_can_be_retried(
     assert _section(_isolated_config)["server"]["org"] == "new-org"
 
 
+def test_a_save_that_failed_before_writing_still_refuses_a_value_changed_since(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, _SET_UP)
+    runtime, host = _runtime()
+    write_config(_isolated_config, _SET_UP.replace("8443", "9000"))  # someone else
+    ensure = setup_write.ensure_profile
+    failures = ["the disk is full"]
+
+    def flaky(profile: str) -> Any:
+        if failures:
+            raise ConfigError(failures.pop())
+        return ensure(profile)
+
+    monkeypatch.setattr(setup_write, "ensure_profile", flaky)
+    _send(runtime, host, _form(port="7000"))
+    assert "the disk is full" in runtime.model.forms["duo"].error
+
+    _send(runtime, host, ["enter"])  # Save again
+
+    assert _section(_isolated_config)["port"] == 9000
+    assert "changed in profile default while it was open" in runtime.model.forms["duo"].error
+
+
+def test_the_reason_a_save_was_refused_is_in_sight_on_a_short_screen() -> None:
+    run = drive_screen(_build(), _form("https://duo.example.com", "acme"), size=(100, 20))
+
+    assert "enter the port" in run.frame
+
+
 def test_a_variable_that_sets_part_of_the_key_is_named_when_filing(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -268,7 +301,9 @@ def test_a_variable_that_sets_part_of_the_key_is_named_when_filing(
     key = DuoServer(url=HttpUrl("https://duo.example.com"), org="env-org")
     assert DUO_TOKEN.get(key).get_secret_value() == "tok"
     warnings = [text for level, text in _result(run).notes if level == "warning"]
-    assert any("$UNTAPED_DUO__SERVER__ORG" in text and "env-org" in text for text in warnings)
+    assert len(warnings) == 1  # once for the key both logins share
+    assert "$UNTAPED_DUO__SERVER__ORG" in warnings[0]
+    assert "env-org" in warnings[0]
 
 
 def test_a_masked_setting_never_shows_in_a_repr() -> None:
@@ -277,3 +312,21 @@ def test_a_masked_setting_never_shows_in_a_repr() -> None:
 
     assert "hunter2" not in repr(asked) + repr(state)
     assert "old2" not in repr(asked) + repr(state)
+
+
+class RosterProfile(BaseModel):
+    """Section ``roster``: a list the plugin needs."""
+
+    teams: Annotated[list[str] | None, NeedsSetup] = None
+
+
+def test_an_empty_list_the_plugin_needs_is_refused(_isolated_config: Path) -> None:
+    result = compose(make_spec("roster", settings=RosterProfile))
+    screen = setup_screen(
+        result, setup_services(result), sections=setup_sections(), profile="default", store=None
+    )
+
+    run = drive_screen(screen, ["enter", "enter", "ctrl-s"])
+
+    assert "enter the teams" in run.frame
+    assert not _isolated_config.exists()

@@ -171,8 +171,8 @@ def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
-    # The check fails; tab goes to the buttons and enter saves anyway.
-    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc")
+    # The check fails; the focus goes to its buttons and enter saves anyway.
+    backend = _scripted(*_keys("https://wiz", token="bad"), "enter", "esc", "esc")
 
     result = _setup(backend)
 
@@ -189,7 +189,7 @@ def test_a_failed_check_cancelled_writes_nothing(
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
-    backend = _scripted(*_keys("https://wiz", token="bad"), "tab", "right", "enter", "esc", "esc")
+    backend = _scripted(*_keys("https://wiz", token="bad"), "right", "enter", "esc", "esc")
 
     result = _setup(backend)
 
@@ -234,7 +234,7 @@ def test_ctrl_c_wins_over_a_failed_row(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    result = _setup(_scripted(*_keys("https://wiz", token="bad"), "tab", "enter", "ctrl-c"))
+    result = _setup(_scripted(*_keys("https://wiz", token="bad"), "enter", "ctrl-c"))
 
     assert result.exit_code == 130
     row = next(row for row in json.loads(result.stdout) if row["check"] == "wiz.api")

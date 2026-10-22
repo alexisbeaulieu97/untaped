@@ -53,6 +53,7 @@ __all__ = [
     "RankTarget",
     "SecretChoice",
     "ensure_profile",
+    "landed",
     "overlay_values",
     "write_candidate",
     "write_ranking",
@@ -152,6 +153,17 @@ def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, obj
     return values
 
 
+def landed(candidate: Candidate, state: ServiceState) -> tuple[str, ...]:
+    """The keys of ``candidate``'s settings that ``state`` (read after a write) holds as asked."""
+    repo = SettingsFileRepository()
+    section = candidate.section
+    return tuple(
+        key
+        for key, text in candidate.values
+        if state.own.get(key) == (None if text is None else repo.coerced(f"{section}.{key}", text))
+    )
+
+
 def write_candidate(
     spec: PluginSpec,
     candidate: Candidate,
@@ -191,7 +203,7 @@ def write_candidate(
                 notes.extend(_retire(section, current.own_command, None))
             continue
         notes.extend(_legacy_token(spec, candidate, secret, current, store, repo))
-    return notes
+    return list(dict.fromkeys(notes))  # a variable over a shared key is named once
 
 
 def _legacy_token(
@@ -257,13 +269,13 @@ def _login(
         )
     notes: list[Note] = []
     variables = _key_variables(credential, section, type(settings))
-    if variables:
+    if variables and how != "env":
         names = ", ".join(f"${name}" for name in variables)
         notes.append(
             (
                 "warning",
-                f"{names} sets the {section} settings the {credential.label} is filed under, "
-                f"so it was filed for {describe_key(key)}",
+                f"{names} sets part of the key {section}'s logins are filed under, "
+                f"so they were filed for {describe_key(key)}",
             )
         )
     if how == "env":

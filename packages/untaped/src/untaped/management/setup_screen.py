@@ -87,6 +87,7 @@ from untaped.management.setup_state import ServiceState, service_marks
 from untaped.management.setup_write import (
     Candidate,
     RankTarget,
+    landed,
     overlay_values,
     write_candidate,
 )
@@ -207,12 +208,14 @@ class Saved:
 class NotSaved:
     """The connection write for ``name`` failed with ``error``; ``listing`` is what ``profile``
     shows now (what was written before the failure stays). ``conflict``: it was refused because
-    the profile changed while the form was open, so nothing was written."""
+    the profile changed while the form was open. ``written``: the settings the profile now holds
+    as the save asked, written before it failed."""
 
     name: str
     error: str
     conflict: bool
     listing: Listing | None
+    written: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -939,7 +942,7 @@ class _Setup:
         if not failing:
             return self._save(model, replace(asked, checked="passed" if rows else "unchecked"))
         form = model.forms[name].with_error(failing[0] or "the check failed")
-        form = with_buttons(form, anyway_buttons())
+        form = _on_buttons(with_buttons(form, anyway_buttons()))
         failed = replace(asked, checked="failed")
         return (
             replace(
@@ -990,7 +993,9 @@ class _Setup:
             except Exception as exc:  # shown on the form, as any failed command is
                 conflict = isinstance(exc, ConfigError) and exc.category is ErrorCategory.CONFLICT
                 listing = _listing(asked.profile, services)
-                return NotSaved(name, _error_text(exc), conflict, listing)
+                now = None if listing is None else listing.states.get(name)
+                written = () if now is None else landed(asked, now)
+                return NotSaved(name, _error_text(exc), conflict, listing, written)
             return Saved(name, asked.profile, tuple(notes), _listing(asked.profile, services))
 
         return (
@@ -1066,7 +1071,7 @@ class _Setup:
         A conflict wrote nothing: the form opens again on what the profile
         holds now. Otherwise the settings the save wrote before failing are
         what the form opened on now, so a retry neither refuses them as
-        changed nor writes them twice.
+        changed nor writes them twice; any other still expects what it did.
         """
         asked = model.pending
         if model.phase != "saving" or asked is None or asked.name != message.name:
@@ -1079,7 +1084,7 @@ class _Setup:
             opened = fresh
             done = replace(done, forms={**done.forms, name: form})
         elif fresh is not None:
-            keys = [key for key, _ in asked.values]
+            keys = message.written
             opened = model.opened[name]
             values = {**opened.values, **{key: fresh.values.get(key) for key in keys}}
             own = {**opened.own, **{key: fresh.own.get(key) for key in keys}}
@@ -1127,7 +1132,7 @@ class _Setup:
         return self._after(failed)
 
     def _fail(self, model: SetupModel, name: str, text: str) -> SetupModel:
-        form = reset(model.forms[name].with_error(text))
+        form = _on_buttons(reset(model.forms[name].with_error(text)))
         return replace(
             model,
             failed=_without(model.failed, name),
@@ -1218,6 +1223,11 @@ class _Note:
 
     def validate(self) -> str:
         return ""
+
+
+def _on_buttons(form: Form) -> Form:
+    """``form`` focused on its buttons, where its error under them stays in sight."""
+    return replace(form, focus=len(form.fields) - 1)
 
 
 def _error_text(error: BaseException) -> str:
