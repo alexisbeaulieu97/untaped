@@ -1,0 +1,350 @@
+"""``config migrate``'s credential step: 11.0 config tokens become stored logins.
+
+For each profile (``default`` first) and each declared credential, the key
+is resolved from the config file alone (``default`` under the profile,
+renames applied; root ``http.verify_ssl: false`` read as the key's
+``verify_tls: false``). Each source the profile reads becomes its own row:
+
+- a ``token_command`` untaped wrote (``auth set``) points at its entry,
+  which stays where it is: an older untaped still reads it;
+- one inherited from ``default`` for another server is copied to a new
+  entry;
+- any other command keeps its argv, which runs from the config folder;
+- a plain-text token goes to this machine's password store.
+
+A leftover stays in the file and keeps warning on every run that reads it:
+two profiles filing different sources for one server, a plain-text token
+with no store, or a key the file doesn't set (only the environment does).
+The migrated lines leave the file. :func:`plan` reads only; :func:`apply`
+stores, then edits the file once.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal
+
+from pydantic import BaseModel, ValidationError
+
+from untaped.auth import read_command
+from untaped.config_file import mutate_config
+from untaped.credential_store import (
+    file_reference,
+    find_row,
+    store_command,
+    store_token,
+)
+from untaped.credentials import (
+    Credential,
+    CredentialKey,
+    credential_key,
+    declared_credentials,
+    describe_key,
+    key_fields,
+    key_shape,
+)
+from untaped.errors import ConfigError
+from untaped.profile_resolver import DEFAULT_PROFILE
+from untaped.settings import active_settings_layout, validate_settings_section
+from untaped.token_store import TokenStore, preset_entry
+
+__all__ = ["CredentialMove", "apply", "plan"]
+
+type How = Literal["reference", "copy", "command", "store", "same", "outranked", "leftover"]
+
+
+@dataclass(frozen=True)
+class CredentialMove:
+    """One old credential line one profile reads, and what ``config migrate`` does with it."""
+
+    profile: str
+    setting: str
+    """The line: ``awx.token`` or ``awx.token_command``."""
+    how: How
+    detail: str
+    credential: Credential[Any] | None = None
+    key: CredentialKey | None = None
+    argv: tuple[str, ...] | None = None
+    token: str | None = field(default=None, repr=False)
+    preset: tuple[TokenStore, str] | None = None
+    owner: str | None = None
+    """The profile whose file holds the line (``default`` for an inherited one)."""
+    tls: tuple[str, ...] | None = None
+    """Where this profile gets ``verify_tls: false`` from root ``verify_ssl``."""
+
+    @property
+    def moves(self) -> bool:
+        """Whether its line leaves the file."""
+        return self.how != "leftover" and self.owner == self.profile
+
+
+def plan(data: Mapping[str, Any], *, store_available: bool) -> list[CredentialMove]:
+    """What migrating ``data``'s credential lines would do; reads and stores nothing.
+
+    ``store_available``: whether a password store (or the test store) can
+    take a plain-text token.
+    """
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict):
+        return []
+    names = sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, name))
+    by_plugin: dict[str, list[Credential[Any]]] = {}
+    for credential in declared_credentials():
+        by_plugin.setdefault(credential.plugin, []).append(credential)
+    layout = active_settings_layout()
+    moves: list[CredentialMove] = []
+    filed: dict[str, CredentialMove] = {}
+    for profile in names:
+        effective = layout.effective(dict(data), profile=profile)
+        entry = profiles.get(profile)
+        own: Mapping[str, Any] = entry if isinstance(entry, dict) else {}
+        for section, credentials in sorted(by_plugin.items()):
+            values = effective.get(section)
+            if not isinstance(values, dict):
+                continue
+            held = own.get(section)
+            mine: Mapping[str, Any] = held if isinstance(held, dict) else {}
+            for credential in credentials:
+                move = _plan_one(
+                    credential,
+                    profile=profile,
+                    values=values,
+                    mine=mine,
+                    effective=effective,
+                    filed=filed,
+                    store_available=store_available,
+                )
+                if move is not None:
+                    moves.append(move)
+    return _keep_read_lines(moves)
+
+
+def _plan_one(
+    credential: Credential[Any],
+    *,
+    profile: str,
+    values: Mapping[str, Any],
+    mine: Mapping[str, Any],
+    effective: Mapping[str, Any],
+    filed: dict[str, CredentialMove],
+    store_available: bool,
+) -> CredentialMove | None:
+    section, name = credential.plugin, credential.name
+    command_field = f"{name}_command"
+    raw_token, raw_argv = values.get(name), values.get(command_field)
+    token = raw_token.strip() if isinstance(raw_token, str) and raw_token.strip() else None
+    argv = [str(each) for each in raw_argv] if isinstance(raw_argv, list) and raw_argv else None
+    if token is not None:
+        line, argv = name, None
+    elif argv is not None:
+        line = command_field
+    else:
+        return None
+    owned = line in mine
+    setting = f"{section}.{line}"
+    owner = profile if owned or profile == DEFAULT_PROFILE else DEFAULT_PROFILE
+    base = CredentialMove(profile, setting, "leftover", "", credential=credential, owner=owner)
+    key, tls = _key(credential, effective)
+    if key is None:
+        return replace(
+            base,
+            detail=f"profile {profile}'s file sets no {section} server; set one there and run "
+            "`untaped config migrate` again",
+        )
+    base = replace(base, key=key, tls=tls)
+    ident = credential.id(key)
+    earlier = filed.get(ident)
+    if earlier is not None:
+        if earlier.owner == owner and earlier.setting == setting:
+            return None  # the same line, read by an inheriting profile for the same server
+        if (earlier.argv, earlier.token) == (None if argv is None else tuple(argv), token):
+            return replace(base, how="same", detail=f"profile {earlier.profile} files the same")
+        return replace(
+            base,
+            detail=f"profile {earlier.profile} files another {credential.label} for "
+            f"{describe_key(key)}; keep one and run `untaped config migrate` again",
+        )
+    if find_row(ident) is not None:
+        move = replace(base, how="outranked", detail="a stored login already answers")
+        filed[ident] = move
+        return move
+    inherited = owner != profile
+    if argv is None:
+        move = (
+            replace(base, how="store", token=token, detail="stored in the password store")
+            if store_available
+            else replace(base, detail="no password store on this machine; it stays")
+        )
+    elif (found := preset_entry(argv)) is not None:
+        store, entry = found
+        how: How = "copy" if inherited else "reference"
+        detail = (
+            f"copied from {store.describe(entry)}"
+            if inherited
+            else f"reads {store.describe(entry)}, as before"
+        )
+        move = replace(base, how=how, argv=tuple(argv), preset=found, detail=detail)
+    else:
+        relative = _relative(argv)
+        detail = "the command is kept"
+        if relative:
+            detail += f"; {relative} is relative, so it runs from the config folder"
+        move = replace(base, how="command", argv=tuple(argv), detail=detail)
+    if move.how != "leftover":
+        filed[ident] = move
+    return move
+
+
+def _key(
+    credential: Credential[Any], effective: Mapping[str, Any]
+) -> tuple[CredentialKey | None, tuple[str, ...] | None]:
+    """The key from the file's values, with root ``verify_ssl: false`` as ``verify_tls``."""
+    section = credential.plugin
+    try:
+        settings: BaseModel = validate_settings_section(dict(effective), section)
+    except ValidationError:
+        return None, None
+    key = credential_key(credential, settings)
+    if key is None:
+        return None, None
+    http = effective.get("http")
+    tls = key_shape(type(key)).tls
+    if not (isinstance(http, dict) and http.get("verify_ssl") is False and tls is not None):
+        return key, None
+    if getattr(key, tls) is not True:
+        return key, None
+    path = next((path for path, each in key_fields(type(settings)) if each is credential.key), None)
+    turned = key.model_copy(update={tls: False})
+    return turned, None if path is None else (section, *path, tls)
+
+
+def _relative(argv: Sequence[object]) -> str | None:
+    for part in (str(each) for each in argv):
+        if ("/" in part or part.startswith(".")) and not part.startswith(("/", "~", "-")):
+            return part
+    return None
+
+
+def _keep_read_lines(moves: list[CredentialMove]) -> list[CredentialMove]:
+    """Keep a ``default`` line that a profile left over still reads."""
+    still_read = {
+        (move.owner, move.setting)
+        for move in moves
+        if move.how == "leftover" and move.owner != move.profile
+    }
+    return [
+        replace(move, how="leftover", detail=f"{move.detail}; another profile still reads it")
+        if move.moves and (move.owner, move.setting) in still_read
+        else move
+        for move in moves
+    ]
+
+
+def apply(moves: Sequence[CredentialMove]) -> list[CredentialMove]:
+    """Store each move's credential, then take the migrated lines out of the file.
+
+    A store that fails turns its move into a leftover (its line stays).
+    Returns the moves as done.
+    """
+    done = [_store(move) for move in moves]
+    removed = [move for move in done if move.moves]
+    tls = [move for move in done if move.tls is not None and move.how != "leftover"]
+    if removed or tls:
+        mutate_config(lambda data: _edit(data, removed, tls))
+    return done
+
+
+def _store(move: CredentialMove) -> CredentialMove:
+    credential, key = move.credential, move.key
+    if credential is None or key is None:
+        return move
+    try:
+        refused = credential.refusal(key, "filing a credential")
+        if refused is not None:
+            raise refused
+        match move.how:
+            case "reference" if move.preset is not None:
+                file_reference(credential, key, *move.preset)
+            case "copy" if move.preset is not None:
+                store, entry = move.preset
+                secret = read_command(store.read_argv(entry), setting=move.setting)
+                store_token(credential, key, secret)
+            case "command" if move.argv is not None:
+                store_command(credential, key, move.argv)
+            case "store" if move.token is not None:
+                store_token(credential, key, move.token)
+    except ConfigError as exc:
+        return replace(move, how="leftover", detail=f"{exc}; it stays")
+    return move
+
+
+def _edit(
+    data: dict[str, Any], removed: Sequence[CredentialMove], tls: Sequence[CredentialMove]
+) -> None:
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict):
+        return
+    for move in tls:
+        assert move.tls is not None
+        node = profiles.setdefault(move.profile, {})
+        for part in move.tls[:-1]:
+            node = node.setdefault(part, {})
+        node[move.tls[-1]] = False
+    for move in removed:
+        if move.credential is None:
+            continue
+        section, name = move.credential.plugin, move.credential.name
+        own = profiles.get(move.profile)
+        if not isinstance(own, dict) or not isinstance(values := own.get(section), dict):
+            continue
+        for line in (name, f"{name}_command"):  # the unused one goes too
+            values.pop(line, None)
+        if not values:
+            del own[section]
+
+
+def rows(moves: Sequence[CredentialMove], *, planned: bool) -> list[dict[str, str]]:
+    """``config migrate``'s outcome rows for ``moves``."""
+    found: list[dict[str, str]] = []
+    for move in moves:
+        action = "planned" if planned and move.how != "leftover" else _ACTIONS[move.how]
+        to = "" if move.how == "leftover" else _to(move)
+        found.append(
+            {
+                "profile": move.profile,
+                "from": move.setting,
+                "to": to,
+                "action": action,
+                "detail": move.detail,
+            }
+        )
+        if move.tls is not None and move.how != "leftover":
+            found.append(
+                {
+                    "profile": move.profile,
+                    "from": "http.verify_ssl",
+                    "to": ".".join(move.tls),
+                    "action": "planned" if planned else "copied",
+                    "detail": "the root line stays until 12.0",
+                }
+            )
+    return found
+
+
+_ACTIONS: Mapping[str, str] = {
+    "reference": "stored",
+    "copy": "stored",
+    "command": "stored",
+    "store": "stored",
+    "same": "dropped",
+    "outranked": "dropped",
+    "leftover": "kept",
+}
+
+
+def _to(move: CredentialMove) -> str:
+    credential, key = move.credential, move.key
+    if credential is None or key is None:
+        return ""
+    return f"login {credential.plugin} {credential.name} ({describe_key(key)})"

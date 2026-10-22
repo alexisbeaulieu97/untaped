@@ -176,6 +176,11 @@ def read_row(row: CredentialRow, *, origin: str | None) -> BoundSecret:
     return BoundSecret(lambda: readable.read(entry), origin=origin, source=source)
 
 
+def store_available() -> bool:
+    """Whether a token has a store to go to: this machine's, or a test's."""
+    return _TEST_STORE.get() is not None or pick_store() is not None
+
+
 def _memory_store() -> ReadableStore:
     store = _TEST_STORE.get()
     if store is None:
@@ -274,6 +279,20 @@ def store_command(credential: Credential[Any], key: CredentialKey, argv: Sequenc
     return f"will run `{shlex.join(command)}` from the config folder when this token is needed"
 
 
+def file_reference(
+    credential: Credential[Any], key: CredentialKey, store: TokenStore, entry: str
+) -> str:
+    """File a row reading the 11.0 entry ``entry`` that ``store`` already holds; where it is.
+
+    ``config migrate`` files one per preset ``token_command``: the entry stays
+    where it is (an older untaped still reads it), so forgetting the row
+    leaves it.
+    """
+    ident = credential.id(key)
+    index().put(_row(credential, key, ident, backend=store.name, entry=entry, migrated=True))
+    return store.describe(entry)
+
+
 def forget_row(ident: str) -> CredentialRow | None:
     """Delete the row ``ident`` and its store entry; the row, or ``None`` when absent.
 
@@ -365,6 +384,7 @@ __all__ = [
     "SecretStore",
     "config_prefix",
     "entry_for",
+    "file_reference",
     "find_row",
     "forget_row",
     "index",
@@ -375,6 +395,7 @@ __all__ = [
     "rows",
     "rows_by_prefix",
     "set_test_store",
+    "store_available",
     "store_command",
     "store_token",
 ]

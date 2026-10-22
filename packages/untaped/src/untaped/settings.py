@@ -73,11 +73,17 @@ class HttpSettings(BaseModel):
         default=None,
         description="PEM file of extra CA certificates to trust instead of the OS trust store.",
     )
-    verify_ssl: bool = Field(
+    # Turning checks off belongs to one server's key (`<plugin>.server.verify_tls`).
+    verify_ssl: Annotated[
+        bool, deprecated(removed_in=12, replacement="each server's verify_tls")
+    ] = Field(
         default=True,
-        description="Verify TLS certificates. `false` disables all certificate checks.",
+        description=(
+            "Verify TLS certificates. `false` disables all certificate checks, and reads as "
+            "`verify_tls: false` on every server key; `config migrate` writes it there."
+        ),
     )
-    verify_hostname: bool = Field(
+    verify_hostname: Annotated[bool, deprecated(removed_in=12)] = Field(
         default=True,
         description="Check the certificate host name. `false` keeps chain validation.",
     )
