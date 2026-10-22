@@ -16,6 +16,7 @@ from untaped.credentials import describe_key
 from untaped.errors import ConfigError
 from untaped.management.auth import build_root_auth_app
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
+from untaped.settings import load_settings_section
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, current_memory_store
 from untaped.token_store import TokenStore
 
@@ -440,3 +441,32 @@ def test_a_replaced_entry_that_cannot_be_deleted_only_warns(
     assert "the replaced entry pass" in result.stderr
     assert "the keychain is locked" in result.stderr
     assert _secret(TOKEN, KEY) == "new"
+
+
+_ROOT_OFF = "profiles:\n  default:\n    http: {verify_ssl: false}\n"
+
+
+def test_root_verify_ssl_false_leaves_a_server_nobody_set_up_unset(
+    _isolated_config: Path,
+) -> None:
+    write_config(_isolated_config, _ROOT_OFF)
+
+    result = _auth("status", "--format", "json")
+
+    rows = {row["section"]: row for row in _json(result)}
+    assert rows["wiz"]["key"] == "not set up"
+    assert "invalid" not in result.stderr
+
+
+@pytest.mark.parametrize("variable", ["UNTAPED_WIZ__SERVER__URL", "UNTAPED_WIZ__SERVER"])
+def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    url = "https://wiz.example.com"
+    monkeypatch.setenv(variable, url if variable.endswith("URL") else json.dumps({"url": url}))
+    write_config(_isolated_config, _ROOT_OFF)
+    _auth("status")  # composes wiz
+
+    server = load_settings_section("wiz").server
+
+    assert (str(server.url), server.verify_tls) == (f"{url}/", False)

@@ -7,13 +7,17 @@ resolves through it.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import json
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from untaped.deprecated_keys import KeyUse, rename_keys
+if TYPE_CHECKING:
+    from untaped.credentials import CredentialKey
+
+from untaped.deprecated_keys import KeyUse, old_spellings, rename_keys
 from untaped.errors import ConfigError
 from untaped.messages import hint, not_found
 from untaped.profile_resolver import (
@@ -173,31 +177,92 @@ def _root_tls_off(
     turned: set[tuple[str, ...]] = set()
     for section, model in models.items():
         for path, key in key_fields(model):
-            shape = key_shape(key)
-            node = _dig(effective, (section, *path))
-            if shape.tls is None or (node is not None and not isinstance(node, dict)):
+            tls = key_shape(key).tls
+            if tls is None or not _keyed(effective, environ, section, model, path, key):
                 continue
-            node = node or {}
-            if not any(_url(node, key, url) for url in shape.urls):
-                continue
-            if node.get(shape.tls, True) is not True or not _complete(node, key):
-                continue
-            leaf = (section, *path, shape.tls)
-            decided = None
-            for layer in layers:
-                root = _dig(layer, ("http", "verify_ssl"))
-                if _dig(layer, leaf) is not None:
-                    decided = "key"
-                elif root is not None:
-                    decided = "root" if root is False else None
-            if decided == "root":
+            leaf = (section, *path, tls)
+            if _root_decides(layers, leaf):
                 _place(effective, leaf, False)
                 turned.add(leaf)
     return frozenset(turned)
 
 
+def _keyed(
+    effective: Mapping[str, Any],
+    environ: Mapping[str, str],
+    section: str,
+    model: type[BaseModel],
+    path: tuple[str, ...],
+    key: type[CredentialKey],
+) -> bool:
+    """Whether this run has a whole key at ``path`` with a URL and TLS still on."""
+    from untaped.credentials import key_shape  # noqa: PLC0415 - credentials is heavy
+
+    shape = key_shape(key)
+    node = _dig(effective, (section, *path))
+    if node is not None and not isinstance(node, dict):
+        return False
+    node = node or {}
+    if node.get(shape.tls, True) is not True:
+        return False
+    present = {**dict.fromkeys(_env_fields(environ, section, model, path, key), True), **node}
+    return any(_url(present, key, url) for url in shape.urls) and _complete(present, key)
+
+
+def _root_decides(layers: Sequence[Mapping[str, Any]], leaf: tuple[str, ...]) -> bool:
+    """Whether root ``verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
+    decided = None
+    for layer in layers:
+        root = _dig(layer, ("http", "verify_ssl"))
+        if _dig(layer, leaf) is not None:
+            decided = "key"
+        elif root is not None:
+            decided = "root" if root is False else None
+    return decided == "root"
+
+
+def _env_fields(
+    environ: Mapping[str, str],
+    section: str,
+    model: type[BaseModel],
+    path: tuple[str, ...],
+    key: type[BaseModel],
+) -> set[str]:
+    """The key's fields a variable in ``environ`` sets (old spellings and JSON objects too)."""
+    from untaped.settings import env_var_name  # noqa: PLC0415 - settings imports this module
+
+    if not environ:
+        return set()
+    upper = {name.upper(): value for name, value in environ.items()}
+    found: set[str] = set()
+    for name in key.model_fields:
+        relative = ".".join((*path, name))
+        for spelling in (relative, *old_spellings(model, relative)):
+            if _env_holds(upper, (section, *spelling.split(".")), env_var_name):
+                found.add(name)
+    return found
+
+
+def _env_holds(
+    upper: Mapping[str, str], path: tuple[str, ...], name_of: Callable[[tuple[str, ...]], str]
+) -> bool:
+    """Whether a variable sets ``path``: its own, or an ancestor's JSON object holding it."""
+    for depth in range(len(path), 0, -1):
+        value = upper.get(name_of(path[:depth]))
+        if value is None:
+            continue
+        if depth == len(path):
+            return True
+        try:
+            data: Any = json.loads(value)
+        except ValueError:
+            return False
+        return _dig(data, path[depth:]) is not None
+    return False
+
+
 def _url(node: Mapping[str, Any], key: type[BaseModel], name: str) -> bool:
-    """Whether the key has a URL ``name``: set in the file, or a real default."""
+    """Whether the key has a URL ``name``: set in the file or a variable, or a real default."""
     field = key.model_fields[name]
     return bool(node.get(name)) or (
         not field.is_required() and field.get_default(call_default_factory=True) is not None
