@@ -9,9 +9,11 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from untaped.bootstrap import build_root_app
 from untaped.deprecated_keys import key_mappings
 from untaped.sdk import get_config_section
-from untaped_github.settings import GithubSettings
+from untaped.testing import CliInvoker
+from untaped_github.settings import SWEEP, GithubSettings
 
 
 def test_inventory_defaults() -> None:
@@ -41,7 +43,7 @@ def test_a_deleted_inventory_setting_is_not_read(inventory: dict[str, object]) -
     assert set(settings.inventory.model_dump()) == {"orgs", "teams"}
 
 
-@pytest.mark.parametrize("sweep", [{"max_age_seconds": -1}, {"parallel": 0}, {"parallel": -2}])
+@pytest.mark.parametrize("sweep", [{"parallel": 0}, {"parallel": -2}])
 def test_sweep_settings_reject_out_of_range_values(sweep: dict[str, int]) -> None:
     with pytest.raises(ValidationError):
         GithubSettings.model_validate({"sweep": sweep})
@@ -89,3 +91,17 @@ def test_git_protocol_takes_https_or_ssh(protocol: str) -> None:
     assert GithubSettings.model_validate({"git_protocol": protocol}).git_protocol == protocol
     with pytest.raises(ValidationError):
         GithubSettings.model_validate({"git_protocol": "git"})
+
+
+def test_the_sweep_max_age_is_the_sweep_caches_setting() -> None:
+    assert SWEEP.setting == "github.caches.sweep.max_age_seconds"
+    assert "max_age_seconds" not in GithubSettings().sweep.model_dump()
+
+
+def test_a_10x_sweep_max_age_is_read_as_the_cache_max_age() -> None:
+    _write({"sweep": {"max_age_seconds": 60}})
+
+    result = CliInvoker().invoke(build_root_app().meta, ["config", "get", SWEEP.setting])
+
+    assert result.stdout.strip() == "60"
+    assert "sweep.max_age_seconds" in result.stderr  # the renamed-key warning

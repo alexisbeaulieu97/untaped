@@ -266,6 +266,48 @@ CASES = {
         False,
     ),
     "a convention goes": ("convention file fills.json", "", False),
+    "rename a setting, still read under its old key": (
+        "cfg acme.max_age integer default=60",
+        "cfg acme.caches.x.max_age_seconds integer default=60\n"
+        "cfg acme.max_age -> acme.caches.x.max_age_seconds  [deprecated, removed in 12.0]",
+        True,
+    ),
+    "rename a setting and change its type": (
+        "cfg acme.max_age integer default=60",
+        "cfg acme.caches.x.max_age_seconds string default=never\n"
+        "cfg acme.max_age -> acme.caches.x.max_age_seconds  [deprecated, removed in 12.0]",
+        False,
+    ),
+    "rename a renamed setting again": (
+        "cfg acme.new integer default=60\ncfg acme.old -> acme.new  [deprecated, removed in 12.0]",
+        "cfg acme.newer integer default=60\n"
+        "cfg acme.new -> acme.newer  [deprecated, removed in 12.0]\n"
+        "cfg acme.old -> acme.newer  [deprecated, removed in 12.0]",
+        True,
+    ),
+    "retarget a renamed setting to another key": (
+        "cfg acme.new integer default=60\ncfg acme.other string default=x\n"
+        "cfg acme.old -> acme.new  [deprecated, removed in 12.0]",
+        "cfg acme.new integer default=60\ncfg acme.other string default=x\n"
+        "cfg acme.old -> acme.other  [deprecated, removed in 12.0]",
+        False,
+    ),
+    "rename a setting, its old key no longer read": (
+        "cfg acme.max_age integer default=60",
+        "cfg acme.caches.x.max_age_seconds integer default=60",
+        False,
+    ),
+    "a switch takes its negative too": (
+        "cli untaped acme sync --refresh switch",
+        "cli untaped acme sync --refresh negative=--cached\n"
+        "cli untaped acme sync --refresh switch default=unset",
+        True,
+    ),
+    "a switch becomes a valued option": (
+        "cli untaped acme sync --refresh switch",
+        "cli untaped acme sync --refresh VALUE default=unset",
+        False,
+    ),
 }
 
 

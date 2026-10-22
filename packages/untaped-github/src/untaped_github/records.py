@@ -201,7 +201,7 @@ class CorpusSyncOutcome(OutcomeRecord, kind="github.sync_outcome"):
 
     ``action`` is ``synced`` (fetched), ``unchanged`` (GitHub reports no push
     since the cached fetch, so none ran), ``skipped`` (the cached copy is
-    younger than ``github.sweep.max_age_seconds``), or ``failed``. A failed
+    younger than ``github.caches.sweep.max_age_seconds``), or ``failed``. A failed
     row says why in ``detail`` and carries the structured ``error``.
     """
 

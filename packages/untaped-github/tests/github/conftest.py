@@ -10,17 +10,20 @@ from typing import Any
 
 import pytest
 
+from untaped.plugins.registry import section_settings
 from untaped.sdk import GitResult
 from untaped.settings import get_settings, register_profile_settings
 from untaped_git.infrastructure import remote as remote_module
 from untaped_git.infrastructure import store as store_module
+from untaped_github import SPEC
 from untaped_github.settings import GithubSettings
 
 
 @pytest.fixture(autouse=True)
 def _github_settings() -> None:
-    # Invoking the github app directly skips the SDK profile-settings registration.
-    register_profile_settings("github", GithubSettings)
+    # Invoking the github app directly skips the SDK profile-settings registration;
+    # composition registers the section with the ``caches`` key SPEC.caches adds.
+    register_profile_settings("github", section_settings(SPEC) or GithubSettings)
 
 
 def _git_dir(cwd: Path) -> list[str]:

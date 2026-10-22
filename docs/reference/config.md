@@ -103,10 +103,10 @@ overridden for one process with the environment variable shown.
 | `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
-| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. 0 or more. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists for workspace (repo names, the picker). With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists for workspace. |
+| `github.caches.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS` | Seconds repo data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `jira`
 
@@ -174,6 +174,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.index.max_age_seconds |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
+| `github.sweep.max_age_seconds` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `github.caches.sweep.max_age_seconds` | renamed |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |

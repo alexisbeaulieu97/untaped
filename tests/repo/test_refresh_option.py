@@ -4,10 +4,7 @@
 setting it names and its default cannot drift from the code, and every
 command says the directive the same way. A hand-declared ``Parameter``
 spelling ``--refresh`` or ``--cached`` (as ``name`` or ``negative``) in a
-shipped module fails here. The exemptions are the commands not on a
-``Cache`` yet; each names the PR that moves it, and
-:func:`test_the_exemptions_are_still_needed` fails once one is gone, so the
-list shrinks with them.
+shipped module fails here.
 """
 
 from __future__ import annotations
@@ -18,12 +15,6 @@ from pathlib import Path
 from repo.support import PACKAGES, REPO_ROOT
 
 FLAGS = frozenset({"--refresh", "--cached"})
-#: ``(module, flag)`` → when it moves onto ``refresh_option``.
-EXEMPT = {
-    ("untaped_github/cli/sweep_commands.py", "--refresh"): "until D (#582)",
-    ("untaped_github/cli/sweep_commands.py", "--cached"): "until D (#582)",
-    ("untaped_github/cli/cache_commands.py", "--refresh"): "until D (#582)",
-}
 
 
 def _spelled(node: ast.expr) -> set[str]:
@@ -70,7 +61,6 @@ def test_no_command_declares_the_directive_by_hand() -> None:
     stray = [
         f"{module}:{line} declares {flag}"
         for (module, flag), lines in _found().items()
-        if (module, flag) not in EXEMPT
         for line in lines
     ]
     assert not stray, (
@@ -78,11 +68,6 @@ def test_no_command_declares_the_directive_by_hand() -> None:
         "`Annotated[bool | None, refresh_option(CACHE)] = None` (untaped.sdk), so its help "
         "names the cache's setting and default; see docs/caches.md"
     )
-
-
-def test_the_exemptions_are_still_needed() -> None:
-    gone = sorted(set(EXEMPT) - set(_found()))
-    assert not gone, f"{gone} no longer declare the flag by hand: drop them from EXEMPT"
 
 
 def test_the_finder_flags_hand_declared_directives_only() -> None:

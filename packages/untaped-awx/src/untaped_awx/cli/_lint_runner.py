@@ -18,12 +18,10 @@ from untaped.sdk import (
     Filled,
     OutputFormat,
     ProgressHandle,
-    plugin_dir,
     plural,
     raise_usage,
     report_errors,
 )
-from untaped_awx import SPEC
 from untaped_awx.application.lint.controller import load_controller
 from untaped_awx.application.lint.documents import load_documents
 from untaped_awx.application.resources.ports import Catalog
@@ -34,7 +32,6 @@ from untaped_awx.application.resources.save_resources import (
 from untaped_awx.cli.context import AwxContext, open_context
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.lint.resources import AwxResources, subject_of
-from untaped_awx.infrastructure.lint import snapshot_store
 from untaped_awx.infrastructure.lint.documents import documents_of, file_texts
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import awx_api_path
@@ -146,27 +143,24 @@ def _only(
 
 
 def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> AwxResources:
-    """The controller's snapshot, filled when ``awx.caches.resources`` says it is due."""
+    """The controller's snapshot, filled when ``awx.caches.resources`` says it is due.
+
+    The token is the partition: hashed into the file's name, never shown.
+    A profile with no token reads what the controller shows anyone, which
+    is its own partition, ``""``.
+    """
     base_url = str(ctx.settings.base_url)
     token = ctx.settings.token
-    path = snapshot_store.store_path(
-        plugin_dir(SPEC),
-        profile=ctx.profile,
-        base_url=base_url,
-        token=token.get_secret_value() if token is not None else "",
-    )
-    if not path.exists() and RESOURCES.freshness(base_url).refreshed_at is not None:
-        RESOURCES.forget(base_url)  # the data went away: what the sidecar says no longer holds
     served = RESOURCES.serve(
         {base_url: urlparse(base_url).netloc or base_url},
         refresh=refresh,
-        fill=partial(_fill, ctx, path),
-        read=partial(snapshot_store.read, path),
+        fill=partial(_fill, ctx),
+        partition=token.get_secret_value() if token is not None else "",
     )
-    return served.value
+    return served.value[base_url]
 
 
-def _fill(ctx: AwxContext, path: Path, _key: str, progress: ProgressHandle) -> Filled:
+def _fill(ctx: AwxContext, _key: str, progress: ProgressHandle) -> Filled[AwxResources]:
     resources = load_controller(
         client=ctx.repo,
         fk=ctx.fk,
@@ -176,8 +170,7 @@ def _fill(ctx: AwxContext, path: Path, _key: str, progress: ProgressHandle) -> F
         path_of=_path_of,
         progress=progress,
     )
-    snapshot_store.write(path, resources)
-    return Filled(summary=plural(len(resources.items), "resource"))
+    return Filled(value=resources, summary=plural(len(resources.items), "resource"))
 
 
 def _path_of(spec: ResourceSpec, id_: int) -> str:
