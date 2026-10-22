@@ -115,8 +115,8 @@ def _order(left: str, right: str) -> int:
 def render_stub(name: str, plugin: str, description: str) -> str:
     """The stub's ``SKILL.md`` for ``plugin`` (``untaped`` for core).
 
-    Only the frozen forms of ``untaped agents`` appear in it, so every stub
-    ever installed keeps working.
+    Only the command forms its test allows appear in it, so a release that
+    changes ``untaped agents`` knows exactly what the stubs depend on.
     """
     core = plugin == CORE
     title = CORE if core else f"untaped {plugin}"
@@ -149,8 +149,7 @@ the project's environment (for example `uv run untaped`); elsewhere, `untaped` o
 3. `untaped agents {plugin} COMMAND`: a command's options and examples. Read it before running
    the command.
 
-If that untaped answers `agents` with "Unknown command", it is older than this skill: use
-`{fallback}` instead.
+If that untaped answers `agents` with "Unknown command", use `{fallback}` instead.
 """
 
 

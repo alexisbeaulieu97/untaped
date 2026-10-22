@@ -10,9 +10,8 @@ TOPIC``): a command, or a guide. A command wins over a guide of its name.
 Every page names the untaped that answered, and says so when the folder's
 project asks for another one.
 
-The command's spelling is frozen: every stub skill ever installed names it
-(:func:`untaped.stability.frozen`). This package is internal and imported
-only when ``untaped agents`` runs, so root ``--help`` never pays for it.
+This package is internal and imported only when ``untaped agents`` runs, so
+root ``--help`` never pays for it.
 """
 
 from __future__ import annotations

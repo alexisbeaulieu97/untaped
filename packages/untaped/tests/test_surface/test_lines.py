@@ -57,20 +57,15 @@ def test_render_sorts_and_dedupes_under_the_header() -> None:
 def test_render_writes_the_lowest_format_its_marks_need() -> None:
     undated = render([Line("cli untaped a", DeprecatedMark(None, "untaped b"))])
     dated = render([Line("cli untaped a", DeprecatedMark(12))])
-    frozen = render([Line("cli untaped a", DeprecatedMark(12)), Line("cli untaped b", "frozen")])
     assert undated == "# untaped surface 1\ncli untaped a  [deprecated]\n"
-    assert dated == "# untaped surface 2\ncli untaped a  [deprecated, removed in 12.0]\n"
-    assert frozen == (
-        f"# untaped surface {FORMAT}\n"
-        "cli untaped a  [deprecated, removed in 12.0]\ncli untaped b  [frozen]\n"
-    )
+    assert dated == f"# untaped surface {FORMAT}\ncli untaped a  [deprecated, removed in 12.0]\n"
 
 
-def test_a_frozen_mark_reads_back_and_an_older_format_still_parses() -> None:
-    lines = [Line("cli untaped agents", "frozen"), Line("cli untaped x", "experimental")]
+def test_an_experimental_mark_reads_back_and_an_older_format_still_parses() -> None:
+    lines = [Line("cli untaped agents", "experimental"), Line("cli untaped x", DeprecatedMark(12))]
     assert parse(render(lines)) == lines
-    assert parse("# untaped surface 2\ncli untaped a  [deprecated, removed in 12.0]\n") == [
-        Line("cli untaped a", DeprecatedMark(12))
+    assert parse("# untaped surface 1\ncli untaped a  [deprecated]\n") == [
+        Line("cli untaped a", DeprecatedMark())
     ]
 
 

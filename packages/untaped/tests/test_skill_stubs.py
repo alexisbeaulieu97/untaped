@@ -90,23 +90,23 @@ def test_newer_side_names_what_wrote_the_stub() -> None:
     assert newer_side(_author(version="11.3.0"), _author()) == "untaped-jira (11.3.0)"
 
 
-#: The command forms a stub may name: the frozen ``agents`` entry points, the
-#: ``--help`` fallback for an untaped older than the stub, and the example of
+#: The command forms a stub may name: the ``agents`` entry points, the
+#: ``--help`` fallback for an untaped without them, and the example of
 #: running a project's own untaped.
-_FROZEN_FORMS = re.compile(
+_STUB_FORMS = re.compile(
     r"untaped|uv run untaped|untaped agents( \w[\w-]*( COMMAND)?)?|untaped( [\w-]+)? --help"
 )
 
 
 @pytest.mark.parametrize("plugin", ["workspace", "untaped"])
-def test_the_template_names_only_frozen_command_forms(plugin: str) -> None:
-    # Stubs installed by every version call these; changing them strands them.
+def test_the_template_names_only_the_stub_command_forms(plugin: str) -> None:
+    # Installed stubs call these; a release that changes one must update the stubs.
     text = render_stub(f"untaped-{plugin}", plugin, "Workspaces.")
     commands = [
         span for span in re.findall(r"`([^`]+)`", text) if span.startswith(("untaped", "uv "))
     ]
     assert commands
-    assert all(_FROZEN_FORMS.fullmatch(command) for command in commands), commands
+    assert all(_STUB_FORMS.fullmatch(command) for command in commands), commands
 
 
 def test_a_plugin_stub_points_at_its_plugin_and_its_help() -> None:

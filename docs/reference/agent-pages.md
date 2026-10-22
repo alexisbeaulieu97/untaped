@@ -119,9 +119,9 @@ kind's model (`guide-yaml`). `map-line` holds a plugin's lines on the map
 (its `help`, its contracts' and providers' first lines) to 120 characters,
 since every agent reads the map.
 
-## What stays the same
+## Stability
 
-`untaped agents` and its path argument are frozen: no release renames,
-removes or deprecates them, because installed skills call them. The public
-surface marks them `[frozen]`. What the pages say, and how they lay it out,
-follows the plugins' own text and may change in any release.
+`untaped agents` is experimental: its path argument, and what the pages say
+and how they lay it out, may change in a minor release. Installed stub skills
+call it: a release that changes how they call it refreshes the stubs in the
+home folder, and a project's stubs need `untaped skills update`.

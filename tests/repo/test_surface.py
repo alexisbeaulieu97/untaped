@@ -73,12 +73,7 @@ def removal_target(version: str, baseline: str, fragments: list[str]) -> int:
 
 
 def removal_exempt(line: Line, target: int, baseline: str) -> bool:
-    """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep.
-
-    A frozen line never may: stubs installed by every version call it.
-    """
-    if line.mark == "frozen":
-        return False
+    """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep."""
     mark = line.deprecation
     if mark is not None and mark.removed_in is not None:
         return mark.removed_in <= target
@@ -243,9 +238,6 @@ def test_the_removal_target(version: str, fragments: list[str], target: int) -> 
         (DeprecatedMark(11), 12, True),
         # A line dated later stays: it was promised that long.
         (DeprecatedMark(13), 12, False),
-        # A frozen line stays through every release, a major's prep included.
-        ("frozen", 11, False),
-        ("frozen", 12, False),
     ],
 )
 def test_a_major_in_preparation_removes_what_is_due(
