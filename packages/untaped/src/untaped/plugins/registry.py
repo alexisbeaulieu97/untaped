@@ -13,6 +13,7 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
+import copy
 import functools
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
@@ -1081,14 +1082,15 @@ def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
     """A subclass of ``model`` that never reads ``keys``, one class per pair.
 
     A subclass keeps the model's validators and methods. The keys are dropped
-    before validation and their fields reset to ``None``: registering the
+    before validation, so their fields keep their defaults: registering the
     class again is a no-op.
     """
-    # The dropped keys stay in the file: a model forbidding extra keys would refuse them.
-    extra = model.model_config.get("extra")
+    forbids = model.model_config.get("extra") == "forbid"
 
     class Spliced(model):  # type: ignore[misc,valid-type]
-        model_config = ConfigDict(extra="ignore" if extra == "forbid" else extra)
+        # The dropped keys stay in the file: a model forbidding extra keys would refuse them.
+        if forbids:
+            model_config = ConfigDict(extra="ignore")
 
         @model_validator(mode="before")
         @classmethod
@@ -1097,9 +1099,17 @@ def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
                 return {key: value for key, value in data.items() if key not in keys}
             return data
 
-    fields: dict[str, Any] = {
-        name: (Any, Field(default=None, exclude=True)) for name in keys & set(model.model_fields)
-    }
+    # A declared field keeps its usual empty value; one with no default is None.
+    fields: dict[str, Any] = {}
+    for name, info in model.model_fields.items():
+        if name not in keys:
+            continue
+        if info.is_required():
+            fields[name] = (Any, Field(default=None, exclude=True))
+        else:
+            kept = copy.copy(info)
+            kept.exclude = True
+            fields[name] = (info.annotation, kept)
     without = create_model(model.__name__, __base__=Spliced, __module__=model.__module__, **fields)
     return cast("type[BaseModel]", without)
 

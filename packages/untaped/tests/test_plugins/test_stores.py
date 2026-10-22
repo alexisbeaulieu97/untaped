@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from test_plugins.plugin_harness import make_candidate, make_shell
 from untaped.errors import ConfigError
@@ -250,6 +250,31 @@ def test_the_state_models_validators_still_run() -> None:
     assert spliced is not None
     with pytest.raises(ValueError, match="too long"):
         spliced.model_validate({"aliases": {}, "cursor": "longer"})
+
+
+def test_an_after_validator_sees_a_declared_fields_default() -> None:
+    class Checked(BaseModel):
+        aliases: dict[str, str] = {}
+        cursor: str = ""
+
+        @model_validator(mode="after")
+        def _has_aliases(self) -> Checked:
+            assert isinstance(self.aliases, dict)
+            return self
+
+    spliced = spliced_state(_hello(state=Checked, stores=(ALIASES,)))
+
+    assert spliced is not None
+    assert spliced.model_validate({"aliases": {"a": "b"}, "cursor": "c"}).model_dump() == {
+        "cursor": "c"
+    }
+
+
+def test_the_spliced_state_leaves_extra_unset_unless_it_forbids() -> None:
+    spliced = spliced_state(_hello(state=HelloState, stores=(ALIASES,)))
+
+    assert spliced is not None
+    assert "extra" not in spliced.model_config
 
 
 def test_an_open_state_model_stays_open() -> None:
