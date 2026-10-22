@@ -75,12 +75,23 @@ def test_the_owner_finds_one_book_and_reports_none() -> None:
 
 
 @pytest.mark.usefixtures("configured")
-def test_the_answer_is_cached_per_profile() -> None:
+def test_the_answer_is_cached_per_provider_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = Path(os.environ["UNTAPED_CONFIG"])
+    path.write_text(
+        _CONFIG
+        + _CONFIG.removeprefix("profiles:\n  default:\n").join(["  same:\n", ""])
+        + "  other:\n    library:\n      volumes: [{shelf_mark: C3, name: Kim, pages: 9}]\n",
+        encoding="utf-8",
+    )
+    cached = Path(os.environ["HOME"]) / ".untaped" / "plugins" / "shelf" / "cached"
     assert invoke_root(["shelf", "list"]).exit_code == 0
-    home = Path(os.environ["HOME"])
-    [entry] = (home / ".untaped" / "plugins" / "shelf" / "cached").rglob("*.json")
-    assert entry.parent.name == "default"
+    monkeypatch.setenv("UNTAPED_PROFILE", "same")
+    assert invoke_root(["shelf", "list"]).exit_code == 0
+    [entry] = cached.rglob("*.json")  # the same library settings share the answer
     assert entry.parent.parent.name == "book_source_books"
+    monkeypatch.setenv("UNTAPED_PROFILE", "other")
+    assert invoke_root(["shelf", "list"]).exit_code == 0
+    assert len(list(cached.rglob("*.json"))) == 2
 
 
 @pytest.mark.usefixtures("configured")
