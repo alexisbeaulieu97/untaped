@@ -145,10 +145,10 @@ def _save_buttons() -> Buttons:
 
 
 def anyway_buttons() -> Buttons:
-    """``Save anyway`` and ``Cancel``: what the form offers once its check failed."""
-    return Buttons(
-        (Button("save_anyway", "Save anyway", "primary"), Button("cancel", "Cancel", "ghost"))
-    )
+    """``Save anyway`` and ``Cancel`` (focused): what the form offers once its check failed."""
+    save = Button("save_anyway", "Save anyway", "primary")
+    cancel = Button("cancel", "Cancel", "ghost")
+    return Buttons((save, cancel), focus=1)  # a reflexive enter never saves what failed
 
 
 def with_buttons(form: Form, buttons: Buttons) -> Form:
@@ -218,7 +218,8 @@ def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -
     so a value the profile inherits stays inherited and one changed since
     is not replaced; a secret setting left empty keeps its value. Raises
     :class:`ConfigError` for a value ``config set`` would refuse, or a
-    setting the plugin needs left empty.
+    setting the plugin needs left empty, its ``details["field"]`` naming
+    the form's field.
     """
     descriptors = _descriptors(spec)
     held = dict(form.fields)
@@ -230,13 +231,18 @@ def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -
         opened = _written(descriptor, editor(descriptor, state.values.get(field.key), label=""))
         if text is None and descriptor.is_secret and state.values.get(field.key) is not None:
             continue  # an empty secret keeps the one set
+        refused = {"field": field.key}  # the screen shows the refusal on this field
         if text is None and field.needs_setup:
-            raise ConfigError(f"enter the {_label(field.path[-1])}", category="invalid")
+            label = _label(field.path[-1])
+            raise ConfigError(f"enter the {label}", category="invalid", details=refused)
         if text == opened:
             continue
         if text is not None:
             text = text.strip() if descriptor.annotation is not SecretStr else text
-            repo.coerced(f"{spec.name}.{field.key}", text)  # refuses what config set would
+            try:
+                repo.coerced(f"{spec.name}.{field.key}", text)  # refuses what config set would
+            except ConfigError as exc:
+                raise ConfigError(str(exc), category="invalid", details=refused) from exc
         values.append((field.key, text))
     secrets = tuple(
         _choice(spec.name, secret, held[_source(secret)].value)

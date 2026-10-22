@@ -271,11 +271,12 @@ def _login(
     variables = _key_variables(credential, section, type(settings))
     if variables and how != "env":
         names = ", ".join(f"${name}" for name in variables)
+        verb = "sets" if len(variables) == 1 else "set"
         notes.append(
             (
                 "warning",
-                f"{names} sets part of the key {section}'s logins are filed under, "
-                f"so they were filed for {describe_key(key)}",
+                f"{names} {verb} part of the {section} key, so this save filed its logins "
+                f"for {describe_key(key)}",
             )
         )
     if how == "env":

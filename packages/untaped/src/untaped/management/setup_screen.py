@@ -890,6 +890,9 @@ class _Setup:
         try:
             asked = candidate(spec, model.current, model.forms[name], model.opened[name])
         except ConfigError as exc:
+            field = exc.details.get("field")
+            if isinstance(field, str):
+                return self._refuse(model, name, field, str(exc)), []
             return self._fail(model, name, str(exc)), []
 
         def prime() -> object:
@@ -1130,6 +1133,18 @@ class _Setup:
             note: Note = ("warning", f"could not save {asked.name}: {text}")
             failed = replace(failed, notes=(*failed.notes, note))
         return self._after(failed)
+
+    def _refuse(self, model: SetupModel, name: str, key: str, text: str) -> SetupModel:
+        """The form refused the value of its field ``key``: show why there, and focus it."""
+        failed = self._fail(model, name, "")
+        form = failed.forms[name]
+        slot = next(index for index, (each, _) in enumerate(form.fields) if each == key)
+        fields = tuple(
+            (each, field.with_error(text) if index == slot else field)
+            for index, (each, field) in enumerate(form.fields)
+        )
+        refused = replace(form, fields=fields, focus=slot)
+        return replace(failed, forms={**failed.forms, name: refused})
 
     def _fail(self, model: SetupModel, name: str, text: str) -> SetupModel:
         form = _on_buttons(reset(model.forms[name].with_error(text)))

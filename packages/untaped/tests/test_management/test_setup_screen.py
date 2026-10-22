@@ -358,8 +358,10 @@ def test_save_anyway_writes(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    # After the failed check the focus is on its buttons, Save anyway first.
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "enter", "esc", "esc"])
+    # After the failed check the focus is on its buttons, on Cancel: Save anyway is left of it.
+    run = drive_screen(
+        _build(), [*_keys("https://wiz", token="bad"), "left", "enter", "esc", "esc"]
+    )
 
     assert run.commands_run == ("probe", "save")
     assert list(current_memory_store().entries.values()) == ["bad"]
@@ -389,7 +391,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_rows(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "right", "enter"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "enter"])
 
     assert run.model.focus == "section"
     assert run.model.failed == {}
@@ -1135,8 +1137,8 @@ def test_save_anyway_survives_another_plugin_saving(
         "esc",
         "down",
         "enter",
-        "enter",  # back in wiz's form, on the token field it failed on
-        "tab",  # the buttons: Save anyway
+        "enter",  # back in wiz's form, on its buttons
+        "left",  # Save anyway
         "enter",
     ]
 

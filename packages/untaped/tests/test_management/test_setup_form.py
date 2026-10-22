@@ -285,10 +285,20 @@ def test_a_save_that_failed_before_writing_still_refuses_a_value_changed_since(
     assert "changed in profile default while it was open" in runtime.model.forms["duo"].error
 
 
-def test_the_reason_a_save_was_refused_is_in_sight_on_a_short_screen() -> None:
+def test_a_refused_value_is_shown_on_its_field_which_takes_the_focus() -> None:
+    run = drive_screen(_build(), _form("duo.example.com", "acme", "8443"), size=(100, 20))
+
+    form = run.model.forms["duo"]
+    assert form.focus == 0  # the URL, scrolled back into sight
+    assert "invalid value for 'duo.server.url'" in run.frame
+    assert SEEN == []
+
+
+def test_a_setting_left_empty_is_named_on_its_field_on_a_short_screen() -> None:
     run = drive_screen(_build(), _form("https://duo.example.com", "acme"), size=(100, 20))
 
     assert "enter the port" in run.frame
+    assert run.model.forms["duo"].focus == 2
 
 
 def test_a_variable_that_sets_part_of_the_key_is_named_when_filing(
