@@ -12,9 +12,10 @@ from untaped_awx.settings import AwxSettings
 
 
 def job_ui_url(settings: AwxSettings, job: Job) -> str | None:
-    """The execution's output page, or ``None`` without a ``base_url`` or for an unknown kind."""
+    """The execution's output page, or ``None`` without a server or for an unknown kind."""
     routes = JOB_ROUTES.get(job.kind)
-    if settings.base_url is None or routes is None:
+    if settings.server is None or routes is None:
         return None
     root = "/execution/" if settings.api_prefix.startswith("/api/controller/") else "/#/"
-    return f"{settings.base_url.rstrip('/')}{root}jobs/{routes.ui_type}/{job.id}/output"
+    base = str(settings.server.url).rstrip("/")
+    return f"{base}{root}jobs/{routes.ui_type}/{job.id}/output"

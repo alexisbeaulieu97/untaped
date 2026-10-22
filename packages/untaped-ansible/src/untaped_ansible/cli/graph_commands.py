@@ -102,7 +102,12 @@ from untaped_ansible.records import (
     VariableUseHit,
 )
 from untaped_ansible.settings import INDEX, AnsibleSettings, SourceDefinition
-from untaped_github.api import GithubClient, GithubSettings, github_web_host
+from untaped_github.api import (
+    GithubClient,
+    GithubSettings,
+    github_token_found,
+    github_web_host,
+)
 from untaped_github.api import github_settings as load_github_settings
 
 _diag = Diagnostics()
@@ -901,7 +906,7 @@ def _graph_env(
         raise UsageError("--backend needs a refresh; drop --cached")
     aliases = AliasRepository().entries()
     github_settings = load_github_settings()
-    github_host = github_web_host(github_settings.base_url)
+    github_host = github_web_host(github_settings.api_url)
     graph_source = _graph_source(options, default_source=settings.default_source)
     # Live reads resolve only the default branch; every ref exists only in a source's cache.
     if all_refs and live:
@@ -1438,12 +1443,12 @@ def _graph_for_target(
 
     if not use_live:
         return build(index), [], _Reads(source=request.source_key is not None, live=False)
-    if local is not None and request.source_key is None and github_settings.token is None:
+    if local is not None and request.source_key is None and not github_token_found():
         warnings = []
         if any(edge.dependency_repo is not None for edge in local.edges):
             warnings.append(
                 "transitive dependencies were not expanded: pass --source NAME to use "
-                "cached source data, or configure github.token for live GitHub reads"
+                "cached source data, or run `untaped auth login github` for live GitHub reads"
             )
         return build(NullDependencyIndex()), warnings, _Reads(source=False, live=False)
     live_index = live_reads.index()

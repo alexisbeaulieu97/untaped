@@ -8,7 +8,7 @@ in ``profiles.<target>``.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import yaml
@@ -260,32 +260,62 @@ class SettingsFileRepository:
         own; writing or removing the key removes every old spelling in the
         target profile, each reported to ``on_spelling_removed``.
         """
-        descriptor = self.descriptor(key)
+        return self.update_values(
+            {key: update},
+            profile=profile,
+            dry_run=dry_run,
+            on_spelling_removed=on_spelling_removed,
+        )
+
+    def update_values(
+        self,
+        updates: Mapping[str, Callable[[str, Any], str | None]],
+        *,
+        profile: str | None = None,
+        dry_run: bool = False,
+        on_spelling_removed: SpellingRemoved | None = None,
+    ) -> str:
+        """:meth:`update_value` for several keys as one change, under one config lock.
+
+        Every ``update`` runs first, then each key's section is validated with
+        all of them in place, so keys that are only valid together (a server's
+        URL and its TLS setting) are written together; one refused value or
+        one raising ``update`` writes nothing. Returns the target profile name.
+        """
+        descriptors = {key: self.descriptor(key) for key in updates}
         resolved: str | None = None
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
-            olds = self._old_paths(descriptor)
-            raw_value = update(resolved, self._own(target_data, descriptor))
-            if raw_value is None:
-                unset_at_path(target_data, descriptor.path)
-            else:
-                set_at_path(target_data, descriptor.path, _coerce_value(key, descriptor, raw_value))
-            _remove_spellings(target_data, olds, on_spelling_removed)
-            try:
-                self._validate_section(data, descriptor, profile=resolved)
-            except ValidationError as exc:
-                raise ConfigError(
-                    f"invalid value for {key!r}: {first_validation_error(exc)}",
-                    category="invalid",
-                ) from exc
+            for key, update in updates.items():
+                descriptor = descriptors[key]
+                olds = self._old_paths(descriptor)
+                raw_value = update(resolved, self._own(target_data, descriptor))
+                if raw_value is None:
+                    unset_at_path(target_data, descriptor.path)
+                else:
+                    value = _coerce_value(key, descriptor, raw_value)
+                    set_at_path(target_data, descriptor.path, value)
+                _remove_spellings(target_data, olds, on_spelling_removed)
+            for key, descriptor in descriptors.items():
+                try:
+                    self._validate_section(data, descriptor, profile=resolved)
+                except ValidationError as exc:
+                    raise ConfigError(
+                        f"invalid value for {key!r}: {first_validation_error(exc)}",
+                        category="invalid",
+                    ) from exc
 
         _run(_apply, dry_run=dry_run)
         # ``_run`` always runs ``_apply``, which sets ``resolved`` from
         # ``write_profile`` (always a profile name).
         assert resolved is not None
         return resolved
+
+    def coerced(self, key: str, raw_value: str) -> Any:
+        """``raw_value`` (as ``config set`` takes it) as the value a write would store."""
+        return _coerce_value(key, self.descriptor(key), raw_value)
 
     def own_value(self, key: str, *, profile: str | None = None) -> Any:
         """``key``'s raw value in ``profile``'s own data, as :meth:`update_value` passes it.
@@ -403,6 +433,40 @@ class SettingsFileRepository:
         else:
             mutate_config(_apply, renames=renames)
         return rows
+
+    def edit_profiles(
+        self,
+        *,
+        unset: Sequence[tuple[str, tuple[str, ...]]] = (),
+        put: Sequence[tuple[str, tuple[str, ...], object]] = (),
+    ) -> None:
+        """Set and unset leaves in named profiles under one lock, as ``config migrate`` does.
+
+        ``put`` is ``(profile, path, value)``, creating the profile and the
+        mappings on its path; ``unset`` is ``(profile, path)``, and a section
+        it leaves empty is removed. Nothing is validated: the caller moves
+        values whose meaning it keeps.
+        """
+
+        def _apply(data: dict[str, Any]) -> None:
+            profiles = data.setdefault("profiles", {})
+            for profile, path, value in put:
+                node = profiles.setdefault(profile, {})
+                for part in path[:-1]:
+                    node = node.setdefault(part, {})
+                node[path[-1]] = value
+            for profile, path in unset:
+                own = profiles.get(profile)
+                parent = own
+                for part in path[:-1]:
+                    parent = parent.get(part) if isinstance(parent, dict) else None
+                if not isinstance(parent, dict):
+                    continue
+                parent.pop(path[-1], None)
+                if isinstance(own, dict) and own.get(path[0]) == {}:
+                    del own[path[0]]
+
+        mutate_config(_apply)
 
     def _section_models(self) -> dict[str, type[BaseModel]]:
         return model_sections(self._profile_model())

@@ -84,14 +84,12 @@ data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
 A plugin that connects to a service marks what it can't run without, and
 `setup`, `setup plan`, doctor and `auth` read the marks: `NeedsSetup` on an
-`X | None = None` field, `Secret(env=..., suggest=...)` on each top-level
-`SecretStr | None` secret. `untaped` adds each secret's command setting
-(`acme.token_command`); a misplaced mark quarantines the plugin.
-`connected_client(config, section="acme", base_url=config.base_url)` sends the
-`token` secret (else the only one) as the bearer, to `base_url`'s origin
-(scheme, host and port) only: a request elsewhere raises `HttpError` before it
-is sent. Redirects are returned unless a call passes `follow_redirects=True`,
-which follows them on the same origin only.
+`X | None = None` field (set means not `None`); a misplaced mark quarantines
+the plugin. `setup`'s form edits each marked field in the field its type
+takes, and a marked model as its fields that have no default.
+
+How a plugin keeps a server's secret (stored with the server it is sent to,
+never in configuration) is in [Credentials](./credentials.md).
 
 A complete plugin module, with a nullary app factory (leave it out for a
 plugin with no commands), its stub skill and the `SPEC` the entry point
@@ -207,7 +205,7 @@ and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (`DoctorCheck` on `PluginSpec.doctor_checks`) returns a
 `DoctorResult`. Its `fix` is the `untaped` command that repairs a failed or
-warned row, without the program name: a string (`"config set acme.base_url
+warned row, without the program name: a string (`"config set acme.server.url
 <URL>"`, split like a shell would) or an argv list. Write a value the user
 supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
 argv, prefixed with `--profile NAME` unless it names one, so an agent can run

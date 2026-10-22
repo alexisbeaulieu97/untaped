@@ -25,7 +25,7 @@ from untaped_github.domain.models import (
 )
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped_github.infrastructure.github_client import GithubClient
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import GH, GithubSettings
 
 __all__ = [
     "BatchRepoRefsFailure",
@@ -40,6 +40,7 @@ __all__ = [
     "ResolveRepositoryInventory",
     "TeamScope",
     "github_settings",
+    "github_token_found",
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
@@ -53,3 +54,11 @@ def github_settings() -> GithubSettings:
     so the GitHub plugin stays the only reader of its section.
     """
     return get_config_section("github", GithubSettings)
+
+
+def github_token_found() -> bool:
+    """Whether a GitHub token is set for the configured server; nothing is read or run.
+
+    Ansible asks this before live GitHub reads instead of reading the token.
+    """
+    return GH.answer(github_settings().server) is not None

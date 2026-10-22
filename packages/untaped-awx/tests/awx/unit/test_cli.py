@@ -8,7 +8,7 @@ import respx
 
 from untaped import bootstrap
 from untaped.plugins.registry import PluginCandidate
-from untaped.settings import get_settings
+from untaped.settings import get_settings, load_settings_section
 from untaped.testing import CliInvoker, CliResult
 from untaped_awx.cli import app
 
@@ -24,7 +24,7 @@ def _write_config(tmp_path: Path, *, api_prefix: str | None = None) -> Path:
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
         """
     if api_prefix is not None:
@@ -76,7 +76,7 @@ def test_ping_ignores_invalid_sibling_section(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
             github:
@@ -115,7 +115,7 @@ def test_ping_table_renders_detail_view(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
         """
@@ -151,7 +151,7 @@ def test_ping_json_emits_bare_object(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
         """
@@ -210,7 +210,7 @@ def test_a_rejected_token_exits_4_with_the_token_hint(
 
     assert result.exit_code == 4
     assert result.stderr.endswith(
-        "error: AWX rejected the token (HTTP 401)\nhint: run `untaped auth set awx`\n"
+        "error: AWX rejected the token (HTTP 401)\nhint (your step): run `untaped auth login awx`\n"
     )
 
 
@@ -230,7 +230,7 @@ def test_json_diagnostics_report_the_failure_attribution(
     record = _last_diagnostic(result)
     assert record["message"] == "AWX rejected the token (HTTP 401)"
     assert (record["category"], record["system"]) == ("auth", "awx")
-    assert record["hint"] == "run `untaped auth set awx`"
+    assert record["hint"] == "run `untaped auth login awx`"
     assert record["details"]["status"] == 401
 
 
@@ -269,7 +269,7 @@ def test_ping_rejects_command_local_profile_flag(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: default-token
               api_prefix: /api/v2/
         """
@@ -288,7 +288,7 @@ def test_ping_requires_base_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     result = CliInvoker().invoke(app, ["ping"])
     assert result.exit_code != 0
-    assert "base_url" in str(result.exception) or "base_url" in result.output
+    assert "awx.server is not set" in result.output
 
 
 @pytest.mark.parametrize("cli_name", ["organizations", "credential-types", "job-templates"])
@@ -304,7 +304,7 @@ def test_list_applies_default_organization_only_to_scoped_kinds(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
               default_organization: Default
@@ -345,7 +345,7 @@ def test_list_filter_passes_through_to_awx(tmp_path: Path, monkeypatch: pytest.M
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
         """
@@ -392,7 +392,7 @@ def test_list_filter_rejects_malformed_entry(
         profiles:
           default:
             awx:
-              base_url: https://aap.example.com
+              server: {url: https://aap.example.com}
               token: secret
               api_prefix: /api/v2/
         """
@@ -410,7 +410,7 @@ def test_get_bare_invocation_is_usage_error_without_opening_context() -> None:
 
     assert result.exit_code == 2
     assert "error: provide names, --stdin, filters/search, or --all" in result.stderr
-    assert "awx.base_url" not in result.output
+    assert "awx.server" not in result.output
 
 
 def test_apply_rejects_parallel_below_one_before_opening_context(tmp_path: Path) -> None:
@@ -421,7 +421,7 @@ def test_apply_rejects_parallel_below_one_before_opening_context(tmp_path: Path)
 
     assert result.exit_code != 0
     assert "parallel" in result.output
-    assert "awx.base_url" not in result.output
+    assert "awx.server" not in result.output
 
 
 def test_apply_emits_clamp_warning_above_cap(
@@ -474,3 +474,25 @@ def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str
     assert bare.exit_code == 2
     assert "requires an argument" in bare.stderr
     assert bare.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("UNTAPED_AWX__BASE_URL", "https://aap.example.com"),
+        ("UNTAPED_AWX", '{"server": {"url": "https://aap.example.com"}}'),
+        ("UNTAPED_AWX", '{"base_url": "https://aap.example.com"}'),
+    ],
+)
+def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    http: {verify_ssl: false}\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv(variable, value)
+    get_settings.cache_clear()
+
+    server = load_settings_section("awx").server
+
+    assert (str(server.url), server.verify_tls) == ("https://aap.example.com/", False)

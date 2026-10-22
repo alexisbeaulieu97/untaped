@@ -38,6 +38,7 @@ class Service(BaseModel):
 
 
 def _client(**kwargs: object) -> HttpClient:
+    kwargs.setdefault("bearer", SecretStr(_CANARY))
     return connected_client(Service(), section="demo", base_url=_URL, http=HttpSettings(), **kwargs)  # type: ignore[arg-type]
 
 
@@ -86,7 +87,7 @@ def test_a_callers_authorization_header_wins_and_is_bound_the_same_way() -> None
 def test_an_uncredentialed_client_may_reach_any_origin() -> None:
     route = respx.get("https://elsewhere.example.net/ping").mock(return_value=httpx.Response(200))
     with connected_client(
-        Service(token=None), section="demo", base_url=_URL, require_token=False, http=HttpSettings()
+        Service(token=None), section="demo", base_url=_URL, http=HttpSettings()
     ) as client:
         client.get("https://elsewhere.example.net/ping")
     assert "Authorization" not in route.calls.last.request.headers
@@ -152,7 +153,11 @@ def test_verify_replaces_the_profiles_tls(monkeypatch: pytest.MonkeyPatch) -> No
 def test_an_idn_base_url_is_its_own_origin() -> None:
     route = respx.get("https://xn--bcher-kva.example/me").mock(return_value=httpx.Response(200))
     with connected_client(
-        Service(), section="demo", base_url="https://bücher.example", http=HttpSettings()
+        Service(),
+        section="demo",
+        base_url="https://bücher.example",
+        bearer=SecretStr(_CANARY),
+        http=HttpSettings(),
     ) as client:
         client.get("/me")
     assert route.calls.last.request.headers["Authorization"] == f"Bearer {_CANARY}"
@@ -170,7 +175,11 @@ def test_same_origin_reads_an_idn_host_as_it_is_sent() -> None:
 def test_a_base_url_with_sharp_s_gets_its_credential() -> None:
     route = respx.get("https://xn--strae-oqa.example/me").mock(return_value=httpx.Response(200))
     with connected_client(
-        Service(), section="demo", base_url="https://straße.example", http=HttpSettings()
+        Service(),
+        section="demo",
+        base_url="https://straße.example",
+        bearer=SecretStr(_CANARY),
+        http=HttpSettings(),
     ) as client:
         client.get("/me")
     assert route.calls.last.request.headers["Authorization"] == f"Bearer {_CANARY}"

@@ -113,8 +113,11 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("schema", "warning", "A provider records the owner schema hash it was tested against."),
     ("owner-schema-drift", "warning", "A provider was tested against the installed owner."),
     ("migrations", "error", "Each directory migration previews on an empty HOME."),
-    ("unmarked-service", "warning", "Settings mark what needs setting up: NeedsSetup, Secret."),
-    ("self-declared-command", "warning", "A Secret's command setting is left for untaped to add."),
+    (
+        "unmarked-service",
+        "warning",
+        "A service's settings mark NeedsSetup; its token is a Credential.",
+    ),
 )
 
 RULES: tuple[Rule, ...] = tuple(

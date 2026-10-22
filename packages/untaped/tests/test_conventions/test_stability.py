@@ -567,7 +567,11 @@ def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
     spec = make_spec(name="svc", factory=_app, settings=_Clean)
     root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
 
-    found = [m for m in marks(root, bootstrap.composition()) if m.target == "setting"]
+    found = [
+        m
+        for m in marks(root, bootstrap.composition())
+        if m.target == "setting" and m.where.startswith("svc.")
+    ]
 
     assert [(m.where, type(m.stability).__name__, m.replacement) for m in found] == [
         ("svc.trial", "Experimental", None),

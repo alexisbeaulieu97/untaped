@@ -155,7 +155,9 @@ def test_connected_client_retries_by_default(no_sleep: list[float]) -> None:
             side_effect=[httpx.Response(429), httpx.Response(200, json={"login": "x"})]
         )
         config = _DemoSettings(token=SecretStr("t"))
-        with connected_client(config, section="demo", base_url=config.base_url) as client:
+        with connected_client(
+            config, section="demo", base_url=config.base_url, bearer=config.token
+        ) as client:
             assert client.get_json_dict("/user") == {"login": "x"}
     assert route.call_count == 2
 
@@ -242,7 +244,7 @@ def test_exhausted_retries_record_the_attempts_and_the_client_section(
     with respx.mock(base_url="https://api.example.com") as mock:
         mock.get("/x").mock(return_value=httpx.Response(503))
         client = connected_client(
-            _DemoSettings(), section="demo", base_url="https://api.example.com", require_token=False
+            _DemoSettings(), section="demo", base_url="https://api.example.com"
         )
         with client, pytest.raises(HttpStatusError) as exc_info:
             client.get("/x")
@@ -255,7 +257,7 @@ def test_a_transport_failure_is_unavailable_in_the_client_section(no_sleep: list
     with respx.mock(base_url="https://api.example.com") as mock:
         mock.get("/x").mock(side_effect=httpx.ConnectError("refused"))
         client = connected_client(
-            _DemoSettings(), section="demo", base_url="https://api.example.com", require_token=False
+            _DemoSettings(), section="demo", base_url="https://api.example.com"
         )
         with client, pytest.raises(HttpTransportError) as exc_info:
             client.get("/x")

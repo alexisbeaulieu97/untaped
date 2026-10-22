@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import HttpUrl
 
 from untaped_awx.domain import Job
 from untaped_awx.infrastructure.jobs.web_ui import job_ui_url
-from untaped_awx.settings import AwxSettings
+from untaped_awx.settings import AwxServer, AwxSettings
 
 
 @pytest.mark.parametrize(
@@ -18,7 +19,8 @@ from untaped_awx.settings import AwxSettings
     ],
 )
 def test_job_ui_url_follows_the_ui_generation(api_prefix: str, kind: str, url: str) -> None:
-    settings = AwxSettings(base_url="https://aap.example.com/", api_prefix=api_prefix)
+    server = AwxServer(url=HttpUrl("https://aap.example.com/"))
+    settings = AwxSettings(server=server, api_prefix=api_prefix)
     assert job_ui_url(settings, Job(id=7, kind=kind, status="successful")) == url
 
 

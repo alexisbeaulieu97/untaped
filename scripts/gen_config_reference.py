@@ -21,10 +21,11 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
+from types import UnionType
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Union, get_args, get_origin
 
 from packaging.utils import canonicalize_name
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 from release import packages
 
 if TYPE_CHECKING:
@@ -77,25 +78,33 @@ class Row:
 
 
 def _type_name(row: Row) -> str:
-    inner, optional = row.annotation, row.optional
+    name = _annotation_name(row.annotation)
+    return f"{name} (optional)" if row.optional else name
+
+
+def _annotation_name(inner: Any) -> str:
     origin = get_origin(inner)
     if inner is SecretStr:
-        name = "secret"
-    elif origin is Literal:
-        name = " \\| ".join(f"`{arg}`" for arg in get_args(inner))
-    elif origin is list:
-        name = "list"
-    elif origin is dict:
-        name = "mapping"
-    elif inner is Path:
-        name = "path"
-    elif isinstance(inner, type):
-        name = {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(
+        return "secret"
+    if inner is HttpUrl:
+        return "URL"
+    if origin is Literal:
+        return " \\| ".join(f"`{arg}`" for arg in get_args(inner))
+    if origin is Annotated:
+        return _annotation_name(get_args(inner)[0])
+    if origin in (Union, UnionType):
+        return " or ".join(_annotation_name(arg) for arg in get_args(inner))
+    if origin is list:
+        return "list"
+    if origin is dict:
+        return "mapping"
+    if inner is Path:
+        return "path"
+    if isinstance(inner, type):
+        return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(
             inner.__name__, inner.__name__
         )
-    else:
-        name = str(inner)
-    return f"{name} (optional)" if optional else name
+    return str(inner)
 
 
 def _default_text(value: Any) -> str:

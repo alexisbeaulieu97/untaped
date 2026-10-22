@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 from collections.abc import Iterator
@@ -109,7 +110,8 @@ def test_the_store_fetch_asks_the_forge_and_git_asks_untaped(
     wt = workspace_env / "J-1" / "app"
     assert fill(wt)["password"] == "untaped-token"
     # The helper asks with the profile the workspace was created under.
-    assert untaped_on_path.read_text().splitlines() == ["--profile default git credential get"]
+    [asked] = untaped_on_path.read_text().splitlines()
+    assert re.fullmatch(r"--profile default git credential --nonce [0-9a-f]{32} get", asked)
 
 
 def test_helper_only_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(

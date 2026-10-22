@@ -1,9 +1,10 @@
 """First-party plugins mark what needs setting up, and core reads them the same way.
 
 No first-party settings model leans on the deprecated base_url/token
-fallback or leaves a secret unmarked; only ``GithubSettings`` (api surface
-until 12.0) still declares its own command setting and ``token_sources``.
-GitHub with only ``GH_TOKEN`` exported reads set up, as before the marks.
+fallback or keeps a secret in a setting that is not deprecated; only
+``GithubSettings`` (api surface until 12.0) still declares its own command
+setting and ``token_sources``. GitHub with only ``GH_TOKEN`` exported reads
+set up, as before the marks.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from test_management.support import write_config
 from untaped import bootstrap
 from untaped.config_schema import unwrap_optional
 from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.setting_marks import declared_marks, self_declared_commands, setup_marks
+from untaped.setting_marks import setup_marks
+from untaped.stability import field_marks
 from untaped.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
@@ -34,17 +36,13 @@ def test_no_first_party_model_relies_on_the_names(
         model = spec.settings
         if model is None:
             continue
-        marks = declared_marks(model)
-        marked = {field.key for field in marks.fields} if marks is not None else set()
-        secrets = {field.key for field in marks.secrets} if marks is not None else set()
+        marks = setup_marks(model, spec.credentials)
+        assert marks is None or not marks.legacy, spec.name
+        deprecated = field_marks(model)
         for name, field in model.model_fields.items():
-            if name == "base_url" and field.default is None and name not in marked:
+            if unwrap_optional(field.annotation) is SecretStr and name not in deprecated:
                 unmarked.append(f"{spec.name}.{name}")
-            if unwrap_optional(field.annotation) is SecretStr and name not in secrets:
-                unmarked.append(f"{spec.name}.{name}")
-        marks_read = setup_marks(model)
-        assert marks_read is None or not marks_read.legacy, spec.name
-        if self_declared_commands(model) or hasattr(model, "token_sources"):
+        if "token_command" in model.model_fields or hasattr(model, "token_sources"):
             own_commands.add(model.__name__)
     assert unmarked == []
     assert own_commands == {"GithubSettings"}

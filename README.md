@@ -36,7 +36,7 @@ untaped doctor
 
 ```bash
 # Store a token in your password store, not in config.yml
-untaped auth set github
+untaped auth login github
 untaped github whoami
 
 # List an org's repos and check them out into a task workspace
@@ -77,6 +77,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   your own package, with its [conventions](./docs/reference/conventions.md),
   [how composition works](./docs/composition.md),
   [contracts](./docs/contracts.md) between plugins,
+  [credentials](./docs/credentials.md) for a service it connects to,
   [caches](./docs/caches.md) of what an upstream answered,
   [state](./docs/state.md) only it holds and
   [its agent skill](./docs/plugin-skills.md), checked with

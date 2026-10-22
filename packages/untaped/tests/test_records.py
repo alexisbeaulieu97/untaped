@@ -538,6 +538,7 @@ def _samples() -> dict[str, WireModel]:
     from untaped.management.records import (
         AuthOutcome,
         ConfigMigrationOutcome,
+        CredentialOutcome,
         DoctorCheckRow,
         FixOutcome,
         InstalledSkillRow,
@@ -550,6 +551,7 @@ def _samples() -> dict[str, WireModel]:
         SetupStep,
         SkillOutcome,
         SkillRow,
+        StoredCredential,
         TokenSource,
     )
     from untaped.plugin_records import Plugin
@@ -653,6 +655,22 @@ def _samples() -> dict[str, WireModel]:
             error=Failure.from_exception(ConfigError("x")),
         ),
         TokenSource(profile="default", section="github", source="$GITHUB_TOKEN"),
+        CredentialOutcome(
+            plugin="github",
+            name="token",
+            key="url=https://api.github.com",
+            id="9b07e4",
+            store="pass",
+            action="stored",
+        ),
+        StoredCredential(
+            id="9b07e4",
+            plugin="github",
+            name="token",
+            key="url=https://api.github.com",
+            backend="pass",
+            where="untaped/github/token/9b07e4",
+        ),
         ConfigMigrationOutcome.model_validate(
             {"profile": "default", "from": "a.b", "to": "a.c", "action": "renamed", "detail": ""}
         ),
@@ -1266,8 +1284,10 @@ def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
 #: before each declared a model: a model keeps its row's wire order.
 _ROW_KEYS = {
     # `field` came later, at the end, so the old keys keep their order.
-    "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error", "field"],
-    "untaped.token_source": ["profile", "section", "source", "field"],
+    "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error"],
+    "untaped.token_source": ["profile", "section", "source", "name"],
+    "untaped.credential_outcome": ["plugin", "name", "key", "id", "store", "action"],
+    "untaped.stored_credential": ["id", "plugin", "name", "key", "backend", "where"],
     "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],
     "untaped.doctor_check": ["check", "plugin", "status", "title", "detail", "fix", "automatic"],
     "untaped.fix_outcome": ["fix", "checks", "action", "detail"],

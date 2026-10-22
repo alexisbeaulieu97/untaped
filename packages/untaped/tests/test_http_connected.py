@@ -1,8 +1,10 @@
-"""``connected_client`` takes the values it needs: ``base_url=``, ``bearer=``, ``require_token=``.
+"""``connected_client`` takes the values it needs: ``base_url=``, ``bearer=``, ``verify=``.
 
-A blank value is "<section> is not set up", naming the unset marked fields
-(or the parameter, for an unmarked model); leaving ``base_url=`` out keeps
-the old read by field name and warns; passing both kinds refuses.
+``bearer`` is the token a ``Credential`` gave (bound to its server), or
+``None`` for a client without one. A blank URL is "<section> is not set
+up", naming the unset marked settings (or the parameter, for an unmarked
+model); leaving ``base_url=`` out keeps the old read by field name and
+warns; passing both kinds refuses.
 """
 
 from __future__ import annotations
@@ -13,12 +15,13 @@ from typing import Annotated
 import httpx
 import pytest
 import respx
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 
+from test_management.support import compose, make_spec
 from untaped.errors import ConfigError, HttpError
 from untaped.http import connected_client, rejected_token_error
-from untaped.sdk import NeedsSetup, Secret
-from untaped.settings import HttpSettings, register_profile_settings
+from untaped.sdk import BoundSecret, Credential, CredentialKey, NeedsSetup
+from untaped.settings import HttpSettings
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -26,37 +29,21 @@ _URL = "https://api.example.com"
 _HTTP = HttpSettings()
 
 
+class Server(CredentialKey):
+    url: HttpUrl
+
+
 class Marked(BaseModel):
-    """The usual service: a marked URL and a marked token."""
+    """The usual service: a marked server; its token is a declared credential."""
 
-    base_url: Annotated[str | None, NeedsSetup] = None
-    token: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
-
-
-class Hooked(BaseModel):
-    """A token and a second secret."""
-
-    base_url: Annotated[str | None, NeedsSetup] = None
-    token: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
-    webhook_secret: Annotated[SecretStr | None, Secret()] = None
-
-
-class Keyed(BaseModel):
-    """One secret, not named ``token``."""
-
-    base_url: Annotated[str | None, NeedsSetup] = None
-    api_key: Annotated[SecretStr | None, NeedsSetup, Secret()] = None
+    server: Annotated[Server | None, NeedsSetup] = None
 
 
 class Plain(BaseModel):
-    """Unmarked: its ``token`` is still the bearer."""
+    """Unmarked: its ``token`` is still the bearer of the old read by name."""
 
     base_url: str = ""
     token: SecretStr | None = None
-
-
-class Tokenless(BaseModel):
-    base_url: str = _URL
 
 
 def _write(path: Path, text: str) -> None:
@@ -74,84 +61,94 @@ def _authorization(config: BaseModel, **kwargs: object) -> str | None:
 
 
 @pytest.mark.parametrize(
-    ("config", "bearer"),
+    ("bearer", "header"),
     [
-        (Marked(base_url=_URL, token=SecretStr("t")), "Bearer t"),
-        (Hooked(base_url=_URL, token=SecretStr("t"), webhook_secret=SecretStr("w")), "Bearer t"),
-        (Keyed(base_url=_URL, api_key=SecretStr("k")), "Bearer k"),
-        (Plain(base_url=_URL, token=SecretStr("p")), "Bearer p"),
+        (None, None),
+        ("t", "Bearer t"),
+        (SecretStr("t"), "Bearer t"),
+        (BoundSecret("t", origin=_URL, source="test"), "Bearer t"),
     ],
-    ids=["token", "token-over-another-secret", "the-only-secret", "unmarked-token"],
+    ids=["none", "text", "secret", "bound"],
 )
-def test_the_bearer_defaults_to_the_token_else_the_only_secret(
-    config: BaseModel, bearer: str
-) -> None:
-    assert _authorization(config, base_url=_URL) == bearer
+def test_the_bearer_is_what_the_caller_passes(bearer: object, header: str | None) -> None:
+    assert _authorization(Marked(), base_url=_URL, bearer=bearer) == header
 
 
-def test_an_explicit_bearer_wins() -> None:
-    config = Marked(base_url=_URL, token=SecretStr("t"))
-    assert _authorization(config, base_url=_URL, bearer=SecretStr("other")) == "Bearer other"
+@pytest.mark.parametrize(
+    ("origin", "says"),
+    [
+        ("https://other.example.com", r"with a credential bound to https://other\.example\.com"),
+        (None, "this credential is not for HTTP"),
+    ],
+)
+def test_a_token_bound_elsewhere_is_refused(origin: str | None, says: str) -> None:
+    bearer = BoundSecret("t", origin=origin, source="test")
+    with pytest.raises(ConfigError, match=says):
+        connected_client(Marked(), section="demo", base_url=_URL, bearer=bearer, http=_HTTP)
 
 
-@pytest.mark.parametrize(("token", "header"), [(None, None), (SecretStr("t"), "Bearer t")])
-def test_a_client_that_needs_no_token_still_sends_one_it_has(
-    token: SecretStr | None, header: str | None
-) -> None:
-    """awx's ``ping``: no token needed, but a configured one is still sent."""
-    config = Marked(base_url=_URL, token=token)
-    assert _authorization(config, base_url=_URL, require_token=False) == header
+def test_a_bound_token_is_sent_only_to_its_origin() -> None:
+    bearer = BoundSecret("t", origin=_URL, source="test")
+    with (
+        respx.mock,
+        connected_client(Marked(), section="demo", base_url=_URL, bearer=bearer, http=_HTTP) as c,
+        pytest.raises(HttpError, match=r"it is bound to https://api\.example\.com"),
+    ):
+        c.get("https://elsewhere.example.com/me")
 
 
-def test_a_missing_value_names_the_unset_marked_fields(_isolated_config: Path) -> None:
+def test_a_missing_url_names_the_unset_marked_fields(_isolated_config: Path) -> None:
     _write(
         _isolated_config,
         "active: home\n"
         "profiles:\n"
         "  home: {}\n"
         "  work:\n"
-        "    demo: {base_url: https://work.example.com, token_command: [pass, show, demo]}\n",
+        "    demo: {server: {url: https://work.example.com}}\n",
     )
     with pytest.raises(ConfigError) as caught:
         connected_client(Marked(), section="demo", base_url=None, http=_HTTP)
 
     error = caught.value
-    assert str(error) == (
-        "demo is not set up in profile 'home': demo.base_url and demo.token are not set"
-    )
+    assert str(error) == "demo is not set up in profile 'home': demo.server is not set"
     assert error.hint is not None
-    assert "profile 'work' sets them" in error.hint
+    assert "profile 'work' sets it" in error.hint
     assert error.hint.endswith("run `untaped setup plan --only demo`")
     assert error.details["profiles"] == ["work"]
 
 
-def test_a_missing_token_alone_is_named() -> None:
-    with pytest.raises(ConfigError, match=r"^demo is not set up.*: demo\.token is not set$"):
-        connected_client(Marked(base_url=_URL), section="demo", base_url=_URL, http=_HTTP)
+class Bare(BaseModel):
+    """Nothing marked and nothing the old fallback reads."""
+
+    timeout: float = 1.0
 
 
-@pytest.mark.parametrize(
-    ("config", "kwargs", "named"),
-    [
-        (Plain(base_url=_URL), {"base_url": _URL}, "bearer= has no value"),
-        (Plain(token=SecretStr("t")), {"base_url": " "}, "base_url= has no value"),
-        (Plain(), {"base_url": ""}, "base_url= and bearer= have no value"),
-        (Tokenless(), {"base_url": _URL}, "bearer= has no value"),
-    ],
-    ids=["unmarked-token", "blank-url", "both", "no-secret-at-all"],
-)
-def test_a_blank_value_from_an_unmarked_field_names_the_parameter(
-    config: BaseModel, kwargs: dict[str, str], named: str
-) -> None:
+def test_a_blank_url_of_an_unmarked_model_names_its_setting_else_the_parameter() -> None:
     with pytest.raises(ConfigError) as caught:
-        connected_client(config, section="demo", http=_HTTP, **kwargs)  # type: ignore[arg-type]
+        connected_client(Plain(), section="demo", base_url=" ", http=_HTTP)
+    assert str(caught.value).endswith(": demo.base_url is not set")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(Bare(), section="demo", base_url=" ", http=_HTTP)
     assert str(caught.value).startswith("demo is not set up")
-    assert str(caught.value).endswith(f": {named}")
+    assert str(caught.value).endswith(": base_url= has no value")
     assert (caught.value.hint or "").endswith("run `untaped setup plan --only demo`")
 
 
-def test_a_model_without_a_secret_builds_a_tokenless_client_when_none_is_required() -> None:
-    assert _authorization(Tokenless(), base_url=_URL, require_token=False) is None
+@pytest.mark.parametrize(
+    ("verify", "expected"),
+    [(True, True), (False, False)],
+)
+def test_verify_is_the_keys_tls(verify: bool, expected: bool) -> None:
+    client = connected_client(Marked(), section="demo", base_url=_URL, verify=verify, http=_HTTP)
+    with client:
+        assert (client._client._transport._pool._ssl_context.verify_mode != 0) is expected  # type: ignore[union-attr]
+
+
+def test_a_missing_ca_file_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="does not exist"):
+        connected_client(
+            Marked(), section="demo", base_url=_URL, verify=tmp_path / "ca.pem", http=_HTTP
+        )
 
 
 @pytest.mark.parametrize(
@@ -166,40 +163,26 @@ def test_a_model_without_a_secret_builds_a_tokenless_client_when_none_is_require
 )
 def test_base_url_with_an_old_parameter_refuses(kwargs: dict[str, object], named: str) -> None:
     """Even an old parameter's former default counts as passed."""
-    config = Marked(base_url=_URL, token=SecretStr("t"))
     with (
         pytest.warns(DeprecationWarning, match=r"connected_client\("),
         pytest.raises(TypeError, match=f"pass base_url= or {named}, not both"),
     ):
-        connected_client(config, section="demo", base_url=_URL, http=_HTTP, **kwargs)  # type: ignore[arg-type]
+        connected_client(Marked(), section="demo", base_url=_URL, http=_HTTP, **kwargs)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
     ("kwargs", "named"),
     [
         ({"bearer": "t"}, "bearer="),
-        ({"require_token": True}, "require_token="),
-        ({"require_token": False, "bearer": None}, "bearer= and require_token="),
+        ({"verify": False}, "verify="),
+        ({"verify": True, "bearer": None}, "bearer= and verify="),
     ],
-    ids=["bearer", "require_token", "both"],
+    ids=["bearer", "verify", "both"],
 )
 def test_a_new_parameter_without_base_url_refuses(kwargs: dict[str, object], named: str) -> None:
     """Without ``base_url=`` the old read would ignore them."""
-    config = Marked(base_url=_URL, token=SecretStr("t"))
     with pytest.raises(TypeError, match=f"pass base_url= with {named}$"):
-        connected_client(config, section="demo", http=_HTTP, **kwargs)  # type: ignore[arg-type]
-
-
-def test_a_client_needing_no_token_does_not_name_it_as_unset() -> None:
-    with pytest.raises(ConfigError) as caught:
-        connected_client(Marked(), section="demo", base_url=None, require_token=False, http=_HTTP)
-    assert str(caught.value).endswith(": demo.base_url is not set")
-
-
-def test_a_passed_bearer_is_not_named_as_unset() -> None:
-    with pytest.raises(ConfigError) as caught:
-        connected_client(Marked(), section="demo", base_url="", bearer="t", http=_HTTP)
-    assert str(caught.value).endswith(": demo.base_url is not set")
+        connected_client(Plain(base_url=_URL), section="demo", http=_HTTP, **kwargs)  # type: ignore[arg-type]
 
 
 def test_leaving_base_url_out_keeps_the_old_read_and_warns() -> None:
@@ -214,9 +197,91 @@ def test_leaving_base_url_out_keeps_the_old_read_and_warns() -> None:
         connected_client(Plain(base_url=_URL), section="demo", http=_HTTP)
 
 
-def test_a_rejected_secret_names_its_own_auth_set() -> None:
-    register_profile_settings("duo", Hooked)
+class DuoServer(CredentialKey):
+    url: HttpUrl
+
+
+class Duo(BaseModel):
+    server: Annotated[DuoServer | None, NeedsSetup] = None
+
+
+def test_a_rejected_credential_names_its_own_auth_login() -> None:
+    token = Credential("duo", "token", key=DuoServer)
+    hook = Credential("duo", "webhook_secret", key=DuoServer)
+    compose(make_spec("duo", settings=Duo, credentials=(token, hook)))
     cause = HttpError("HTTP 401", status_code=401, url=f"{_URL}/hooks", system="duo")
     error = rejected_token_error("duo", "rejected", cause=cause, field="webhook_secret")
-    assert error.hint == "run `untaped auth set duo.webhook_secret`"
-    assert rejected_token_error("duo", "rejected").hint == "run `untaped auth set duo`"
+    assert error.hint == "run `untaped auth login duo webhook_secret`"
+    assert error.fix_by == "user"
+    assert rejected_token_error("duo", "rejected").hint == "run `untaped auth login duo`"
+
+
+@pytest.mark.parametrize(
+    ("http", "verify", "url", "sent"),
+    [
+        (HttpSettings(proxy="http://proxy.example.com:3128"), True, _URL, True),
+        (HttpSettings(proxy="http://proxy.example.com:3128"), False, _URL, False),
+        (
+            HttpSettings(proxy="http://proxy.example.com:3128", verify_hostname=False),
+            True,
+            _URL,
+            False,
+        ),
+        # root verify_ssl already reads as the key's verify_tls; a key saying true set it
+        (HttpSettings(proxy="http://proxy.example.com:3128", verify_ssl=False), True, _URL, True),
+        (
+            HttpSettings(proxy="http://proxy.example.com:3128"),
+            True,
+            "http://plain.example.com",
+            False,
+        ),
+    ],
+)
+def test_a_folder_proxy_carries_a_credential_only_over_verified_https(
+    monkeypatch: pytest.MonkeyPatch, http: HttpSettings, verify: bool, url: str, sent: bool
+) -> None:
+    monkeypatch.setattr(
+        "untaped.credentials.folder_leaves", lambda: {("http", "proxy"): "/work/.untaped.yml"}
+    )
+
+    def build() -> None:
+        connected_client(
+            Marked(), section="demo", base_url=url, bearer="tok", http=http, verify=verify
+        ).close()
+
+    if sent:
+        build()
+    else:
+        with pytest.raises(ConfigError, match="won't send a credential through a folder's proxy"):
+            build()
+
+
+def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "untaped.credentials.folder_leaves", lambda: {("http", "ca_bundle"): "/work/.untaped.yml"}
+    )
+
+    with pytest.raises(ConfigError, match="won't send a credential under a trust setting"):
+        connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=_HTTP)
+
+
+@pytest.mark.parametrize(("verify", "verify_ssl"), [(True, True), (None, False)])
+def test_a_keys_client_takes_root_trust_without_verify_ssl(
+    monkeypatch: pytest.MonkeyPatch, verify: bool | None, verify_ssl: bool
+) -> None:
+    """A key's TLS already holds root verify_ssl; a client given no key's TLS still applies it."""
+    seen: list[HttpSettings] = []
+
+    def trust(http: HttpSettings) -> bool:
+        seen.append(http)
+        return True
+
+    monkeypatch.setattr("untaped.http.resolve_verify", trust)
+    root = HttpSettings(verify_ssl=False, ca_bundle=Path("/etc/ca.pem"))
+
+    connected_client(
+        Marked(), section="demo", base_url=_URL, bearer="tok", http=root, verify=verify
+    ).close()
+
+    [used] = seen
+    assert (used.verify_ssl, used.ca_bundle) == (verify_ssl, Path("/etc/ca.pem"))

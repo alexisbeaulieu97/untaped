@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import Any
 
-from untaped.sdk import ConfigError, HttpSettings, connected_client, run_hint
+from untaped.sdk import HttpSettings, connected_client
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -14,38 +14,32 @@ from untaped_github.infrastructure.graphql import (
     graphql_endpoint,
 )
 from untaped_github.infrastructure.pagination import paginate_list, paginate_search
-from untaped_github.settings import GithubSettings
-
-_DEFAULT_URL = GithubSettings.model_fields["base_url"].default
+from untaped_github.settings import GH, GithubSettings
 
 
 class GithubClient:
-    """Talks to ``api.github.com`` (or a GHE base) using the configured token.
+    """Talks to ``api.github.com`` (or a GHE base) using the server's stored token.
 
     Connection wiring (bearer auth, TLS, base-URL normalization) is delegated
-    to core's ``connected_client``; a missing or blank token fails fast with
-    its "github is not set up" error. ``base_url`` has a default, so it is
-    not marked as needing setup; an explicit blank override still fails
-    loudly, naming the setting, here.
+    to core's ``connected_client``; a missing token fails fast with
+    ``NoCredential``, naming ``untaped auth login github``.
     """
 
     def __init__(self, config: GithubSettings, *, http: HttpSettings | None = None) -> None:
-        if not config.base_url.strip():
-            raise ConfigError(
-                "github.base_url is blank",
-                hint=f"{run_hint('config unset github.base_url')} to use {_DEFAULT_URL}",
-            )
+        server = config.server
         self._http = connected_client(
             config,
             section="github",
-            base_url=config.base_url,
+            base_url=config.api_url,
+            bearer=GH.get(server),
+            verify=server.verify_tls,
             headers={
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
             http=http,
         )
-        self._graphql_endpoint = graphql_endpoint(config.base_url)
+        self._graphql_endpoint = graphql_endpoint(config.api_url)
 
     def me(self) -> dict[str, Any]:
         return self._http.get_json_dict("/user")

@@ -1,7 +1,8 @@
 """Use cases for the root config command group.
 
 The reads (:class:`GetSetting`, :class:`ListSettings`) and the writes
-(:class:`SetSetting`, :class:`UnsetSetting`, :class:`RankProviders`) are
+(:class:`SetSetting`, :class:`SetSettings`, :class:`UnsetSetting`,
+:class:`RankProviders`) are
 what every front shares: ``config``, ``plugin rank`` and the setup screen
 call the same code, so they cannot disagree about what a write does. A
 write prints nothing; it returns its outcome record and the lines a front
@@ -11,7 +12,7 @@ prints about it (:data:`Note`).
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Container
+from collections.abc import Callable, Collection, Container, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -124,6 +125,64 @@ class UnsetSetting:
             notes = (("success", f"unset {key} {where}{_removed_note(spellings)}"),)
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), notes)
+
+
+class SetSettings:
+    """Write several settings in a profile as one change, validated together: all or none."""
+
+    def __init__(self, repo: SettingsWriter) -> None:
+        self._repo = repo
+
+    def __call__(
+        self,
+        values: Mapping[str, str | None],
+        *,
+        profile: str | None = None,
+        expected: Mapping[str, Any] | None = None,
+    ) -> tuple[SettingChange, ...]:
+        """Set each key to its raw value (``None`` unsets it) in ``profile``, as one write.
+
+        Keys that are only valid together (a server's URL and its TLS setting)
+        are validated with each other in place. ``expected`` maps a key to its
+        own value when it was read (:meth:`SetSetting.current`): one key
+        changed since refuses the whole write. Raises :class:`ConfigError`
+        when a value is invalid or changed; nothing is written then. One
+        change per key, in ``values``' order.
+        """
+        expected = expected or {}
+        removed: list[str] = []
+        had: dict[str, bool] = {}
+
+        def updater(key: str, value: str | None) -> Callable[[str, Any], str | None]:
+            def update(target: str, current: Any) -> str | None:
+                if key in expected and current != expected[key]:
+                    raise ConfigError(
+                        f"{key} changed in profile {target} while it was open; nothing was written",
+                        category="conflict",
+                    )
+                had[key] = current is not None
+                return value
+
+            return update
+
+        target = self._repo.update_values(
+            {key: updater(key, value) for key, value in values.items()},
+            profile=profile,
+            on_spelling_removed=removed.append,
+        )
+        changes: list[SettingChange] = []
+        for key, value in values.items():
+            if value is None and not had.get(key):
+                outcome = SettingOutcome(key=key, profile=target, action="unchanged")
+                changes.append(SettingChange(outcome))
+                continue
+            verb, action = ("unset", "deleted") if value is None else ("set", "updated")
+            # The old spellings removed go on the first line, as one write removed them.
+            line = f"{verb} {key} in profile {target}{_removed_note(removed)}"
+            removed = []
+            outcome = SettingOutcome(key=key, profile=target, action=action)
+            changes.append(SettingChange(outcome, (("success", line),)))
+        return tuple(changes)
 
 
 _EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])

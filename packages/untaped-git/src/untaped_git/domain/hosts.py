@@ -18,9 +18,10 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from untaped.contracts import Answers, Contract, Failed, Ok, gather
 from untaped.sdk import ConfigError, experimental
@@ -28,12 +29,20 @@ from untaped_git.domain.url import url_host
 
 
 class Credential(BaseModel):
-    """A username and password (or token) for one HTTPS remote."""
+    """A username and password (or token) for one HTTPS remote, and how its TLS is checked."""
 
     model_config = ConfigDict(frozen=True)
 
     username: str
     password: SecretStr
+    verify_tls: bool | Path = Field(
+        default=True,
+        description=(
+            "How git checks the host: `True` (git's own trust), a CA file for this host "
+            "(the key's, or root `http.ca_bundle` when the key keeps untaped's trust), "
+            "or `False` (git still verifies)."
+        ),
+    )
 
 
 @experimental

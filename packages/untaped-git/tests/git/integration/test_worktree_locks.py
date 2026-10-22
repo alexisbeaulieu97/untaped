@@ -11,6 +11,7 @@ import pytest
 from git.conftest import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
 from untaped.testing.git import GitRemote
+from untaped_git.infrastructure.helper_nonce import helper_nonce
 from untaped_git.infrastructure.store import RepoStore
 
 _MAIN = "refs/remotes/origin/main"
@@ -267,3 +268,31 @@ def test_a_copy_of_a_copy_reusing_the_owned_entrys_id_stays_the_users(
     store.repair_worktree(moved)
 
     assert store.worktree_owners()[moved.resolve()] is None
+
+
+def test_repair_gives_untapeds_helper_line_the_moved_worktrees_nonce(
+    store_for: StoreFor, tmp_path: Path
+) -> None:
+    store = _workspace(store_for)
+    old = tmp_path / "PROJ-1"
+    store.worktree_add(old / "app", _MAIN, branch="one")
+    key = "credential.https://git.example.com.helper"
+    git(old / "app", "config", "--worktree", "--add", key, "", bare=False)
+    git(
+        old / "app",
+        "config",
+        "--worktree",
+        "--add",
+        key,
+        "!untaped --profile work git credential --nonce 0123abcd",
+        bare=False,
+    )
+    new = tmp_path / "moved" / "PROJ-1"
+    new.parent.mkdir()
+    old.rename(new)
+
+    store.repair_worktree(new / "app")
+
+    nonce = helper_nonce(store.path, new / "app")
+    lines = git(new / "app", "config", "--worktree", "--get-all", key, bare=False).splitlines()
+    assert lines == ["", f"!untaped --profile work git credential --nonce {nonce}"]

@@ -241,8 +241,9 @@ def test_marks_report_behaviours() -> None:
     assert found == {
         "untaped.connected-client-by-name": "base_url= and bearer= values",
         "untaped.plaintext-token": "`untaped auth migrate`",
-        "untaped.self-declared-command": "the command setting untaped adds for each Secret",
-        "untaped.unmarked-service": "NeedsSetup and Secret marks on its settings",
+        "untaped.unmarked-service": (
+            "a NeedsSetup-marked CredentialKey setting and a declared Credential"
+        ),
         "svc.row-kind": "kind= on the Record class",
     }
 

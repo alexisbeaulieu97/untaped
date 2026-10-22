@@ -139,9 +139,9 @@ def test_profile_scoped_plugin_setting_resolves(
     _isolated_config: Path, specs: dict[str, PluginSpec]
 ) -> None:
     _isolated_config.write_text(
-        "profiles:\n  default:\n    jira:\n      base_url: https://jira.example.com\n",
+        "profiles:\n  default:\n    jira:\n      server: {url: https://jira.example.com}\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()
-    stdout = _invoke(specs["jira"], "config", "get", "jira.base_url")
-    assert stdout.strip() == "https://jira.example.com"
+    stdout = _invoke(specs["jira"], "config", "get", "jira.server.url")
+    assert stdout.strip() == "https://jira.example.com/"

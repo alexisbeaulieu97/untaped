@@ -18,15 +18,21 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import HttpUrl
 
 from screen.support import FakeHost
 from test_management.stores import FakeStores, install_fake_stores
 from test_management.support import (
+    ENVY_TOKEN,
     FAIL,
     PROBES,
+    WIZ_TOKEN,
     EnvProfile,
+    EnvyServer,
     LegacyProfile,
+    UnmarkedWizProfile,
     WizProfile,
+    WizServer,
     compose,
     make_spec,
     wiz_api_check,
@@ -51,9 +57,9 @@ from untaped.management.setup_state import (
 from untaped.plugins.registry import PluginSpec
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
-from untaped.sdk import online_check
+from untaped.sdk import Credential, online_check
 from untaped.settings import active_overlay, get_settings
-from untaped.testing import ScreenKeys, drive_screen
+from untaped.testing import ScreenKeys, current_memory_store, drive_screen
 from untaped.testing.screens import ScreenKey, ScreenRun, rendered_text
 from untaped.theme import BUILTIN_THEMES
 from untaped.token_store import pick_store
@@ -62,9 +68,12 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 SECRET = "s3cr3t-t0ken"
 _ENVY_STORED = (
-    "profiles:\n  default:\n    envy:\n      token_command: [pass, show, untaped/default/envy]\n"
+    "profiles:\n  default:\n    envy:\n      server: {url: https://envy}\n"
+    "      token_command: [pass, show, untaped/default/envy]\n"
 )
-_WIZ_PLAINTEXT = "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n      token: old\n"
+_WIZ_PLAINTEXT = (
+    "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n      token: old\n"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +120,7 @@ def _keys(
     command: str | None = None,
     submit: bool = True,
 ) -> list[ScreenKey]:
-    """List -> rows -> connection form: the URL, the token tab (``right`` steps in), its field,
+    """List -> rows -> setup form: the URL, the token tab (``right`` steps in), its field,
     then enter."""
     keys: list[ScreenKey] = ["enter", "enter"]
     if url is not None:
@@ -154,6 +163,16 @@ def _seed(stores: FakeStores, tmp_path: Path, entries: dict[str, str]) -> None:
         gpg.write_text("encrypted", encoding="utf-8")
 
 
+def _login(url: str, *, envy: bool = False) -> str | None:
+    """The token a run gets for ``url``'s server (``wiz``'s, or ``envy``'s), if any."""
+    found = (
+        ENVY_TOKEN.find(EnvyServer(url=HttpUrl(url)))
+        if envy
+        else WIZ_TOKEN.find(WizServer(url=HttpUrl(url)))
+    )
+    return None if found is None else found.get_secret_value()
+
+
 def _result(run: ScreenRun[SetupModel, SetupResult]) -> SetupResult:
     assert isinstance(run.outcome, Quit), run.frame
     assert run.result is not None
@@ -166,15 +185,13 @@ def _result(run: ScreenRun[SetupModel, SetupResult]) -> SetupResult:
 def test_check_passes_then_writes_a_stored_token(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    install_fake_stores(tmp_path, monkeypatch, "pass")
 
     run = drive_screen(_build(), [*_keys("https://wiz", token=" tok "), "esc", "esc"])
 
-    assert _wiz_section(_isolated_config) == {
-        "base_url": "https://wiz",
-        "token_command": ["pass", "show", "untaped/default/wiz"],
-    }
-    assert stores.entries() == {"untaped/default/wiz": "tok"}
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
+    assert list(current_memory_store().entries.values()) == ["tok"]
+    assert _login("https://wiz") == "tok"
     assert PROBES == ["probed"]
     assert run.commands_run == ("probe", "save")
     assert _result(run) == SetupResult("default", ("wiz",), (), interrupted=False)
@@ -183,19 +200,14 @@ def test_check_passes_then_writes_a_stored_token(
 def test_check_passes_then_moves_the_plaintext_token(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n      token: old\n",
-    )
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(_isolated_config, _WIZ_PLAINTEXT)
 
     run = drive_screen(_build(), [*_keys(), "esc", "esc"])
 
-    assert _wiz_section(_isolated_config) == {
-        "base_url": "https://wiz",
-        "token_command": ["pass", "show", "untaped/default/wiz"],
-    }
-    assert stores.entries() == {"untaped/default/wiz": "old"}
+    # The URL was not edited, so it is not rewritten.
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz"}}
+    assert list(current_memory_store().entries.values()) == ["old"]
     assert "old" not in _isolated_config.read_text()
     assert _result(run).touched == ("wiz",)
 
@@ -219,10 +231,8 @@ def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Pa
         _build(), [*_keys("https://wiz", command=f"{program} --flag 'two words'"), "esc", "esc"]
     )
 
-    assert _wiz_section(_isolated_config) == {
-        "base_url": "https://wiz",
-        "token_command": [program, "--flag", "two words"],
-    }
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
+    assert _login("https://wiz") == "tok"
     assert run.commands_run == ("prime", "probe", "save")
     assert PROBES == ["probed"]
 
@@ -231,7 +241,7 @@ def test_check_passes_then_writes_the_env_choice(_isolated_config: Path) -> None
     run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1), "esc", "esc"])
 
     assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
-        "base_url": "https://envy"
+        "server": {"url": "https://envy/"}
     }
     assert ("info", "export $ENVY_TOKEN in your shell for untaped envy to use it") in (
         _result(run).notes
@@ -241,12 +251,12 @@ def test_check_passes_then_writes_the_env_choice(_isolated_config: Path) -> None
 def test_check_passes_then_keeps_the_current_token(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://old\n      token: kept\n",
+        "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n      token: kept\n",
     )
 
     run = drive_screen(_build(), [*_keys("https://new"), "esc", "esc"])
 
-    assert _wiz_section(_isolated_config) == {"base_url": "https://new", "token": "kept"}
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://new/"}, "token": "kept"}
     assert _result(run).touched == ("wiz",)
 
 
@@ -264,7 +274,7 @@ def test_using_the_env_var_drops_the_profiles_stored_token(
     run = drive_screen(_build(_envy()), [*_keys("https://envy", right=3), "esc", "esc"])
 
     assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
-        "base_url": "https://envy"
+        "server": {"url": "https://envy/"}
     }
     assert stores.entries() == {}
     notes = [text for _, text in _result(run).notes]
@@ -288,7 +298,8 @@ def test_a_new_command_deletes_the_replaced_stored_token(
 
     assert stores.entries() == {}
     section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
-    assert section["token_command"] == [program]
+    assert section == {"server": {"url": "https://envy/"}}
+    assert _login("https://envy", envy=True) == "tok"
     notes = [text for _, text in _result(run).notes]
     assert "deleted the replaced envy token from pass (untaped/default/envy)" in notes
 
@@ -299,7 +310,8 @@ def test_an_unreachable_replaced_store_only_warns(
     stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    envy:\n      token_command:\n"
+        "profiles:\n  default:\n    envy:\n      server: {url: https://envy}\n"
+        "      token_command:\n"
         "        [secret-tool, lookup, service, untaped, account, default/envy]\n",
     )
     stores.state.write_text('{"default/envy": "old"}')
@@ -315,8 +327,9 @@ def test_an_unreachable_replaced_store_only_warns(
         for kind, text in notes
     )
     section = read_config_dict(_isolated_config)["profiles"]["default"]["envy"]
-    assert section["token_command"] == ["pass", "show", "untaped/default/envy"]
-    assert stores.entries() == {"default/envy": "old", "untaped/default/envy": "new"}
+    assert section == {"server": {"url": "https://envy/"}}
+    assert stores.entries() == {"default/envy": "old"}
+    assert list(current_memory_store().entries.values()) == ["new"]
 
 
 # --- the check comes first -------------------------------------------------------
@@ -342,15 +355,18 @@ def test_check_fails_then_nothing_is_written(
 def test_save_anyway_writes(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    # After the failed check the focus is on the token field: tab goes to the buttons.
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "enter", "esc", "esc"])
+    # After the failed check the focus is on its buttons, on Cancel: Save anyway is left of it.
+    run = drive_screen(
+        _build(), [*_keys("https://wiz", token="bad"), "left", "enter", "esc", "esc"]
+    )
 
     assert run.commands_run == ("probe", "save")
-    assert stores.entries() == {"untaped/default/wiz": "bad"}
-    assert _wiz_section(_isolated_config)["base_url"] == "https://wiz"
+    assert list(current_memory_store().entries.values()) == ["bad"]
+    assert _login("https://wiz") == "bad"
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
     assert "saved, check failed" in _flat(run.frames[-2])
     assert _result(run).touched == ("wiz",)
 
@@ -361,7 +377,7 @@ def test_a_failed_check_is_forgotten_when_the_values_change(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "x"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "shift-tab", "x"])
 
     flat = _flat(run.frame)
     assert "Save anyway" not in flat
@@ -375,7 +391,7 @@ def test_cancel_forgets_the_failed_check_and_returns_to_the_rows(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "tab", "right", "enter"])
+    run = drive_screen(_build(), [*_keys("https://wiz", token="bad"), "enter"])
 
     assert run.model.focus == "section"
     assert run.model.failed == {}
@@ -458,16 +474,19 @@ def test_an_empty_url_and_an_empty_token_are_refused_in_place(_isolated_config: 
 def test_the_overlay_never_writes_and_never_changes_get_settings(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://old\n")
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
+    )
     config = _isolated_config.read_bytes()
     seen: list[tuple[str | None, str | None]] = []
 
     def probe() -> str:
         # A cross-section read: it goes through get_settings(), which the overlay bypasses.
         wiz = get_settings().wiz  # type: ignore[attr-defined]
-        token = app_context().section("wiz", WizProfile).token
-        seen.append((wiz.base_url, None if token is None else token.get_secret_value()))
+        server = app_context().section("wiz", WizProfile).server
+        assert server is not None
+        seen.append((str(wiz.server.url), WIZ_TOKEN.get(server).get_secret_value()))
         return "ok"
 
     spec = make_spec(
@@ -484,17 +503,17 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
         runtime.send(_message(key))
     runtime.send(Key("ctrl-s"))
     host.deliver()  # the probe, on a worker thread, saw the candidate values
-    assert seen == [("https://new", "candidate")]
+    assert seen == [("https://new/", "candidate")]
     # The main thread never saw them (the check dropped the cache; it was never filled).
     main = get_settings().wiz  # type: ignore[attr-defined]
-    assert (main.base_url, main.token) == ("https://old", None)
+    assert (str(main.server.url), WIZ_TOKEN.find(main.server)) == ("https://old/", None)
     assert active_overlay() is None
     host.deliver()  # ... then the write ran, on its own thread
     host.join()
 
     # The write went through the repository (the cache was dropped by it, not filled).
-    assert _wiz_section(_isolated_config)["base_url"] == "https://new"
-    assert stores.entries() == {"untaped/default/wiz": "candidate"}
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://new/"}}
+    assert list(current_memory_store().entries.values()) == ["candidate"]
     assert config != _isolated_config.read_bytes()
 
 
@@ -506,7 +525,9 @@ def test_a_failed_check_leaves_the_files_and_the_cache_alone(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      base_url: https://old\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
+    )
     config = _isolated_config.read_bytes()
     FAIL.append(True)
     screen = _build()  # building tests the store once; nothing after that touches it
@@ -516,8 +537,9 @@ def test_a_failed_check_leaves_the_files_and_the_cache_alone(
 
     assert _isolated_config.read_bytes() == config
     assert stores.entries() == {} and stores.calls() == calls
+    assert current_memory_store().entries == {}
     after = get_settings().wiz  # type: ignore[attr-defined]
-    assert (after.base_url, after.token) == ("https://old", None)
+    assert (str(after.server.url), WIZ_TOKEN.find(after.server)) == ("https://old/", None)
 
 
 # --- timing: one check at a time, quitting during a save --------------------------
@@ -600,7 +622,8 @@ def test_quitting_during_a_save_leaves_a_complete_write(
     result = runtime.outcome.result
     assert result.touched == ("wiz",)
     assert result.interrupted is (quit_key == "ctrl-c")
-    assert _wiz_section(_isolated_config) == {"base_url": "https://new", "token_command": [program]}
+    assert _wiz_section(_isolated_config) == {"server": {"url": "https://new/"}}
+    assert _login("https://new") == "tok"
     assert stores.entries() == {}  # the replaced entry was retired too
     assert (
         "info",
@@ -713,8 +736,8 @@ def test_preflight_failure_writes_nothing(
 def test_changing_the_profile_reloads_the_forms(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://default.example\n"
-        "  prod:\n    wiz:\n      base_url: https://prod.example\n",
+        "profiles:\n  default:\n    wiz:\n      server: {url: https://default.example}\n"
+        "  prod:\n    wiz:\n      server: {url: https://prod.example}\n",
     )
 
     run = drive_screen(_build(), ["enter", "esc", "shift-tab", "ctrl-u", Paste("prod"), "enter"])
@@ -758,11 +781,16 @@ def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Pat
 
 
 def test_a_status_per_state(_isolated_config: Path) -> None:
-    specs = [make_spec(name, settings=WizProfile) for name in ("ready", "bare", "fresh", "broken")]
+    specs = [
+        make_spec(
+            name, settings=WizProfile, credentials=(Credential(name, "token", key=WizServer),)
+        )
+        for name in ("ready", "bare", "fresh", "broken")
+    ]
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    ready: {base_url: https://r, token: t}\n"
-        "    bare: {base_url: https://b}\n    broken: {base_url: [1, 2]}\n",
+        "profiles:\n  default:\n    ready: {server: {url: https://r}, token: t}\n"
+        "    bare: {server: {url: https://b}}\n    broken: {server: {url: [1, 2]}}\n",
     )
 
     frame = drive_screen(_build(*specs)).frame
@@ -804,7 +832,8 @@ def test_inherited_token_note_shows_in_the_tab(
         "profiles:\n  default:\n    wiz:\n      token: shared\n  prod: {}\nactive: default\n",
     )
 
-    run = drive_screen(_build(profile="prod"), ["enter", "enter", "tab"], size=(220, 40))
+    unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
+    run = drive_screen(_build(unmarked, profile="prod"), ["enter", "enter", "tab"], size=(220, 40))
 
     flat = _flat(run.frame)
     assert "would leave it in charge, so only keeping the current token is offered" in flat
@@ -812,34 +841,37 @@ def test_inherited_token_note_shows_in_the_tab(
     assert "Keep" in flat and "Command" not in flat and "pass" not in flat
 
 
-_UNSET = ServiceState(values={}, token_source=None)
+_UNSET = ServiceState(values={})
 
 
 def test_tabs_offer_the_same_choices_as_before(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    spec = _wiz()
     store = pick_store()
 
-    def offered(state: ServiceState, *, has_command: bool = True) -> list[str]:
+    def offered(
+        state: ServiceState, spec: PluginSpec | None = None, *, has_command: bool = True
+    ) -> list[str]:
+        spec = spec or _wiz()
         return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
 
-    plain = ServiceState(values={"base_url": "u"}, token_source="wiz.token", plaintext="old")
+    plain = ServiceState(values={}, secret_sources={"token": "wiz.token"}, plaintext="old")
     assert offered(plain) == ["move", "keep", "store", "command", "env"]
     assert offered(_UNSET) == ["store", "command", "env"]
-    inherited = ServiceState(
-        values={"base_url": "u"}, token_source="wiz.token", inherited_token=True
-    )
-    assert offered(inherited) == ["keep"]
-    assert offered(_UNSET, has_command=False) == ["store", "enter"]
-    assert offered(ServiceState(values={}, token_source=None, inherited_command=True)) == [
-        "store",
-        "command",
-    ]
-    assert [c.value for c in _token_choices(spec, _UNSET, None, has_command=True)] == [
+    inherited = ServiceState(values={}, secret_sources={"token": "wiz.token"}, inherited_token=True)
+    # A stored login answers before default's plain text, so every choice works.
+    assert offered(inherited) == ["keep", "store", "command", "env"]
+    assert [c.value for c in _token_choices(_wiz(), _UNSET, None, has_command=True)] == [
         "command",
         "env",
+    ]
+    unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
+    assert offered(inherited, unmarked) == ["keep"]
+    assert offered(_UNSET, _legacy(), has_command=False) == ["store", "enter"]
+    assert offered(ServiceState(values={}, inherited_command=True), unmarked) == [
+        "store",
+        "command",
     ]
 
 
@@ -934,9 +966,9 @@ def test_the_token_command_is_primed_before_the_background_check(tmp_path: Path)
     seen: list[str] = []
 
     def probe() -> str:
-        token = app_context().section("wiz", WizProfile).token
-        assert token is not None
-        seen.append(token.get_secret_value())  # cached by the suspended command
+        server = app_context().section("wiz", WizProfile).server
+        assert server is not None
+        seen.append(WIZ_TOKEN.get(server).get_secret_value())  # cached by the suspended command
         return "ok"
 
     spec = make_spec(
@@ -1007,8 +1039,8 @@ def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None
 
 
 _TWO_PROFILES = (
-    "profiles:\n  default:\n    wiz:\n      base_url: https://default.example\n"
-    "  prod:\n    wiz:\n      base_url: https://prod.example\n"
+    "profiles:\n  default:\n    wiz:\n      server: {url: https://default.example}\n"
+    "  prod:\n    wiz:\n      server: {url: https://prod.example}\n"
 )
 
 
@@ -1105,15 +1137,15 @@ def test_save_anyway_survives_another_plugin_saving(
         "esc",
         "down",
         "enter",
-        "enter",  # back in wiz's form, on the token field it failed on
-        "tab",  # the buttons: Save anyway
+        "enter",  # back in wiz's form, on its buttons
+        "left",  # Save anyway
         "enter",
     ]
 
     run = drive_screen(_build(_envy(), _wiz()), keys)
 
-    assert _wiz_section_for(_isolated_config, "envy")["base_url"] == "https://envy"
-    assert _wiz_section(_isolated_config)["base_url"] == "https://wiz"
+    assert _wiz_section_for(_isolated_config, "envy")["server"] == {"url": "https://envy/"}
+    assert _wiz_section(_isolated_config)["server"] == {"url": "https://wiz/"}
     assert run.model.saved == (("default", "envy"), ("default", "wiz"))
     assert run.model.failed == {}
 

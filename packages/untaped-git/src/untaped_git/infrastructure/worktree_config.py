@@ -9,6 +9,7 @@ is the store's own: it uses :class:`RepoStore`'s internals.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorCategory, UntapedError, find_program
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
+from untaped_git.infrastructure.helper_nonce import helper_nonce
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
     config_value,
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
 
 _PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+_NONCE = re.compile(r"--nonce [0-9a-f]+")
 #: The owning plugin's name, in the entry's admin directory (``worktrees/<id>``).
 OWNER_MARK = "untaped-owner"
 
@@ -54,7 +57,8 @@ def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | No
         _worktree_config(store, worktree, "--unset-all", helper, check=False)
         if store._helper_only:
             _worktree_config(store, worktree, "--add", helper, "")
-        _worktree_config(store, worktree, "--add", helper, _helper_command(profile))
+        nonce = helper_nonce(store._path, worktree, create=True)
+        _worktree_config(store, worktree, "--add", helper, _helper_command(profile, nonce))
 
 
 def enable_worktree_config(store: RepoStore) -> None:
@@ -146,6 +150,23 @@ def repair_worktree(store: RepoStore, worktree: Path) -> None:
     store._git(["worktree", "repair", os.path.abspath(worktree)])
     if _owned_before_repair(store, entry):
         _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+        _renew_helper_nonce(store, worktree)
+
+
+def _renew_helper_nonce(store: RepoStore, worktree: Path) -> None:
+    """Give untaped's helper line the moved worktree's nonce, keeping the rest of the line."""
+    result = store._git(
+        ["config", "--worktree", "--null", "--get-regexp", r"^credential\..*\.helper$"],
+        cwd=worktree,
+        capture=True,
+        check=False,
+    )
+    nonce = helper_nonce(store._path, worktree, create=True)
+    for entry in result.text.split("\0"):
+        key, _, value = entry.partition("\n")
+        renewed = _NONCE.sub(f"--nonce {nonce}", value)
+        if key and renewed != value:
+            _worktree_config(store, worktree, "--fixed-value", "--replace-all", key, renewed, value)
 
 
 def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:
@@ -215,9 +236,10 @@ def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool =
     store._git(["config", "--worktree", *args], cwd=worktree, check=check)
 
 
-def _helper_command(profile: str | None) -> str:
+def _helper_command(profile: str | None, nonce: str | None) -> str:
     executable = find_program("untaped") or str(Path(sys.argv[0]).resolve())
     command = f"!{shlex.quote(executable)}"
     if profile:
         command += f" --profile {shlex.quote(profile)}"
-    return f"{command} git credential"
+    command += " git credential"
+    return f"{command} --nonce {nonce}" if nonce else command

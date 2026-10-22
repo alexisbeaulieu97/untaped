@@ -12,6 +12,7 @@ from untaped.config.use_cases import (
     Note,
     RankProviders,
     SetSetting,
+    SetSettings,
     SettingChange,
     UnsetSetting,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "Note",
     "RankProviders",
     "SetSetting",
+    "SetSettings",
     "SettingChange",
     "SettingEntry",
     "SettingsFileRepository",

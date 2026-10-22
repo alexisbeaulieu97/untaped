@@ -17,13 +17,13 @@ Point a profile at the controller, give it a token, then check the
 connection:
 
 ```bash
-untaped config set awx.base_url https://aap.example.com
-untaped auth set awx
+untaped config set awx.server.url https://aap.example.com
+untaped auth login awx
 untaped config set awx.api_prefix /api/v2/   # standalone AWX only
 untaped awx ping
 ```
 
-`ping` names the authenticated `user`. `auth set` stores the token with your
+`ping` names the authenticated `user`. `auth login` stores the token with your
 password store, not in `config.yml`; an environment variable also works. See
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens)
 and the

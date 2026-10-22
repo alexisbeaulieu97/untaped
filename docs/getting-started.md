@@ -63,15 +63,20 @@ editor and written as `untaped plugin rank` writes it; its `+ add a ranking`
 row takes `CONTRACT METHOD PROVIDER...` as `plugin rank` does. Any other list
 or map is one line of JSON, as `config set` takes it.
 
-A service's first row is its connection. Enter opens its form: the settings
-the plugin needs (such as the base URL) and how to get the token (tabs):
-store it with your password store (as `untaped auth set` does), move a
-plaintext one there, give a command that prints it (`token_command`), use an
-environment variable, or keep the current one. Saving checks the service online with what you typed before anything is
-written; if the check fails, the reason is shown under the form and you can fix
-the values, or `Save anyway`. An exported `UNTAPED_<SECTION>__TOKEN` (for
-example `UNTAPED_GITHUB__TOKEN`) wins over the token you type in that check, as
-it does in `doctor`.
+A service's first row is what it needs set up. Enter opens its form: every
+setting the plugin marks as needed (such as its server's URL), each in the
+field its type takes, then, for each of its secrets (usually one token), how
+to get it (tabs): store it with your password store (as `untaped auth login`
+does), move a plaintext one there, give a command that prints it, use an
+environment variable, or keep the current one. Each secret is filed for the
+server the form saves. Saving checks the service online with what you typed
+before anything is written; if the check fails, the reason is shown under the
+form and you can fix the values, or `Save anyway`. Only the settings you
+changed are written, in one write, so a value the profile inherits stays
+inherited; if one of them changed in the config file since the form opened,
+nothing is written and the form says so. An exported
+`UNTAPED_<SECTION>__TOKEN` (for example `UNTAPED_GITHUB__TOKEN`) wins over the
+token you type in that check, as it does in `doctor`.
 
 Esc leaves the screen; ctrl-c leaves it too and exits 130. Naming a new
 profile in the profile field shows `default`'s values and creates the profile
@@ -106,32 +111,32 @@ ones that ask for a token.
 
 Settings live in `~/.untaped/config.yml`. Write them with `untaped config set`
 rather than by hand, so they are validated. Tokens do not belong there:
-`untaped auth set` reads one without echo and stores it with this machine's
-password store (macOS keychain, Secret Service or `pass`), and the config only
-names the command that reads it back.
+`untaped auth login` reads one without echo and stores it with this machine's
+password store (macOS keychain, Secret Service or `pass`), filed for the
+server the settings name.
 
 ```bash
-untaped auth set github
-untaped config set jira.base_url https://jira.example.com
-untaped auth set jira
-untaped config set awx.base_url https://aap.example.com
-untaped auth set awx
+untaped auth login github
+untaped config set jira.server.url https://jira.example.com
+untaped auth login jira
+untaped config set awx.server.url https://aap.example.com
+untaped auth login awx
 ```
 
 In scripts, pipe the token in instead:
 
 ```bash
-printf '%s\n' "$GITHUB_TOKEN" | untaped auth set github --stdin
+printf '%s\n' "$GITHUB_TOKEN" | untaped auth login github
 ```
 
-Already have tokens in `config.yml`? `untaped auth migrate` moves them all.
+Already have tokens in `config.yml`? `untaped config migrate` moves them all.
 More in [Tokens](./configuration.md#tokens).
 
-Check what is set. Secrets show as `***`:
+Check what is set:
 
 ```bash
 untaped config list
-untaped config get github.token
+untaped auth status
 ```
 
 The [configuration reference](./reference/config.md) lists every setting,
@@ -144,8 +149,8 @@ override it field by field.
 
 ```bash
 untaped profile create prod --copy-from default
-untaped --profile prod config set awx.base_url https://aap.prod.example.com
-untaped --profile prod auth set awx
+untaped --profile prod config set awx.server.url https://aap.prod.example.com
+untaped --profile prod auth login awx
 
 untaped profile list
 untaped --profile prod awx ping

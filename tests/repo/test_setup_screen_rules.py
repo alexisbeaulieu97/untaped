@@ -22,8 +22,7 @@ from untaped.settings import get_profile_settings_model
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
 SCREEN = ("management/setup_screen.py", "management/setup_sections.py")
-#: The connection form, and the keys its row hides, name their own fields until the model
-#: declares its connection.
+#: The setup form, and the state behind it, which reads 11.0's token settings by name.
 CONNECTION = "management/setup_connection.py"
 CONNECTION_KEYS = "management/setup_state.py"
 ALLOWED_CONFIG = frozenset(
@@ -50,10 +49,10 @@ FILE_WRITERS = frozenset(
 #: Strings of the screen's modules that are also a setting's name, and why each is not one.
 ALLOWED_NAMES: dict[str, dict[str, str]] = {
     CONNECTION: {
-        "token": "the token tabs' field, until the form serves every Secret (config-browser C2)",
+        "url": "an acronym field labels write upper case (`Base URL`), not a setting's name",
     },
     CONNECTION_KEYS: {
-        name: "the token's own keys, read from the file, until auth serves every Secret"
+        name: "11.0's token settings, read from the file until 12.0 removes them"
         for name in ("token", "token_command")
     },
 }

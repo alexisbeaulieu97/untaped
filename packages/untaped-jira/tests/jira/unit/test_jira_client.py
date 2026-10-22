@@ -4,24 +4,23 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
 
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr, ValidationError
+from pydantic import ValidationError
 
 from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, get_config_section
 from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS
 from untaped_jira.errors import JiraError
 from untaped_jira.infrastructure import JiraClient
-from untaped_jira.settings import JiraSettings
+from untaped_jira.settings import TOKEN, JiraSettings
 
 BASE = "https://jira.example.com"
 
 
 def _settings(**overrides: object) -> JiraSettings:
-    return JiraSettings.model_validate({"base_url": BASE, "token": "jira_pat", **overrides})
+    return JiraSettings.model_validate({"server": {"url": BASE}, **overrides})
 
 
 def _search_page(start: int, total: int, *keys: str) -> httpx.Response:
@@ -42,27 +41,24 @@ def test_client_sends_pat_bearer_header_and_joins_api_prefix() -> None:
     assert route.calls[0].request.headers["accept"] == "application/json"
 
 
-@pytest.mark.parametrize(
-    ("config", "setting"),
-    [
-        (JiraSettings(token=SecretStr("jira_pat")), r"jira\.base_url"),
-        (JiraSettings(base_url=BASE, token=SecretStr("   ")), r"jira\.token"),
-    ],
-)
-def test_client_requires_base_url_and_non_blank_token(config: JiraSettings, setting: str) -> None:
-    with pytest.raises(ConfigError, match=setting):
-        JiraClient(config)
+def test_client_requires_a_server() -> None:
+    with pytest.raises(ConfigError, match=r"jira\.server is not set"):
+        JiraClient(JiraSettings())
 
 
-def test_token_falls_back_to_jira_api_token(
-    jira_config: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    jira_config.write_text(f"profiles:\n  default:\n    jira:\n      base_url: {BASE}\n")
+def test_a_blank_token_is_not_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_JIRA__TOKEN", "   ")
+    with pytest.raises(ConfigError, match="no jira token") as caught:
+        JiraClient(_settings())
+    assert "untaped auth login jira" in (caught.value.hint or "")
+
+
+def test_token_falls_back_to_jira_api_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_JIRA__TOKEN")
     monkeypatch.setenv("JIRA_API_TOKEN", "from-env")
-    token = get_config_section("jira", JiraSettings).token
-    assert token is not None
-    assert token.get_secret_value() == "from-env"
+    server = get_config_section("jira", JiraSettings).server
+    assert server is not None
+    assert TOKEN.get(server).get_secret_value() == "from-env"
 
 
 @pytest.mark.parametrize(

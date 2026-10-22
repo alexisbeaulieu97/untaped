@@ -3,8 +3,10 @@
 Enable it with ``pytest_plugins = ["untaped.testing.plugin"]`` in a suite's
 top-level ``conftest.py``. Every test then runs with its own ``HOME`` and
 ``UNTAPED_CONFIG``, no ``UNTAPED_*``/``GIT_CONFIG_*`` variables, no ambient
-tokens, no controlling terminal, plain non-colour output, and a fresh
-settings registry. It is not auto-loaded, so installing untaped never changes
+tokens (the variables every declared ``Credential`` reads among them), an
+in-memory password store (:class:`untaped.testing.MemoryStore`), no
+controlling terminal, plain non-colour output, and a fresh settings
+registry. It is not auto-loaded, so installing untaped never changes
 another project's tests.
 """
 
@@ -18,12 +20,13 @@ from pathlib import Path
 import pytest
 
 from untaped.auth import clear_token_cache
+from untaped.credentials import credential_env_names
 from untaped.deprecated_keys import reset_key_warnings
 from untaped.projects import _forget as _forget_projects
 from untaped.prompts import reset_terminal_override, set_terminal_override
 from untaped.settings import get_settings, reset_config_registry
 from untaped.store import _forget_opened
-from untaped.testing import no_terminal
+from untaped.testing import memory_store, no_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
@@ -47,7 +50,8 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
     with pytest.MonkeyPatch.context() as patch:
         uv_cache = os.environ.get("UV_CACHE_DIR") or str(Path.home() / ".cache" / "uv")
         for key in list(os.environ):
-            if key.startswith(("UNTAPED_", "GIT_CONFIG_")) or key in _AMBIENT_ENV:
+            ambient = key in _AMBIENT_ENV or key in credential_env_names()
+            if key.startswith(("UNTAPED_", "GIT_CONFIG_")) or ambient:
                 patch.delenv(key)
         patch.setenv("HOME", str(home))
         patch.setenv("UV_CACHE_DIR", uv_cache)
@@ -68,7 +72,8 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
         terminal_token = set_terminal_override(no_terminal)
         try:
-            yield
+            with memory_store():
+                yield
         finally:
             reset_terminal_override(terminal_token)
             _forget_opened()  # the store layouts this test held lived under its HOME

@@ -6,16 +6,15 @@ profile itself, then each service's marked fields (or its invalid
 settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
 is a value to ask the user for); ``by`` says who runs it, read from the
-marks: ``user`` for a step that asks for or reveals a
-:class:`~untaped.setting_marks.Secret`, so a secret never passes through
-an agent. Service state comes from :mod:`untaped.management.setup_state`
-(shared with the setup screen) and the online rows are the plugins' own
-online doctor checks.
+marks: ``user`` for a step that asks for or reveals a declared
+credential's secret, so a secret never passes through an agent. Service
+state comes from :mod:`untaped.management.setup_state` (shared with the
+setup screen) and the online rows are the plugins' own online doctor
+checks.
 """
 
 from __future__ import annotations
 
-import json
 import shlex
 
 from untaped.auth import (
@@ -161,14 +160,18 @@ def _service_rows(
     marks = service_marks(spec)
     for field in marks.required:
         step = f"{name}.{field.key}"
-        if field.path == ("token",) and field.secret is not None:
+        if field.credential is not None and field.key in state.missing:
+            rows.append(_login_row(spec, field, profile))
+        elif field.credential is not None:
+            rows.append(_credential_row(spec, field, state, profile))
+        elif field.path == ("token",) and field.credential is None and field.is_secret:
             rows.append(_token_row(spec, state, profile, store_name=store_name))
         elif field.key not in state.missing:
             rows.append(_row(step, name, "done", _done(field, state)))
         else:
             run = command_argv(set_command(field, marks, section=section), profile=profile)
-            # A secret never passes through an agent, marked Secret or not.
-            by: SetupActor = "user" if field.secret is not None or field.masked else "agent"
+            # A secret never passes through an agent, declared or not.
+            by: SetupActor = "user" if field.is_secret or field.masked else "agent"
             detail = f"{section}.{field.key} is not set"
             rows.append(_row(step, name, "todo", detail, run, by=by))
     return rows
@@ -180,6 +183,46 @@ def _done(field: MarkedField, state: ServiceState) -> str:
         return state.shown[field.key]
     source = state.sources.get(field.key)
     return f"set by {source}" if source else "set"
+
+
+def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
+    """A credential's step: ``auth login``, the person's, with its ``suggest`` when on PATH."""
+    credential = field.credential
+    assert credential is not None
+    name = spec.name
+    login = set_command(field, service_marks(spec), section=name)
+    run = command_argv(login, profile=profile)
+    detail = f"no {credential.label} for this run's {name} settings"
+    suggest = credential.suggest
+    if suggest is not None and find_program(suggest.argv[0]) is not None:
+        command = command_argv(
+            [*login, "--token-command", shlex.join(suggest.argv)], profile=profile
+        )
+        when = f"{suggest.note}, " if suggest.note else ""
+        detail = f"{detail}; or, {when}let `{shlex.join(suggest.argv)}` print it: " + (
+            f"`{command_line(shlex.join(command))}`"
+        )
+    return _row(f"{name}.{field.key}", name, "todo", detail, run, by="user")
+
+
+def _credential_row(spec: PluginSpec, field: MarkedField, state: ServiceState, profile: str) -> Row:
+    """A found credential: done, unless it is still plain text in its deprecated setting.
+
+    ``config migrate`` moves it to a stored login inside its own process, but
+    it asks first (an older untaped sharing the home stops reading it), so the
+    step is the user's.
+    """
+    name = spec.name
+    step = f"{name}.{field.key}"
+    source = state.sources.get(field.key, "")
+    detail = f"{field.key} from {source}"
+    if source == f"{name}.{field.key}":
+        detail = f"{detail}, plain text in the config file; move it to a stored login"
+        run = command_argv("config migrate", profile=profile)
+        return _row(step, name, "failed", detail, run, by="user")
+    if source.startswith(f"{name}."):
+        detail = f"{detail}; `config migrate` moves {source} to a stored login"
+    return _row(step, name, "done", detail)
 
 
 def _token_row(
@@ -228,13 +271,7 @@ def _token_row(
         )
         command = ["config", "set", f"{section}.token_command", "<COMMAND>"]
         run = command_argv(command, profile=profile)
-    suggest = None if token is None or token.secret is None else token.secret.suggest
-    if suggest is not None and find_program(suggest.argv[0]) is not None:
-        argv = json.dumps(list(suggest.argv))
-        command = command_argv(["config", "set", f"{section}.token_command", argv], profile=profile)
-        reuse = command_line(shlex.join(command))
-        when = f"{suggest.note}, " if suggest.note else ""
-        detail = f"{detail}; or, {when}let `{shlex.join(suggest.argv)}` print it: `{reuse}`"
+    del token
     return _row(step, name, "todo", detail, run, by="user")
 
 
@@ -276,7 +313,7 @@ def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
 def _by(spec: PluginSpec, run: list[str] | None, *, automatic: bool) -> SetupActor:
     """Who runs a fix: an automatic one is the agent's.
 
-    Any other fix that writes a secret (``auth …``, a ``Secret`` field or
+    Any other fix that writes a secret (``auth …``, a secret's setting or
     its command setting, from the marks) is the user's.
     """
     if automatic:
@@ -285,7 +322,7 @@ def _by(spec: PluginSpec, run: list[str] | None, *, automatic: bool) -> SetupAct
     secrets = {
         f"{spec.name}.{key}"
         for field in service_marks(spec).secrets
-        for key in (field.key, field.command)
+        for key in (field.key, f"{field.key}_command")
     }
     secret = command[:1] == ["auth"] or any(arg in secrets for arg in command)
     return "user" if secret else "agent"

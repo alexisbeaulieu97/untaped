@@ -6,7 +6,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import get_config_section
+from untaped.sdk import deprecated_behaviour, get_config_section
+
+NONCELESS_HELPER = deprecated_behaviour("nonceless-credential-helper", removed_in=12)
+"""``git credential get`` answering a helper line without ``--nonce`` (11.0 wrote them)."""
 
 
 class GitSettings(BaseModel):

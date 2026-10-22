@@ -6,7 +6,7 @@ from importlib.resources import files
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PluginSpec, SkillAsset, online_check
-from untaped_awx.settings import RESOURCES, AwxSettings
+from untaped_awx.settings import RESOURCES, TOKEN, AwxSettings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -59,5 +59,6 @@ SPEC = PluginSpec(
     ),
     doctor_checks=(online_check("awx.api", section="awx", probe=_probe_api),),
     caches=(RESOURCES,),
+    credentials=(TOKEN,),
     provides={"lint": _lint},
 )

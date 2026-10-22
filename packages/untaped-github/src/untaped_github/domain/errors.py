@@ -68,7 +68,7 @@ def github_failures() -> Iterator[None]:
     """Attribute GitHub failures raised inside the block.
 
     A rejected token (401) becomes the standard ``auth`` error with the
-    ``auth set github`` hint; a rate limit becomes ``unavailable``
+    ``auth login github`` hint; a rate limit becomes ``unavailable``
     (GitHub answers an exhausted budget with 403 too: retry later).
     """
     try:
