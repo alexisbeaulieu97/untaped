@@ -16,9 +16,10 @@ and never checks. :func:`refresh_option` is the ``--refresh``/``--cached``
 option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
-Layout: each key is one file under ``<plugin dir>/cached/<name>/<profile>/``
-(``cached/<name>.v<layout>/`` when the cache follows a store; no profile
-folder under ``split="none"``) on core's data file (:mod:`untaped.data_file`):
+Layout: each key is one file under ``<plugin dir>/cached/<name>/<settings digest>/``
+(``cached/<name>.v<layout>/`` when the cache follows a store; no digest
+folder under ``split="none"``; :mod:`untaped.settings_digest` names it) on
+core's data file (:mod:`untaped.data_file`):
 its first line says what the cache knows about the key (:class:`Freshness`),
 and a cache declared with ``model=`` keeps the value itself on the second,
 one file per version of the value. Files are written atomically and
@@ -36,6 +37,7 @@ way a key past its max age is.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import importlib.metadata
@@ -365,6 +367,8 @@ _HELD: ContextVar[frozenset[Path]] = ContextVar("untaped_cache_held", default=fr
 _PARTITION_HORIZON = timedelta(days=30)
 #: A version's file of a key: ``<segment>[.p<hash>].v<hash>.json``.
 _VERSIONED = re.compile(r"(?P<stem>.+)\.v[0-9a-f]{8}\.json")
+#: An untyped cache's one file per key and partition.
+_PLAIN = re.compile(r"(?P<stem>.+)\.json")
 
 
 class Cache[M = None]:
@@ -393,7 +397,9 @@ class Cache[M = None]:
     freshness are one file per version of the value (its type's shape and
     ``version``): a key filled by another version is served, outdated, when
     a refresh fails or under ``--cached``. ``split`` says whether the files
-    are kept per profile (``"settings"``) or once for every profile
+    are kept per settings of the plugin's own section (``"settings"``: a
+    folder per :mod:`settings digest <untaped.settings_digest>`, shared by
+    every profile whose section reads the same) or once for all of them
     (``"none"``, when the key and partition already say whose data it is).
     Two declarations with the same values (the same callables) are equal.
     """
@@ -806,8 +812,10 @@ class Cache[M = None]:
             version=version,
         )
         kept_it = self._keep(own, key, label, saved, typing, value)
-        if kept_it and typing is not None and saved.error is None:
-            self._sweep(paths, key, own, max_age)
+        if kept_it and saved.error is None:
+            if typing is not None:
+                self._sweep(paths, key, own, max_age)
+            self._sweep_siblings(paths, key)
         return saved, kept_it
 
     def _say_interrupted(self, freshness: Freshness) -> None:
@@ -942,6 +950,9 @@ class Cache[M = None]:
     def freshness(self, key: str, *, partition: str | None = None) -> Freshness:
         """What the cache knows about ``key`` now, without a lock (a status row).
 
+        Finding the folder loads the plugin's settings, so an invalid section
+        raises its :class:`ConfigError`, as :meth:`max_age` does.
+
         Reads each file's first line only: a value that no longer reads is
         found by :meth:`serve`, which refills it.
         """
@@ -1015,16 +1026,20 @@ class Cache[M = None]:
         return named_plugin_dir(self.plugin) / "caches" / self.name
 
     def _folder(self) -> Path:
-        """The folder this cache's files are in for the active settings: computed here only."""
-        from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
+        """The folder this cache's files are in for the active settings: computed here only.
+
+        Under ``split="settings"``, the root's folder named by the plugin's
+        settings digest (:mod:`untaped.settings_digest`).
+        """
+        from untaped.settings_digest import settings_digest  # noqa: PLC0415 - no cycle
 
         root = self._root(None if self.store is None else self.store.layout)
-        return root if self.split == "none" else root / _segment(selected_profile())
+        return root if self.split == "none" else root / settings_digest(self.plugin)
 
     def _paths(
         self, key: str, partition: str | None = None, *, folder: Path | None = None
     ) -> _KeyPaths:
-        """``key``'s folder, file stem and lock in ``partition`` (the active profile's folder)."""
+        """``key``'s folder, file stem and lock in ``partition`` (the active settings' folder)."""
         folder = self._folder() if folder is None else folder
         stem = _segment(key) if partition is None else f"{_segment(key)}.p{_digest(partition)}"
         return _KeyPaths(folder, stem, folder / f"{stem}.lock")
@@ -1190,43 +1205,111 @@ class Cache[M = None]:
         return True
 
     def _sweep(self, paths: _KeyPaths, key: str, own: Path, max_age: timedelta) -> None:
-        """After a complete fill, under the key's lock: drop values no reader would serve.
+        """After a typed cache's complete fill, under the key's lock: drop what no reader serves.
 
         This key and partition's files of other versions go once past
         ``max_age``: whoever reads one refills it anyway. Another
         partition's files of the key (a rotated credential) go only past
-        the longer of 30 days and ten times the declared max age, under
-        their own lock taken without waiting: a folder shared by profiles
-        may serve one whose max age is longer than this one's.
+        :meth:`_horizon`, under their own lock taken without waiting: a
+        folder shared by profiles may serve one whose max age is longer
+        than this one's.
         """
-        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
-
         now = _utcnow()
-        horizon = max(_PARTITION_HORIZON, 10 * self.default_max_age)
-        segment = _segment(key)
-        for entry in _listed(paths.dir):
-            matched = _VERSIONED.fullmatch(entry.name)
-            if matched is None or entry == own:
+        for entry, stem, refreshed in self._key_files(paths.dir, key, _VERSIONED):
+            if entry == own:
                 continue
-            stem = matched["stem"]
-            if stem != segment and not stem.startswith(f"{segment}.p"):
-                continue
-            found = read_lines(entry, value=False)
-            if not isinstance(found, Lines) or found.stamp.get("key") != key:
-                continue  # unreadable, or another key whose name begins alike
-            refreshed = parse_utc(found.stamp.get("refreshed_at"))
             if stem == paths.stem:
                 if refreshed is None or now - refreshed >= max_age:
                     entry.unlink(missing_ok=True)
                 continue
-            if refreshed is not None and now - refreshed < horizon:
+            self._sweep_other(paths.dir, entry, stem, now - self._horizon(), key, refreshed)
+
+    def _sweep_siblings(self, paths: _KeyPaths, key: str) -> None:
+        """After a complete fill, under the key's lock: the key in other settings' folders.
+
+        Its files there (settings since changed, every partition and
+        version) go past :meth:`_horizon`, under their own lock taken
+        without waiting; a folder left with nothing but free locks is
+        removed. Nothing under ``split="none"``, which has one folder.
+        """
+        if self.split == "none":
+            return
+        cutoff = _utcnow() - self._horizon()
+        for sibling in _listed(paths.dir.parent):
+            if sibling == paths.dir or not sibling.is_dir():
                 continue
-            other = _KeyPaths(paths.dir, stem, paths.dir / f"{stem}.lock")
-            try:
-                with self._held(other, timeout=0.0, label=key):
+            for entry, stem, refreshed in self._key_files(sibling, key, _VERSIONED, _PLAIN):
+                self._sweep_other(sibling, entry, stem, cutoff, key, refreshed)
+            self._remove_if_unused(sibling)
+
+    def _horizon(self) -> timedelta:
+        """How long a key's files in another partition or folder stay: 30 days or 10 max ages."""
+        return max(_PARTITION_HORIZON, 10 * self.default_max_age)
+
+    @staticmethod
+    def _key_files(
+        folder: Path, key: str, *names: re.Pattern[str]
+    ) -> Iterator[tuple[Path, str, datetime | None]]:
+        """``key``'s files in ``folder``: path, stem, refreshed.
+
+        A name is read by the first of ``names`` whose stem is the key's
+        (``x.vdeadbeef.json`` is key ``x``'s version, or key ``x.vdeadbeef``'s
+        one file); the stamp says which key it holds.
+        """
+        segment = _segment(key)
+        for entry in _listed(folder):
+            stems = (each["stem"] for name in names if (each := name.fullmatch(entry.name)))
+            stem = next(
+                (each for each in stems if each == segment or each.startswith(f"{segment}.p")),
+                None,
+            )
+            if stem is None:
+                continue
+            refreshed = _stamped(entry, key)
+            if refreshed is not False:
+                yield entry, stem, refreshed
+
+    def _sweep_other(
+        self,
+        folder: Path,
+        entry: Path,
+        stem: str,
+        cutoff: datetime,
+        key: str,
+        refreshed: datetime | None,
+    ) -> None:
+        """Delete ``entry`` (listed as ``refreshed``) refreshed before ``cutoff``, its lock free.
+
+        The stamp is read again under the lock: another process may have
+        refilled the file since it was listed.
+        """
+        if refreshed is not None and refreshed > cutoff:
+            return
+        other = _KeyPaths(folder, stem, folder / f"{stem}.lock")
+        try:
+            with self._held(other, timeout=0.0, label=key):
+                if _refreshed_before(entry, key, cutoff):
                     entry.unlink(missing_ok=True)
+        except _LockError:
+            pass  # busy, or its lock won't open: the next complete fill tries again
+
+    def _remove_if_unused(self, folder: Path) -> None:
+        """Remove ``folder`` when it holds only locks, each free; else leave it as it is."""
+        entries = _listed(folder)
+        if not entries or any(entry.suffix != ".lock" for entry in entries):
+            return
+        for lock in entries:
+            stem = lock.name.removesuffix(".lock")
+            try:
+                with self._held(_KeyPaths(folder, stem, lock), timeout=0.0, label=stem):
+                    lock.unlink(missing_ok=True)
             except _LockError:
-                continue  # busy, or its lock won't open: the next complete fill tries again
+                return  # a fill in progress: it keeps the folder
+        # Only when empty: another process may have just written to it. One
+        # creating its first lock here in the same instant fails that fill
+        # ("could not lock"); the folder has seen no fill for the horizon.
+        with contextlib.suppress(OSError):
+            folder.rmdir()
 
     @contextmanager
     def _task(self, text: str, parent: ProgressHandle) -> Iterator[ProgressHandle]:
@@ -1458,6 +1541,25 @@ def versioned(typing: ValueTyping, version: str | None) -> str:
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:8]
+
+
+def _stamped(entry: Path, key: str) -> datetime | None | Literal[False]:
+    """When ``entry``'s stamp says ``key`` was refreshed; ``False`` when it isn't ``key``'s file.
+
+    An unreadable file, or another key's whose name begins alike, is not.
+    """
+    from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
+
+    found = read_lines(entry, value=False)
+    if not isinstance(found, Lines) or found.stamp.get("key") != key:
+        return False
+    return parse_utc(found.stamp.get("refreshed_at"))
+
+
+def _refreshed_before(entry: Path, key: str, cutoff: datetime) -> bool:
+    """Whether ``entry`` is ``key``'s file, never refreshed or refreshed before ``cutoff``."""
+    refreshed = _stamped(entry, key)
+    return refreshed is not False and (refreshed is None or refreshed <= cutoff)
 
 
 def _listed(folder: Path) -> list[Path]:

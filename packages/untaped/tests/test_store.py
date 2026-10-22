@@ -15,6 +15,7 @@ from untaped import store as store_module
 from untaped.cache import Cache
 from untaped.contracts import cached
 from untaped.errors import ConfigError
+from untaped.settings_digest import settings_digest
 from untaped.store import Store, _FileInUse, _forget_opened, _in_use, _SqliteInUse
 
 
@@ -375,7 +376,7 @@ def test_a_cache_following_a_store_keeps_its_files_per_layout(tmp_path: Path) ->
     data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=3)
     cache = Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
 
-    assert cache._paths("k").file().parent == _cached() / "data.v3" / "default"
+    assert cache._paths("k").file().parent == _cached() / "data.v3" / settings_digest("acme")
     assert data._layout_folders(3) == [_cached() / "data.v3"]
     assert data._layout_folders(None) == [_caches() / "data"]
     assert cache != Cache("acme", "data", label="data", max_age=timedelta(hours=1))

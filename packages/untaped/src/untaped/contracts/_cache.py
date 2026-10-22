@@ -1,10 +1,12 @@
 """The answer cache behind ``@cached``: providers' answers kept in the owner's :class:`Cache`.
 
-One entry per provider, method, profile and arguments, keyed ``<provider>:<hash>``
-(``<hash>`` is the sha256 of the arguments' canonical JSON): the cache is the
+One entry per provider, method, settings and arguments, keyed ``<provider>:<hash>``
+(``<hash>`` is the sha256 of the arguments' canonical JSON) in the partition of
+the provider's settings digest (:mod:`untaped.settings_digest`): the cache is the
 owner's and the entry one provider's, so whatever reports an entry (a stale
-line) names whose it is. The entry is a typed cache file like any
-``Cache(model=)``'s, under the owner's ``cached/<contract>_<method>/<profile>/``:
+line) names whose it is, and an answer is never served to a provider whose
+settings read otherwise. The entry is a typed cache file like any
+``Cache(model=)``'s, under the owner's ``cached/<contract>_<method>/<owner's settings digest>/``:
 its freshness, then the answer. Its type is the return type's shape (with the
 provider's own record model's, which ``source.record`` carries), so an entry
 written for another shape of either model is a miss, never an error. A cache
@@ -48,6 +50,7 @@ from untaped.contracts._declare import Binding, Contract, binding_of
 from untaped.errors import UntapedError
 from untaped.output.progress import ProgressHandle
 from untaped.output.sink import current_sink
+from untaped.settings_digest import settings_digest
 
 #: The entries this context is filling, as ``(cache, key)``.
 _FILLING: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
@@ -193,6 +196,7 @@ def call(
                 refresh=None,
                 fill=answer.fill,
                 typing=_typing(binding, return_type(binding, name)),
+                partition=settings_digest(binding.plugin),
             )
         except _ProviderBug as exc:
             bug = exc.bug
