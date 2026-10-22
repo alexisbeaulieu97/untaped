@@ -396,6 +396,7 @@ def collect_doctor_rows(
     if plugins is None:
         rows.append(_references_row(shell, result))
         rows.append(_stores_row(shell, result))
+        rows.append(_caches_row(shell, result))
         rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
@@ -716,6 +717,43 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     return _row("stores", shell.name, _WARN, title, "; ".join(parts), _stores_fix(reasons))
 
 
+def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """What doctor notes about caches: always a pass, since every cache refills.
+
+    A cache's keys holding only another version's value, and the
+    ``cached/`` folder of a plugin not installed here (another install
+    sharing this home may use it; ``setup migrate-dirs`` offers to remove it).
+    """
+    from untaped.cache import outdated_keys  # noqa: PLC0415 - runs only in doctor
+    from untaped.management.migrate_dirs import (  # noqa: PLC0415
+        MIGRATE_COMMAND,
+        installed_names,
+    )
+    from untaped.migrations import dir_bytes, uninstalled_caches  # noqa: PLC0415
+
+    title = "no caches of another version or of a plugin not installed here"
+    parts: list[str] = []
+    for registered in result.plugins:
+        for cache in registered.spec.caches:
+            try:
+                outdated = outdated_keys(cache)
+            except Exception as exc:  # the plugin's version= or model= code runs here
+                parts.append(f"{cache.qualified}: could not check its files: {exc}")
+                continue
+            if outdated:
+                keys = plural(outdated, "key", "keys")
+                parts.append(
+                    f"{cache.qualified}: {keys} filled by another version, refilled when due"
+                )
+    for folder in uninstalled_caches(installed_names(result)):
+        parts.append(
+            f"{shown_path(folder)}: {size_text(dir_bytes(folder))} of a plugin not installed"
+            f" here (another install may use it, so only `untaped {MIGRATE_COMMAND}`"
+            " removes it)"
+        )
+    return _row("caches", shell.name, _PASS, title, "; ".join(parts) or "nothing to note")
+
+
 def _layout_text(
     store: Store, layout: Layout, references: Sequence[Reference]
 ) -> tuple[str, set[str]]:
@@ -878,9 +916,15 @@ def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
         plan,
         summary_text,
     )
+    from untaped.migrations import UNINSTALLED_CACHES  # noqa: PLC0415
 
     title = "no directories left by older versions"
-    planned = plan(result, MigrationOptions(measure=False))
+    # An uninstalled plugin's caches are only noted, in the ``caches`` row.
+    planned = [
+        item
+        for item in plan(result, MigrationOptions(measure=False))
+        if item.migration.id != UNINSTALLED_CACHES
+    ]
     failed = [
         f"{item.migration.id}: {item.error.message}" for item in planned if item.error is not None
     ]

@@ -298,3 +298,81 @@ def test_a_damaged_lock_never_hides_what_keep_names(monkeypatch: pytest.MonkeyPa
         if row["id"] == "acme.data-layouts"
     ]
     assert (row["action"], row["detail"]) == ("keep", "kept: a profile points here")
+
+
+# --- an uninstalled plugin's caches ------------------------------------------------
+
+
+def _cached(plugin: str) -> Path:
+    folder = named_plugin_dir(plugin) / "cached" / "items"
+    folder.mkdir(parents=True)
+    (folder / "k.json").write_bytes(b"x" * 5)
+    return folder.parent
+
+
+def test_an_uninstalled_plugins_caches_are_cores_row_and_applying_removes_only_them() -> None:
+    gone = _cached("gone")
+    mine = _cached("acme")
+    (named_plugin_dir("gone") / "kept.db").write_bytes(b"data")
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    [row] = [row for row in rows if row["id"] == "untaped.uninstalled-caches"]
+    assert (row["action"], row["source"]) == ("delete", str(gone))
+    assert row["detail"] == "plugin 'gone' isn't installed here; another install may use it"
+    assert gone.exists()
+
+    result = _cli("--yes")
+    assert result.exit_code == 0, result.stderr
+    assert not gone.exists()
+    assert (named_plugin_dir("gone") / "kept.db").exists()
+    assert mine.exists()
+
+
+def test_a_quarantined_plugins_caches_are_its_own() -> None:
+    _cached("acme")
+    foreign = Store("other", "data", base=_base)
+    broken = replace(make_spec("acme"), stores=(foreign,))  # quarantined: foreign-store
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(broken)])
+
+    rows = json.loads(invoke_cli(root.meta, ["setup", "migrate-dirs", "--format", "json"]).stdout)
+
+    assert [row for row in rows if row["id"] == "untaped.uninstalled-caches"] == []
+
+
+def test_a_symlinked_cached_folder_is_kept(tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    link = named_plugin_dir("gone") / "cached"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(target)
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    [row] = [row for row in rows if row["id"] == "untaped.uninstalled-caches"]
+    assert row["action"] == "keep"
+    assert _cli("--yes").exit_code == 0
+    assert link.is_symlink()
+
+
+def test_a_symlinked_plugin_folder_keeps_its_caches(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    (shared / "cached").mkdir(parents=True)
+    link = named_plugin_dir("gone")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(shared)
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    [row] = [row for row in rows if row["id"] == "untaped.uninstalled-caches"]
+    assert row["action"] == "keep"
+    assert _cli("--yes").exit_code == 0
+    assert (shared / "cached").is_dir()
+
+
+def test_a_folder_no_plugin_could_own_is_never_offered() -> None:
+    _cached(".trash")
+
+    rows = json.loads(_cli("--dry-run").stdout)
+
+    assert [row for row in rows if row["id"] == "untaped.uninstalled-caches"] == []

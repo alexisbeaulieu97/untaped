@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,10 +32,12 @@ from untaped.plugins.registry import (
     MigrationOutcome,
     MigrationRow,
     PluginContext,
+    plugins_root,
 )
 from untaped.refs import refs_dir
 from untaped.settings import (
     DEFAULT_CONFIG_PATH,
+    PLUGIN_NAME_PATTERN,
     env_var_name,
     resolve_config_path,
     resolve_state_path,
@@ -132,7 +134,10 @@ def unsafe_dir(path: Path) -> str | None:
 
 
 def _unsafe(path: Path, *, plugins: bool) -> str | None:
-    """:func:`unsafe_dir`, with ``plugins=False`` for a store's layout (which lives there)."""
+    """:func:`unsafe_dir`, with ``plugins=False`` for what lives in a plugin's folder.
+
+    A store's layout, or an uninstalled plugin's caches.
+    """
     real = _real(path)
     untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
@@ -143,8 +148,8 @@ def _unsafe(path: Path, *, plugins: bool) -> str | None:
             return f"it holds {shown_path(held)}"
     if overlapping(path, refs_dir()):
         return f"it overlaps the install references in {shown_path(refs_dir())}"
-    if plugins and overlapping(path, untaped / "plugins"):
-        return f"it overlaps the plugins' data in {shown_path(untaped / 'plugins')}"
+    if plugins and overlapping(path, plugins_root()):
+        return f"it overlaps the plugins' data in {shown_path(plugins_root())}"
     return None
 
 
@@ -287,6 +292,52 @@ def references_migration() -> DirMigration:
     return DirMigration(id=migration_id, title=title, preview=preview, apply=apply)
 
 
+#: The id of core's row for an uninstalled plugin's caches.
+UNINSTALLED_CACHES = "untaped.uninstalled-caches"
+
+
+def uninstalled_caches(installed: Collection[str]) -> list[Path]:
+    """Each ``plugins/<name>/cached`` folder whose plugin isn't one of ``installed``, by name."""
+    try:
+        folders = sorted(plugins_root().iterdir())
+    except OSError:
+        return []
+    return [
+        folder / "cached"
+        for folder in folders
+        if PLUGIN_NAME_PATTERN.fullmatch(folder.name)
+        and folder.name not in installed
+        and _there(folder / "cached")
+    ]
+
+
+def uninstalled_caches_migration(installed: Collection[str]) -> DirMigration:
+    """Core's ``untaped.uninstalled-caches`` row: the caches of plugins not installed here.
+
+    A cache refills, but another install sharing this home may still use
+    it, so nothing removes it on its own; this previewed row is where a
+    person does. Applying deletes each folder whose plugin is still not
+    installed.
+    """
+
+    def detail(path: Path) -> str:
+        return f"plugin {path.parent.name!r} isn't installed here; another install may use it"
+
+    def refused(path: Path) -> str | None:
+        if path.parent.is_symlink():
+            target = shown_path(os.path.realpath(path.parent))
+            return f"its plugin's folder is a symlink to {target}: it stays"
+        return _unsafe(path, plugins=False)
+
+    return _deleting(
+        UNINSTALLED_CACHES,
+        "caches of plugins not installed here",
+        lambda: uninstalled_caches(installed),
+        detail=detail,
+        refused=refused,
+    )
+
+
 def _deleted(items: Sequence[object]) -> str:
     return "deleted " + ", ".join(
         shown_path(item) if isinstance(item, Path) else str(item) for item in items
@@ -313,24 +364,42 @@ def delete_migration(
     """
 
     def refused(path: Path) -> str | None:
+        return unsafe_dir(path) or (guard(path) if guard is not None else None)
+
+    return _deleting(id, title, paths, detail=lambda _path: detail, refused=refused)
+
+
+def _deleting(
+    id: str,
+    title: str,
+    paths: Callable[[], Sequence[Path]],
+    *,
+    detail: Callable[[Path], str],
+    refused: Callable[[Path], str | None],
+) -> DirMigration:
+    """:func:`delete_migration` with each path's own detail and refusal (a symlink always stays)."""
+
+    def kept(path: Path) -> str | None:
         if path.is_symlink():
             target = shown_path(os.path.realpath(path))
             return f"a symlink to {target}: deleting it would leave what it points to"
-        return unsafe_dir(path) or (guard(path) if guard is not None else None)
+        return refused(path)
 
     def preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
         rows = []
         for path in _existing(paths()):
-            reason = refused(path)
+            reason = kept(path)
             if reason is not None:
                 rows.append(MigrationRow(action="keep", source=str(path), detail=f"kept: {reason}"))
                 continue
             size = dir_bytes(path) if options.measure else 0
-            rows.append(MigrationRow(action="delete", source=str(path), detail=detail, bytes=size))
+            rows.append(
+                MigrationRow(action="delete", source=str(path), detail=detail(path), bytes=size)
+            )
         return rows
 
     def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-        existing = [path for path in _existing(paths()) if refused(path) is None]
+        existing = [path for path in _existing(paths()) if kept(path) is None]
         if not existing:
             return [MigrationOutcome(id=id, action="unchanged", detail="nothing left to delete")]
         freed = 0
