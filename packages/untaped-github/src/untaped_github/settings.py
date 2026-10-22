@@ -142,9 +142,7 @@ class GithubSettings(BaseModel):
         deprecated(removed_in=12, replacement="untaped auth login github"),
     ] = Field(
         default=None,
-        description=(
-            "GitHub token for API calls and Git fetches."
-        ),
+        description=("GitHub token for API calls and Git fetches."),
     )
     token_command: Annotated[
         TokenCommand,

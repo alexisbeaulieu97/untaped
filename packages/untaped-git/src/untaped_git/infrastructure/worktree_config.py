@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import ErrorCategory, UntapedError, find_program
 from untaped_git.domain.namespace import layout_for
 from untaped_git.domain.url import https_origin
+from untaped_git.infrastructure.helper_nonce import helper_nonce
 from untaped_git.infrastructure.repo_files import (
     WorktreeEntry,
     config_value,
@@ -54,7 +55,8 @@ def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | No
         _worktree_config(store, worktree, "--unset-all", helper, check=False)
         if store._helper_only:
             _worktree_config(store, worktree, "--add", helper, "")
-        _worktree_config(store, worktree, "--add", helper, _helper_command(profile))
+        nonce = helper_nonce(store._path, worktree, create=True)
+        _worktree_config(store, worktree, "--add", helper, _helper_command(profile, nonce))
 
 
 def enable_worktree_config(store: RepoStore) -> None:
@@ -215,9 +217,10 @@ def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool =
     store._git(["config", "--worktree", *args], cwd=worktree, check=check)
 
 
-def _helper_command(profile: str | None) -> str:
+def _helper_command(profile: str | None, nonce: str | None) -> str:
     executable = find_program("untaped") or str(Path(sys.argv[0]).resolve())
     command = f"!{shlex.quote(executable)}"
     if profile:
         command += f" --profile {shlex.quote(profile)}"
-    return f"{command} git credential"
+    command += " git credential"
+    return f"{command} --nonce {nonce}" if nonce else command

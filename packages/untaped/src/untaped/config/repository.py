@@ -8,7 +8,7 @@ in ``profiles.<target>``.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import yaml
@@ -403,6 +403,40 @@ class SettingsFileRepository:
         else:
             mutate_config(_apply, renames=renames)
         return rows
+
+    def edit_profiles(
+        self,
+        *,
+        unset: Sequence[tuple[str, tuple[str, ...]]] = (),
+        put: Sequence[tuple[str, tuple[str, ...], object]] = (),
+    ) -> None:
+        """Set and unset leaves in named profiles under one lock, as ``config migrate`` does.
+
+        ``put`` is ``(profile, path, value)``, creating the profile and the
+        mappings on its path; ``unset`` is ``(profile, path)``, and a section
+        it leaves empty is removed. Nothing is validated: the caller moves
+        values whose meaning it keeps.
+        """
+
+        def _apply(data: dict[str, Any]) -> None:
+            profiles = data.setdefault("profiles", {})
+            for profile, path, value in put:
+                node = profiles.setdefault(profile, {})
+                for part in path[:-1]:
+                    node = node.setdefault(part, {})
+                node[path[-1]] = value
+            for profile, path in unset:
+                own = profiles.get(profile)
+                parent = own
+                for part in path[:-1]:
+                    parent = parent.get(part) if isinstance(parent, dict) else None
+                if not isinstance(parent, dict):
+                    continue
+                parent.pop(path[-1], None)
+                if isinstance(own, dict) and own.get(path[0]) == {}:
+                    del own[path[0]]
+
+        mutate_config(_apply)
 
     def _section_models(self) -> dict[str, type[BaseModel]]:
         return model_sections(self._profile_model())

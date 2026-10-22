@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from untaped.sdk import (
+    DeprecatedBehaviour,
     DoctorCheck,
     DoctorResult,
     PluginContext,
@@ -47,6 +48,12 @@ def _git_store(ctx: PluginContext) -> DoctorResult:
     return store_check(ctx)
 
 
+def _deprecations() -> Sequence[DeprecatedBehaviour]:
+    from untaped_git.settings import NONCELESS_HELPER  # noqa: PLC0415
+
+    return (NONCELESS_HELPER,)
+
+
 SPEC = PluginSpec(
     name="git",
     app_factory=build_app,
@@ -70,4 +77,5 @@ SPEC = PluginSpec(
         DoctorCheck(id="git.repo-store", title="git store", run=_git_store),
     ),
     contracts=_contracts,
+    deprecations=_deprecations,
 )

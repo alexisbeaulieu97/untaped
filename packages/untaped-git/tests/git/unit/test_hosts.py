@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -20,6 +22,7 @@ from untaped.testing.git import global_config
 from untaped_git import SPEC
 from untaped_git.cli import app
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
+from untaped_git.infrastructure.helper_nonce import KEY_FILE, helper_nonce
 
 
 class Forge(GitHost):
@@ -236,3 +239,52 @@ def test_hosts_lists_no_helper_of_the_users_when_only_untapeds_is_asked(
     get_settings.cache_clear()
 
     assert _helpers_first() == [[]]
+
+
+_GET = "protocol=https\nhost=github.com\npath=acme/app.git\n\n"
+
+
+def test_a_helper_without_a_nonce_still_answers_and_warns() -> None:
+    compose("hub")
+    Forge.homes = {"hub": "github.com"}
+
+    result = invoke_cli(app, ["credential", "get"], input=_GET)
+
+    assert result.stdout.splitlines() == ["username=hub", "password=token"]
+    assert "a credential helper line without --nonce is deprecated" in result.stderr
+
+
+@pytest.fixture
+def worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    folder = tmp_path / "wt"
+    subprocess.run(["git", "init", "-q", str(folder)], check=True)
+    monkeypatch.chdir(folder)
+    return folder
+
+
+def test_the_worktrees_nonce_answers(worktree: Path) -> None:
+    compose("hub")
+    Forge.homes = {"hub": "github.com"}
+    nonce = helper_nonce(worktree / ".git", worktree, create=True)
+    assert nonce is not None
+
+    result = invoke_cli(app, ["credential", "--nonce", nonce, "get"], input=_GET)
+
+    assert result.stdout.splitlines() == ["username=hub", "password=token"]
+    assert result.stderr == ""
+    assert stat.S_IMODE((worktree / ".git" / KEY_FILE).stat().st_mode) == 0o600
+
+
+def test_another_worktrees_nonce_answers_nothing(worktree: Path, tmp_path: Path) -> None:
+    compose("hub")
+    Forge.homes = {"hub": "github.com"}
+    nonce = helper_nonce(worktree / ".git", tmp_path / "elsewhere", create=True)
+    assert nonce is not None
+
+    result = invoke_cli(app, ["credential", "--nonce", nonce, "get"], input=_GET)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert f"credential helper in {worktree.resolve()} was written for another folder" in (
+        result.stderr
+    )

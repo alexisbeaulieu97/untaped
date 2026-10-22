@@ -1,4 +1,5 @@
 # untaped surface 3
+behaviour git.nonceless-credential-helper  [deprecated, removed in 12.0]
 behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
@@ -60,8 +61,8 @@ cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; 
 cfg http.ca_bundle string(format=path)? default=unset
 cfg http.proxy string? default=unset
 cfg http.timeout_seconds number(exclusiveMinimum=0) default=30.0
-cfg http.verify_hostname boolean default=true
-cfg http.verify_ssl boolean default=true
+cfg http.verify_hostname boolean default=true  [deprecated, removed in 12.0]
+cfg http.verify_ssl boolean default=true  [deprecated, removed in 12.0; use each server's verify_tls]
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
@@ -3011,6 +3012,8 @@ cli untaped config migrate --format choice=pipe
 cli untaped config migrate --format choice=raw
 cli untaped config migrate --format choice=table
 cli untaped config migrate --format choice=yaml
+cli untaped config migrate --yes alias=-y
+cli untaped config migrate --yes switch
 cli untaped config set --columns VALUE... default=unset
 cli untaped config set --columns alias=-c
 cli untaped config set --dry-run switch
@@ -3211,6 +3214,7 @@ cli untaped dotfiles unsubscribe --yes alias=-y  [experimental]
 cli untaped dotfiles unsubscribe --yes switch  [experimental]
 cli untaped dotfiles unsubscribe NAME  [experimental]
 cli untaped git
+cli untaped git credential --nonce VALUE default=unset
 cli untaped git credential ACTION
 cli untaped git credential ACTION choice=erase
 cli untaped git credential ACTION choice=get

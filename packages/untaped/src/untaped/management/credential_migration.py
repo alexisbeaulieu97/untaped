@@ -28,7 +28,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ValidationError
 
 from untaped.auth import read_command
-from untaped.config_file import mutate_config
+from untaped.config.repository import SettingsFileRepository
 from untaped.credential_store import (
     file_reference,
     find_row,
@@ -250,8 +250,16 @@ def apply(moves: Sequence[CredentialMove]) -> list[CredentialMove]:
     done = [_store(move) for move in moves]
     removed = [move for move in done if move.moves]
     tls = [move for move in done if move.tls is not None and move.how != "leftover"]
-    if removed or tls:
-        mutate_config(lambda data: _edit(data, removed, tls))
+    unset = [
+        (move.profile, (move.credential.plugin, line))
+        for move in removed
+        if move.credential is not None
+        # the unused one of the two goes too
+        for line in (move.credential.name, f"{move.credential.name}_command")
+    ]
+    put = [(move.profile, move.tls, False) for move in tls if move.tls is not None]
+    if unset or put:
+        SettingsFileRepository().edit_profiles(unset=unset, put=put)
     return done
 
 
@@ -279,31 +287,6 @@ def _store(move: CredentialMove) -> CredentialMove:
     return move
 
 
-def _edit(
-    data: dict[str, Any], removed: Sequence[CredentialMove], tls: Sequence[CredentialMove]
-) -> None:
-    profiles = data.get("profiles")
-    if not isinstance(profiles, dict):
-        return
-    for move in tls:
-        assert move.tls is not None
-        node = profiles.setdefault(move.profile, {})
-        for part in move.tls[:-1]:
-            node = node.setdefault(part, {})
-        node[move.tls[-1]] = False
-    for move in removed:
-        if move.credential is None:
-            continue
-        section, name = move.credential.plugin, move.credential.name
-        own = profiles.get(move.profile)
-        if not isinstance(own, dict) or not isinstance(values := own.get(section), dict):
-            continue
-        for line in (name, f"{name}_command"):  # the unused one goes too
-            values.pop(line, None)
-        if not values:
-            del own[section]
-
-
 def rows(moves: Sequence[CredentialMove], *, planned: bool) -> list[dict[str, str]]:
     """``config migrate``'s outcome rows for ``moves``."""
     found: list[dict[str, str]] = []
@@ -326,7 +309,7 @@ def rows(moves: Sequence[CredentialMove], *, planned: bool) -> list[dict[str, st
                     "from": "http.verify_ssl",
                     "to": ".".join(move.tls),
                     "action": "planned" if planned else "copied",
-                    "detail": "the root line stays until 12.0",
+                    "detail": "root http.verify_ssl stays for an older untaped",
                 }
             )
     return found

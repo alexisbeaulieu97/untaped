@@ -39,7 +39,7 @@ def validate_git_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme == "https":
         if parsed.username is not None or parsed.password is not None:
-            raise ValueError("a Git URL must not carry credentials; use `untaped auth set`")
+            raise ValueError("a Git URL must not carry credentials; use `untaped auth login`")
     elif parsed.scheme != "ssh":
         raise ValueError(f"{parsed.scheme}:// is not an accepted Git URL scheme")
     if not parsed.hostname or parsed.path.strip("/") == "":
