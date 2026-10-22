@@ -41,9 +41,17 @@ progress through `handle`; `read()` then computes the command's answer once,
 over every key. `serve()` opens the refresh's progress task, holds the key's
 lock while it fills (another process filling the same key is waited for,
 then served), and keeps what it knows about each key in a file under
-`plugin_dir(SPEC)/cached/`, per profile: keep your own store apart the same
-way (by key, and by profile when a setting can change what a key holds), or
-let the cache keep the data itself (below).
+`plugin_dir(SPEC)/cached/`, in a folder named by a digest of your plugin's
+own settings: the values some layer set (never a default, never the cache max
+ages or extension ranks untaped adds to your section, never core's `http`)
+and where each secret comes from (a variable's name, the config file or a
+token command), never its value. Profiles whose section reads the same share
+the folder; a changed value or another credential source gets its own. After
+a complete fill, the key's files in the folders of settings you no longer use
+go once they are older than 30 days and ten times the declared max age, and a
+folder left empty goes too. Keep your own store apart the same way (by key,
+and by settings when a setting can change what a key holds), or let the cache
+keep the data itself (below).
 A fill never serves its own cache; serving another one, it passes its
 `handle` as `serve(progress=)`, so the inner refresh shows as its phase.
 
@@ -118,9 +126,11 @@ deleted.
 `partition=` keeps another set of files for the same keys, for data that
 depends on a credential: it is hashed into the file names and never shown in
 a warning or an error. Another partition's files of a key go once they are
-older than 30 days and ten times the declared max age. `split="none"` keeps
-one folder for every profile, when the key and the partition already say
-whose data it is (by default, `split="settings"`, each profile has its own).
+older than 30 days and ten times the declared max age. The same variable or
+token command with a new value keeps its folder, so a cache whose data depends
+on who asks passes the credential as `partition=`.
+`split="none"` keeps one folder for every setting, when the key and the
+partition already say whose data it is (by default, `split="settings"`).
 `cached(key)` peeks at the kept value, `forget(key)` drops every version of
 it, and `seed()` and `read=` are refused, since the cache holds the data
 itself. A fill of a typed cache that returns no value, or a value of another
@@ -164,8 +174,15 @@ holds), and stale: `--cached` serves it with one `untaped.stale` warning whose
 `outdated` is true (`source prod: made by another version of the acme plugin;
 using data from …`). `seed()` writes no version, so data seeded from an older
 release is refreshed on its first read. Two installs at different versions
-that share a profile (a release and a development checkout) refill each
+that share settings (a release and a development checkout) refill each
 other's keys on every read. Without `version=` nothing changes.
+
+A default is not part of the settings digest, so a release that changes a
+default leaves every folder where it is. When that changed default alters
+what a cache holds, bump the cache's `version=` in the same release (a
+`code_version` that hashes the module declaring the default does it by
+itself), or keys filled under the old default are served as if they were
+current.
 
 ## Stores
 
@@ -199,7 +216,7 @@ exits: every reader shares it, and only whoever moves a layout takes it
 alone. Open the store through `open()` every time, before the file exists.
 
 A store holds only data you can recompute: never settings, state, or anything
-a user typed. Keying it by profile, when a setting changes what it holds, is
+a user typed. Keying it by settings, when a setting changes what it holds, is
 yours to do inside it. `untaped lint` reports `lint.store-format` where a
 plugin passes a `plugin_dir(...)` or `~/.untaped` path straight to
 `sqlite3.connect`, `shelve.open` or `dbm.open`; a file whose layout every

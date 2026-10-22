@@ -46,6 +46,7 @@ from untaped.output.sink import (
     open_tasks,
     recording,
 )
+from untaped.settings_digest import settings_digest
 from untaped.testing import CacheClock, CliResult, cache_clock, invoke_cli, progress_clock
 from untaped.upstream import PROBE_TIMEOUT
 
@@ -223,10 +224,10 @@ def test_first_use_fills_then_a_fresh_read_is_silent(clock: CacheClock) -> None:
     assert second.diagnostics == ()
 
 
-def test_the_sidecar_holds_the_freshness_under_the_profile(clock: CacheClock) -> None:
+def test_the_sidecar_holds_the_freshness_under_the_settings_digest(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
     paths = TOY._paths("a")
-    assert paths.file().parent.name == "default"
+    assert paths.file().parent.name == settings_digest("toy")
     assert paths.file().parent.parent.name == "items"
     assert paths.file().parent.parent.parent.name == "cached"
     assert paths.file().read_text(encoding="utf-8").count("\n") == 1  # no value: one line
@@ -736,9 +737,26 @@ def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
     assert TOY._paths("abc").file().name == "abc.json"
 
 
-def test_profiles_that_sanitize_alike_keep_their_own_folders() -> None:
-    folders = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
-    assert len(folders) == 4
+def test_values_that_sanitize_alike_keep_their_own_segments() -> None:
+    segments = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
+    assert len(segments) == 4
+
+
+def test_a_complete_fill_sweeps_the_key_from_old_settings_folders(clock: CacheClock) -> None:
+    _refreshed(clock, "a", "b", ago=timedelta(days=31))
+    own = TOY._paths("a").dir
+    old = own.parent / "0000000000000000"
+    own.rename(old)
+    _refreshed(clock, "a", ago=timedelta(days=1))
+    recent = own.parent / "1111111111111111"
+    own.rename(recent)
+
+    assert _show("a", "--refresh").exit_code == 0
+
+    assert [file.name for file in old.glob("*.json")] == ["b.json"]  # another key's: kept
+    assert [file.name for file in recent.glob("*.json")] == ["a.json"]  # inside the horizon
+    _show("b", "--refresh")
+    assert not old.exists()  # its last file went, then its locks and the folder
 
 
 def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheClock) -> None:
@@ -784,16 +802,14 @@ def test_a_failed_sidecar_write_keeps_the_old_one_and_the_answer(
     assert _sidecar("a")["refreshed_at"] == "2026-10-12T07:00:00Z"
 
 
-def test_each_profile_has_its_own_sidecar(
+def test_profiles_whose_settings_read_the_same_share_a_sidecar(
     clock: CacheClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _show("a").exit_code == 0
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
 
-    assert _show("a", "--cached").exit_code == 1
-    assert _show("a").exit_code == 0
-    assert UP.fills == ["a", "a"]
-    assert TOY._paths("a").file().parent.name == "work"
+    assert _show("a", "--cached").exit_code == 0
+    assert UP.fills == ["a"]
 
 
 # ---- the stale line, once ------------------------------------------------------
@@ -1213,3 +1229,14 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
         True,
         "2026-10-12T09:30:00Z",
     )
+
+
+def test_a_key_named_like_a_version_is_found_by_its_stamp(clock: CacheClock) -> None:
+    UP.items["x.vdeadbeef"] = ["x1"]
+    assert _show("x.vdeadbeef").exit_code == 0
+    folder = TOY._paths("x.vdeadbeef").dir
+    [(entry, stem, refreshed)] = TOY._key_files(
+        folder, "x.vdeadbeef", cache_module._VERSIONED, cache_module._PLAIN
+    )
+    assert (entry.name, stem, refreshed) == ("x.vdeadbeef.json", "x.vdeadbeef", START)
+    assert list(TOY._key_files(folder, "x", cache_module._VERSIONED, cache_module._PLAIN)) == []

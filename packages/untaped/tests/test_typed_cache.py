@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import stat
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from filelock import FileLock
 from pydantic import BaseModel
 
 from untaped import data_file, refs
@@ -22,6 +24,7 @@ from untaped.output.diagnostic import Diagnostic, Pruned, StaleData
 from untaped.output.progress import ProgressHandle
 from untaped.output.sink import diagnostics_scope, recording
 from untaped.plugins.registry import named_plugin_dir
+from untaped.settings_digest import settings_digest
 from untaped.testing import CacheClock, cache_clock, damage, keep_value
 
 START = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
@@ -330,6 +333,63 @@ def test_another_partitions_files_go_only_past_the_long_horizon(
     assert json.loads(_lines(file)[1])["items"] == ["jt"]
 
 
+def _sibling(name: str, *keys: str) -> Path:
+    """Move ``keys``' files (every partition and version) to sibling settings folder ``name``."""
+    own = SNAPSHOTS._folder()
+    sibling = own.parent / name
+    sibling.mkdir()
+    for key in keys:
+        stem = SNAPSHOTS._paths(key).stem
+        for file in own.glob(f"{stem}*"):
+            file.rename(sibling / file.name)
+    return sibling
+
+
+def test_a_fill_sweeps_the_key_from_sibling_settings_folders_past_the_horizon(
+    clock: CacheClock, up: Controller
+) -> None:
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["old"]), refreshed_at=START, partition="t")
+    old = _sibling("0000000000000000", KEY)
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["old"]), refreshed_at=START)
+    keep_value(SNAPSHOTS, "another key", Snapshot(items=["x"]), refreshed_at=START)
+    mixed = _sibling("1111111111111111", KEY, "another key")
+    clock.advance(timedelta(days=29))
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["recent"]), refreshed_at=clock.now)
+    recent = _sibling("2222222222222222", KEY)
+
+    clock.advance(timedelta(days=2))
+    _serve(up)
+
+    assert not old.exists()  # its only data went, then its locks and the folder
+    [kept] = mixed.glob("*.json")  # another key's file is its own business
+    assert json.loads(_lines(kept)[0])["untaped"]["key"] == "another key"
+    assert len(list(recent.glob("*.json"))) == 1  # 2 days old: inside the horizon
+    assert len(_files()) == 1
+
+
+def test_a_busy_sibling_lock_keeps_its_file(clock: CacheClock, up: Controller) -> None:
+    keep_value(SNAPSHOTS, KEY, Snapshot(items=["old"]), refreshed_at=START)
+    sibling = _sibling("0000000000000000", KEY)
+    lock = sibling / f"{SNAPSHOTS._paths(KEY).stem}.lock"
+    held, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with FileLock(str(lock)):
+            held.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    held.wait(10)
+    clock.advance(timedelta(days=31))
+    try:
+        _serve(up)
+    finally:
+        release.set()
+        holder.join()
+    assert len(list(sibling.glob("*.json"))) == 1
+
+
 # --- partitions and splits -----------------------------------------------------------
 
 
@@ -359,7 +419,9 @@ def test_split_none_keeps_one_folder_for_every_profile(
     shared_none = Cache(
         "toy", "shared", label="x", max_age=timedelta(hours=1), model=Snapshot, split="none"
     )
-    assert shared._folder() == named_plugin_dir("toy") / "cached" / "shared" / "default"
+    assert shared._folder() == named_plugin_dir("toy") / "cached" / "shared" / settings_digest(
+        "toy"
+    )
     assert shared_none._folder() == named_plugin_dir("toy") / "cached" / "shared"
     _serve(up, cache=shared_none)
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
