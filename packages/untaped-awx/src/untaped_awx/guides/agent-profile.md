@@ -39,16 +39,13 @@ changing something it should not.
 
 ## In untaped
 
-Add a profile for the agent and keep the token out of `config.yml` (the user
-runs `untaped --profile agent auth set awx` to store one, or names their own
-password manager's command):
+Add a profile for the agent:
 
 ```yaml
 profiles:
   agent:
     awx:
-      base_url: https://aap.example.com
-      token_command: [pass, show, aap/untaped-agent]
+      server: {url: https://aap.example.com}
       default_organization: Default
       test_timeout_seconds: 1200  # seconds a case may run before its job is cancelled
 ```
@@ -60,9 +57,13 @@ $ untaped --profile agent awx ping
 `ping` names the authenticated user.
 
 Select the profile with `--profile agent` or `UNTAPED_PROFILE=agent` in the
-agent's environment. `awx.token` wins over `token_command`; a profile with
-neither uses `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` or `AAP_TOKEN`,
-tried in that order.
+agent's environment. A token is filed per server, so the agent's own token
+for a server you also log in to comes from its environment: the user sets
+`UNTAPED_AWX__TOKEN` there (for example from their password manager), which
+wins over a stored login. On a server only the agent uses, the user runs
+`untaped --profile agent auth login awx` instead. Without either, untaped
+tries `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` and `AAP_TOKEN`, in that
+order.
 
 Exit 4 from a test run usually means this user lacks a role above or its
 token was refused (`untaped agents awx test-results`).

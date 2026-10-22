@@ -36,7 +36,7 @@ untaped doctor
 
 ```bash
 # Store a token in your password store, not in config.yml
-untaped auth set github
+untaped auth login github
 untaped github whoami
 
 # List an org's repos and check them out into a task workspace

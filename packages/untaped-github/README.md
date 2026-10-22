@@ -11,7 +11,7 @@ repos avoid GitHub's search limits.
 ## Set up
 
 ```bash
-untaped auth set github
+untaped auth login github
 untaped config set github.default_org acme
 untaped github whoami
 ```
@@ -19,7 +19,7 @@ untaped github whoami
 For GitHub Enterprise Server, also point the profile at its API:
 
 ```bash
-untaped config set github.base_url https://github.example.com/api/v3
+untaped config set github.server.url https://github.example.com/api/v3
 ```
 
 With a default org,

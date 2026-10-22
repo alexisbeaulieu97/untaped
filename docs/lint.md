@@ -23,7 +23,8 @@ Each plugin is checked against:
   `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`,
   `lint.migrations`), and a deprecation warning for settings that leave
   `untaped` to guess what needs setting up from the names `base_url` and
-  `token` (`lint.unmarked-service`);
+  `token` instead of a marked server and a declared credential
+  (`lint.unmarked-service`);
 - the rules that read its files: stderr wording, layering, structure, the
   terminal and blob-reader boundaries, databases opened through a store
   ([conventions](reference/conventions.md#enforcement)).

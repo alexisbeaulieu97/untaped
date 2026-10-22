@@ -11,9 +11,11 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` (`stability`: `stable`, `experimental` or `deprecated`; `table` lists the last two apart) |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
-| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`) |
-| `auth set`, `auth unset`, `auth migrate` | `untaped.auth_outcome` (never the secret; `field` names it, `token` or another; `action` `gone` when `unset` found the entry already deleted; a secret `migrate` could not move is `failed`, with `error`) |
-| `auth status` | `untaped.token_source` (one per secret, `field` naming it) |
+| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`; for a token line `stored` (with the login in `to`), `dropped` (another profile's or a stored login answers) or `kept` (it stays, `detail` says why); `copied` for root `http.verify_ssl` written into a server's `verify_tls`; `planned` under `--dry-run`) |
+| `auth login`, `auth forget` | `untaped.credential_outcome` (never the secret; `plugin`, `name`, `key` described, `id` short, `store`, `action`) |
+| `auth list` | `untaped.stored_credential` (`id`, `plugin`, `name`, `key`, `backend`, `where`: the store entry or the command's program alone) |
+| `auth status` | `untaped.token_source` (for a declared credential, one row for this run: `key`, `step` `variable`, `stored`, `setting` or `env`, `source`, `id`, or `refusal`; for a plugin on 11.0's settings, one per profile) |
+| `auth set`, `auth unset`, `auth migrate` (deprecated) | `untaped.auth_outcome` (never the secret; `field` names it, `token` or another; `action` `gone` when `unset` found the entry already deleted; a secret `migrate` could not move is `failed`, with `error`) |
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `project list` | `untaped.project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
@@ -52,7 +54,7 @@ supply, and `fix` is null on a passing row. A `doctor_check` row's
 input, and nothing a person should decide, such as registering an install). A
 `setup_step` row also has `step` (`install` for this install's registration,
 `profile`, `<service>.<setting>` for each setting the plugin needs, such as
-`awx.base_url` and `awx.token`, `<service>.settings` when the service's
+`awx.server` and `awx.token`, `<service>.settings` when the service's
 settings are invalid, and `<service>.online.<check>` for each online check,
 such as `awx.online.api`),
 `state` (`done`, `todo`, `failed`, `skipped`), `detail` and `by`: `user` for

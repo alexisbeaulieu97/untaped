@@ -9,10 +9,9 @@ and the next ``status --fetch``.
 
 from __future__ import annotations
 
-import re
-
 import json
 import os
+import re
 import stat
 import subprocess
 from collections.abc import Iterator

@@ -3,7 +3,8 @@
 Settings live in profiles in `config.yml`; data a plugin manages itself
 lives in `state.yml`. The [configuration reference](./reference/config.md)
 lists every setting, its default and its environment variable. Plugin
-settings live in their own sections (`github.token`, `awx.base_url`).
+settings live in their own sections (`github.default_org`, `awx.server.url`);
+their tokens live outside the file ([Tokens](#tokens)).
 
 ## File and layout
 
@@ -63,20 +64,18 @@ active: prod
 profiles:
   default:
     http:
-      verify_ssl: true
+      ca_bundle: ~/certs/corp-ca.pem
     ui:
       theme: default
       border: rounded
       collection_view: table
       detail_view: list
     awx:
-      base_url: https://aap.example.com
-      token_command: [pass, show, untaped/default/awx]
+      server: {url: https://aap.example.com}
     github:
-      token_command: [gh, auth, token]
+      default_org: acme
     jira:
-      base_url: https://jira.example.com
-      token_command: [pass, show, untaped/default/jira]
+      server: {url: https://jira.example.com}
       default_project: OPS
       default_board_id: 42
     workspace:
@@ -85,8 +84,7 @@ profiles:
 
   prod:
     awx:
-      base_url: https://aap.prod.example.com
-      token_command: [pass, show, untaped/prod/awx]
+      server: {url: https://aap.prod.example.com, verify_tls: ~/certs/aap-prod.pem}
 ```
 
 `state.yml` holds one section per plugin, outside profiles:
@@ -125,7 +123,7 @@ symlink. Writes rewrite only the keys they change and keep your comments, key
 order, quoting and indentation.
 
 A setting's value comes from the first of these that has it: its
-`UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_GITHUB__TOKEN`),
+`UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_AWX__SERVER__URL`),
 the active profile, `profiles.default`, the built-in default.
 
 ## Several versions on one machine
@@ -159,7 +157,7 @@ profile overlays it field by field.
 
 ```bash
 untaped profile create stage --copy-from default
-untaped --profile stage config set awx.base_url https://aap.stage.example.com
+untaped --profile stage config set awx.server.url https://aap.stage.example.com
 untaped profile use stage
 untaped profile delete stage --dry-run
 ```
@@ -189,14 +187,14 @@ Tokens after `--` belong to the command and are never read as `untaped` options.
 
 ## Settings
 
-Plugin keys are always fully qualified (`awx.base_url`, never
-`base_url`). `http.*`, `ui.*` and `skills.*` are shared root sections.
+Plugin keys are always fully qualified (`awx.server.url`, never
+`server.url`). `http.*`, `ui.*` and `skills.*` are shared root sections.
 
 ```bash
 untaped config list --all-profiles
-untaped config get github.token --show-secrets
+untaped config get awx.server.url
 untaped config set http.timeout_seconds 60 --dry-run
-untaped --profile prod config unset awx.token
+untaped --profile prod config unset jira.default_project
 untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
@@ -259,126 +257,127 @@ writes each setting through the same code as `config set`.
 
 `http.*` and `ui.*` are profile settings shared by all plugins. HTTP
 clients use the operating system trust store by default. To trust a corporate
-certificate, prefer a pinned CA bundle:
+CA (a proxy that inspects TLS, say) for every client and for git, set a CA
+bundle once:
 
 ```bash
 untaped config set http.ca_bundle /path/to/corp-ca.pem
-untaped --profile work config set http.verify_hostname false
 ```
 
-`http.verify_ssl: false` disables certificate validation; keep it for a
-controlled network. `ui.theme` picks a built-in theme and `ui.format` the
-default `--format`; the [configuration reference](./reference/config.md#root)
-lists every `http.*` and `ui.*` setting, including the names `ui.symbols` and
-`ui.color_roles` accept. `config set` and `doctor` reject any other name; a
-stray name already in `config.yml` keeps working.
+One server's own certificate check belongs to that server: its
+`verify_tls` is `true` (the trust above), a CA file for that server alone,
+or `false` (no check; keep it for a controlled network). It is part of what a
+stored token is filed under, so a token is never sent to a server checked
+another way than when it was stored:
+
+```bash
+untaped --profile work config set awx.server.verify_tls /path/to/aap-ca.pem
+```
+
+Root `http.verify_ssl` and `http.verify_hostname` are deprecated. In 11.x,
+`http.verify_ssl: false` still turns every check off, and `config migrate`
+writes it into each server as `verify_tls: false`. `ui.theme` picks a built-in
+theme and `ui.format` the default `--format`; the
+[configuration reference](./reference/config.md#root) lists every `http.*`
+and `ui.*` setting, including the names `ui.symbols` and `ui.color_roles`
+accept. `config set` and `doctor` reject any other name; a stray name already
+in `config.yml` keeps working.
 
 ## Tokens
 
-Keep tokens out of `config.yml`: agents read that file to learn a setup,
-people paste it into chats, and dotfile tools copy it. Store a token with this
-machine's password store instead:
+Tokens never live in `config.yml`: agents read that file to learn a setup,
+people paste it into chats, and dotfile tools copy it. A token is filed for
+one server (its URL and how its certificate is checked) with `untaped auth
+login`, in this machine's password store or as a command that prints it:
 
 ```bash
-untaped auth set awx                  # prompts; or: … | untaped auth set awx --stdin
+untaped auth login awx                       # the server this run uses; prompts
+pass show work/jira | untaped auth login jira    # from stdin
+untaped auth login github --token-command 'gh auth token'
+untaped auth list                            # every stored login
+untaped auth status                          # which source answers, for this run
+untaped auth forget awx                      # or: untaped auth forget --id 3f9c…
 ```
 
-`auth set` reads the token from a hidden prompt or `--stdin`, never from an
-argument. It uses the first store that works here: macOS `security` (the login
+`auth login` prints the server first, then reads the token from a hidden
+prompt or stdin, never from an argument. Without a plugin on a terminal it
+offers a menu of what this run needs; off a terminal the plugin is required.
+It uses the first store that works here: macOS `security` (the login
 keychain), `secret-tool` (a Secret Service such as GNOME Keyring), then `pass`
 (GPG, which works over SSH with gpg-agent; usually what a headless server or
 WSL2 ends up with; it needs an initialised store, a gpg secret key for it and a
-working pinentry, with `GPG_TTY` set in a terminal). `--store` picks one. Before
-asking for a token (here and in `setup`) it tests the store with a throwaway
-value (`pass`: a gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
-`secret-tool`: a store and read back) and stops with the cause if that fails;
-tokens read later through `pass` report gpg's first error
-and the same fixes. It hands the token to the store on stdin, reads it back, and
-only then writes `<section>.token_command` (the store's read command) in the
-active profile, removing any plaintext `<section>.token`. Run it again to
-replace a rotated token. The entry is
-`<profile>/<section>` under the `untaped` service, so two config files on one
-machine (`UNTAPED_CONFIG`) share it. `untaped auth --help` lists the other
-commands: `migrate` moves every plaintext token, `status` says where each
-comes from, and `unset` removes a stored one.
+working pinentry, with `GPG_TTY` set in a terminal). `--store` picks one.
+Before asking for a token it tests the store with a throwaway value (`pass`: a
+gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
+`secret-tool`: a store and read back) and stops with the cause if that fails.
+It hands the token to the store on stdin and reads it back before filing it.
+Run it again to replace a rotated token. The index of logins (never the
+tokens) is kept in `state.yml`; entries are `<plugin>/<name>/<id>` under the
+`untaped` service, prefixed by a hash of the config file's path for a config
+other than `~/.untaped/config.yml`, so two config files never share one.
 
-A plugin can mark more than one secret, such as a token and a webhook secret.
-`auth set|unset <section>` means the one named `token`, else the only one, and
-refuses (naming each) when neither fits; `<section>.<field>` names any of them:
+A plugin's token for a server comes from the first of these that has one:
 
-```bash
-untaped auth set acme.webhook_secret  # writes acme.webhook_secret_command
-```
+1. `UNTAPED_<PLUGIN>__TOKEN` (`UNTAPED_<PLUGIN>__<NAME>` for a secret not
+   named `token`), an override for this process;
+2. the login stored for exactly this server;
+3. in 11.x, the deprecated `<plugin>.token` or `<plugin>.token_command`
+   setting;
+4. the service's conventional environment variables, in the order the
+   [environment table](./reference/environment.md#untaped) lists them
+   (`GH_TOKEN`, `JIRA_API_TOKEN`, `CONTROLLER_OAUTH_TOKEN`, …).
 
-A secret other than `token` has the entry `<profile>/<section>.<field>`, so a
-token stored by an earlier release keeps its entry. `status` has a row per
-secret, `migrate` moves each, and their records say which in `field`.
+With none, a command exits 4 naming `untaped auth login <plugin>`: logging in
+and setting a token variable are the person's steps, never an agent's.
+
+A token command (`--token-command`) is an argv list, run without a shell, at
+most once per process and only when a command first needs the token. It runs
+in the config file's folder (`~/.untaped` by default) rather than the folder
+you are in, so a repository can't plant the program it finds; give a file the
+command reads as an absolute path. `untaped` strips surrounding whitespace
+from the output and never prints the token, the command's arguments or its
+output: a failure reads `error: the stored jira token (3f9c…): 'op' exited
+with status 1` (or `not found on PATH`, `printed no token`, `timed out after
+60s`). `untaped` never runs `gh auth token` on its own; log in with
+`--token-command 'gh auth token'` to reuse the GitHub CLI's login.
 
 A store over SSH can fail on an unlock prompt nobody sees: unlock it first
 (`security unlock-keychain` on macOS). Store commands time out after 60s.
 When neither stdin nor stderr is a terminal (an agent running `untaped`,
 cron), `pass` is never asked for gpg's passphrase: a locked key fails at once.
 For a plain `pass show <entry>`, the error names the command that unlocks it
-from your terminal (such as `pass show untaped/default/awx > /dev/null`);
-gpg-agent then keeps the passphrase cached for a while. A pinentry mode you set
-yourself, in `PASSWORD_STORE_GPG_OPTS` or `gpg.conf`, is left alone: loopback
-with a passphrase file for cron, or `--pinentry-mode=ask` to let an agent's
-command open a desktop pinentry you can answer. If an earlier run left a
-passphrase prompt open on another screen, `gpgconf --kill gpg-agent` closes it
-(it also forgets cached passphrases, SSH key unlocks included); gpg starts a fresh agent on next use.
+from your terminal; gpg-agent then keeps the passphrase cached for a while. A
+pinentry mode you set yourself, in `PASSWORD_STORE_GPG_OPTS` or `gpg.conf`, is
+left alone: loopback with a passphrase file for cron, or
+`--pinentry-mode=ask` to let an agent's command open a desktop pinentry you
+can answer. If an earlier run left a passphrase prompt open on another
+screen, `gpgconf --kill gpg-agent` closes it (it also forgets cached
+passphrases, SSH key unlocks included).
 
-What this protects: the token is no longer in a file read casually. It does
-not stop a program running as you, which can run `untaped` or the store's own
-command. Agents in particular should be denied reads of `~/.untaped/` and the
-password store in their harness; they can use `untaped config get`, which
-masks secrets.
+What this protects: the token is no longer in a file read casually, and it
+is only ever sent to the server it was filed for. It does not stop a program
+running as you, which can run the store's own command. Agents in particular
+should be denied reads of `~/.untaped/` and the password store in their
+harness.
 
-`github`, `jira` and `awx` read their API token from the first of these that
-is set:
+### Tokens from untaped 11.0
 
-1. `<section>.token`, from the active profile or its
-   `UNTAPED_<SECTION>__TOKEN` override;
-2. `<section>.token_command`, a command whose standard output is the token;
-3. the service's conventional environment variables, tried in the order the
-   [environment table](./reference/environment.md#untaped) lists them.
+11.0 kept a token in `<plugin>.token` (plain text) or `<plugin>.token_command`
+(`auth set` wrote one reading the entry `<profile>/<plugin>`). Both still
+work in 11.x, after a stored login, and warn; `auth set|unset|migrate` keep
+their 11.0 meaning and are deprecated. `untaped config migrate` moves them,
+per profile, after a confirmation (`--yes` off a terminal; `--dry-run`
+previews):
 
-These variables are not tied to a profile: one applies to every profile that
-sets neither `token` nor `token_command`, whatever its `base_url`. For the
-same reason, `doctor` and `setup` count one only once the service's other
-settings are set: `awx` and `jira` also need a `base_url`, and `github`,
-which has a default URL, is set up by `GH_TOKEN` alone. `doctor` never runs
-`token_command` to check that it is set.
+- a command `auth set` wrote becomes a login reading the same entry, which
+  stays where it is;
+- another command becomes a login running it;
+- a plain-text token goes to the password store;
+- a line it can't move (two profiles filing different tokens for one server,
+  no password store, a server only the environment sets) stays, listed as
+  kept.
 
-`token_command` keeps the token out of `config.yml`; `auth set` writes one,
-and any password manager's command works too. It is an argv list, run without
-a shell, at most once per process and only when a command first needs the
-token. It runs in the config file's folder (`~/.untaped` by default) rather
-than the folder you are in, so a repository can't plant the program it finds;
-give a file the command reads as an absolute path:
-
-```bash
-untaped config set github.token_command '["gh", "auth", "token"]'
-untaped config set jira.token_command '["op", "read", "op://work/jira/token"]'
-untaped config set awx.token_command '["pass", "show", "aap/token"]'
-```
-
-`untaped` strips surrounding whitespace from the output. It never prints the
-token, the command's arguments or its output: a failure is reported as
-`error: jira.token_command: 'op' exited with status 1` (or `not found on
-PATH`, `printed no token`, `timed out after 60s`). The command's own stderr
-goes straight to your terminal, except `pass`'s: gpg repeats one error per
-call, so the error quotes its first line and, for gpg's, names the usual fix.
-
-`untaped` does not run `gh auth token` on its own. To reuse the GitHub CLI's
-login, set `github.token_command` as above.
-
-A token in `<section>.token` (or any other secret in its own setting) is stored
-in plain text in `config.yml`. Keeping it there is deprecated, and it is still
-read until the major its warning names; `UNTAPED_<SECTION>__TOKEN` avoids the
-file altogether. Loading one warns once per run, `config set` of any secret
-`auth set` can store warns (naming that `auth set`), `untaped doctor` warns
-with `untaped auth migrate` as the fix, and `untaped setup` no longer offers
-it.
+An older untaped sharing the config stops reading the lines it moved.
 
 ## Debug logs
 

@@ -23,7 +23,7 @@ repo providers list. For GitHub's, set a GitHub token (see
 and the orgs or teams to list:
 
 ```bash
-untaped auth set github
+untaped auth login github
 untaped config set github.inventory.orgs '["acme"]'
 ```
 
