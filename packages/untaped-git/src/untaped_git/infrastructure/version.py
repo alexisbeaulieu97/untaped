@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import functools
 import re
-import shutil
 
-from untaped.sdk import GitCommandError, run_git
+from untaped.sdk import GitCommandError, find_program, run_git
 
 #: The oldest git the repo store runs on.
 FLOOR = (2, 29)
@@ -19,7 +18,7 @@ _VERSION = re.compile(r"git version (\d+)\.(\d+)(?:\.(\d+))?")
 
 def git_version() -> tuple[int, int, int] | None:
     """``(major, minor, patch)`` of the ``git`` on ``PATH``; ``None`` when absent or unreadable."""
-    path = shutil.which("git")
+    path = find_program("git")
     return None if path is None else _version_of(path)
 
 

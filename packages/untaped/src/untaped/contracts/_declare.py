@@ -37,7 +37,7 @@ from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.records import Issued, Record, Source, kind_of
 
 if TYPE_CHECKING:
-    from untaped.http import HttpClient
+    from untaped.http import HttpClient, VerifyTypes
     from untaped.plugins.registry import PluginSpec
 
 #: Set to ``True`` on a function a provider base defines for its own role (a rule
@@ -317,7 +317,8 @@ def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
     return value
 
 
-def _http_client(binding: Binding | None) -> HttpClient:
+def _http_client(binding: Binding | None, *, verify: VerifyTypes | None = None) -> HttpClient:
+    """The profile's client for ``binding``'s provider; ``verify`` replaces the profile's TLS."""
     from untaped.http import HttpClient, RetryPolicy, resolve_verify  # noqa: PLC0415
     from untaped.settings import HttpSettings, load_settings_section  # noqa: PLC0415
 
@@ -325,7 +326,7 @@ def _http_client(binding: Binding | None) -> HttpClient:
     if not isinstance(http, HttpSettings):
         http = HttpSettings.model_validate(http)
     return HttpClient(
-        verify=resolve_verify(http),
+        verify=resolve_verify(http) if verify is None else verify,
         timeout=http.timeout_seconds,
         proxy=http.proxy,
         retry=RetryPolicy(),

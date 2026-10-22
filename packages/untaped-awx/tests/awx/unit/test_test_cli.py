@@ -1278,7 +1278,7 @@ def test_no_paths_finds_the_checkout_suites_without_running_git(
     nested = tmp_path / "sub"
     nested.mkdir()
     monkeypatch.chdir(nested)
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
 
     result = cli.invoke(app, ["test", "list", "-f", "json"])
 

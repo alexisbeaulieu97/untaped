@@ -105,16 +105,49 @@ def _is_named_call(node: ast.expr, name: str) -> bool:
     )
 
 
+#: The core builders whose own ``verify=`` may replace the settings' TLS. Nothing under
+#: src passes one yet (see the guard below); the key's TLS will (#811).
+_VERIFY_OVERRIDES = frozenset(
+    {"packages/untaped/src/untaped/http.py", "packages/untaped/src/untaped/contracts/_declare.py"}
+)
+
+
+def _resolves_verify(node: ast.expr, *, overrides: bool) -> bool:
+    """``resolve_verify(...)``; with ``overrides``, also ``resolve_verify(...) if v is None
+    else v``: a core builder's ``verify=`` parameter replacing the settings'.
+    """
+    if overrides and isinstance(node, ast.IfExp):
+        test = node.test
+        return (
+            _is_named_call(node.body, "resolve_verify")
+            and isinstance(test, ast.Compare)
+            and isinstance(test.left, ast.Name)
+            and isinstance(test.ops[0], ast.Is)
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None
+            and isinstance(node.orelse, ast.Name)
+            and node.orelse.id == test.left.id
+        )
+    return _is_named_call(node, "resolve_verify")
+
+
 def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
     """``"<rel>:<lineno>"`` for ``HttpClient(...)`` calls whose ``verify=`` is
-    missing or not a ``resolve_verify(...)`` call."""
+    missing or not a ``resolve_verify(...)`` call (or, in a core builder, its
+    parameter's override of one), and for ``connected_client(...)`` or
+    ``_http_client(...)`` calls passing ``verify=`` at all."""
     offenders: list[str] = []
+    overrides = rel in _VERIFY_OVERRIDES
     for call in ast.walk(tree):
-        if not _is_named_call(call, "HttpClient"):  # type: ignore[arg-type]
+        if not isinstance(call, ast.Call):
             continue
-        assert isinstance(call, ast.Call)
         verify_kw = next((kw for kw in call.keywords if kw.arg == "verify"), None)
-        if verify_kw is None or not _is_named_call(verify_kw.value, "resolve_verify"):
+        if _is_named_call(call, "HttpClient"):
+            if verify_kw is None or not _resolves_verify(verify_kw.value, overrides=overrides):
+                offenders.append(f"{rel}:{call.lineno}")
+        elif verify_kw is not None and (
+            _is_named_call(call, "connected_client") or _is_named_call(call, "_http_client")
+        ):
             offenders.append(f"{rel}:{call.lineno}")
     return offenders
 
@@ -124,13 +157,14 @@ def test_httpclient_construction_passes_verify() -> None:
     offenders: list[str] = []
     for py_file in sorted(path for src in SRC_DIRS for path in src.rglob("*.py")):
         text = py_file.read_text(encoding="utf-8")
-        if "HttpClient" in text:
+        if any(name in text for name in ("HttpClient", "connected_client", "_http_client")):
             offenders.extend(
                 _verify_offenders(ast.parse(text), str(py_file.relative_to(REPO_ROOT)))
             )
     assert not offenders, (
-        "HttpClient(...) construction under src/ must pass "
-        "verify=resolve_verify(...):\n  " + "\n  ".join(offenders)
+        "HttpClient(...) construction under src/ must pass verify=resolve_verify(...), "
+        "and nothing may replace the user's TLS through connected_client(verify=):\n  "
+        + "\n  ".join(offenders)
     )
 
 
@@ -140,6 +174,9 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
 @pytest.mark.parametrize(
     ("call", "flagged"),
     [
+        ("connected_client(c, section='x', base_url='u', verify=False)", True),
+        ("capi.connected_client(c, section='x', base_url='u')", False),
+        ("_http_client(binding, verify=False)", True),
         ("HttpClient(base_url='x', headers={})", True),
         ("HttpClient(base_url='x', verify=True)", True),
         ("HttpClient(base_url='x', verify=False)", True),
@@ -148,12 +185,28 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
         # Regression: the bare, uncalled reference must not be accepted.
         ("HttpClient(base_url='x', verify=resolve_verify)", True),
         ("HttpClient(base_url='x', verify=resolve_verify(http))", False),
+        # A core builder's override is not allowed anywhere else.
+        ("HttpClient(base_url='x', verify=resolve_verify(http) if v is None else v)", True),
         ("capi.HttpClient(base_url='x', verify=capi.resolve_verify(http))", False),
     ],
 )
 def test_verify_detector(call: str, flagged: bool) -> None:
     tree = ast.parse(f"{_HEADER}def f(http) -> None:\n    {call}\n")
     assert bool(_verify_offenders(tree, "<test>")) is flagged
+
+
+@pytest.mark.parametrize(
+    ("verify", "flagged"),
+    [
+        ("resolve_verify(http) if v is None else v", False),
+        ("resolve_verify(http) if v is None else False", True),
+        ("False if v is None else resolve_verify(http)", True),
+    ],
+)
+def test_verify_detector_allows_a_core_builders_override(verify: str, flagged: bool) -> None:
+    tree = ast.parse(f"{_HEADER}def f(http, v) -> None:\n    HttpClient(verify={verify})\n")
+    rel = "packages/untaped/src/untaped/http.py"
+    assert bool(_verify_offenders(tree, rel)) is flagged
 
 
 _TREE_MODULE = REPO_ROOT / "packages/untaped/src/untaped/tree.py"

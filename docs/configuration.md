@@ -352,7 +352,9 @@ which has a default URL, is set up by `GH_TOKEN` alone. `doctor` never runs
 `token_command` keeps the token out of `config.yml`; `auth set` writes one,
 and any password manager's command works too. It is an argv list, run without
 a shell, at most once per process and only when a command first needs the
-token:
+token. It runs in the config file's folder (`~/.untaped` by default) rather
+than the folder you are in, so a repository can't plant the program it finds;
+give a file the command reads as an absolute path:
 
 ```bash
 untaped config set github.token_command '["gh", "auth", "token"]'
@@ -383,8 +385,8 @@ it.
 `--verbose`/`-v` sends debug logs to stderr through Python's `logging`, as
 `DEBUG untaped.<area>: <message>` lines:
 
-- `untaped.http`: each request's method, URL (with any password masked),
-  status or transport error, and time, plus each retry wait;
+- `untaped.http`: each request's method, URL, outcome and time, each retry
+  wait and redirect, and the `http.proxy` a service's client uses;
 - `untaped.git`: each `git` command's arguments (URL credentials masked), its
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);
@@ -394,4 +396,5 @@ it.
   `KeyError: …`; JSON Lines carry the message only), and why an answer was
   not cached.
 
-`--verbose` is the only switch; there is no log-level setting.
+Every line masks a URL's user name and password and an `Authorization`
+value. `--verbose` is the only switch; there is no log-level setting.

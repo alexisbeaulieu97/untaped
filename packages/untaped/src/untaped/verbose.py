@@ -5,7 +5,8 @@ flag lives on the invocation's output policy (``untaped.output.policy``): it
 streams a wrapped tool's output live instead of capturing it, and raises the
 ``untaped`` logger to DEBUG. The logger's handler forwards every record to the
 sink as an ``untaped.debug`` diagnostic (``DEBUG untaped.http: …`` in text, a
-JSON line under JSON diagnostics). The root callback calls :func:`reset` after
+JSON line under JSON diagnostics), with credentials masked
+(:func:`~untaped.redaction.redact_credentials`). The root callback calls :func:`reset` after
 each invocation, clearing the flag and the DEBUG level so neither leaks across
 in-process callers (tests, embedding). The handler added by
 :func:`configure_logging` is left attached (idempotent), but receives nothing
@@ -19,6 +20,7 @@ import logging
 from untaped.output.diagnostic import Debug
 from untaped.output.policy import FlagToken, is_verbose, reset_flag, set_flag
 from untaped.output.sink import current_sink
+from untaped.redaction import redact_credentials
 
 _LOGGER_NAME = "untaped"
 
@@ -45,12 +47,12 @@ def reset(token: FlagToken | None = None) -> None:
 
 
 class _SinkHandler(logging.Handler):
-    """Forward each log record to the stderr sink as an ``untaped.debug`` line."""
+    """Forward each log record, credentials masked, to the stderr sink as ``untaped.debug``."""
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            debug = Debug(logger=record.name, message=record.getMessage())
-            current_sink().emit(debug, rendered=self.format(record))
+            debug = Debug(logger=record.name, message=redact_credentials(record.getMessage()))
+            current_sink().emit(debug, rendered=redact_credentials(self.format(record)))
         except Exception:
             self.handleError(record)
 

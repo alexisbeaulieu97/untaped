@@ -144,7 +144,7 @@ def test_local_install_without_git_still_finds_the_checkout_root(
     (repo / ".git").mkdir(parents=True)
     (repo / "sub").mkdir()
     monkeypatch.chdir(repo / "sub")
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
 
     [result] = _install_local_from_cwd(source)
 
@@ -317,7 +317,7 @@ def test_checkout_root_finds_a_worktree_by_its_git_file_without_running_git(
     worktree = tmp_path / "worktree"
     (worktree / "sub").mkdir(parents=True)
     (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/worktree\n")
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     assert checkout_root(worktree / "sub") == worktree.resolve()
 
 

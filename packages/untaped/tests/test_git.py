@@ -313,13 +313,13 @@ def test_git_toplevel_is_none_outside_a_checkout(tmp_path: Path) -> None:
 def test_git_toplevel_surfaces_a_missing_git(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     with pytest.raises(GitCommandError, match="`git` not found on PATH"):
         git_toplevel(tmp_path)
 
 
 def test_missing_git_binary_is_an_untaped_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("shutil.which", lambda _: None)
+    monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     with pytest.raises(UntapedError, match="`git` not found on PATH"):
         run_git(["status"], timeout=5)
 

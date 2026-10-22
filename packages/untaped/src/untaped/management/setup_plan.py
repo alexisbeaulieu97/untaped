@@ -17,9 +17,14 @@ from __future__ import annotations
 
 import json
 import shlex
-import shutil
 
-from untaped.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command, token_instead
+from untaped.auth import (
+    PLAINTEXT_TOKEN,
+    find_program,
+    plaintext_subject,
+    takes_token_command,
+    token_instead,
+)
 from untaped.cli import emit
 from untaped.config_file import read_config_dict
 from untaped.management.doctor import run_line, selected_check_rows
@@ -224,7 +229,7 @@ def _token_row(
         command = ["config", "set", f"{section}.token_command", "<COMMAND>"]
         run = command_argv(command, profile=profile)
     suggest = None if token is None or token.secret is None else token.secret.suggest
-    if suggest is not None and shutil.which(suggest.argv[0]) is not None:
+    if suggest is not None and find_program(suggest.argv[0]) is not None:
         argv = json.dumps(list(suggest.argv))
         command = command_argv(["config", "set", f"{section}.token_command", argv], profile=profile)
         reuse = command_line(shlex.join(command))
