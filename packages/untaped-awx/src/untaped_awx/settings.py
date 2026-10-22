@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import timedelta
-from typing import Annotated, ClassVar
+from typing import TYPE_CHECKING, Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from untaped.sdk import Cache, NeedsSetup, Secret, code_version, experimental
+
+if TYPE_CHECKING:
+    from untaped_awx.domain.lint.resources import AwxResources
 
 #: The ansible.controller / awx.awx collection's token variables, in its order.
 _TOKEN_ENV = ("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
@@ -86,14 +89,26 @@ def _resources_version() -> str:
     )
 
 
+def _resources_model() -> type[AwxResources]:
+    """The snapshot's model, imported on first use: it loads lint, which ``--help`` never needs."""
+    from untaped_awx.domain.lint.resources import AwxResources  # noqa: PLC0415
+
+    return AwxResources
+
+
 #: The controller snapshot ``awx lint`` reads without FILES: every resource
-#: the profile's token can read, per controller, refreshed past an hour.
+#: a token can read, per controller, refreshed past an hour. The cache keeps
+#: the snapshot itself, keyed by the controller's URL with the token as the
+#: partition, so the files are shared by every profile and a token never
+#: reads what another token saw.
 RESOURCES = Cache(
     "awx",
     "resources",
     label="controller resources",
     max_age=timedelta(hours=1),
     version=_resources_version,
+    model=_resources_model,
+    split="none",
 )
 
 

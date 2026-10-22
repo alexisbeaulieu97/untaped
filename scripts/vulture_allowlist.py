@@ -131,3 +131,6 @@ StaleData.age_seconds
 
 # Settings fields read by name from the config (the secret lookup, `auth`).
 GithubSettings.token_command  # declared until 12.0; core adds it for other plugins
+
+# Data file fields kept for the record and shown by `backups get`, never read by name.
+BackupEntry.before_hash

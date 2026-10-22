@@ -4878,8 +4878,10 @@ sdk untaped.sdk.FormatOption choice=pipe
 sdk untaped.sdk.FormatOption choice=raw
 sdk untaped.sdk.FormatOption choice=table
 sdk untaped.sdk.FormatOption choice=yaml
+sdk untaped.sdk.Found(by@3=) default=None  [experimental]
 sdk untaped.sdk.Found(refreshed_at@2=) default=None  [experimental]
 sdk untaped.sdk.Found(value)  [experimental]
+sdk untaped.sdk.Found.by  [experimental]
 sdk untaped.sdk.Found.refreshed_at  [experimental]
 sdk untaped.sdk.Found.value  [experimental]
 sdk untaped.sdk.Frame(width, height, theme)  [experimental]

@@ -56,7 +56,7 @@ class Controller:
         self.fills.append(key)
         if self.error is not None:
             raise self.error
-        return Filled[Snapshot](value=Snapshot(items=self.items[key]), summary="1 resource")
+        return Filled(value=Snapshot(items=self.items[key]), summary="1 resource")  # as documented
 
 
 @pytest.fixture

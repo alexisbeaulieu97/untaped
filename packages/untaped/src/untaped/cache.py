@@ -55,7 +55,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, overload
 
 from cyclopts import Parameter
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
 
 from untaped.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.fs import file_lock
@@ -254,7 +254,9 @@ class Filled[M = None](BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    value: M | None = None
+    # Not validated here: an unparameterized ``Filled(value=...)`` would check it against
+    # ``None``. The cache checks the value against its model= when it keeps it.
+    value: SkipValidation[M | None] = None
     partial: Failure | None = None
     retry_at: UtcTimestamp | None = None
     summary: str | None = None
@@ -1612,7 +1614,7 @@ def _code_version(module: str, distributions: tuple[str, ...], extra: tuple[str,
 # --------------------------------------------------------------------------- #
 
 
-def refresh_option(cache: Cache) -> Parameter:
+def refresh_option(cache: Cache[Any]) -> Parameter:
     """The ``--refresh``/``--cached`` option for ``cache``'s directive; its help names the setting.
 
     Declare it as ``refresh: Annotated[bool | None, refresh_option(CACHE)] = None``

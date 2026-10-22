@@ -11,12 +11,11 @@ import pytest
 
 from awx.lint_support import CLEAN, DOCUMENTS, seed_controller
 from untaped.sdk import plugin_dir
-from untaped.testing import CliResult, compose_with, invoke_cli
+from untaped.testing import CliResult, compose_with, damage, invoke_cli
 from untaped_awx import SPEC
 from untaped_awx.api import AwxResources
 from untaped_awx.cli import app
 from untaped_awx.cli.context import AwxContext
-from untaped_awx.infrastructure.lint.snapshot_store import store_path
 from untaped_lint.api import Finding, ResourceLocation, Rules, rule
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -61,10 +60,24 @@ def _files(tmp_path: Path, **texts: str) -> Path:
     return folder
 
 
-def _snapshot_file(token: str = "secret") -> Path:
-    return store_path(
-        plugin_dir(SPEC), profile="default", base_url="https://aap.example.com", token=token
-    )
+def _snapshot_files() -> list[Path]:
+    """The files ``awx.caches.resources`` keeps: one per controller and token, for every profile."""
+    return sorted((plugin_dir(SPEC) / "cached" / "resources").glob("*.json"))
+
+
+def _stored(token: str = "secret") -> AwxResources:
+    """The snapshot ``awx.caches.resources`` keeps for the fake controller and ``token``."""
+    from untaped_awx.settings import RESOURCES
+
+    served = RESOURCES.cached("https://aap.example.com", partition=token)
+    assert served is not None
+    return served.value
+
+
+def _kept_snapshot(file: Path) -> str:
+    """The snapshot a cache file holds: its second line, after the freshness stamp."""
+    _stamp, value = file.read_text(encoding="utf-8").splitlines()
+    return value
 
 
 # --- FILES --offline --------------------------------------------------------------
@@ -184,8 +197,8 @@ def test_the_controller_origin_reads_every_kind_once_and_reports_each_rule(fake_
 def test_the_snapshot_is_redacted_owner_only_and_served_from_the_cache(fake_aap: Any) -> None:
     seed_controller(fake_aap)
     first = _lint()
-    snapshot = _snapshot_file()
-    text = snapshot.read_text(encoding="utf-8")
+    [snapshot] = _snapshot_files()
+    text = _kept_snapshot(snapshot)
     assert "hunter2" not in text  # a template's launch variable
     assert "opensesame" not in text  # a workflow node's prompts.extra_vars
     assert "swordfish" not in text  # an inventory's variable
@@ -202,22 +215,64 @@ def test_the_snapshot_is_redacted_owner_only_and_served_from_the_cache(fake_aap:
 
 
 @pytest.mark.usefixtures("composed")
-def test_a_snapshot_file_gone_from_under_its_sidecar_is_read_again(fake_aap: Any) -> None:
+def test_a_snapshot_file_gone_is_read_again(fake_aap: Any) -> None:
     seed_controller(fake_aap)
     _lint()
-    _snapshot_file().unlink()
+    [snapshot] = _snapshot_files()
+    snapshot.unlink()
+    before = len(fake_aap.router.calls)
     result = _lint()
     assert result.exit_code == 3, result.output
-    assert _snapshot_file().exists()
+    assert len(fake_aap.router.calls) > before
+    assert _snapshot_files() == [snapshot]
 
 
 @pytest.mark.usefixtures("composed")
-def test_cached_with_nothing_kept_fails_without_asking(fake_aap: Any) -> None:
+def test_a_damaged_snapshot_is_read_again(fake_aap: Any) -> None:
+    from untaped_awx.settings import RESOURCES
+
+    seed_controller(fake_aap)
+    _lint()
+    damage(RESOURCES, "https://aap.example.com", partition="secret")
+    before = len(fake_aap.router.calls)
+    result = _lint()
+    assert result.exit_code == 3, result.output
+    assert len(fake_aap.router.calls) > before
+    [snapshot] = _snapshot_files()
+    AwxResources.model_validate_json(_kept_snapshot(snapshot))
+
+
+@pytest.mark.usefixtures("composed")
+def test_cached_with_nothing_kept_fails_without_asking(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")  # details are shown
     seed_controller(fake_aap)
     result = _lint("--cached")
     assert result.exit_code == 1, result.output
     assert _requests(fake_aap) == []
     assert "controller resources" in result.stderr
+    assert "tok-1f2e3d" not in result.output  # the partition, never its details
+
+
+@pytest.mark.usefixtures("composed")
+def test_an_outdated_snapshot_under_cached_warns_without_the_token(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped_awx.settings import RESOURCES
+
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "tok-1f2e3d")
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")  # details are shown
+    seed_controller(fake_aap)
+    _lint()
+    before = len(fake_aap.router.calls)
+    monkeypatch.setattr(RESOURCES, "version", lambda: "another")
+    result = _lint("--cached")
+    assert result.exit_code == 3, result.output
+    assert len(fake_aap.router.calls) == before
+    assert "another version" in result.stderr
+    assert "tok-1f2e3d" not in result.output
 
 
 @pytest.mark.usefixtures("composed")
@@ -241,15 +296,51 @@ def test_a_code_version_change_reads_the_controller_again(
 def test_another_token_never_reads_this_tokens_snapshot(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """N1: the store's name digests the token, so a changed token reads the controller again."""
+    """N1: the token is the cache's partition, so a changed token reads the controller again."""
+    first, second = "tok-1f2e3d", "tok-9a8b7c"
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", first)
     seed_controller(fake_aap)
     _lint()
     before = len(fake_aap.router.calls)
-    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "rotated")
-    assert _lint().exit_code == 3
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", second)
+    result = _lint()
+    assert result.exit_code == 3, result.output
     assert len(fake_aap.router.calls) > before
-    assert _snapshot_file("rotated").exists() and _snapshot_file("secret").exists()
-    assert "rotated" not in _snapshot_file("rotated").name
+    files = _snapshot_files()
+    assert len(files) == 2  # one per token
+    for file in files:
+        assert first not in file.name and second not in file.name
+        assert first not in file.read_text(encoding="utf-8")
+        assert second not in file.read_text(encoding="utf-8")
+    assert _stored(first).items and _stored(second).items
+
+
+@pytest.mark.usefixtures("composed")
+def test_two_profiles_on_one_controller_and_token_share_its_snapshot(
+    fake_aap: Any, aap_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The profile is not part of the snapshot's identity: the controller and token are."""
+    aap_config.write_text(
+        """
+        profiles:
+          default:
+            awx:
+              base_url: https://aap.example.com
+              api_prefix: /api/v2/
+          other:
+            awx:
+              base_url: https://aap.example.com
+              api_prefix: /api/v2/
+        """
+    )
+    seed_controller(fake_aap)
+    _lint()
+    before = len(fake_aap.router.calls)
+    monkeypatch.setenv("UNTAPED_PROFILE", "other")
+    result = _lint()
+    assert result.exit_code == 3, result.output
+    assert len(fake_aap.router.calls) == before  # served the default profile's snapshot
+    assert len(_snapshot_files()) == 1
 
 
 @pytest.mark.usefixtures("composed")
@@ -362,7 +453,7 @@ def test_an_unlisted_kinds_summary_never_makes_an_identity(fake_aap: Any) -> Non
     fake_aap.store["workflow_nodes"][210]["inventory"] = 20
     fake_aap.list_errors["inventories"] = 403
     _lint()
-    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    stored = _stored()
     (release,) = [item for item in stored.items if item.resource.metadata.name == "release"]
     (node,) = [node for node in release.resource.spec["nodes"] if node["id"] == "deploy"]
     assert node["prompts"]["inventory"] == "prod"  # in the workflow's organization, not null
@@ -404,7 +495,7 @@ def test_a_management_job_schedule_is_read_as_its_system_job_template(fake_aap: 
     result = _lint()
     assert result.exit_code == 3, result.output  # seed_controller's findings, nothing worse
     assert not [row for row in _rows(result) if row["location"]["id"] == "schedules/403"]
-    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    stored = _stored()
     (schedule,) = [item for item in stored.items if item.location.id == "schedules/403"]  # type: ignore[union-attr]
     assert schedule.resource.metadata.parent is not None
     assert schedule.resource.metadata.parent.kind == "SystemJobTemplate"
@@ -427,7 +518,7 @@ def test_a_node_prompting_a_hidden_record_is_not_taken_for_its_namesake(fake_aap
     )  # fmt: skip
     fake_aap.store["workflow_nodes"][210]["inventory"] = 21
     _lint()
-    stored = AwxResources.model_validate_json(_snapshot_file().read_text(encoding="utf-8"))
+    stored = _stored()
     (release,) = [item for item in stored.items if item.resource.metadata.name == "release"]
     (prompted,) = [ref for ref in release.references if ref.field.endswith(".prompts.inventory")]
     assert (prompted.resolution, prompted.location) == ("unresolved", None)
@@ -529,10 +620,11 @@ def test_kind_narrows_the_report_never_the_load(fake_aap: Any) -> None:
     seed_controller(fake_aap)
     _lint("--refresh")
     full = _requests(fake_aap)
-    snapshot = _snapshot_file().read_text(encoding="utf-8")
+    [file] = _snapshot_files()
+    snapshot = _kept_snapshot(file)
     narrowed = _lint("--refresh", "--kind", "job-templates")
     assert _requests(fake_aap)[len(full) :] == full
-    assert _snapshot_file().read_text(encoding="utf-8") == snapshot
+    assert _kept_snapshot(file) == snapshot
     assert {target for _, target in _found(narrowed)} == {
         "JobTemplate/Platform/deploy-web",
         "JobTemplate/Platform/orphan",

@@ -13,6 +13,7 @@ from untaped.errors import ConfigError
 from untaped.fs import (
     atomic_write,
     file_lock,
+    is_write_temp,
     read_structured_file,
 )
 
@@ -317,3 +318,20 @@ def test_atomic_write_closes_the_temp_file_when_encoding_fails(tmp_path: Path) -
     assert len(os.listdir("/dev/fd")) == open_fds
     assert target.read_text() == "old"
     assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
+
+
+def test_a_write_in_flight_is_told_from_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[str] = []
+    real = fs_module.os.replace
+
+    def spy(source: str, target: str) -> None:
+        seen.append(Path(source).name)
+        real(source, target)
+
+    monkeypatch.setattr(fs_module.os, "replace", spy)
+    atomic_write(tmp_path / "SKILL.md", "x")
+    assert [is_write_temp(name) for name in seen] == [True]
+    assert not is_write_temp("SKILL.md")
+    assert not is_write_temp(".SKILL.md.untaped.tmp")

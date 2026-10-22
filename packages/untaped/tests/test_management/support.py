@@ -223,7 +223,7 @@ def age_stub(directory: Path, *, untaped: str = "10.0.0", text: str = "older wor
     skill = directory / SKILL_FILE
     skill.write_text(text, encoding="utf-8")
     marker = json.loads((directory / STUB_MARKER).read_text(encoding="utf-8"))
-    marker["untaped"] = untaped
+    marker["untaped"]["by"] = untaped
     if marker["plugin"] == "untaped":
         marker["plugin_version"] = untaped
     marker["sha256"] = digest({SKILL_FILE: skill.read_bytes()})
