@@ -118,7 +118,10 @@ def test_a_redirect_to_another_origin_is_refused_naming_both() -> None:
     assert str(caught.value).startswith(
         "refusing to follow a redirect from https://api.example.com to https://evil.example.net"
     )
-    assert caught.value.hint == "if http's server moved, set its URL to https://evil.example.net"
+    assert caught.value.hint == (
+        "if the server moved to https://evil.example.net and you trust it, "
+        "update http's URL setting"
+    )
 
 
 @respx.mock
@@ -158,6 +161,19 @@ def test_an_idn_base_url_is_its_own_origin() -> None:
 def test_same_origin_reads_an_idn_host_as_it_is_sent() -> None:
     assert same_origin("https://xn--bcher-kva.example/x", "https://bücher.example")
     assert not same_origin("https://xn--bcher-kva.example/x", "https://bucher.example")
+    # IDNA 2008, as httpx sends it, keeps ß (IDNA 2003 would map it to "ss").
+    assert same_origin("https://xn--strae-oqa.example/x", "https://straße.example")
+    assert not same_origin("https://straße.example/x", "https://strasse.example")
+
+
+@respx.mock
+def test_a_base_url_with_sharp_s_gets_its_credential() -> None:
+    route = respx.get("https://xn--strae-oqa.example/me").mock(return_value=httpx.Response(200))
+    with connected_client(
+        Service(), section="demo", base_url="https://straße.example", http=HttpSettings()
+    ) as client:
+        client.get("/me")
+    assert route.calls.last.request.headers["Authorization"] == f"Bearer {_CANARY}"
 
 
 @respx.mock
@@ -171,6 +187,18 @@ def test_a_hop_gets_only_the_time_left(monkeypatch: pytest.MonkeyPatch) -> None:
     with HttpClient(_URL) as client:
         client.get("/old", follow_redirects=True)
     assert new.calls.last.request.extensions["timeout"]["read"] == 0.5
+
+
+@respx.mock
+def test_a_hop_keeps_a_shorter_timeout_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(f"{_URL}/old").mock(
+        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
+    )
+    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
+    monkeypatch.setattr("untaped.http._time_left", lambda: 300.0)
+    with HttpClient(_URL, timeout=5.0) as client:
+        client.get("/old", follow_redirects=True)
+    assert set(new.calls.last.request.extensions["timeout"].values()) == {5.0}
 
 
 @respx.mock
@@ -321,6 +349,11 @@ def test_log_redaction_masks_credentials(line: str, masked: str) -> None:
 
 def test_a_password_holding_an_at_sign_is_masked_whole() -> None:
     assert redact_url_password("https://user:p@ss@host/x") == "https://user:***@host/x"
+
+
+def test_a_password_holding_an_apostrophe_is_masked() -> None:
+    assert redact_url_password("http://user:it's@proxy:3128") == "http://user:***@proxy:3128"
+    assert redact_credentials("http://user:it's@proxy:3128") == "http://***@proxy:3128"
 
 
 def test_verbose_lines_mask_the_proxy_and_authorization(

@@ -9,7 +9,6 @@ check: ``doctor --online`` runs it to contact the configured service.
 
 from __future__ import annotations
 
-import shutil
 import ssl
 from collections.abc import Callable, Iterator
 
@@ -18,6 +17,7 @@ from pydantic import BaseModel
 from untaped.auth import (
     PLAINTEXT_TOKEN,
     describe_token_source,
+    find_program,
     plaintext_subject,
     takes_token_command,
     token_alternatives,
@@ -34,7 +34,7 @@ def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorChec
     """Warn when ``program`` is not on ``PATH``; ``purpose`` says what needs it."""
 
     def run(_ctx: PluginContext) -> DoctorResult:
-        found = shutil.which(program)
+        found = find_program(program)
         if found is None:
             return DoctorResult(
                 id=check_id,

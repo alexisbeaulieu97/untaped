@@ -15,7 +15,6 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 
 from __future__ import annotations
 
-import contextlib
 import email.utils
 import functools
 import inspect
@@ -392,7 +391,10 @@ class HttpClient:
                     f"to {_site(str(hop.url))}: it leaves the origin",
                     url=str(request.url),
                     system=self.system,
-                    hint=f"if {self.system}'s server moved, set its URL to {_site(str(hop.url))}",
+                    hint=(
+                        f"if the server moved to {_site(str(hop.url))} and you trust it, "
+                        f"update {self.system}'s URL setting"
+                    ),
                 )
             if len(sent) > _MAX_REDIRECTS:
                 raise HttpError(
@@ -408,8 +410,12 @@ class HttpClient:
                     system=self.system,
                 )
             if left is not None:
-                # httpx copies the first request's timeout onto the hop.
-                hop.extensions["timeout"] = httpx.Timeout(left).as_dict()
+                # httpx copies the first request's timeout onto the hop; cap it.
+                copied = hop.extensions.get("timeout", {})
+                hop.extensions["timeout"] = {
+                    key: left if value is None else min(value, left)
+                    for key, value in httpx.Timeout(**copied).as_dict().items()
+                }
             _log_exchange(request, f"{response.status_code} -> {hop.url}", started)
             sent.append(hop if self._auth is None else self._auth(hop))
             response = self._client.send(sent[-1])
@@ -1087,14 +1093,27 @@ def _origin(url: str) -> tuple[str, str | None, int | None] | None:
     if not parts.scheme and not parts.netloc:
         return None
     scheme = parts.scheme.lower()
-    host = parts.hostname
-    with contextlib.suppress(UnicodeError):
-        host = host.encode("idna").decode("ascii") if host else host  # an IDN as sent
+    host = _sent_host(parts.hostname)
     try:
         port = parts.port or _DEFAULT_PORTS.get(scheme)
     except ValueError:
         port = -1  # an unparsable port never matches a well-formed origin
     return scheme, host, port
+
+
+def _sent_host(host: str | None) -> str | None:
+    """``host`` as httpx sends it: an IDN in punycode (IDNA 2008), else unchanged.
+
+    A host httpx refuses stays as it is: it never matches a host httpx sends to.
+    """
+    if not host or host.isascii():
+        return host
+    import httpx  # noqa: PLC0415
+
+    try:
+        return httpx.URL(f"http://{host}/").raw_host.decode("ascii")
+    except httpx.InvalidURL:
+        return host
 
 
 def _same_origin_next(response: httpx.Response, *, system: str | None = None) -> str | None:

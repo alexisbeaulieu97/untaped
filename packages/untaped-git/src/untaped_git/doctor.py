@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
-
-from untaped.sdk import DoctorResult, PluginContext, plural, size_text
+from untaped.sdk import DoctorResult, PluginContext, find_program, plural, size_text
 from untaped_git.infrastructure.version import below_floor, floor_text, git_version, version_text
 
 _ID = "git.version"
@@ -12,7 +10,7 @@ _ID = "git.version"
 
 def version_check(_ctx: PluginContext) -> DoctorResult:
     """``git.version``: fails below the repo store's floor, warns when git is missing."""
-    if shutil.which("git") is None:
+    if find_program("git") is None:
         return DoctorResult(
             id=_ID, ok=True, warn=True, detail="`git` not found on PATH; the repo store will fail"
         )

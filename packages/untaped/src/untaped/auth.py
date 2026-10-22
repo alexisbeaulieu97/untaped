@@ -336,11 +336,13 @@ def command_folder() -> Path:
 
 
 def find_program(name: str) -> str | None:
-    """``shutil.which(name)`` the way :func:`run_command` finds it.
+    """Where a bare program ``name`` is found on ``PATH`` when untaped runs it.
 
-    A relative ``PATH`` entry (``.``) is read from :func:`command_folder`,
-    never the current folder, so a repository can't plant the program
-    untaped probes for or runs.
+    Like ``shutil.which(name)``, except that a relative ``PATH`` entry (``.``,
+    or an empty one) is read from :func:`command_folder`, never the current
+    folder, so a repository can't plant the program untaped probes for or
+    runs. Pass a bare name: one with a ``/`` is resolved as ``shutil.which``
+    would.
     """
     folder = command_folder()
     entries = os.environ.get("PATH", os.defpath).split(os.pathsep)
