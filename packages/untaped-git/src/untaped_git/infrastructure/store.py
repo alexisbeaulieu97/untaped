@@ -942,7 +942,8 @@ class RepoStore:
         The repo's entry is pointed at the new directory, and the owner stamp,
         which records the absolute path, is rewritten when this plugin owns
         it, also when git already repointed the entry (a hand ``git worktree
-        repair`` or ``move``). Safe to repeat. Refused when ``worktree`` is
+        repair`` or ``move``), and so is untaped's credential helper line,
+        whose nonce is the folder's. Safe to repeat. Refused when ``worktree`` is
         not one of this repo's worktrees.
         """
         with self._locked():

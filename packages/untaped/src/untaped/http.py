@@ -802,7 +802,7 @@ def connected_client(
     base = url.rstrip("/")
     if credential is not None:
         _refuse_folder_transport(
-            http_settings, base, verified=override is not False, section=section
+            http_settings, base, verified=_verified(override, http_settings), section=section
         )
     if http_settings.proxy:
         _LOG.debug("%s: via proxy %s", section, redact_credentials(http_settings.proxy))
@@ -816,6 +816,13 @@ def connected_client(
         retry=retry,
         system=section,
     )
+
+
+def _verified(override: VerifyTypes | None, http: HttpSettings) -> bool:
+    """Whether a client's TLS checks the chain and the host: its key's, else the root's."""
+    if override is not None:
+        return override is not False
+    return http.verify_ssl and http.verify_hostname
 
 
 def _key_verify(verify: bool | Path) -> VerifyTypes | None:

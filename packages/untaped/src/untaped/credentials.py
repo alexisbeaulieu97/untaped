@@ -250,9 +250,16 @@ SHORT_ID = 6
 def describe_key(key: CredentialKey) -> str:
     """``url=https://aap.example.com verify_tls=~/certs/ca.pem``: a key as messages show it.
 
-    Fields at their default are left out; a key with none shows ``(any)``.
+    Fields at their default are left out, except a URL (github.com's default
+    server is still a server); a key with none shows ``(any)``.
     """
-    parts = [f"{name}={_shown(value)}" for name, value in key_data(key).items()]
+    data = key_data(key)
+    urls = key_shape(type(key)).urls
+    parts = [
+        f"{name}={_shown(data[name] if name in data else _normal(getattr(key, name)))}"
+        for name in type(key).model_fields
+        if name in data or (name in urls and getattr(key, name) is not None)
+    ]
     return " ".join(parts) or "(any)"
 
 

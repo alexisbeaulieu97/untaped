@@ -3,7 +3,8 @@
 For each profile (``default`` first) and each declared credential, the key
 is resolved from the config file alone (``default`` under the profile,
 renames applied; root ``http.verify_ssl: false`` read as the key's
-``verify_tls: false``). Each source the profile reads becomes its own row:
+``verify_tls: false``, as every run reads it, and written there). Each
+source the profile reads becomes its own row:
 
 - a ``token_command`` untaped wrote (``auth set``) points at its entry,
   which stays where it is: an older untaped still reads it;
@@ -72,6 +73,8 @@ class CredentialMove:
     """The profile whose file holds the line (``default`` for an inherited one)."""
     tls: tuple[str, ...] | None = None
     """Where this profile gets ``verify_tls: false`` from root ``verify_ssl``."""
+    clash: str | None = None
+    """The profile whose different line for the same server holds this one back."""
 
     @property
     def moves(self) -> bool:
@@ -96,7 +99,8 @@ def plan(data: Mapping[str, Any], *, store_available: bool) -> list[CredentialMo
     moves: list[CredentialMove] = []
     filed: dict[str, CredentialMove] = {}
     for profile in names:
-        effective = layout.effective(dict(data), profile=profile)
+        resolved = layout.resolve(dict(data), profile=profile)
+        effective = resolved.effective
         entry = profiles.get(profile)
         own: Mapping[str, Any] = entry if isinstance(entry, dict) else {}
         for section, credentials in sorted(by_plugin.items()):
@@ -112,12 +116,13 @@ def plan(data: Mapping[str, Any], *, store_available: bool) -> list[CredentialMo
                     values=values,
                     mine=mine,
                     effective=effective,
+                    tls_off=resolved.tls_off,
                     filed=filed,
                     store_available=store_available,
                 )
                 if move is not None:
                     moves.append(move)
-    return _keep_read_lines(moves)
+    return _keep_read_lines(_hold_clashes(moves))
 
 
 def _plan_one(
@@ -127,6 +132,7 @@ def _plan_one(
     values: Mapping[str, Any],
     mine: Mapping[str, Any],
     effective: Mapping[str, Any],
+    tls_off: frozenset[tuple[str, ...]],
     filed: dict[str, CredentialMove],
     store_available: bool,
 ) -> CredentialMove | None:
@@ -145,7 +151,7 @@ def _plan_one(
     setting = f"{section}.{line}"
     owner = profile if owned or profile == DEFAULT_PROFILE else DEFAULT_PROFILE
     base = CredentialMove(profile, setting, "leftover", "", credential=credential, owner=owner)
-    key, tls = _key(credential, effective)
+    key, tls = _key(credential, effective, tls_off)
     if key is None:
         return replace(
             base,
@@ -160,11 +166,7 @@ def _plan_one(
             return None  # the same line, read by an inheriting profile for the same server
         if (earlier.argv, earlier.token) == (None if argv is None else tuple(argv), token):
             return replace(base, how="same", detail=f"profile {earlier.profile} files the same")
-        return replace(
-            base,
-            detail=f"profile {earlier.profile} files another {credential.label} for "
-            f"{describe_key(key)}; keep one and run `untaped config migrate` again",
-        )
+        return replace(base, detail=_clash(earlier.profile, credential, key), clash=earlier.profile)
     if find_row(ident) is not None:
         move = replace(base, how="outranked", detail="a stored login already answers")
         filed[ident] = move
@@ -197,9 +199,15 @@ def _plan_one(
 
 
 def _key(
-    credential: Credential[Any], effective: Mapping[str, Any]
+    credential: Credential[Any],
+    effective: Mapping[str, Any],
+    tls_off: frozenset[tuple[str, ...]],
 ) -> tuple[CredentialKey | None, tuple[str, ...] | None]:
-    """The key from the file's values, with root ``verify_ssl: false`` as ``verify_tls``."""
+    """The key from the file's values, and its TLS leaf when root ``verify_ssl`` turned it off.
+
+    The key is the one this run uses (root ``verify_ssl: false`` already
+    read as its ``verify_tls: false``), so a login filed for it is found.
+    """
     section = credential.plugin
     try:
         settings: BaseModel = validate_settings_section(dict(effective), section)
@@ -208,15 +216,11 @@ def _key(
     key = credential_key(credential, settings)
     if key is None:
         return None, None
-    http = effective.get("http")
     tls = key_shape(type(key)).tls
-    if not (isinstance(http, dict) and http.get("verify_ssl") is False and tls is not None):
-        return key, None
-    if getattr(key, tls) is not True:
-        return key, None
     path = next((path for path, each in key_fields(type(settings)) if each is credential.key), None)
-    turned = key.model_copy(update={tls: False})
-    return turned, None if path is None else (section, *path, tls)
+    if tls is None or path is None or (section, *path, tls) not in tls_off:
+        return key, None
+    return key, (section, *path, tls)
 
 
 def _relative(argv: Sequence[object]) -> str | None:
@@ -224,6 +228,32 @@ def _relative(argv: Sequence[object]) -> str | None:
         if ("/" in part or part.startswith(".")) and not part.startswith(("/", "~", "-")):
             return part
     return None
+
+
+def _clash(other: str, credential: Credential[Any], key: CredentialKey) -> str:
+    return (
+        f"profile {other} files another {credential.label} for {describe_key(key)}; "
+        "keep one and run `untaped config migrate` again"
+    )
+
+
+def _hold_clashes(moves: list[CredentialMove]) -> list[CredentialMove]:
+    """Keep both lines of a clash: a stored login would answer for the other profile too."""
+    clashes = {(move.clash, _ident(move)): move.profile for move in moves if move.clash is not None}
+    found: list[CredentialMove] = []
+    for move in moves:
+        other = clashes.get((move.profile, _ident(move)))
+        credential, key = move.credential, move.key
+        if other is not None and credential is not None and key is not None:
+            move = replace(move, how="leftover", detail=_clash(other, credential, key))
+        found.append(move)
+    return found
+
+
+def _ident(move: CredentialMove) -> str | None:
+    if move.credential is None or move.key is None:
+        return None
+    return move.credential.id(move.key)
 
 
 def _keep_read_lines(moves: list[CredentialMove]) -> list[CredentialMove]:

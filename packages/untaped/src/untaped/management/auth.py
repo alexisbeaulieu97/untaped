@@ -39,7 +39,14 @@ from untaped.cli import (
 )
 from untaped.config.repository import SettingsFileRepository
 from untaped.config_file import read_config_dict
-from untaped.credential_store import CredentialRow, find_row, rows, rows_by_prefix
+from untaped.credential_store import (
+    CredentialRow,
+    find_row,
+    ready_store,
+    rows,
+    rows_by_prefix,
+    store_token,
+)
 from untaped.credentials import (
     SHORT_ID,
     Credential,
@@ -245,9 +252,10 @@ def _login(
         argv = _split_command(token_command)
         where = credential.store(key, command=argv)
     else:
+        chosen = ready_store(credential, store)
         ui = ui_context(strict=False)
         token = _prompt_token(ui, credential.label) if ui.can_prompt else _read_stdin_token()
-        where = credential.store(key, token=token, backend=store)
+        where = store_token(credential, key, token, store=chosen)
     ident = credential.id(key)
     _diag.success(f"stored the {credential.label} for {describe_key(key)}: {where}")
     _name_outranked(credential)
@@ -379,6 +387,10 @@ def _row_by_id(ident: str) -> CredentialRow:
 
 
 def _row_key(row: CredentialRow) -> str:
+    """The key as the row's label shows it (defaulted URLs too), else its stored fields."""
+    prefix = f"{row.plugin} {row.name.replace('_', ' ')} "
+    if row.label.startswith(prefix):
+        return row.label.removeprefix(prefix)
     return " ".join(f"{name}={value}" for name, value in row.key.items()) or "(no key fields)"
 
 

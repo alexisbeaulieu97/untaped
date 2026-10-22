@@ -125,7 +125,7 @@ def test_an_inherited_preset_for_another_server_is_copied(
     assert "token_command" not in _profiles(_isolated_config)["default"]["wiz"]
 
 
-def test_two_profiles_filing_different_tokens_for_one_server_keep_the_second(
+def test_two_profiles_filing_different_tokens_for_one_server_keep_both(
     _isolated_config: Path,
 ) -> None:
     write_config(
@@ -138,11 +138,14 @@ def test_two_profiles_filing_different_tokens_for_one_server_keep_the_second(
     rows = _rows(_migrate("--yes", "--format", "json"))
 
     assert [(row["profile"], row["action"]) for row in rows] == [
-        ("default", "stored"),
+        ("default", "kept"),
         ("work", "kept"),
     ]
+    assert "profile work files another wiz token" in rows[0]["detail"]
     assert "profile default files another wiz token" in rows[1]["detail"]
-    assert _profiles(_isolated_config)["work"]["wiz"] == {"token": "two"}
+    profiles = _profiles(_isolated_config)
+    assert (profiles["default"]["wiz"]["token"], profiles["work"]["wiz"]["token"]) == ("one", "two")
+    assert stored_rows() == []
 
 
 def test_a_server_only_the_environment_sets_is_kept(
@@ -175,6 +178,26 @@ def test_root_verify_ssl_false_becomes_the_keys_verify_tls(_isolated_config: Pat
     assert default["http"] == {"verify_ssl": False}, "the root line stays until 12.0"
     [stored] = stored_rows()
     assert stored.key == {"url": "https://wiz.example.com", "verify_tls": False}
+
+
+def test_root_verify_ssl_false_keeps_the_key_a_login_was_filed_for(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    http: {verify_ssl: false}\n"
+        "    wiz: {server: {url: https://wiz.example.com}, token: old}\n",
+    )
+    compose(make_spec("wiz", settings=WizProfile, credentials=(TOKEN,)))
+    server = WizServer(url=HttpUrl("https://wiz.example.com"), verify_tls=False)
+    TOKEN.store(server, token="new")
+
+    rows = _rows(_migrate("--yes", "--format", "json"))
+
+    assert ("wiz.token", "dropped") in {(row["from"], row["action"]) for row in rows}
+    found = TOKEN.get(server)
+    assert found is not None and found.get_secret_value() == "new"
+    assert sorted(current_memory_store().entries.values()) == ["new"]
 
 
 def test_a_stored_login_outranks_the_line_which_goes(_isolated_config: Path) -> None:

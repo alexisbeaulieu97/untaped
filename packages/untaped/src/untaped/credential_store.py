@@ -243,26 +243,42 @@ def store_token(
     token: str,
     *,
     backend: str | None = None,
+    store: SecretStore | None = None,
 ) -> str:
     """Save ``token`` to a password store for ``key`` and file its row; where it went.
 
-    The store is the named one, else the first usable one. The secret is
-    written and read back before the row is filed, so a failure files
-    nothing. An entry another row names is never reused.
+    The store is ``store`` (from :func:`ready_store`), else the named one,
+    else the first usable one. The secret is written and read back before
+    the row is filed, so a failure files nothing. An entry another row
+    names is never reused.
     """
-    store: SecretStore | None = _TEST_STORE.get() or pick_store(_store_name(backend))
     if store is None:
-        message, hint = no_backend_message(credential.plugin, credential.name)
-        raise ConfigError(message, hint=hint, fix_by="user")
-    store.preflight()
+        store = ready_store(credential, backend)
     ident = credential.id(key)
     entry = entry_for(credential, ident)
     taken = [row for row in rows() if row.entry == entry and row.id != ident]
     if taken:
         entry = f"{entry}-{ident[16:24]}"
     store.save(entry, token, label=label_for(credential, key))
+    old = find_row(ident)
     index().put(_row(credential, key, ident, backend=cast("Backend", store.name), entry=entry))
+    if old is not None and (old.backend, old.entry) != (store.name, entry):
+        _drop_entry(old)
     return store.describe(entry)
+
+
+def ready_store(credential: Credential[Any], backend: str | None = None) -> SecretStore:
+    """The store a token for ``credential`` goes to, tested with a throwaway value.
+
+    ``auth login`` calls it before asking for the token, so nobody pastes
+    one only to learn it has nowhere to go.
+    """
+    store: SecretStore | None = _TEST_STORE.get() or pick_store(_store_name(backend))
+    if store is None:
+        message, hint = no_backend_message(credential.plugin, credential.name)
+        raise ConfigError(message, hint=hint, fix_by="user")
+    store.preflight()
+    return store
 
 
 def store_command(credential: Credential[Any], key: CredentialKey, argv: Sequence[str]) -> str:
@@ -274,8 +290,8 @@ def store_command(credential: Credential[Any], key: CredentialKey, argv: Sequenc
     ident = credential.id(key)
     old = find_row(ident)
     index().put(_row(credential, key, ident, backend="command", argv=command))
-    if old is not None and old.store is not None and old.entry is not None:
-        _delete_entry(old)
+    if old is not None:
+        _drop_entry(old)
     return f"will run `{shlex.join(command)}` from the config folder when this token is needed"
 
 
@@ -305,6 +321,12 @@ def forget_row(ident: str) -> CredentialRow | None:
         _delete_entry(row)
     index().delete(ident)
     return row
+
+
+def _drop_entry(old: CredentialRow) -> None:
+    """Delete the entry a replaced row named, unless it is an 11.0 one an older untaped reads."""
+    if not old.migrated:
+        _delete_entry(old)
 
 
 def _delete_entry(row: CredentialRow) -> None:

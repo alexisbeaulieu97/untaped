@@ -214,3 +214,51 @@ def test_a_rejected_credential_names_its_own_auth_login() -> None:
     assert error.hint == "run `untaped auth login duo webhook_secret`"
     assert error.fix_by == "user"
     assert rejected_token_error("duo", "rejected").hint == "run `untaped auth login duo`"
+
+
+@pytest.mark.parametrize(
+    ("http", "verify", "url", "sent"),
+    [
+        (HttpSettings(proxy="http://proxy.example.com:3128"), True, _URL, True),
+        (HttpSettings(proxy="http://proxy.example.com:3128"), False, _URL, False),
+        (
+            HttpSettings(proxy="http://proxy.example.com:3128", verify_hostname=False),
+            True,
+            _URL,
+            False,
+        ),
+        (HttpSettings(proxy="http://proxy.example.com:3128", verify_ssl=False), True, _URL, False),
+        (
+            HttpSettings(proxy="http://proxy.example.com:3128"),
+            True,
+            "http://plain.example.com",
+            False,
+        ),
+    ],
+)
+def test_a_folder_proxy_carries_a_credential_only_over_verified_https(
+    monkeypatch: pytest.MonkeyPatch, http: HttpSettings, verify: bool, url: str, sent: bool
+) -> None:
+    monkeypatch.setattr(
+        "untaped.credentials.folder_leaves", lambda: {("http", "proxy"): "/work/.untaped.yml"}
+    )
+
+    def build() -> None:
+        connected_client(
+            Marked(), section="demo", base_url=url, bearer="tok", http=http, verify=verify
+        ).close()
+
+    if sent:
+        build()
+    else:
+        with pytest.raises(ConfigError, match="won't send a credential through a folder's proxy"):
+            build()
+
+
+def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "untaped.credentials.folder_leaves", lambda: {("http", "ca_bundle"): "/work/.untaped.yml"}
+    )
+
+    with pytest.raises(ConfigError, match="won't send a credential under a trust setting"):
+        connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=_HTTP)

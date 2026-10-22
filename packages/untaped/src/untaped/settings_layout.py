@@ -33,6 +33,8 @@ class ResolvedConfig:
     provenance: dict[tuple[str, ...], str]
     uses: dict[str, dict[str, tuple[KeyUse, ...]]]
     """``profile -> section -> uses``, for the layered profiles only."""
+    tls_off: frozenset[tuple[str, ...]] = frozenset()
+    """The key ``verify_tls`` leaves a layer's root ``http.verify_ssl: false`` turned off."""
 
 
 class ProfilesSettingsLayout:
@@ -82,7 +84,8 @@ class ProfilesSettingsLayout:
         models = sections if sections is not None else self._sections_now()
         renamed, uses = _rename_profiles(raw, models, override)
         effective, provenance = resolve_profiles(renamed, active_override=override)
-        return ResolvedConfig(effective, provenance, uses)
+        tls_off = _root_tls_off(renamed, override, effective, models)
+        return ResolvedConfig(effective, provenance, uses, tls_off)
 
     def _sections_now(self) -> SectionModels:
         return self._sections() if self._sections is not None else {}
@@ -129,6 +132,64 @@ class ProfilesSettingsLayout:
         if not isinstance(target, dict):
             raise ConfigError(f"profile {name!r} must be a mapping")
         return target, name
+
+
+def _layers(raw: dict[str, Any], active: str | None) -> list[dict[str, Any]]:
+    """The layered profiles' own data, ``default`` first."""
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, dict):
+        return []
+    names = dict.fromkeys((DEFAULT_PROFILE, active or DEFAULT_PROFILE))
+    return [profiles[name] for name in names if isinstance(profiles.get(name), dict)]
+
+
+def _root_tls_off(
+    raw: dict[str, Any], active: str | None, effective: dict[str, Any], models: SectionModels
+) -> frozenset[tuple[str, ...]]:
+    """Read a layer's root ``http.verify_ssl: false`` as each key's ``verify_tls: false``.
+
+    11.x only (``verify_ssl`` goes in 12.0). The key's TLS field is found by
+    type; a key with no URL set is left alone, and a layer's own
+    ``verify_tls`` wins over its ``verify_ssl``, as a later layer wins over
+    an earlier one. ``effective`` is updated in place; returns the leaves
+    turned off.
+    """
+    from untaped.credentials import key_fields, key_shape  # noqa: PLC0415 - credentials is heavy
+
+    layers = _layers(raw, active)
+    if not any(_dig(layer, ("http", "verify_ssl")) is False for layer in layers):
+        return frozenset()
+    turned: set[tuple[str, ...]] = set()
+    for section, model in models.items():
+        for path, key in key_fields(model):
+            shape = key_shape(key)
+            node = _dig(effective, (section, *path))
+            if shape.tls is None or not isinstance(node, dict):
+                continue
+            if (
+                not any(node.get(url) for url in shape.urls)
+                or node.get(shape.tls, True) is not True
+            ):
+                continue
+            leaf = (section, *path, shape.tls)
+            decided = None
+            for layer in layers:
+                if _dig(layer, leaf) is not None:
+                    decided = "key"
+                elif _dig(layer, ("http", "verify_ssl")) is False:
+                    decided = "root"
+            if decided == "root":
+                node[shape.tls] = False
+                turned.add(leaf)
+    return frozenset(turned)
+
+
+def _dig(data: Any, path: tuple[str, ...]) -> Any:
+    for part in path:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(part)
+    return data
 
 
 def _rename_profiles(

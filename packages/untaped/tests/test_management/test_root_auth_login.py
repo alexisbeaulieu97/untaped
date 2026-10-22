@@ -10,8 +10,10 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from test_management.support import compose, make_spec, write_config
-from untaped.credential_store import file_reference
+from untaped.credential_store import file_reference, index
 from untaped.credential_store import rows as stored_rows
+from untaped.credentials import describe_key
+from untaped.errors import ConfigError
 from untaped.management.auth import build_root_auth_app
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, current_memory_store
@@ -356,3 +358,64 @@ def test_status_before_setup_says_so() -> None:
     rows = {row["section"]: row for row in _json(_auth("status", "--format", "json"))}
 
     assert (rows["wiz"]["key"], rows["wiz"]["source"]) == ("not set up", "none")
+
+
+@pytest.mark.usefixtures("_server")
+def test_login_tests_the_store_before_asking_for_the_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken() -> None:
+        raise ConfigError("pass cannot decrypt", hint="unlock gpg")
+
+    monkeypatch.setattr(current_memory_store(), "preflight", broken)
+    backend = ScriptedPromptBackend(secrets=["never"])
+
+    result = _auth("login", "wiz", backend=backend)
+
+    assert result.exit_code == 4, result.output
+    assert "pass cannot decrypt" in result.stderr
+    assert backend.calls == []
+
+
+@pytest.mark.usefixtures("_server")
+def test_a_command_login_over_a_migrated_row_keeps_the_old_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(TokenStore, "delete", lambda self, entry: deleted.append(entry))
+    file_reference(TOKEN, KEY, TokenStore("pass"), "default/wiz")
+
+    result = _auth("login", "wiz", "--token-command", "printf tok")
+
+    assert result.exit_code == 0, result.output
+    assert deleted == []
+
+
+@pytest.mark.usefixtures("_server")
+def test_logging_in_again_into_another_entry_deletes_the_replaced_one() -> None:
+    memory = current_memory_store()
+    TOKEN.store(KEY, token="first")
+    [row] = stored_rows()
+    memory.entries["elsewhere"] = memory.entries.pop(row.entry or "")
+    index().put(row.model_copy(update={"entry": "elsewhere"}))
+
+    TOKEN.store(KEY, token="second")
+
+    assert "elsewhere" not in memory.entries
+    assert sorted(memory.entries.values()) == ["second"]
+
+
+class Hub(CredentialKey):
+    url: HttpUrl = HttpUrl("https://api.hub.example.com")
+    verify_tls: TlsVerify = True
+
+
+def test_a_defaulted_url_is_still_named() -> None:
+    hub = Credential("hub", "token", key=Hub)
+    hub.store(Hub(), token="t")
+
+    assert describe_key(Hub()) == "url=https://api.hub.example.com"
+    [row] = stored_rows()
+    assert row.key == {}, "the id leaves defaults out, so adding one keeps every login"
+    listed = _json(_auth("list", "--format", "json"))
+    assert listed[0]["key"] == "url=https://api.hub.example.com"

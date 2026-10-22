@@ -9,6 +9,7 @@ is the store's own: it uses :class:`RepoStore`'s internals.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from untaped_git.infrastructure.store import RepoStore
 
 _PLAIN_REFSPEC = "+refs/heads/*:refs/remotes/origin/*"
+_NONCE = re.compile(r"--nonce [0-9a-f]+")
 #: The owning plugin's name, in the entry's admin directory (``worktrees/<id>``).
 OWNER_MARK = "untaped-owner"
 
@@ -148,6 +150,28 @@ def repair_worktree(store: RepoStore, worktree: Path) -> None:
     store._git(["worktree", "repair", os.path.abspath(worktree)])
     if _owned_before_repair(store, entry):
         _worktree_config(store, worktree, "untaped.worktree", str(worktree.resolve()))
+        _renew_helper_nonce(store, worktree)
+
+
+def _renew_helper_nonce(store: RepoStore, worktree: Path) -> None:
+    """Give untaped's helper line the moved worktree's nonce, keeping the rest of the line."""
+    result = store._git(
+        ["config", "--worktree", "--null", "--get-regexp", r"^credential\..*\.helper$"],
+        cwd=worktree,
+        capture=True,
+        check=False,
+    )
+    nonce = helper_nonce(store._path, worktree, create=True)
+    for entry in result.text.split("\0"):
+        key, _, value = entry.partition("\n")
+        renewed = _NONCE.sub(f"--nonce {nonce}", value)
+        if key and renewed != value:
+            _worktree_config(store, worktree, "--replace-all", key, renewed, _exact(value))
+
+
+def _exact(value: str) -> str:
+    """A ``git config`` value pattern matching ``value`` alone."""
+    return "^" + re.escape(value) + "$"
 
 
 def _entry_of(store: RepoStore, worktree: Path) -> WorktreeEntry | None:

@@ -275,8 +275,8 @@ untaped --profile work config set awx.server.verify_tls /path/to/aap-ca.pem
 ```
 
 Root `http.verify_ssl` and `http.verify_hostname` are deprecated. In 11.x,
-`http.verify_ssl: false` still turns every check off, and `config migrate`
-writes it into each server as `verify_tls: false`. `ui.theme` picks a built-in
+`http.verify_ssl: false` reads as each server's `verify_tls: false` (unless
+the server sets its own) and `config migrate` writes it there. `ui.theme` picks a built-in
 theme and `ui.format` the default `--format`; the
 [configuration reference](./reference/config.md#root) lists every `http.*`
 and `ui.*` setting, including the names `ui.symbols` and `ui.color_roles`
@@ -373,9 +373,10 @@ previews):
   stays where it is;
 - another command becomes a login running it;
 - a plain-text token goes to the password store;
-- a line it can't move (two profiles filing different tokens for one server,
-  no password store, a server only the environment sets) stays, listed as
-  kept.
+- a line it can't move stays, listed as kept: both lines when two profiles
+  file different tokens for one server (a login would answer for both), a
+  plain-text token with no password store, or a server only the environment
+  sets.
 
 An older untaped sharing the config stops reading the lines it moved.
 

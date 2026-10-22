@@ -9,9 +9,13 @@ bare top-level keys.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
+from pydantic import BaseModel, HttpUrl
 
+from untaped.sdk import CredentialKey, TlsVerify
 from untaped.settings import (
     active_settings_layout,
     get_settings,
@@ -48,3 +52,62 @@ class TestDefaultLayout:
     def test_active_layout_is_a_singleton(self) -> None:
         """There is one layout instance; repeated calls return the same object."""
         assert active_settings_layout() is active_settings_layout()
+
+
+class _Server(CredentialKey):
+    url: HttpUrl | None = None
+    verify_tls: TlsVerify = True
+
+
+class _Section(BaseModel):
+    server: _Server | None = None
+
+
+def _tls(text: str, *, profile: str | None = None) -> tuple[Any, frozenset[tuple[str, ...]]]:
+    resolved = ProfilesSettingsLayout().resolve(
+        yaml.safe_load(text), profile=profile, sections={"wiz": _Section}
+    )
+    return resolved.effective["wiz"]["server"].get("verify_tls"), resolved.tls_off
+
+
+@pytest.mark.parametrize(
+    ("text", "profile", "expected"),
+    [
+        # root verify_ssl: false reads as the key's verify_tls: false
+        (
+            "default: {http: {verify_ssl: false}, wiz: {server: {url: https://w.example.com}}}",
+            None,
+            False,
+        ),
+        # the layer's own verify_tls wins
+        (
+            "default: {http: {verify_ssl: false}, wiz: {server: {url: https://w.example.com, "
+            "verify_tls: true}}}",
+            None,
+            True,
+        ),
+        # a later layer's verify_ssl wins over an earlier verify_tls
+        (
+            "default: {wiz: {server: {url: https://w.example.com, verify_tls: true}}}\n"
+            "  work: {http: {verify_ssl: false}}",
+            "work",
+            False,
+        ),
+        # and a later layer's verify_tls over an earlier verify_ssl
+        (
+            "default: {http: {verify_ssl: false}, wiz: {server: {url: https://w.example.com}}}\n"
+            "  work: {wiz: {server: {verify_tls: true}}}",
+            "work",
+            True,
+        ),
+        # a key with no URL is left alone
+        ("default: {http: {verify_ssl: false}, wiz: {server: {verify_tls: true}}}", None, True),
+    ],
+)
+def test_root_verify_ssl_false_reads_as_each_keys_verify_tls(
+    text: str, profile: str | None, expected: bool
+) -> None:
+    value, turned = _tls(f"profiles:\n  {text}\n", profile=profile)
+
+    assert (value is not False) is expected
+    assert (("wiz", "server", "verify_tls") in turned) is not expected
