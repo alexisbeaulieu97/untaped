@@ -58,7 +58,7 @@ from rich.text import Text
 
 from untaped.auth import CommandToken, forget_token_command
 from untaped.config.use_cases import Note
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, ErrorCategory
 from untaped.management.doctor import online_probe_rows
 from untaped.management.setup_connection import (
     anyway_buttons,
@@ -204,6 +204,18 @@ class Saved:
 
 
 @dataclass(frozen=True)
+class NotSaved:
+    """The connection write for ``name`` failed with ``error``; ``listing`` is what ``profile``
+    shows now (what was written before the failure stays). ``conflict``: it was refused because
+    the profile changed while the form was open, so nothing was written."""
+
+    name: str
+    error: str
+    conflict: bool
+    listing: Listing | None
+
+
+@dataclass(frozen=True)
 class Registered:
     """The registration finished; ``text`` is what it wrote."""
 
@@ -229,6 +241,9 @@ class SetupModel:
     states: Mapping[str, ServiceState]
     forms: Mapping[str, Form]
     """This install's form and each service's connection form."""
+    opened: Mapping[str, ServiceState]
+    """Each service's state its form was built from: what a save compares the form with, so
+    a value relisted since is never written back from a stale form."""
     panes: Mapping[str, SectionPane]
     """Each listed section's rows."""
     config_path: str = ""
@@ -470,6 +485,7 @@ class _Setup:
             rows=rows,
             states=listing.states,
             forms={INSTALL_ROW: _install_form(), **self._forms(listing.states, self.profile)},
+            opened=listing.states,
             panes=self._panes(listing, self.profile),
             config_path=str(resolve_config_path()),
             selected=1 if self.order else 0,
@@ -561,6 +577,8 @@ class _Setup:
                 return self._probed(model, name, rows)
             case Saved():
                 return self._saved(model, message)
+            case NotSaved():
+                return self._not_saved(model, message)
             case ProfileLoaded(profile=profile, listing=listing):
                 return self._loaded(model, profile, listing)
             case Registered(text=text):
@@ -720,6 +738,7 @@ class _Setup:
                     INSTALL_ROW: model.forms[INSTALL_ROW],
                     **self._forms(listing.states, profile),
                 },
+                opened=listing.states,
                 panes=self._panes(listing, profile),
                 phase="idle",
                 pending=None,
@@ -866,7 +885,7 @@ class _Setup:
         spec = self.services[name]
         del values  # the form itself holds them, each in its shape's field
         try:
-            asked = candidate(spec, model.current, model.forms[name], model.states[name])
+            asked = candidate(spec, model.current, model.forms[name], model.opened[name])
         except ConfigError as exc:
             return self._fail(model, name, str(exc)), []
 
@@ -966,7 +985,12 @@ class _Setup:
         )
 
         def save() -> object:
-            notes = write_candidate(spec, asked, state, store, preflight)
+            try:
+                notes = write_candidate(spec, asked, state, store, preflight)
+            except Exception as exc:  # shown on the form, as any failed command is
+                conflict = isinstance(exc, ConfigError) and exc.category is ErrorCategory.CONFLICT
+                listing = _listing(asked.profile, services)
+                return NotSaved(name, _error_text(exc), conflict, listing)
             return Saved(name, asked.profile, tuple(notes), _listing(asked.profile, services))
 
         return (
@@ -1000,6 +1024,7 @@ class _Setup:
                 **done.forms,
                 name: connection_form(self.services[name], state, self.store, model.current),
             },
+            opened={**done.opened, name: state},
             saved=(*model.saved, (message.profile, name)),
             notes=(*model.notes, *message.notes),
             focus="section",
@@ -1035,8 +1060,37 @@ class _Setup:
         )
         return self._after(done)
 
+    def _not_saved(self, model: SetupModel, message: NotSaved) -> tuple[SetupModel, list[Cmd]]:
+        """A save failed: the form keeps what the user typed, now compared with the profile.
+
+        A conflict wrote nothing: the form opens again on what the profile
+        holds now. Otherwise the settings the save wrote before failing are
+        what the form opened on now, so a retry neither refuses them as
+        changed nor writes them twice.
+        """
+        asked = model.pending
+        if model.phase != "saving" or asked is None or asked.name != message.name:
+            return model, []
+        name = message.name
+        done = model if message.listing is None else self._relisted(model, message.listing)
+        fresh = done.states.get(name)
+        if fresh is not None and message.conflict:
+            form = connection_form(self.services[name], fresh, self.store, model.current)
+            opened = fresh
+            done = replace(done, forms={**done.forms, name: form})
+        elif fresh is not None:
+            keys = [key for key, _ in asked.values]
+            opened = model.opened[name]
+            values = {**opened.values, **{key: fresh.values.get(key) for key in keys}}
+            own = {**opened.own, **{key: fresh.own.get(key) for key in keys}}
+            opened = replace(opened, values=values, own=own)
+        else:
+            opened = model.opened[name]
+        done = replace(done, opened={**done.opened, name: opened})
+        return self._save_failed(done, asked, message.error)
+
     def _failed(self, model: SetupModel, error: BaseException) -> tuple[SetupModel, list[Cmd]]:
-        text = str(error).strip() or type(error).__name__
+        text = _error_text(error)
         if model.phase == "registering":
             form = model.forms[INSTALL_ROW].with_error(f"could not register this install: {text}")
             refused: Note = ("warning", f"could not register this install: {text}")
@@ -1059,6 +1113,12 @@ class _Setup:
         asked = model.pending
         if model.phase not in ("probing", "saving") or asked is None:
             return model, []
+        return self._save_failed(model, asked, text)
+
+    def _save_failed(
+        self, model: SetupModel, asked: Candidate, text: str
+    ) -> tuple[SetupModel, list[Cmd]]:
+        """The check or the save of ``asked`` failed with ``text``: show it on its form."""
         wrote = model.phase == "saving"
         failed = replace(self._fail(model, asked.name, text), phase="idle", pending=None)
         if wrote and model.leaving is not None:
@@ -1158,6 +1218,11 @@ class _Note:
 
     def validate(self) -> str:
         return ""
+
+
+def _error_text(error: BaseException) -> str:
+    """How a failed command reads on the screen: its message, else its type's name."""
+    return str(error).strip() or type(error).__name__
 
 
 def _no_preflight() -> None:

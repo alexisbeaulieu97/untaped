@@ -213,10 +213,12 @@ def _token_command(name: str, text: str) -> list[str]:
 def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -> Candidate:
     """The form's validated values as what the user asked for.
 
-    Only the settings the user changed are written, so a value the profile
-    inherits stays inherited; a secret setting left empty keeps its value.
-    Raises :class:`ConfigError` for a value ``config set`` would refuse, or
-    a setting the plugin needs left empty.
+    ``state`` is the one the form was built from: only the settings the user
+    changed from it are written, each expecting the profile's value it held,
+    so a value the profile inherits stays inherited and one changed since
+    is not replaced; a secret setting left empty keeps its value. Raises
+    :class:`ConfigError` for a value ``config set`` would refuse, or a
+    setting the plugin needs left empty.
     """
     descriptors = _descriptors(spec)
     held = dict(form.fields)
@@ -224,8 +226,8 @@ def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -
     values: list[tuple[str, str | None]] = []
     for field in form_fields(spec):
         descriptor = descriptors[field.path]
-        text = written(descriptor, held[field.key])
-        opened = written(descriptor, editor(descriptor, state.values.get(field.key), label=""))
+        text = _written(descriptor, held[field.key])
+        opened = _written(descriptor, editor(descriptor, state.values.get(field.key), label=""))
         if text is None and descriptor.is_secret and state.values.get(field.key) is not None:
             continue  # an empty secret keeps the one set
         if text is None and field.needs_setup:
@@ -242,6 +244,12 @@ def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -
     )
     expected = tuple((key, state.own.get(key)) for key, _ in values)
     return Candidate(spec.name, spec.name, profile, tuple(values), secrets, expected)
+
+
+def _written(descriptor: FieldDescriptor, component: Any) -> str | None:
+    """What ``component`` writes, an empty list as nothing (a list the plugin needs is refused)."""
+    text = written(descriptor, component)
+    return None if text == "[]" else text
 
 
 def _choice(name: str, secret: MarkedField, tab: object) -> SecretChoice:

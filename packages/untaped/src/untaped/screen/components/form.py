@@ -123,7 +123,8 @@ class Form:
     ) -> RenderableType:
         """The fields stacked a blank line apart, cut to the lines around the focused one.
 
-        The form's own error, under the fields, is kept in sight instead while it shows.
+        The form's own error, under the fields, is kept in sight instead while it shows
+        and the last field (the one that submits) is focused.
         """
         blocks: list[RenderableType] = [
             field.view(frame, focused=focused and index == self.focus, width=width)
@@ -131,4 +132,6 @@ class Form:
         ]
         if self.error:
             blocks.append(Text(self.error, style=role_style(frame, "screen.error")))
-        return windowed(blocks, len(self.fields) if self.error else self.focus, frame.height)
+        last = len(self.fields) - 1
+        pinned = bool(self.error) and self.focus == last
+        return windowed(blocks, len(self.fields) if pinned else self.focus, frame.height)

@@ -24,7 +24,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 from untaped.auth import token_env_names
 from untaped.config.models import SettingOutcome
@@ -37,7 +37,7 @@ from untaped.config.use_cases import (
     SettingChange,
     UnsetSetting,
 )
-from untaped.credentials import Credential, credential_key, describe_key
+from untaped.credentials import Credential, credential_key, describe_key, key_fields
 from untaped.errors import ConfigError, UsageError
 from untaped.management.auth import delete_stored_token, save_token
 from untaped.management.setup_state import ServiceState, profile_exists, service_marks
@@ -45,7 +45,7 @@ from untaped.plugins.registry import PluginSpec, settings_model
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import CreateProfile
 from untaped.profile_resolver import DEFAULT_PROFILE, profile_scope
-from untaped.settings import load_settings_section
+from untaped.settings import env_var_setting, load_settings_section
 from untaped.token_store import TokenStore, entry_name, preset_entry
 
 __all__ = [
@@ -87,15 +87,16 @@ class Candidate:
     ``values`` are the settings the user changed, as ``(key, text)`` in
     form order, each as ``config set`` takes it (``None`` unsets it);
     ``expected`` is each one's own value in the profile when the form
-    opened. ``secrets`` is one choice per secret, in form order.
+    opened. Neither is in a repr: a masked setting is among them.
+    ``secrets`` is one choice per secret, in form order.
     """
 
     name: str
     section: str
     profile: str
-    values: tuple[tuple[str, str | None], ...] = ()
+    values: tuple[tuple[str, str | None], ...] = field(default=(), repr=False)
     secrets: tuple[SecretChoice, ...] = ()
-    expected: tuple[tuple[str, object], ...] = ()
+    expected: tuple[tuple[str, object], ...] = field(default=(), repr=False)
     checked: Checked = "unchecked"
 
     @property
@@ -239,20 +240,32 @@ def _login(
     """File a declared credential's choice under the key just saved, as ``auth login`` does.
 
     The key is read back from the profile once its settings are written, so
-    the login is filed under exactly what later runs resolve. The profile's
+    the login is filed under exactly what later runs resolve; a variable
+    that sets part of it over the saved settings is named. The profile's
     old ``<name>`` and ``<name>_command`` go: the stored login answers first.
     """
     section, profile, how = candidate.section, candidate.profile, secret.how
     if how == "keep":
         return []
     with profile_scope(profile):
-        key = credential_key(credential, load_settings_section(section))
+        settings = load_settings_section(section)
+    key = credential_key(credential, settings)
     if key is None:
         raise ConfigError(
             f"{section} has no settings to file the {credential.label} under",
             fix_by="user",
         )
     notes: list[Note] = []
+    variables = _key_variables(credential, section, type(settings))
+    if variables:
+        names = ", ".join(f"${name}" for name in variables)
+        notes.append(
+            (
+                "warning",
+                f"{names} sets the {section} settings the {credential.label} is filed under, "
+                f"so it was filed for {describe_key(key)}",
+            )
+        )
     if how == "env":
         if credential.forget(key) is not None:
             notes.append(("info", f"forgot the stored {credential.label} for {describe_key(key)}"))
@@ -271,6 +284,18 @@ def _login(
         if repo.unset_value(f"{section}.{old}", profile=profile)[0]:
             notes.append(("info", f"unset {section}.{old} in profile {profile}"))
     return notes
+
+
+def _key_variables(
+    credential: Credential[Any], section: str, model: type[BaseModel]
+) -> tuple[str, ...]:
+    """The set ``UNTAPED_*`` variables that supply a field of ``credential``'s key."""
+    for path, each in key_fields(model):
+        if each is not credential.key:
+            continue
+        found = (env_var_setting((section, *path, name)) for name in each.model_fields)
+        return tuple(dict.fromkeys(name for name in found if name is not None))
+    return ()
 
 
 def ensure_profile(profile: str) -> list[Note]:

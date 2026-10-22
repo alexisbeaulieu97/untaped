@@ -138,11 +138,11 @@ def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
 class ServiceState:
     """What a service section currently resolves to in the profile."""
 
-    values: Mapping[str, object]
+    values: Mapping[str, object] = field(repr=False)
     """Each form field's effective value (the model default when unset; ``None`` for none),
-    the form's starting values."""
+    the form's starting values (never in a repr: a masked setting is among them)."""
 
-    own: Mapping[str, object] = field(default_factory=dict)
+    own: Mapping[str, object] = field(default_factory=dict, repr=False)
     """Each form field's raw value in the profile's own data (``None`` when it sets none):
     what a save expects to find, so a value changed since the form opened is not replaced."""
 
