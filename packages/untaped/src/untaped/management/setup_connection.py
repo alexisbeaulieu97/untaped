@@ -231,7 +231,7 @@ def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -
         if text is None and descriptor.is_secret and state.values.get(field.key) is not None:
             continue  # an empty secret keeps the one set
         if text is None and field.needs_setup:
-            raise ConfigError(f"Enter the {_label(field.path[-1])}.", category="invalid")
+            raise ConfigError(f"enter the {_label(field.path[-1])}", category="invalid")
         if text == opened:
             continue
         if text is not None:

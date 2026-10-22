@@ -158,7 +158,7 @@ def test_saving_checks_both_secrets_then_files_each_under_the_key(_isolated_conf
 def test_a_setting_the_plugin_needs_left_empty_is_refused(_isolated_config: Path) -> None:
     run = drive_screen(_build(), _form("https://duo.example.com", "acme"))
 
-    assert "Enter the port." in run.frame
+    assert "enter the port" in run.frame
     assert SEEN == []
     assert not _isolated_config.exists()
 
