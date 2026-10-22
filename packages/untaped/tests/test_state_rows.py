@@ -255,7 +255,12 @@ def test_a_repeated_key_is_damaged() -> None:
 
 
 @pytest.mark.parametrize(
-    ("row", "problem"), [({"created_at": "x"}, "it has no name"), ("text", "it is not a mapping")]
+    ("row", "problem"),
+    [
+        ({"created_at": "x"}, "it has no name"),
+        ({"name": 3, "created_at": "x"}, "its name is not a string"),
+        ("text", "it is not a mapping"),
+    ],
 )
 def test_a_row_without_a_key_is_named_by_its_position(row: object, problem: str) -> None:
     write_rows(ITEMS, [{"name": "a", "created_at": "x"}, row])
@@ -329,7 +334,7 @@ def test_replace_all_keeps_a_stored_rows_unknown_fields() -> None:
 
 # -- bytes on disk -----------------------------------------------------------
 
-#: ``workspace.active`` as v11.0.0's StateCollection wrote it (model_dump(mode="json")).
+#: Rows in the layout v11.0.0's StateCollection wrote for ``model_dump(mode="json")`` rows.
 GOLDEN = """\
 format_version: 1
 demo:
@@ -438,6 +443,11 @@ def test_core_rows_live_in_a_section_core_reserves() -> None:
         core_rows("demo", "index", model=Repo, key_field="name")
     with pytest.raises(ConfigError, match="section core reserves"):
         StateRows("credentials", "index", model=Repo, key_field="name")
+    with pytest.raises(ConfigError, match="credentials"):
+        StateMap("credentials", "index").set("a", "b")
+    with pytest.raises(ConfigError, match="credentials"):
+        StateCollection("credentials", "index").upsert({"id": "a"})
+    assert rows.keys() == ["a"]
 
 
 # -- two processes ---------------------------------------------------------------

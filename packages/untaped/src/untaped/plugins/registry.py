@@ -1033,14 +1033,19 @@ def state_keys(spec: PluginSpec | ApplicationSpec) -> frozenset[str]:
 
 
 def state_model(spec: PluginSpec | ApplicationSpec) -> type[BaseModel] | None:
-    """One model of ``spec``'s whole state section; ``None`` when it keeps no state.
+    """One model of ``spec``'s whole state section in the home; ``None`` when it keeps none.
 
     The ``state`` model's fields, then a field per state declaration it
     doesn't cover: rows of the declaration's model, a string map, or a list
-    of mappings. Resolves lazy row models: for the surface, the config
-    reference and ``doctor``, never on the startup path.
+    of mappings. A project's rows live in the project and are left out.
+    Resolves lazy row models: for the surface, the config reference and
+    ``doctor``, never on the startup path.
     """
-    declarations = state_declarations(spec) if isinstance(spec, PluginSpec) else ()
+    declarations = (
+        tuple(each for each in state_declarations(spec) if not isinstance(each, ProjectStateRows))
+        if isinstance(spec, PluginSpec)
+        else ()
+    )
     covered = set() if spec.state is None else set(spec.state.model_fields)
     extra: dict[str, Any] = {
         each.name: (_declared_type(each), Field(default_factory=_EMPTY[type(each)]))
@@ -1058,18 +1063,14 @@ def state_model(spec: PluginSpec | ApplicationSpec) -> type[BaseModel] | None:
 
 
 def spliced_state(spec: PluginSpec) -> type[BaseModel] | None:
-    """The ``state`` model as spliced into settings, less the keys a ``StateRows`` owns.
+    """The ``state`` model as spliced into settings, less the keys a state declaration owns.
 
-    Rows keep their own rules (unknown fields kept, a damaged row named), so
-    they never fail the plugin's settings load.
+    Declared state keeps its own rules (unknown fields kept, a damaged row
+    named), so it never fails the plugin's settings load.
     """
     if spec.state is None:
         return None
-    owned = {
-        each.name
-        for each in state_declarations(spec)
-        if isinstance(each, StateRows | ProjectStateRows)
-    }
+    owned = {each.name for each in state_declarations(spec)}
     if not owned & set(spec.state.model_fields):
         return spec.state
     return _without(spec.state, frozenset(owned))
@@ -1083,9 +1084,9 @@ def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
         for name, info in model.model_fields.items()
         if name not in keys
     }
-    without: type[BaseModel] = create_model(
-        model.__name__, __config__=ConfigDict(**model.model_config), **fields
-    )
+    # The removed keys stay in the file: a model forbidding extra keys would refuse them.
+    config = ConfigDict(**{**model.model_config, "extra": "ignore"})
+    without: type[BaseModel] = create_model(model.__name__, __config__=config, **fields)
     return without
 
 

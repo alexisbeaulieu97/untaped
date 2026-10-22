@@ -52,15 +52,16 @@ each unchanged element as stored.
 
 So a field you add to a row's model needs a default that means the same as the
 field being absent: older releases write rows without it. The public surface
-lists each field of a stable plugin's rows (`state acme.items.label string
-default=""`), and a minor release refuses a new field without a default.
+lists each top-level field of a stable plugin's rows (`state acme.items.label
+string default=""`), and a minor release refuses a new one without a default;
+a nested model's fields aren't listed, so give each new one a default too.
 
 **A damaged row stops the command.** A row that fails the model, has no key,
 or shares its key with another is never guessed at: reading it, `all()` and a
 change to it stop with exit 4, naming the file, the row and the fix (the
 `remove_hint` command, when you give one). `keys()`, the other rows and
 `delete` keep working, so the user can remove it. `untaped doctor` checks every
-row.
+row in the home, and the current project's.
 
 ## A project's rows
 
@@ -88,13 +89,14 @@ never matched. Both are stable; prefer `StateRows` for new rows.
 
 List every state declaration on `PluginSpec.stores`: each one's name is a key
 of your state section, so no setting may take it, and `untaped config get` and
-`set` refuse it. A `StateRows` your package makes but doesn't list quarantines
-the plugin (`unlisted-state`), as does a declaration of another plugin's state
+`set` refuse it. A `StateRows` made in the module that makes your spec, or in
+the package whose `__init__` makes it, but not listed quarantines the plugin
+(`unlisted-state`), as does a declaration of another plugin's state
 (`foreign-store`) or a name listed twice (`duplicate-store`).
 
 A plugin may also declare its whole section as a model, `PluginSpec(state=)`;
-the config reference and `doctor` read both. Rows a `StateRows` owns are read
-only through it.
+the config reference and `doctor` read both. A key a declaration owns is read
+only through it, never with the section's model.
 
 ## Tests
 

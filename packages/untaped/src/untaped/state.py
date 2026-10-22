@@ -44,19 +44,20 @@ _HERE = frozenset({__name__})
 class _RowFile:
     """The rows under ``<section>.<name>`` of one state file (the home's unless ``path``)."""
 
-    __slots__ = ("_path", "name", "section")
+    __slots__ = ("_core", "_path", "name", "section")
 
-    def __init__(self, section: str, name: str, path: Path | None) -> None:
+    def __init__(self, section: str, name: str, path: Path | None, *, core: bool = False) -> None:
         self.section = section
         self.name = name
         self._path = path
+        self._core = core
 
     def path(self) -> Path:
         return self._path or resolve_state_path()
 
     def read(self) -> list[Any]:
         """The raw rows; ``[]`` when unset. Anything but a list raises ConfigError."""
-        return self.rows(read_plugin_state(self.section, self._path))
+        return self.rows(read_plugin_state(self.section, self._path, core=self._core))
 
     def mutate(self, fn: Callable[[list[Any]], list[Any] | None]) -> None:
         """Replace the rows under the state file's lock; ``None`` from ``fn`` writes nothing."""
@@ -70,7 +71,7 @@ class _RowFile:
             else:
                 state.pop(self.name, None)
 
-        mutate_plugin_state(self.section, _apply, self._path)
+        mutate_plugin_state(self.section, _apply, self._path, core=self._core)
 
     def rows(self, state: Mapping[str, Any]) -> list[Any]:
         if self.name not in state:
@@ -123,6 +124,7 @@ def caller_home(skip: frozenset[str]) -> str:
     return f"{name}." if "__path__" in frame.f_globals else name
 
 
+@experimental
 class RowExists(ConfigError):
     """:meth:`StateRows.add` found a row with the same key (exits ``1``)."""
 
@@ -211,9 +213,11 @@ class StateRows[M: BaseModel]:
         omit_none: bool,
         remove_hint: str | None,
         path: Path | None,
+        *,
+        core: bool = False,
     ) -> StateRows[M]:
         rows: StateRows[M] = object.__new__(cls)
-        rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path)
+        rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path, core=core)
         return rows
 
     def _setup(
@@ -225,6 +229,8 @@ class StateRows[M: BaseModel]:
         omit_none: bool,
         remove_hint: str | None,
         path: Path | None,
+        *,
+        core: bool = False,
     ) -> None:
         self.plugin = plugin
         self.name = name
@@ -233,7 +239,7 @@ class StateRows[M: BaseModel]:
         self.omit_none = omit_none
         self.remove_hint = remove_hint
         self._resolved: _Shape | None = None
-        self._file = _RowFile(plugin, name, path)
+        self._file = _RowFile(plugin, name, path, core=core)
 
     @property
     def qualified(self) -> str:
@@ -430,7 +436,8 @@ class StateRows[M: BaseModel]:
                 raise self._damaged(label, None, "it is not a mapping")
             key = row.get(name)
             if not isinstance(key, str):
-                raise self._damaged(label, None, f"it has no {name}")
+                problem = f"it has no {name}" if key is None else f"its {name} is not a string"
+                raise self._damaged(label, None, problem)
             if key in seen:
                 repeated = self._indexes(rows, key)
                 raise self._damaged(key, key, f"its key is repeated (rows {_rows_text(repeated)})")
@@ -542,7 +549,9 @@ def core_rows[M: BaseModel](
     if section not in CORE_STATE_SECTIONS:
         raise ConfigError(f"core_rows: {section!r} is not a state section core reserves")
     _check_declaration(None, name, model, key_field, remove_hint)
-    return StateRows._bound(section, name, model, key_field, omit_none, remove_hint, None)
+    return StateRows._bound(
+        section, name, model, key_field, omit_none, remove_hint, None, core=True
+    )
 
 
 def project_state_path(project: Project) -> Path:

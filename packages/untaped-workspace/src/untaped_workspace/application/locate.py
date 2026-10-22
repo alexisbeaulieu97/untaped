@@ -44,7 +44,5 @@ def active_workspace(store: WorkspaceStore, name: str) -> WorkspaceRecord:
     """The stored active workspace ``name``; not found (listing the known ones) otherwise."""
     record = store.get(name)
     if record is None:
-        raise WorkspaceNotFoundError(
-            not_found("workspace", name, known=[r.name for r in store.active()])
-        )
+        raise WorkspaceNotFoundError(not_found("workspace", name, known=store.names()))
     return record

@@ -207,7 +207,7 @@ class RemoveWorkspace:
         active = self._store.get(name)
         archived = tuple(record for record in self._store.archived() if record.name == name)
         if active is None and not archived:
-            known = sorted({r.name for r in (*self._store.active(), *self._store.archived())})
+            known = sorted({*self._store.names(), *(r.name for r in self._store.archived())})
             raise WorkspaceNotFoundError(not_found("workspace", name, known=known))
         status = tuple(self._status(active)) if active is not None else ()
         holders = self._holders(excluding=name)

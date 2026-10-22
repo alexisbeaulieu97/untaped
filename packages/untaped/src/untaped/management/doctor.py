@@ -388,7 +388,7 @@ def collect_doctor_rows(
         settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
         rows.extend(_setup_rows(scope, settings, profile=profile))
-        if scope.state_model is not None:
+        if scope.state_model is not None or scope.rows:
             rows.append(_state_row(scope, scope.state_model, state))
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
@@ -949,7 +949,7 @@ def _core_row(
 
 def _state_row(
     scope: _SectionScope,
-    state_model: type[BaseModel],
+    state_model: type[BaseModel] | None,
     state: tuple[dict[str, Any], Path] | None,
 ) -> dict[str, object]:
     """Validate a plugin's state section in ``state.yml`` (profile-independent).
@@ -967,7 +967,8 @@ def _state_row(
         return _row("state", scope.plugin, _FAIL, title, detail)
     owned = {rows.name for rows in scope.rows}
     try:
-        state_model.model_validate({k: v for k, v in (node or {}).items() if k not in owned})
+        if state_model is not None:  # None: only a project's rows, checked below
+            state_model.model_validate({k: v for k, v in (node or {}).items() if k not in owned})
     except ValidationError as exc:
         detail = f"invalid {scope.section} state in {source}: {first_validation_error(exc)}"
         return _row("state", scope.plugin, _FAIL, title, detail)

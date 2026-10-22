@@ -900,12 +900,14 @@ RESERVED_SECTIONS = frozenset(
 )
 
 
-def check_state_section_name(section: str) -> None:
+def check_state_section_name(section: str, *, core: bool = False) -> None:
     """Reject a state section name that collides with ``config.yml``'s own keys.
 
-    Core's own state sections (:data:`CORE_STATE_SECTIONS`) pass.
+    ``core=True`` takes only core's own sections (:data:`CORE_STATE_SECTIONS`).
     """
-    if section in CORE_STATE_SECTIONS:
+    if core:
+        if section not in CORE_STATE_SECTIONS:
+            raise ConfigError(f"{section!r} is not a state section core keeps")
         return
     if not section or section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved or invalid state section name: {section!r}")

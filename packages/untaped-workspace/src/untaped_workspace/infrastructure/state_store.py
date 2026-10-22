@@ -51,8 +51,12 @@ class StateWorkspaceStore:
     def active(self) -> list[WorkspaceRecord]:
         return ACTIVE.all()
 
+    def names(self) -> list[str]:
+        return ACTIVE.keys()
+
     def archived(self) -> list[ArchivedRecord]:
-        return [ArchivedRecord.model_validate(row) for row in ARCHIVED.entries()]
+        # As StateRows reads rows: a newer untaped's fields never fail them.
+        return [ArchivedRecord.model_validate(row, extra="ignore") for row in ARCHIVED.entries()]
 
     def get(self, name: str) -> WorkspaceRecord | None:
         return ACTIVE.get(workspace_key(name))

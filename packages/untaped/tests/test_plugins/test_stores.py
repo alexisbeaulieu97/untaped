@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from test_plugins.plugin_harness import make_candidate, make_shell
 from untaped.errors import ConfigError
@@ -20,7 +20,7 @@ from untaped.plugins.registry import (
 )
 from untaped.state import StateCollection, StateMap, StateRows
 from untaped.store import Store
-from untaped.testing import make_project
+from untaped.testing import check_plugin, make_project, plugin_candidate
 
 DATA = Store("hello", "data", base=lambda: Path("data.db"))
 
@@ -121,6 +121,15 @@ def test_rows_its_package_declares_but_doesnt_list_are_quarantined() -> None:
     del unlisted
 
 
+@pytest.mark.usefixtures("fresh_composition")
+def test_plugin_check_fails_rows_left_unlisted() -> None:
+    rows = check_plugin("hello", candidates=[plugin_candidate(PluginSpec(name="hello"))])
+
+    (row,) = [row for row in rows if row.check == "registration"]
+    assert (row.title, row.status) == ("unlisted-state", "fail")
+    assert "'hello.rows'" in row.detail
+
+
 def test_rows_another_module_declares_are_not_this_plugins() -> None:
     assert compose(make_shell(), [make_candidate(_hello())]).quarantine == ()
 
@@ -174,3 +183,27 @@ def test_the_spliced_state_leaves_out_what_rows_own() -> None:
     assert list(spliced.model_fields) == ["cursor"]
     assert spliced_state(spec) is spliced  # registered again as the same section
     assert spliced_state(_hello(state=HelloState)) is HelloState
+
+
+class StrictState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rows: list[Row] = []
+    aliases: dict[str, str] = {}
+    cursor: str = ""
+
+
+def test_the_spliced_state_ignores_the_keys_declarations_own() -> None:
+    spliced = spliced_state(_hello(state=StrictState, stores=(ROWS, ALIASES)))
+
+    assert spliced is not None
+    assert list(spliced.model_fields) == ["cursor"]
+    loaded = spliced.model_validate({"rows": [{"name": 1}], "aliases": {"a": "b"}, "cursor": "c"})
+    assert loaded.model_dump() == {"cursor": "c"}
+
+
+def test_the_state_model_leaves_out_a_projects_rows() -> None:
+    model = state_model(_hello(stores=(ROWS, EVERY_ROW)))
+
+    assert model is not None
+    assert list(model.model_fields) == ["rows"]

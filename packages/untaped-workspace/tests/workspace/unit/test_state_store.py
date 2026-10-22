@@ -182,3 +182,22 @@ def test_a_damaged_active_record_names_its_row() -> None:
 
     assert caught.value.exit_code == 4
     assert caught.value.hint == "correct or remove that row by hand"
+
+
+def test_names_still_lists_a_damaged_record() -> None:
+    write_rows(ACTIVE, [{"name": "w"}, {"name": "v", "created_at": "2026-10-01T00:00:00Z"}])
+
+    assert StateWorkspaceStore().names() == ["w", "v"]
+
+
+def test_a_newer_installs_fields_on_an_archived_record_are_ignored() -> None:
+    store = StateWorkspaceStore()
+    store.create(WorkspaceRecord(name="w", created_at=T0))
+    store.archive("w", at=T0)
+    state = Path.home() / ".untaped" / "state.yml"
+    state.write_text(state.read_text().replace("archived_at:", "pinned: true\n    archived_at:"))
+    assert "pinned: true" in state.read_text()
+
+    [archived] = store.archived()
+
+    assert (archived.name, archived.archived_at) == ("w", T0)

@@ -5460,18 +5460,18 @@ sdk untaped.sdk.RetryPolicy.retry_after_max
 sdk untaped.sdk.RetryPolicy.retry_on_transport
 sdk untaped.sdk.RetryPolicy.retry_statuses
 sdk untaped.sdk.RetryPolicy.status_delay(attempt, retry_after)
-sdk untaped.sdk.RowExists()
-sdk untaped.sdk.RowExists(*args)
-sdk untaped.sdk.RowExists(category=) default=None
-sdk untaped.sdk.RowExists(details=) default=None
-sdk untaped.sdk.RowExists(hint=) default=None
-sdk untaped.sdk.RowExists(system=) default=None
-sdk untaped.sdk.RowExists.category class
-sdk untaped.sdk.RowExists.details class
-sdk untaped.sdk.RowExists.exit_code
-sdk untaped.sdk.RowExists.hint class
-sdk untaped.sdk.RowExists.retryable
-sdk untaped.sdk.RowExists.system class
+sdk untaped.sdk.RowExists()  [experimental]
+sdk untaped.sdk.RowExists(*args)  [experimental]
+sdk untaped.sdk.RowExists(category=) default=None  [experimental]
+sdk untaped.sdk.RowExists(details=) default=None  [experimental]
+sdk untaped.sdk.RowExists(hint=) default=None  [experimental]
+sdk untaped.sdk.RowExists(system=) default=None  [experimental]
+sdk untaped.sdk.RowExists.category class  [experimental]
+sdk untaped.sdk.RowExists.details class  [experimental]
+sdk untaped.sdk.RowExists.exit_code  [experimental]
+sdk untaped.sdk.RowExists.hint class  [experimental]
+sdk untaped.sdk.RowExists.retryable  [experimental]
+sdk untaped.sdk.RowExists.system class  [experimental]
 sdk untaped.sdk.Screen(init, update, view, title, command, alternative) callback(init, 0) callback(update, 2) callback(view, 2)  [experimental]
 sdk untaped.sdk.Screen(keys@7=) default=[]  [experimental]
 sdk untaped.sdk.Screen(layout@9=) default=full  [experimental]
