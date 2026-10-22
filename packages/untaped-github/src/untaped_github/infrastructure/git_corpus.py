@@ -102,7 +102,7 @@ class GitCorpusCache:
         url = self._remote_url(repo)
         branch = _default_branch(repo)
         store = self._store(url)
-        read = self._read(store)
+        read = self._read(store, warn=False)  # this fetch rewrites a file it can't read
         stored = read[0] if read else None
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
         ref_globs = tuple(dict.fromkeys((*(stored.ref_globs if stored else ()), *selector.globs)))
@@ -345,11 +345,13 @@ class GitCorpusCache:
             if store.path.parts[-len(key) :] == key:
                 yield store, *read
 
-    def _read(self, store: RepoStore) -> tuple[CorpusMeta, datetime | None] | None:
+    def _read(
+        self, store: RepoStore, *, warn: bool = True
+    ) -> tuple[CorpusMeta, datetime | None] | None:
         """github's metadata in ``store`` and when it was fetched; ``None`` when there is none.
 
         A file this release can't read (damaged, or a newer untaped's) is
-        warned about and read as none: the next fetch rewrites it.
+        read as none (with a warning unless ``warn=False``): the next fetch rewrites it.
         """
         from untaped.sdk import Absent, Found, OtherVersion  # noqa: PLC0415  # loads on first use
 
@@ -362,9 +364,11 @@ class GitCorpusCache:
                 reason = f"written by a newer untaped ({by or 'unknown'})"
             case unreadable:
                 reason = f"it {unreadable.reason}"
-        self._warn(
-            f"could not read corpus metadata in {store.path}: {reason}; the next sync rewrites it"
-        )
+        if warn:
+            self._warn(
+                f"could not read corpus metadata in {store.path}: {reason}; "
+                "the next sync rewrites it"
+            )
         return None
 
     def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:

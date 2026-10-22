@@ -157,8 +157,8 @@ def test_metadata_it_cannot_read_is_refetched_and_rewritten(
     env.sync()
 
     assert env.cache.repo_freshness(env.repo) is not None
-    assert warnings, "no warning"
-    assert all("the next sync rewrites it" in warning for warning in warnings), warnings
+    (warning,) = warnings  # from the freshness check, not again from the sync rewriting it
+    assert "the next sync rewrites it" in warning
 
 
 def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
