@@ -59,15 +59,16 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
-| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. Falls back to `token_command`, then `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN`. |
+| `awx.server.url` | URL | unset | `UNTAPED_AWX__SERVER__URL` | AWX/AAP URL, for example `https://aap.example.com`. |
+| `awx.server.verify_tls` | boolean or path | `true` | `UNTAPED_AWX__SERVER__VERIFY_TLS` | Check the controller's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. Above 0. |
 | `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Above 0. Experimental: may change in a minor release. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Above 0. Experimental: may change in a minor release. |
 | `awx.caches.resources.max_age_seconds` | integer | `3600` | `UNTAPED_AWX__CACHES__RESOURCES__MAX_AGE_SECONDS` | Seconds controller resources is served before untaped checks upstream; 0 checks every time. 0 or more. |
-| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
+| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | The awx token in plain text. Deprecated: removed in untaped-awx 12.0; use `untaped auth login awx`. |
+| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) printing the awx token. Deprecated: removed in untaped-awx 12.0; use `untaped auth login awx`. |
 
 ## `dotfiles`
 
@@ -98,9 +99,10 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `github.base_url` | string | `https://api.github.com` | `UNTAPED_GITHUB__BASE_URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
-| `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
-| `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
+| `github.server.url` | URL | `https://api.github.com/` | `UNTAPED_GITHUB__SERVER__URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
+| `github.server.verify_tls` | boolean or path | `true` | `UNTAPED_GITHUB__SERVER__VERIFY_TLS` | Check the server's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
+| `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Deprecated: removed in untaped-github 12.0; use `untaped auth login github`. |
+| `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token. Deprecated: removed in untaped-github 12.0; use `untaped auth login github`. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
@@ -112,8 +114,8 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `jira.base_url` | string (optional) | unset | `UNTAPED_JIRA__BASE_URL` | Jira Data Center URL, for example `https://jira.example.com`. |
-| `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | Jira personal access token. Falls back to `token_command`, then `JIRA_API_TOKEN`. |
+| `jira.server.url` | URL | unset | `UNTAPED_JIRA__SERVER__URL` | Jira Data Center URL, for example `https://jira.example.com`. |
+| `jira.server.verify_tls` | boolean or path | `true` | `UNTAPED_JIRA__SERVER__VERIFY_TLS` | Check Jira's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
 | `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
 | `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
@@ -121,7 +123,8 @@ overridden for one process with the environment variable shown.
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
-| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `jira.token` is unset. |
+| `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | The jira token in plain text. Deprecated: removed in untaped-jira 12.0; use `untaped auth login jira`. |
+| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) printing the jira token. Deprecated: removed in untaped-jira 12.0; use `untaped auth login jira`. |
 
 ## `lint`
 
@@ -173,13 +176,16 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.git_fetch_depth` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | none | deleted in 11.0; the repo store fetches full history |
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.index.max_age_seconds |
+| `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | renamed |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
+| `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | renamed |
 | `github.sweep.max_age_seconds` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `github.caches.sweep.max_age_seconds` | renamed |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
+| `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | renamed |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 | `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |

@@ -10,7 +10,7 @@ in order:
    object), today's override spelling;
 2. the credential stored with ``untaped auth login`` for exactly this key;
 3. in 11.x only, the old ``<plugin>.<name>`` or ``<plugin>.<name>_command``
-   setting (deprecated, removed in 12);
+   setting (:func:`untaped.settings.legacy_credential_fields` marks them);
 4. the plugin's own variables (``env=``), in order.
 
 A key a folder file chose, by any of its fields, gets nothing from steps 1, 3

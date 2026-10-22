@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
 
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr, ValidationError
+from pydantic import ValidationError
 
 from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, get_config_section
 from untaped_jira.domain.parse import ISSUE_DETAIL_FIELDS

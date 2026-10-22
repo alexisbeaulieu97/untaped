@@ -200,7 +200,7 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
             id=SETUP_CHECK,
             ok=True,
             warn=True,
-            detail=f"{detail}; {old} is deprecated",
+            detail=f"{detail}; `config migrate` moves {old} to a stored login",
             fix="config migrate",
         )
     return DoctorResult(id=SETUP_CHECK, ok=True, detail=detail or "set up")

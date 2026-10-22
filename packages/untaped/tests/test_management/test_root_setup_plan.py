@@ -242,8 +242,7 @@ def test_a_token_command_in_the_config_is_done_and_deprecated(_isolated_config: 
     token = _step(_plan(), "wiz.token")
     assert (token["state"], token["run"]) == ("done", [])
     assert token["detail"] == (
-        "token from wiz.token_command; `config migrate` moves wiz.token_command"
-        " to a stored login"
+        "token from wiz.token_command; `config migrate` moves wiz.token_command to a stored login"
     )
 
 

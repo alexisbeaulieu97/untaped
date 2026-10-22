@@ -1,8 +1,8 @@
 # untaped surface 3
+behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
-behaviour untaped.self-declared-command  [deprecated, removed in 12.0; use the command setting untaped adds for each Secret]
-behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use NeedsSetup and Secret marks on its settings]
+behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use a NeedsSetup-marked CredentialKey setting and a declared Credential]
 cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -20,14 +20,16 @@ cfg ansible.source_refresh_rate_limit_floor integer(minimum=0) default=500
 cfg ansible.source_refresh_repo_batch_size integer(minimum=1) default=100
 cfg ansible.stale_after_seconds -> ansible.caches.index.max_age_seconds  [deprecated, removed in 12.0]
 cfg awx.api_prefix string default=/api/controller/v2/
-cfg awx.base_url string? default=unset
+cfg awx.base_url -> awx.server.url  [deprecated, removed in 12.0]
 cfg awx.caches.resources.max_age_seconds integer(minimum=0) default=3600
 cfg awx.default_organization string? default=unset
 cfg awx.page_size integer(exclusiveMinimum=0) default=200
+cfg awx.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
+cfg awx.server.verify_tls boolean|string(format=path) default=true
 cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
-cfg awx.token string(format=password)? default=unset
-cfg awx.token_command string[]? default=unset
+cfg awx.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login awx]
+cfg awx.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login awx]
 cfg dotfiles.kept_dir string(format=path) default=~/.untaped/plugins/dotfiles/kept  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
@@ -41,7 +43,7 @@ cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
 cfg git.untaped_helper_only boolean default=false
-cfg github.base_url string default=https://api.github.com
+cfg github.base_url -> github.server.url  [deprecated, removed in 12.0]
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
@@ -49,10 +51,12 @@ cfg github.git_protocol choice=ssh
 cfg github.git_protocol string default=https
 cfg github.inventory.orgs string[] default=[]
 cfg github.inventory.teams string[] default=[]
+cfg github.server.url string(format=uri,maxLength=2083,minLength=1) default=<computed>
+cfg github.server.verify_tls boolean|string(format=path) default=true
 cfg github.sweep.max_age_seconds -> github.caches.sweep.max_age_seconds  [deprecated, removed in 12.0]
 cfg github.sweep.parallel integer(minimum=1) default=12
-cfg github.token string(format=password)? default=unset
-cfg github.token_command string[]? default=unset
+cfg github.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
+cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
 cfg http.ca_bundle string(format=path)? default=unset
 cfg http.proxy string? default=unset
 cfg http.timeout_seconds number(exclusiveMinimum=0) default=30.0
@@ -61,7 +65,7 @@ cfg http.verify_ssl boolean default=true
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
-cfg jira.base_url string? default=unset
+cfg jira.base_url -> jira.server.url  [deprecated, removed in 12.0]
 cfg jira.confirm choice=always
 cfg jira.confirm choice=destructive
 cfg jira.confirm choice=never
@@ -69,8 +73,10 @@ cfg jira.confirm string default=destructive
 cfg jira.default_board_id integer? default=unset
 cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
-cfg jira.token string(format=password)? default=unset
-cfg jira.token_command string[]? default=unset
+cfg jira.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
+cfg jira.server.verify_tls boolean|string(format=path) default=true
+cfg jira.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login jira]
+cfg jira.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login jira]
 cfg lint.extensions.linter.rank.findings string[] default=[]  [experimental]
 cfg lint.extensions.linter.rank.rules string[] default=[]  [experimental]
 cfg lint.extensions.tree_reader.rank.read string[] default=[]  [experimental]
@@ -405,36 +411,81 @@ cli untaped ansible source-alias set --format choice=table
 cli untaped ansible source-alias set --format choice=yaml
 cli untaped ansible source-alias set ALIAS REPO
 cli untaped auth
-cli untaped auth migrate
-cli untaped auth migrate --columns VALUE... default=unset
-cli untaped auth migrate --columns alias=-c
-cli untaped auth migrate --dry-run switch
-cli untaped auth migrate --format VALUE default=table
-cli untaped auth migrate --format alias=-f
-cli untaped auth migrate --format choice=json
-cli untaped auth migrate --format choice=pipe
-cli untaped auth migrate --format choice=raw
-cli untaped auth migrate --format choice=table
-cli untaped auth migrate --format choice=yaml
-cli untaped auth migrate --store VALUE default=unset
-cli untaped auth migrate --store choice=pass
-cli untaped auth migrate --store choice=secret-tool
-cli untaped auth migrate --store choice=security
-cli untaped auth set --columns VALUE... default=unset
-cli untaped auth set --columns alias=-c
-cli untaped auth set --format VALUE default=table
-cli untaped auth set --format alias=-f
-cli untaped auth set --format choice=json
-cli untaped auth set --format choice=pipe
-cli untaped auth set --format choice=raw
-cli untaped auth set --format choice=table
-cli untaped auth set --format choice=yaml
-cli untaped auth set --stdin switch
-cli untaped auth set --store VALUE default=unset
-cli untaped auth set --store choice=pass
-cli untaped auth set --store choice=secret-tool
-cli untaped auth set --store choice=security
-cli untaped auth set SECTION
+cli untaped auth forget
+cli untaped auth forget --<FIELDS> VALUE
+cli untaped auth forget --columns VALUE... default=unset
+cli untaped auth forget --columns alias=-c
+cli untaped auth forget --dry-run switch
+cli untaped auth forget --format VALUE default=table
+cli untaped auth forget --format alias=-f
+cli untaped auth forget --format choice=json
+cli untaped auth forget --format choice=pipe
+cli untaped auth forget --format choice=raw
+cli untaped auth forget --format choice=table
+cli untaped auth forget --format choice=yaml
+cli untaped auth forget --id VALUE default=unset
+cli untaped auth forget --yes alias=-y
+cli untaped auth forget --yes switch
+cli untaped auth forget [NAME]@2 default=unset
+cli untaped auth forget [PLUGIN]@1 default=unset
+cli untaped auth list
+cli untaped auth list --columns VALUE... default=unset
+cli untaped auth list --columns alias=-c
+cli untaped auth list --format VALUE default=table
+cli untaped auth list --format alias=-f
+cli untaped auth list --format choice=json
+cli untaped auth list --format choice=pipe
+cli untaped auth list --format choice=raw
+cli untaped auth list --format choice=table
+cli untaped auth list --format choice=yaml
+cli untaped auth login
+cli untaped auth login --<FIELDS> VALUE
+cli untaped auth login --columns VALUE... default=unset
+cli untaped auth login --columns alias=-c
+cli untaped auth login --format VALUE default=table
+cli untaped auth login --format alias=-f
+cli untaped auth login --format choice=json
+cli untaped auth login --format choice=pipe
+cli untaped auth login --format choice=raw
+cli untaped auth login --format choice=table
+cli untaped auth login --format choice=yaml
+cli untaped auth login --store VALUE default=unset
+cli untaped auth login --store choice=pass
+cli untaped auth login --store choice=secret-tool
+cli untaped auth login --store choice=security
+cli untaped auth login --token-command VALUE default=unset
+cli untaped auth login [NAME]@2 default=unset
+cli untaped auth login [PLUGIN]@1 default=unset
+cli untaped auth migrate  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --columns alias=-c  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --dry-run switch  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format VALUE default=table  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format alias=-f  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format choice=json  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format choice=pipe  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format choice=raw  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format choice=table  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --format choice=yaml  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --store VALUE default=unset  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --store choice=pass  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --store choice=secret-tool  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth migrate --store choice=security  [deprecated, removed in 12.0; use untaped config migrate]
+cli untaped auth set --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --columns alias=-c  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format alias=-f  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format choice=json  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format choice=pipe  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format choice=raw  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format choice=table  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --format choice=yaml  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --stdin switch  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --store VALUE default=unset  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --store choice=pass  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --store choice=secret-tool  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --store choice=security  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set SECTION  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth status
 cli untaped auth status --columns VALUE... default=unset
 cli untaped auth status --columns alias=-c
@@ -445,19 +496,19 @@ cli untaped auth status --format choice=pipe
 cli untaped auth status --format choice=raw
 cli untaped auth status --format choice=table
 cli untaped auth status --format choice=yaml
-cli untaped auth unset --columns VALUE... default=unset
-cli untaped auth unset --columns alias=-c
-cli untaped auth unset --dry-run switch
-cli untaped auth unset --format VALUE default=table
-cli untaped auth unset --format alias=-f
-cli untaped auth unset --format choice=json
-cli untaped auth unset --format choice=pipe
-cli untaped auth unset --format choice=raw
-cli untaped auth unset --format choice=table
-cli untaped auth unset --format choice=yaml
-cli untaped auth unset --yes alias=-y
-cli untaped auth unset --yes switch
-cli untaped auth unset SECTION
+cli untaped auth unset --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --columns alias=-c  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --dry-run switch  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format alias=-f  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format choice=json  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format choice=pipe  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format choice=raw  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format choice=table  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --format choice=yaml  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --yes alias=-y  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --yes switch  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset SECTION  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped awx
 cli untaped awx apply --allow-unverified switch
 cli untaped awx apply --check switch
@@ -4397,6 +4448,7 @@ cli untaped workspace status [NAME]@1 default=unset  [experimental]
 contract git.Credential(password, username)
 contract git.Credential.password string(format=password)
 contract git.Credential.username string
+contract git.Credential.verify_tls boolean|string(format=path) default=true
 contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
@@ -4415,6 +4467,8 @@ contract lint.Failure.category choice=usage
 contract lint.Failure.category string
 contract lint.Failure.details object default={}
 contract lint.Failure.exit_code integer default=1
+contract lint.Failure.fix_by choice=user
+contract lint.Failure.fix_by string? default=None
 contract lint.Failure.hint string? default=None
 contract lint.Failure.item string? default=None
 contract lint.Failure.message string
@@ -4481,11 +4535,13 @@ sdk untaped.contracts.Ambiguous()
 sdk untaped.contracts.Ambiguous(*args)
 sdk untaped.contracts.Ambiguous(category=) default=None
 sdk untaped.contracts.Ambiguous(details=) default=None
+sdk untaped.contracts.Ambiguous(fix_by=) default=None
 sdk untaped.contracts.Ambiguous(hint=) default=None
 sdk untaped.contracts.Ambiguous(system=) default=None
 sdk untaped.contracts.Ambiguous.category class
 sdk untaped.contracts.Ambiguous.details class
 sdk untaped.contracts.Ambiguous.exit_code
+sdk untaped.contracts.Ambiguous.fix_by class
 sdk untaped.contracts.Ambiguous.hint class
 sdk untaped.contracts.Ambiguous.retryable
 sdk untaped.contracts.Ambiguous.system class
@@ -4519,6 +4575,7 @@ sdk untaped.contracts.NoProviderReady(quarantined=) default=None
 sdk untaped.contracts.NoProviderReady.category class
 sdk untaped.contracts.NoProviderReady.details class
 sdk untaped.contracts.NoProviderReady.exit_code
+sdk untaped.contracts.NoProviderReady.fix_by class
 sdk untaped.contracts.NoProviderReady.hint class
 sdk untaped.contracts.NoProviderReady.retryable
 sdk untaped.contracts.NoProviderReady.system class
@@ -4526,11 +4583,13 @@ sdk untaped.contracts.NotFound()
 sdk untaped.contracts.NotFound(*args)
 sdk untaped.contracts.NotFound(category=) default=None
 sdk untaped.contracts.NotFound(details=) default=None
+sdk untaped.contracts.NotFound(fix_by=) default=None
 sdk untaped.contracts.NotFound(hint=) default=None
 sdk untaped.contracts.NotFound(system=) default=None
 sdk untaped.contracts.NotFound.category class
 sdk untaped.contracts.NotFound.details class
 sdk untaped.contracts.NotFound.exit_code
+sdk untaped.contracts.NotFound.fix_by class
 sdk untaped.contracts.NotFound.hint class
 sdk untaped.contracts.NotFound.retryable
 sdk untaped.contracts.NotFound.system class
@@ -4606,6 +4665,7 @@ sdk untaped.sdk.Binding.key  [experimental]
 sdk untaped.sdk.Binding.label  [experimental]
 sdk untaped.sdk.Binding.message  [experimental]
 sdk untaped.sdk.Binding.when  [experimental]
+sdk untaped.sdk.BoundSecret(value, *, origin, source) callback(value, 0)
 sdk untaped.sdk.Button(id, label)  [experimental]
 sdk untaped.sdk.Button(kind@3=) default=secondary  [experimental]
 sdk untaped.sdk.Button.id  [experimental]
@@ -4696,14 +4756,33 @@ sdk untaped.sdk.ConfigError()
 sdk untaped.sdk.ConfigError(*args)
 sdk untaped.sdk.ConfigError(category=) default=None
 sdk untaped.sdk.ConfigError(details=) default=None
+sdk untaped.sdk.ConfigError(fix_by=) default=None
 sdk untaped.sdk.ConfigError(hint=) default=None
 sdk untaped.sdk.ConfigError(system=) default=None
 sdk untaped.sdk.ConfigError.category class
 sdk untaped.sdk.ConfigError.details class
 sdk untaped.sdk.ConfigError.exit_code
+sdk untaped.sdk.ConfigError.fix_by class
 sdk untaped.sdk.ConfigError.hint class
 sdk untaped.sdk.ConfigError.retryable
 sdk untaped.sdk.ConfigError.system class
+sdk untaped.sdk.Credential(env=) default=[]
+sdk untaped.sdk.Credential(plugin, name, *, key)
+sdk untaped.sdk.Credential(suggest=) default=None
+sdk untaped.sdk.Credential.answer(key)
+sdk untaped.sdk.Credential.find(key)
+sdk untaped.sdk.Credential.forget(key)
+sdk untaped.sdk.Credential.get(key)
+sdk untaped.sdk.Credential.id(key)
+sdk untaped.sdk.Credential.label
+sdk untaped.sdk.Credential.qualified
+sdk untaped.sdk.Credential.refusal(key, what)
+sdk untaped.sdk.Credential.store(backend=) default=None
+sdk untaped.sdk.Credential.store(command=) default=None
+sdk untaped.sdk.Credential.store(key)
+sdk untaped.sdk.Credential.store(token=) default=None
+sdk untaped.sdk.CredentialKey()
+sdk untaped.sdk.CredentialKey.origin class
 sdk untaped.sdk.Cycle(error@6=) default=""  [experimental]
 sdk untaped.sdk.Cycle(help@5=) default=""  [experimental]
 sdk untaped.sdk.Cycle(inherited@4=) default=false  [experimental]
@@ -4814,6 +4893,7 @@ sdk untaped.sdk.ExitCode.description
 sdk untaped.sdk.Failure(*, message, category, system)
 sdk untaped.sdk.Failure(details=) default={}
 sdk untaped.sdk.Failure(exit_code=) default=1
+sdk untaped.sdk.Failure(fix_by=) default=None
 sdk untaped.sdk.Failure(hint=) default=None
 sdk untaped.sdk.Failure(item=) default=None
 sdk untaped.sdk.Failure(retryable=) default=false
@@ -4821,6 +4901,7 @@ sdk untaped.sdk.Failure.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Failure.category
 sdk untaped.sdk.Failure.details
 sdk untaped.sdk.Failure.exit_code
+sdk untaped.sdk.Failure.fix_by
 sdk untaped.sdk.Failure.from_exception(error)
 sdk untaped.sdk.Failure.from_exception(message=) default=None
 sdk untaped.sdk.Failure.hint
@@ -4936,6 +5017,7 @@ sdk untaped.sdk.GitCommandError(timed_out=) default=false
 sdk untaped.sdk.GitCommandError.category class
 sdk untaped.sdk.GitCommandError.details class
 sdk untaped.sdk.GitCommandError.exit_code
+sdk untaped.sdk.GitCommandError.fix_by class
 sdk untaped.sdk.GitCommandError.hint class
 sdk untaped.sdk.GitCommandError.retryable
 sdk untaped.sdk.GitCommandError.system class
@@ -4992,6 +5074,7 @@ sdk untaped.sdk.HttpError.category class
 sdk untaped.sdk.HttpError.describes_body class
 sdk untaped.sdk.HttpError.details class
 sdk untaped.sdk.HttpError.exit_code
+sdk untaped.sdk.HttpError.fix_by class
 sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
@@ -5019,6 +5102,7 @@ sdk untaped.sdk.HttpStatusError.category class
 sdk untaped.sdk.HttpStatusError.describes_body class
 sdk untaped.sdk.HttpStatusError.details class
 sdk untaped.sdk.HttpStatusError.exit_code
+sdk untaped.sdk.HttpStatusError.fix_by class
 sdk untaped.sdk.HttpStatusError.hint class
 sdk untaped.sdk.HttpStatusError.retryable
 sdk untaped.sdk.HttpStatusError.system class
@@ -5034,6 +5118,7 @@ sdk untaped.sdk.HttpTransportError.category class
 sdk untaped.sdk.HttpTransportError.describes_body class
 sdk untaped.sdk.HttpTransportError.details class
 sdk untaped.sdk.HttpTransportError.exit_code
+sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
@@ -5135,10 +5220,25 @@ sdk untaped.sdk.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.NeverRefreshed.category class
 sdk untaped.sdk.NeverRefreshed.details class
 sdk untaped.sdk.NeverRefreshed.exit_code
+sdk untaped.sdk.NeverRefreshed.fix_by class
 sdk untaped.sdk.NeverRefreshed.hint class
 sdk untaped.sdk.NeverRefreshed.retryable
 sdk untaped.sdk.NeverRefreshed.system class
 sdk untaped.sdk.NextField()  [experimental]
+sdk untaped.sdk.NoCredential()
+sdk untaped.sdk.NoCredential(*args)
+sdk untaped.sdk.NoCredential(category=) default=None
+sdk untaped.sdk.NoCredential(details=) default=None
+sdk untaped.sdk.NoCredential(fix_by=) default=None
+sdk untaped.sdk.NoCredential(hint=) default=None
+sdk untaped.sdk.NoCredential(system=) default=None
+sdk untaped.sdk.NoCredential.category class
+sdk untaped.sdk.NoCredential.details class
+sdk untaped.sdk.NoCredential.exit_code
+sdk untaped.sdk.NoCredential.fix_by class
+sdk untaped.sdk.NoCredential.hint class
+sdk untaped.sdk.NoCredential.retryable
+sdk untaped.sdk.NoCredential.system class
 sdk untaped.sdk.NumberInput(above@6=) default=None  [experimental]
 sdk untaped.sdk.NumberInput(below@7=) default=None  [experimental]
 sdk untaped.sdk.NumberInput(cursor@9=) default=None  [experimental]
@@ -5175,6 +5275,7 @@ sdk untaped.sdk.OperationCancelledError(message@1=) default="cancelled; no chang
 sdk untaped.sdk.OperationCancelledError.category class
 sdk untaped.sdk.OperationCancelledError.details class
 sdk untaped.sdk.OperationCancelledError.exit_code
+sdk untaped.sdk.OperationCancelledError.fix_by class
 sdk untaped.sdk.OperationCancelledError.hint class
 sdk untaped.sdk.OperationCancelledError.retryable
 sdk untaped.sdk.OperationCancelledError.system class
@@ -5327,9 +5428,10 @@ sdk untaped.sdk.PluginContext.settings
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
 sdk untaped.sdk.PluginSpec(caches@12=) default=[]
 sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(deprecations@14=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(credentials@14=) default=[]
+sdk untaped.sdk.PluginSpec(deprecations@15=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(doctor_checks@6=) default=[]
-sdk untaped.sdk.PluginSpec(guides@15=) default=None
+sdk untaped.sdk.PluginSpec(guides@16=) default=None
 sdk untaped.sdk.PluginSpec(help@7=) default=None
 sdk untaped.sdk.PluginSpec(migrations@11=) default=[]
 sdk untaped.sdk.PluginSpec(name)
@@ -5342,6 +5444,7 @@ sdk untaped.sdk.PluginSpec(stores@13=) default=[]
 sdk untaped.sdk.PluginSpec.app_factory
 sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
+sdk untaped.sdk.PluginSpec.credentials
 sdk untaped.sdk.PluginSpec.deprecations()
 sdk untaped.sdk.PluginSpec.doctor_checks
 sdk untaped.sdk.PluginSpec.guides
@@ -5464,11 +5567,13 @@ sdk untaped.sdk.RowExists()  [experimental]
 sdk untaped.sdk.RowExists(*args)  [experimental]
 sdk untaped.sdk.RowExists(category=) default=None  [experimental]
 sdk untaped.sdk.RowExists(details=) default=None  [experimental]
+sdk untaped.sdk.RowExists(fix_by=) default=None  [experimental]
 sdk untaped.sdk.RowExists(hint=) default=None  [experimental]
 sdk untaped.sdk.RowExists(system=) default=None  [experimental]
 sdk untaped.sdk.RowExists.category class  [experimental]
 sdk untaped.sdk.RowExists.details class  [experimental]
 sdk untaped.sdk.RowExists.exit_code  [experimental]
+sdk untaped.sdk.RowExists.fix_by class  [experimental]
 sdk untaped.sdk.RowExists.hint class  [experimental]
 sdk untaped.sdk.RowExists.retryable  [experimental]
 sdk untaped.sdk.RowExists.system class  [experimental]
@@ -5520,11 +5625,6 @@ sdk untaped.sdk.SearchList.view(frame)  [experimental]
 sdk untaped.sdk.SearchList.view(width=) default=None  [experimental]
 sdk untaped.sdk.SearchList.window_rows  [experimental]
 sdk untaped.sdk.SearchList.with_error(text)  [experimental]
-sdk untaped.sdk.Secret()
-sdk untaped.sdk.Secret(env=) default=[]
-sdk untaped.sdk.Secret(suggest=) default=None
-sdk untaped.sdk.Secret.env
-sdk untaped.sdk.Secret.suggest
 sdk untaped.sdk.SecretInput(cursor@3=) default=None  [experimental]
 sdk untaped.sdk.SecretInput(error@5=) default=""  [experimental]
 sdk untaped.sdk.SecretInput(help@4=) default=""  [experimental]
@@ -5790,10 +5890,13 @@ sdk untaped.sdk.TextInput.view(focused=) default=false  [experimental]
 sdk untaped.sdk.TextInput.view(frame)  [experimental]
 sdk untaped.sdk.TextInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.TextInput.with_error(text)  [experimental]
+sdk untaped.sdk.TlsVerify
 sdk untaped.sdk.TokenCommand
-sdk untaped.sdk.TokenSources()
-sdk untaped.sdk.TokenSources(env@1=) default=[]
-sdk untaped.sdk.TokenSources.env
+sdk untaped.sdk.TokenSources()  [deprecated, removed in 12.0; use untaped.sdk.Credential]
+sdk untaped.sdk.TokenSources(env@1=) default=[]  [deprecated, removed in 12.0; use untaped.sdk.Credential]
+sdk untaped.sdk.TokenSources.__init_subclass__(*args)  [deprecated, removed in 12.0; use untaped.sdk.Credential]
+sdk untaped.sdk.TokenSources.env  [deprecated, removed in 12.0; use untaped.sdk.Credential]
+sdk untaped.sdk.TokenUrl
 sdk untaped.sdk.Tree(cursor@4=) default=0  [experimental]
 sdk untaped.sdk.Tree(error@6=) default=""  [experimental]
 sdk untaped.sdk.Tree(expanded@3=) default=[]  [experimental]
@@ -5925,11 +6028,13 @@ sdk untaped.sdk.UntapedError()
 sdk untaped.sdk.UntapedError(*args)
 sdk untaped.sdk.UntapedError(category=) default=None
 sdk untaped.sdk.UntapedError(details=) default=None
+sdk untaped.sdk.UntapedError(fix_by=) default=None
 sdk untaped.sdk.UntapedError(hint=) default=None
 sdk untaped.sdk.UntapedError(system=) default=None
 sdk untaped.sdk.UntapedError.category class
 sdk untaped.sdk.UntapedError.details class
 sdk untaped.sdk.UntapedError.exit_code
+sdk untaped.sdk.UntapedError.fix_by class
 sdk untaped.sdk.UntapedError.hint class
 sdk untaped.sdk.UntapedError.retryable
 sdk untaped.sdk.UntapedError.system class
@@ -5937,11 +6042,13 @@ sdk untaped.sdk.UsageError()
 sdk untaped.sdk.UsageError(*args)
 sdk untaped.sdk.UsageError(category=) default=None
 sdk untaped.sdk.UsageError(details=) default=None
+sdk untaped.sdk.UsageError(fix_by=) default=None
 sdk untaped.sdk.UsageError(hint=) default=None
 sdk untaped.sdk.UsageError(system=) default=None
 sdk untaped.sdk.UsageError.category class
 sdk untaped.sdk.UsageError.details class
 sdk untaped.sdk.UsageError.exit_code
+sdk untaped.sdk.UsageError.fix_by class
 sdk untaped.sdk.UsageError.hint class
 sdk untaped.sdk.UsageError.retryable
 sdk untaped.sdk.UsageError.system class
@@ -5981,15 +6088,14 @@ sdk untaped.sdk.code_version(module)
 sdk untaped.sdk.committed_path(spec, name, *, root)  [experimental]
 sdk untaped.sdk.connected_client(base_url=) default=<computed>
 sdk untaped.sdk.connected_client(base_url_field=) default=base_url  [deprecated, removed in 12.0; use base_url=]
-sdk untaped.sdk.connected_client(bearer=) default=<computed>
+sdk untaped.sdk.connected_client(bearer=) default=None
 sdk untaped.sdk.connected_client(bearer_token_field=) default=token  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(config, *, section)
 sdk untaped.sdk.connected_client(headers=) default=None
 sdk untaped.sdk.connected_client(http=) default=None
-sdk untaped.sdk.connected_client(require_token=) default=true
 sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(retry=) default=<computed>
-sdk untaped.sdk.connected_client(verify=) default=None
+sdk untaped.sdk.connected_client(verify=) default=true
 sdk untaped.sdk.connection_check(check_id, *, section)
 sdk untaped.sdk.copy_data_file(source, target)  [experimental]
 sdk untaped.sdk.create_app(*, name)
@@ -6181,6 +6287,15 @@ sdk untaped.testing.CliResult.exit_code
 sdk untaped.testing.CliResult.output
 sdk untaped.testing.CliResult.stderr
 sdk untaped.testing.CliResult.stdout
+sdk untaped.testing.MemoryStore()
+sdk untaped.testing.MemoryStore.delete(entry)
+sdk untaped.testing.MemoryStore.describe(entry)
+sdk untaped.testing.MemoryStore.gone(entry)
+sdk untaped.testing.MemoryStore.name class
+sdk untaped.testing.MemoryStore.preflight()
+sdk untaped.testing.MemoryStore.read(entry)
+sdk untaped.testing.MemoryStore.save(entry, token)
+sdk untaped.testing.MemoryStore.save(label=) default=None
 sdk untaped.testing.PluginCandidate(distribution, name, target)
 sdk untaped.testing.PluginCandidate(distribution_version@4=) default=""
 sdk untaped.testing.PluginCandidate(entry_point_group@5=) default=untaped.plugins
@@ -6257,6 +6372,7 @@ sdk untaped.testing.check_plugin(name)
 sdk untaped.testing.compose_with()
 sdk untaped.testing.compose_with(*plugins)
 sdk untaped.testing.compose_with(provides=) default=None
+sdk untaped.testing.current_memory_store()
 sdk untaped.testing.damage(cache, key)  [experimental]
 sdk untaped.testing.damage(partition=) default=None  [experimental]
 sdk untaped.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
@@ -6314,6 +6430,8 @@ sdk untaped.testing.keep_value(partition=) default=None  [experimental]
 sdk untaped.testing.keep_value(version=) default=None  [experimental]
 sdk untaped.testing.make_project(holds=) default=None  [experimental]
 sdk untaped.testing.make_project(path)  [experimental]
+sdk untaped.testing.memory_store()
+sdk untaped.testing.memory_store(store@1=) default=None
 sdk untaped.testing.move_ask(store, item, *, moved_from)  [experimental]
 sdk untaped.testing.plan_release(project, store)  [experimental]
 sdk untaped.testing.plugin_candidate(distribution=) default=None
@@ -6562,8 +6680,10 @@ sdk untaped_git.api.Adopted(repo, action)
 sdk untaped_git.api.Adopted.action
 sdk untaped_git.api.Adopted.repo
 sdk untaped_git.api.Credential(*, username, password)
+sdk untaped_git.api.Credential(verify_tls=) default=true
 sdk untaped_git.api.Credential.password
 sdk untaped_git.api.Credential.username
+sdk untaped_git.api.Credential.verify_tls
 sdk untaped_git.api.GitHost base=untaped.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
@@ -6748,22 +6868,25 @@ sdk untaped_github.api.GithubGraphqlErrorKind choice=rate_limited
 sdk untaped_github.api.GithubGraphqlErrorKind choice=secondary_rate_limited
 sdk untaped_github.api.GithubGraphqlErrorKind choice=unknown
 sdk untaped_github.api.GithubSettings()
-sdk untaped_github.api.GithubSettings(base_url=) default=https://api.github.com
 sdk untaped_github.api.GithubSettings(default_org=) default=None
 sdk untaped_github.api.GithubSettings(git_protocol=) default=https
 sdk untaped_github.api.GithubSettings(inventory=) default=<computed>
+sdk untaped_github.api.GithubSettings(server=) default=<computed>
 sdk untaped_github.api.GithubSettings(sweep=) default=<computed>
 sdk untaped_github.api.GithubSettings(token=) default=None
 sdk untaped_github.api.GithubSettings(token_command=) default=None
+sdk untaped_github.api.GithubSettings.api_url
 sdk untaped_github.api.GithubSettings.base_url
 sdk untaped_github.api.GithubSettings.default_org
 sdk untaped_github.api.GithubSettings.git_protocol
 sdk untaped_github.api.GithubSettings.inventory
+sdk untaped_github.api.GithubSettings.renamed_keys class
 sdk untaped_github.api.GithubSettings.retired_keys class
+sdk untaped_github.api.GithubSettings.server
 sdk untaped_github.api.GithubSettings.sweep
 sdk untaped_github.api.GithubSettings.token
 sdk untaped_github.api.GithubSettings.token_command
-sdk untaped_github.api.GithubSettings.token_sources class
+sdk untaped_github.api.GithubSettings.token_sources class  [deprecated, removed in 12.0; use untaped.sdk.Credential]
 sdk untaped_github.api.RepoRef(*, kind, name, sha)
 sdk untaped_github.api.RepoRef.kind
 sdk untaped_github.api.RepoRef.name
@@ -6786,6 +6909,7 @@ sdk untaped_github.api.TeamScope(org, slug)
 sdk untaped_github.api.TeamScope.org
 sdk untaped_github.api.TeamScope.slug
 sdk untaped_github.api.github_settings()
+sdk untaped_github.api.github_token_found()
 sdk untaped_github.api.github_web_host(base_url)
 sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]

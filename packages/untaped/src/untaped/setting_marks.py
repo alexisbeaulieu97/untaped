@@ -60,7 +60,7 @@ login`` files a token or a command for.
 
 @deprecated(removed_in=12, replacement="untaped.sdk.Credential")
 @warnings.deprecated(
-    "TokenSources is deprecated and will be removed in 12.0; use `untaped.sdk.Credential`"
+    "TokenSources is deprecated and will be removed in 12.0; use untaped.sdk.Credential"
 )
 @dataclass(frozen=True)
 class TokenSources:

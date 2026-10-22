@@ -381,7 +381,7 @@ class PluginSpec:
     ``credentials`` are the :class:`~untaped.credentials.Credential` objects
     whose secrets the plugin needs: core keeps them outside configuration,
     owns ``untaped auth login`` for them, and each still reads its 11.0
-    ``<name>``/``<name>_command`` settings until 12.0.
+    ``<name>``/``<name>_command`` settings, which carry their own marks.
 
     ``guides`` is a folder of Markdown files (``files("untaped_acme") /
     "guides"``), each a page ``untaped agents <name> <guide>`` prints: prose

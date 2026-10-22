@@ -143,19 +143,15 @@ class GithubSettings(BaseModel):
     ] = Field(
         default=None,
         description=(
-            "GitHub token for API calls and Git fetches; deprecated, stored with "
-            "`untaped auth login github`."
+            "GitHub token for API calls and Git fetches."
         ),
     )
     token_command: Annotated[
         TokenCommand,
-        deprecated(removed_in=12, replacement="untaped auth login github --token-command"),
+        deprecated(removed_in=12, replacement="untaped auth login github"),
     ] = Field(
         default=None,
-        description=(
-            "Command (argv list, no shell) that prints the token; deprecated, stored "
-            "with `untaped auth login github --token-command`."
-        ),
+        description="Command (argv list, no shell) that prints the token.",
     )
     default_org: str | None = Field(
         default=None,

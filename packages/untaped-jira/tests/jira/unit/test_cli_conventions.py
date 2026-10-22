@@ -315,7 +315,8 @@ def test_rejected_token_hints_at_auth_login() -> None:
 
     assert result.exit_code == 4, result.output
     assert result.stderr.endswith(
-        "error: Jira rejected the token (HTTP 401)\nhint (your step): run `untaped auth login jira`\n"
+        "error: Jira rejected the token (HTTP 401)\n"
+        "hint (your step): run `untaped auth login jira`\n"
     )
 
 

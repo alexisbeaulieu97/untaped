@@ -291,8 +291,8 @@ def section_model(
     ``model``'s ``renamed_keys`` here, on the composed class only: the
     owner's own declarations never point at an injected key. Each declared
     :class:`~untaped.credentials.Credential` gets the 11.0 settings that
-    still supply it until 12.0 (:func:`legacy_credential_fields`), both
-    deprecated, unless the model declares them itself.
+    still supply it (:func:`legacy_credential_fields`, which marks them),
+    unless the model declares them itself.
     """
     renamed = _cache_renames(model, caches)
     if renamed:
@@ -343,8 +343,8 @@ def legacy_credential_fields(
     """The deprecated ``<name>`` and ``<name>_command`` settings each credential still reads.
 
     In 11.x a credential's old plain-text setting and its command setting
-    are read after the stored login (``Credential.get``'s third step); both
-    are deprecated, removed in 12. A field the plugin's model declares
+    are read after the stored login (``Credential.get``'s third step); each
+    carries a ``deprecated(...)`` mark. A field the plugin's model declares
     itself (an 11.0 model kept as is) is left to it.
     """
     fields: dict[str, Any] = {}

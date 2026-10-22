@@ -150,7 +150,10 @@ def test_a_token_from_an_old_setting_warns_with_config_migrate(
     row = _setup()
     old = f"wiz.{setting.partition(':')[0]}"
     assert row["status"] == "warn"
-    assert row["detail"] == f"url=https://wiz; token from {old}; {old} is deprecated"
+    assert (
+        row["detail"]
+        == f"url=https://wiz; token from {old}; `config migrate` moves {old} to a stored login"
+    )
     assert row["fix"][-2:] == ["config", "migrate"]
     assert row["automatic"] is False
 
