@@ -146,9 +146,7 @@ install, run `untaped setup register --remove` from it, so the others may
 clean up after it; an install deleted without that is
 noticed (its folder no longer holds untaped), and `untaped setup migrate-dirs`
 removes its reference. `untaped doctor` lists every registered install and,
-for each store, the layouts on disk and what holds them. Uninstalling a
-plugin leaves its caches for another install that may use it; `migrate-dirs`
-offers to delete them.
+for each store, the layouts on disk and what holds them.
 
 `untaped config migrate` (with or without `--dry-run`) and `doctor`'s
 unknown-keys row name the other registered installs, since an older install may still read the keys a
