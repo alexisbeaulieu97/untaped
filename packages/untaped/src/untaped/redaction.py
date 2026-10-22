@@ -22,10 +22,10 @@ def redact_url_password(value: str, *, placeholder: str = "***") -> str:
     return _URL_PASSWORD.sub(rf"\g<prefix>:{placeholder}@", value)
 
 
-_URL_USERINFO = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.\-]*://)[^/?#@\s]+@")
+_URL_USERINFO = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.\-]*://)[^/?#\s]*@")
 _AUTHORIZATION = re.compile(
     r"(?P<name>\b(?:proxy-)?authorization\b['\"]?\s*[:=]\s*['\"]?)"
-    r"(?P<scheme>[A-Za-z]+\s+)?[^\s'\",;}]+",
+    r"(?P<scheme>[A-Za-z]+[ \t]+)?[^\s'\",;}]+",
     re.IGNORECASE,
 )
 

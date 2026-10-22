@@ -308,11 +308,15 @@ class HttpClient:
             if self._auth is not None:
                 request = self._auth(request)
             started = time.monotonic()
+            sent = [request]
             try:
-                request, response = self._send(request, follow=follow, started=started)
+                response = self._send(sent, follow=follow, started=started)
             except httpx.HTTPError as exc:
+                request = sent[-1]
                 _log_exchange(request, f"failed: {type(exc).__name__}", started)
-                presend = isinstance(
+                # A redirect hop failing to connect still follows a request the
+                # server received: retrying resends it, so it is not pre-send.
+                presend = len(sent) == 1 and isinstance(
                     exc,
                     httpx.ConnectError
                     | httpx.ConnectTimeout
@@ -342,6 +346,7 @@ class HttpClient:
                     system=self.system,
                     details={"attempts": attempt},
                 ) from exc
+            request = sent[-1]
             _log_exchange(request, str(response.status_code), started)
             if response.status_code >= 400:
                 if (
@@ -365,19 +370,19 @@ class HttpClient:
             succeeded()
             return response
 
-    def _send(
-        self, request: httpx.Request, *, follow: bool, started: float
-    ) -> tuple[httpx.Request, httpx.Response]:
-        """Send ``request``; with ``follow``, its same-origin redirects too.
+    def _send(self, sent: list[httpx.Request], *, follow: bool, started: float) -> httpx.Response:
+        """Send ``sent[0]``; with ``follow``, its same-origin redirects too.
 
-        Returns the last request sent and its response. httpx builds each
-        hop (``next_request``, its method and body per the status); the hop
-        is signed again by the client's ``auth``.
+        Each hop sent is appended to ``sent``, so the caller knows which
+        request a failure or the response belongs to. httpx builds each hop
+        (``next_request``, its method and body per the status); the hop is
+        signed again by the client's ``auth``, and none starts past the
+        deadline.
         """
-        response = self._client.send(request)
-        hops = 0
+        response = self._client.send(sent[0])
         while follow and (hop := response.next_request) is not None:
             response.close()
+            request = sent[-1]
             if not same_origin(str(hop.url), str(request.url)):
                 raise HttpError(
                     f"refusing to follow a redirect from {_site(str(request.url))} "
@@ -385,17 +390,23 @@ class HttpClient:
                     url=str(request.url),
                     system=self.system,
                 )
-            hops += 1
-            if hops > _MAX_REDIRECTS:
+            if len(sent) > _MAX_REDIRECTS:
                 raise HttpError(
-                    f"more than {_MAX_REDIRECTS} redirects from {request.url}",
+                    f"more than {_MAX_REDIRECTS} redirects from {sent[0].url}",
                     url=str(request.url),
                     system=self.system,
                 )
+            left = _time_left()
+            if left is not None and left <= 0:
+                raise HttpTransportError(
+                    "request deadline exceeded before a redirect was followed",
+                    url=str(hop.url),
+                    system=self.system,
+                )
             _log_exchange(request, f"{response.status_code} -> {hop.url}", started)
-            request = hop if self._auth is None else self._auth(hop)
-            response = self._client.send(request)
-        return request, response
+            sent.append(hop if self._auth is None else self._auth(hop))
+            response = self._client.send(sent[-1])
+        return response
 
     def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """``kwargs`` with the timeout capped by the upstream budget and the deadline."""
@@ -785,6 +796,10 @@ def _origin_bound(credential: str, base: str, *, system: str) -> AuthFn:
     was set up for. A request's own ``Authorization`` header is kept.
     """
 
+    import httpx  # noqa: PLC0415
+
+    base = str(httpx.URL(base))  # the host as httpx sends it (an IDN as punycode)
+
     def sign(request: httpx.Request) -> httpx.Request:
         if not same_origin(str(request.url), base):
             raise HttpError(
@@ -800,15 +815,10 @@ def _origin_bound(credential: str, base: str, *, system: str) -> AuthFn:
 
 
 def _site(url: str) -> str:
-    """``scheme://host[:port]`` of ``url``, without userinfo, path or query."""
-    parts = urlsplit(url.strip())
-    host = parts.hostname or ""
-    host = f"[{host}]" if ":" in host else host
-    try:
-        port = parts.port
-    except ValueError:
-        port = None
-    return f"{parts.scheme}://{host}" + (f":{port}" if port else "")
+    """``scheme://host[:port]`` of an absolute ``url``: its origin, as a message names it."""
+    scheme, host, port = _origin(url) or ("", "", None)
+    host = f"[{host}]" if host and ":" in host else host or ""
+    return f"{scheme}://{host}" + ("" if port in {None, _DEFAULT_PORTS.get(scheme)} else f":{port}")
 
 
 def _text(value: object) -> str:

@@ -19,9 +19,10 @@ import respx
 from pydantic import BaseModel, SecretStr
 
 from untaped import verbose
-from untaped.auth import run_command
-from untaped.errors import HttpError
-from untaped.http import HttpClient, connected_client
+from untaped.auth import command_folder, find_program, run_command
+from untaped.errors import HttpError, HttpTransportError
+from untaped.git import run_git
+from untaped.http import HttpClient, RetryPolicy, connected_client
 from untaped.redaction import redact_credentials
 from untaped.settings import HttpSettings
 
@@ -128,9 +129,87 @@ def test_a_redirect_loop_stops() -> None:
         client.get("/loop", follow_redirects=True)
 
 
-def test_verify_replaces_the_profiles_tls() -> None:
-    with _client(verify=False) as client:
-        assert client._client._transport._pool._ssl_context.verify_mode.name == "CERT_NONE"  # type: ignore[attr-defined]
+def test_verify_replaces_the_profiles_tls(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[object] = []
+    real = httpx.Client
+
+    def client(*args: object, **kwargs: object) -> httpx.Client:
+        seen.append(kwargs["verify"])
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", client)
+    _client(verify=False).close()
+    _client().close()
+    assert seen[0] is False
+    assert seen[1] is not False
+
+
+@respx.mock
+def test_an_idn_base_url_is_its_own_origin() -> None:
+    route = respx.get("https://xn--bcher-kva.example/me").mock(return_value=httpx.Response(200))
+    with connected_client(
+        Service(), section="demo", base_url="https://bücher.example", http=HttpSettings()
+    ) as client:
+        client.get("/me")
+    assert route.calls.last.request.headers["Authorization"] == f"Bearer {_CANARY}"
+
+
+@respx.mock
+def test_each_redirect_hop_is_signed_again() -> None:
+    respx.get(f"{_URL}/old").mock(
+        return_value=httpx.Response(307, headers={"Location": f"{_URL}/new"})
+    )
+    respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
+    signed: list[str] = []
+
+    def sign(request: httpx.Request) -> httpx.Request:
+        signed.append(request.url.path)
+        return request
+
+    with HttpClient(_URL, auth=sign) as client:
+        client.get("/old", follow_redirects=True)
+    assert signed == ["/old", "/new"]
+
+
+@respx.mock
+def test_a_credentialed_redirect_to_another_origin_sends_nothing_there() -> None:
+    respx.get(f"{_URL}/old").mock(
+        return_value=httpx.Response(302, headers={"Location": "https://evil.example.net/x"})
+    )
+    other = respx.get("https://evil.example.net/x").mock(return_value=httpx.Response(200))
+    with _client() as client, pytest.raises(HttpError, match="leaves the origin"):
+        client.get("/old", follow_redirects=True)
+    assert not other.called
+
+
+def test_a_hop_that_fails_to_connect_does_not_resend_a_post() -> None:
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "POST":
+            return httpx.Response(303, headers={"Location": f"{_URL}/done"})
+        raise httpx.ConnectError("refused", request=request)
+
+    client = HttpClient(_URL, retry=RetryPolicy(backoff_base=0))
+    client._client = httpx.Client(base_url=_URL, transport=httpx.MockTransport(handler))
+    with client, pytest.raises(HttpTransportError) as caught:
+        client.post("/submit", json={}, follow_redirects=True)
+    assert methods == ["POST", "GET"]
+    assert caught.value.details["url"] == f"{_URL}/done"
+
+
+@respx.mock
+def test_no_redirect_hop_starts_past_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    respx.get(f"{_URL}/old").mock(
+        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
+    )
+    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
+    left = iter([5.0, -1.0])  # the first request, then the hop
+    monkeypatch.setattr("untaped.http._time_left", lambda: next(left))
+    with HttpClient(_URL) as client, pytest.raises(HttpTransportError, match="deadline"):
+        client.get("/old", follow_redirects=True)
+    assert not new.called
 
 
 def _program(folder: Path, text: str) -> None:
@@ -138,6 +217,42 @@ def _program(folder: Path, text: str) -> None:
     program = folder / "tok"
     program.write_text(f"#!{sys.executable}\nprint({text!r})\n")
     program.chmod(0o755)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
+def test_programs_are_found_in_the_config_folder_not_the_current_one(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    _program(repo, "planted")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("PATH", f".{os.pathsep}{os.environ['PATH']}")
+    assert find_program("tok") is None
+    _program(_isolated_config.parent, "own")
+    assert find_program("tok") == str(_isolated_config.parent / "." / "tok")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
+def test_git_planted_in_the_folder_it_runs_in_is_not_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    planted = repo / "git"
+    planted.write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'ran')!r}, 'w')\n")
+    planted.chmod(0o755)
+    monkeypatch.setenv("PATH", f".{os.pathsep}{os.environ['PATH']}")
+    run_git(["--version"], cwd=repo, timeout=30)
+    assert not (tmp_path / "ran").exists()
+
+
+def test_a_relative_config_path_is_read_from_where_untaped_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "conf").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", "conf/config.yml")
+    assert command_folder() == tmp_path / "conf"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
@@ -175,6 +290,8 @@ def test_a_command_runs_from_home_until_the_config_folder_exists(
         ("via proxy http://tok3n@proxy:3128", "via proxy http://***@proxy:3128"),
         ("via proxy http://u:p@proxy:3128/", "via proxy http://***@proxy:3128/"),
         ("GET https://api.example.com/a?b=c@d", "GET https://api.example.com/a?b=c@d"),
+        ("via proxy http://user:p@ss@proxy:3128", "via proxy http://***@proxy:3128"),
+        ("Authorization: Bearer\nnext line", "Authorization: ***\nnext line"),
     ],
 )
 def test_log_redaction_masks_credentials(line: str, masked: str) -> None:

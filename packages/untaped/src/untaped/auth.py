@@ -45,6 +45,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -286,7 +287,7 @@ def run_command(
 ) -> subprocess.CompletedProcess[str]:
     """Run ``argv`` without a shell, its stdout captured, and return it finished.
 
-    It runs in :func:`_command_folder`, never the current folder. ``label``
+    It runs in :func:`command_folder`, never the current folder. ``label``
     starts every error, which never repeats the command's output or
     arguments. stderr goes straight to the terminal unless ``capture_stderr``.
     A non-zero exit is returned, not raised. With nobody to answer a prompt,
@@ -303,7 +304,7 @@ def run_command(
             timeout=_TIMEOUT_SECONDS,
             check=False,
             env=env,
-            cwd=_command_folder(),
+            cwd=command_folder(),
         )
     except FileNotFoundError:
         raise ConfigError(f"{label} not found on PATH") from None
@@ -323,15 +324,28 @@ def run_command(
         raise ConfigError(f"{label} could not run: {exc.strerror}") from None
 
 
-def _command_folder() -> Path:
+def command_folder() -> Path:
     """The folder token and store commands run in: the config file's (``~/.untaped``).
 
     Never the current folder, so a repository can't plant the program that a
     relative ``argv[0]``, or a bare name with ``.`` on ``PATH``, would run.
     Home, until the config folder exists.
     """
-    folder = resolve_config_path().parent
+    folder = resolve_config_path().absolute().parent
     return folder if folder.is_dir() else Path.home()
+
+
+def find_program(name: str) -> str | None:
+    """``shutil.which(name)`` the way :func:`run_command` finds it.
+
+    A relative ``PATH`` entry (``.``) is read from :func:`command_folder`,
+    never the current folder, so a repository can't plant the program
+    untaped probes for or runs.
+    """
+    folder = command_folder()
+    entries = os.environ.get("PATH", os.defpath).split(os.pathsep)
+    path = os.pathsep.join(str(folder / (entry or ".")) for entry in entries)
+    return shutil.which(name, path=path)
 
 
 def pass_gpg_options() -> list[str]:
@@ -559,7 +573,9 @@ __all__ = [
     "TokenSources",
     "clear_token_cache",
     "command_failure",
+    "command_folder",
     "describe_token_source",
+    "find_program",
     "first_stderr_line",
     "forget_token_command",
     "gpg_hint",

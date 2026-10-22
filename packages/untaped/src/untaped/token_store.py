@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -35,6 +34,8 @@ from typing import Literal
 from untaped.auth import (
     PASS_GPG_HINT,
     command_failure,
+    command_folder,
+    find_program,
     first_stderr_line,
     gpg_hint,
     locked_store_error,
@@ -159,7 +160,7 @@ class TokenStore:
         """Whether this store works on this machine right now."""
         if self.name == "pass":
             return pass_problem() is None
-        if shutil.which(self.name) is None:
+        if find_program(self.name) is None:
             return False
         if self.name == "security":
             return _is_macos()
@@ -189,14 +190,14 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
     A missing pinentry or agent shows only on a real decrypt, which
     :data:`PASS_GPG_HINT` covers.
     """
-    if shutil.which("pass") is None:
+    if find_program("pass") is None:
         return "pass is not installed"
     recipients = _gpg_recipients()
     if not recipients:
         return "the password store is not initialised (run `pass init <gpg-id>`)"
     if not probe_key:
         return None
-    if shutil.which("gpg") is None and shutil.which("gpg2") is None:
+    if find_program("gpg") is None and find_program("gpg2") is None:
         return "gpg is not installed"
     for recipient in recipients:
         completed = _probe(_gpg("--list-secret-keys", "--", recipient))
@@ -212,7 +213,7 @@ def pass_problem(*, probe_key: bool = True) -> str | None:
 
 def _gpg(*args: str) -> list[str]:
     """A gpg command line built the way ``pass`` builds its own (see its ``GPG_OPTS``)."""
-    program = "gpg2" if shutil.which("gpg2") else "gpg"
+    program = "gpg2" if find_program("gpg2") else "gpg"
     options = pass_gpg_options()  # as pass gets them
     fixed = [
         "--quiet",
@@ -242,6 +243,7 @@ def _gpg_round_trip() -> None:
                 timeout=_ROUND_TRIP_SECONDS,
                 check=False,
                 env=pass_gpg_env(),
+                cwd=command_folder(),
             )
         except subprocess.TimeoutExpired:
             raise ConfigError(
@@ -278,6 +280,7 @@ def _probe(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
             text=True,
             timeout=_PROBE_TIMEOUT_SECONDS,
             check=False,
+            cwd=command_folder(),
         )
     except OSError, subprocess.TimeoutExpired:
         return None
@@ -348,7 +351,7 @@ def no_store_message(section: str, env: Sequence[str], *, command: str = "token_
     """Why nothing was stored, and the routes that remain (``command``: the secret's setting)."""
     routes = [f"set {section}.{command} to a password manager's command"]
     routes.extend(f"export ${name}" for name in env[:1])
-    skipped = pass_problem() if shutil.which("pass") else None
+    skipped = pass_problem() if find_program("pass") else None
     note = f" ({skipped})" if skipped else ""
     return (
         "no token store is usable on this machine (macOS security, secret-tool with a "

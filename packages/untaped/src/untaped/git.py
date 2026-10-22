@@ -20,7 +20,6 @@ import hashlib
 import logging
 import os
 import re
-import shutil
 import signal
 import subprocess
 import tempfile
@@ -382,7 +381,9 @@ def run_git(
     network = bool(argv) and argv[0] in _NETWORK_SUBCOMMANDS
     if network and capped():
         timeout, attempts = min(timeout, PROBE_TIMEOUT), 1
-    git_path = shutil.which(git)
+    from untaped.auth import find_program  # noqa: PLC0415 - auth reads the settings
+
+    git_path = find_program(git)  # never a `git` planted in the folder git runs in
     if git_path is None:
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
     payload = stdin.encode() if isinstance(stdin, str) else stdin

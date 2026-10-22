@@ -1,3 +1,2 @@
-API tokens are only ever sent to the server they are set up for,
-`--verbose` masks credentials, and token commands run from the config
-folder instead of the current one.
+An API token is only ever sent to the server it is set up for: a request or
+redirect to another server is refused.

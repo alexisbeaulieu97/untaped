@@ -83,7 +83,9 @@ yourself, in a workspace checkout or anywhere else, is unaffected:
   `GIT_ALTERNATE_OBJECT_DIRECTORIES` and `GIT_COMMON_DIR`, so an outer
   repository cannot redirect the command;
 - removes `GIT_TRACE*` and `GIT_CURL_VERBOSE` when it passes a token to Git,
-  so the token is not logged.
+  so the token is not logged;
+- finds `git` on `PATH` reading a relative entry (`.`) from the config
+  file's folder, so a repository can't plant the `git` it runs.
 
 If you set `GIT_SSH_COMMAND` yourself, add `-o BatchMode=yes` to keep the
 fail-fast behavior. The git plugin's repo store also sets
