@@ -55,7 +55,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
 from untaped.setting_marks import SetupMarks, TokenCommand, TokenSources, declared_marks
-from untaped.settings import env_var_name, resolve_config_path
+from untaped.settings import env_var_name, env_var_setting, resolve_config_path
 from untaped.stability import deprecated_behaviour
 
 _LOG = logging.getLogger("untaped.auth")
@@ -182,6 +182,25 @@ def describe_token_source(
         return f"{section}.{sources.command}"
     env_name = _env_source(sources.env) if ambient else None
     return None if env_name is None else f"${env_name}"
+
+
+def secret_source(settings: BaseModel, *, section: str, field: str) -> str | None:
+    """Which source the secret ``field`` would come from, named without reading or running it.
+
+    The variable's name when one supplies it (``UNTAPED_AWX__TOKEN``, ``GH_TOKEN``),
+    ``<section>.<field>`` for a value in the config file, ``stored`` for its
+    command; ``None`` when no source is configured. ``settings`` is the section
+    as loaded, before :func:`resolve_token`. For the settings digest
+    (:mod:`untaped.settings_digest`): a run on another source never shares
+    data kept for this one.
+    """
+    if _explicit_token(settings, field):
+        name = token_override_name(section, field=field)
+        return name if env_var_setting((section, field)) is not None else f"{section}.{field}"
+    sources = _secret_sources(type(settings), field)
+    if sources.command and getattr(settings, sources.command, None):
+        return "stored"
+    return _env_source(sources.env)
 
 
 def token_env_names(settings: BaseModel, *, field: str = "token") -> tuple[str, ...]:

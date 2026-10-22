@@ -46,6 +46,7 @@ from untaped.output.sink import (
     open_tasks,
     recording,
 )
+from untaped.settings_digest import settings_digest
 from untaped.testing import CacheClock, CliResult, cache_clock, invoke_cli, progress_clock
 from untaped.upstream import PROBE_TIMEOUT
 
@@ -223,10 +224,10 @@ def test_first_use_fills_then_a_fresh_read_is_silent(clock: CacheClock) -> None:
     assert second.diagnostics == ()
 
 
-def test_the_sidecar_holds_the_freshness_under_the_profile(clock: CacheClock) -> None:
+def test_the_sidecar_holds_the_freshness_under_the_settings_digest(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
     paths = TOY._paths("a")
-    assert paths.file().parent.name == "default"
+    assert paths.file().parent.name == settings_digest("toy")
     assert paths.file().parent.parent.name == "items"
     assert paths.file().parent.parent.parent.name == "cached"
     assert paths.file().read_text(encoding="utf-8").count("\n") == 1  # no value: one line
@@ -784,16 +785,14 @@ def test_a_failed_sidecar_write_keeps_the_old_one_and_the_answer(
     assert _sidecar("a")["refreshed_at"] == "2026-10-12T07:00:00Z"
 
 
-def test_each_profile_has_its_own_sidecar(
+def test_profiles_whose_settings_read_the_same_share_a_sidecar(
     clock: CacheClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _show("a").exit_code == 0
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
 
-    assert _show("a", "--cached").exit_code == 1
-    assert _show("a").exit_code == 0
-    assert UP.fills == ["a", "a"]
-    assert TOY._paths("a").file().parent.name == "work"
+    assert _show("a", "--cached").exit_code == 0
+    assert UP.fills == ["a"]
 
 
 # ---- the stale line, once ------------------------------------------------------

@@ -16,9 +16,10 @@ and never checks. :func:`refresh_option` is the ``--refresh``/``--cached``
 option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
-Layout: each key is one file under ``<plugin dir>/cached/<name>/<profile>/``
-(``cached/<name>.v<layout>/`` when the cache follows a store; no profile
-folder under ``split="none"``) on core's data file (:mod:`untaped.data_file`):
+Layout: each key is one file under ``<plugin dir>/cached/<name>/<settings digest>/``
+(``cached/<name>.v<layout>/`` when the cache follows a store; no digest
+folder under ``split="none"``; :mod:`untaped.settings_digest` names it) on
+core's data file (:mod:`untaped.data_file`):
 its first line says what the cache knows about the key (:class:`Freshness`),
 and a cache declared with ``model=`` keeps the value itself on the second,
 one file per version of the value. Files are written atomically and
@@ -36,6 +37,7 @@ way a key past its max age is.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import importlib.metadata
@@ -393,7 +395,9 @@ class Cache[M = None]:
     freshness are one file per version of the value (its type's shape and
     ``version``): a key filled by another version is served, outdated, when
     a refresh fails or under ``--cached``. ``split`` says whether the files
-    are kept per profile (``"settings"``) or once for every profile
+    are kept per settings of the plugin's own section (``"settings"``: a
+    folder per :mod:`settings digest <untaped.settings_digest>`, shared by
+    every profile whose section reads the same) or once for all of them
     (``"none"``, when the key and partition already say whose data it is).
     Two declarations with the same values (the same callables) are equal.
     """
@@ -1015,16 +1019,20 @@ class Cache[M = None]:
         return named_plugin_dir(self.plugin) / "caches" / self.name
 
     def _folder(self) -> Path:
-        """The folder this cache's files are in for the active settings: computed here only."""
-        from untaped.profile_resolver import selected_profile  # noqa: PLC0415 - no cycle
+        """The folder this cache's files are in for the active settings: computed here only.
+
+        Under ``split="settings"``, the root's folder named by the plugin's
+        settings digest (:mod:`untaped.settings_digest`).
+        """
+        from untaped.settings_digest import settings_digest  # noqa: PLC0415 - no cycle
 
         root = self._root(None if self.store is None else self.store.layout)
-        return root if self.split == "none" else root / _segment(selected_profile())
+        return root if self.split == "none" else root / settings_digest(self.plugin)
 
     def _paths(
         self, key: str, partition: str | None = None, *, folder: Path | None = None
     ) -> _KeyPaths:
-        """``key``'s folder, file stem and lock in ``partition`` (the active profile's folder)."""
+        """``key``'s folder, file stem and lock in ``partition`` (the active settings' folder)."""
         folder = self._folder() if folder is None else folder
         stem = _segment(key) if partition is None else f"{_segment(key)}.p{_digest(partition)}"
         return _KeyPaths(folder, stem, folder / f"{stem}.lock")
@@ -1194,19 +1202,41 @@ class Cache[M = None]:
 
         This key and partition's files of other versions go once past
         ``max_age``: whoever reads one refills it anyway. Another
-        partition's files of the key (a rotated credential) go only past
-        the longer of 30 days and ten times the declared max age, under
+        partition's files of the key (a rotated credential), and the key's
+        files in sibling settings folders (settings since changed), go only
+        past the longer of 30 days and ten times the declared max age, under
         their own lock taken without waiting: a folder shared by profiles
-        may serve one whose max age is longer than this one's.
+        may serve one whose max age is longer than this one's. A sibling
+        folder left with nothing but free locks is removed.
         """
-        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
-
         now = _utcnow()
         horizon = max(_PARTITION_HORIZON, 10 * self.default_max_age)
+        for entry, stem, refreshed in self._key_files(paths.dir, key):
+            if entry == own:
+                continue
+            if stem == paths.stem:
+                if refreshed is None or now - refreshed >= max_age:
+                    entry.unlink(missing_ok=True)
+                continue
+            self._sweep_other(paths.dir, entry, stem, refreshed, now - horizon, key)
+        if self.split == "none":
+            return
+        for sibling in _listed(paths.dir.parent):
+            if sibling == paths.dir or not sibling.is_dir():
+                continue
+            for entry, stem, refreshed in self._key_files(sibling, key):
+                self._sweep_other(sibling, entry, stem, refreshed, now - horizon, key)
+            self._remove_if_unused(sibling)
+
+    @staticmethod
+    def _key_files(folder: Path, key: str) -> Iterator[tuple[Path, str, datetime | None]]:
+        """``key``'s files in ``folder``, every partition and version: path, stem, refreshed."""
+        from untaped.data_file import Lines, read_lines  # noqa: PLC0415 - first use
+
         segment = _segment(key)
-        for entry in _listed(paths.dir):
+        for entry in _listed(folder):
             matched = _VERSIONED.fullmatch(entry.name)
-            if matched is None or entry == own:
+            if matched is None:
                 continue
             stem = matched["stem"]
             if stem != segment and not stem.startswith(f"{segment}.p"):
@@ -1214,19 +1244,41 @@ class Cache[M = None]:
             found = read_lines(entry, value=False)
             if not isinstance(found, Lines) or found.stamp.get("key") != key:
                 continue  # unreadable, or another key whose name begins alike
-            refreshed = parse_utc(found.stamp.get("refreshed_at"))
-            if stem == paths.stem:
-                if refreshed is None or now - refreshed >= max_age:
-                    entry.unlink(missing_ok=True)
-                continue
-            if refreshed is not None and now - refreshed < horizon:
-                continue
-            other = _KeyPaths(paths.dir, stem, paths.dir / f"{stem}.lock")
+            yield entry, stem, parse_utc(found.stamp.get("refreshed_at"))
+
+    def _sweep_other(
+        self,
+        folder: Path,
+        entry: Path,
+        stem: str,
+        refreshed: datetime | None,
+        cutoff: datetime,
+        key: str,
+    ) -> None:
+        """Delete ``entry`` when refreshed before ``cutoff`` and its lock is free."""
+        if refreshed is not None and refreshed > cutoff:
+            return
+        other = _KeyPaths(folder, stem, folder / f"{stem}.lock")
+        try:
+            with self._held(other, timeout=0.0, label=key):
+                entry.unlink(missing_ok=True)
+        except _LockError:
+            pass  # busy, or its lock won't open: the next complete fill tries again
+
+    def _remove_if_unused(self, folder: Path) -> None:
+        """Remove ``folder`` when it holds only locks, each free; else leave it as it is."""
+        entries = _listed(folder)
+        if not entries or any(entry.suffix != ".lock" for entry in entries):
+            return
+        for lock in entries:
+            stem = lock.name.removesuffix(".lock")
             try:
-                with self._held(other, timeout=0.0, label=key):
-                    entry.unlink(missing_ok=True)
+                with self._held(_KeyPaths(folder, stem, lock), timeout=0.0, label=stem):
+                    lock.unlink(missing_ok=True)
             except _LockError:
-                continue  # busy, or its lock won't open: the next complete fill tries again
+                return  # a fill in progress: it keeps the folder
+        with contextlib.suppress(OSError):
+            folder.rmdir()  # only when empty: another process may have just written to it
 
     @contextmanager
     def _task(self, text: str, parent: ProgressHandle) -> Iterator[ProgressHandle]:

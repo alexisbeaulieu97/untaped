@@ -42,6 +42,7 @@ from untaped.errors import ConfigError, ExitCode, HttpTransportError, UntapedErr
 from untaped.output.diagnostic import StaleData
 from untaped.output.sink import diagnostics_scope, exit_on_counted_failure, recording
 from untaped.plugins.registry import PluginSpec
+from untaped.settings_digest import settings_digest
 
 
 @pytest.fixture
@@ -233,7 +234,13 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
     assert Library.calls == 2
     assert isinstance(cached_only, Ok)
     [path] = _cache_files()
-    assert path.parts[-6:-1] == ("plugins", "shelf", "cached", "book_source_books", "default")
+    assert path.parts[-6:-1] == (
+        "plugins",
+        "shelf",
+        "cached",
+        "book_source_books",
+        settings_digest("shelf"),
+    )
     assert [row["title"] for row in _value(path)] == ["Dune", "Emma"]
     stamp = _stamp(path)
     assert stamp["file"] == 1
@@ -375,10 +382,12 @@ def test_an_expired_entry_is_refreshed() -> None:
     assert Library.calls == 2
 
 
-def test_the_cache_is_per_profile() -> None:
+def test_the_cache_is_per_provider_settings() -> None:
     compose(shelf_spec(), library_spec())
     write_config(
-        LIBRARY_CONFIG + "  work:\n    library: {catalog: https://w.example, volumes: []}\n"
+        LIBRARY_CONFIG
+        + "  work:\n    library: {catalog: https://w.example, volumes: []}\n"
+        + "  same:\n    library: {catalog: https://w.example, volumes: []}\n"
     )
     gather(BookSource.books)()
     from untaped.profile_resolver import profile_scope
@@ -388,7 +397,12 @@ def test_the_cache_is_per_profile() -> None:
     assert isinstance(answer, Ok)
     assert answer.value == []
     assert Library.calls == 2
-    assert {path.parent.name for path in _cache_files()} == {"default", "work"}
+    with profile_scope("same"):
+        [answer] = gather(BookSource.books)()
+    assert Library.calls == 2  # the provider's settings read the same as work's
+    files = _cache_files()
+    assert len(files) == 2
+    assert {path.parent.name for path in files} == {settings_digest("shelf")}
 
 
 def test_the_deadline_bounds_a_provider_requests() -> None:
