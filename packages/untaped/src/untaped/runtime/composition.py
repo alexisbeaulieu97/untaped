@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from untaped.runtime.declaration import (
+    AliasDecl,
     BlockDecl,
     CommandDecl,
     Declaration,
@@ -131,14 +132,21 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     ``taken`` are names a plugin may not have: core's root commands and
     config.yml's own top-level keys (core composes first and wins). A plugin
     whose name is taken, by those or by an earlier entry, or whose walk finds
-    any problem, is quarantined with every problem named.
+    any problem, is quarantined with every problem named. A record class
+    belongs to the plugin whose package defines it, whichever plugins reach
+    it and in whatever order (shelf's ``Book``, which library's provider also
+    returns, is ``shelf.book``); a class no plugin's package defines belongs
+    to the plugin that reaches it.
     """
     names = set(taken)
+    owners: dict[str, str] = {}
+    for entry in entries:
+        owners.setdefault(_package(entry.target), entry.name)
     plugins: list[PluginDecl] = []
-    kinds: dict[type, KindDecl] = {}
+    kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
     for entry in entries:
-        walk = _PluginWalk(entry)
+        walk = _PluginWalk(entry, owners)
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(
@@ -165,36 +173,29 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     )
 
 
-def _claim(
-    walk: _PluginWalk, kinds: dict[type, KindDecl], problems: list[Problem]
-) -> dict[type, KindDecl]:
-    """The kinds ``walk`` owns; a class another plugin already owns is a problem.
+def _package(target: str) -> str:
+    """The top-level package of an entry point's module: every class under it is the plugin's."""
+    return target.partition(":")[0].partition(".")[0]
 
-    A class reached by two plugins belongs to the one whose package defines it.
-    """
-    claimed: dict[type, KindDecl] = {}
+
+def _claim(
+    walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem]
+) -> dict[str, KindDecl]:
+    """The kinds ``walk`` reaches; two classes that would be one kind are a problem."""
+    claimed: dict[str, KindDecl] = {}
     for cls, kind in walk.kinds.items():
-        held = kinds.get(cls)
-        if held is not None and not cls.__module__.startswith(walk.package + "."):
-            problems.append(
-                Problem(
-                    rule="foreign-kind",
-                    where=cls.__qualname__,
-                    detail=f"is the kind {held.kind} of plugin {held.plugin}, which defines it",
-                )
-            )
-            continue
-        claimed[cls] = KindDecl(kind=kind, target=target_of(cls), plugin=walk.name)
-    by_kind = Counter(kind.kind for kind in claimed.values())
-    for kind, count in by_kind.items():
-        if count > 1:
+        target = target_of(cls)
+        held = claimed.get(kind) or kinds.get(kind)
+        if held is not None and held.target != target:
             problems.append(
                 Problem(
                     rule="duplicate-kind",
-                    where=walk.name,
-                    detail=f"{count} classes would be the kind {kind}: rename one",
+                    where=cls.__qualname__,
+                    detail=f"would be the kind {kind}, which {held.target} is: rename one",
                 )
             )
+            continue
+        claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
     return claimed
 
 
@@ -221,11 +222,12 @@ def _prose(cls: type) -> tuple[str, str]:
 class _PluginWalk:
     """One plugin's walk: its declaration, the kinds it reaches, and its problems."""
 
-    def __init__(self, entry: PluginEntry) -> None:
+    def __init__(self, entry: PluginEntry, owners: dict[str, str]) -> None:
         self.name = entry.name
         self.target = entry.target
         module = entry.target.partition(":")[0]
-        self.package = module.partition(".")[0]
+        self.package = _package(entry.target)
+        self.owners = owners
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
         self.decl: PluginDecl | None = None
@@ -245,6 +247,17 @@ class _PluginWalk:
 
     def problem(self, rule: str, where: str, detail: str) -> None:
         self.problems.append(Problem(rule=rule, where=where, detail=detail))
+
+    def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
+        """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""
+        decl = _stability(mark)
+        if mark is not None and decl is None:
+            self.problem(
+                "reserved-name",
+                f"{cls.__qualname__}.stability",
+                f"holds {mark!r}, not experimental or deprecated(...)",
+            )
+        return decl
 
     # --- the plugin class ---------------------------------------------------------
 
@@ -311,25 +324,22 @@ class _PluginWalk:
             self.problem(
                 "reserved-name", f"{where}.commands", "is a tuple of Command and Group classes"
             )
-        if cls.stability is not None and _stability(cls.stability) is None:
-            self.problem(
-                "reserved-name",
-                f"{where}.stability",
-                f"holds {cls.stability!r}, not experimental or deprecated(...)",
-            )
+        self.stability_of(cls, cls.stability)
         if held["skill"] is not None and not isinstance(held["skill"], StubSkill):
             self.problem("reserved-name", f"{where}.skill", f"holds {cls.skill!r}, not a StubSkill")
         if cls.runs is not None and not _is_command(cls.runs):
             self.problem(
                 "reserved-name", f"{where}.runs", f"holds {cls.runs!r}, not a Command class"
             )
-        for offered in _tuple(self, cls, "offers"):
+        self.offers = _tuple(self, cls, "offers")
+        self.fills = _tuple(self, cls, "fills")
+        for offered in self.offers:
             info = contract_of(offered) if isinstance(offered, type) else None
             if info is None or info.cls is not offered:
                 self.problem(
                     "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
                 )
-        for filled in _tuple(self, cls, "fills"):
+        for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
                 self.problem(
@@ -390,15 +400,18 @@ class _PluginWalk:
             decl = self._node(node, path, where=where)
             if decl is None:
                 continue
-            if decl.name in names:
+            spellings = [decl.name]
+            if isinstance(decl, CommandDecl):
+                spellings += [alias.name for alias in decl.aliases]
+            taken = [name for name in spellings if name in names]
+            if taken:
                 self.problem(
                     "duplicate-command",
                     where,
-                    f"{decl.target} and {names[decl.name]} are both "
-                    f"`{' '.join((*path, decl.name))}`",
+                    f"{decl.target} and {names[taken[0]]} are both `{' '.join((*path, taken[0]))}`",
                 )
                 continue
-            names[decl.name] = decl.target
+            names.update(dict.fromkeys(spellings, decl.target))
             found.append(decl)
         return tuple(found)
 
@@ -421,7 +434,7 @@ class _PluginWalk:
                 target=target_of(node),
                 summary=summary,
                 doc=doc,
-                stability=_stability(node.stability),
+                stability=self.stability_of(node, node.stability),
                 commands=self._nodes(
                     node.commands, group_path, where=f"{node.__qualname__}.commands"
                 ),
@@ -525,14 +538,33 @@ class _CommandWalk:
             writes=tuple(seen.writes),
             guides=tuple(dict.fromkeys(seen.guides)),
             asks_first=seen.blocks["confirm"] > 0,
-            stability=_stability(cls.stability),
-            aliases=tuple(str(alias.replacement) for alias in cls.aliases),
+            stability=self._mark(cls),
+            aliases=self._aliases(),
+        )
+
+    def _mark(self, cls: type[Command[Any]]) -> StabilityDecl | None:
+        return self.plugin.stability_of(cls, cls.stability)
+
+    def _aliases(self) -> tuple[AliasDecl, ...]:
+        aliases = self.cls.aliases
+        if not isinstance(aliases, tuple) or not all(
+            isinstance(alias, Deprecated) and isinstance(alias.replacement, str)
+            for alias in aliases
+        ):
+            self.problem(
+                "reserved-name",
+                f"{self.where}.aliases",
+                f"holds {aliases!r}, not a tuple of "
+                'Deprecated(replacement="old-name", removed_in=...)',
+            )
+            return ()
+        return tuple(
+            AliasDecl(name=str(alias.replacement), removed_in=alias.removed_in) for alias in aliases
         )
 
     def _kind(self, model: type[BaseModel]) -> str:
-        kind = f"{self.plugin.name}.{snake(model.__name__)}"
-        self.plugin.kinds.setdefault(model, kind)
-        return self.plugin.kinds[model]
+        owner = self.plugin.owners.get(model.__module__.partition(".")[0], self.plugin.name)
+        return self.plugin.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
 
     def _settings(self) -> None:
         model = settings_model(self.cls)
@@ -627,14 +659,12 @@ class _CommandWalk:
                 "a core-filled field type is the whole field type, never inside another",
             )
             return
-        value, optional, repeated = _unwrap(annotation)
-        positional = POSITIONAL in info.metadata
-        if _is_model(value) and not issubclass(value, Output) and not positional and not repeated:
+        value, repeated, inner = _unwrap(annotation)
+        marks = (*info.metadata, *inner)
+        if _is_model(value) and POSITIONAL not in marks and not repeated:
             self._bundle(path, value)
             return
-        self._option(
-            path, where, info, value=value, optional=optional, repeated=repeated, panel=panel
-        )
+        self._option(path, where, info, value=value, marks=marks, repeated=repeated, panel=panel)
 
     def _bundle(self, path: str, model: type[BaseModel]) -> None:
         if _prose(model)[0]:
@@ -649,7 +679,7 @@ class _CommandWalk:
         info: FieldInfo,
         *,
         value: object,
-        optional: bool,
+        marks: tuple[object, ...],
         repeated: bool,
         panel: str,
     ) -> None:
@@ -657,14 +687,14 @@ class _CommandWalk:
         if token is None:
             return
         name = path.rpartition(".")[2].rstrip("_")
-        positional = POSITIONAL in info.metadata
+        positional = POSITIONAL in marks
         if not info.description:
             self.problem(
                 "missing-description",
                 where,
                 "every option and argument has help: Field(description=...)",
             )
-        shorts = [mark.flag for mark in info.metadata if isinstance(mark, Short)]
+        shorts = [mark.flag for mark in marks if isinstance(mark, Short)]
         for short in shorts:
             if short in CORE_SHORTS:
                 self.problem("core-short", where, f"{short} belongs to core's own flags")
@@ -686,12 +716,12 @@ class _CommandWalk:
                 default=_jsonable(default),
                 help=info.description or "",
                 panel=panel,
-                allow_hyphen=AllowHyphen in info.metadata,
-                or_stdin=OR_STDIN in info.metadata,
-                stability=next((s for s in map(_stability, info.metadata) if s is not None), None),
+                allow_hyphen=AllowHyphen in marks,
+                or_stdin=OR_STDIN in marks,
+                stability=next((s for s in map(_stability, marks) if s is not None), None),
             )
         )
-        self._file(value, info)
+        self._file(value, marks)
 
     def _token(self, value: object, where: str) -> tuple[str, tuple[str, ...]] | None:
         token = _token(value)
@@ -712,16 +742,14 @@ class _CommandWalk:
             self.seen.guides.append(target_of(value))
         return token
 
-    def _file(self, value: object, info: FieldInfo) -> None:
+    def _file(self, value: object, marks: tuple[object, ...]) -> None:
         if get_origin(value) is not File:
             return
         model = generic_argument(value)
         if not _is_model(model):
             self.problem("field-type", self.where, "File[M] takes a pydantic model M")
             return
-        (self.seen.writes if Written in info.metadata else self.seen.inputs).append(
-            self._kind(model)
-        )
+        (self.seen.writes if Written in marks else self.seen.inputs).append(self._kind(model))
 
     def _core(self, path: str, where: str, block: type[FieldBlock], info: FieldInfo) -> None:
         seen = self.seen
@@ -806,7 +834,7 @@ class _CommandWalk:
         if getattr(method, "__untaped_cached__", None) is None:
             return False
         name = getattr(method, "__name__", "")
-        classes = (*self.plugin.cls.offers, *self.plugin.cls.fills)
+        classes = (*self.plugin.offers, *self.plugin.fills)
         return any(getattr(cls, name, None) is method for cls in classes)
 
     def _duplicates(self) -> None:
@@ -827,17 +855,26 @@ class _CommandWalk:
 # --- types -----------------------------------------------------------------------------
 
 
-def _unwrap(annotation: object) -> tuple[object, bool, bool]:
-    """``(value type, optional, repeated)`` of a field annotation.
+def _unwrap(annotation: object) -> tuple[object, bool, tuple[object, ...]]:
+    """``(value type, repeated, marks)`` of a field annotation.
 
-    ``list[str] | None`` is ``(str, True, True)``.
+    ``Annotated[list[str], Positional] | None`` is ``(str, True, (POSITIONAL,))``:
+    pydantic lifts only top-level ``Annotated`` marks into the field's metadata,
+    so the marks inside ``X | None`` or a list are collected here.
     """
-    optional = False
+    marks: list[object] = []
+
+    def peel(annotation: object) -> object:
+        while get_origin(annotation) is typing.Annotated:
+            annotation, *found = get_args(annotation)
+            marks.extend(found)
+        return annotation
+
     if get_origin(annotation) in (typing.Union, types.UnionType):
         members = [arg for arg in get_args(annotation) if arg is not type(None)]
-        optional = len(members) < len(get_args(annotation))
         if len(members) == 1:
             annotation = members[0]
+    annotation = peel(annotation)
     repeated = False
     if get_origin(annotation) in (
         list,
@@ -849,11 +886,7 @@ def _unwrap(annotation: object) -> tuple[object, bool, bool]:
         args = [arg for arg in get_args(annotation) if arg is not Ellipsis]
         if len(args) == 1:
             annotation, repeated = args[0], True
-    return _strip(annotation), optional, repeated
-
-
-def _strip(annotation: object) -> object:
-    return get_args(annotation)[0] if get_origin(annotation) is typing.Annotated else annotation
+    return peel(annotation), repeated, tuple(marks)
 
 
 def _is_pair(annotation: object) -> bool:

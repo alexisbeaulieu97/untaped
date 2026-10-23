@@ -200,6 +200,13 @@ def test_derive_drops_omitted_fields_and_keeps_validators() -> None:
         Plain(limit=101)
 
 
+def test_an_omitted_field_stays_dropped_in_a_subclass() -> None:
+    class Narrow(derive(List, "Plain", omit=("with_scm",))):  # type: ignore[misc]
+        """Narrow."""
+
+    assert "with_scm" not in Narrow.model_fields
+
+
 def test_derive_refuses_an_omit_naming_no_field() -> None:
     with pytest.raises(TypeError, match="omit names no field"):
         derive(List, "Bad", omit=("nope",))

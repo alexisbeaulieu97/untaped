@@ -58,6 +58,13 @@ class OptionDecl(_Frozen):
     stability: StabilityDecl | None = None
 
 
+class AliasDecl(_Frozen):
+    """An old spelling of a renamed command, which still works and warns until its removal."""
+
+    name: str
+    removed_in: int | None = None
+
+
 #: What ``run``'s return type says the command prints.
 type Returns = Literal[
     "rows", "record", "rows-or-record", "record-or-none", "line", "line-or-none", "nothing"
@@ -90,7 +97,7 @@ class CommandDecl(_Frozen):
     guides: tuple[str, ...] = ()
     asks_first: bool = False
     stability: StabilityDecl | None = None
-    aliases: tuple[str, ...] = ()
+    aliases: tuple[AliasDecl, ...] = ()
 
 
 class GroupDecl(_Frozen):

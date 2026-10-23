@@ -11,25 +11,29 @@ from pydantic import BaseModel, Field
 
 from core_test_support.contracts.support import BOOKS, BookSource, Shop
 from untaped.runtime.composition import PluginEntry, compose, kebab, snake, words
-from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, Problem
+from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
 from untaped.sdk import (
     Column,
     Command,
     Confirm,
+    Deprecated,
     File,
     Group,
     Key,
     KeyValue,
     Output,
+    Parallel,
     Plugin,
     Positional,
     Refresh,
     Short,
     Stdin,
     StubSkill,
+    TextOrStdin,
     Written,
     deprecated,
     experimental,
+    key,
 )
 from untaped.sdk._block import Block
 
@@ -485,17 +489,25 @@ def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
     ]
 
 
-def test_two_plugins_cannot_share_a_kind_they_do_not_define() -> None:
+def test_a_record_class_belongs_to_the_plugin_whose_package_defines_it() -> None:
     class Peer(Plugin):
         """Peer."""
 
         settings = HelloSettings
         commands = (Say,)
 
-    declaration = compose([_entry(Hello), _entry(Peer, "peer", module="untaped_peer.plugin")])
-    [refused] = declaration.quarantined
-    assert refused.name == "peer"
-    assert {p.rule for p in refused.problems} == {"foreign-kind"}
+    hello, peer = _entry(Hello), _entry(Peer, "peer", module="untaped_peer.plugin")
+    for entries in ([hello, peer], [peer, hello]):
+        declaration = compose(entries)
+        assert declaration.quarantined == ()
+        outputs = {c.output for c in declaration.commands() if c.name == "say"}
+        assert outputs == {"hello.salutation"}
+        assert ("hello.salutation", "hello") in [(k.kind, k.plugin) for k in declaration.kinds]
+
+
+def test_a_class_no_plugin_defines_belongs_to_the_plugin_reaching_it() -> None:
+    declaration = compose([_entry(Hello, module="untaped_hello.plugin")])
+    assert [kind.kind for kind in declaration.kinds] == ["hello.salutation", "hello.suite"]
 
 
 def test_two_classes_that_would_be_one_kind() -> None:
@@ -535,3 +547,144 @@ def test_stability_marks_reach_the_declaration() -> None:
 
 def test_composing_twice_gives_the_same_declaration(declaration: Declaration) -> None:
     assert compose([_entry(Hello)]) == declaration
+
+
+def test_marks_inside_an_optional_reach_the_option() -> None:
+    class Marked(Command):
+        """Marked."""
+
+        pos: Positional[str] | None = Field(None, description="An argument.")
+        many: Positional[list[str]] | None = Field(None, description="Arguments.")
+        repo: Annotated[str, Short("-r")] | None = Field(None, description="The repository.")
+        text: TextOrStdin | None = Field(None, description="Text or -.")
+
+        def run(self) -> None:
+            return None
+
+    [marked] = compose([_entry(_plugin_with(Marked))]).commands()
+    options = {option.field: option for option in marked.options}
+    assert options["pos"].positional
+    assert (options["many"].positional, options["many"].token) == (True, "list[str]")
+    assert options["repo"].short == "-r"
+    assert options["text"].or_stdin
+
+
+def test_a_core_short_inside_an_optional_is_still_refused() -> None:
+    class Clash(Command):
+        """Clash."""
+
+        force: Annotated[bool, Short("-y")] | None = Field(None, description="Force.")
+
+        def run(self) -> None:
+            return None
+
+    assert ("core-short", "Clash.force") in _rules(_plugin_with(Clash))
+
+
+def test_aliases_are_old_spellings_with_their_removal() -> None:
+    class Greet(Command):
+        """Greet."""
+
+        aliases = (Deprecated(replacement="hi", removed_in=13),)
+
+        def run(self) -> None:
+            return None
+
+    [greet] = compose([_entry(_plugin_with(Greet))]).commands()
+    assert greet.aliases == (AliasDecl(name="hi", removed_in=13),)
+
+
+def test_an_alias_is_a_spelling_no_sibling_may_take() -> None:
+    class Hi(Command):
+        """Hi."""
+
+        def run(self) -> None:
+            return None
+
+    class Greet(Command):
+        """Greet."""
+
+        aliases = (Deprecated(replacement="hi", removed_in=13),)
+
+        def run(self) -> None:
+            return None
+
+    assert [p.rule for p in _problems(_plugin_with(Hi, Greet))] == ["duplicate-command"]
+
+
+def test_marks_on_commands_and_groups_are_checked() -> None:
+    class Loose(Command):
+        """Loose."""
+
+        aliases = ("old",)  # type: ignore[assignment]
+        stability = "experimental"  # type: ignore[assignment]
+
+        def run(self) -> None:
+            return None
+
+    class Shaky(Group):
+        """Shaky."""
+
+        stability = "beta"  # type: ignore[assignment]
+
+    assert sorted(_rules(_plugin_with(Loose, Shaky))) == [
+        ("reserved-name", "Loose.aliases"),
+        ("reserved-name", "Loose.stability"),
+        ("reserved-name", "Shaky.stability"),
+    ]
+
+
+def test_a_refresh_on_a_plugin_whose_offers_is_not_a_tuple() -> None:
+    class Books(Command):
+        """Books."""
+
+        refresh: Refresh = Refresh(BookSource.books)
+
+        def run(self) -> None:
+            return None
+
+    class Loose(Plugin):
+        """Loose."""
+
+        settings = HelloSettings
+        commands = (Books,)
+        offers = BookSource  # type: ignore[assignment]
+
+    assert _rules(Loose) == [
+        ("reserved-name", "Loose.offers"),
+        ("refresh-cache", "Books.refresh"),
+    ]
+
+
+def test_parallel_reads_its_own_plugins_settings() -> None:
+    class Elsewhere(BaseModel):
+        workers: int = 4
+
+    class Fan(Command):
+        """Fan."""
+
+        parallel: Parallel = Parallel(default=key(Elsewhere).workers)
+
+        def run(self) -> None:
+            return None
+
+    assert _rules(_plugin_with(Fan)) == [("settings-model", "Fan.parallel")]
+
+
+def test_every_return_shape() -> None:
+    class Maybe(Command):
+        """Maybe."""
+
+        def run(self) -> str | None:
+            return None
+
+    class Either(Command):
+        """Either."""
+
+        output: Output[Salutation]
+
+        def run(self) -> Salutation | Iterator[Salutation]:
+            return iter(())
+
+    shapes = [c.returns for c in compose([_entry(_plugin_with(Maybe, Either))]).commands()]
+    assert shapes == ["line-or-none", "rows-or-record"]

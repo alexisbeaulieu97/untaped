@@ -212,16 +212,20 @@ def _derive_command(
             info = copy.copy(base.model_fields[field])
             info.annotation = annotation  # type: ignore[assignment]
             replaced[field] = (annotation, info)
+    # An omitted field is shadowed by a class variable, so a subclass of the
+    # derived class doesn't inherit it back from the base's annotations.
+    dropped: dict[str, Any] = {field: (ClassVar[None], None) for field in omit}
     sub: type[Command[Any]] = create_model(
-        name, __base__=base, __doc__=doc or base.__doc__, __module__=base.__module__, **replaced
+        name,
+        __base__=base,
+        __doc__=doc or base.__doc__,
+        __module__=base.__module__,
+        **replaced,
+        **dropped,
     )
     for field, value in fields.items():
         if field not in base.model_fields:
             setattr(sub, field, value)
-    if omit:
-        for field in omit:
-            del sub.__pydantic_fields__[field]
-        sub.model_rebuild(force=True)
     return sub  # type: ignore[return-value]  # create_model types the class by its base
 
 
