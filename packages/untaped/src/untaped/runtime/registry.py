@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import functools
 import re
+import sys
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -79,6 +80,7 @@ from untaped.sdk.storage.store import Store
 
 if TYPE_CHECKING:
     from untaped.sdk.contracts import Contract
+    from untaped.sdk.plugin import Plugin
     from untaped.sdk.storage.holds import ItemStore
 
 #: What a plugin lists on ``PluginSpec.stores`` for the data it keeps in ``state.yml``.
@@ -590,6 +592,7 @@ VALID_REASONS = frozenset(
         "foreign-credential",
         "duplicate-credential",
         "bad-credential",
+        "bad-plugin-class",
     }
 )
 
@@ -1402,15 +1405,16 @@ def compose(
     state = _CompositionState(shell)
     ordered = sorted(candidates, key=_candidate_order)
     quarantined: dict[int, QuarantineRecord] = {}
-    claims: dict[int, PluginSpec] = {}
+    provided: dict[int, PluginSpec | type[Plugin]] = {}
     for index, candidate in enumerate(ordered):
         try:
-            claims[index] = _provide(candidate, state)
+            provided[index] = _provide(candidate, state)
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
-    for index, contest in _contested(ordered, claims).items():
+    for index, contest in _contested(ordered, provided).items():
         quarantined[index] = contest.to_record(ordered[index])
-        del claims[index]
+        del provided[index]
+    claims = _mounted(ordered, provided, state, quarantined)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
@@ -1439,17 +1443,76 @@ def compose(
     )
 
 
+def _mounted(
+    ordered: Sequence[PluginCandidate],
+    provided: dict[int, PluginSpec | type[Plugin]],
+    state: _CompositionState,
+    quarantined: dict[int, QuarantineRecord],
+) -> dict[int, PluginSpec]:
+    """Every claim as a spec: the plugin classes composed in one walk and mounted.
+
+    A plugin class composition refuses is quarantined with every problem it
+    names; one it composes reaches the rest of composition as the spec the
+    mount builds for it (:func:`untaped.runtime.mount.plugin_spec`).
+    """
+    claims = {index: spec for index, spec in provided.items() if isinstance(spec, PluginSpec)}
+    classes = {index: cls for index, cls in provided.items() if not isinstance(cls, PluginSpec)}
+    if not classes:
+        return claims
+    from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
+    from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
+
+    entries = [
+        PluginEntry(ordered[index].name, _entry_target(ordered[index], cls), cls)
+        for index, cls in classes.items()
+    ]
+    mount = compose_plugins(entries)
+    refused = {each.name: each for each in mount.declaration.quarantined}
+    for index in classes:
+        candidate = ordered[index]
+        if candidate.name in refused:
+            detail = "; ".join(str(problem) for problem in refused[candidate.name].problems)
+            quarantined[index] = _Quarantine("bad-plugin-class", detail).to_record(candidate)
+            continue
+        spec = plugin_spec(mount, candidate.name)
+        try:
+            _check_declaration(spec, state)
+        except _Quarantine as failed:
+            quarantined[index] = failed.to_record(candidate)
+            continue
+        claims[index] = spec
+    return dict(sorted(claims.items()))
+
+
+def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
+    """Whether ``obj`` is a 12.0 plugin class, without importing the plugin interface.
+
+    A plugin class subclasses :class:`untaped.sdk.plugin.Plugin`, so its import
+    loaded that module; a 11.x composition never pays for it.
+    """
+    module = sys.modules.get("untaped.sdk.plugin")
+    return module is not None and isinstance(obj, type) and issubclass(obj, module.Plugin)
+
+
+def _entry_target(candidate: PluginCandidate, cls: type[Plugin]) -> str:
+    """The ``module:Qualname`` an entry point names: its target, or the class given directly."""
+    from untaped.runtime.declaration import target_of  # noqa: PLC0415 - 12.0 plugins only
+
+    return candidate.target if isinstance(candidate.target, str) else target_of(cls)
+
+
 def _contested(
-    ordered: Sequence[PluginCandidate], claims: dict[int, PluginSpec]
+    ordered: Sequence[PluginCandidate], claims: Mapping[int, object]
 ) -> dict[int, _Quarantine]:
     """A quarantine per claimant of a plugin name two or more claims share.
 
     The name is also the config section and CLI group, so one contest
-    covers all three.
+    covers all three. A claim carries its candidate's name (a spec's name
+    was checked against it).
     """
     claimants: defaultdict[str, list[int]] = defaultdict(list)
-    for index, spec in claims.items():
-        claimants[spec.name].append(index)
+    for index in claims:
+        claimants[ordered[index].name].append(index)
     contested: dict[int, _Quarantine] = {}
     for name, indexes in claimants.items():
         if len(indexes) < 2:
@@ -1487,11 +1550,13 @@ def _module_of(candidate: PluginCandidate) -> str:
     return "untaped_" + candidate.name.replace("-", "_")
 
 
-def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec:
-    """Resolve one candidate's entry point to its ``PluginSpec``, then validate it.
+def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec | type[Plugin]:
+    """Resolve one candidate's entry point to its ``PluginSpec`` or plugin class.
 
-    The entry point names the spec itself (``untaped_acme:SPEC``); anything
-    else, a callable included, is ``not-a-spec`` and is never called.
+    The entry point names the spec itself (``untaped_acme:SPEC``) or a
+    12.0 plugin class (``untaped_acme.plugin:Acme``), which composition reads
+    with the other plugin classes (:func:`_mounted`); anything else, a
+    callable included, is ``not-a-spec`` and is never called.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
@@ -1511,6 +1576,8 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             f"distribution {candidate.distribution!r}: {exc}",
             entry_point="",
         ) from None
+    if _is_plugin_class(spec):
+        return spec
     if not isinstance(spec, PluginSpec):
         raise _Quarantine(
             "not-a-spec",

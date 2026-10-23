@@ -11,20 +11,24 @@ from pydantic import BaseModel, Field, ValidationError
 
 from untaped.sdk import (
     AllowHyphen,
+    Column,
     ConfigError,
     ExistingFile,
     File,
+    Key,
     KeyJson,
     KeyValue,
     Output,
     Parallel,
     Positional,
     Short,
+    Stdin,
     UntapedError,
+    UsageError,
     key,
 )
 from untaped.sdk._block import POSITIONAL
-from untaped.sdk.fields import CORE_SHORTS, SettingKey
+from untaped.sdk.fields import CORE_SHORTS, SettingKey, column_fields, key_field
 
 
 class Suite(BaseModel):
@@ -166,7 +170,7 @@ def test_a_key_is_a_field_type_dumped_as_its_path() -> None:
 def test_output_lists_its_formats_with_the_plugins_renderers() -> None:
     assert Output().formats == ("table", "json", "yaml", "pipe", "raw")
     assert Output(render={"tree": print}).formats[-1] == "tree"
-    assert Output(columns=["key"]).columns == ("key",)
+    assert Output(columns=["key"]).declared_columns == ("key",)
 
 
 def test_parallel_checks_its_numbers() -> None:
@@ -183,3 +187,43 @@ def test_annotated_marks_reach_the_field() -> None:
         repo: Annotated[str, Short("-r")] = Field("x", description="The repo.")
 
     assert [type(m) for m in Opts.model_fields["repo"].metadata] == [Short]
+
+
+class Row(BaseModel):
+    name: Annotated[str, Key, Column]
+    size: int = 0
+
+
+def test_an_unfilled_output_is_a_table_with_its_declared_columns() -> None:
+    output: Output[Row] = Output(columns=("name",))
+    assert (output.format, list(output.columns), output.requested) == ("table", ["name"], None)
+    output.columns.add("size", "name")
+    assert list(output.columns) == ["name", "size"]
+
+
+def test_a_filled_output_is_a_copy_and_falls_back_to_the_column_marks() -> None:
+    default: Output[Row] = Output()
+    filled = default._filled(fmt="json", requested=["+size"], columns=column_fields(Row))
+    filled.columns.add("size")
+    filled.empty("none")
+    assert (filled.format, list(filled.columns), filled.requested) == (
+        "json",
+        ["name", "size"],
+        ["+size"],
+    )
+    assert (default.format, list(default.columns), default.empty_text) == ("table", [], None)
+
+
+def test_an_unfilled_stdin_gives_back_what_was_given() -> None:
+    stdin: Stdin[Row] = Stdin()
+    assert stdin.identifiers(["ada"]) == ["ada"]
+    assert stdin.values(["ada"]) == ["ada"]
+    assert stdin.identifiers([], allow_empty=True) == []
+    with pytest.raises(UsageError, match="at least one identifier"):
+        stdin.identifiers([])
+
+
+def test_the_key_and_column_marks_name_their_fields() -> None:
+    assert key_field(Row) == "name"
+    assert column_fields(Row) == ("name",)
+    assert key_field(Suite) is None

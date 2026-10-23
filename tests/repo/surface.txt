@@ -5245,6 +5245,7 @@ sdk untaped.sdk.OutcomeRecord.table_columns class
 sdk untaped.sdk.Output()
 sdk untaped.sdk.Output(columns=) default=[]
 sdk untaped.sdk.Output(render=) default=None callback(*)
+sdk untaped.sdk.Output.empty(text)
 sdk untaped.sdk.Output.field_kind class
 sdk untaped.sdk.Output.formats
 sdk untaped.sdk.Output.options class
@@ -5750,8 +5751,17 @@ sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental
 sdk untaped.sdk.Stdin()
 sdk untaped.sdk.Stdin(via=) default=None callback(*)
 sdk untaped.sdk.Stdin.field_kind class
+sdk untaped.sdk.Stdin.identifiers()
+sdk untaped.sdk.Stdin.identifiers(allow_empty=) default=false
+sdk untaped.sdk.Stdin.identifiers(given@1=) default=[]
 sdk untaped.sdk.Stdin.options class
 sdk untaped.sdk.Stdin.panel class
+sdk untaped.sdk.Stdin.rows()
+sdk untaped.sdk.Stdin.rows(allow_empty=) default=false
+sdk untaped.sdk.Stdin.rows(given@1=) default=[]
+sdk untaped.sdk.Stdin.values()
+sdk untaped.sdk.Stdin.values(allow_empty=) default=false
+sdk untaped.sdk.Stdin.values(given@1=) default=[]
 sdk untaped.sdk.StdinInput(values, records)
 sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values

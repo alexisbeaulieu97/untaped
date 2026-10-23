@@ -19,6 +19,7 @@ command never parses a token itself.
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -29,10 +30,18 @@ from pydantic.types import PathType
 from pydantic_core import core_schema
 
 from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, Mark
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
+from untaped.sdk.errors import (
+    ConfigError,
+    ErrorCategory,
+    UntapedError,
+    UsageError,
+    first_validation_error,
+)
 
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler
+
+    from untaped.sdk._pipe import PipeEnvelope
 
 # --- positionals and marks ------------------------------------------------------
 
@@ -324,6 +333,11 @@ def key(model: type[BaseModel]) -> SettingKey:
 # --- the fields core fills ---------------------------------------------------------
 
 
+def _copy[B: FieldBlock](block: B) -> B:
+    """A shallow copy of a field's default, which a filled field must never change."""
+    return copy.copy(block)
+
+
 OUTPUT_FORMATS: tuple[str, ...] = ("table", "json", "yaml", "pipe", "raw")
 """The formats every ``Output`` offers, before a plugin's own renderers."""
 
@@ -353,13 +367,56 @@ class Output[R: BaseModel](FieldBlock):
         columns: Sequence[str] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
-        self.columns = tuple(columns)
+        self.declared_columns = tuple(columns)
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
+        #: The format ``--format`` chose (``table`` when unfilled).
+        self.format = "table"
+        #: The table's default columns this run: the declared ones, or ``R``'s
+        #: ``Column`` fields; ``.add(...)`` adds more. ``--columns`` applies on top.
+        self.columns = Columns(self.declared_columns)
+        self.requested: list[str] | None = None
+        self.empty_text: str | None = None
 
     @property
     def formats(self) -> tuple[str, ...]:
         """Every value ``--format`` takes for this command."""
         return (*OUTPUT_FORMATS, *self.render)
+
+    def empty(self, text: str) -> None:
+        """The text a table shows when ``run`` printed no row."""
+        self.empty_text = text
+
+    def _filled(
+        self, *, fmt: str, requested: list[str] | None, columns: Sequence[str]
+    ) -> Output[R]:
+        """A copy for one invocation, as core fills it from ``--format`` and ``--columns``.
+
+        ``columns`` are ``R``'s ``Column`` fields, used when the default names none.
+        """
+        filled = _copy(self)
+        filled.format = fmt
+        filled.requested = requested
+        filled.columns = Columns(self.declared_columns or columns)
+        filled.empty_text = None
+        return filled
+
+
+class Columns(list[str]):
+    """A command's default table columns for one run: ``self.output.columns.add("url")``."""
+
+    def add(self, *names: str) -> None:
+        """Show ``names`` too, after the columns already shown."""
+        self.extend(name for name in names if name not in self)
+
+
+def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
+    """The fields of ``model`` marked ``Column``: a table's default columns (none: every field)."""
+    return tuple(name for name, info in model.model_fields.items() if Column in info.metadata)
+
+
+def key_field(model: type[BaseModel]) -> str | None:
+    """The field of ``model`` marked ``Key``: what a bare identifier stands for."""
+    return next((name for name, info in model.model_fields.items() if Key in info.metadata), None)
 
 
 class Stdin[R: BaseModel](FieldBlock):
@@ -376,6 +433,100 @@ class Stdin[R: BaseModel](FieldBlock):
 
     def __init__(self, *, via: Callable[..., Any] | None = None) -> None:
         self.via = via
+        #: Whether ``--stdin`` was given (never, when unfilled).
+        self.requested = False
+        self._models: tuple[type[BaseModel], ...] = ()
+        self._kinds: Mapping[str, type[BaseModel]] | None = {}
+
+    def _filled(
+        self,
+        *,
+        requested: bool,
+        models: Sequence[type[BaseModel]],
+        kinds: Mapping[str, type[BaseModel]] | None,
+    ) -> Stdin[R]:
+        """A copy for one invocation: ``--stdin``, the models ``R`` names, the kinds accepted.
+
+        ``kinds`` maps each accepted kind to its model; ``None`` accepts any kind.
+        """
+        filled = _copy(self)
+        filled.requested = requested
+        filled._models = tuple(models)
+        filled._kinds = None if kinds is None else dict(kinds)
+        return filled
+
+    def identifiers(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str]:
+        """The identifiers given, or read from stdin: bare lines, or each row's ``Key`` field.
+
+        Both at once, or neither (unless ``allow_empty``), is a usage error.
+        """
+        return [
+            value if isinstance(value, str) else self._identifier(value)
+            for value in self._read(given, allow_empty=allow_empty)
+        ]
+
+    def values(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str | R]:
+        """The arguments as given, or what stdin carried: each a bare line or a validated row."""
+        return [
+            value if isinstance(value, str) else self._row(value)
+            for value in self._read(given, allow_empty=allow_empty)
+        ]
+
+    def rows(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[R]:
+        """Whole validated rows from stdin; a bare identifier is a usage error."""
+        rows: list[R] = []
+        for value in self.values(given, allow_empty=allow_empty):
+            if isinstance(value, str):
+                raise UsageError(f"expected rows on stdin, got the bare line {value!r}")
+            rows.append(value)
+        return rows
+
+    def _read(self, given: Sequence[str], *, allow_empty: bool) -> list[str | PipeEnvelope]:
+        from untaped.sdk._stdin import read_stdin_input  # noqa: PLC0415 - only a reader pays
+
+        if not self.requested:
+            if not given and not allow_empty:
+                raise UsageError("at least one identifier is required (or use --stdin)")
+            return list(given)
+        if given:
+            raise UsageError("provide identifiers as positional args or via --stdin, not both")
+        kinds = None if self._kinds is None else tuple(self._kinds)
+        piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
+        return list(piped.values) if piped.records is None else list(piped.records)
+
+    def _model(self, envelope: PipeEnvelope) -> type[BaseModel]:
+        if envelope.kind is not None and self._kinds:
+            model = self._kinds.get(envelope.kind)
+            if model is not None:
+                return model
+        if not self._models:
+            raise TypeError("Stdin was not filled with the models it accepts")
+        return self._models[0]
+
+    def _identifier(self, envelope: PipeEnvelope) -> str:
+        field = key_field(self._model(envelope))
+        if field is None:
+            raise ConfigError(
+                "stdin is untaped pipe format but this command cannot map records to "
+                "identifiers: no field of the accepted model is marked Key",
+                category="invalid",
+            )
+        value = envelope.record.get(field)
+        identifier = "" if value is None else str(value).strip()
+        if not identifier:
+            raise ConfigError(
+                f"line {envelope.lineno}: record {field!r} is missing or blank",
+                category="invalid",
+            )
+        return identifier
+
+    def _row(self, envelope: PipeEnvelope) -> R:
+        try:
+            return cast("R", self._model(envelope).model_validate(envelope.record))
+        except ValidationError as exc:
+            raise ConfigError(
+                f"line {envelope.lineno}: {first_validation_error(exc)}", category="invalid"
+            ) from exc
 
 
 class Lines(FieldBlock):
