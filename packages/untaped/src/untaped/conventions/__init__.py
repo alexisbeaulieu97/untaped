@@ -5,7 +5,7 @@ See ``docs/reference/conventions.md#enforcement``.
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
 third-party plugin is checked exactly like a first-party one. Plugin tests call
-:func:`untaped.testing.check_conventions`; this package is internal.
+:func:`untaped.sdk.testing.check_conventions`; this package is internal.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from cyclopts import App
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from untaped.bootstrap import build_root_app, composition
 from untaped.conventions.guides import guide_violations
 from untaped.conventions.help_tree import help_tree_violations
 from untaped.conventions.imports import import_boundary_violations
@@ -32,7 +31,8 @@ from untaped.conventions.stability import (
     undated_violations,
 )
 from untaped.conventions.structure import structure_class_violations
-from untaped.plugins.registry import (
+from untaped.runtime.bootstrap import build_root_app, composition
+from untaped.runtime.registry import (
     PluginCandidate,
     PluginSpec,
     discover_candidates,
@@ -54,7 +54,7 @@ def plugin_violations(
     when ``untaped[lint]`` is installed, the file rules it now owns
     (:func:`file_lines`); the private-test-import rule runs only when
     ``tests_dir`` is given. ``candidates`` replaces entry-point discovery (as in
-    :func:`untaped.bootstrap.compose_root`), so a test can check a provider
+    :func:`untaped.runtime.bootstrap.compose_root`), so a test can check a provider
     that is not installed. Lines are ``<where>::<rule>::<detail>``, sorted. A
     quarantined plugin's one violation is the reason composition refused it.
     """
@@ -147,7 +147,7 @@ def _core_lines(checked: _Checked) -> list[str]:
 
 def _sdk_deprecations(package: str) -> list[str]:
     """``deprecation_text_violations`` of the plugin's ``api`` and ``testing`` modules."""
-    from untaped.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
+    from untaped.core.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
 
     return [
         line
@@ -298,7 +298,7 @@ def _boundary(
 
     Every candidate counts as a plugin, composed or quarantined: a
     ``module:attr`` target names its package; a spec target (as from
-    :func:`untaped.testing.plugin_candidate`) gives it through what the spec
+    :func:`untaped.sdk.testing.plugin_candidate`) gives it through what the spec
     declares, and is skipped when that cannot be resolved. The checked
     plugin's own distribution is always declared, as is what one of
     ``extras`` (its ``provides`` keys) requires.

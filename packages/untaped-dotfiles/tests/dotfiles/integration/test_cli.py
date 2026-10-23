@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from dotfiles.conftest import MANIFEST, commit_all, git, push, write_files
-from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_root
+from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_root
 from untaped_dotfiles.cli import app
 
 pytestmark = pytest.mark.usefixtures("dotfiles_env")

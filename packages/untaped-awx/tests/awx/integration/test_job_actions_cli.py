@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 
 

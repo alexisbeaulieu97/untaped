@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.output.policy import enable_quiet, reset_quiet
-from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend
-from untaped.testing.git import GitRemote
+from untaped.runtime.output_policy import enable_quiet, reset_quiet
+from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
+from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.cli import app
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore

@@ -1,0 +1,217 @@
+"""Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
+
+Profiles are a core feature, not a plugin: this resolver and
+:class:`untaped.runtime.settings_layout.ProfilesSettingsLayout` are core's home for
+profile resolution.
+
+The resolver is layer-agnostic: callers hand it the parsed
+``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
+``UNTAPED_PROFILE`` or the root ``--profile`` flag is used). It returns:
+
+- ``effective``: a deep-merged dict of values (active beats default per leaf).
+- ``provenance``: a flat ``leaf_path -> profile_name`` map naming the profile
+  that supplied each leaf in ``effective``. Missing entries mean the leaf
+  came from the schema default (i.e. neither profile set it).
+
+``profiles.default`` is optional. When present, it serves as a shared
+overrides layer beneath the active profile; when absent, the active profile
+is layered alone (and the Pydantic schema's defaults sit beneath both via
+the Settings class).
+
+Top-level keys outside ``profiles`` are ignored here — they are the
+caller's responsibility.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Literal
+
+from untaped.sdk.errors import ConfigError
+
+ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
+DEFAULT_PROFILE = "default"
+
+ProfileSource = Literal["flag", "env", "config", "fallback"]
+
+_profile_override: ContextVar[str | None] = ContextVar("untaped_profile_override", default=None)
+
+
+def set_profile_override(name: str | None) -> None:
+    """Set (or clear, with ``None``) the invocation-scoped ``--profile`` override."""
+    _profile_override.set(name)
+
+
+@contextmanager
+def profile_scope(name: str) -> Iterator[None]:
+    """Select ``name`` as this invocation's profile inside the block.
+
+    The root ``--profile`` option and ``setup`` both use it. The settings
+    cache is dropped on entry and exit so reads follow the selection.
+    """
+    # Lazy: ``untaped.runtime.settings`` imports this module.
+    from untaped.runtime.settings import get_settings  # noqa: PLC0415
+
+    token = _profile_override.set(name)
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        _profile_override.reset(token)
+        get_settings.cache_clear()
+
+
+def profile_override() -> str | None:
+    """Return the active ``--profile`` override, if any."""
+    return _profile_override.get()
+
+
+def classify_active_profile(
+    data: dict[str, Any],
+) -> tuple[str | None, ProfileSource]:
+    """Return the active profile name **and** which layer supplied it.
+
+    Same precedence as :func:`effective_active_profile_name` (env var >
+    ``data['active']`` > unset), but also tells the caller whether the
+    answer came from the env var, the persisted ``active:`` key, or
+    neither (fallback). Powers the ``profile current`` command
+    and any other code path that needs to classify the layer.
+    """
+    override = _profile_override.get()
+    if override:
+        return override, "flag"
+    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
+    if env_override:
+        return env_override, "env"
+    raw = data.get("active")
+    if isinstance(raw, str) and raw:
+        return raw, "config"
+    return None, "fallback"
+
+
+def effective_active_profile_name(data: dict[str, Any]) -> str | None:
+    """Return the active profile honouring ``UNTAPED_PROFILE``.
+
+    Precedence: env var > ``data['active']`` > ``None``. Callers fall back
+    to ``"default"`` themselves when they need a guaranteed name. Thin
+    wrapper over :func:`classify_active_profile`.
+    """
+    name, _ = classify_active_profile(data)
+    return name
+
+
+def selected_profile(data: dict[str, Any] | None = None) -> str:
+    """The profile this invocation acts on: ``--profile``, ``UNTAPED_PROFILE``, ``active``.
+
+    Falls back to ``default``. ``data`` is the parsed config; without it the
+    config file is read, and an unreadable one counts as empty.
+    """
+    if data is None:
+        # Lazy: ``untaped.runtime.config_file`` imports ``untaped.runtime.settings``,
+        # which imports us.
+        from untaped.runtime.config_file import read_config_dict  # noqa: PLC0415
+
+        try:
+            data = read_config_dict()
+        except ConfigError:
+            data = {}
+    return effective_active_profile_name(data) or DEFAULT_PROFILE
+
+
+def resolve_profiles(
+    config_data: dict[str, Any],
+    *,
+    active_override: str | None = None,
+) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
+    """Return ``(effective, provenance)`` from the parsed config dict.
+
+    Raises ``ConfigError`` when ``profiles`` (or one profile) is not a
+    mapping — an empty ``name:`` entry (YAML ``null``) counts as an empty
+    profile — or when an explicit override names an undefined profile.
+    """
+    profiles = _profiles_mapping(config_data)
+    active_name = _select_active(config_data, active_override, profiles)
+
+    effective: dict[str, Any] = {}
+    provenance: dict[tuple[str, ...], str] = {}
+
+    if DEFAULT_PROFILE in profiles:
+        _layer(profiles[DEFAULT_PROFILE] or {}, DEFAULT_PROFILE, effective, provenance, ())
+    if active_name is not None and active_name != DEFAULT_PROFILE:
+        _layer(profiles[active_name] or {}, active_name, effective, provenance, ())
+
+    return effective, provenance
+
+
+def _profiles_mapping(config_data: dict[str, Any]) -> dict[str, Any]:
+    profiles = config_data.get("profiles")
+    if profiles is None:
+        return {}
+    if not isinstance(profiles, dict):
+        raise ConfigError(
+            f"config key 'profiles' must be a mapping of profile names, "
+            f"got {type(profiles).__name__}"
+        )
+    for name, data in profiles.items():
+        if data is not None and not isinstance(data, dict):
+            raise ConfigError(f"profile {name!r} must be a mapping, got {type(data).__name__}")
+    return profiles
+
+
+def _select_active(
+    config_data: dict[str, Any],
+    active_override: str | None,
+    profiles: dict[str, Any],
+) -> str | None:
+    """Pick the profile whose values overlay the optional ``default`` layer.
+
+    Returns ``None`` when nothing names an active profile and ``default``
+    is also missing — there's no layer to apply, so the caller resolves
+    to ``({}, {})`` and lets the schema defaults take over.
+
+    Raises ``ConfigError`` when an explicit override (env var, root
+    ``--profile`` flag, or the persisted ``active:`` key) names a
+    profile that isn't defined.
+    """
+    explicit = active_override if active_override else config_data.get("active")
+    if explicit:
+        if not isinstance(explicit, str):
+            raise ConfigError(f"config key 'active' must be a profile name, got {explicit!r}")
+        # With no profiles at all only the conceptual ``default`` resolves
+        # (to schema defaults); any other name is a typo worth surfacing.
+        if not profiles and explicit == DEFAULT_PROFILE:
+            return None
+        if explicit not in profiles:
+            raise ConfigError(
+                f"active profile {explicit!r} is not defined in `profiles`. "
+                f"Known profiles: {', '.join(sorted(profiles)) or '(none)'}"
+            )
+        return explicit
+    return DEFAULT_PROFILE if DEFAULT_PROFILE in profiles else None
+
+
+def _layer(
+    src: dict[str, Any],
+    profile: str,
+    dst: dict[str, Any],
+    provenance: dict[tuple[str, ...], str],
+    path: tuple[str, ...],
+) -> None:
+    """Deep-merge ``src`` into ``dst`` and record per-leaf provenance.
+
+    Lists and other non-dict values replace the corresponding key wholesale
+    (no list-element merging). Nested dicts recurse.
+    """
+    for key, value in src.items():
+        leaf_path = (*path, key)
+        if isinstance(value, dict):
+            existing = dst.get(key)
+            child = existing if isinstance(existing, dict) else {}
+            dst[key] = child
+            _layer(value, profile, child, provenance, leaf_path)
+        else:
+            dst[key] = value
+            provenance[leaf_path] = profile

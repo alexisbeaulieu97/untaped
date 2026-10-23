@@ -1,7 +1,7 @@
 """``RepoSources``: what the user typed, resolved over every plugin filling ``RepoSource``.
 
 The providers are fakes named ``github`` and ``gitlab`` (design §15's scenarios);
-workspace asks them only through ``untaped.contracts``.
+workspace asks them only through ``untaped.sdk.contracts``.
 """
 
 from __future__ import annotations
@@ -12,11 +12,11 @@ from datetime import timedelta
 
 import pytest
 
-from untaped.contracts import Ambiguous, Contract, NotReady, Source, gather
-from untaped.output.diagnostic import StaleData
-from untaped.output.sink import diagnostics_scope, recording
+from untaped.runtime.sink import diagnostics_scope, recording
 from untaped.sdk import ErrorCategory, UntapedError, UsageError
-from untaped.testing import compose_with
+from untaped.sdk.contracts import Ambiguous, Contract, NotReady, Source, gather
+from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo, RepoSource

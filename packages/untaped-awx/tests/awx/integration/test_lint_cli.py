@@ -11,7 +11,7 @@ import pytest
 
 from awx.lint_support import CLEAN, DOCUMENTS, seed_controller
 from untaped.sdk import plugin_dir
-from untaped.testing import CliResult, compose_with, damage, invoke_cli
+from untaped.sdk.testing import CliResult, compose_with, damage, invoke_cli
 from untaped_awx import SPEC
 from untaped_awx.api import AwxResources
 from untaped_awx.cli import app

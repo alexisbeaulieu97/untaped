@@ -129,7 +129,7 @@ def _lint_uses(*names: str) -> dict[str, list[ast.AST]]:
 
 
 def test_only_lint_providers_import_check_plugin() -> None:
-    users = _lint_uses("untaped.testing.check_plugin")
+    users = _lint_uses("untaped.sdk.testing.check_plugin")
     assert users, "the scan finds no import of check_plugin at all"
     assert [path for path in users if not path.startswith("providers/")] == []
 

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_ansible.cli import app
 
 

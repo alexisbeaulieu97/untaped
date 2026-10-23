@@ -9,10 +9,10 @@ import pytest
 from pydantic import SecretStr
 
 from git.conftest import StoreError, StoreFor, ensure, git
-from untaped import bootstrap
+from untaped.runtime import bootstrap
 from untaped.sdk import PluginSpec
-from untaped.testing import plugin_candidate
-from untaped.testing.git import GitRemote, global_config, trace2_events
+from untaped.sdk.testing import plugin_candidate
+from untaped.sdk.testing.git import GitRemote, global_config, trace2_events
 from untaped_git import SPEC, api
 from untaped_git.domain.hosts import Credential, HostAuth
 from untaped_git.errors import GitError

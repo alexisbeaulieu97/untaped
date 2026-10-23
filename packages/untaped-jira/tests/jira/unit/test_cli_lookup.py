@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import respx
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"

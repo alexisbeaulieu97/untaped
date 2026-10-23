@@ -3,7 +3,7 @@
 One line per promise ``docs/versioning.md`` makes (commands and flags,
 settings and state keys, the SDK modules and contracts), from the root
 composed with every first-party plugin. The line grammar and the rules behind
-it live in :mod:`untaped.surface`.
+it live in :mod:`untaped.core.surface`.
 
 Usage::
 
@@ -30,7 +30,7 @@ from packaging.version import Version
 from release import packages, release_version
 
 if TYPE_CHECKING:
-    from untaped.plugins.registry import PluginCandidate
+    from untaped.runtime.registry import PluginCandidate
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "tests" / "repo" / "surface.txt"
@@ -38,7 +38,7 @@ OUTPUT = REPO_ROOT / "tests" / "repo" / "surface.txt"
 
 def first_party_candidates() -> list[PluginCandidate]:
     """The installed candidates of this repository's own distributions, in name order."""
-    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
+    from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
 
     own = packages(REPO_ROOT)
     return sorted(
@@ -49,7 +49,7 @@ def first_party_candidates() -> list[PluginCandidate]:
 
 def render() -> str:
     """The file text for the installed first-party plugins."""
-    from untaped.surface import generate, render  # noqa: PLC0415
+    from untaped.core.surface import generate, render  # noqa: PLC0415
 
     return render(generate(first_party_candidates()))
 
@@ -63,7 +63,7 @@ def next_major(version: str) -> int:
 
 def due_report(text: str, major: int) -> tuple[str, int]:
     """What ``--due`` prints for the file ``text``, and its exit code."""
-    from untaped.surface import due, parse  # noqa: PLC0415
+    from untaped.core.surface import due, parse  # noqa: PLC0415
 
     found = due(parse(text), major)
     if not found:

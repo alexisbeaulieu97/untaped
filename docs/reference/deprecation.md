@@ -26,7 +26,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 3.0`. untaped's own plugins use untaped's majors, since they release in
 lockstep. A mark without `removed_in` still works and warns "a future major
 release", but nothing can hold it to a date: `untaped lint` reports it
-(`lint.undated-deprecation`) and `untaped.testing.assert_surface` refuses it
+(`lint.undated-deprecation`) and `untaped.sdk.testing.assert_surface` refuses it
 when you pass your `version=`.
 
 A behaviour has no object to mark, so it gets a name, and listing it on your

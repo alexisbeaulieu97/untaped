@@ -7,11 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from untaped.contracts import Answers, Failed, NoProviderReady, NotReady, Ok, Skipped, Source
-from untaped.output.diagnostic import StaleData
-from untaped.output.sink import diagnostics_scope, recording
+from untaped.runtime.sink import diagnostics_scope, recording
 from untaped.sdk import UntapedError
-from untaped.testing import compose_with
+from untaped.sdk.contracts import Answers, Failed, NoProviderReady, NotReady, Ok, Skipped, Source
+from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo

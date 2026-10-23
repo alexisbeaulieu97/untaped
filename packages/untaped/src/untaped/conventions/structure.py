@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any
 
 from untaped.conventions.settings_names import settings_name_violations
-from untaped.errors import UntapedError
-from untaped.plugins.registry import PluginSpec, settings_model
+from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.sdk.errors import UntapedError
 
 
 def _modules(package: str) -> Iterator[Any]:

@@ -6,7 +6,6 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.sdk import (
     FormatOption,
     app_context,
@@ -15,6 +14,7 @@ from untaped.sdk import (
     finish,
     report_errors,
 )
+from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped_shelf.api import Book, BookSource
 
 app = create_app(name="shelf", help="Find books (an example contract owner).")

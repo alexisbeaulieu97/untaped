@@ -1,0 +1,111 @@
+"""Prompt/stdin/value resolution helpers for ``config set``."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Literal, get_args, get_origin
+
+from untaped.core.config.ports import SettingsReader
+from untaped.core.config.use_cases import GetSetting
+from untaped.sdk._cli import raise_usage
+from untaped.sdk._schema import FieldDescriptor
+from untaped.sdk._stdin import read_stdin_text
+from untaped.sdk._ui import ui_context
+from untaped.sdk.errors import ConfigError
+from untaped.sdk.prompt.prompts import PromptChoice
+
+
+def resolve_set_value(
+    full_key: str,
+    value: str | None,
+    *,
+    stdin: bool,
+    prompt: bool,
+    repo: SettingsReader,
+) -> str:
+    choices = (("VALUE", value is not None), ("--stdin", stdin), ("--prompt", prompt))
+    sources = [name for name, selected in choices if selected]
+    if not sources:
+        raise_usage("provide VALUE, --stdin, or --prompt")
+    if len(sources) > 1:
+        raise_usage("provide only one of VALUE, --stdin, or --prompt")
+    if stdin:
+        return _read_stdin_value()
+    if prompt:
+        return _prompt_value(full_key, repo)
+    assert value is not None
+    return value
+
+
+def _read_stdin_value() -> str:
+    value = read_stdin_text().rstrip("\r\n")
+    if "\n" in value or "\r" in value:
+        raise ConfigError("--stdin expects exactly one value", category="invalid")
+    if not value.strip():
+        raise ConfigError("no value received on stdin", category="invalid")
+    return value
+
+
+def _prompt_value(full_key: str, repo: SettingsReader) -> str:
+    descriptor = repo.descriptor(full_key)
+    message = f"Value for {full_key}"
+    ui = ui_context(strict=False)
+    if descriptor.is_secret:
+        return ui.secret(message)
+    default = _prompt_default(full_key, descriptor, repo)
+    if descriptor.choices is not None and not descriptor.is_collection:
+        names = [
+            PromptChoice(value=name, label=name) for name in sorted(descriptor.choices.names())
+        ]
+        return ui.select(message, names, default=default, search=True)
+    literal_values = _literal_values(descriptor)
+    if literal_values:
+        return str(
+            ui.select(
+                message,
+                [PromptChoice(value=item, label=str(item)) for item in literal_values],
+                default=_default_choice(default, literal_values),
+            )
+        )
+    if descriptor.annotation is bool:
+        bool_values = ["true", "false"]
+        return ui.select(
+            message,
+            [PromptChoice(value=item, label=item) for item in bool_values],
+            default=default if default in bool_values else None,
+        )
+    return ui.text(message, default=default)
+
+
+def _prompt_default(full_key: str, descriptor: FieldDescriptor, repo: SettingsReader) -> str | None:
+    value: object
+    try:
+        entry = GetSetting(repo)(full_key)
+    except ConfigError:
+        # The key's section is invalid (the very thing being repaired): offer
+        # the raw stored value, if it is a scalar, instead of failing.
+        value = repo.raw_setting_value(descriptor)
+    else:
+        value = entry.value
+    if isinstance(value, dict | list):
+        value = None
+    if value is None or value in {"", "***"}:
+        return None
+    if isinstance(value, str) and ":***@" in value:
+        # A masked URL password must never become the text to accept.
+        return None
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+def _literal_values(descriptor: FieldDescriptor) -> list[object]:
+    if get_origin(descriptor.annotation) is Literal:
+        return list(get_args(descriptor.annotation))
+    return []
+
+
+def _default_choice(default: str | None, choices: Sequence[object]) -> object | None:
+    if default is None:
+        return None
+    return next((choice for choice in choices if str(choice) == default), None)

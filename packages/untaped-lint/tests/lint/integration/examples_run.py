@@ -33,9 +33,9 @@ def _requires(name: str) -> tuple[str, ...]:
 def main() -> None:
     for name in NAMES:
         sys.path.insert(0, str(EXAMPLES / f"untaped-{name}" / "src"))
-    from untaped.bootstrap import build_root_app
+    from untaped.runtime.bootstrap import build_root_app
     from untaped.sdk import installed_plugins
-    from untaped.testing import CliInvoker, PluginCandidate, compose_with, plugin_candidate
+    from untaped.sdk.testing import CliInvoker, PluginCandidate, compose_with, plugin_candidate
     from untaped_lint.application.subjects import plugin_subject
     from untaped_lint.testing import run
 

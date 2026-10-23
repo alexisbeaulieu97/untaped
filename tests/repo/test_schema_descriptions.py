@@ -32,7 +32,7 @@ from typing import get_args
 from pydantic import BaseModel, Field
 
 from repo.support import FIRST_PARTY, REPO_ROOT
-from untaped.records import Record, record_kinds
+from untaped.sdk.records import Record, record_kinds
 from untaped_awx.cli.commands import DOCUMENT_MODELS
 
 

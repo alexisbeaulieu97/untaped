@@ -20,9 +20,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
 from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, plural
-from untaped.testing import PluginCandidate, allowed_names
+from untaped.sdk.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
+from untaped.sdk.testing import PluginCandidate, allowed_names
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Linter, TreeReader

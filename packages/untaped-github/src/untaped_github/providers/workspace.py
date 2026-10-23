@@ -13,8 +13,8 @@ or names another repo than ``full_name``, is refused.
 
 from __future__ import annotations
 
-from untaped.contracts import Configured, NotReady
 from untaped.sdk import UsageError, app_context
+from untaped.sdk.contracts import Configured, NotReady
 from untaped_git.api import store_key
 from untaped_github.application.inventory import (
     RepositoryInventoryScope,

@@ -3,7 +3,7 @@
 A contract is an interface one plugin (its owner) declares and others fill,
 so the owner never names who answers: workspace asks for repositories without
 knowing whether GitHub, GitLab or both supply them. Everything lives in
-`untaped.contracts`, whose docstrings are the reference; `untaped.sdk` never
+`untaped.sdk.contracts`, whose docstrings are the reference; `untaped.sdk` never
 imports it, so a command that asks no contract pays nothing.
 
 ```python
@@ -195,7 +195,7 @@ variable sets it).
 
 ## Testing contracts
 
-`untaped.testing` has the tools, and loads `untaped.contracts` only when one
+`untaped.sdk.testing` has the tools, and loads `untaped.sdk.contracts` only when one
 runs.
 
 An owner tests its questions against providers it controls, and keeps its
@@ -212,7 +212,7 @@ def test_shelf_keeps_its_surface() -> None:
 - `compose_with(*plugins, provides={"fake": [...]})` composes the named
   installed plugins (or `PluginSpec`s) plus a plugin named `fake` offering
   each instance to the owner of its contract, and restores the composition
-  after the block. Outside tests, `untaped.contracts.providing(owner,
+  after the block. Outside tests, `untaped.sdk.contracts.providing(owner,
   {"house": [...]})` does the same for an owner that loads providers from
   elsewhere (a repository's rule modules): the installed plugins plus a
   plugin `house` offering each instance to `owner`. A key that is not a
@@ -265,7 +265,7 @@ def test_the_library_fills_the_shelf_contract() -> None:
   against the installed owner's. A provider that isn't ready skips the live
   checks. A different hash is `owner-schema-drift`, which warns (here and in
   `doctor`) and never fails: rerun the provider's tests against that owner.
-  It exits 3 when a check fails. `untaped.testing.check_plugin(NAME)`
+  It exits 3 when a check fails. `untaped.sdk.testing.check_plugin(NAME)`
   returns the rows of these checks, without the conventions that read only
   the plugin's files, for a linter to judge; the deprecated
   `untaped plugin check [NAME]` prints them.

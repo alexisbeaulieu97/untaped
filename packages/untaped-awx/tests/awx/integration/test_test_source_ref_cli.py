@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.application.suites.runner import RunTestSuite
 from untaped_awx.application.suites.temporary_set import TemporarySets
 from untaped_awx.cli import app

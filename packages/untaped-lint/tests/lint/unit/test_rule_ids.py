@@ -22,7 +22,7 @@ PACKAGES = Path(__file__).resolve().parents[4]
 CORE = PACKAGES / "untaped" / "src" / "untaped"
 SOURCES = (
     *sorted((CORE / "conventions").glob("*.py")),
-    CORE / "management" / "plugin_check.py",
+    CORE / "core" / "commands" / "plugin_check.py",
     *sorted((PACKAGES / "untaped-lint/src/untaped_lint/providers/conventions").glob("*.py")),
 )
 _ID = re.compile(RULE_ID)

@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 GOLDEN = Path(__file__).parent / "export_golden"

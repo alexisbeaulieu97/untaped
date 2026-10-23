@@ -11,10 +11,10 @@ import pytest
 import yaml
 from pydantic import SecretStr
 
-from untaped import bootstrap
-from untaped.plugins.registry import PluginSpec
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginSpec
 from untaped.sdk import ConfigError
-from untaped.testing import invoke_cli, plugin_candidate
+from untaped.sdk.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
 from untaped_git.domain.hosts import resolve_host

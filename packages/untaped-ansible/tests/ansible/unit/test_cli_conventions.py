@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
-from untaped.testing import ScriptedPromptBackend, invoke_cli
+from untaped.sdk.testing import ScriptedPromptBackend, invoke_cli
 from untaped_ansible.cli import app
 
 _SOURCES = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}

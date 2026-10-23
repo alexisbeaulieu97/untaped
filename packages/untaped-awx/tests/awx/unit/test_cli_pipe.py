@@ -14,8 +14,8 @@ import httpx
 import pytest
 import respx
 
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import compose_with
+from untaped.sdk.testing import compose_with
 from untaped_lint.api import FileLocation, Finding, Rules, Tree, finding, rule, target_of
 from untaped_lint.application.tree_paths import tree_paths
 from untaped_lint.testing import run, run_rule, tree

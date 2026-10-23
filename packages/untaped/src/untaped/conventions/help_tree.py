@@ -43,9 +43,9 @@ from typing import Any
 
 from cyclopts import App, Group
 
-from untaped.cli import write_kind
 from untaped.conventions.commands import console_lines, examples_of, parse_problem, segments
-from untaped.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
+from untaped.runtime.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
+from untaped.sdk._cli import write_kind
 
 RESERVED_SHORTS = {
     "-f": "--format",

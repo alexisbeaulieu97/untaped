@@ -10,7 +10,7 @@ For one plugin package this flags:
 Lines are ``<path>::<rule>::<detail>``; ``# untaped: allow <rule>`` on the
 flagged line suppresses one. The structure checks that import the package
 (exception classes, ports, frozen settings, setting names) are core's,
-behind ``untaped.testing.check_plugin``.
+behind ``untaped.sdk.testing.check_plugin``.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.testing import allows
+from untaped.sdk.testing import allows
 from untaped_lint.infrastructure.files import SourceFile, callee, source_files
 
 SECTION_READERS = frozenset({"get_config_section", "section"})

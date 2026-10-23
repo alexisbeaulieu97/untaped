@@ -11,7 +11,7 @@ import pytest
 from packaging.version import Version
 
 import untaped_recipe.infrastructure.pack_scaffold as pack_scaffold
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_recipe.application.harness import load_case_spec, orphaned_test_dirs
 from untaped_recipe.cli import app
 from untaped_recipe.domain.pack import InstalledPack

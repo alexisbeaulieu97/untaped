@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.contracts import Contract, NotReady, Source
 from untaped.sdk import UntapedError
-from untaped.testing import CliInvoker, CliResult, compose_with
-from untaped.testing.git import GitRemote
+from untaped.sdk.contracts import Contract, NotReady, Source
+from untaped.sdk.testing import CliInvoker, CliResult, compose_with
+from untaped.sdk.testing.git import GitRemote
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo
@@ -461,8 +461,8 @@ def test_a_picked_repo_keeps_its_listed_project(
 def test_create_counts_the_repo_sources_under_its_own_task(
     make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
-    from untaped.output.diagnostic import Progress
-    from untaped.testing import progress_clock
+    from untaped.sdk.diagnostic import Progress
+    from untaped.sdk.testing import progress_clock
 
     api = make_upstream("api")
     with progress_clock() as ticks:

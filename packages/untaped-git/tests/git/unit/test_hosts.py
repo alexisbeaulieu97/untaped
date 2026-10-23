@@ -13,12 +13,12 @@ from typing import ClassVar
 import pytest
 from pydantic import SecretStr
 
-from untaped import bootstrap
-from untaped.plugins.registry import PluginSpec
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginSpec
+from untaped.runtime.settings import get_settings
 from untaped.sdk import ConfigError
-from untaped.settings import get_settings
-from untaped.testing import invoke_cli, plugin_candidate
-from untaped.testing.git import global_config
+from untaped.sdk.testing import invoke_cli, plugin_candidate
+from untaped.sdk.testing.git import global_config
 from untaped_git import SPEC
 from untaped_git.cli import app
 from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host

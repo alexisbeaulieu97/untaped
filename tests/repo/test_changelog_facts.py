@@ -21,7 +21,7 @@ import release  # scripts/release.py
 
 import changelog  # scripts/changelog.py
 from repo.support import REPO_ROOT, no_baseline, reachable_tags
-from untaped.surface import DeprecatedMark, Line, render
+from untaped.core.surface import DeprecatedMark, Line, render
 
 
 def is_release_pr(version: str, text: str, fragments: Sequence[str]) -> bool:
@@ -92,7 +92,7 @@ def test_is_release_pr(version: str, text: str, fragments: list[str], expected: 
         ("sdk untaped.sdk.report_error(exc)", "report_error"),
         ("sdk untaped.sdk.report_error(item=) default=None", "report_error"),
         ("sdk untaped.sdk.UiContext.message(kind, text)", "UiContext.message"),
-        ("sdk untaped.testing.git.make_repo(path)", "make_repo"),
+        ("sdk untaped.sdk.testing.git.make_repo(path)", "make_repo"),
         ("sdk untaped_acme.api.old()", "old"),
         ("cli untaped awx put", "awx put"),
         ("cli untaped awx test run --dry-run switch", "awx test run --dry-run"),

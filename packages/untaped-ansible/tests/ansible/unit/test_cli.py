@@ -18,9 +18,9 @@ import pytest
 import respx
 import yaml
 
+from untaped.runtime.settings import get_settings
 from untaped.sdk import Failure, Filled, Progress, ProgressHandle, StaleData
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult, cache_clock, progress_clock
+from untaped.sdk.testing import CliInvoker, CliResult, cache_clock, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
 from untaped_ansible.domain.payloads import (

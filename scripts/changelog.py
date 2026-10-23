@@ -39,7 +39,7 @@ from pathlib import Path
 
 from release import baseline_tag  # scripts/release.py
 
-from untaped.git import GitCommandError, run_git
+from untaped.sdk.git import GitCommandError, run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_URL = "https://github.com/alexisbeaulieu97/untaped"
@@ -350,7 +350,7 @@ def short_name(identity: str) -> str:
     ``cfg`` and ``state`` lines are the key (a rename's old key); a
     ``behaviour`` line is its name without the owner.
     """
-    from untaped.surface import SDK_MODULES  # noqa: PLC0415
+    from untaped.core.surface import SDK_MODULES  # noqa: PLC0415
 
     area, _, rest = identity.partition(" ")
     rest = rest.partition(" -> ")[0]
@@ -397,7 +397,7 @@ def postponement_facts(baseline: str | None, current: str | None) -> list[Fact]:
     member (``plugin check --format`` under ``plugin check``,
     ``AppContext.diag`` under ``AppContext``), with the same dates, adds none.
     """
-    from untaped.surface import parse, postponements  # noqa: PLC0415
+    from untaped.core.surface import parse, postponements  # noqa: PLC0415
 
     if baseline is None or current is None:
         return []

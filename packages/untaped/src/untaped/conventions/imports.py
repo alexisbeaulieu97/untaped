@@ -1,9 +1,9 @@
 """Import boundary of a plugin: core only through its public modules.
 
 A plugin's own source may import ``untaped`` only as ``untaped.sdk``,
-``untaped.contracts`` (declaring and filling contracts) or
-``untaped.testing`` and ``untaped.testing.git`` (an owner's conformance
-checks and fixtures: :data:`untaped.surface.SDK_MODULES`), and another plugin only
+``untaped.sdk.contracts`` (declaring and filling contracts) or
+``untaped.sdk.testing`` and ``untaped.sdk.testing.git`` (an owner's conformance
+checks and fixtures: :data:`untaped.core.surface.SDK_MODULES`), and another plugin only
 as that plugin's ``api`` module, and only when its distribution declares a
 dependency on the other's, by default or under an extra named after a
 ``provides`` key. Its own package
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from untaped.conventions.allow import allowed
 from untaped.conventions.source import SourceFile, import_targets
-from untaped.surface import SDK_MODULES
+from untaped.core.surface import SDK_MODULES
 
 RULE = "import-boundary"
 _SDK = "untaped.sdk"

@@ -69,7 +69,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from untaped.git import GitCommandError, git_toplevel, run_git
+from untaped.sdk.git import GitCommandError, git_toplevel, run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FORMAT = re.compile(r"^\d+\.\d+\.\d+((a|b|rc)\d+)?$")

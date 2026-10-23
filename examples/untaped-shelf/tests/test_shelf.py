@@ -12,8 +12,8 @@ from untaped_shelf import SPEC
 from untaped_shelf.api import Book, BookSource
 from untaped_shelf.testing import conformance
 
-from untaped.contracts import Ok, gather
-from untaped.testing import assert_surface, compose_with
+from untaped.sdk.contracts import Ok, gather
+from untaped.sdk.testing import assert_surface, compose_with
 from untaped_lint.testing import assert_clean
 
 

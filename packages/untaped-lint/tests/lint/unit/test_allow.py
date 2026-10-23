@@ -7,7 +7,7 @@ from textwrap import dedent
 
 import pytest
 
-from untaped.testing import allows
+from untaped.sdk.testing import allows
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations

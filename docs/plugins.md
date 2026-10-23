@@ -8,7 +8,7 @@ entry-point group and owns everything else: there is no second console
 script, config command or profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
 A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
-`untaped.contracts` and `untaped.testing` for [contracts](./contracts.md);
+`untaped.sdk.contracts` and `untaped.sdk.testing` for [contracts](./contracts.md);
 see [SDK stability](./reference/conventions.md#sdk-stability). Any plugin,
 first-party or not, may also import another plugin's declared `api` module,
 under the rules in
@@ -308,7 +308,7 @@ workspace = ["untaped-workspace>=11,<12"]
 `untaped lint` fails a plugin with no `untaped` range, or with a
 `provides` key no such extra matches. An installed owner outside the
 extra's range quarantines that offer alone (`owner-out-of-range`). The
-provider imports only `untaped.sdk`, `untaped.contracts`, `untaped.testing`
+provider imports only `untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing`
 and the owner's `api` module.
 
 Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once the
@@ -368,17 +368,17 @@ uv run mypy
 uv run ruff check
 ```
 
-Add `pytest_plugins = ["untaped.testing.plugin"]` to your top-level
+Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests,
-`untaped.testing.assert_surface(SPEC, path)` to keep its commands, settings
+`untaped.sdk.testing.assert_surface(SPEC, path)` to keep its commands, settings
 and contracts from losing a line by accident (experimental), and
-`untaped.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
+`untaped.sdk.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
-with `untaped.testing.progress_clock()`).
+with `untaped.sdk.testing.progress_clock()`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

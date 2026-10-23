@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 import untaped_recipe.cli.library_commands as library_commands
-from untaped import bootstrap
-from untaped.testing import CliInvoker, ScriptedPromptBackend, invoke_cli, plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, invoke_cli, plugin_candidate
 from untaped_recipe import SPEC
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_dir

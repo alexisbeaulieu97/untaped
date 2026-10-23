@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import PluginCandidate
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import UiContext, tree_text
-from untaped.testing import CliInvoker, invoke_cli
+from untaped.sdk.testing import CliInvoker, invoke_cli
 from untaped_awx.cli import app
 from untaped_awx.domain import WorkflowUsage
 from untaped_awx.domain.workflow_usage import UsageTarget, usage_tree

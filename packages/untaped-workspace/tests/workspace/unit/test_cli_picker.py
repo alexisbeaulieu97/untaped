@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.contracts import Answers, Ok
 from untaped.sdk import Picked, PickItem, PickResult, UntapedError
+from untaped.sdk.contracts import Answers, Ok
 from untaped_workspace.api import Repo
 from untaped_workspace.cli.picker import build_request, name_validator, repo_args
 from untaped_workspace.domain.models import RepoArg, StoredRepo, WorkspaceRecord

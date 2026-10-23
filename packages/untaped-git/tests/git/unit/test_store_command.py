@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped import bootstrap
-from untaped.testing import CliInvoker, plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped_git import SPEC
 
 

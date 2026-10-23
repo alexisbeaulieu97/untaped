@@ -27,7 +27,7 @@ from rich.text import Text
 
 from untaped.screen.components.draw import role_style
 from untaped.screen.core import Activate, Cmd, Frame, Key
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["BOX_ROWS", "Button", "Buttons", "Pressed"]
 

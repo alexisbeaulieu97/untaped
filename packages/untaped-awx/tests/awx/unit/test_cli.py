@@ -6,10 +6,10 @@ import httpx
 import pytest
 import respx
 
-from untaped import bootstrap
-from untaped.plugins.registry import PluginCandidate
-from untaped.settings import get_settings, load_settings_section
-from untaped.testing import CliInvoker, CliResult
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.settings import get_settings, load_settings_section
+from untaped.sdk.testing import CliInvoker, CliResult
 from untaped_awx.cli import app
 
 

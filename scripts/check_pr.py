@@ -30,7 +30,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import changelog
-from untaped.git import GitCommandError, run_git
+from untaped.sdk.git import GitCommandError, run_git
 
 DRIFT_HEADING = "## Drift review"
 DRIFT_ITEMS = (

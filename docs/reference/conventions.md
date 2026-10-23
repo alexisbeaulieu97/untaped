@@ -6,8 +6,8 @@ the helper rather than your own version.
 
 A plugin also follows these rules:
 
-- A plugin imports only `untaped.sdk`, [`untaped.contracts`](../contracts.md)
-  and `untaped.testing` from `untaped`, and another plugin only through its
+- A plugin imports only `untaped.sdk`, [`untaped.sdk.contracts`](../contracts.md)
+  and `untaped.sdk.testing` from `untaped`, and another plugin only through its
   `api` module, declared (see
   [Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills and doctor checks.
@@ -150,7 +150,7 @@ Rules for parameters:
 
 To rename a command, group or flag, keep the old spelling as a hidden alias,
 `deprecated_alias(parent_app, "me", "whoami", removed_in=12)` (a flag: `"--old"`,
-`"--new"` on the command's app), tested through `untaped.testing.invoke_root`;
+`"--new"` on the command's app), tested through `untaped.sdk.testing.invoke_root`;
 [Deprecating something](deprecation.md) covers every kind.
 
 Command names are kebab-case; use plural nouns for collections. Names are
@@ -175,7 +175,7 @@ free, but a command that writes declares it with `@writes`, or
   the answer instead).
 - When stdin carries piped data, prompts read from the controlling terminal
   (`/dev/tty`). If there is no terminal, the command exits 2 and names
-  `--yes`. In tests, `untaped.testing.invoke_cli(..., terminal=True,
+  `--yes`. In tests, `untaped.sdk.testing.invoke_cli(..., terminal=True,
   prompt_backend=...)` simulates that terminal; without `terminal=True` there
   is none.
 - Read stdin only through the helpers in [Piping](#piping)
@@ -258,8 +258,8 @@ one owner's `api` module, never forked into both.
 
 ## Stable helper surface
 
-[`sdk.py`](../../packages/untaped/src/untaped/sdk.py) lists every export,
-and each helper's docstring is its reference.
+[`untaped/sdk/_exports.py`](../../packages/untaped/src/untaped/sdk/_exports.py)
+lists every export, and each helper's docstring is its reference.
 The sections above name the helper for each rule. Beyond those:
 
 - Read settings with `app_context().section(name, Model)` or
@@ -385,7 +385,7 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 
-`untaped.sdk`, `untaped.contracts` and `untaped.testing` are stable within a
+`untaped.sdk`, `untaped.sdk.contracts` and `untaped.sdk.testing` are stable within a
 major release: a minor or patch release adds to them and never breaks them.
 Plugins import only these; other `untaped` modules are internal.
 A deprecated SDK attribute or callable is removed at the major its warning

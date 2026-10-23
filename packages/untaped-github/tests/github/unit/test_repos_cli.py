@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, CliResult, progress_clock
+from untaped.sdk.testing import CliInvoker, CliResult, progress_clock
 from untaped_github.cli import app
 
 

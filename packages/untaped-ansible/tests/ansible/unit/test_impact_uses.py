@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ansible.unit.test_cli import _record_refresh, _run, _seed_index, _use_config
-from untaped.testing import CliResult
+from untaped.sdk.testing import CliResult
 from untaped_ansible.domain.graph import GraphNode
 from untaped_ansible.domain.payloads import IndexedDependency
 from untaped_ansible.domain.reach import Reach

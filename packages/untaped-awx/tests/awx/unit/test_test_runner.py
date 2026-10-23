@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.output.sink import Diagnostics, diagnostics_scope, failure_exit_code
+from untaped.runtime.sink import Diagnostics, diagnostics_scope, failure_exit_code
 from untaped.sdk import ConfigError, HttpTransportError
 from untaped_awx.application.suites.ports import (
     FkPrefetcher,

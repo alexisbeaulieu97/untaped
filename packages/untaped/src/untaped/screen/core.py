@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-from untaped.stability import experimental
-from untaped.theme import BUILTIN_THEMES, SCREEN_ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES, SCREEN_ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
+from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
     from rich.box import Box
@@ -337,7 +337,9 @@ class Frame:
 
     def box(self) -> Box | None:
         """The Rich box of the theme's border style; ``None`` when the border is ``none``."""
-        from untaped.render import resolve_box  # noqa: PLC0415 - keeps Rich out of import time
+        from untaped.runtime.render import (  # noqa: PLC0415 - keeps Rich out of import time
+            resolve_box,
+        )
 
         return resolve_box(self.theme.border)
 

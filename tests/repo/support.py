@@ -10,7 +10,7 @@ from typing import NoReturn
 import pytest
 from release import baseline_tag  # scripts/release.py
 
-from untaped.git import run_git
+from untaped.sdk.git import run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"

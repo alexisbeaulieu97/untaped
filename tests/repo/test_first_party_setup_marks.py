@@ -16,13 +16,13 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from test_management.support import write_config
-from untaped import bootstrap
-from untaped.config_schema import unwrap_optional
-from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.setting_marks import setup_marks
-from untaped.stability import field_marks
-from untaped.testing import invoke_cli
+from core_test_support.management.support import write_config
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.sdk._schema import unwrap_optional
+from untaped.sdk.health.marks import setup_marks
+from untaped.sdk.marks import field_marks
+from untaped.sdk.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 

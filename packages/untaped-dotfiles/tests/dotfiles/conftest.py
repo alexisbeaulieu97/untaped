@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.settings import get_settings
+from untaped.runtime.settings import get_settings
 
 MANIFEST = """\
 version: 1

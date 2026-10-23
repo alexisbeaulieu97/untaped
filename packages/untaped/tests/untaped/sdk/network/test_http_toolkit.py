@@ -1,0 +1,847 @@
+"""Tests for the plugin HTTP toolkit: connected clients and pagination."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, ClassVar
+
+import httpx
+import pytest
+import respx
+from pydantic import BaseModel, SecretStr, ValidationError
+
+from untaped.runtime.settings import (
+    HttpSettings,
+    register_profile_settings,
+    reset_config_registry,
+)
+from untaped.sdk.diagnostic import format_error
+from untaped.sdk.errors import ConfigError, HttpError, UntapedError
+from untaped.sdk.network.auth import TokenCommand, TokenSources
+from untaped.sdk.network.http import (
+    connected_client,
+    missing_setting_error,
+    paginate_link,
+    paginate_offset,
+    paginate_pages,
+    rejected_token_error,
+    same_origin,
+)
+
+
+@pytest.fixture
+def _by_name() -> Iterator[None]:
+    """The deprecated read by field name (no ``base_url=``), which these tests keep covering.
+
+    Each such call warns; ``required=`` warns on its own.
+    """
+    with pytest.warns(DeprecationWarning, match=r"without base_url=|connected_client\(required="):
+        yield
+
+
+_BY_NAME = pytest.mark.usefixtures("_by_name")
+
+
+class DemoSettings(BaseModel):
+    base_url: str = "https://api.example.com"
+    token: SecretStr | None = None
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_http_settings_rejects_non_positive_timeout(bad: float) -> None:
+    with pytest.raises(ValidationError):
+        HttpSettings(timeout_seconds=bad)
+
+
+@respx.mock
+def test_connected_client_applies_settings_timeout() -> None:
+    respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200, json={}))
+    config = DemoSettings(token=SecretStr("x"))
+
+    with connected_client(
+        config, section="demo", base_url=config.base_url, http=HttpSettings(timeout_seconds=5.0)
+    ) as client:
+        client.get("/user")
+
+    timeout = respx.calls.last.request.extensions["timeout"]
+    assert timeout["connect"] == 5.0
+    assert timeout["read"] == 5.0
+
+
+def test_connected_client_passes_proxy_and_timeout_to_httpx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proxy/timeout from settings thread through to the httpx client constructor."""
+    captured: dict[str, object] = {}
+    real_client = httpx.Client
+
+    def spy(*args: object, **kwargs: object) -> httpx.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", spy)
+    config = DemoSettings(token=SecretStr("x"))
+
+    with connected_client(
+        config,
+        section="demo",
+        base_url=config.base_url,
+        http=HttpSettings(timeout_seconds=12.0, proxy="http://proxy.example:8080"),
+    ):
+        pass
+
+    assert captured["proxy"] == "http://proxy.example:8080"
+    assert captured["timeout"] == 12.0
+
+
+def test_connected_client_defaults_to_resolved_profile_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no explicit ``http=``, the client uses the active profile's HTTP
+    settings — so a per-profile proxy/ca/verify actually takes effect for every
+    tool without each one remembering to thread it."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        "profiles:\n  default:\n    http:\n      proxy: http://corp-proxy:3128\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    reset_config_registry()
+
+    captured: dict[str, object] = {}
+    real_client = httpx.Client
+
+    def spy(*args: object, **kwargs: object) -> httpx.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", spy)
+    config = DemoSettings(token=SecretStr("x"))
+    try:
+        with connected_client(config, section="demo", base_url=config.base_url):
+            pass
+    finally:
+        reset_config_registry()
+
+    assert captured["proxy"] == "http://corp-proxy:3128"
+
+
+@pytest.mark.parametrize(("field", "placeholder"), [("token", "<token>"), ("base_url", "<url>")])
+def test_missing_setting_error_names_config_set_and_env_paths(field: str, placeholder: str) -> None:
+    """The ``config set`` placeholder is the field's last word."""
+    error = missing_setting_error("demo", field)
+
+    assert isinstance(error, ConfigError)
+    assert str(error) == f"demo.{field} is not configured"
+    assert error.hint is not None
+    assert f"`untaped config set demo.{field} {placeholder}`" in error.hint
+    assert f"UNTAPED_DEMO__{field.upper()}" in error.hint
+
+
+def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> None:
+    error = format_error(missing_setting_error("demo", "base_url", "token", secret=("token",)))
+
+    assert "demo.base_url and demo.token are not configured" in error
+    assert "`untaped config set demo.base_url <url>`" in error
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "<token>" not in error
+    assert "UNTAPED_DEMO__BASE_URL" in error
+    assert "UNTAPED_DEMO__TOKEN" in error
+
+
+class SourcedSettings(BaseModel):
+    token_sources: ClassVar[TokenSources] = TokenSources(env=("DEMO_TOKEN",))
+
+    base_url: str = "https://api.example.com"
+    token: SecretStr | None = None
+    token_command: TokenCommand = None
+
+
+@_BY_NAME
+def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
+    with pytest.raises(ConfigError) as caught:
+        connected_client(SourcedSettings(), section="demo")
+    message = format_error(caught.value)
+    assert "`untaped auth set demo`" in message
+    assert "demo.token_command or $DEMO_TOKEN" in message
+
+
+def test_a_missing_token_without_token_command_prompts_for_it() -> None:
+    error = format_error(missing_setting_error("demo", "token", secret=("token",)))
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "auth set" not in error
+
+
+class NoUrlSettings(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = SecretStr("sekret")
+
+
+@_BY_NAME
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        (DemoSettings(token=None), r"demo\.token is not configured"),
+        (DemoSettings(token=SecretStr("   ")), r"demo\.token is not configured"),
+        (NoUrlSettings(), r"demo\.base_url is not configured"),
+        (
+            DemoSettings(base_url="", token=None),
+            r"demo\.base_url and demo\.token are not configured",
+        ),
+    ],
+    ids=["missing-token", "blank-token", "missing-base-url", "both-missing"],
+)
+def test_connected_client_rejects_missing_settings(config: BaseModel, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        connected_client(config, section="demo")
+
+
+def _write_config(text: str) -> None:
+    path = Path(os.environ["UNTAPED_CONFIG"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+@_BY_NAME
+def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
+    """An agent can switch profile from the error alone instead of asking for the value."""
+    _write_config(
+        "active: home\n"
+        "profiles:\n"
+        "  home: {}\n"
+        "  work:\n"
+        "    demo: {base_url: https://work.example.com}\n"
+        "  lab:\n"
+        "    demo: {base_url: '  '}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    error = caught.value
+    assert str(error) == "demo.base_url is not configured in profile 'home'"
+    assert error.hint is not None
+    assert "profile 'work' sets it: run `untaped --profile work …`" in error.hint
+    assert "UNTAPED_PROFILE=work" in error.hint
+    assert "lab" not in error.hint
+    assert error.details["profiles"] == ["work"]
+
+
+@_BY_NAME
+def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
+    _write_config(
+        "profiles:\n"
+        "  default: {}\n"
+        "  a:\n"
+        "    demo: {token_command: [pass, show, demo]}\n"
+        "  b:\n"
+        "    demo: {token: sekret}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(SourcedSettings(), section="demo")
+
+    assert "profiles 'a' and 'b' set it" in (caught.value.hint or "")
+    assert "`untaped --profile NAME …`" in (caught.value.hint or "")
+
+
+@_BY_NAME
+def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> None:
+    _write_config("profiles:\n  default: {}\n  work: {}\n")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured in profile 'default'"
+    assert "--profile" not in (caught.value.hint or "")
+    assert "profiles" not in caught.value.details
+
+
+@_BY_NAME
+def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
+    """The active profile blanks a key ``default`` sets; ``work`` still inherits it."""
+    _write_config(
+        "active: home\n"
+        "profiles:\n"
+        "  default:\n"
+        "    demo: {base_url: https://example.com}\n"
+        "  home:\n"
+        "    demo: {base_url: null}\n"
+        "  my work: {}\n"
+    )
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert caught.value.details["profiles"] == ["default", "my work"]
+
+
+@_BY_NAME
+def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
+    _write_config("profiles:\n  default: {}\n  my work:\n    demo: {base_url: https://x}\n")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    hint = caught.value.hint or ""
+    assert "`untaped --profile 'my work' …`" in hint
+    assert "UNTAPED_PROFILE='my work'" in hint
+
+
+@_BY_NAME
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("UNTAPED_DEMO__BASE_URL", ""),
+        ("untaped_demo__base_url", ""),
+        ("UNTAPED_DEMO", '{"base_url": ""}'),
+        ("UNTAPED_DEMO", "not json"),
+    ],
+)
+def test_an_environment_override_names_no_profile(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    """An override applies to every profile, so switching profile would not help."""
+    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured"
+    assert "--profile" not in (caught.value.hint or "")
+
+
+@_BY_NAME
+def test_an_environment_blob_without_the_key_still_names_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    monkeypatch.setenv("UNTAPED_DEMO", '{"token": "t"}')
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert caught.value.details["profiles"] == ["work"]
+
+
+@_BY_NAME
+def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unreadable(path: Path | None = None) -> dict[str, Any]:
+        raise ConfigError("unreadable")
+
+    monkeypatch.setattr("untaped.sdk.network.http.read_config_dict", unreadable)
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
+    with pytest.raises(ConfigError) as caught:
+        connected_client(NoUrlSettings(), section="demo")
+
+    assert str(caught.value) == "demo.base_url is not configured in profile 'work'"
+
+
+@respx.mock
+def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
+    route = respx.get("https://api.example.com/user").mock(
+        return_value=httpx.Response(200, json={"login": "demo"})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(
+        config,
+        section="demo",
+        base_url=config.base_url,
+        bearer=config.token,
+        headers={"Accept": "application/vnd.demo+json"},
+    ) as client:
+        payload = client.get_json_dict("/user")
+
+    assert payload == {"login": "demo"}
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer sekret"
+    assert request.headers["Accept"] == "application/vnd.demo+json"
+
+
+@respx.mock
+def test_connected_client_strips_trailing_base_url_slash() -> None:
+    respx.get("https://api.example.com/user").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    config = DemoSettings(base_url="https://api.example.com/", token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        assert client.get_json_dict("/user") == {"ok": True}
+
+
+@_BY_NAME
+@pytest.mark.parametrize(
+    ("token", "authorization"), [(SecretStr("sekret"), "Bearer sekret"), (None, None)]
+)
+@respx.mock
+def test_connected_client_token_not_required(
+    token: SecretStr | None, authorization: str | None
+) -> None:
+    """awx leaves ``token`` out of ``required`` so a token-less client can hit
+    unauthenticated endpoints, yet a token that *is* configured must still
+    become the ``Authorization: Bearer`` header."""
+    route = respx.get("https://api.example.com/ping/").mock(
+        return_value=httpx.Response(200, json={"pong": True})
+    )
+    config = DemoSettings(token=token)
+
+    with connected_client(config, section="demo", required=("base_url",)) as client:
+        assert client.get_json_dict("/ping/") == {"pong": True}
+
+    assert route.calls.last.request.headers.get("Authorization") == authorization
+
+
+def test_paginate_pages_follows_cursors_and_respects_limit() -> None:
+    pages: dict[str | None, tuple[list[dict[str, Any]], str | None]] = {
+        None: ([{"n": 1}, {"n": 2}], "p2"),
+        "p2": ([{"n": 3}, {"n": 4}], None),
+    }
+
+    items = list(paginate_pages(lambda cursor: pages[cursor], limit=3))
+
+    assert [item["n"] for item in items] == [1, 2, 3]
+
+
+def test_paginate_pages_stops_on_cursor_cycle() -> None:
+    items = list(paginate_pages(lambda cursor: ([{"n": 1}], "same"), limit=None, max_pages=10))
+
+    assert [item["n"] for item in items] == [1, 1]
+
+
+def test_paginate_pages_errors_when_not_converging() -> None:
+    counter = iter(range(1000))
+
+    def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str]:
+        return [{"n": 0}], f"p{next(counter)}"
+
+    with pytest.raises(UntapedError, match="did not converge"):
+        list(paginate_pages(fetch, limit=None, max_pages=5))
+
+
+@pytest.mark.parametrize(
+    "link_header",
+    [
+        '<https://api.example.com/things?page=2>; rel="next"',
+        '<https://api.example.com/things?page=2>; title="x"; rel="next"',
+        "<https://api.example.com/things?page=2>; rel=next",
+        '<https://api.example.com/things?page=2>; rel="prev next"',
+        '<https://api.example.com/things?page=2> ; rel="next"',
+    ],
+)
+@respx.mock
+def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        if params.get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(200, json=[{"id": 1}], headers={"link": link_header})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(paginate_link(client, "/things"))
+
+    assert [row["id"] for row in rows] == [1, 2]
+
+
+@respx.mock
+def test_paginate_link_non_json_page_is_an_http_error() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, text="<html>login</html>")
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo", base_url=config.base_url) as client,
+        pytest.raises(HttpError, match="non-JSON"),
+    ):
+        list(paginate_link(client, "/things"))
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.net/things?page=2",
+        "http://api.example.com/things?page=2",
+        "https://api.example.com:8443/things?page=2",
+    ],
+)
+@respx.mock
+def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(
+            200, json=[{"id": 1}], headers={"link": f'<{next_url}>; rel="next"'}
+        )
+    )
+    other = respx.route(url__startswith=next_url.split("/things")[0])
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo", base_url=config.base_url) as client,
+        pytest.raises(HttpError, match="cross-origin"),
+    ):
+        list(paginate_link(client, "/things"))
+    assert not other.called
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/api/v2/jobs/?page=2", True),
+        ("https://aap.example.com/api/v2/jobs/?page=2", True),
+        ("HTTPS://AAP.example.com:443/api/v2/jobs/", True),
+        ("https://evil.example.net/api/v2/jobs/", False),
+        ("http://aap.example.com/api/v2/jobs/", False),
+        ("https://aap.example.com:8443/api/v2/jobs/", False),
+        ("https://aap.example.com:bad/api/v2/jobs/", False),
+        ("//evil.example.net/api/v2/jobs/", False),
+    ],
+)
+def test_same_origin(url: str, expected: bool) -> None:
+    assert same_origin(url, "https://aap.example.com") is expected
+
+
+@respx.mock
+def test_paginate_link_follows_relative_next_link() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        if httpx.QueryParams(request.url.query).get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(
+            200, json=[{"id": 1}], headers={"link": '</things?page=2>; rel="next"'}
+        )
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        assert [row["id"] for row in paginate_link(client, "/things")] == [1, 2]
+
+
+@respx.mock
+def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
+    seen: list[str | None] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        seen.append(httpx.QueryParams(request.url.query).get("per_page"))
+        return httpx.Response(200, json=[{"id": 1}])
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        list(paginate_link(client, "/things", limit=5, page_size=100))
+
+    assert seen == ["5"]
+
+
+@respx.mock
+def test_paginate_link_extracts_items_envelope() -> None:
+    respx.get(url__startswith="https://api.example.com/search/code").mock(
+        return_value=httpx.Response(200, json={"total_count": 1, "items": [{"id": 42}]})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(paginate_link(client, "/search/code", item_key="items"))
+
+    assert rows == [{"id": 42}]
+
+
+@respx.mock
+def test_paginate_link_non_list_payload_short_circuits() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, json={"message": "weird error envelope"})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        assert list(paginate_link(client, "/things")) == []
+
+
+@respx.mock
+def test_paginate_offset_walks_start_at_envelopes() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        start = int(httpx.QueryParams(request.url.query)["startAt"])
+        if start == 0:
+            return httpx.Response(200, json={"values": [{"n": 1}, {"n": 2}], "total": 3})
+        return httpx.Response(200, json={"values": [{"n": 3}], "total": 3})
+
+    respx.get(url__startswith="https://api.example.com/board").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        items = list(
+            paginate_offset(
+                client,
+                "GET",
+                "/board",
+                item_key="values",
+                page_size=2,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
+        )
+
+    assert [item["n"] for item in items] == [1, 2, 3]
+
+
+@respx.mock
+def test_paginate_offset_caps_at_limit_and_shrinks_request_size() -> None:
+    seen_sizes: list[str] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        seen_sizes.append(params["maxResults"])
+        return httpx.Response(200, json={"values": [{"n": 1}, {"n": 2}], "total": 100})
+
+    respx.get(url__startswith="https://api.example.com/board").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        items = list(
+            paginate_offset(
+                client,
+                "GET",
+                "/board",
+                item_key="values",
+                page_size=50,
+                limit=2,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
+        )
+
+    assert len(items) == 2
+    assert seen_sizes == ["2"]
+
+
+@respx.mock
+def test_paginate_offset_post_rejects_non_object_envelope() -> None:
+    route = respx.post("https://api.example.com/search").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo", base_url=config.base_url) as client,
+        pytest.raises(HttpError) as exc_info,
+    ):
+        list(
+            paginate_offset(
+                client,
+                "POST",
+                "/search",
+                item_key="issues",
+                body={"jql": "project = DEMO"},
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
+        )
+
+    assert "expected JSON object" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.url == "https://api.example.com/search"
+    assert exc_info.value.body == "[]"
+    assert route.call_count == 1
+    request_json = route.calls[0].request.content.decode()
+    assert '"jql":"project = DEMO"' in request_json
+    assert '"startAt":0' in request_json
+    assert '"maxResults":50' in request_json
+
+
+@respx.mock
+def test_paginate_offset_post_empty_object_envelope_is_empty_page() -> None:
+    route = respx.post("https://api.example.com/search").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(
+            paginate_offset(
+                client,
+                "POST",
+                "/search",
+                item_key="issues",
+                body={"jql": "project = DEMO"},
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
+        )
+
+    assert rows == []
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_paginate_offset_neutral_defaults_send_offset_and_limit() -> None:
+    seen: list[tuple[str | None, str | None]] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        seen.append((params.get("offset"), params.get("limit")))
+        return httpx.Response(200, json={"rows": []})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        list(paginate_offset(client, "GET", "/things", item_key="rows"))
+
+    assert seen == [("0", "50")]
+
+
+@respx.mock
+def test_paginate_offset_ignores_islast_unless_opted_in() -> None:
+    """A payload with isLast=true must NOT stop the walk when last_flag is unset
+    (the page was full, so a next page is requested)."""
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                200, json={"rows": [{"id": i} for i in range(50)], "isLast": True}
+            )
+        return httpx.Response(200, json={"rows": []})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows"))
+
+    assert len(rows) == 50
+    assert calls["n"] == 2  # isLast ignored → second fetch happened
+
+
+@respx.mock
+def test_paginate_offset_honors_last_flag_when_named() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"rows": [{"id": i} for i in range(50)], "isLast": True})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows", last_flag="isLast"))
+
+    assert len(rows) == 50
+    assert calls["n"] == 1
+
+
+@respx.mock
+def test_paginate_offset_total_continues_past_server_capped_short_page() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        offset = int(httpx.QueryParams(request.url.query)["offset"])
+        if offset == 0:
+            return httpx.Response(200, json={"rows": [{"id": 1}, {"id": 2}], "total": 3})
+        return httpx.Response(200, json={"rows": [{"id": 3}], "total": 3})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows", page_size=50))
+
+    assert [row["id"] for row in rows] == [1, 2, 3]
+    assert calls["n"] == 2
+
+
+@respx.mock
+def test_paginate_offset_last_flag_false_continues_past_short_page() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(200, json={"rows": [{"id": 1}], "isLast": False})
+        return httpx.Response(200, json={"rows": [{"id": 2}], "isLast": True})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", base_url=config.base_url) as client:
+        rows = list(
+            paginate_offset(
+                client,
+                "GET",
+                "/things",
+                item_key="rows",
+                page_size=50,
+                last_flag="isLast",
+            )
+        )
+
+    assert [row["id"] for row in rows] == [1, 2]
+    assert calls["n"] == 2
+
+
+@respx.mock
+def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"rows": [{"id": calls["n"]}]})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo", base_url=config.base_url) as client,
+        pytest.raises(UntapedError, match="did not converge after 2 pages"),
+    ):
+        list(
+            paginate_offset(
+                client,
+                "GET",
+                "/things",
+                item_key="rows",
+                page_size=1,
+                max_pages=2,
+            )
+        )
+
+    assert calls["n"] == 2
+
+
+@pytest.mark.usefixtures("_isolated_config")
+def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
+    cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
+
+    register_profile_settings("awx", SourcedSettings)
+
+    error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
+
+    assert isinstance(error, ConfigError)
+    assert (str(error), error.category, error.system) == (
+        "AWX rejected the token (HTTP 401)",
+        "auth",
+        "awx",
+    )
+    assert error.hint == "run `untaped auth set awx`"
+    assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}
+
+
+@pytest.mark.usefixtures("_isolated_config")
+@pytest.mark.parametrize("model", [None, DemoSettings])
+def test_a_rejected_token_without_token_command_hints_at_config_set(
+    model: type[BaseModel] | None,
+) -> None:
+    # `auth set` refuses a section whose model has no token_command.
+    if model is not None:
+        register_profile_settings("plain", model)
+    error = rejected_token_error("plain", "rejected")
+    assert error.hint == "run `untaped config set plain.token --prompt`"

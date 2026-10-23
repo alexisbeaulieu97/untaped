@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import ConfigError, StateRows
-from untaped.testing import read_rows, write_rows
+from untaped.sdk.testing import read_rows, write_rows
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped_workspace.infrastructure import StateWorkspaceStore

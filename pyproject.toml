@@ -172,7 +172,7 @@ ignore_decorators = [
     "@model_validator",  # pydantic calls validators and serializers
     "@field_validator",
     "@model_serializer",
-    "@pytest.fixture",  # untaped.testing.plugin autouse fixtures
+    "@pytest.fixture",  # untaped.sdk.testing.plugin autouse fixtures
     "@bindings.add",  # prompt_toolkit key bindings
 ]
 # Fixed framework signatures, and attributes set on third-party objects.
@@ -196,7 +196,7 @@ ignore_names = [
     "__annotations__",
     "code_generator_class",
     "concat",
-    "renamed_keys",  # settings ClassVars read by untaped.deprecated_keys
+    "renamed_keys",  # settings ClassVars read by untaped.sdk.health.deprecated_keys
     "retired_keys",
 ]
 

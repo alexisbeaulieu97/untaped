@@ -1,8 +1,8 @@
-"""stderr has one writer: the sink in ``untaped/output/``.
+"""stderr has one writer: the sink in ``untaped/runtime/sink.py``.
 
 A line written around the sink can garble the spinner, skip ``--quiet``, miss
-the exit code and break JSON Lines. So no shipped module outside
-``untaped/output/`` calls ``sys.stderr.write``, passes ``file=sys.stderr``
+the exit code and break JSON Lines. So no shipped module but
+the sink calls ``sys.stderr.write``, passes ``file=sys.stderr``
 (an ``IfExp`` choosing it included), or calls ``json_diagnostics`` or
 ``write_record``. ``scripts/`` are dev tools, not the CLI, and are out of scope.
 """
@@ -14,8 +14,8 @@ from pathlib import Path
 
 from repo.support import PACKAGES, REPO_ROOT
 
-#: The sink's own package, relative to its ``src``.
-OWNER = "untaped/output/"
+#: The sink, relative to its ``src``.
+OWNER = "untaped/runtime/sink.py"
 #: The recipe hook worker is a child process: its stderr is a pipe the parent
 #: reads and reports through the sink, so its traceback is not a CLI line.
 EXEMPT = {"untaped_recipe/_worker/hook_worker.py": 1}
@@ -76,7 +76,7 @@ def test_only_the_sink_writes_stderr() -> None:
         if name in EXEMPT and len(lines) == EXEMPT[name]:
             continue
         stray += [f"{name}:{line}" for line in lines]
-    assert not stray, f"{stray}: write stderr through the sink (untaped.output) instead"
+    assert not stray, f"{stray}: write stderr through the sink (untaped.runtime.sink) instead"
 
 
 def test_the_exemption_is_still_needed() -> None:

@@ -47,11 +47,11 @@ from untaped.conventions.commands import (
     console_lines,
     parse_problem,
 )
-from untaped.errors import UsageError, first_validation_error
-from untaped.plugins.registry import CompositionResult, PluginSpec
+from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.sdk.errors import UsageError, first_validation_error
 
 if TYPE_CHECKING:
-    from untaped.agents._guides import Guide
+    from untaped.core.agents._guides import Guide
 
 MAP_LINE_LIMIT = 120
 """The longest first line the map shows: each plugin adds a bounded cost to every session."""
@@ -64,8 +64,8 @@ _HEADING = re.compile(r"^# ", re.MULTILINE)
 def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> list[str]:
     """Every guide and map-line violation of the composed plugin ``spec``."""
     # The pages read this package (the Examples section); import them on use.
-    from untaped.agents._build import top_names  # noqa: PLC0415
-    from untaped.agents._guides import SUFFIX, guides  # noqa: PLC0415
+    from untaped.core.agents._build import top_names  # noqa: PLC0415
+    from untaped.core.agents._guides import SUFFIX, guides  # noqa: PLC0415
 
     found = list(_map_lines(root, result, spec))
     listed = guides(spec)
@@ -99,7 +99,7 @@ def _quoted(
     root: App, result: CompositionResult, spec: PluginSpec, body: str
 ) -> Iterator[tuple[str, str]]:
     quoted = [*((line, False) for line in console_lines(body)), *commands(body)]
-    from untaped.agents import page  # noqa: PLC0415
+    from untaped.core.agents import page  # noqa: PLC0415
 
     composed = {"untaped", *(each.spec.name for each in result.plugins)}
     for command, inline in quoted:
@@ -124,7 +124,7 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
     blocks = _KIND_FENCE.findall(body)
     if not blocks:
         return
-    from untaped.management.plugins import kind_model  # noqa: PLC0415 - imports kinds lazily
+    from untaped.core.commands.plugins import kind_model  # noqa: PLC0415 - imports kinds lazily
 
     for kind, block in blocks:
         model = kind_model(kind, result)
@@ -141,7 +141,7 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
 
 def _map_lines(root: App, result: CompositionResult, spec: PluginSpec) -> Iterator[str]:
     """The plugin's lines on the map over the limit, measured on the map itself."""
-    from untaped.agents._build import build_map  # noqa: PLC0415
+    from untaped.core.agents._build import build_map  # noqa: PLC0415
 
     shown = build_map(root, result).plugins
     own = next(entry for entry in shown if entry.name == spec.name)

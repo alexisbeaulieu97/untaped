@@ -15,9 +15,8 @@ from typing import Any
 
 import pytest
 
-from untaped.output import diagnostic
-from untaped.sdk import Failure, kind_of
-from untaped.testing import CliInvoker
+from untaped.sdk import Failure, diagnostic, kind_of
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 from untaped_awx.domain.jobs.job import JobEvent
 from untaped_awx.domain.kinds import snake_kind

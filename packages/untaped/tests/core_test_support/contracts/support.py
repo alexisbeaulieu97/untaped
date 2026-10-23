@@ -1,0 +1,158 @@
+"""A toy owner (``shelf``) and its providers (``library``, ``shop``, ``kiosk``)."""
+
+from __future__ import annotations
+
+from abc import abstractmethod
+from collections.abc import Sequence
+from datetime import timedelta
+from pathlib import Path
+from typing import ClassVar
+
+from pydantic import BaseModel
+
+from untaped.runtime import bootstrap
+from untaped.runtime.contracts.registry import reset
+from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.runtime.settings import get_settings
+from untaped.sdk import experimental
+from untaped.sdk.contracts import Configured, Contract, Issued, Record, bridge, cached, listing
+from untaped.sdk.storage.cache import Cache
+from untaped.sdk.testing import plugin_candidate
+
+BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
+BY_AUTHOR = Cache("shelf", "book_source_by_author", label="books", max_age=timedelta(hours=1))
+
+
+class Book(Issued, kind="shelf.book"):
+    title: str
+    pages: int = 0
+
+
+@experimental
+class BookSource[T: Record = Book](Contract):
+    """Where books come from."""
+
+    @bridge
+    def to_book(self, item: T) -> Book:
+        raise NotImplementedError
+
+    @listing
+    @cached(BOOKS)
+    @abstractmethod
+    def books(self) -> list[Book]: ...
+
+    def lookup(self, title: str) -> list[Book]:
+        raise NotImplementedError
+
+    @cached(BY_AUTHOR)
+    def by_author(self, author: str, limit: int = 10) -> list[Book]:
+        raise NotImplementedError
+
+    def first(self) -> Book:
+        raise NotImplementedError
+
+    def count(self) -> int:
+        raise NotImplementedError
+
+
+class Volume(Record, kind="library.volume"):
+    id: int
+    name: str
+
+
+class SpecialVolume(Volume, kind="library.special_volume"):
+    signed: bool = False
+
+
+class LibrarySettings(BaseModel):
+    catalog: str
+    volumes: list[Volume] = []
+
+
+class Library(BookSource[Volume], Configured[LibrarySettings]):
+    calls: ClassVar[int] = 0
+    error: ClassVar[Exception | None] = None
+
+    def to_book(self, item: Volume) -> Book:
+        return Book(title=item.name, pages=item.id)
+
+    def books(self) -> list[Book]:
+        type(self).calls += 1
+        if type(self).error is not None:
+            raise type(self).error
+        return [self.to_book(volume) for volume in self.settings.volumes]
+
+
+class Shop(BookSource):
+    rows: ClassVar[list[object]] = []
+    error: ClassVar[Exception | None] = None
+    asked: ClassVar[list[tuple[str, int]]] = []
+    total: ClassVar[object] = 0
+
+    def books(self) -> list[Book]:
+        if type(self).error is not None:
+            raise type(self).error
+        return list(type(self).rows)  # type: ignore[arg-type]  # tests plant bad rows too
+
+    def lookup(self, title: str) -> list[Book]:
+        return [book for book in self.books() if book.title == title]
+
+    def by_author(self, author: str, limit: int = 10) -> list[Book]:
+        type(self).asked.append((author, limit))
+        return [Book(title=author)]
+
+    def first(self) -> Book:
+        return type(self).rows[0]  # type: ignore[return-value]  # tests plant bad rows too
+
+    def count(self) -> int:
+        return type(self).total  # type: ignore[return-value]  # tests plant bad values too
+
+
+class Kiosk(BookSource):
+    rows: ClassVar[list[Book]] = []
+
+    def books(self) -> list[Book]:
+        return list(type(self).rows)
+
+
+def shelf_spec() -> PluginSpec:
+    return PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS, BY_AUTHOR))
+
+
+def library_spec(*providers: Contract) -> PluginSpec:
+    offered: Sequence[Contract] = providers or (Library(),)
+    return PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": lambda: offered})
+
+
+def shop_spec() -> PluginSpec:
+    return PluginSpec(name="shop", provides={"shelf": lambda: (Shop(),)})
+
+
+def kiosk_spec() -> PluginSpec:
+    return PluginSpec(name="kiosk", provides={"shelf": lambda: (Kiosk(),)})
+
+
+def compose(*specs: PluginSpec) -> CompositionResult:
+    reset()
+    return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
+
+
+def write_config(text: str) -> None:
+    import os
+
+    path = Path(os.environ["UNTAPED_CONFIG"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    get_settings.cache_clear()
+    reset()
+
+
+LIBRARY_CONFIG = """\
+profiles:
+  default:
+    library:
+      catalog: https://library.example
+      volumes:
+        - {id: 1, name: Dune}
+        - {id: 2, name: Emma}
+"""

@@ -16,10 +16,10 @@ from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
-from untaped.contracts import Contract
-from untaped.surface import SDK_MODULES
-from untaped.surface._lists import HOOKS, IMPLEMENTERS
-from untaped.surface._sdk import Exports, _split_mro, collect_exports
+from untaped.core.surface import SDK_MODULES
+from untaped.core.surface._lists import HOOKS, IMPLEMENTERS
+from untaped.core.surface._sdk import Exports, _split_mro, collect_exports
+from untaped.sdk.contracts import Contract
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

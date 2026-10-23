@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 
 from lint.fakes import Acme, Gizmo, PluginReader, Raising, Sprocket, WarnOnly, Widget, pipe
-from untaped.contracts import NotReady
-from untaped.plugins.registry import PluginContext
+from untaped.runtime.registry import PluginContext
 from untaped.sdk import Plugin, PluginSpec
-from untaped.testing import CliResult, PluginCheckRow, compose_with, invoke_cli, invoke_root
+from untaped.sdk.contracts import NotReady
+from untaped.sdk.testing import CliResult, PluginCheckRow, compose_with, invoke_cli, invoke_root
 from untaped_lint import SPEC
 from untaped_lint.api import Rule
 from untaped_lint.cli import app

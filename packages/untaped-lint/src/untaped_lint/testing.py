@@ -21,7 +21,7 @@ from importlib import metadata
 from pathlib import Path
 
 from untaped.sdk import Failure, Record, installed_plugins, kind_of, record_model
-from untaped.testing import PluginCandidate
+from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application import repo_file
 from untaped_lint.application.engine import Options
 from untaped_lint.application.engine import run as _run
@@ -132,7 +132,7 @@ def assert_clean(
     found on its own). ``candidates`` replaces entry-point discovery, so an
     uninstalled spec can be checked.
     """
-    from untaped.testing import compose_with  # noqa: PLC0415 - composes only when called
+    from untaped.sdk.testing import compose_with  # noqa: PLC0415 - composes only when called
 
     if candidates is not None:
         candidates = _with_lint(candidates)

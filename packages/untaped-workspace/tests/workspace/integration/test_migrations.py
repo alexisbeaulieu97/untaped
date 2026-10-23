@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import MigrationOptions, PluginContext, shown_path
-from untaped.testing.git import GitRemote
+from untaped.sdk.testing.git import GitRemote
 from untaped_workspace import migrations
 from untaped_workspace.settings import WorkspaceSettings
 from workspace.conftest import git

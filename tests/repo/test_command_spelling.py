@@ -6,11 +6,11 @@ import pytest
 import respx
 from cyclopts import App
 
-from untaped._root_options import canonical_command_tokens
-from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import PluginCandidate
-from untaped.stability import deprecated_alias
-from untaped.testing import invoke_cli
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.root_options import canonical_command_tokens
+from untaped.sdk.marks import deprecated_alias
+from untaped.sdk.testing import invoke_cli
 
 
 def test_underscore_command_spelling_renders_help_instead_of_crashing(

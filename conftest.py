@@ -13,12 +13,13 @@ import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.utils import canonicalize_name
 from pydantic import BaseModel
 
-from untaped import bootstrap, cli
-from untaped.output.sink import drop_tasks
-from untaped.plugins.registry import PluginCandidate, PluginSpec, discover_candidates
-from untaped.records import table_columns_of
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candidates
+from untaped.runtime.sink import drop_tasks
+from untaped.sdk import _cli as cli
+from untaped.sdk.records import table_columns_of
 
-pytest_plugins = ["untaped.testing.plugin"]
+pytest_plugins = ["untaped.sdk.testing.plugin"]
 
 _REPO_ROOT = Path(__file__).resolve().parent
 

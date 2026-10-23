@@ -10,7 +10,7 @@ import pytest
 
 from git.conftest import StoreError, StoreFor, all_refs, ensure, git
 from untaped.sdk import ErrorCategory
-from untaped.testing.git import GitRemote
+from untaped.sdk.testing.git import GitRemote
 from untaped_git.domain.release import Released, Removed
 from untaped_git.infrastructure.repo_files import worktree_entries
 from untaped_git.infrastructure.store import RepoStore

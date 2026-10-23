@@ -181,7 +181,7 @@ def stdin_repos() -> list[RepoArg]:
     which turns it into a repo without asking its API. A record without a
     kind, or of a kind no plugin reads, is a usage error.
     """
-    from untaped.contracts import convert  # noqa: PLC0415  # loaded only for piped records
+    from untaped.sdk.contracts import convert  # noqa: PLC0415  # loaded only for piped records
     from untaped_workspace.api import RepoSource  # noqa: PLC0415
 
     data = read_stdin_input(what="repos")

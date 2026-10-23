@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import yaml
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 from untaped_awx.cli.context import AwxContext
 from untaped_awx.domain.suites.workflow_run import MAX_NESTING

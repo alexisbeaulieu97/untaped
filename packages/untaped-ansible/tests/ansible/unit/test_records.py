@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 from untaped.sdk import Failure, Record, kind_of
-from untaped.testing import invoke_cli
+from untaped.sdk.testing import invoke_cli
 from untaped_ansible.cli import app
 from untaped_ansible.records import (
     AliasOutcome,

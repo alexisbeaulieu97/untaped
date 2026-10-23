@@ -1,6 +1,6 @@
 """Fake plugins filling workspace's ``RepoSource`` (and git's ``GitHost``) for the tests.
 
-Compose them with ``untaped.testing.compose_with(GIT, WORKSPACE, provides={"github": [...]})``:
+Compose them with ``untaped.sdk.testing.compose_with(GIT, WORKSPACE, provides={"github": [...]})``:
 the fake plugin's name is the ``provides`` key, so ``github`` and ``gitlab`` here are fakes
 workspace knows nothing about, as it knows nothing about the real ones.
 """
@@ -12,9 +12,9 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from untaped.contracts import NotReady, Record
+from untaped.runtime.settings import get_settings
 from untaped.sdk import UntapedError, UsageError
-from untaped.settings import get_settings
+from untaped.sdk.contracts import NotReady, Record
 from untaped_git.api import Credential, GitHost
 from untaped_workspace.api import Repo, RepoSource
 

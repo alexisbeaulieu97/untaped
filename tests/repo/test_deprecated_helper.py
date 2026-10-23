@@ -2,7 +2,7 @@
 
 ``UiContext.message``, ``.success`` and ``.progress``, ``report_error``,
 ``report_row_errors``, and ``echo``/``UiContext.styled``'s ``err=`` are
-deprecated (their marks name the release). No shipped module outside ``untaped/output/`` calls
+deprecated (their marks name the release). No shipped module but the sink calls
 them: a call is flagged by name, and ``success``/``progress`` only when the
 receiver is not a ``Diagnostics`` handle (``diag``, ``_diag``, ``<x>.diag``,
 ``Diagnostics()``) or core's sink (``current_sink()``), since they have
@@ -20,8 +20,8 @@ from pathlib import Path
 
 from repo.support import PACKAGES, REPO_ROOT
 
-#: The sink's own package, relative to its ``src``.
-OWNER = "untaped/output/"
+#: The sink, relative to its ``src``.
+OWNER = "untaped/runtime/sink.py"
 #: Modules allowed to keep a flagged call, with how many.
 EXEMPT: dict[str, int] = {}
 #: Handle spellings whose ``success``/``progress`` are ``Diagnostics`` methods.

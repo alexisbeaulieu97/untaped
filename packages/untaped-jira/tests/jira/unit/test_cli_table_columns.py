@@ -12,7 +12,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import invoke_cli
+from untaped.sdk.testing import invoke_cli
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"

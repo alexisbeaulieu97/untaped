@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import Filled, RefTarget, Store, code_version
-from untaped.testing import assert_schema_pinned
+from untaped.sdk.testing import assert_schema_pinned
 from untaped_ansible import settings
 from untaped_ansible.infrastructure import open_index
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_SQL, SCHEMA_VERSION
@@ -148,7 +148,7 @@ def _fill_index() -> None:
 
 
 def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() -> None:
-    from untaped import refs
+    from untaped.sdk.storage import _refs as refs  # untaped: allow private-test-import
 
     refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     newer = _plugin() / "index.v5.sqlite3"
@@ -174,7 +174,7 @@ def test_an_unregistered_install_keeps_both_layouts() -> None:
 
 
 def test_a_set_index_path_never_prunes_the_default_place(tmp_path: Path) -> None:
-    from untaped import refs
+    from untaped.sdk.storage import _refs as refs  # untaped: allow private-test-import
 
     refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     newer = _plugin() / "index.v5.sqlite3"
@@ -188,7 +188,7 @@ def test_a_layout_a_profile_points_index_path_at_is_never_pruned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Another profile's index stays, while a run on the default path fills and prunes."""
-    from untaped import refs
+    from untaped.sdk.storage import _refs as refs  # untaped: allow private-test-import
 
     refs.register([RefTarget(plugin="ansible", store="index", layout=4)])
     pinned = _plugin() / "index.v3.sqlite3"

@@ -24,7 +24,7 @@ them. For two installs that disagree about a renamed setting, see
   [configuration reference](./reference/config.md).
 - Environment variables:
   [environment variables](./reference/environment.md).
-- The `untaped.sdk`, `untaped.contracts` and `untaped.testing` surface, for
+- The `untaped.sdk`, `untaped.sdk.contracts` and `untaped.sdk.testing` surface, for
   [plugin authors](./plugins.md), except the
   [experimental](#experimental) objects listed below.
 - Spellings `untaped` writes outside its own process, such as the Git
@@ -48,8 +48,8 @@ These may change in any release:
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
 - The rules `untaped lint` and the deprecated
-  `untaped.testing.check_conventions` apply, and the checks and rows
-  `untaped.testing.check_plugin` returns: a minor release may add or move
+  `untaped.sdk.testing.check_conventions` apply, and the checks and rows
+  `untaped.sdk.testing.check_plugin` returns: a minor release may add or move
   one, so a plugin's lint test can start failing. Mark a source
   line with `# untaped: allow <rule>` to waive a convention rule there, where
   the rule [allows it](./reference/conventions.md#enforcement).
@@ -91,18 +91,18 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `known_projects`, `committed_path`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
   `LetGo`, `Refused`, `HolderView`, `UnknownHolder` and `HolderState` in
   `untaped.sdk`, and `make_project`, `release_ask`, `move_ask` and
-  `plan_release` in `untaped.testing`. See [Projects](./projects.md).
+  `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
   a plugin's typed private file in a store repo.
-- The fixtures in `untaped.testing.git`, for testing a plugin against the
+- The fixtures in `untaped.sdk.testing.git`, for testing a plugin against the
   repo store.
-- `untaped.testing.assert_surface` and the line format of the
+- `untaped.sdk.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
 - Stores: `Store`, `holders`, `RefHolder`, `RefTarget` and
   `other_layouts_migration` in `untaped.sdk`, `Cache(store=)`, and
-  `assert_schema_pinned` and `write_reference` in `untaped.testing`. The
+  `assert_schema_pinned` and `write_reference` in `untaped.sdk.testing`. The
   files a store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
@@ -113,16 +113,16 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button`,
   `Pressed`, `SearchList`, `Tree`, `TreeRow`, `Tags`, `Viewport`, `Form`,
   `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
-  and `untaped.testing.drive_screen` with `untaped.testing.ScreenKeys` and
-  `untaped.testing.ScreenRun`. See [Screens](./screens.md).
+  and `untaped.sdk.testing.drive_screen` with `untaped.sdk.testing.ScreenKeys` and
+  `untaped.sdk.testing.ScreenRun`. See [Screens](./screens.md).
 - Data files: `read_data_file`, `write_data_file`, `copy_data_file` and
   what a read answers (`Found`, `Absent`, `Unreadable` and `OtherVersion`)
-  in `untaped.sdk`, and `keep_value` and `damage` in `untaped.testing`. The
+  in `untaped.sdk`, and `keep_value` and `damage` in `untaped.sdk.testing`. The
   files they write are stable from the start: users keep them. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
 - State rows: `StateRows`, `ProjectStateRows` and `RowExists` in
   `untaped.sdk`, `StateMap`'s `project=` (it takes the experimental
-  `Project`), and `write_rows` and `read_rows` in `untaped.testing`. The rows
+  `Project`), and `write_rows` and `read_rows` in `untaped.sdk.testing`. The rows
   they write are stable from the start: users keep them, and a stable
   plugin's row fields are `state` lines. See [Plugin state](./state.md).
 - Tree output: `TreeGraph` (with `cycle_edges`), `TreeGraphNode`,

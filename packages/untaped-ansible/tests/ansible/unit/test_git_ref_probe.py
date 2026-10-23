@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.settings import get_settings
+from untaped.runtime.settings import get_settings
 from untaped_ansible.domain.payloads import GitRef, ProbeTarget
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe

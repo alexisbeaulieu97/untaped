@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import compose_with
+from untaped.sdk.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import RepoSource
@@ -46,8 +46,8 @@ def test_repos_is_cached_in_the_cache_workspace_declares_and_lists() -> None:
 def test_a_max_age_of_zero_asks_the_providers_every_time(
     by: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped.contracts import gather
-    from untaped.settings import get_settings
+    from untaped.runtime.settings import get_settings
+    from untaped.sdk.contracts import gather
 
     if by == "env":
         monkeypatch.setenv("UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS", "0")

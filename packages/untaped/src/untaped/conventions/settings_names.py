@@ -25,10 +25,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from untaped.config_schema import unwrap_optional
 from untaped.conventions.allow import allowed
-from untaped.deprecated_keys import mapping_errors
-from untaped.stability import mark_errors
+from untaped.sdk._schema import unwrap_optional
+from untaped.sdk.health.deprecated_keys import mapping_errors
+from untaped.sdk.marks import mark_errors
 
 NAMING = "settings-naming"
 RENAMES = "settings-renames"

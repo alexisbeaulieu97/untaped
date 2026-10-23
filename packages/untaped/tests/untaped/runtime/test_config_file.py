@@ -1,0 +1,410 @@
+"""Tests for the YAML config-file helpers."""
+
+import contextvars
+import threading
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from untaped.runtime.config_file import (
+    mutate_config,
+    mutate_plugin_state,
+    read_config_dict,
+    read_plugin_state,
+    set_at_path,
+    unset_at_path,
+    write_config_dict,
+)
+from untaped.sdk.errors import ConfigError, UntapedError
+
+
+def test_read_returns_empty_when_file_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    assert read_config_dict() == {}
+
+
+def test_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"awx": {"token": "secret", "base_url": "https://x"}})
+    assert read_config_dict() == {"awx": {"token": "secret", "base_url": "https://x"}}
+
+
+def test_write_creates_parent_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "deeply" / "nested" / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"a": 1})
+    assert cfg.exists()
+    assert cfg.parent.is_dir()
+
+
+def test_write_uses_secure_perms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"a": 1})
+    mode = cfg.stat().st_mode & 0o777
+    assert mode == 0o600
+
+
+def test_write_goes_through_a_symlinked_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = tmp_path / "dotfiles" / "config.yml"
+    real.parent.mkdir()
+    real.write_text("# mine\na: 1\n")
+    real.chmod(0o644)
+    cfg = tmp_path / "config.yml"
+    cfg.symlink_to(real)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    mutate_config(lambda data: data.update({"b": 2}))
+    assert cfg.is_symlink()
+    assert real.read_text() == "# mine\na: 1\nb: 2\n"
+    assert real.stat().st_mode & 0o777 == 0o600
+
+
+def test_set_creates_intermediate_dicts() -> None:
+    data: dict = {}
+    set_at_path(data, ("awx", "token"), "secret")
+    assert data == {"awx": {"token": "secret"}}
+
+
+def test_set_replaces_non_dict_intermediate() -> None:
+    data: dict = {"awx": "scalar"}
+    set_at_path(data, ("awx", "token"), "secret")
+    assert data == {"awx": {"token": "secret"}}
+
+
+def test_unset_removes_value_and_empty_parents() -> None:
+    data: dict = {"awx": {"token": "secret"}, "github": {"token": "ghp"}}
+    assert unset_at_path(data, ("awx", "token")) is True
+    assert data == {"github": {"token": "ghp"}}
+
+
+def test_unset_keeps_non_empty_parent() -> None:
+    data: dict = {"awx": {"token": "x", "base_url": "https://y"}}
+    assert unset_at_path(data, ("awx", "token")) is True
+    assert data == {"awx": {"base_url": "https://y"}}
+
+
+def test_unset_returns_false_for_missing_path() -> None:
+    data: dict = {"awx": {"base_url": "https://y"}}
+    assert unset_at_path(data, ("awx", "token")) is False
+    assert data == {"awx": {"base_url": "https://y"}}
+
+
+# ---------------------------- mutate_config ---------------------------- #
+
+
+def test_mutate_config_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Happy path: callback receives the loaded dict, mutates in place, gets persisted."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"log_level": "INFO"})
+
+    def _set_debug(data: dict[str, Any]) -> None:
+        data["log_level"] = "DEBUG"
+
+    mutate_config(_set_debug)
+    assert read_config_dict()["log_level"] == "DEBUG"
+
+
+def test_mutate_config_clears_get_settings_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful write must invalidate ``get_settings`` so the next
+    reader sees the new values without manual ``cache_clear()``."""
+    from untaped.runtime.settings import get_settings
+
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {"skills": {"updates": "warn"}}}})
+
+    get_settings.cache_clear()
+    assert get_settings().skills.updates == "warn"
+
+    def _set_off(data: dict[str, Any]) -> None:
+        data["profiles"]["default"]["skills"]["updates"] = "off"
+
+    mutate_config(_set_off)
+    assert get_settings().skills.updates == "off"
+
+
+def test_mutate_config_no_op_does_not_clear_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the callback doesn't change anything, the cache must stay warm
+    — clearing it on every call would defeat the cache for read-mostly
+    flows like ``config list``."""
+    from untaped.runtime.settings import get_settings
+
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"log_level": "INFO"})
+
+    get_settings.cache_clear()
+    cached = get_settings()
+    mutate_config(lambda data: None)
+    assert get_settings() is cached
+
+
+def test_mutate_config_creates_file_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First-time use: callback sees `{}`, write creates the file."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    def _seed(data: dict[str, Any]) -> None:
+        data["log_level"] = "DEBUG"
+
+    mutate_config(_seed)
+    assert cfg.exists()
+    assert read_config_dict() == {"log_level": "DEBUG"}
+
+
+def test_mutate_config_skips_write_when_callback_no_ops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A callback that doesn't mutate the dict must not touch disk.
+
+    Otherwise commands that intentionally no-op (``config unset`` for a
+    missing key, or a domain command removing an already-missing object)
+    silently re-serialize the YAML — losing comments, losing user-set key
+    order, and bumping mtime — even though nothing semantically changed.
+    """
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"log_level": "INFO"})
+    before_mtime = cfg.stat().st_mtime_ns
+
+    mutate_config(lambda data: None)
+
+    assert cfg.stat().st_mtime_ns == before_mtime
+
+
+def test_mutate_config_no_op_does_not_create_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A no-op against a missing config must not bring the file into
+    existence — the user just probed something that wasn't there."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    mutate_config(lambda data: None)
+
+    assert not cfg.exists()
+
+
+def test_mutate_config_exception_keeps_file_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the callback raises, the on-disk file must be untouched.
+
+    The atomic write only runs after the callback succeeds, so a half-applied
+    mutation never reaches disk.
+    """
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"log_level": "INFO"})
+    snapshot = cfg.read_text()
+
+    def _bad(data: dict[str, Any]) -> None:
+        data["log_level"] = "DEBUG"
+        raise RuntimeError("oops")
+
+    with pytest.raises(RuntimeError, match="oops"):
+        mutate_config(_bad)
+    assert cfg.read_text() == snapshot
+
+
+def test_mutate_config_lock_blocks_concurrent_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Holding the lock on disk causes a contending caller to error out
+    promptly with ConfigError, not silently overwrite."""
+    from filelock import FileLock
+
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
+    write_config_dict({"log_level": "INFO"})
+
+    held = FileLock(str(cfg) + ".lock")
+    held.acquire()
+    try:
+        with pytest.raises(ConfigError, match="lock"):
+            mutate_config(lambda data: None)
+    finally:
+        held.release()
+
+
+def test_mutate_config_releases_lock_on_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A callback that raises must still release the lock so a follow-up
+    mutation isn't blocked forever."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
+    write_config_dict({"log_level": "INFO"})
+
+    with pytest.raises(RuntimeError):
+        mutate_config(lambda data: (_ for _ in ()).throw(RuntimeError("fail")))
+
+    # Second call must succeed without timing out.
+    mutate_config(lambda data: data.update({"flag": True}))
+    assert read_config_dict()["flag"] is True
+
+
+# ---------------------------- YAML parse errors ---------------------------- #
+
+
+def test_read_config_dict_translates_yaml_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Broken YAML must surface as ``ConfigError`` (user-facing ``error: …``),
+    not bubble out as a PyYAML traceback to the CLI handler."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("active: [unterminated\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match=str(cfg)):
+        read_config_dict()
+
+
+def test_mutate_config_translates_yaml_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``untaped config set`` over a corrupted config file must surface as
+    ``ConfigError`` — ``mutate_config`` reads via ``read_config_dict`` inside
+    the lock, so the boundary translation must carry through."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("active: [unterminated\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match=str(cfg)):
+        mutate_config(lambda data: data.update({"x": 1}))
+
+
+@pytest.mark.parametrize("value", ["x", "-1", "nan", "inf"])
+def test_invalid_lock_timeout_env_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", value)
+    with pytest.raises(ConfigError, match="UNTAPED_CONFIG_LOCK_TIMEOUT"):
+        mutate_config(lambda data: None)
+
+
+def test_unreadable_config_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("log_level: INFO\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    real_open = Path.open
+
+    def deny(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == cfg:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny)
+    with pytest.raises(ConfigError, match=r"could not read .*Permission denied"):
+        read_config_dict()
+
+
+def test_write_creates_the_file_owner_only_from_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The temp file must never exist with looser permissions than 0600."""
+    import os
+    import stat
+
+    cfg = tmp_path / "config.yml"
+    modes: list[int] = []
+    real_replace = os.replace
+
+    def spy_replace(src: Any, dst: Any) -> None:
+        modes.append(stat.S_IMODE(os.stat(src).st_mode))
+        real_replace(src, dst)
+
+    old_umask = os.umask(0o022)
+    monkeypatch.setattr(os, "replace", spy_replace)
+    try:
+        write_config_dict({"token": "secret"}, cfg)
+    finally:
+        os.umask(old_umask)
+    assert modes == [0o600]
+    assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yml"]
+
+
+def test_failed_write_leaves_no_temp_file_and_keeps_the_original(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+    write_config_dict({"log_level": "INFO"}, cfg)
+    before = cfg.read_text()
+
+    with pytest.raises(Exception, match="cannot represent"):
+        write_config_dict({"bad": object()}, cfg)
+
+    assert cfg.read_text() == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yml"]
+
+
+def test_write_ignores_a_stale_fixed_name_temp_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+    stale = tmp_path / "config.yml.tmp"
+    stale.write_text("stale")
+    write_config_dict({"log_level": "INFO"}, cfg)
+    assert read_config_dict(cfg) == {"log_level": "INFO"}
+
+
+def test_nested_config_write_is_refused(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+
+    def _inner(data: dict[str, Any]) -> None:
+        data["b"] = 2
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_config(_inner, path=cfg)
+
+    with pytest.raises(UntapedError, match="inside another write"):
+        mutate_config(_outer, path=cfg)
+    assert not cfg.exists()
+
+
+def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
+    state = tmp_path / "state.yml"
+    config = tmp_path / "config.yml"
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_plugin_state("demo", lambda section: section.update(b=2), path=state)
+
+    mutate_config(_outer, path=config)
+    assert read_config_dict(config) == {"a": 1}
+    assert read_plugin_state("demo", path=state) == {"b": 2}
+
+
+def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(
+    tmp_path: Path,
+) -> None:
+    cfg = tmp_path / "config.yml"
+    captured: list[contextvars.Context] = []
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        captured.append(contextvars.copy_context())
+
+    mutate_config(_outer, path=cfg)
+    later = threading.Thread(
+        target=captured[0].run,
+        args=(mutate_config, lambda data: data.update(b=2)),
+        kwargs={"path": cfg},
+    )
+    later.start()
+    later.join()
+    assert read_config_dict(cfg) == {"a": 1, "b": 2}

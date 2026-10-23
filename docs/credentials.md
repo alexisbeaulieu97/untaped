@@ -52,7 +52,7 @@ person takes. The token is bound to the server's origin (scheme, host and
 port): `connected_client` refuses to build a client for another one, and a
 request elsewhere raises `HttpError` before it is sent. Redirects are
 returned unless a call passes `follow_redirects=True`, which follows them on
-the same origin only. In tests, `untaped.testing` keeps logins in memory
+the same origin only. In tests, `untaped.sdk.testing` keeps logins in memory
 (`current_memory_store()`), so `TOKEN.store(server, token="t")` sets one up.
 
 ## See also

@@ -43,12 +43,26 @@ uv lock --check                                 # lock file is current
 - The root `pyproject.toml` is the uv workspace root (tool configuration and
   the `dev` group, no `[project]`); `uv.lock` locks the whole workspace.
 - `packages/<name>/` holds one distribution each: its `pyproject.toml`,
-  `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`: its
-  `src/untaped/` holds the root app and shared services. `sdk.py` is the
-  public SDK surface; `plugins/registry.py` is the internal composition
-  kernel (see [How composition works](docs/composition.md));
-  `management/` holds the root's management commands. The implementation is
-  the reference for composition and command behavior.
+  `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`;
+  its `src/untaped/` has three roots, named by who reads them, beside the
+  experimental `screen/` kit:
+  - `sdk/` is what a plugin may import: everything in it is public except a
+    `_`-prefixed module or name. Its groups are subpackages (`storage/`,
+    `contracts/`, `network/`, `health/`, `prompt/`, `testing/`, and the
+    `git` and `projects` modules). `sdk/` is moving off `runtime/` and
+    `core/`: `tests/repo/test_layout.py` names each SDK module that still
+    imports them, and the list only shrinks.
+  - `core/` is untaped's own plugin: its settings and its commands
+    (`core/commands/`) with their logic.
+  - `runtime/` is how a run happens: discovery and composition
+    (`runtime/registry.py`, see [How composition works](docs/composition.md)),
+    settings loading, the stderr sink and rendering. No plugin imports
+    `runtime/` or `core/`.
+
+  The implementation is the reference for composition and command behavior.
+  Core's tests mirror the source under `tests/untaped/` (the test of
+  `untaped/sdk/storage/cache.py` is `tests/untaped/sdk/storage/test_cache.py`);
+  helpers several tests share live in `tests/core_test_support/`.
 - Each plugin is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one plugin end
   to end. Its agent pages (`untaped agents <name>`) are the reference; its
@@ -74,7 +88,7 @@ uv lock --check                                 # lock file is current
 ## Adding a first-party plugin
 
 A first-party plugin is treated like any third-party plugin: it uses only
-`untaped.sdk`, `untaped.contracts`, `untaped.testing` and other plugins'
+`untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing` and other plugins'
 declared `api` modules, and gets no special treatment in how it is loaded or
 what it may use, because any of them may move to its own repository. It
 follows the [plugin rules](docs/reference/conventions.md) and uses this layout:
@@ -130,8 +144,8 @@ or becomes an SDK helper that every plugin can use. Declare a
 - **Absolute imports only**, tests included.
 - **Lazy imports on CLI startup paths** (`tests/repo/test_import_cost.py`
   budgets them); `# noqa: PLC0415` only where Ruff flags it.
-- **Git through `untaped.git`** (`run_git`, `git_toplevel`) and advisory
-  file locks through `untaped.fs` (`file_lock`), both re-exported by
+- **Git through `untaped.sdk.git`** (`run_git`, `git_toplevel`) and advisory
+  file locks through `file_lock` (`untaped.sdk.storage`), both re-exported by
   `untaped.sdk`; never hand-rolled `subprocess` git plumbing.
 - **Module docstrings.** Every module opens with a docstring saying what it
   owns (re-export stubs are exempt; `house.module-docstring` checks source
@@ -160,7 +174,7 @@ or becomes an SDK helper that every plugin can use. Declare a
   contract, run `uv run python scripts/gen_surface.py` and commit
   `tests/repo/surface.txt`. A test fails while it is stale, and in a minor
   release when it loses a stable line of the last release; the rules behind
-  the lines are in `untaped/surface/__init__.py`.
+  the lines are in `untaped/core/surface/__init__.py`.
 
 ## Before you open a PR
 

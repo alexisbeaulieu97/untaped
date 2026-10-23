@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from awx.lint_support import CLEAN, DOCUMENTS
-from untaped.testing import assert_fills, compose_with
+from untaped.sdk.testing import assert_fills, compose_with
 from untaped_awx.api import AwxResources
 from untaped_awx.domain.lint.rules import RULES
 from untaped_awx.providers.lint import AwxDocuments, AwxRules

@@ -18,13 +18,13 @@ from typing import ClassVar, cast
 
 from pydantic import ValidationError
 
-from untaped.contracts import Contract, listing
 from untaped.sdk import Failure, Record, experimental, kind_of
+from untaped.sdk.contracts import Contract, listing
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree
 
 #: Marks a provider base's own helper, so doctor's unused-method check skips it
-#: (``untaped.contracts`` reads the same attribute).
+#: (``untaped.sdk.contracts`` reads the same attribute).
 _PROVIDER_HELPER = "__untaped_provider_helper__"
 
 

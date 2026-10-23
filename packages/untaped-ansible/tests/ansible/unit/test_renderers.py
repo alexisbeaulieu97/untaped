@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk import TreeGraphEdge, TreeGraphNode, UiContext, tree_text
-from untaped.theme import BUILTIN_THEMES
 from untaped_ansible.domain.graph import (
     DependencyGraph,
     GraphCycle,

@@ -1,7 +1,7 @@
 """``tests/repo/surface.txt``: current, and keeping every stable line of the last release.
 
 The file lists what ``docs/versioning.md`` promises, one line per promise
-(:mod:`untaped.surface` holds the grammar and the rules). A minor release
+(:mod:`untaped.core.surface` holds the grammar and the rules). A minor release
 keeps every stable line of the newest final tag; a major in preparation (an
 ``upgrading`` fragment in ``changelog.d/``, or a workspace version whose
 major is past the tag's) may drop them, except a deprecated line dated for a
@@ -32,13 +32,13 @@ from repo.support import (
     no_baseline,
     release_baseline,
 )
-from untaped.contracts._fills import FILLS_FILE
-from untaped.deprecated_keys import DECLARATIONS
-from untaped.git import GitCommandError
-from untaped.management import plugin_check
-from untaped.plugins.registry import PLUGINS_ENTRY_POINT_GROUP
-from untaped.surface import DeprecatedMark, Line, LineMark, parse, removed
-from untaped.surface._lists import CONVENTIONS
+from untaped.core.commands import plugin_check
+from untaped.core.surface import DeprecatedMark, Line, LineMark, parse, removed
+from untaped.core.surface._lists import CONVENTIONS
+from untaped.runtime.contracts.fills import FILLS_FILE
+from untaped.runtime.registry import PLUGINS_ENTRY_POINT_GROUP
+from untaped.sdk.git import GitCommandError
+from untaped.sdk.health.deprecated_keys import DECLARATIONS
 from untaped_git.infrastructure import worktree_config
 
 REGENERATE = "uv run python scripts/gen_surface.py"
@@ -285,7 +285,7 @@ def test_overrides_are_declared() -> None:
     assert done.returncode == 0, done.stderr
     assert not done.stdout, (
         "these override members of exported SDK classes; list each in HOOKS "
-        "(untaped/surface/_lists.py) with why the SDK reads it, or its class in "
+        "(untaped/core/surface/_lists.py) with why the SDK reads it, or its class in "
         "IMPLEMENTERS:\n" + done.stdout
     )
 
@@ -304,11 +304,13 @@ def test_written_outside_spellings_have_lines(generated: str) -> None:
 
 def test_conventions_are_real() -> None:
     """Each ``convention`` line names something core really finds by that name."""
-    auth = (PACKAGES / "untaped" / "src" / "untaped" / "auth.py").read_text(encoding="utf-8")
+    auth = (PACKAGES / "untaped" / "src" / "untaped" / "sdk" / "network" / "auth.py").read_text(
+        encoding="utf-8"
+    )
     conformance = inspect.getsource(plugin_check._owner_conformance)
     real = {
         f"entry-point {PLUGINS_ENTRY_POINT_GROUP}": True,
-        "module untaped.testing.plugin": importlib.util.find_spec("untaped.testing.plugin")
+        "module untaped.sdk.testing.plugin": importlib.util.find_spec("untaped.sdk.testing.plugin")
         is not None,
         "module <owner>.testing.conformance": 'f"{package}.testing"' in conformance
         and '"conformance"' in conformance,

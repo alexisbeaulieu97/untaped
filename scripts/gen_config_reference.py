@@ -4,7 +4,7 @@ The page lists every setting of the root app (``http.*``, ``ui.*``,
 ``skills.*``) and of each first-party plugin's settings model, plus each
 plugin's state model. Types, defaults and environment variables come from
 the Pydantic models, and each description from the field's
-``Field(description=...)``, followed by its :class:`~untaped.config_schema.Choices`
+``Field(description=...)``, followed by its :class:`~untaped.sdk._schema.Choices`
 names and its bounds when it has them.
 
 Usage::
@@ -29,10 +29,10 @@ from pydantic import BaseModel, HttpUrl, SecretStr
 from release import packages
 
 if TYPE_CHECKING:
-    from untaped.config_schema import Choices
-    from untaped.plugins.registry import PluginCandidate
-    from untaped.stability import Stability
-    from untaped.surface._settings import Section
+    from untaped.core.surface._settings import Section
+    from untaped.runtime.registry import PluginCandidate
+    from untaped.sdk._schema import Choices
+    from untaped.sdk.marks import Stability
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
@@ -122,14 +122,14 @@ def _default_text(value: Any) -> str:
 
 
 def _env_name(key: str) -> str:
-    from untaped.settings import env_var_name  # noqa: PLC0415
+    from untaped.runtime.settings import env_var_name  # noqa: PLC0415
 
     return env_var_name(key.split("."))
 
 
 def _first_party() -> tuple[PluginCandidate, ...]:
     """The installed candidates of this repository's own distributions."""
-    from untaped.plugins.registry import discover_candidates  # noqa: PLC0415
+    from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
 
     own = packages(REPO_ROOT)
     return tuple(c for c in discover_candidates() if canonicalize_name(c.distribution) in own)
@@ -142,9 +142,9 @@ def collect_sections() -> list[Section]:
     order. Raises :class:`RuntimeError` naming every quarantined first-party
     plugin rather than drop its section.
     """
-    from untaped.bootstrap import SHELL_SPEC  # noqa: PLC0415
-    from untaped.plugins.registry import compose  # noqa: PLC0415
-    from untaped.surface._settings import check_quarantine, sections  # noqa: PLC0415
+    from untaped.core.surface._settings import check_quarantine, sections  # noqa: PLC0415
+    from untaped.runtime.bootstrap import SHELL_SPEC  # noqa: PLC0415
+    from untaped.runtime.registry import compose  # noqa: PLC0415
 
     result = compose(SHELL_SPEC, _first_party())
     check_quarantine(result)
@@ -164,7 +164,7 @@ def _all_rows() -> list[Row]:
 
 
 def _section_rows(section: Section) -> list[Row]:
-    from untaped.surface._settings import setting_leaves  # noqa: PLC0415
+    from untaped.core.surface._settings import setting_leaves  # noqa: PLC0415
 
     return [
         Row(
@@ -204,8 +204,8 @@ def _with_bounds(description: str | None, bounds: str | None) -> str | None:
 
 def _description(row: Row) -> str:
     """The description cell: the text, then the sentence for a marked setting."""
-    from untaped.messages import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
-    from untaped.stability import Deprecated, removal_text, replacement_text  # noqa: PLC0415
+    from untaped.sdk.marks import Deprecated, removal_text, replacement_text  # noqa: PLC0415
+    from untaped.sdk.words import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
 
     if row.mark is None:
         return str(row.description)
@@ -220,8 +220,8 @@ def _description(row: Row) -> str:
 
 def _renamed_table() -> list[str]:
     """The Renamed settings table: every declared rename, in section order."""
-    from untaped.deprecated_keys import key_mappings  # noqa: PLC0415
-    from untaped.settings import model_sections  # noqa: PLC0415
+    from untaped.runtime.settings import model_sections  # noqa: PLC0415
+    from untaped.sdk.health.deprecated_keys import key_mappings  # noqa: PLC0415
 
     rows: list[str] = []
     for _, prefix, model, is_state, _, _ in collect_sections():

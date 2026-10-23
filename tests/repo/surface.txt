@@ -4534,111 +4534,7 @@ convention attribute token_sources
 convention entry-point untaped.plugins
 convention file fills.json
 convention module <owner>.testing.conformance
-convention module untaped.testing.plugin
-sdk untaped.contracts.Ambiguous()
-sdk untaped.contracts.Ambiguous(*args)
-sdk untaped.contracts.Ambiguous(category=) default=None
-sdk untaped.contracts.Ambiguous(details=) default=None
-sdk untaped.contracts.Ambiguous(fix_by=) default=None
-sdk untaped.contracts.Ambiguous(hint=) default=None
-sdk untaped.contracts.Ambiguous(system=) default=None
-sdk untaped.contracts.Ambiguous.category class
-sdk untaped.contracts.Ambiguous.details class
-sdk untaped.contracts.Ambiguous.exit_code
-sdk untaped.contracts.Ambiguous.fix_by class
-sdk untaped.contracts.Ambiguous.hint class
-sdk untaped.contracts.Ambiguous.retryable
-sdk untaped.contracts.Ambiguous.system class
-sdk untaped.contracts.Answer
-sdk untaped.contracts.Answers(items, *, owner, contract, method)
-sdk untaped.contracts.Answers(pending=) default=None
-sdk untaped.contracts.Answers.rank_command()
-sdk untaped.contracts.Answers.rank_command(plugins@1=) default=None
-sdk untaped.contracts.Answers.take_stale()
-sdk untaped.contracts.Configured()
-sdk untaped.contracts.Configured.settings
-sdk untaped.contracts.Contract implement=
-sdk untaped.contracts.Contract.__init_subclass__(shell=) default=None
-sdk untaped.contracts.Contract.http
-sdk untaped.contracts.Contract.own(item)
-sdk untaped.contracts.Contract.ready() -> NotReady?
-sdk untaped.contracts.Failed(plugin, error)
-sdk untaped.contracts.Failed(rank@3=) default=None
-sdk untaped.contracts.Failed(reason@4=) default=None
-sdk untaped.contracts.Failed.error
-sdk untaped.contracts.Failed.plugin
-sdk untaped.contracts.Failed.rank
-sdk untaped.contracts.Failed.reason
-sdk untaped.contracts.Issued()
-sdk untaped.contracts.Issued(source=) default=None
-sdk untaped.contracts.Issued.__init_subclass__(kind=) default=None
-sdk untaped.contracts.Issued.source
-sdk untaped.contracts.Issued.table_columns class
-sdk untaped.contracts.NoProviderReady(message, *, not_ready)
-sdk untaped.contracts.NoProviderReady(quarantined=) default=None
-sdk untaped.contracts.NoProviderReady.category class
-sdk untaped.contracts.NoProviderReady.details class
-sdk untaped.contracts.NoProviderReady.exit_code
-sdk untaped.contracts.NoProviderReady.fix_by class
-sdk untaped.contracts.NoProviderReady.hint class
-sdk untaped.contracts.NoProviderReady.retryable
-sdk untaped.contracts.NoProviderReady.system class
-sdk untaped.contracts.NotFound()
-sdk untaped.contracts.NotFound(*args)
-sdk untaped.contracts.NotFound(category=) default=None
-sdk untaped.contracts.NotFound(details=) default=None
-sdk untaped.contracts.NotFound(fix_by=) default=None
-sdk untaped.contracts.NotFound(hint=) default=None
-sdk untaped.contracts.NotFound(system=) default=None
-sdk untaped.contracts.NotFound.category class
-sdk untaped.contracts.NotFound.details class
-sdk untaped.contracts.NotFound.exit_code
-sdk untaped.contracts.NotFound.fix_by class
-sdk untaped.contracts.NotFound.hint class
-sdk untaped.contracts.NotFound.retryable
-sdk untaped.contracts.NotFound.system class
-sdk untaped.contracts.NotReady(reason)
-sdk untaped.contracts.NotReady(setting@2=) default=None
-sdk untaped.contracts.NotReady.reason
-sdk untaped.contracts.NotReady.setting
-sdk untaped.contracts.Ok(invalid@6=) default=[]
-sdk untaped.contracts.Ok(plugin, value)
-sdk untaped.contracts.Ok(rank@3=) default=None
-sdk untaped.contracts.Ok(refreshed_at@4=) default=None
-sdk untaped.contracts.Ok(stale@5=) default=None
-sdk untaped.contracts.Ok.invalid
-sdk untaped.contracts.Ok.plugin
-sdk untaped.contracts.Ok.rank
-sdk untaped.contracts.Ok.refreshed_at
-sdk untaped.contracts.Ok.stale
-sdk untaped.contracts.Ok.value
-sdk untaped.contracts.Record()
-sdk untaped.contracts.Record.__init_subclass__(kind=) default=None
-sdk untaped.contracts.Record.table_columns class
-sdk untaped.contracts.Skipped(plugin, reason, detail)
-sdk untaped.contracts.Skipped(rank@4=) default=None
-sdk untaped.contracts.Skipped.detail
-sdk untaped.contracts.Skipped.plugin
-sdk untaped.contracts.Skipped.rank
-sdk untaped.contracts.Skipped.reason
-sdk untaped.contracts.Source(*, plugin, kind)
-sdk untaped.contracts.Source(record=) default={}
-sdk untaped.contracts.Source.kind
-sdk untaped.contracts.Source.plugin
-sdk untaped.contracts.Source.record
-sdk untaped.contracts.bridge(fn, /)
-sdk untaped.contracts.cached(cache, /)
-sdk untaped.contracts.convert(bridge, envelope) callback(bridge, *)
-sdk untaped.contracts.gather(deadline=) default=None
-sdk untaped.contracts.gather(method, /) callback(method, P)
-sdk untaped.contracts.gather(needs=) default=[] callback(*)
-sdk untaped.contracts.gather(plugins=) default=None
-sdk untaped.contracts.gather(progress=) default=NO_PROGRESS
-sdk untaped.contracts.gather(refresh=) default=None
-sdk untaped.contracts.listing(fn, /)
-sdk untaped.contracts.providing(candidates=) default=None
-sdk untaped.contracts.providing(owner, offered)
-sdk untaped.contracts.select_one(answers, matches) callback(matches, 1)
+convention module untaped.sdk.testing.plugin
 sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
@@ -6101,6 +5997,110 @@ sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [depre
 sdk untaped.sdk.connected_client(retry=) default=<computed>
 sdk untaped.sdk.connected_client(verify=) default=None
 sdk untaped.sdk.connection_check(check_id, *, section)
+sdk untaped.sdk.contracts.Ambiguous()
+sdk untaped.sdk.contracts.Ambiguous(*args)
+sdk untaped.sdk.contracts.Ambiguous(category=) default=None
+sdk untaped.sdk.contracts.Ambiguous(details=) default=None
+sdk untaped.sdk.contracts.Ambiguous(fix_by=) default=None
+sdk untaped.sdk.contracts.Ambiguous(hint=) default=None
+sdk untaped.sdk.contracts.Ambiguous(system=) default=None
+sdk untaped.sdk.contracts.Ambiguous.category class
+sdk untaped.sdk.contracts.Ambiguous.details class
+sdk untaped.sdk.contracts.Ambiguous.exit_code
+sdk untaped.sdk.contracts.Ambiguous.fix_by class
+sdk untaped.sdk.contracts.Ambiguous.hint class
+sdk untaped.sdk.contracts.Ambiguous.retryable
+sdk untaped.sdk.contracts.Ambiguous.system class
+sdk untaped.sdk.contracts.Answer
+sdk untaped.sdk.contracts.Answers(items, *, owner, contract, method)
+sdk untaped.sdk.contracts.Answers(pending=) default=None
+sdk untaped.sdk.contracts.Answers.rank_command()
+sdk untaped.sdk.contracts.Answers.rank_command(plugins@1=) default=None
+sdk untaped.sdk.contracts.Answers.take_stale()
+sdk untaped.sdk.contracts.Configured()
+sdk untaped.sdk.contracts.Configured.settings
+sdk untaped.sdk.contracts.Contract implement=
+sdk untaped.sdk.contracts.Contract.__init_subclass__(shell=) default=None
+sdk untaped.sdk.contracts.Contract.http
+sdk untaped.sdk.contracts.Contract.own(item)
+sdk untaped.sdk.contracts.Contract.ready() -> NotReady?
+sdk untaped.sdk.contracts.Failed(plugin, error)
+sdk untaped.sdk.contracts.Failed(rank@3=) default=None
+sdk untaped.sdk.contracts.Failed(reason@4=) default=None
+sdk untaped.sdk.contracts.Failed.error
+sdk untaped.sdk.contracts.Failed.plugin
+sdk untaped.sdk.contracts.Failed.rank
+sdk untaped.sdk.contracts.Failed.reason
+sdk untaped.sdk.contracts.Issued()
+sdk untaped.sdk.contracts.Issued(source=) default=None
+sdk untaped.sdk.contracts.Issued.__init_subclass__(kind=) default=None
+sdk untaped.sdk.contracts.Issued.source
+sdk untaped.sdk.contracts.Issued.table_columns class
+sdk untaped.sdk.contracts.NoProviderReady(message, *, not_ready)
+sdk untaped.sdk.contracts.NoProviderReady(quarantined=) default=None
+sdk untaped.sdk.contracts.NoProviderReady.category class
+sdk untaped.sdk.contracts.NoProviderReady.details class
+sdk untaped.sdk.contracts.NoProviderReady.exit_code
+sdk untaped.sdk.contracts.NoProviderReady.fix_by class
+sdk untaped.sdk.contracts.NoProviderReady.hint class
+sdk untaped.sdk.contracts.NoProviderReady.retryable
+sdk untaped.sdk.contracts.NoProviderReady.system class
+sdk untaped.sdk.contracts.NotFound()
+sdk untaped.sdk.contracts.NotFound(*args)
+sdk untaped.sdk.contracts.NotFound(category=) default=None
+sdk untaped.sdk.contracts.NotFound(details=) default=None
+sdk untaped.sdk.contracts.NotFound(fix_by=) default=None
+sdk untaped.sdk.contracts.NotFound(hint=) default=None
+sdk untaped.sdk.contracts.NotFound(system=) default=None
+sdk untaped.sdk.contracts.NotFound.category class
+sdk untaped.sdk.contracts.NotFound.details class
+sdk untaped.sdk.contracts.NotFound.exit_code
+sdk untaped.sdk.contracts.NotFound.fix_by class
+sdk untaped.sdk.contracts.NotFound.hint class
+sdk untaped.sdk.contracts.NotFound.retryable
+sdk untaped.sdk.contracts.NotFound.system class
+sdk untaped.sdk.contracts.NotReady(reason)
+sdk untaped.sdk.contracts.NotReady(setting@2=) default=None
+sdk untaped.sdk.contracts.NotReady.reason
+sdk untaped.sdk.contracts.NotReady.setting
+sdk untaped.sdk.contracts.Ok(invalid@6=) default=[]
+sdk untaped.sdk.contracts.Ok(plugin, value)
+sdk untaped.sdk.contracts.Ok(rank@3=) default=None
+sdk untaped.sdk.contracts.Ok(refreshed_at@4=) default=None
+sdk untaped.sdk.contracts.Ok(stale@5=) default=None
+sdk untaped.sdk.contracts.Ok.invalid
+sdk untaped.sdk.contracts.Ok.plugin
+sdk untaped.sdk.contracts.Ok.rank
+sdk untaped.sdk.contracts.Ok.refreshed_at
+sdk untaped.sdk.contracts.Ok.stale
+sdk untaped.sdk.contracts.Ok.value
+sdk untaped.sdk.contracts.Record()
+sdk untaped.sdk.contracts.Record.__init_subclass__(kind=) default=None
+sdk untaped.sdk.contracts.Record.table_columns class
+sdk untaped.sdk.contracts.Skipped(plugin, reason, detail)
+sdk untaped.sdk.contracts.Skipped(rank@4=) default=None
+sdk untaped.sdk.contracts.Skipped.detail
+sdk untaped.sdk.contracts.Skipped.plugin
+sdk untaped.sdk.contracts.Skipped.rank
+sdk untaped.sdk.contracts.Skipped.reason
+sdk untaped.sdk.contracts.Source(*, plugin, kind)
+sdk untaped.sdk.contracts.Source(record=) default={}
+sdk untaped.sdk.contracts.Source.kind
+sdk untaped.sdk.contracts.Source.plugin
+sdk untaped.sdk.contracts.Source.record
+sdk untaped.sdk.contracts.bridge(fn, /)
+sdk untaped.sdk.contracts.cached(cache, /)
+sdk untaped.sdk.contracts.convert(bridge, envelope) callback(bridge, *)
+sdk untaped.sdk.contracts.gather(deadline=) default=None
+sdk untaped.sdk.contracts.gather(method, /) callback(method, P)
+sdk untaped.sdk.contracts.gather(needs=) default=[] callback(*)
+sdk untaped.sdk.contracts.gather(plugins=) default=None
+sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
+sdk untaped.sdk.contracts.gather(refresh=) default=None
+sdk untaped.sdk.contracts.listing(fn, /)
+sdk untaped.sdk.contracts.providing(candidates=) default=None
+sdk untaped.sdk.contracts.providing(owner, offered)
+sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
 sdk untaped.sdk.copy_data_file(source, target)  [experimental]
 sdk untaped.sdk.create_app(*, name)
 sdk untaped.sdk.create_app(help=) default=""
@@ -6254,6 +6254,189 @@ sdk untaped.sdk.setting_guard(section)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.summary(operation, counts)
+sdk untaped.sdk.testing.CacheClock(start)
+sdk untaped.sdk.testing.CacheClock.advance(by)
+sdk untaped.sdk.testing.CacheClock.now
+sdk untaped.sdk.testing.CliInvoker()
+sdk untaped.sdk.testing.CliInvoker.invoke(args@2=) default=None
+sdk untaped.sdk.testing.CliInvoker.invoke(catch_exceptions=) default=true
+sdk untaped.sdk.testing.CliInvoker.invoke(command) callback(command, *)
+sdk untaped.sdk.testing.CliInvoker.invoke(input=) default=None
+sdk untaped.sdk.testing.CliInvoker.invoke(interactive=) default=false
+sdk untaped.sdk.testing.CliInvoker.invoke(prompt_backend=) default=None
+sdk untaped.sdk.testing.CliInvoker.invoke(terminal=) default=false
+sdk untaped.sdk.testing.CliResult(diagnostics@5=) default=[]
+sdk untaped.sdk.testing.CliResult(exception@4=) default=None
+sdk untaped.sdk.testing.CliResult(exit_code, stdout, stderr)
+sdk untaped.sdk.testing.CliResult.diagnostics
+sdk untaped.sdk.testing.CliResult.exception
+sdk untaped.sdk.testing.CliResult.exit_code
+sdk untaped.sdk.testing.CliResult.output
+sdk untaped.sdk.testing.CliResult.stderr
+sdk untaped.sdk.testing.CliResult.stdout
+sdk untaped.sdk.testing.MemoryStore()
+sdk untaped.sdk.testing.MemoryStore.delete(entry)
+sdk untaped.sdk.testing.MemoryStore.describe(entry)
+sdk untaped.sdk.testing.MemoryStore.gone(entry)
+sdk untaped.sdk.testing.MemoryStore.name class
+sdk untaped.sdk.testing.MemoryStore.preflight()
+sdk untaped.sdk.testing.MemoryStore.read(entry)
+sdk untaped.sdk.testing.MemoryStore.save(entry, token)
+sdk untaped.sdk.testing.MemoryStore.save(label=) default=None
+sdk untaped.sdk.testing.PluginCandidate(distribution, name, target)
+sdk untaped.sdk.testing.PluginCandidate(distribution_version@4=) default=""
+sdk untaped.sdk.testing.PluginCandidate(entry_point_group@5=) default=untaped.plugins
+sdk untaped.sdk.testing.PluginCandidate(requires_dist@6=) default=[]
+sdk untaped.sdk.testing.PluginCandidate.distribution
+sdk untaped.sdk.testing.PluginCandidate.distribution_version
+sdk untaped.sdk.testing.PluginCandidate.entry_point_group
+sdk untaped.sdk.testing.PluginCandidate.name
+sdk untaped.sdk.testing.PluginCandidate.requires_dist
+sdk untaped.sdk.testing.PluginCandidate.target
+sdk untaped.sdk.testing.PluginCheckRow(*, status, plugin, check, title)
+sdk untaped.sdk.testing.PluginCheckRow(detail=) default=""
+sdk untaped.sdk.testing.PluginCheckRow.__init_subclass__(kind=) default=None
+sdk untaped.sdk.testing.PluginCheckRow.check
+sdk untaped.sdk.testing.PluginCheckRow.detail
+sdk untaped.sdk.testing.PluginCheckRow.plugin
+sdk untaped.sdk.testing.PluginCheckRow.status
+sdk untaped.sdk.testing.PluginCheckRow.table_columns class
+sdk untaped.sdk.testing.PluginCheckRow.title
+sdk untaped.sdk.testing.ProgressClock()
+sdk untaped.sdk.testing.ProgressClock.advance(seconds)
+sdk untaped.sdk.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
+sdk untaped.sdk.testing.PromptBackend.confirm(message: string, *, default: boolean) -> boolean
+sdk untaped.sdk.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[object][], *, defaults: array) -> array
+sdk untaped.sdk.testing.PromptBackend.pick_many(request: PickRequest) -> PickResult?
+sdk untaped.sdk.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
+sdk untaped.sdk.testing.PromptBackend.select(message: string, choices: PromptChoice[object][], *, default: any?, search: boolean) -> any
+sdk untaped.sdk.testing.PromptBackend.text(message: string, *, default: string?) -> string
+sdk untaped.sdk.testing.ScreenKeys()  [experimental]
+sdk untaped.sdk.testing.ScreenKeys(*keys)  [experimental]
+sdk untaped.sdk.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]
+sdk untaped.sdk.testing.ScreenRun.commands_run  [experimental]
+sdk untaped.sdk.testing.ScreenRun.frame  [experimental]
+sdk untaped.sdk.testing.ScreenRun.frames  [experimental]
+sdk untaped.sdk.testing.ScreenRun.model  [experimental]
+sdk untaped.sdk.testing.ScreenRun.outcome  [experimental]
+sdk untaped.sdk.testing.ScreenRun.result  [experimental]
+sdk untaped.sdk.testing.ScriptedPromptBackend()
+sdk untaped.sdk.testing.ScriptedPromptBackend(confirms=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(interrupt=) default=false
+sdk untaped.sdk.testing.ScriptedPromptBackend(multiselects=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(picks=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(screens=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(secrets=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(selections=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend(texts=) default=[]
+sdk untaped.sdk.testing.ScriptedPromptBackend.confirm(message, *, default)
+sdk untaped.sdk.testing.ScriptedPromptBackend.multiselect(message, choices, *, defaults)
+sdk untaped.sdk.testing.ScriptedPromptBackend.needs_terminal class
+sdk untaped.sdk.testing.ScriptedPromptBackend.pick_many(request)
+sdk untaped.sdk.testing.ScriptedPromptBackend.run_screen(screen, *, theme)
+sdk untaped.sdk.testing.ScriptedPromptBackend.secret(message, *, confirmation)
+sdk untaped.sdk.testing.ScriptedPromptBackend.select(message, choices, *, default, search)
+sdk untaped.sdk.testing.ScriptedPromptBackend.text(message, *, default)
+sdk untaped.sdk.testing.TtyStringIO()
+sdk untaped.sdk.testing.TtyStringIO(initial_value@1=) default=""
+sdk untaped.sdk.testing.TtyStringIO(newline@2=) default="\n"
+sdk untaped.sdk.testing.allowed_names(line)
+sdk untaped.sdk.testing.allows(source_lines, lineno, rule)
+sdk untaped.sdk.testing.assert_destructive_contract(assert_unchanged=) default=None callback(0)
+sdk untaped.sdk.testing.assert_destructive_contract(command, args) callback(command, *)
+sdk untaped.sdk.testing.assert_fills(provider)
+sdk untaped.sdk.testing.assert_fills(samples=) default=[]
+sdk untaped.sdk.testing.assert_schema_pinned(ddl, *, version, additive_since, pins)  [experimental]
+sdk untaped.sdk.testing.assert_surface(spec, path)  [experimental]
+sdk untaped.sdk.testing.assert_surface(version@3=) default=None  [experimental]
+sdk untaped.sdk.testing.cache_clock()
+sdk untaped.sdk.testing.cache_clock(start@1=) default=None
+sdk untaped.sdk.testing.check_conventions(candidates=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
+sdk untaped.sdk.testing.check_conventions(plugin)  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
+sdk untaped.sdk.testing.check_conventions(tests_dir=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
+sdk untaped.sdk.testing.check_plugin(candidates=) default=None
+sdk untaped.sdk.testing.check_plugin(name)
+sdk untaped.sdk.testing.compose_with()
+sdk untaped.sdk.testing.compose_with(*plugins)
+sdk untaped.sdk.testing.compose_with(provides=) default=None
+sdk untaped.sdk.testing.current_memory_store()
+sdk untaped.sdk.testing.damage(cache, key)  [experimental]
+sdk untaped.sdk.testing.damage(partition=) default=None  [experimental]
+sdk untaped.sdk.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
+sdk untaped.sdk.testing.drive_screen(keys@2=) default=[]  [experimental]
+sdk untaped.sdk.testing.drive_screen(screen)  [experimental]
+sdk untaped.sdk.testing.drive_screen(size=) default=[100,30]  [experimental]
+sdk untaped.sdk.testing.drive_screen(theme=) default=<computed>  [experimental]
+sdk untaped.sdk.testing.git.GitRemote(path, work, url)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.allow_filter()  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.allow_filter(on@1=) default=true  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.branch(at@2=) default=main  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.branch(name)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.branches(at@2=) default=main  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.branches(names)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.commit(branch=) default=main  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.commit(path, text)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.delete_branch(name)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.drop_pack(*, on_call)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.drop_pack(times=) default=1  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.oid(rev)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.packs_requested()  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.path  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.refuse_by_oid()  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.spread(at@2=) default=main  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.spread(names)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.tag(at@2=) default=main  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.tag(message=) default=None  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.tag(name)  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.url  [experimental]
+sdk untaped.sdk.testing.git.GitRemote.work  [experimental]
+sdk untaped.sdk.testing.git.git_remote(base)  [experimental]
+sdk untaped.sdk.testing.git.git_remote(host=) default=git.example  [experimental]
+sdk untaped.sdk.testing.git.git_remote(name@2=) default=app  [experimental]
+sdk untaped.sdk.testing.git.git_shim(bin_dir, monkeypatch)  [experimental]
+sdk untaped.sdk.testing.git.git_shim(refuse_stdin=) default=false  [experimental]
+sdk untaped.sdk.testing.git.git_shim(stall_maintenance=) default=None  [experimental]
+sdk untaped.sdk.testing.git.git_shim(stall_stdin_fetch=) default=None  [experimental]
+sdk untaped.sdk.testing.git.git_shim(version=) default=None  [experimental]
+sdk untaped.sdk.testing.git.global_config(add=) default=false  [experimental]
+sdk untaped.sdk.testing.git.global_config(key, value)  [experimental]
+sdk untaped.sdk.testing.git.hostile_git_home()  [experimental]
+sdk untaped.sdk.testing.git.trace2_events(path)  [experimental]
+sdk untaped.sdk.testing.import_targets(node, package)
+sdk untaped.sdk.testing.invoke_cli(args@2=) default=None
+sdk untaped.sdk.testing.invoke_cli(catch_exceptions=) default=true
+sdk untaped.sdk.testing.invoke_cli(command) callback(command, *)
+sdk untaped.sdk.testing.invoke_cli(input=) default=None
+sdk untaped.sdk.testing.invoke_cli(interactive=) default=false
+sdk untaped.sdk.testing.invoke_cli(prompt_backend=) default=None
+sdk untaped.sdk.testing.invoke_cli(terminal=) default=false
+sdk untaped.sdk.testing.invoke_root(argv)
+sdk untaped.sdk.testing.invoke_root(input=) default=None
+sdk untaped.sdk.testing.keep_value(cache, key, value, *, refreshed_at)  [experimental]
+sdk untaped.sdk.testing.keep_value(partition=) default=None  [experimental]
+sdk untaped.sdk.testing.keep_value(version=) default=None  [experimental]
+sdk untaped.sdk.testing.make_project(holds=) default=None  [experimental]
+sdk untaped.sdk.testing.make_project(path)  [experimental]
+sdk untaped.sdk.testing.memory_store()
+sdk untaped.sdk.testing.memory_store(store@1=) default=None
+sdk untaped.sdk.testing.move_ask(store, item, *, moved_from)  [experimental]
+sdk untaped.sdk.testing.plan_release(project, store)  [experimental]
+sdk untaped.sdk.testing.plugin_candidate(distribution=) default=None
+sdk untaped.sdk.testing.plugin_candidate(requires_dist=) default=[]
+sdk untaped.sdk.testing.plugin_candidate(spec)
+sdk untaped.sdk.testing.progress_clock()
+sdk untaped.sdk.testing.read_rows(rows)  [experimental]
+sdk untaped.sdk.testing.release_ask(force=) default=false  [experimental]
+sdk untaped.sdk.testing.release_ask(holder=) default=present  [experimental]
+sdk untaped.sdk.testing.release_ask(others=) default=0  [experimental]
+sdk untaped.sdk.testing.release_ask(store, item)  [experimental]
+sdk untaped.sdk.testing.write_reference(anchor=) default=None  [experimental]
+sdk untaped.sdk.testing.write_reference(anchor_id=) default=None  [experimental]
+sdk untaped.sdk.testing.write_reference(holder, targets)  [experimental]
+sdk untaped.sdk.testing.write_reference(moved_from=) default=[]  [experimental]
+sdk untaped.sdk.testing.write_reference(plugin=) default=None  [experimental]
+sdk untaped.sdk.testing.write_reference(version=) default=None  [experimental]
+sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]
 sdk untaped.sdk.tree_text(ui=) default=None  [experimental]
 sdk untaped.sdk.ui_context()
@@ -6271,190 +6454,7 @@ sdk untaped.sdk.writes()
 sdk untaped.sdk.writes(destructive=) default=false
 sdk untaped.sdk.writes(func@1/=) default=None
 sdk untaped.sdk.yaml_mapping_indent(text)
-sdk untaped.testing.CacheClock(start)
-sdk untaped.testing.CacheClock.advance(by)
-sdk untaped.testing.CacheClock.now
-sdk untaped.testing.CliInvoker()
-sdk untaped.testing.CliInvoker.invoke(args@2=) default=None
-sdk untaped.testing.CliInvoker.invoke(catch_exceptions=) default=true
-sdk untaped.testing.CliInvoker.invoke(command) callback(command, *)
-sdk untaped.testing.CliInvoker.invoke(input=) default=None
-sdk untaped.testing.CliInvoker.invoke(interactive=) default=false
-sdk untaped.testing.CliInvoker.invoke(prompt_backend=) default=None
-sdk untaped.testing.CliInvoker.invoke(terminal=) default=false
-sdk untaped.testing.CliResult(diagnostics@5=) default=[]
-sdk untaped.testing.CliResult(exception@4=) default=None
-sdk untaped.testing.CliResult(exit_code, stdout, stderr)
-sdk untaped.testing.CliResult.diagnostics
-sdk untaped.testing.CliResult.exception
-sdk untaped.testing.CliResult.exit_code
-sdk untaped.testing.CliResult.output
-sdk untaped.testing.CliResult.stderr
-sdk untaped.testing.CliResult.stdout
-sdk untaped.testing.MemoryStore()
-sdk untaped.testing.MemoryStore.delete(entry)
-sdk untaped.testing.MemoryStore.describe(entry)
-sdk untaped.testing.MemoryStore.gone(entry)
-sdk untaped.testing.MemoryStore.name class
-sdk untaped.testing.MemoryStore.preflight()
-sdk untaped.testing.MemoryStore.read(entry)
-sdk untaped.testing.MemoryStore.save(entry, token)
-sdk untaped.testing.MemoryStore.save(label=) default=None
-sdk untaped.testing.PluginCandidate(distribution, name, target)
-sdk untaped.testing.PluginCandidate(distribution_version@4=) default=""
-sdk untaped.testing.PluginCandidate(entry_point_group@5=) default=untaped.plugins
-sdk untaped.testing.PluginCandidate(requires_dist@6=) default=[]
-sdk untaped.testing.PluginCandidate.distribution
-sdk untaped.testing.PluginCandidate.distribution_version
-sdk untaped.testing.PluginCandidate.entry_point_group
-sdk untaped.testing.PluginCandidate.name
-sdk untaped.testing.PluginCandidate.requires_dist
-sdk untaped.testing.PluginCandidate.target
-sdk untaped.testing.PluginCheckRow(*, status, plugin, check, title)
-sdk untaped.testing.PluginCheckRow(detail=) default=""
-sdk untaped.testing.PluginCheckRow.__init_subclass__(kind=) default=None
-sdk untaped.testing.PluginCheckRow.check
-sdk untaped.testing.PluginCheckRow.detail
-sdk untaped.testing.PluginCheckRow.plugin
-sdk untaped.testing.PluginCheckRow.status
-sdk untaped.testing.PluginCheckRow.table_columns class
-sdk untaped.testing.PluginCheckRow.title
-sdk untaped.testing.ProgressClock()
-sdk untaped.testing.ProgressClock.advance(seconds)
-sdk untaped.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
-sdk untaped.testing.PromptBackend.confirm(message: string, *, default: boolean) -> boolean
-sdk untaped.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[object][], *, defaults: array) -> array
-sdk untaped.testing.PromptBackend.pick_many(request: PickRequest) -> PickResult?
-sdk untaped.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
-sdk untaped.testing.PromptBackend.select(message: string, choices: PromptChoice[object][], *, default: any?, search: boolean) -> any
-sdk untaped.testing.PromptBackend.text(message: string, *, default: string?) -> string
-sdk untaped.testing.ScreenKeys()  [experimental]
-sdk untaped.testing.ScreenKeys(*keys)  [experimental]
-sdk untaped.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]
-sdk untaped.testing.ScreenRun.commands_run  [experimental]
-sdk untaped.testing.ScreenRun.frame  [experimental]
-sdk untaped.testing.ScreenRun.frames  [experimental]
-sdk untaped.testing.ScreenRun.model  [experimental]
-sdk untaped.testing.ScreenRun.outcome  [experimental]
-sdk untaped.testing.ScreenRun.result  [experimental]
-sdk untaped.testing.ScriptedPromptBackend()
-sdk untaped.testing.ScriptedPromptBackend(confirms=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(interrupt=) default=false
-sdk untaped.testing.ScriptedPromptBackend(multiselects=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(picks=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(screens=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(secrets=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(selections=) default=[]
-sdk untaped.testing.ScriptedPromptBackend(texts=) default=[]
-sdk untaped.testing.ScriptedPromptBackend.confirm(message, *, default)
-sdk untaped.testing.ScriptedPromptBackend.multiselect(message, choices, *, defaults)
-sdk untaped.testing.ScriptedPromptBackend.needs_terminal class
-sdk untaped.testing.ScriptedPromptBackend.pick_many(request)
-sdk untaped.testing.ScriptedPromptBackend.run_screen(screen, *, theme)
-sdk untaped.testing.ScriptedPromptBackend.secret(message, *, confirmation)
-sdk untaped.testing.ScriptedPromptBackend.select(message, choices, *, default, search)
-sdk untaped.testing.ScriptedPromptBackend.text(message, *, default)
-sdk untaped.testing.TtyStringIO()
-sdk untaped.testing.TtyStringIO(initial_value@1=) default=""
-sdk untaped.testing.TtyStringIO(newline@2=) default="\n"
-sdk untaped.testing.allowed_names(line)
-sdk untaped.testing.allows(source_lines, lineno, rule)
-sdk untaped.testing.assert_destructive_contract(assert_unchanged=) default=None callback(0)
-sdk untaped.testing.assert_destructive_contract(command, args) callback(command, *)
-sdk untaped.testing.assert_fills(provider)
-sdk untaped.testing.assert_fills(samples=) default=[]
-sdk untaped.testing.assert_schema_pinned(ddl, *, version, additive_since, pins)  [experimental]
-sdk untaped.testing.assert_surface(spec, path)  [experimental]
-sdk untaped.testing.assert_surface(version@3=) default=None  [experimental]
-sdk untaped.testing.cache_clock()
-sdk untaped.testing.cache_clock(start@1=) default=None
-sdk untaped.testing.check_conventions(candidates=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
-sdk untaped.testing.check_conventions(plugin)  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
-sdk untaped.testing.check_conventions(tests_dir=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
-sdk untaped.testing.check_plugin(candidates=) default=None
-sdk untaped.testing.check_plugin(name)
-sdk untaped.testing.compose_with()
-sdk untaped.testing.compose_with(*plugins)
-sdk untaped.testing.compose_with(provides=) default=None
-sdk untaped.testing.current_memory_store()
-sdk untaped.testing.damage(cache, key)  [experimental]
-sdk untaped.testing.damage(partition=) default=None  [experimental]
-sdk untaped.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
-sdk untaped.testing.drive_screen(keys@2=) default=[]  [experimental]
-sdk untaped.testing.drive_screen(screen)  [experimental]
-sdk untaped.testing.drive_screen(size=) default=[100,30]  [experimental]
-sdk untaped.testing.drive_screen(theme=) default=<computed>  [experimental]
-sdk untaped.testing.git.GitRemote(path, work, url)  [experimental]
-sdk untaped.testing.git.GitRemote.allow_filter()  [experimental]
-sdk untaped.testing.git.GitRemote.allow_filter(on@1=) default=true  [experimental]
-sdk untaped.testing.git.GitRemote.branch(at@2=) default=main  [experimental]
-sdk untaped.testing.git.GitRemote.branch(name)  [experimental]
-sdk untaped.testing.git.GitRemote.branches(at@2=) default=main  [experimental]
-sdk untaped.testing.git.GitRemote.branches(names)  [experimental]
-sdk untaped.testing.git.GitRemote.commit(branch=) default=main  [experimental]
-sdk untaped.testing.git.GitRemote.commit(path, text)  [experimental]
-sdk untaped.testing.git.GitRemote.delete_branch(name)  [experimental]
-sdk untaped.testing.git.GitRemote.drop_pack(*, on_call)  [experimental]
-sdk untaped.testing.git.GitRemote.drop_pack(times=) default=1  [experimental]
-sdk untaped.testing.git.GitRemote.oid(rev)  [experimental]
-sdk untaped.testing.git.GitRemote.packs_requested()  [experimental]
-sdk untaped.testing.git.GitRemote.path  [experimental]
-sdk untaped.testing.git.GitRemote.refuse_by_oid()  [experimental]
-sdk untaped.testing.git.GitRemote.spread(at@2=) default=main  [experimental]
-sdk untaped.testing.git.GitRemote.spread(names)  [experimental]
-sdk untaped.testing.git.GitRemote.tag(at@2=) default=main  [experimental]
-sdk untaped.testing.git.GitRemote.tag(message=) default=None  [experimental]
-sdk untaped.testing.git.GitRemote.tag(name)  [experimental]
-sdk untaped.testing.git.GitRemote.url  [experimental]
-sdk untaped.testing.git.GitRemote.work  [experimental]
-sdk untaped.testing.git.git_remote(base)  [experimental]
-sdk untaped.testing.git.git_remote(host=) default=git.example  [experimental]
-sdk untaped.testing.git.git_remote(name@2=) default=app  [experimental]
-sdk untaped.testing.git.git_shim(bin_dir, monkeypatch)  [experimental]
-sdk untaped.testing.git.git_shim(refuse_stdin=) default=false  [experimental]
-sdk untaped.testing.git.git_shim(stall_maintenance=) default=None  [experimental]
-sdk untaped.testing.git.git_shim(stall_stdin_fetch=) default=None  [experimental]
-sdk untaped.testing.git.git_shim(version=) default=None  [experimental]
-sdk untaped.testing.git.global_config(add=) default=false  [experimental]
-sdk untaped.testing.git.global_config(key, value)  [experimental]
-sdk untaped.testing.git.hostile_git_home()  [experimental]
-sdk untaped.testing.git.trace2_events(path)  [experimental]
-sdk untaped.testing.import_targets(node, package)
-sdk untaped.testing.invoke_cli(args@2=) default=None
-sdk untaped.testing.invoke_cli(catch_exceptions=) default=true
-sdk untaped.testing.invoke_cli(command) callback(command, *)
-sdk untaped.testing.invoke_cli(input=) default=None
-sdk untaped.testing.invoke_cli(interactive=) default=false
-sdk untaped.testing.invoke_cli(prompt_backend=) default=None
-sdk untaped.testing.invoke_cli(terminal=) default=false
-sdk untaped.testing.invoke_root(argv)
-sdk untaped.testing.invoke_root(input=) default=None
-sdk untaped.testing.keep_value(cache, key, value, *, refreshed_at)  [experimental]
-sdk untaped.testing.keep_value(partition=) default=None  [experimental]
-sdk untaped.testing.keep_value(version=) default=None  [experimental]
-sdk untaped.testing.make_project(holds=) default=None  [experimental]
-sdk untaped.testing.make_project(path)  [experimental]
-sdk untaped.testing.memory_store()
-sdk untaped.testing.memory_store(store@1=) default=None
-sdk untaped.testing.move_ask(store, item, *, moved_from)  [experimental]
-sdk untaped.testing.plan_release(project, store)  [experimental]
-sdk untaped.testing.plugin_candidate(distribution=) default=None
-sdk untaped.testing.plugin_candidate(requires_dist=) default=[]
-sdk untaped.testing.plugin_candidate(spec)
-sdk untaped.testing.progress_clock()
-sdk untaped.testing.read_rows(rows)  [experimental]
-sdk untaped.testing.release_ask(force=) default=false  [experimental]
-sdk untaped.testing.release_ask(holder=) default=present  [experimental]
-sdk untaped.testing.release_ask(others=) default=0  [experimental]
-sdk untaped.testing.release_ask(store, item)  [experimental]
-sdk untaped.testing.write_reference(anchor=) default=None  [experimental]
-sdk untaped.testing.write_reference(anchor_id=) default=None  [experimental]
-sdk untaped.testing.write_reference(holder, targets)  [experimental]
-sdk untaped.testing.write_reference(moved_from=) default=[]  [experimental]
-sdk untaped.testing.write_reference(plugin=) default=None  [experimental]
-sdk untaped.testing.write_reference(version=) default=None  [experimental]
-sdk untaped.testing.write_rows(rows, raw)  [experimental]
-sdk untaped_awx.api.AwxResources base=untaped.contracts.Record  [experimental]
+sdk untaped_awx.api.AwxResources base=untaped.sdk.Record  [experimental]
 sdk untaped_awx.api.AwxResources()  [experimental]
 sdk untaped_awx.api.AwxResources(items=) default=[]  [experimental]
 sdk untaped_awx.api.AwxResources(kinds=) default={}  [experimental]
@@ -6688,7 +6688,7 @@ sdk untaped_git.api.Credential(verify_tls=) default=true
 sdk untaped_git.api.Credential.password
 sdk untaped_git.api.Credential.username
 sdk untaped_git.api.Credential.verify_tls
-sdk untaped_git.api.GitHost base=untaped.contracts.Contract  [experimental]
+sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
 sdk untaped_git.api.GitHost.home() -> string?  [experimental]
@@ -6784,7 +6784,7 @@ sdk untaped_git.api.RepoStore.write_private()  [experimental]
 sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
-sdk untaped_git.api.TreeEntry base=untaped.contracts.Record
+sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
 sdk untaped_git.api.TreeEntry.mode
 sdk untaped_git.api.TreeEntry.oid
@@ -6934,8 +6934,8 @@ sdk untaped_lint.api.FileLocation(line=) default=None  [experimental]
 sdk untaped_lint.api.FileLocation.column  [experimental]
 sdk untaped_lint.api.FileLocation.line  [experimental]
 sdk untaped_lint.api.FileLocation.path  [experimental]
-sdk untaped_lint.api.Finding base=untaped.contracts.Issued  [experimental]
-sdk untaped_lint.api.Finding base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Finding base=untaped.sdk.Issued  [experimental]
+sdk untaped_lint.api.Finding base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Finding(*, rule, severity, target, message)  [experimental]
 sdk untaped_lint.api.Finding(error=) default=None  [experimental]
 sdk untaped_lint.api.Finding(fix=) default=None  [experimental]
@@ -6959,12 +6959,12 @@ sdk untaped_lint.api.LintConfig(tree_root@3=) default=None  [experimental]
 sdk untaped_lint.api.LintConfig.ignore  [experimental]
 sdk untaped_lint.api.LintConfig.repo  [experimental]
 sdk untaped_lint.api.LintConfig.tree_root  [experimental]
-sdk untaped_lint.api.Linter base=untaped.contracts.Contract  [experimental]
+sdk untaped_lint.api.Linter base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.Linter implement=findings,rules  [experimental]
 sdk untaped_lint.api.Linter.findings(subject: Subject) -> Finding[]  [experimental]
 sdk untaped_lint.api.Linter.rules() -> Rule[]  [experimental]
 sdk untaped_lint.api.Location  [experimental]
-sdk untaped_lint.api.Plugin base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Plugin base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Plugin(*, name, status, distribution, version)  [experimental]
 sdk untaped_lint.api.Plugin(package=) default=None  [experimental]
 sdk untaped_lint.api.Plugin(source_dir=) default=None  [experimental]
@@ -6981,8 +6981,8 @@ sdk untaped_lint.api.ResourceLocation(*, id)  [experimental]
 sdk untaped_lint.api.ResourceLocation(url=) default=None  [experimental]
 sdk untaped_lint.api.ResourceLocation.id  [experimental]
 sdk untaped_lint.api.ResourceLocation.url  [experimental]
-sdk untaped_lint.api.Rule base=untaped.contracts.Issued  [experimental]
-sdk untaped_lint.api.Rule base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Rule base=untaped.sdk.Issued  [experimental]
+sdk untaped_lint.api.Rule base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Rule(*, id, reads, severity, summary)  [experimental]
 sdk untaped_lint.api.Rule(renamed_from=) default=[]  [experimental]
 sdk untaped_lint.api.Rule(source=) default=None  [experimental]
@@ -6995,7 +6995,7 @@ sdk untaped_lint.api.Rule.table_columns class  [experimental]
 sdk untaped_lint.api.RuleFunction  [experimental]
 sdk untaped_lint.api.RuleFunction.model  [experimental]
 sdk untaped_lint.api.RuleFunction.rule  [experimental]
-sdk untaped_lint.api.Rules base=untaped.contracts.Contract  [experimental]
+sdk untaped_lint.api.Rules base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.Rules base=untaped_lint.api.Linter  [experimental]
 sdk untaped_lint.api.Rules implement=  [experimental]
 sdk untaped_lint.api.Rules.RULES class  [experimental]
@@ -7007,17 +7007,17 @@ sdk untaped_lint.api.SelectOption  [experimental]
 sdk untaped_lint.api.Severity choice=error  [experimental]
 sdk untaped_lint.api.Severity choice=warning  [experimental]
 sdk untaped_lint.api.StrictOption  [experimental]
-sdk untaped_lint.api.Subject base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Subject base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Subject(*, kind, record)  [experimental]
 sdk untaped_lint.api.Subject.kind  [experimental]
 sdk untaped_lint.api.Subject.record  [experimental]
-sdk untaped_lint.api.Tree base=untaped.contracts.Record  [experimental]
+sdk untaped_lint.api.Tree base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Tree(*, root, paths)  [experimental]
 sdk untaped_lint.api.Tree.files()  [experimental]
 sdk untaped_lint.api.Tree.files(*globs)  [experimental]
 sdk untaped_lint.api.Tree.paths  [experimental]
 sdk untaped_lint.api.Tree.root  [experimental]
-sdk untaped_lint.api.TreeReader base=untaped.contracts.Contract  [experimental]
+sdk untaped_lint.api.TreeReader base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.TreeReader implement=read  [experimental]
 sdk untaped_lint.api.TreeReader.read(tree: Tree) -> Subject[]  [experimental]
 sdk untaped_lint.api.finding(fix=) default=None  [experimental]
@@ -7060,8 +7060,8 @@ sdk untaped_lint.testing.run_rule(rule, subject) callback(rule, *)  [experimenta
 sdk untaped_lint.testing.subject(record)  [experimental]
 sdk untaped_lint.testing.tree(files)  [experimental]
 sdk untaped_lint.testing.tree(root=) default=None  [experimental]
-sdk untaped_workspace.api.Repo base=untaped.contracts.Issued  [experimental]
-sdk untaped_workspace.api.Repo base=untaped.contracts.Record  [experimental]
+sdk untaped_workspace.api.Repo base=untaped.sdk.Issued  [experimental]
+sdk untaped_workspace.api.Repo base=untaped.sdk.Record  [experimental]
 sdk untaped_workspace.api.Repo(*, name, url)  [experimental]
 sdk untaped_workspace.api.Repo(archived=) default=false  [experimental]
 sdk untaped_workspace.api.Repo(default_branch=) default=None  [experimental]
@@ -7073,7 +7073,7 @@ sdk untaped_workspace.api.Repo.description  [experimental]
 sdk untaped_workspace.api.Repo.name  [experimental]
 sdk untaped_workspace.api.Repo.url  [experimental]
 sdk untaped_workspace.api.RepoName  [experimental]
-sdk untaped_workspace.api.RepoSource base=untaped.contracts.Contract  [experimental]
+sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.api.RepoSource.repos() -> Repo[]  [experimental]
 sdk untaped_workspace.api.RepoSource.to_repo(item)  [experimental]

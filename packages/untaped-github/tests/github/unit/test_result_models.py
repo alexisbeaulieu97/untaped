@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from untaped.records import kind_of
+from untaped.sdk.records import kind_of
 from untaped_github.records import (
     CodeResult,
     CorpusRepoResult,

@@ -11,7 +11,7 @@ from textwrap import dedent
 import pytest
 
 from untaped.sdk import ConfigError, UsageError
-from untaped.testing import compose_with, make_project
+from untaped.sdk.testing import compose_with, make_project
 from untaped_lint.application import repo_file
 from untaped_lint.application.subjects import declared_plugins
 from untaped_lint.testing import conformance, repo_rule, run, run_rule, tree

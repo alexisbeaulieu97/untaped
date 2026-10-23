@@ -563,7 +563,7 @@ def test_fetch_pack_source_rejects_option_like_rev(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[list[str]] = []
-    monkeypatch.setattr("untaped.git._run_process", lambda args, **kwargs: calls.append(args))
+    monkeypatch.setattr("untaped.sdk.git._run_process", lambda args, **kwargs: calls.append(args))
 
     with pytest.raises(UsageError, match="rev"):
         fetch_pack_source(
@@ -584,7 +584,7 @@ def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
             args, 128, stdout="", stderr="fatal: Authentication failed for 'https://x/'"
         )
 
-    monkeypatch.setattr("untaped.git._run_process", fake_run)
+    monkeypatch.setattr("untaped.sdk.git._run_process", fake_run)
 
     with pytest.raises(ValueError, match="Authentication failed"):
         fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
@@ -633,7 +633,7 @@ def test_fetch_pack_source_runs_git_non_interactive_in_c_locale(
         seen.append(kwargs)
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("untaped.git._run_process", fake_run)
+    monkeypatch.setattr("untaped.sdk.git._run_process", fake_run)
 
     fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
 

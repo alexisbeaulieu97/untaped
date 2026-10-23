@@ -35,7 +35,7 @@ from untaped.screen.components.draw import (
 from untaped.screen.components.paths import complete_paths
 from untaped.screen.components.text import EditBuffer
 from untaped.screen.core import Cmd, Frame, Key, Paste
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["NumberInput", "PathInput", "SecretInput", "TextInput"]
 

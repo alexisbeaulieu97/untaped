@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from untaped.contracts import Ok, gather
 from untaped.sdk import ConfigError
+from untaped.sdk.contracts import Ok, gather
 from untaped_git.domain.hosts import GitHost
 from untaped_git.domain.records import GitHostRecord
 

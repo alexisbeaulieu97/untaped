@@ -1,7 +1,7 @@
 """The setup screen reads and writes only through the config use cases, and names no setting.
 
 The screen and ``config set`` cannot disagree because they run the same code:
-the screen's modules import from ``untaped.config`` only the use cases, the
+the screen's modules import from ``untaped.core.config`` only the use cases, the
 repository class, the records and the field mapping, and touch neither the
 config file nor YAML; across the code base, only the repositories and the
 editor write the file. The screen knows shapes, not settings: no string in its
@@ -15,35 +15,37 @@ from __future__ import annotations
 import ast
 
 from repo.support import PACKAGES
-from untaped import bootstrap
-from untaped.config.fields import shape
-from untaped.config_schema import walk_settings
-from untaped.settings import get_profile_settings_model
+from untaped.core.config.fields import shape
+from untaped.runtime import bootstrap
+from untaped.runtime.settings import get_profile_settings_model
+from untaped.sdk._schema import walk_settings
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
-SCREEN = ("management/setup_screen.py", "management/setup_sections.py")
+SCREEN = ("core/commands/setup_screen.py", "core/commands/setup_sections.py")
 #: The setup form, and the state behind it, which reads 11.0's token settings by name.
-CONNECTION = "management/setup_connection.py"
-CONNECTION_KEYS = "management/setup_state.py"
+CONNECTION = "core/commands/setup_connection.py"
+CONNECTION_KEYS = "core/commands/setup_state.py"
 ALLOWED_CONFIG = frozenset(
     {
-        "untaped.config.use_cases",
-        "untaped.config.repository",
-        "untaped.config.models",  # records and their display, no reader or writer
-        "untaped.config.fields",
+        "untaped.core.config.use_cases",
+        "untaped.core.config.repository",
+        "untaped.core.config.models",  # records and their display, no reader or writer
+        "untaped.core.config.fields",
     }
 )
-BANNED_MODULES = frozenset({"untaped.config_file", "yaml", "untaped.yaml_roundtrip"})
+BANNED_MODULES = frozenset(
+    {"untaped.runtime.config_file", "yaml", "untaped.runtime.yaml_roundtrip"}
+)
 BANNED_CALLS = frozenset(
     {"load_settings_section", "read_config_dict", "mutate_config", "set_value", "unset_value"}
 )
 #: The modules that may write the config file.
 FILE_WRITERS = frozenset(
     {
-        "untaped/config/repository.py",
-        "untaped/management/config_editor.py",
-        "untaped/profile/repository.py",
-        "untaped/config_file.py",
+        "untaped/core/config/repository.py",
+        "untaped/core/commands/config_editor.py",
+        "untaped/core/profile/repository.py",
+        "untaped/runtime/config_file.py",
     }
 )
 #: Strings of the screen's modules that are also a setting's name, and why each is not one.
@@ -120,7 +122,7 @@ def test_the_screen_reads_and_writes_through_the_config_use_cases() -> None:
             f"{name} imports {module}"
             for module in sorted(imports)
             if module in BANNED_MODULES
-            or (module.startswith("untaped.config.") and module not in ALLOWED_CONFIG)
+            or (module.startswith("untaped.core.config.") and module not in ALLOWED_CONFIG)
         ]
         found += [f"{name} calls {call}" for call in sorted(_calls(tree) & BANNED_CALLS)]
     assert not found, (
@@ -171,5 +173,5 @@ def test_every_first_party_setting_gets_a_field_of_its_shape() -> None:
     ]
     assert not found, (
         f"{found}: these settings open as one line of JSON in `untaped setup`; give their "
-        "shape a field in untaped.config.fields"
+        "shape a field in untaped.core.config.fields"
     )

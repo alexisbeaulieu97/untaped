@@ -19,11 +19,11 @@ from typing import Any
 import pytest
 import yaml
 
-from untaped import bootstrap
+from untaped.runtime import bootstrap
+from untaped.runtime.settings import get_settings
 from untaped.sdk import ErrorCategory, GitCommandError, GitResult
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, plugin_candidate
-from untaped.testing.git import GitRemote, git_remote
+from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_ansible import SPEC as ANSIBLE
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.cli import app

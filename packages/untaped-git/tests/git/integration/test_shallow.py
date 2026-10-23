@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from git.conftest import StoreFor, git
-from untaped.testing.git import GitRemote, trace2_events
+from untaped.sdk.testing.git import GitRemote, trace2_events
 from untaped_git.infrastructure import store as store_module
 from untaped_git.infrastructure.store import RepoStore
 

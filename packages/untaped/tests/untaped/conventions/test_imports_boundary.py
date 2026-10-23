@@ -1,0 +1,351 @@
+"""Import boundary: plugin code reaches core only through ``untaped.sdk``.
+
+Plugins are synthetic packages written into a temporary site and
+discovered through explicit candidates, so each case controls the
+distributions and their ``Requires-Dist``.
+"""
+
+from __future__ import annotations
+
+import importlib
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from textwrap import dedent
+
+import pytest
+
+from core_test_support.conventions.support import Install
+from untaped.conventions import plugin_violations
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.testing import plugin_candidate
+
+_INIT = """
+    from __future__ import annotations
+
+    from pydantic import BaseModel, ConfigDict
+
+    from untaped.sdk import PluginSpec
+
+
+    class Settings(BaseModel):
+        model_config = ConfigDict(frozen=True)
+
+
+    def build_app():
+        from untaped.sdk import create_app
+
+        return create_app(name="{name}", help="Demo.")
+
+
+    SPEC = PluginSpec(
+        name="{name}", app_factory=build_app, settings=Settings, provides={provides}
+    )
+    {body}
+"""
+
+Check = Callable[[str], list[str]]
+
+
+@dataclass(frozen=True)
+class Cap:
+    """A synthetic plugin: package ``name``, installed in distribution ``dist``."""
+
+    name: str
+    files: dict[str, str]
+    requires: tuple[str, ...] = ()
+    broken: bool = False
+    dist: str = ""
+    package: str = ""
+    installed: bool = True
+    spec_target: bool = False
+    provides: tuple[str, ...] = ()
+
+
+def cap(
+    name: str,
+    *,
+    files: dict[str, str] | None = None,
+    requires: Sequence[str] = (),
+    broken: bool = False,
+    dist: str = "",
+    package: str = "",
+    installed: bool = True,
+    spec_target: bool = False,
+    provides: Sequence[str] = (),
+) -> Cap:
+    """A plugin; ``dist`` and ``package`` default to ``name``.
+
+    ``spec_target`` discovers it through :func:`untaped.sdk.testing.plugin_candidate`
+    (a spec target) instead of a ``module:SPEC`` string.
+    """
+    return Cap(
+        name,
+        files or {},
+        tuple(requires),
+        broken,
+        dist or name,
+        package or name,
+        installed,
+        spec_target,
+        tuple(provides),
+    )
+
+
+Boundary = Callable[..., Check]
+
+
+@pytest.fixture
+def boundary(install: Install) -> Boundary:
+    """``setup(*caps)`` installs them and returns ``check(name)``: the boundary lines.
+
+    A plugin with ``installed=False`` is only discovered, never importable.
+    """
+
+    def setup(*caps: Cap) -> Check:
+        candidates: list[PluginCandidate] = []
+        for c in caps:
+            body = 'SPEC = "broken"' if c.broken else ""
+            offers = "{" + "".join(f"{owner!r}: tuple, " for owner in c.provides) + "}"
+            init = dedent(_INIT).format(name=c.name, body=body, provides=offers)
+            prefix = c.package.replace(".", "/")
+            if c.installed:
+                files = {f"{prefix}/{k}": v for k, v in c.files.items()}
+                install({f"{prefix}/__init__.py": init, **files})
+            if c.spec_target:
+                spec = importlib.import_module(c.package).SPEC
+                candidates.append(plugin_candidate(spec, distribution=c.dist))
+                continue
+            candidates.append(
+                PluginCandidate(
+                    distribution=c.dist,
+                    name=c.name,
+                    target=f"{c.package}:SPEC",
+                    requires_dist=c.requires,
+                )
+            )
+
+        def check(name: str) -> list[str]:
+            found = plugin_violations(name, candidates=candidates)
+            return [line for line in found if "::import-boundary::" in line]
+
+        return check
+
+    return setup
+
+
+def test_core_imports_other_than_the_sdk_are_violations(boundary: Boundary) -> None:
+    check = boundary(cap("demo", files={"cli/__init__.py": "from untaped.sdk._cli import echo\n"}))
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::imports untaped.sdk._cli; use untaped.sdk"
+    ]
+
+
+def test_bare_untaped_and_import_statements_are_violations(boundary: Boundary) -> None:
+    source = (
+        "import untaped\n"
+        "import untaped.runtime.settings as s\n"
+        "from untaped.runtime import bootstrap\n"
+    )
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::imports untaped; use untaped.sdk",
+        "demo/cli/__init__.py:2::import-boundary::imports untaped.runtime.settings; "
+        "use untaped.sdk",
+        "demo/cli/__init__.py:3::import-boundary::imports untaped.runtime; use untaped.sdk",
+    ]
+
+
+def test_the_sdk_and_own_modules_are_allowed(boundary: Boundary) -> None:
+    source = "from untaped.sdk import create_app\nfrom demo.domain import x\nimport json\n"
+    check = boundary(
+        cap("demo", files={"cli/__init__.py": source, "domain/__init__.py": "x = 1\n"})
+    )
+    assert check("demo") == []
+
+
+def test_function_level_and_type_checking_imports_count(boundary: Boundary) -> None:
+    source = (
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from untaped.sdk._cli import a\n"
+        "def f():\n"
+        "    from untaped.runtime.settings import b\n"
+    )
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
+    assert check("demo") == [
+        "demo/cli/__init__.py:3::import-boundary::imports untaped.sdk._cli; use untaped.sdk",
+        "demo/cli/__init__.py:5::import-boundary::imports untaped.runtime.settings; "
+        "use untaped.sdk",
+    ]
+
+
+def test_a_waiver_suppresses_one_line(boundary: Boundary) -> None:
+    source = (
+        "import untaped.sdk._cli  # untaped: allow import-boundary\n"
+        "import untaped.runtime.settings\n"
+    )
+    check = boundary(cap("demo", files={"cli/__init__.py": source}))
+    assert check("demo") == [
+        "demo/cli/__init__.py:2::import-boundary::imports untaped.runtime.settings; use untaped.sdk"
+    ]
+
+
+def test_another_plugin_only_through_its_api(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\nfrom other.domain import y\n"},
+            requires=["other"],
+        ),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:2::import-boundary::imports other.domain; use other.api"
+    ]
+
+
+def test_importing_the_api_module_by_name_is_allowed(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap("demo", files={"cli/__init__.py": "from other import api\n"}, requires=["other"]),
+    )
+    assert check("demo") == []
+
+
+def test_a_requirement_under_a_platform_marker_is_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other>=1; python_version >= '3' and sys_platform != 'nowhere'"],
+        ),
+    )
+    assert check("demo") == []
+
+
+def test_a_requirement_guarded_by_an_extra_is_not_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other; extra == 'x'"],
+        ),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::"
+        "imports other.api but its distribution does not depend on other's"
+    ]
+
+
+def test_a_requirement_under_a_provides_extra_is_declared(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap(
+            "demo",
+            files={"cli/__init__.py": "from other.api import x\n"},
+            requires=["other>=1,<2; extra == 'other'"],
+            provides=["other"],
+        ),
+    )
+    assert check("demo") == []
+
+
+def test_the_testing_module_is_public(boundary: Boundary) -> None:
+    source = "from untaped.sdk.testing import check_conventions\nfrom untaped.sdk import testing\n"
+    check = boundary(cap("demo", files={"testing.py": source}))
+    assert check("demo") == []
+
+
+def test_every_sdk_module_is_public(boundary: Boundary) -> None:
+    source = "from untaped.sdk.testing.git import git_remote\nfrom untaped.sdk.testing import git\n"
+    check = boundary(cap("demo", files={"testing.py": source}))
+    assert check("demo") == []
+
+
+def test_an_api_import_needs_a_declared_dependency(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}),
+        cap("demo", files={"cli/__init__.py": "from other.api import x\n"}),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::"
+        "imports other.api but its distribution does not depend on other's"
+    ]
+
+
+def test_plugins_in_one_distribution_may_import_each_others_api(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n"}, dist="suite"),
+        cap("demo", files={"cli/__init__.py": "from other.api import x\n"}, dist="suite"),
+    )
+    assert check("demo") == []
+
+
+def test_a_quarantined_plugin_still_counts_as_a_plugin(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"api.py": "x = 1\n", "domain/__init__.py": "y = 1\n"}, broken=True),
+        cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::imports other.domain; use other.api"
+    ]
+
+
+def test_a_plugin_nested_under_untaped_is_a_plugin_not_core(boundary: Boundary) -> None:
+    package = "untaped.plugins.other"
+    check = boundary(
+        cap("other", package=package, installed=False),
+        cap(
+            "demo",
+            files={"cli/__init__.py": f"def f():\n    from {package}.domain import y\n"},
+            requires=["other"],
+        ),
+    )
+    assert check("demo") == [
+        f"demo/cli/__init__.py:2::import-boundary::imports {package}.domain; use {package}.api"
+    ]
+
+
+def test_a_plugin_given_as_a_spec_candidate_is_a_plugin(boundary: Boundary) -> None:
+    check = boundary(
+        cap("other", files={"domain/__init__.py": "y = 1\n"}, spec_target=True),
+        cap("demo", files={"cli/__init__.py": "from other.domain import y\n"}, requires=["other"]),
+    )
+    assert check("demo") == [
+        "demo/cli/__init__.py:1::import-boundary::imports other.domain; use other.api"
+    ]
+
+
+def test_relative_imports_within_the_own_package_are_allowed(boundary: Boundary) -> None:
+    check = boundary(
+        cap(
+            "demo",
+            files={
+                "cli/__init__.py": "from . import helpers\nfrom ..domain import x\n",
+                "cli/helpers.py": "",
+                "domain/__init__.py": "x = 1\n",
+                "application/__init__.py": "from .ports import p\n",
+                "application/ports.py": "p = 1\n",
+            },
+        )
+    )
+    assert check("demo") == []
+
+
+def test_a_relative_import_into_a_sibling_plugin_is_a_violation(boundary: Boundary) -> None:
+    parent = "suite"
+    check = boundary(
+        cap("other", package=f"{parent}.other", files={"domain/__init__.py": "y = 1\n"}),
+        cap(
+            "demo",
+            package=f"{parent}.demo",
+            files={"cli/__init__.py": "from ...other.domain import y\n"},
+            requires=["other"],
+        ),
+    )
+    assert check("demo") == [
+        f"demo/cli/__init__.py:1::import-boundary::imports {parent}.other.domain;"
+        f" use {parent}.other.api"
+    ]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from awx.lint_support import CLEAN, DOCUMENTS
-from untaped.stability import Experimental, function_mark
+from untaped.sdk.marks import Experimental, function_mark
 from untaped_awx.api import (
     AwxResources,
     ControllerFacts,

@@ -12,7 +12,7 @@ import ast
 from pathlib import Path
 
 from repo.support import PACKAGES, REPO_ROOT, SURFACE_FILE
-from untaped.surface import parse
+from untaped.core.surface import parse
 
 
 def declared(packages: Path) -> set[str]:

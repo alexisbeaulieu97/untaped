@@ -30,7 +30,7 @@ cd /tmp/untaped-hello
 .venv/bin/python -m pytest tests
 ```
 
-The tests use `untaped.testing` and `untaped_lint.testing`: `tests/conftest.py`
+The tests use `untaped.sdk.testing` and `untaped_lint.testing`: `tests/conftest.py`
 enables the hermetic plugin, `assert_clean("hello")` fails where `untaped lint`
 would, and `invoke_root` runs `untaped ...` in-process. The building guide
 is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).

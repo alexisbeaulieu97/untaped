@@ -136,7 +136,7 @@ partition already say whose data it is (by default, `split="settings"`).
 it, and `seed()` and `read=` are refused, since the cache holds the data
 itself. A fill of a typed cache that returns no value, or a value of another
 class, raises `TypeError`; so does a value from any other cache's fill. In
-tests, `untaped.testing.keep_value(CACHE, key, value, refreshed_at=,
+tests, `untaped.sdk.testing.keep_value(CACHE, key, value, refreshed_at=,
 version=)` keeps a value as a fill would, and `damage(CACHE, key)` makes its
 file unreadable. Both are experimental.
 
@@ -242,7 +242,7 @@ beside it, `open()` returns the bare path and a later open renames it. A
 store born in 11.1 or later leaves `bare` unset.
 
 A SQLite store whose schema grows inside one layout pins its history with
-`untaped.testing.assert_schema_pinned(ddl, version=, additive_since=,
+`untaped.sdk.testing.assert_schema_pinned(ddl, version=, additive_since=,
 pins=)`: a folder of `v<N>.sql` files, one per released schema, and a
 `pins.json` of their hashes. It fails when the DDL changed without a new
 version, when a released file was edited, and when a version claimed as
@@ -308,7 +308,7 @@ are gone are core's `untaped.references` row, and `untaped doctor`'s
 `cached/` folder, since another install sharing the home may still use it:
 `doctor`'s `caches` row notes it, and core's `untaped.uninstalled-caches`
 row offers to delete it. In tests,
-`untaped.testing.write_reference` writes another install's reference.
+`untaped.sdk.testing.write_reference` writes another install's reference.
 
 ## Other files your plugin keeps
 
@@ -337,6 +337,6 @@ now=…)`; its `refresh_error` never fails the row, and `outdated` says the
 key was filled by another version. `cached(key, read)` (`cached(key)` for a
 cache with `model=`) peeks at what is cached with no refresh, lock or warning, for in-process readers
 such as a screen; `seed()` and `forget()` record what an owner already holds
-or forget a key whose data changed. In tests, `untaped.testing.cache_clock()`
+or forget a key whose data changed. In tests, `untaped.sdk.testing.cache_clock()`
 moves the clock a cache reads. The example plugin (`examples/untaped-hello`,
 `hello motd`) has one cache.

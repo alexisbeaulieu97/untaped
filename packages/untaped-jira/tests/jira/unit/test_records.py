@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel
 
 from untaped.sdk import kind_of
-from untaped.testing import invoke_cli
+from untaped.sdk.testing import invoke_cli
 from untaped_jira.cli import app
 from untaped_jira.records import (
     Board,

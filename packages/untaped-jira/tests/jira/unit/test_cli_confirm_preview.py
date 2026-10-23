@@ -15,7 +15,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliResult, ScriptedPromptBackend, invoke_cli
+from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"

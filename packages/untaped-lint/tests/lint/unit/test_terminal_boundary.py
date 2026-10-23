@@ -11,7 +11,7 @@ import pytest
 from lint.support import Install
 from untaped.conventions import plugin_violations
 from untaped.sdk import PluginSpec
-from untaped.testing import plugin_candidate
+from untaped.sdk.testing import plugin_candidate
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.terminal_boundary import RULE, terminal_boundary_violations
 

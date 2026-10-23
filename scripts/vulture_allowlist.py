@@ -63,7 +63,7 @@ AnchorId.ino  # compared whole: a folder's filesystem identity
 RepoStore.delete_refs
 RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 
-# untaped.testing.git: fixtures for plugins that test against the repo store.
+# untaped.sdk.testing.git: fixtures for plugins that test against the repo store.
 GitRemote.spread
 GitRemote.delete_branch
 GitRemote.refuse_by_oid
@@ -124,7 +124,7 @@ StateRows.per_project  # documented SDK: projects PR 6's workspace rows are the 
 StateRows.replace_all  # documented SDK
 _clear_for_tests  # test hook for the composed root
 ScreenRun.commands_run  # read by tests that drive screens
-ProgressClock.advance  # untaped.testing: a test moves the progress clock
+ProgressClock.advance  # untaped.sdk.testing: a test moves the progress clock
 open_tasks  # tests check that no progress task is left open
 drop_tasks  # the root conftest's cleanup of a leaked progress task
 

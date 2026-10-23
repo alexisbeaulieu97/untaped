@@ -146,11 +146,11 @@ from pathlib import Path
 os.environ["UNTAPED_CONFIG"] = str(Path(tempfile.mkdtemp()) / "config.yml")
 sys.path[:0] = {example_src!r}
 
-from untaped.bootstrap import build_root_app, composition
-from untaped.contracts._registry import every_offer, owned_contracts
-from untaped.plugins.registry import discover_candidates, run_deferred_factory
-from untaped.records import record_kinds
-from untaped.testing import plugin_candidate
+from untaped.runtime.bootstrap import build_root_app, composition
+from untaped.runtime.contracts.registry import every_offer, owned_contracts
+from untaped.runtime.registry import discover_candidates, run_deferred_factory
+from untaped.sdk.records import record_kinds
+from untaped.sdk.testing import plugin_candidate
 import untaped_hello, untaped_library, untaped_shelf
 
 examples = [

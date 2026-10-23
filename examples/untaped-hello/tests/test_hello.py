@@ -11,7 +11,7 @@ from pathlib import Path
 from untaped_hello.records import Salutation
 
 from untaped.sdk import Progress, StaleData, kind_of
-from untaped.testing import cache_clock, invoke_root
+from untaped.sdk.testing import cache_clock, invoke_root
 from untaped_lint.testing import assert_clean
 
 
@@ -22,7 +22,7 @@ def test_hello_passes_lint() -> None:
 def test_hello_loads_lazily() -> None:
     """A fresh interpreter: rendering the root help never imports the CLI."""
     code = (
-        "import sys; from untaped.testing import invoke_root; "
+        "import sys; from untaped.sdk.testing import invoke_root; "
         "r = invoke_root(['--help']); "
         "print(r.exit_code, 'hello' in r.stdout, 'untaped_hello.cli' in sys.modules)"
     )

@@ -15,12 +15,12 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from untaped.bootstrap import build_root_app
-from untaped.config_file import read_config_dict
-from untaped.deprecated_keys import key_mappings, mapping_errors
-from untaped.plugins.registry import settings_model
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.registry import settings_model
 from untaped.sdk import get_config_section
-from untaped.testing import CliInvoker
+from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
+from untaped.sdk.testing import CliInvoker
 from untaped_ansible import SPEC
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 

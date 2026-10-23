@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from git.conftest import StoreError, all_refs, ensure, git, objects
-from untaped.testing.git import GitRemote, git_remote, hostile_git_home
+from untaped.sdk.testing.git import GitRemote, git_remote, hostile_git_home
 from untaped_git.infrastructure import store as store_module
 from untaped_git.infrastructure.store import RepoStore
 

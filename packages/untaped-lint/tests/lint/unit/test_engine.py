@@ -19,7 +19,7 @@ from lint.fakes import (
     wide,
 )
 from untaped.sdk import Plugin
-from untaped.testing import compose_with
+from untaped.sdk.testing import compose_with
 from untaped_lint.api import Finding, Rules, finding, rule
 from untaped_lint.records import Subject
 from untaped_lint.testing import run, subject

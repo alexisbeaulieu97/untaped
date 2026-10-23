@@ -23,9 +23,7 @@ from untaped_recipe.infrastructure.backup import (
     prune_selection,
 )
 from untaped_recipe.infrastructure.file_writer import flush_changes
-from untaped_recipe.infrastructure.hook_resolver import (
-    HookResolver,
-)
+from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.pack_store import PackLibrary, pack_content_hash
 
 
@@ -449,7 +447,7 @@ def test_backup_metadata_write_is_atomic(tmp_path: Path, monkeypatch: pytest.Mon
     def failing_replace(src: object, dst: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr("untaped.fs.os.replace", failing_replace)
+    monkeypatch.setattr("untaped.sdk.storage._fs.os.replace", failing_replace)
     with pytest.raises(OSError, match="disk full"):
         draft.commit(
             draft.stage(

@@ -1,13 +1,13 @@
 """The library's provider of ``shelf``'s BookSource contract.
 
-It imports only ``untaped.contracts``, ``untaped.sdk`` and ``untaped_shelf.api``.
+It imports only ``untaped.sdk.contracts``, ``untaped.sdk`` and ``untaped_shelf.api``.
 """
 
 from __future__ import annotations
 
 from untaped_shelf.api import Book, BookSource
 
-from untaped.contracts import Configured, NotReady
+from untaped.sdk.contracts import Configured, NotReady
 from untaped_library.records import Volume
 from untaped_library.settings import LibrarySettings
 

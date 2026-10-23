@@ -24,7 +24,7 @@ from untaped.screen.components.draw import inner_width, role_style, unboxed
 from untaped.screen.components.fields import Field
 from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
 from untaped.screen.fit import fit_text
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["Tab", "Tabs"]
 
