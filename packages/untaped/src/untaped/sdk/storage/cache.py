@@ -471,7 +471,7 @@ class Cache[M = None](OwnedBlock):
             check_plugin_name(plugin)
             if (problem := self.name_problem(name)) is not None:
                 raise ConfigError(problem)
-        where = self._where()
+        where = self.where
         if max_age < timedelta(0) or max_age % timedelta(seconds=1):
             raise ConfigError(f"cache {where}: max_age must be whole seconds, not negative")
         self.label = label

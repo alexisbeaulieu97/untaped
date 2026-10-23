@@ -156,7 +156,8 @@ class OwnedBlock(Block):
             return self._name
         return self.derived_name(self.binding.attribute)
 
-    def _where(self) -> str:
+    @property
+    def where(self) -> str:
         """How a message names the block: ``hello.motd``, or its kind and module while unnamed."""
         if self._plugin is not None:
             return f"{self._plugin}.{self._name}" if self._name else self._plugin

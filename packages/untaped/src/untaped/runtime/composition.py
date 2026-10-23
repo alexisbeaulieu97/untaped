@@ -404,7 +404,7 @@ class _PluginWalk:
                 self.problem(
                     "block-name",
                     where,
-                    f"is named {value.plugin}.{value.name} by hand; a plugin class's "
+                    f"is named {value.where} by hand; a plugin class's "
                     f"{value.block_kind} takes its name from the attribute, so leave it out",
                 )
                 continue

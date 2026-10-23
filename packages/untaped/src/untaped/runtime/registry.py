@@ -215,7 +215,7 @@ class DoctorCheck(OwnedBlock):
         return self._id if self._id is not None else f"{self.plugin}.{self.name}"
 
     def __repr__(self) -> str:
-        return f"DoctorCheck({self._where()!r}, title={self.title!r})"
+        return f"DoctorCheck({self.where!r}, title={self.title!r})"
 
 
 @dataclass(frozen=True)
@@ -347,7 +347,7 @@ class DirMigration(OwnedBlock):
         return self._id if self._id is not None else f"{self.plugin}.{self.name}"
 
     def __repr__(self) -> str:
-        return f"DirMigration({self._where()!r}, title={self.title!r})"
+        return f"DirMigration({self.where!r}, title={self.title!r})"
 
 
 def _check_model(model: object, field: str, label: str) -> None:
