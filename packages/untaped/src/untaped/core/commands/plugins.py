@@ -177,7 +177,7 @@ def build_root_plugin_app(
         when a check fails; owner-schema-drift only warns. The file conventions
         run only when untaped[lint], which now owns them, is installed.
         """
-        from untaped.core.plugin_check.check import (  # noqa: PLC0415 - imports contracts
+        from untaped.core.plugin_check.check import (  # noqa: PLC0415 - loads the composition machinery
             check_plugins,
             report_check_rows,
         )

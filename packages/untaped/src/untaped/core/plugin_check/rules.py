@@ -7,7 +7,7 @@ structure's class checks, each family in its module beside this one. See
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
 third-party plugin is checked exactly like a first-party one. Plugin tests call
-:func:`untaped.sdk.testing.check_conventions`; this package is internal.
+:func:`untaped.sdk.testing.check_conventions`; this module is internal.
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ def _core_lines(checked: _Checked) -> list[str]:
 
 def _sdk_deprecations(package: str) -> list[str]:
     """``deprecation_text_violations`` of the plugin's ``api`` and ``testing`` modules."""
-    from untaped.core.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
+    from untaped.core.surface import plugin_sdk_modules  # noqa: PLC0415 - loaded only when checked
 
     return [
         line
