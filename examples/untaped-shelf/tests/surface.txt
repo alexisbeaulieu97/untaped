@@ -30,8 +30,8 @@ contract shelf.Source.record object default={}
 contract shelf.book_source abstract=books  [experimental]
 contract shelf.book_source.books() -> Book[]  [experimental]
 contract shelf.book_source.to_book(item: Book) -> Book  [experimental]
-sdk untaped_shelf.api.Book base=untaped.sdk.contracts.Issued
-sdk untaped_shelf.api.Book base=untaped.sdk.contracts.Record
+sdk untaped_shelf.api.Book base=untaped.sdk.Issued
+sdk untaped_shelf.api.Book base=untaped.sdk.Record
 sdk untaped_shelf.api.Book(*, title)
 sdk untaped_shelf.api.Book(pages=) default=0
 sdk untaped_shelf.api.Book(source=) default=None
