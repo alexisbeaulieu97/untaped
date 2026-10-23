@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.bootstrap import main
+from untaped.runtime.bootstrap import main
 
 if __name__ == "__main__":
     main()

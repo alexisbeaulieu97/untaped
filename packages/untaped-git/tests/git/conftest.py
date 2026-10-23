@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing.git import GitRemote, git_remote
+from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_git.errors import GitError
 from untaped_git.infrastructure.store import RepoStore
 

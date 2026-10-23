@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from untaped.contracts import Contract, Record, bridge, cached, listing
 from untaped.sdk import experimental
+from untaped.sdk.contracts import Contract, Record, bridge, cached, listing
 from untaped_workspace.domain.repo import Repo, RepoName
 from untaped_workspace.settings import REPOS
 

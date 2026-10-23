@@ -15,8 +15,8 @@ from collections.abc import Iterator
 
 from pydantic import BaseModel, Field
 
-from untaped.config_schema import unwrap_optional
-from untaped.plugins.registry import PluginSpec
+from untaped.runtime.registry import PluginSpec
+from untaped.sdk._schema import unwrap_optional
 
 #: Parts of a field name that say a max age; ``ttl`` counts only as a whole word.
 WORDS = ("max_age", "stale", "expir")

@@ -24,9 +24,9 @@ import respx
 import yaml
 from pydantic import HttpUrl
 
-from untaped.credentials import bind_credentials
-from untaped.plugins.registry import section_settings
-from untaped.settings import get_settings, register_profile_settings
+from untaped.runtime.registry import section_settings
+from untaped.runtime.settings import get_settings, register_profile_settings
+from untaped.sdk.network.credentials import bind_credentials
 from untaped_awx import SPEC
 from untaped_awx.settings import AwxServer, AwxSettings
 
@@ -1443,7 +1443,7 @@ def fake_aap(aap_config: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fake
         real_pause(ctx, 0)
 
     monkeypatch.setattr(AwxContext, "pause", pause)
-    monkeypatch.setattr("untaped.http._sleep", lambda _: None)
+    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _: None)
     fake = FakeAap()
     with respx.mock(base_url=fake.base_url, assert_all_called=False) as mock:
         fake.install(mock)

@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 URL = "https://git.example.com/acme/playbooks.git"

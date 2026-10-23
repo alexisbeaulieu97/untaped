@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import kind_of
-from untaped.testing import CliInvoker
-from untaped.testing.git import GitRemote
+from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.cli import app
 from untaped_workspace.cli.common import RUN_STDIN_RECORDS, run_argv
 

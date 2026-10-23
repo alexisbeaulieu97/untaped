@@ -1,0 +1,85 @@
+"""Wire contract for the ``--format pipe`` interchange format.
+
+The ``pipe`` output format emits one JSON object per line (NDJSON), each line
+fully self-describing so it survives ``head``/``grep``/concatenation::
+
+    {"untaped": "1", "kind": "github.repo", "record": {...}}
+
+This module owns the contract (constants + parse/validate) with **no dependency
+on the rendering layer**, so the producer (:mod:`untaped.sdk._ui`) and the consumer
+(:mod:`untaped.sdk._stdin`) can both share it without an import cycle. Provider
+examples live in ``docs/reference/conventions.md#piping``.
+
+Record values are serialized with ``json.dumps(default=str)`` (same as
+``--format json``), so non-JSON-native types (datetime, Decimal, enum) become
+strings and do **not** round-trip to their original type — fidelity is
+JSON-native types only.
+
+Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
+(1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
+change to its shape is a major *envelope* event, not tied to the SDK major. This
+freeze lets plugin commands interoperate as long as they emit the same
+envelope version (still v1). See ``docs/reference/conventions.md#piping`` for producer and consumer
+examples.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import TypeGuard
+
+from untaped.sdk.errors import ConfigError
+
+PIPE_MARKER_KEY = "untaped"
+PIPE_ENVELOPE_VERSION = "1"
+SUPPORTED_PIPE_VERSIONS = frozenset({"1"})
+
+
+@dataclass(frozen=True)
+class PipeEnvelope:
+    """One decoded ``--format pipe`` line: a record plus its metadata.
+
+    This is the **v1** envelope, versioned independently of the SDK; any change
+    to its shape would bump the envelope version. See the module docstring and
+    ``docs/reference/conventions.md#piping``.
+    """
+
+    kind: str | None
+    record: dict[str, object]
+    lineno: int
+
+
+def is_envelope_line(obj: object) -> TypeGuard[dict[str, object]]:
+    """True if a decoded JSON value looks like a pipe envelope.
+
+    The marker key is the sole discriminator: a bare identifier that is valid
+    JSON (``123``, ``"foo"``) decodes to a scalar, not a dict, and a repo slug
+    like ``acme/api`` is not valid JSON at all — so only an actual envelope
+    object trips this.
+    """
+    return isinstance(obj, dict) and PIPE_MARKER_KEY in obj
+
+
+def parse_envelope_line(lineno: int, text: str) -> PipeEnvelope:
+    """Decode and validate one envelope line, or raise a line-precise error."""
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"line {lineno}: invalid JSON: {exc.msg}", category="invalid") from exc
+    if not is_envelope_line(obj):
+        raise ConfigError(f"line {lineno}: not an untaped pipe record", category="invalid")
+    version = obj.get(PIPE_MARKER_KEY)
+    if version not in SUPPORTED_PIPE_VERSIONS:
+        supported = ", ".join(sorted(SUPPORTED_PIPE_VERSIONS))
+        raise ConfigError(
+            f"line {lineno}: unsupported pipe version {version!r} (supported: {supported})",
+            category="invalid",
+        )
+    record = obj.get("record")
+    if not isinstance(record, dict):
+        raise ConfigError(f"line {lineno}: record is not an object", category="invalid")
+    kind = obj.get("kind")
+    if kind is not None and not isinstance(kind, str):
+        raise ConfigError(f"line {lineno}: kind must be a string or null", category="invalid")
+    return PipeEnvelope(kind=kind, record=record, lineno=lineno)

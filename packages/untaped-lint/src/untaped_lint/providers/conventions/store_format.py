@@ -24,7 +24,7 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.testing import allows
+from untaped.sdk.testing import allows
 from untaped_lint.infrastructure.files import SourceFile, callee
 
 RULE = "store-format"

@@ -17,7 +17,7 @@ the modules listed in ``SCREEN_MODULES`` fails on:
 - a ``box`` constant (``box.ROUNDED``, ``rich.box.ASCII``) or an import from
   ``rich.box``; a box comes from ``frame.box()``.
 
-``untaped/screen/core.py`` and ``untaped/theme.py`` define the tokens and are
+``untaped/screen/core.py`` and ``untaped/runtime/theme.py`` define the tokens and are
 the exempt homes, so they are not listed. Later screens append their modules.
 """
 
@@ -30,18 +30,18 @@ import unicodedata
 import pytest
 
 from repo.support import REPO_ROOT
-from untaped.theme import BUILTIN_THEMES
+from untaped.runtime.theme import BUILTIN_THEMES
 
 #: Repo-relative globs of the modules held to the rule.
 SCREEN_MODULES = (
     "packages/untaped/src/untaped/screen/components/*.py",
     "packages/untaped/src/untaped/screen/prompts.py",
-    "packages/untaped/src/untaped/picker/screen.py",
-    "packages/untaped/src/untaped/management/setup_screen.py",
+    "packages/untaped/src/untaped/screen/picker/screen.py",
+    "packages/untaped/src/untaped/core/commands/setup_screen.py",
 )
 EXEMPT_HOMES = (
     "packages/untaped/src/untaped/screen/core.py",
-    "packages/untaped/src/untaped/theme.py",
+    "packages/untaped/src/untaped/runtime/theme.py",
 )
 
 _ATTRIBUTES = {"bold", "dim", "italic", "underline", "reverse", "blink", "strike", "not", "on"}

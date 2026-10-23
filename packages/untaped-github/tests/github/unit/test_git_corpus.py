@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from untaped import bootstrap
-from untaped.testing import plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.sdk.testing import plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Prefetched, RepoStore
 from untaped_github import SPEC

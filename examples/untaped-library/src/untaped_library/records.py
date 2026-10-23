@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.contracts import Record
+from untaped.sdk.contracts import Record
 
 
 class Volume(Record, kind="library.volume"):

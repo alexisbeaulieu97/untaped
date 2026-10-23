@@ -23,8 +23,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from untaped.contracts import Answers, Contract, Failed, Ok, gather
 from untaped.sdk import ConfigError, experimental
+from untaped.sdk.contracts import Answers, Contract, Failed, Ok, gather
 from untaped_git.domain.url import url_host
 
 

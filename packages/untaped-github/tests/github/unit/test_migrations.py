@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import MigrationOptions, PluginContext
-from untaped.testing.git import git_remote
+from untaped.sdk.testing.git import git_remote
 from untaped_github import SPEC
 from untaped_github.infrastructure.migrations import apply_cache, preview_cache
 
@@ -65,7 +65,7 @@ def test_no_cache_is_unchanged() -> None:
 
 
 def test_a_root_configured_to_the_store_stays(tmp_path: Path, monkeypatch) -> None:
-    from untaped.settings import get_settings
+    from untaped.runtime.settings import get_settings
 
     store = tmp_path / "store"
     repo = store / "git.example" / "app.git"

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli.commands import app
 
 PACKAGE = Path(__file__).resolve().parents[3]

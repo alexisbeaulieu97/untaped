@@ -33,12 +33,12 @@ from pydantic import BaseModel, Field
 
 from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
-from untaped._root_options import _root_options
-from untaped.bootstrap import build_root_app
-from untaped.cache import Cache
-from untaped.plugins import registry
-from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.stability import deprecated
+from untaped.runtime import registry
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.root_options import _root_options
+from untaped.sdk.marks import deprecated
+from untaped.sdk.storage.cache import Cache
 
 REGENERATE = "uv run python scripts/gen_config_reference.py"
 

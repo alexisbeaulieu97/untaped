@@ -243,7 +243,7 @@ line, its value and its help line.
 
 ## Testing
 
-`untaped.testing.drive_screen(screen, keys, size=(100, 30))` runs a screen
+`untaped.sdk.testing.drive_screen(screen, keys, size=(100, 30))` runs a screen
 without a terminal and returns a `ScreenRun`: the plain-text frame after each
 key (`frames`), the last (`frame`), the `result`, the `outcome` and the final
 `model`. Keys are names, single characters, `Paste(...)` or `Resize(...)`; any
@@ -259,7 +259,7 @@ not look for one:
 needs no `terminal=True` and no TTY stdin.
 
 ```python
-from untaped.testing import CliInvoker, ScreenKeys, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScreenKeys, ScriptedPromptBackend
 
 backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
 result = CliInvoker().invoke(app, ["name"], prompt_backend=backend)

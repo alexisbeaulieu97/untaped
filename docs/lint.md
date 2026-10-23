@@ -34,7 +34,7 @@ plugin. In a plugin's tests, `untaped_lint.testing.assert_clean("<name>")`
 fails where `untaped lint` would exit non-zero (`strict=True` for warnings
 too) and lists every finding, so CI catches what the command would.
 
-`untaped plugin check` and `untaped.testing.check_conventions` are
+`untaped plugin check` and `untaped.sdk.testing.check_conventions` are
 deprecated and go at 12.0: they print the same rows as before, but run the
 file rules only when `untaped[lint]` is installed.
 

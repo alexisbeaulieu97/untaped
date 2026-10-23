@@ -24,7 +24,7 @@ from rich.text import Text
 from untaped.screen.components.draw import role_style, unboxed, window_start
 from untaped.screen.components.fields import Field
 from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["WIDE", "Drawing", "Panes", "Viewport", "window", "windowed"]
 

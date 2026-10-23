@@ -391,7 +391,7 @@ An older untaped sharing the config stops reading the lines it moved.
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);
 - `untaped.auth`: which token source was used (never the token);
-- `untaped.contracts`: the traceback when a plugin's provider or contract
+- `untaped.sdk.contracts`: the traceback when a plugin's provider or contract
   raises an unexpected exception (its answer or doctor row shows only
   `KeyError: …`; JSON Lines carry the message only), and why an answer was
   not cached.

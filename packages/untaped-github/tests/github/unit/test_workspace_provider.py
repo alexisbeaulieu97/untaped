@@ -16,10 +16,10 @@ import pytest
 import respx
 import yaml
 
-from untaped.contracts import Failed, NoProviderReady, Ok, convert, gather
+from untaped.runtime.settings import get_settings
 from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError
-from untaped.settings import get_settings
-from untaped.testing import assert_fills, compose_with
+from untaped.sdk.contracts import Failed, NoProviderReady, Ok, convert, gather
+from untaped.sdk.testing import assert_fills, compose_with
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
 from untaped_github.records import GithubRepo
 from untaped_github.settings import GithubSettings
@@ -323,8 +323,8 @@ def test_after_a_failed_refresh_only_the_answer_cache_is_served_stale() -> None:
 def test_an_auto_refresh_over_a_stored_list_fails_fast_and_a_first_one_retries() -> None:
     from datetime import timedelta
 
-    from untaped.testing import cache_clock
-    from untaped.upstream import PROBE_TIMEOUT
+    from untaped.sdk.network.upstream import PROBE_TIMEOUT
+    from untaped.sdk.testing import cache_clock
 
     configure(default_org="acme")
     with cache_clock() as clock, respx.mock(base_url=API) as mock:

@@ -47,7 +47,7 @@ from untaped.screen.components.text import EditBuffer
 from untaped.screen.core import Cmd, Frame, Key, NextField, Paste, PrevField
 from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["ListEditor", "MapEditor", "MapEntry", "SearchList", "Tags", "Tree", "TreeRow"]
 

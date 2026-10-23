@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_recipe.cli import app
 from untaped_recipe.cli.common import library_dir
 from untaped_recipe.cli.detail import (

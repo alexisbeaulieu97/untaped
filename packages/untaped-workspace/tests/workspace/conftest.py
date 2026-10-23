@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped import bootstrap
-from untaped.settings import get_settings
-from untaped.testing import plugin_candidate
-from untaped.testing.git import GitRemote, git_remote
+from untaped.runtime import bootstrap
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import plugin_candidate
+from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_git import SPEC as GIT
 from untaped_git.api import store_key
 from untaped_workspace import SPEC as WORKSPACE

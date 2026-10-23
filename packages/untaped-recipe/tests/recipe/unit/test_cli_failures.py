@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_recipe.cli import app
 
 pytestmark = pytest.mark.usefixtures("isolate_config", "json_diagnostics")

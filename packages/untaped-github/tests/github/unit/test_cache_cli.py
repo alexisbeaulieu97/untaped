@@ -14,8 +14,8 @@ import httpx
 import pytest
 import respx
 
-from untaped import bootstrap
-from untaped.testing import (
+from untaped.runtime import bootstrap
+from untaped.sdk.testing import (
     CliInvoker,
     CliResult,
     assert_destructive_contract,

@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from untaped import bootstrap
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped_ansible import SPEC
 
 

@@ -1,0 +1,309 @@
+"""The SDK's settings layout: map the raw config file to effective values.
+
+`ProfilesSettingsLayout` layers ``profiles.default`` beneath
+``profiles.<active>`` and is the SDK's only layout — every plugin
+resolves through it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from untaped.sdk.network.credentials import CredentialKey
+
+from untaped.runtime.profile_resolver import (
+    DEFAULT_PROFILE,
+    effective_active_profile_name,
+    resolve_profiles,
+)
+from untaped.sdk.errors import ConfigError
+from untaped.sdk.health.deprecated_keys import KeyUse, old_spellings, rename_keys
+from untaped.sdk.words import hint, not_found
+
+SectionModels = Mapping[str, type[BaseModel]]
+
+
+@dataclass(frozen=True)
+class ResolvedConfig:
+    """Effective values, their provenance, and the old keys each layer used."""
+
+    effective: dict[str, Any]
+    provenance: dict[tuple[str, ...], str]
+    uses: dict[str, dict[str, tuple[KeyUse, ...]]]
+    """``profile -> section -> uses``, for the layered profiles only."""
+    tls_off: frozenset[tuple[str, ...]] = frozenset()
+    """The key ``verify_tls`` leaves a layer's root ``http.verify_ssl: false`` turned off."""
+
+
+class ProfilesSettingsLayout:
+    """Layer ``profiles.default`` beneath ``profiles.<active>``.
+
+    Profiles are a core feature, not a plugin, so this layout (and the
+    resolver it delegates to) lives in core.
+
+    ``sections`` supplies the default section models: each layered profile's
+    section data is rewritten to current key names (``renamed_keys``) before
+    layering, so an old key in ``default`` and the new key in the active
+    profile layer as one key. Without it, nothing is renamed.
+    """
+
+    def __init__(self, sections: Callable[[], SectionModels] | None = None) -> None:
+        self._sections = sections
+
+    def effective(self, raw: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
+        """Return the effective settings values for the active (or given) profile."""
+        return self.resolve(raw, profile=profile).effective
+
+    def inherited(self, raw: dict[str, Any], profile: str) -> dict[str, Any]:
+        """Return the effective values ``profile`` inherits: ``default``'s, nothing for itself."""
+        profiles = raw.get("profiles")
+        if profile == DEFAULT_PROFILE or not isinstance(profiles, dict):
+            return {}
+        if DEFAULT_PROFILE not in profiles:
+            return {}
+        return self.effective(raw, profile=DEFAULT_PROFILE)
+
+    def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
+        """Return ``leaf path -> profile name`` for every value in ``effective``."""
+        return self.resolve(raw).provenance
+
+    def resolve(
+        self,
+        raw: dict[str, Any],
+        *,
+        profile: str | None = None,
+        sections: SectionModels | None = None,
+        environ: Mapping[str, str] | None = None,
+    ) -> ResolvedConfig:
+        """Resolve effective settings, provenance and old-key uses.
+
+        ``sections`` overrides the constructor's section models; ``environ``
+        (a run's variables) adds ``UNTAPED_HTTP__VERIFY_SSL`` to how root
+        ``verify_ssl`` reads on keys.
+        """
+        override = profile or effective_active_profile_name(raw)
+        models = sections if sections is not None else self._sections_now()
+        renamed, uses = _rename_profiles(raw, models, override)
+        effective, provenance = resolve_profiles(renamed, active_override=override)
+        tls_off = _root_tls_off(renamed, override, effective, models, environ or {})
+        return ResolvedConfig(effective, provenance, uses, tls_off)
+
+    def _sections_now(self) -> SectionModels:
+        return self._sections() if self._sections is not None else {}
+
+    def profile_names(self, raw: dict[str, Any]) -> list[str]:
+        """Return the selectable profile names."""
+        profiles = raw.get("profiles")
+        return sorted(profiles) if isinstance(profiles, dict) else []
+
+    def profile_data(self, raw: dict[str, Any], name: str) -> dict[str, Any] | None:
+        """Return one profile's raw values, or ``None`` when undefined."""
+        profiles = raw.get("profiles")
+        if not isinstance(profiles, dict):
+            return None
+        if name in profiles and profiles[name] is None:
+            return {}
+        data = profiles.get(name)
+        return data if isinstance(data, dict) else None
+
+    def write_profile(
+        self, raw: dict[str, Any], requested: str | None
+    ) -> tuple[dict[str, Any], str]:
+        """Return the target profile's dict, creating only ``default``.
+
+        Any other target must already exist — this is the guardrail that
+        keeps ``untaped --profile typo config set`` from silently creating a
+        new profile.
+        """
+        name = requested or effective_active_profile_name(raw) or DEFAULT_PROFILE
+        existing = raw.get("profiles")
+        known = existing if isinstance(existing, dict) else {}
+        if name != DEFAULT_PROFILE and name not in known:
+            raise ConfigError(
+                f"{not_found('profile', name, known=sorted(known))}\n"
+                f"{hint(f'profile create {name}')}"
+            )
+        profiles = raw.setdefault("profiles", {})
+        if not isinstance(profiles, dict):
+            raise ConfigError("config key 'profiles' must be a mapping")
+        target = profiles.get(name)
+        if target is None:
+            # Absent, or an empty ``name:`` entry (YAML null): start it fresh.
+            target = profiles[name] = {}
+        if not isinstance(target, dict):
+            raise ConfigError(f"profile {name!r} must be a mapping")
+        return target, name
+
+
+def _layers(raw: dict[str, Any], active: str | None) -> list[dict[str, Any]]:
+    """The layered profiles' own data, ``default`` first."""
+    profiles = raw.get("profiles")
+    if not isinstance(profiles, dict):
+        return []
+    names = dict.fromkeys((DEFAULT_PROFILE, active or DEFAULT_PROFILE))
+    return [profiles[name] for name in names if isinstance(profiles.get(name), dict)]
+
+
+def _root_tls_off(
+    raw: dict[str, Any],
+    active: str | None,
+    effective: dict[str, Any],
+    models: SectionModels,
+    environ: Mapping[str, str],
+) -> frozenset[tuple[str, ...]]:
+    """Read root ``http.verify_ssl: false`` as each key's ``verify_tls: false``.
+
+    11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
+    its TLS from the key alone. The key's TLS field is found by type; a key
+    with no URL (set in the file or a variable, or by default) is left alone. A layer's own
+    ``verify_tls`` wins over its ``verify_ssl``, a later layer wins over an
+    earlier one, and ``UNTAPED_HTTP__VERIFY_SSL`` in ``environ`` over both.
+    ``effective`` is updated in place; returns the leaves turned off.
+    """
+    from untaped.sdk.network.credentials import (  # noqa: PLC0415 - credentials is heavy
+        key_fields,
+        key_shape,
+    )
+
+    layers: list[Mapping[str, Any]] = list(_layers(raw, active))
+    variable = environ.get("UNTAPED_HTTP__VERIFY_SSL")
+    if variable is not None:
+        layers.append({"http": {"verify_ssl": variable.strip().lower() not in _FALSE}})
+    if not any(_dig(layer, ("http", "verify_ssl")) is False for layer in layers):
+        return frozenset()
+    turned: set[tuple[str, ...]] = set()
+    for section, model in models.items():
+        for path, key in key_fields(model):
+            tls = key_shape(key).tls
+            if tls is None or not _keyed(effective, environ, section, model, path, key):
+                continue
+            leaf = (section, *path, tls)
+            if _root_decides(layers, leaf):
+                _place(effective, leaf, False)
+                turned.add(leaf)
+    return frozenset(turned)
+
+
+def _keyed(
+    effective: Mapping[str, Any],
+    environ: Mapping[str, str],
+    section: str,
+    model: type[BaseModel],
+    path: tuple[str, ...],
+    key: type[CredentialKey],
+) -> bool:
+    """Whether this run has a whole key at ``path`` with a URL and TLS still on."""
+    from untaped.sdk.network.credentials import key_shape  # noqa: PLC0415 - credentials is heavy
+
+    shape = key_shape(key)
+    node = _dig(effective, (section, *path))
+    if node is not None and not isinstance(node, dict):
+        return False
+    node = node or {}
+    if node.get(shape.tls, True) is not True:
+        return False
+    present = {**dict.fromkeys(_env_fields(environ, section, model, path, key), True), **node}
+    return any(_url(present, key, url) for url in shape.urls) and _complete(present, key)
+
+
+def _root_decides(layers: Sequence[Mapping[str, Any]], leaf: tuple[str, ...]) -> bool:
+    """Whether root ``verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
+    decided = None
+    for layer in layers:
+        root = _dig(layer, ("http", "verify_ssl"))
+        if _dig(layer, leaf) is not None:
+            decided = "key"
+        elif root is not None:
+            decided = "root" if root is False else None
+    return decided == "root"
+
+
+def _env_fields(
+    environ: Mapping[str, str],
+    section: str,
+    model: type[BaseModel],
+    path: tuple[str, ...],
+    key: type[BaseModel],
+) -> set[str]:
+    """The key's fields a variable in ``environ`` sets (old spellings and JSON objects too)."""
+    from untaped.runtime.settings import (  # noqa: PLC0415 - settings imports this module
+        env_var_setting,
+    )
+
+    if not environ:
+        return set()
+    found: set[str] = set()
+    for name in key.model_fields:
+        relative = ".".join((*path, name))
+        for spelling in (relative, *old_spellings(model, relative)):
+            if env_var_setting((section, *spelling.split(".")), environ=environ) is not None:
+                found.add(name)
+    return found
+
+
+def _url(node: Mapping[str, Any], key: type[BaseModel], name: str) -> bool:
+    """Whether the key has a URL ``name``: set in the file or a variable, or a real default."""
+    field = key.model_fields[name]
+    return bool(node.get(name)) or (
+        not field.is_required() and field.get_default(call_default_factory=True) is not None
+    )
+
+
+def _complete(node: Mapping[str, Any], key: type[BaseModel]) -> bool:
+    """Whether ``node`` sets each required field, so turning TLS off never makes a key invalid."""
+    return all(name in node for name, field in key.model_fields.items() if field.is_required())
+
+
+_FALSE = frozenset({"0", "off", "f", "false", "n", "no"})
+
+
+def _place(data: dict[str, Any], path: tuple[str, ...], value: object) -> None:
+    for part in path[:-1]:
+        child = data.get(part)
+        if not isinstance(child, dict):
+            child = data[part] = {}
+        data = child
+    data[path[-1]] = value
+
+
+def _dig(data: Any, path: tuple[str, ...]) -> Any:
+    for part in path:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(part)
+    return data
+
+
+def _rename_profiles(
+    raw: dict[str, Any], models: SectionModels, active: str | None
+) -> tuple[dict[str, Any], dict[str, dict[str, tuple[KeyUse, ...]]]]:
+    """Copy of ``raw`` with the layered profiles' sections at current key names."""
+    profiles = raw.get("profiles")
+    if not models or not isinstance(profiles, dict):
+        return raw, {}
+    layered = [
+        name
+        for name in dict.fromkeys((DEFAULT_PROFILE, active or DEFAULT_PROFILE))
+        if name in profiles
+    ]
+    renamed_profiles = dict(profiles)
+    uses: dict[str, dict[str, tuple[KeyUse, ...]]] = {}
+    for name in layered:
+        data = profiles[name]
+        if not isinstance(data, dict):
+            continue  # ``resolve_profiles`` reports a malformed profile
+        copy = dict(data)
+        for section, model in models.items():
+            section_data = data.get(section)
+            if not isinstance(section_data, dict):
+                continue
+            copy[section], section_uses = rename_keys(model, section_data)
+            if section_uses:
+                uses.setdefault(name, {})[section] = section_uses
+        renamed_profiles[name] = copy
+    return {**raw, "profiles": renamed_profiles}, uses

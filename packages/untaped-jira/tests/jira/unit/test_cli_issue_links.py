@@ -9,7 +9,7 @@ import httpx
 import respx
 import yaml
 
-from untaped.testing import CliInvoker, CliResult
+from untaped.sdk.testing import CliInvoker, CliResult
 from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"

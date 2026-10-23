@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from untaped.bootstrap import build_root_app
 from untaped.conventions.commands import comment_commands, parse_problem
-from untaped.plugins.registry import PluginCandidate
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate
 from untaped_awx.domain.suites.suite_starter import starter_suite
 
 

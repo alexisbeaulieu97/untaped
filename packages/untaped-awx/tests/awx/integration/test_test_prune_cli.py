@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 from untaped_awx.domain.suites.temporary_set import Marker
 

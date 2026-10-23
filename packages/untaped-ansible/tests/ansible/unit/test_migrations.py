@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from ansible.unit.test_sqlite_index import _commit, _scan
+from untaped.runtime.settings import get_settings
 from untaped.sdk import DirMigration, MigrationOptions, PluginContext
-from untaped.settings import get_settings
 from untaped_ansible import SPEC
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import AnsibleSettings

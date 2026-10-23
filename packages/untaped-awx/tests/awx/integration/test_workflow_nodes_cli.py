@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 _UJT_TYPES = {10: "job", 11: "job", 12: "job", 100: "workflow_job", 200: "workflow_job"}

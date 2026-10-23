@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import CliInvoker
-from untaped.testing.git import GitRemote, git_remote, git_shim, global_config, trace2_events
+from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing.git import GitRemote, git_remote, git_shim, global_config, trace2_events
 from untaped_git.api import RepoStore
 from untaped_git.cli import app as git_app
 from untaped_workspace.cli import app

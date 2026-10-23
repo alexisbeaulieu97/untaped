@@ -22,8 +22,8 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from repo.support import REPO_ROOT
-from untaped.config_schema import walk_settings
-from untaped.settings import get_settings_model
+from untaped.runtime.settings import get_settings_model
+from untaped.sdk._schema import walk_settings
 
 SRC_DIRS = sorted(REPO_ROOT.glob("packages/*/src"))
 
@@ -108,7 +108,10 @@ def _is_named_call(node: ast.expr, name: str) -> bool:
 #: The core builders whose own ``verify=`` may replace the settings' TLS. Nothing under
 #: src passes one yet (see the guard below); the key's TLS will (#811).
 _VERIFY_OVERRIDES = frozenset(
-    {"packages/untaped/src/untaped/http.py", "packages/untaped/src/untaped/contracts/_declare.py"}
+    {
+        "packages/untaped/src/untaped/sdk/network/http.py",
+        "packages/untaped/src/untaped/sdk/contracts/_declare.py",
+    }
 )
 
 
@@ -228,11 +231,11 @@ def test_verify_detector(call: str, flagged: bool) -> None:
 )
 def test_verify_detector_allows_a_core_builders_override(verify: str, flagged: bool) -> None:
     tree = ast.parse(f"{_HEADER}def f(http, v) -> None:\n    HttpClient(verify={verify})\n")
-    rel = "packages/untaped/src/untaped/http.py"
+    rel = "packages/untaped/src/untaped/sdk/network/http.py"
     assert bool(_verify_offenders(tree, rel)) is flagged
 
 
-_TREE_MODULE = REPO_ROOT / "packages/untaped/src/untaped/tree.py"
+_TREE_MODULE = REPO_ROOT / "packages/untaped/src/untaped/sdk/tree.py"
 _TREE_CONNECTORS = ("├── ", "└── ")
 
 

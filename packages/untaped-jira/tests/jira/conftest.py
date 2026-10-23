@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.credentials import bind_credentials
-from untaped.plugins.registry import section_settings
-from untaped.settings import register_profile_settings
+from untaped.runtime.registry import section_settings
+from untaped.runtime.settings import register_profile_settings
+from untaped.sdk.network.credentials import bind_credentials
 from untaped_jira import SPEC
 from untaped_jira.settings import JiraSettings
 

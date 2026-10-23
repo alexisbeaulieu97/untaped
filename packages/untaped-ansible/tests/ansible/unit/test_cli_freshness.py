@@ -27,9 +27,9 @@ from ansible.unit.test_cli import (
     _seed_index,
     _use_config,
 )
-from untaped.bootstrap import build_root_app
+from untaped.runtime.bootstrap import build_root_app
 from untaped.sdk import ErrorCategory, Failure, Message, Progress, StaleData
-from untaped.testing import CliInvoker, CliResult, cache_clock, progress_clock
+from untaped.sdk.testing import CliInvoker, CliResult, cache_clock, progress_clock
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.cli import app, refresh
 from untaped_ansible.domain.payloads import (

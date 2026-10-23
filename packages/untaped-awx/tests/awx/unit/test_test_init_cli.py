@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import yaml
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'

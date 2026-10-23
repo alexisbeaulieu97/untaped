@@ -16,7 +16,7 @@ from typing import Protocol, Self
 from rich.console import RenderableType
 
 from untaped.screen.core import Cmd, Frame
-from untaped.stability import experimental
+from untaped.sdk.marks import experimental
 
 __all__ = ["Field"]
 

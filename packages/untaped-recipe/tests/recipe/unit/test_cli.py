@@ -14,10 +14,10 @@ import yaml
 
 import untaped_recipe.infrastructure.file_writer as file_writer_module
 import untaped_recipe.infrastructure.pack_store as pack_store_module
-from untaped import bootstrap
-from untaped.records import record_kinds
-from untaped.settings import get_settings
-from untaped.testing import (
+from untaped.runtime import bootstrap
+from untaped.runtime.settings import get_settings
+from untaped.sdk.records import record_kinds
+from untaped.sdk.testing import (
     CliInvoker,
     ScriptedPromptBackend,
     assert_destructive_contract,

@@ -11,8 +11,8 @@ import httpx
 import pytest
 import respx
 
-from untaped import bootstrap
-from untaped.testing import CliInvoker, CliResult, plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_github import SPEC
 from untaped_github.cli import app

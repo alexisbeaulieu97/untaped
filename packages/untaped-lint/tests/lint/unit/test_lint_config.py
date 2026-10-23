@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.testing import compose_with
+from untaped.sdk.testing import compose_with
 from untaped_lint.api import lint_config
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

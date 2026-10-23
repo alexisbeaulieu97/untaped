@@ -50,7 +50,7 @@ def _found() -> dict[tuple[str, str], list[int]]:
     for root in roots:
         for path in sorted(Path(root).rglob("*.py")):
             module = path.relative_to(root).as_posix()
-            if module == "untaped/cache.py":  # refresh_option itself
+            if module == "untaped/sdk/storage/cache.py":  # refresh_option itself
                 continue
             for line, flag in hand_declared(path.read_text(encoding="utf-8")):
                 found.setdefault((module, flag), []).append(line)

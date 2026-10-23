@@ -11,20 +11,20 @@ from pathlib import Path
 
 import pytest
 
-from test_plugins.plugin_harness import make_spec
-from untaped import bootstrap
-from untaped._root_options import _root_options
-from untaped.cli import create_app
-from untaped.messages import EXPERIMENTAL_LINE
-from untaped.plugins.registry import PluginCandidate, PluginSpec
-from untaped.stability import (
+from core_test_support.runtime.plugin_harness import make_spec
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.root_options import _root_options
+from untaped.sdk._cli import create_app
+from untaped.sdk.marks import (
     deprecated,
     enable_show_deprecated,
     mark_of,
     panel_for,
     reset_show_deprecated,
 )
-from untaped.testing import CliInvoker, plugin_candidate
+from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk.words import EXPERIMENTAL_LINE
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 

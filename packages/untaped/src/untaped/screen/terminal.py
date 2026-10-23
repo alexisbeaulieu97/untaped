@@ -39,10 +39,10 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.output import ColorDepth, Output
 from prompt_toolkit.output.defaults import create_output
 
+from untaped.runtime.theme import ThemeSpec
 from untaped.screen.color import ColorMode, detect_color, ptk_depth_name, rich_system
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import CmdKind, Runtime, capture_console
-from untaped.theme import ThemeSpec
 
 __all__ = ["TerminalHost", "build_application", "run_screen_on", "run_terminal_screen"]
 

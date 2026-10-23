@@ -33,7 +33,7 @@ from untaped_github.settings import BASE_URL_ALIAS, GH, SWEEP, GithubSettings
 if TYPE_CHECKING:
     from cyclopts import App
 
-    from untaped.contracts import Contract
+    from untaped.sdk.contracts import Contract
 
 __all__ = ["SPEC", "build_app"]
 

@@ -19,11 +19,11 @@ from pathlib import Path
 
 import pytest
 
-from untaped import bootstrap
-from untaped.management.doctor import collect_doctor_rows
-from untaped.plugins.registry import PluginCandidate
-from untaped.testing import CliResult, invoke_cli
-from untaped.testing.git import GitRemote, git_remote
+from untaped.core.commands.doctor import collect_doctor_rows
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.testing import CliResult, invoke_cli
+from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure.state_store import StateWorkspaceStore
 

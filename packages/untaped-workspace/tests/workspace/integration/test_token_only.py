@@ -21,11 +21,11 @@ from typing import ClassVar
 import pytest
 from pydantic import SecretStr
 
-from untaped import bootstrap
-from untaped.plugins.registry import PluginSpec
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, plugin_candidate
-from untaped.testing.git import GitRemote, git_remote, global_config
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginSpec
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk.testing.git import GitRemote, git_remote, global_config
 from untaped_git import SPEC as GIT
 from untaped_git.api import Credential, GitHost
 from untaped_git.cli import app as git_app

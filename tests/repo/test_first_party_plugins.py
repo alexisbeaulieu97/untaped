@@ -17,12 +17,12 @@ import pytest
 import release
 from cyclopts import App
 
+from core_test_support.runtime.plugin_harness import make_shell
 from repo.support import FIRST_PARTY, REPO_ROOT
-from test_plugins.plugin_harness import make_shell
-from untaped import bootstrap
-from untaped.plugins.registry import PluginCandidate, PluginRef, PluginSpec, compose
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, plugin_candidate
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate, PluginRef, PluginSpec, compose
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 

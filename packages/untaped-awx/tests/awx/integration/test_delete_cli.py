@@ -14,8 +14,8 @@ from typing import Any
 import httpx
 import pytest
 
-from untaped.bootstrap import build_root_app
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.runtime.bootstrap import build_root_app
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli import app
 
 

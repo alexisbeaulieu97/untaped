@@ -1,7 +1,7 @@
 """The example ``library`` plugin: no commands, one setting, and books for ``shelf``.
 
 ``provides`` maps the owner's name to a function returning this plugin's
-providers; its local import keeps ``untaped.contracts`` out of every run that
+providers; its local import keeps ``untaped.sdk.contracts`` out of every run that
 asks no contract.
 """
 
@@ -14,7 +14,7 @@ from untaped.sdk import PluginSpec
 from untaped_library.settings import LibrarySettings
 
 if TYPE_CHECKING:
-    from untaped.contracts import Contract
+    from untaped.sdk.contracts import Contract
 
 __all__ = ["SPEC"]
 

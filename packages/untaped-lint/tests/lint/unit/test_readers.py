@@ -9,7 +9,7 @@ import pytest
 
 from lint.fakes import Acme, Widget
 from untaped.sdk import ConfigError
-from untaped.testing import compose_with
+from untaped.sdk.testing import compose_with
 from untaped_lint.api import Subject, Tree, TreeReader
 from untaped_lint.testing import run, subject
 

@@ -81,14 +81,14 @@ def test_screen_components_load_without_the_adapter_or_prompt_toolkit() -> None:
 def test_screen_core_does_not_load_prompt_toolkit() -> None:
     snippet = (
         "import untaped.screen.core, untaped.screen.runtime, untaped.screen.color\n"
-        "import untaped.testing.screens\n"
+        "import untaped.sdk.testing.screens\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 
 
 def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> None:
     snippet = (
-        "from untaped.ui import UiContext\n"
+        "from untaped.sdk._ui import UiContext\n"
         "ctx = UiContext()\n"
         "ctx.collection([{'id': 1, 'name': 'alpha'}], fmt='json')\n"
         "ctx.message('info', 'rendered')\n"
@@ -98,7 +98,7 @@ def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> N
 
 _DISPATCH_PROBE = (
     "import contextlib, io\n"
-    "from untaped.bootstrap import main\n"
+    "from untaped.runtime.bootstrap import main\n"
     "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
     "    main({argv!r})\n"
     "cli = sorted(\n"
@@ -133,7 +133,7 @@ def test_plugin_help_imports_only_its_own_cli() -> None:
 _STARTUP_PROBE = (
     "import contextlib, io\n"
     "baseline = set(sys.modules)\n"
-    "from untaped.bootstrap import main\n"
+    "from untaped.runtime.bootstrap import main\n"
     "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
     "    main({argv!r})\n"
     "new = set(sys.modules) - baseline\n"
@@ -163,9 +163,14 @@ _STARTUP_PROBE = (
 #: ``doctor`` and ``auth``) add two: the measure is 140 against 138 on their
 #: base, 2026-10-20, so the budget goes from 139 to 143 to keep three spare.
 #: The SDK's tree renderer (``untaped.tree``, #789) adds one: 144 against 143
-#: on its base, 2026-10-21, so the budget goes to 147.
-_TOTAL_BUDGET = 700
-_UNTAPED_BUDGET = 147
+#: on its base, 2026-10-21, so the budget goes to 147. Core's three roots and
+#: the SDK's groups add their package modules (``untaped.core``,
+#: ``untaped.runtime``, four groups), the SDK's name table
+#: (``untaped.sdk._exports``) and the screen kit's package (the picker moved
+#: into it), less ``untaped.output`` and ``untaped.plugins``: 150 against 144,
+#: 2026-10-23, so the budget goes to 153, and the total (706 with them) to 710.
+_TOTAL_BUDGET = 710
+_UNTAPED_BUDGET = 153
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
@@ -187,29 +192,29 @@ def test_a_typed_cache_declared_at_startup_loads_neither_its_model_nor_the_data_
         "    raise AssertionError('resolved at declaration')\n"
         "Cache('acme', 'snapshots', label='x', max_age=timedelta(hours=1), model=model)\n"
         + _DISPATCH_PROBE.format(argv=["--help"])
-        + "assert 'untaped.data_file' not in sys.modules\n"
+        + "assert 'untaped.sdk.storage.data_file' not in sys.modules\n"
         "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
     )
     assert "httpx" not in _loaded_heavy_modules(snippet)
 
 
 def test_contracts_load_only_when_asked() -> None:
-    """``untaped.contracts`` is a module root of its own: the SDK and ``--help`` never load it."""
+    """``untaped.sdk.contracts`` is a group of its own: the SDK and ``--help`` never load it."""
     snippet = (
         "import untaped.sdk\n"
-        "assert 'untaped.contracts' not in sys.modules\n"
+        "assert 'untaped.sdk.contracts' not in sys.modules\n"
         + _DISPATCH_PROBE.format(argv=["--help"])
-        + "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+        + "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
     )
     assert "httpx" not in _loaded_heavy_modules(snippet)
 
 
 def test_testing_helpers_load_contracts_only_when_called() -> None:
-    """``untaped.testing`` exports compose_with and assert_fills without loading contracts."""
+    """``untaped.sdk.testing`` exports compose_with and assert_fills without loading contracts."""
     snippet = (
-        "import untaped.testing\n"
-        "untaped.testing.compose_with, untaped.testing.assert_fills\n"
-        "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+        "import untaped.sdk.testing\n"
+        "untaped.sdk.testing.compose_with, untaped.sdk.testing.assert_fills\n"
+        "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 
@@ -218,9 +223,9 @@ def test_help_and_plugin_list_never_call_a_providers_offer() -> None:
     """A provider's ``provides`` function runs when a contract is first asked, never before."""
     snippet = (
         "import contextlib, io\n"
-        "from untaped import bootstrap\n"
-        "from untaped.plugins.registry import PluginSpec\n"
-        "from untaped.testing import plugin_candidate\n"
+        "from untaped.runtime import bootstrap\n"
+        "from untaped.runtime.registry import PluginSpec\n"
+        "from untaped.sdk.testing import plugin_candidate\n"
         "def offer():\n"
         "    raise AssertionError('provides was called')\n"
         "def contracts():\n"
@@ -232,6 +237,6 @@ def test_help_and_plugin_list_never_call_a_providers_offer() -> None:
         "    app = bootstrap.build_root_app(candidates=found)\n"
         "    with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
         "        app.meta(argv)\n"
-        "assert not [m for m in sys.modules if m.startswith('untaped.contracts')]\n"
+        "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)

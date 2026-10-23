@@ -11,7 +11,7 @@ from untaped_library.providers.shelf import LibraryBooks
 from untaped_library.records import Volume
 
 from untaped.sdk import StaleData
-from untaped.testing import assert_fills, invoke_root
+from untaped.sdk.testing import assert_fills, invoke_root
 from untaped_lint.testing import assert_clean
 
 _CONFIG = """\

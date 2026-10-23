@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.contracts import Source, gather
 from untaped.sdk import Picked, PickItem, PickRequest, PickResult
-from untaped.testing import CliInvoker, ScriptedPromptBackend, compose_with
-from untaped.testing.git import GitRemote, global_config
+from untaped.sdk.contracts import Source, gather
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, compose_with
+from untaped.sdk.testing.git import GitRemote, global_config
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo, RepoSource

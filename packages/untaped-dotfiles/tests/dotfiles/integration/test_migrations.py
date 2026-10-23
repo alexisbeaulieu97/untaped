@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
+from untaped.runtime.settings import get_settings
 from untaped.sdk import MigrationOptions, PluginContext, StateCollection
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_dotfiles import SPEC
 from untaped_dotfiles.cli import app
 

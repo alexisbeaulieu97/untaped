@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 

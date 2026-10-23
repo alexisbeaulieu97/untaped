@@ -13,7 +13,7 @@ import pytest
 import untaped_git.infrastructure.adopt as adopt_module
 from git.conftest import StoreError, all_refs, git
 from untaped.sdk import ErrorCategory
-from untaped.testing.git import GitRemote
+from untaped.sdk.testing.git import GitRemote
 from untaped_git.api import adopt, remove_if_emptied
 
 

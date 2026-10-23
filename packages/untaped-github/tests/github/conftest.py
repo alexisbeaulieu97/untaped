@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from untaped.credentials import bind_credentials
-from untaped.plugins.registry import section_settings
+from untaped.runtime.registry import section_settings
+from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk import GitResult
-from untaped.settings import get_settings, register_profile_settings
+from untaped.sdk.network.credentials import bind_credentials
 from untaped_git.infrastructure import remote as remote_module
 from untaped_git.infrastructure import store as store_module
 from untaped_github import SPEC

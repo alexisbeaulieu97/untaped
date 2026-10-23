@@ -17,8 +17,8 @@ from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from untaped.contracts import Answers, Failed, NoProviderReady, Ok, Skipped, gather
 from untaped.sdk import PickCatalog, PickItem, UsageError
+from untaped.sdk.contracts import Answers, Failed, NoProviderReady, Ok, Skipped, gather
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoArg
 from untaped_workspace.domain.naming import repo_key, typed_repo

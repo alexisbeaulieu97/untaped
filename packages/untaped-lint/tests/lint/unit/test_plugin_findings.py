@@ -9,7 +9,7 @@ import pytest
 
 from lint.support import Install
 from untaped.sdk import Plugin
-from untaped.testing import PluginCandidate, PluginCheckRow, compose_with
+from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
 from untaped_lint.providers import conventions
 from untaped_lint.providers.conventions import Conventions, file_lines
 from untaped_lint.records import FileLocation

@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from untaped.messages import EXPERIMENTAL_LINE
-from untaped.testing import CliInvoker, invoke_root
+from untaped.sdk.testing import CliInvoker, invoke_root
+from untaped.sdk.words import EXPERIMENTAL_LINE
 from untaped_awx.application import WatchJob
 from untaped_awx.application.suites.runner import RunTestSuite
 from untaped_awx.cli import app

@@ -15,12 +15,12 @@ import pytest
 from cyclopts import App
 
 from repo import quoted_commands
-from untaped.agents import page
-from untaped.agents._build import visible_children
-from untaped.agents._guides import guides
-from untaped.bootstrap import build_root_app, composition
 from untaped.conventions.help_tree import example_violations
-from untaped.plugins.registry import PluginCandidate
+from untaped.core.agents import page
+from untaped.core.agents._build import visible_children
+from untaped.core.agents._guides import guides
+from untaped.runtime.bootstrap import build_root_app, composition
+from untaped.runtime.registry import PluginCandidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 

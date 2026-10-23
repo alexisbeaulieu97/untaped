@@ -30,8 +30,8 @@ import release  # scripts/release.py
 from packaging.version import Version
 
 from repo.support import REPO_ROOT, SURFACE_FILE, git, reachable_tags, release_baseline
-from untaped.git import GitCommandError
-from untaped.surface import DeprecatedMark, Line, parse, postponements
+from untaped.core.surface import DeprecatedMark, Line, parse, postponements
+from untaped.sdk.git import GitCommandError
 
 POSTPONE = (
     "Remove each in a prep PR (`scripts/gen_surface.py --due` lists them), or postpone it on "
@@ -296,7 +296,7 @@ def test_due_defaults_to_the_next_major(version: str, major: int) -> None:
 
 
 def test_due_lists_the_lines_and_fails_while_any_remain() -> None:
-    from untaped.surface import render
+    from untaped.core.surface import render
 
     text = render(
         [Line("cli untaped a", DeprecatedMark(12)), Line("cli untaped b", DeprecatedMark(13))]

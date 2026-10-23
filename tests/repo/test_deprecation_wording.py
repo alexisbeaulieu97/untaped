@@ -19,7 +19,7 @@ from untaped_lint.providers.conventions.messages import message_violations
 
 CORE = PACKAGES / "untaped" / "src" / "untaped"
 #: Where core builds the sentences: the message helpers and the marks.
-BUILDERS = frozenset({CORE / "messages.py", CORE / "stability.py"})
+BUILDERS = frozenset({CORE / "sdk" / "words.py", CORE / "sdk" / "marks.py"})
 #: A removal version in prose.
 VERSION_IN_PROSE = re.compile(r"\b(?:removed in|until) \d+\.0\b")
 #: History and generated pages, relative to the repo root.
@@ -44,7 +44,7 @@ def test_core_types_no_deprecation_sentence() -> None:
     assert not found, (
         "every deprecation is a promise with a date, so its sentence comes from its mark "
         "(deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…), "
-        "deprecated_behaviour(…, removed_in=…)) or untaped.messages:\n"
+        "deprecated_behaviour(…, removed_in=…)) or untaped.sdk.words:\n"
         + "\n".join(f"  {line}" for line in found)
     )
 

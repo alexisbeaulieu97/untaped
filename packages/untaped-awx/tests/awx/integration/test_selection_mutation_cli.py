@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from awx.integration.support import KINDS, pipe, seed
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli.commands import app
 
 

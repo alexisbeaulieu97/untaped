@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing import compose_with, invoke_cli
+from untaped.sdk.testing import compose_with, invoke_cli
 from untaped_awx.cli import app
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

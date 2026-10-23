@@ -10,10 +10,10 @@ import httpx
 import pytest
 import respx
 
-from test_management.support import write_config
-from untaped import bootstrap
-from untaped.plugins.registry import PluginCandidate
-from untaped.testing import CliInvoker
+from core_test_support.commands.support import write_config
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "fresh_composition")
 

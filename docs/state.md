@@ -100,6 +100,6 @@ only through it, never with the section's model.
 
 ## Tests
 
-`untaped.testing` writes and reads rows unchecked: `write_rows(ITEMS, [...])`
+`untaped.sdk.testing` writes and reads rows unchecked: `write_rows(ITEMS, [...])`
 stores what a newer install or a damaged file would, `read_rows(ITEMS)` returns
 what is stored, and `damage(ITEMS, "one")` damages one row.

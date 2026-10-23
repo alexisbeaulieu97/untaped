@@ -14,7 +14,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import (
+from untaped.sdk.testing import (
     CliInvoker,
     ScriptedPromptBackend,
     assert_destructive_contract,
@@ -340,7 +340,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.Mon
 def test_http_failures_keep_their_category(
     monkeypatch: pytest.MonkeyPatch, status: int, category: str, exit_code: int
 ) -> None:
-    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(status))

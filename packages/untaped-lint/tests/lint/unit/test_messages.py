@@ -50,7 +50,7 @@ warnings.warn("soon", category=PendingDeprecationWarning)
 
 def test_core_management_commands_pass_the_message_rules() -> None:
     """Core's own management commands follow the stderr wording lint enforces on plugins."""
-    spec = importlib.util.find_spec("untaped.management")
+    spec = importlib.util.find_spec("untaped.core.commands")
     assert spec is not None and spec.submodule_search_locations is not None
     source_dir = Path(next(iter(spec.submodule_search_locations)))
     files = list(source_files(source_dir))

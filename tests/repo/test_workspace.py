@@ -148,14 +148,6 @@ def test_dependent_plugins_pin_their_siblings() -> None:
         assert pinned == [f"{dist}=={version}" for dist in ("untaped", *needs)]
 
 
-def test_core_holds_only_the_registry_under_plugins() -> None:
-    root = PACKAGES / "untaped/src/untaped/plugins"
-    assert sorted(p.name for p in root.iterdir() if p.name != "__pycache__") == [
-        "__init__.py",
-        "registry.py",
-    ]
-
-
 #: The first release where a ``SkillAsset`` without ``source`` is a stub.
 STUBS_SINCE = Version("11.1.0")
 

@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from untaped.testing.git import GitRemote
+from untaped.sdk.testing.git import GitRemote
 from untaped_git.api import RepoStore
 from untaped_workspace.domain.models import LocalBranch, StoredRepo, StoreUse
 from untaped_workspace.domain.safety import archive_blockers

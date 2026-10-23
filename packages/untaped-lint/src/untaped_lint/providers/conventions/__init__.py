@@ -1,7 +1,7 @@
 """Lint's own plugin linter: core's composed checks and the file rules, as findings.
 
 Core keeps the checks only the composed root can answer behind one door,
-:func:`untaped.testing.check_plugin`, which returns rows with check names
+:func:`untaped.sdk.testing.check_plugin`, which returns rows with check names
 and a status; this module turns them into findings (``fail`` an error,
 ``warn`` a warning). The rules that read only the plugin's files live here.
 The engine calls :class:`Conventions` directly, before it asks any provider:
@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from untaped.sdk import Plugin, UsageError
-from untaped.testing import PluginCandidate, PluginCheckRow, check_plugin
+from untaped.sdk.testing import PluginCandidate, PluginCheckRow, check_plugin
 from untaped_lint.errors import UnreadableSourceError
 from untaped_lint.infrastructure.files import SourceFile, source_files
 from untaped_lint.providers.conventions.blob_reader import blob_reader_violations

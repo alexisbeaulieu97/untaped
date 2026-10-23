@@ -11,10 +11,10 @@ import httpx
 import pytest
 import respx
 
-from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import PluginCandidate
-from untaped.settings import get_settings
-from untaped.testing import CliInvoker, CliResult, invoke_cli
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.settings import get_settings
+from untaped.sdk.testing import CliInvoker, CliResult, invoke_cli
 from untaped_github.cli import app
 
 API = "https://api.github.com"

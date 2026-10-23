@@ -152,6 +152,6 @@ needs more, it returns a `Refused` and the hold stays. `moved` gets a
 `MoveAsk` naming where the project was (`moved_from`; after several moves
 not yet repaired, one ask per folder, oldest first), or is `None` when
 nothing outside the folder points into it. `project.release(REPOS)` runs
-the same steps for the plugin's own commands. `untaped.testing` has
+the same steps for the plugin's own commands. `untaped.sdk.testing` has
 `make_project(path, holds=...)`, `release_ask`, `move_ask` and
 `plan_release` for unit tests.

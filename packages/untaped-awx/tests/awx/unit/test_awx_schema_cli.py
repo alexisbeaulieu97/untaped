@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.cli import app
 
 

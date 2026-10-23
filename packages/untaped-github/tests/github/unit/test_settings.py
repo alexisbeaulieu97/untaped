@@ -9,10 +9,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from untaped.bootstrap import build_root_app
-from untaped.deprecated_keys import key_mappings
+from untaped.runtime.bootstrap import build_root_app
 from untaped.sdk import get_config_section
-from untaped.testing import CliInvoker
+from untaped.sdk.health.deprecated_keys import key_mappings
+from untaped.sdk.testing import CliInvoker
 from untaped_github.settings import SWEEP, GithubSettings
 
 

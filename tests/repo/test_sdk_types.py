@@ -14,7 +14,7 @@ from pathlib import Path
 
 from repo.support import REPO_ROOT
 
-SDK = REPO_ROOT / "packages/untaped/src/untaped/sdk.py"
+SDK = REPO_ROOT / "packages/untaped/src/untaped/sdk/_exports.py"
 
 SNIPPET = """\
 import untaped.sdk
@@ -160,7 +160,7 @@ def test_a_typed_cache_types_its_values_under_strict_mypy(tmp_path: Path) -> Non
         for line in output.splitlines()
         if "Revealed type is" in line
     }
-    assert revealed[48] == '"untaped.cache.Cache[plugin.Snapshot]"', output
+    assert revealed[48] == '"untaped.sdk.storage.cache.Cache[plugin.Snapshot]"', output
     assert revealed[49] == '"typing.Mapping[str, plugin.Snapshot]"', output
     assert "Served[plugin.Snapshot" in revealed[50], output
     assert "Served[int" in revealed[51], output
@@ -196,7 +196,7 @@ def _lazy_exports(tree: ast.Module) -> set[tuple[str, str]]:
         ):
             table: dict[str, tuple[str, ...]] = ast.literal_eval(node.value)
             return {(module, name) for module, names in table.items() for name in names}
-    raise AssertionError("sdk.py has no _LAZY_MODULES map")
+    raise AssertionError("untaped/sdk/_exports.py has no _LAZY_MODULES map")
 
 
 def test_the_type_checker_imports_are_exactly_the_lazy_screen_exports() -> None:

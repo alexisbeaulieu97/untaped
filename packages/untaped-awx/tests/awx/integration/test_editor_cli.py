@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 from awx.integration.support import KINDS, pipe, seed
-from untaped.testing import CliInvoker, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend
 from untaped_awx.cli.commands import app
 
 
@@ -419,7 +419,7 @@ def test_new_editor_secret_never_leaks(fake_aap: Any, editor: Any, fmt: str) -> 
 def test_reopen_uses_fresh_default_backend_stream_each_time(
     fake_aap: Any, editor: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped.prompts import TerminalPromptBackend
+    from untaped.sdk.prompt.prompts import TerminalPromptBackend
 
     seed(fake_aap, "projects")
     original: list[Any] = []

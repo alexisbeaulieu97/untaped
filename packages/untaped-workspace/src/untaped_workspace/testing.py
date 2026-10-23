@@ -1,7 +1,7 @@
 """Workspace's checks on any provider of ``RepoSource``: ``untaped plugin check`` runs them.
 
 A provider's own tests may call :func:`conformance` too, on a provider
-composed with ``untaped.testing.compose_with``.
+composed with ``untaped.sdk.testing.compose_with``.
 """
 
 from __future__ import annotations

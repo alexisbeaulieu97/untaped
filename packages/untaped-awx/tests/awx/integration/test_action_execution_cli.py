@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_awx.application import WatchJob
 from untaped_awx.cli import app, context, parallel
 

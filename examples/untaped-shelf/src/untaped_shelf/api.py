@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from abc import abstractmethod
 
-from untaped.contracts import Contract, Issued, Record, bridge, cached, listing
 from untaped.sdk import experimental
+from untaped.sdk.contracts import Contract, Issued, Record, bridge, cached, listing
 from untaped_shelf.settings import BOOKS
 
 __all__ = ["Book", "BookSource"]

@@ -22,7 +22,7 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.testing import allows, import_targets
+from untaped.sdk.testing import allows, import_targets
 from untaped_lint.infrastructure.files import SourceFile
 
 FORBIDDEN = {

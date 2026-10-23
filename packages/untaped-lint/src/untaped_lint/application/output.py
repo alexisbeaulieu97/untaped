@@ -17,7 +17,7 @@ from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.records import Finding, Subject, location_text
 
 if TYPE_CHECKING:
-    from untaped.testing import PluginCandidate
+    from untaped.sdk.testing import PluginCandidate
 
 _diag = Diagnostics()
 

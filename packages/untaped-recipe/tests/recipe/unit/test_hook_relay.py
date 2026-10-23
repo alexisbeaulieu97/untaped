@@ -7,7 +7,7 @@ from types import ModuleType
 
 import pytest
 
-from untaped.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker
 from untaped_recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
 from untaped_recipe.cli import app
 

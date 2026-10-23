@@ -15,9 +15,11 @@ import re
 from types import ModuleType
 
 from repo.support import REPO_ROOT
-from untaped import bootstrap, sdk, testing
-from untaped.plugins.registry import PluginCandidate
-from untaped.stability import Experimental, function_mark, marks
+from untaped import sdk
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import testing
+from untaped.sdk.marks import Experimental, function_mark, marks
 
 _BULLET = re.compile(r"^- `([^`]+)`:", re.MULTILINE)
 
@@ -75,7 +77,7 @@ def experimental_objects(module: ModuleType) -> set[str]:
 def unlisted_objects(text: str, names: set[str], *, prefix: str = "") -> list[str]:
     """The ``names`` that ``## Experimental`` does not put in backticks.
 
-    ``prefix`` (``untaped.testing.``) is also accepted in front of a name, for
+    ``prefix`` (``untaped.sdk.testing.``) is also accepted in front of a name, for
     objects that live outside ``untaped.sdk``.
     """
     section = experimental_section(text)
@@ -157,19 +159,21 @@ def test_every_experimental_testing_object_is_on_the_versioning_page() -> None:
     marked = experimental_objects(testing)
 
     assert marked >= {"drive_screen", "ScreenKeys", "ScreenRun"}
-    assert unlisted_objects(text, marked, prefix="untaped.testing.") == []
+    assert unlisted_objects(text, marked, prefix="untaped.sdk.testing.") == []
 
 
 def test_a_marked_object_the_page_does_not_name_fails() -> None:
     page = _bullets("awx test").replace("things.", "the `Screen` and `UiContext.run` API.")
 
     assert unlisted_objects(page, {"Screen", "UiContext.run", "Cmd"}) == ["Cmd"]
-    assert unlisted_objects(page, {"drive_screen"}, prefix="untaped.testing.") == ["drive_screen"]
+    assert unlisted_objects(page, {"drive_screen"}, prefix="untaped.sdk.testing.") == [
+        "drive_screen"
+    ]
     assert (
         unlisted_objects(
-            page.replace("`Screen`", "`untaped.testing.drive_screen`"),
+            page.replace("`Screen`", "`untaped.sdk.testing.drive_screen`"),
             {"drive_screen"},
-            prefix="untaped.testing.",
+            prefix="untaped.sdk.testing.",
         )
         == []
     )

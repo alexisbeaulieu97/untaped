@@ -1,0 +1,344 @@
+"""``check_conventions`` on a real composition, with a real third-party plugin."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import ClassVar
+
+import pytest
+from cyclopts import App
+from pydantic import BaseModel
+
+from core_test_support.conventions.support import Install
+from untaped.conventions import file_rules_installed, plugin_violations
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.sdk import kind_of
+from untaped.sdk.testing import PluginCheckRow, check_conventions, check_plugin, plugin_candidate
+
+# A plugin package outside src/untaped, one file per convention family:
+# an undeclared write (help tree), a print (messages, one allowed), a
+# Protocol outside the ports (structure) and a domain -> cli import (layering).
+_PLUGIN = {
+    "demo_plugin/__init__.py": '''
+        """Demo plugin."""
+
+        from __future__ import annotations
+
+        from typing import TYPE_CHECKING
+
+        from pydantic import BaseModel, ConfigDict
+
+        from untaped.sdk import PluginSpec
+
+        if TYPE_CHECKING:
+            from cyclopts import App
+
+
+        class DemoSettings(BaseModel):
+            """Demo profile settings."""
+
+            model_config = ConfigDict(frozen=True)
+
+
+        def build_app() -> App:
+            from demo_plugin.cli import build
+
+            return build()
+
+
+        SPEC = PluginSpec(
+            name="demo",
+            app_factory=build_app,
+            settings=DemoSettings,
+        )
+
+        ''',
+    "demo_plugin/errors.py": '''
+        """Demo errors."""
+        ''',
+    "demo_plugin/cli.py": '''
+        """Demo commands."""
+
+        from __future__ import annotations
+
+        from cyclopts import App
+
+        from untaped.sdk import YesOption, create_app
+
+
+        def nuke(*, yes: YesOption = False) -> None:
+            """Nuke everything."""
+            print("nuked")
+            print("debug")  # untaped: allow print
+
+
+        def build() -> App:
+            app = create_app(name="demo", help="Demo commands.")
+            app.command(nuke, name="nuke")
+            return app
+        ''',
+    "demo_plugin/domain/__init__.py": '''
+        """Demo domain."""
+        ''',
+    "demo_plugin/domain/model.py": '''
+        """Demo model."""
+
+        from typing import Protocol
+
+        from demo_plugin.cli import build
+
+
+        class Store(Protocol):
+            """A store."""
+        ''',
+}
+_TESTS = {
+    "demo_tests/test_demo.py": """
+        from demo_plugin._internal import helper
+        """,
+}
+
+
+@pytest.fixture
+def demo(install: Install) -> list[PluginCandidate]:
+    """The demo plugin installed in ``tmp_path/site`` and discovered through its entry point."""
+    install({**_PLUGIN, **_TESTS})
+    return [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:SPEC")]
+
+
+# The rules that read only the plugin's files moved to untaped[lint]; core's
+# own run (no plugin installed) finds the rest.
+_LINT = file_rules_installed()
+_FOUND = sorted(
+    [
+        "demo nuke::undeclared-write::--yes",
+        "demo::plugin-name::distribution 'demo-plugin' is not 'untaped-demo'",
+        "demo::plugin-name::import package 'demo_plugin' is not 'untaped_demo'",
+        "demo_plugin.domain.model.Store::protocol-location",
+        *(
+            [
+                "demo_plugin/cli.py::print::print()",
+                "demo_plugin/domain/model.py::layer::domain -> demo_plugin.cli",
+            ]
+            if _LINT
+            else []
+        ),
+    ]
+)
+_PRIVATE_IMPORT = (
+    ["demo_tests/test_demo.py::private-test-import::demo_plugin._internal:_internal"]
+    if _LINT
+    else []
+)
+_DEPRECATED = "check_conventions is deprecated"
+
+
+def test_unknown_plugin_raises() -> None:
+    with pytest.raises(LookupError) as raised, pytest.warns(DeprecationWarning, match=_DEPRECATED):
+        check_conventions("no-such-plugin", candidates=[])
+    assert str(raised.value) == "no installed plugin named 'no-such-plugin'"
+
+
+class _BrokenRenames(BaseModel):
+    renamed_keys: ClassVar[dict[str, str]] = {"old": "missing"}
+
+
+def test_a_quarantined_plugin_fails_with_why() -> None:
+    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
+
+    with (
+        pytest.raises(AssertionError) as raised,
+        pytest.warns(DeprecationWarning, match=_DEPRECATED),
+    ):
+        check_conventions("bad", candidates=[plugin_candidate(spec)])
+
+    [line] = str(raised.value).splitlines()[1:]
+    assert line.startswith("  bad::quarantined::bad-settings-keys: ")
+    assert "missing" in line
+
+
+def test_test_imports_are_checked_only_with_a_tests_dir(
+    demo: list[PluginCandidate], tmp_path: Path
+) -> None:
+    found = plugin_violations("demo", tests_dir=tmp_path / "site" / "demo_tests", candidates=demo)
+    assert found == sorted([*_FOUND, *_PRIVATE_IMPORT])
+
+
+def test_a_third_party_plugin_fails_with_every_violation_in_its_own_files(
+    demo: list[PluginCandidate],
+) -> None:
+    """A plugin outside src/untaped is checked from its own files."""
+    with (
+        pytest.raises(AssertionError) as raised,
+        pytest.warns(DeprecationWarning, match=_DEPRECATED),
+    ):
+        check_conventions("demo", candidates=demo)
+    assert str(raised.value) == "convention violations:\n" + "\n".join(
+        f"  {line}" for line in _FOUND
+    )
+
+
+def test_a_main_module_is_checked_without_running_it(
+    demo: list[PluginCandidate], install: Install
+) -> None:
+    install({"demo_plugin/__main__.py": 'raise SystemExit("ran __main__")\n'})
+    assert plugin_violations("demo", candidates=demo) == _FOUND
+
+
+def test_a_quarantined_plugin_is_warned_about_once(
+    demo: list[PluginCandidate], capsys: pytest.CaptureFixture[str]
+) -> None:
+    broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
+    plugin_violations("demo", candidates=[*demo, broken])
+    assert capsys.readouterr().err.count("quarantined") == 1
+
+
+def test_check_conventions_keeps_the_composition_and_stays_quiet(
+    demo: list[PluginCandidate], capsys: pytest.CaptureFixture[str]
+) -> None:
+    bootstrap.compose_root(candidates=[])
+    before = bootstrap.composition()
+    broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
+
+    with pytest.raises(AssertionError):
+        check_conventions("demo", candidates=[*demo, broken])
+
+    assert bootstrap.composition() is before
+    assert "quarantined" not in capsys.readouterr().err
+
+
+def test_an_app_factory_outside_any_package_names_the_plugin(
+    demo: list[PluginCandidate], tmp_path: Path
+) -> None:
+    init = tmp_path / "site" / "demo_plugin" / "__init__.py"
+    text = init.read_text(encoding="utf-8")
+    partial = text.replace("app_factory=build_app", "app_factory=functools.partial(build_app)")
+    init.write_text(
+        partial.replace("import TYPE_CHECKING", "import TYPE_CHECKING\nimport functools"),
+        encoding="utf-8",
+    )
+    with pytest.raises(LookupError) as raised, pytest.warns(DeprecationWarning, match=_DEPRECATED):
+        check_conventions("demo", candidates=demo)
+    assert str(raised.value) == (
+        "plugin 'demo': its app factory or settings are not defined in a package"
+    )
+
+
+def test_stability_rules_run_with_the_other_checks(
+    demo: list[PluginCandidate], install: Install
+) -> None:
+    marked = (
+        _PLUGIN["demo_plugin/cli.py"]
+        .replace(
+            'create_app(name="demo", help="Demo commands.")',
+            'create_app(name="demo", help="Demo commands.", stability=experimental)',
+        )
+        .replace("import YesOption, create_app", "import YesOption, create_app, experimental")
+    )
+    install({"demo_plugin/cli.py": marked})
+
+    assert "demo::mark-on-spec::demo" in plugin_violations("demo", candidates=demo)
+
+
+def test_a_plugin_without_commands_is_found_through_its_settings(install: Install) -> None:
+    install(
+        {
+            "untaped_quiet/__init__.py": '''
+                """Quiet plugin: settings, no commands."""
+
+                from pydantic import BaseModel, ConfigDict
+
+                from untaped.sdk import PluginSpec
+
+
+                class QuietSettings(BaseModel):
+                    """Quiet profile settings."""
+
+                    model_config = ConfigDict(frozen=True)
+
+
+                SPEC = PluginSpec(name="quiet", settings=QuietSettings)
+                ''',
+            "untaped_quiet/errors.py": '''
+                """Quiet errors."""
+                ''',
+        }
+    )
+    candidate = PluginCandidate(
+        distribution="untaped-quiet", name="quiet", target="untaped_quiet:SPEC"
+    )
+    assert plugin_violations("quiet", candidates=[candidate]) == []
+
+
+def test_a_plugin_with_only_a_name_is_found_through_its_entry_point(install: Install) -> None:
+    install(
+        {
+            "untaped_bare/__init__.py": '''
+                """Bare plugin: a name and nothing else."""
+
+                from untaped.sdk import PluginSpec
+
+
+                SPEC = PluginSpec(name="bare")
+                ''',
+            "untaped_bare/errors.py": '''
+                """Bare errors."""
+                ''',
+        }
+    )
+    candidate = PluginCandidate(
+        distribution="untaped-bare", name="bare", target="untaped_bare:SPEC"
+    )
+    assert plugin_violations("bare", candidates=[candidate]) == []
+
+
+def test_a_plugin_with_only_a_name_and_no_entry_point_cannot_be_located() -> None:
+    candidate = plugin_candidate(PluginSpec(name="bare"))
+    with pytest.raises(LookupError, match="'bare' declares nothing to locate its package by"):
+        plugin_violations("bare", candidates=[candidate])
+
+
+def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Install) -> None:
+    install(
+        {
+            "acme_tools/__init__.py": '''
+                """A hyphenated plugin under the wrong import package."""
+
+                from untaped.sdk import PluginSpec
+
+
+                SPEC = PluginSpec(name="acme-tools")
+                ''',
+            "acme_tools/errors.py": '''
+                """Errors."""
+                ''',
+        }
+    )
+    candidate = PluginCandidate(
+        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools:SPEC"
+    )
+    assert plugin_violations("acme-tools", candidates=[candidate]) == [
+        "acme-tools::plugin-name::import package 'acme_tools' is not 'untaped_acme_tools'"
+    ]
+
+
+def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
+    demo: list[PluginCandidate],
+) -> None:
+    """S13's core half: check names and a status, no file conventions, the same record kind."""
+    rows = check_plugin("demo", candidates=demo)
+    assert all(isinstance(row, PluginCheckRow) for row in rows)
+    assert {(row.check, row.title, row.status) for row in rows} == {
+        ("conventions", "undeclared-write", "fail"),
+        ("conventions", "plugin-name", "fail"),
+        ("conventions", "protocol-location", "fail"),
+    }
+    assert kind_of(PluginCheckRow) == "untaped.plugin_check"
+    assert "severity" not in PluginCheckRow.model_fields
+
+
+def test_check_plugin_checks_an_uninstalled_spec_through_candidates() -> None:
+    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
+    [row] = check_plugin("bad", candidates=[plugin_candidate(spec)])
+    assert (row.check, row.title, row.status) == ("registration", "bad-settings-keys", "fail")

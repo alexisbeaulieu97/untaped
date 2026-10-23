@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.testing import CliInvoker, CliResult
+from untaped.sdk.testing import CliInvoker, CliResult
 from untaped_github.cli import app
 
 
@@ -109,7 +109,7 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(
 def test_rate_limit_is_retryable_and_exits_five(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response
 ) -> None:
-    monkeypatch.setattr("untaped.http._sleep", lambda _delay: None)
+    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     result = _whoami(tmp_path, monkeypatch, [], response=response)
 

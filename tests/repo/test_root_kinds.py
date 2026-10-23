@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.bootstrap import build_root_app
-from untaped.plugins.registry import PluginCandidate
-from untaped.testing import invoke_cli
+from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
