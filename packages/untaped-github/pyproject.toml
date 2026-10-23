@@ -1,19 +1,19 @@
 [project]
 name = "untaped-github"
-version = "11.0.0"
+version = "11.1.0"
 description = "GitHub plugin for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
-dependencies = ["untaped==11.0.0", "untaped-git==11.0.0"]
+dependencies = ["untaped==11.1.0", "untaped-git==11.1.0"]
 
 [project.optional-dependencies]
 # Github fills the git plugin's GitHost and workspace's RepoSource contracts: the owner
 # extras providers declare.
-git = ["untaped-git==11.0.0"]
-workspace = ["untaped-workspace==11.0.0"]
+git = ["untaped-git==11.1.0"]
+workspace = ["untaped-workspace==11.1.0"]
 
 [project.entry-points."untaped.plugins"]
 github = "untaped_github:SPEC"

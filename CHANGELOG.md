@@ -1,5 +1,745 @@
 # Changelog
 
+## 11.1.0
+
+### Added
+
+- A new `lint` plugin (`untaped[lint]`, experimental): `untaped lint` checks
+  the plugins a repository's `pyproject.toml` declares against untaped's
+  conventions and each contract they fill, or any records piped in with
+  `--stdin`, and reports findings with rule ids such as `lint.error-case`.
+  `untaped lint rules` lists every rule, `--ignore <rule>[:<glob>]` and the
+  `lint.ignore` setting leave findings out, and it exits 3 on an error finding.
+  A plugin adds rules by filling the `Linter` contract from `untaped_lint.api`,
+  and tests itself with `untaped_lint.testing.assert_clean(NAME)`. A
+  `# untaped: allow <rule>` marker may name the rule as `lint.<rule>` too.
+  ([#650](https://github.com/alexisbeaulieu97/untaped/pull/650))
+- `untaped plugin list` rows carry each plugin's `distribution`, `version`,
+  `package`, `source_dir` and, from a checkout, `tests_dir`; `untaped.sdk`
+  exports them as `Plugin` with `installed_plugins()`, and `untaped.testing`
+  exports `PluginCandidate`, `allows` and `import_targets` for a plugin's
+  checks. ([#650](https://github.com/alexisbeaulieu97/untaped/pull/650))
+- A deprecation names the major release that removes it: `deprecated()`,
+  `deprecated_alias()`, `Cache()` and the new `Renamed("new", removed_in=…)` for
+  `renamed_keys` take `removed_in=<major>`, and its warning, `--help` line,
+  `config list` note and `doctor` row say "removed in untaped-acme 3.0" (core's
+  own: the version alone). Under `--format json` each warning is an
+  `untaped.deprecation` line with its `id`, `removed_in`, `distribution` and
+  `replacement`, and `config list` rows carry `removed_in` and `distribution`.
+  `untaped.testing.assert_surface(..., version=)` (experimental) fails an
+  undated or overdue deprecation, and `untaped lint` reports a hand-typed
+  deprecation sentence as `lint.hand-typed-deprecation`. Each kind is in
+  [deprecation.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/deprecation.md).
+  ([#688](https://github.com/alexisbeaulieu97/untaped/pull/688))
+- A plugin can declare a `Store` (experimental): a file or folder it keeps
+  under a name per layout, such as `index.v4.sqlite3`, so installs of
+  different untaped versions that share `~/.untaped` never open each other's
+  data. `untaped doctor` gains a `stores` row naming each store's file, any
+  other layout left on disk, what holds each layout and why one is kept, and
+  `untaped.testing.assert_schema_pinned` fails a SQLite store's tests when its
+  schema changes without the right version bump.
+  ([#696](https://github.com/alexisbeaulieu97/untaped/pull/696))
+- A new `lint.store-format` rule (experimental, with the `lint` plugin) fails
+  where a plugin opens a database under its own directory without a `Store`:
+  `sqlite3.connect`, `shelve.open` or `dbm.open` called on a `plugin_dir(...)`
+  or `~/.untaped` path. It is an error, so a plugin's
+  `untaped_lint.testing.assert_clean` (and deprecated `check_conventions`) test
+  may fail after the upgrade; open the file through a `Store` (see
+  [caches.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/caches.md#stores)),
+  or, when every release of the major reads its layout, waive the call with
+  `# untaped: allow store-format`.
+  ([#698](https://github.com/alexisbeaulieu97/untaped/pull/698))
+- `untaped ansible impact ROLE --uses VAR` lists the places the role's
+  dependents define, set or read a variable, one `ansible.variable_use_hit`
+  row each, with the file, line, YAML key path and how it is used. Repeat
+  `--uses` for any of several names. A dependent whose files were never
+  analysed is an error line (exit 1) rather than a missing row, and a role that
+  defines none of the names gets a hint.
+  ([#699](https://github.com/alexisbeaulieu97/untaped/pull/699))
+- Installs of different untaped versions that share `~/.untaped` now clean up
+  after each other. `untaped setup register` records an install and the store
+  layouts it uses in `~/.untaped/refs/` (`--remove` takes it back); a registered
+  install then removes, after a complete refresh, every other layout no
+  registered install holds and no running untaped has open, with an
+  `untaped.pruned` info line for each that `--quiet` keeps. `untaped setup plan`
+  lists registration as its first step (`--check` does not count it), and the
+  `untaped setup` screen offers it as its first row. `untaped doctor` gains a
+  `references` row listing every registered install. `untaped setup
+  migrate-dirs` offers what the cleanup leaves: the layouts nobody holds, as
+  `ansible.index-layouts`, and the references of installs that are gone, as
+  `untaped.references`. `config migrate` and doctor's unknown-keys row name the
+  other registered installs that may still read the keys. For plugins,
+  experimental: `Store(keep=)` for the layouts a setting points at, `holders()`
+  with its `RefTarget` and `RefHolder`, `other_layouts_migration()`, and
+  `untaped.testing.write_reference`. How it works is in
+  [configuration.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/configuration.md#several-versions-on-one-machine).
+  ([#700](https://github.com/alexisbeaulieu97/untaped/pull/700))
+- `untaped plugin schema` describes every record the root commands write,
+  `untaped.auth_outcome`, `untaped.doctor_check`, `untaped.setup_step` and the
+  skills, token, fix and migration rows among them, as well as
+  `untaped.plugin_check` and `untaped.scaffold_outcome`, which it could not find
+  before; their fields are unchanged.
+  ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- A plugin that declares a record kind under another plugin's name (or
+  `untaped.*`) is quarantined with the reason `foreign-kind`, beside
+  `duplicate-kind`: a kind starts with the name of the plugin whose package
+  declares it. ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- `untaped.testing.invoke_root` takes `input=` for what is piped on stdin.
+  ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- Plugins name record kinds by their model: `read_stdin_input` and
+  `read_identifiers` take `accepts=(Model, ...)` beside `accept_kinds=`, and
+  `untaped.sdk` exports `emit_document` for printing a document (a schema, a
+  profile's settings) that is not a row, with no kind and no `pipe` envelope.
+  ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- A plugin can deprecate a behaviour, not only a command or a setting:
+  `deprecated_behaviour("row-kind", removed_in=3, replacement=...)` listed in
+  the new `PluginSpec(deprecations=...)` gets a `behaviour acme.row-kind` line
+  in the public surface, and its `notify`, `warn` and `sentence` build the
+  warning, named after the plugin's distribution and dated like every other
+  deprecation
+  ([deprecation.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/deprecation.md)).
+  ([#703](https://github.com/alexisbeaulieu97/untaped/pull/703))
+- `untaped plugin schema` now describes workspace's seven record kinds,
+  `workspace.workspace`, `workspace.status` and workspace's five outcome kinds,
+  before any workspace command runs; their fields are unchanged.
+  ([#705](https://github.com/alexisbeaulieu97/untaped/pull/705))
+- `untaped plugin schema` describes jira's eight record kinds, `jira.issue`,
+  `jira.issue_outcome`, `jira.comment`, `jira.user`, `jira.transition`,
+  `jira.project`, `jira.board` and `jira.sprint`, before any jira command runs.
+  ([#708](https://github.com/alexisbeaulieu97/untaped/pull/708))
+- `untaped plugin schema` describes dotfiles' nine record kinds,
+  `dotfiles.item`, `dotfiles.repo`, `dotfiles.status`, `dotfiles.status.summary`
+  and the apply, sync, remove, item and repo outcomes, which it could not find
+  before; their fields are unchanged.
+  ([#709](https://github.com/alexisbeaulieu97/untaped/pull/709))
+- `untaped lint` (experimental) lints the repository it runs in:
+  `.untaped/lint.yml` at the root names the repository's own rule modules
+  (`.untaped/lint/*.py`, ids such as `house.no-print`), which plugins read its
+  files (`readers:`, through the `TreeReader` contract) and what to ignore, and
+  every rule reading the repository's files runs on what git tracks or would
+  track. `untaped lint new ID` writes a rule and its failing test, `--config
+  PATH` lints the current directory with another lint file, and
+  `untaped_lint.testing` has `tree`, `run_rule` and `repo_rule` for a rule's
+  tests. ([#704](https://github.com/alexisbeaulieu97/untaped/pull/704))
+- `untaped.testing.allowed_names(line)` returns the rule names a source line's
+  `# untaped: allow` marker names, bare or as `<key>.<id>`, for a linter that
+  resolves them itself.
+  ([#704](https://github.com/alexisbeaulieu97/untaped/pull/704))
+- `untaped plugin schema` now describes github's eight remaining record kinds,
+  `github.user`, `github.code`, `github.issue`, `github.user_hit`,
+  `github.sweep_file`, `github.sweep_match`, `github.sync_outcome` and
+  `github.worktree`, once the plugin is composed; their fields are unchanged.
+  ([#711](https://github.com/alexisbeaulieu97/untaped/pull/711))
+- `untaped plugin schema` now describes `ansible.dependency`,
+  `ansible.dependent`, `ansible.dependency_match`, `ansible.source`,
+  `ansible.source_alias`, `ansible.source_alias_outcome`,
+  `ansible.source_outcome` and `ansible.source_status`, which it could not find
+  before; their fields are unchanged.
+  ([#715](https://github.com/alexisbeaulieu97/untaped/pull/715))
+- A plugin's Python API can deprecate a function or one of its parameters with a
+  date: `@deprecated(removed_in=3, replacement=new_api)` over the
+  `warnings.deprecated` literal type checkers read, and
+  `@deprecated_parameters` on a function whose parameter carries
+  `Annotated[..., deprecated(removed_in=3)]`, which then raises an
+  `UntapedDeprecationWarning` whenever that parameter is passed. `untaped lint`
+  checks that the two marks agree (`lint.deprecation-text`, with the literal to
+  paste), that no deprecation is undated (`lint.undated-deprecation`) and that
+  neither half is forgotten (`lint.untyped-deprecation`,
+  `lint.unwarned-parameter`, `lint.mark-on-overload`)
+  ([deprecation.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/deprecation.md)).
+  ([#707](https://github.com/alexisbeaulieu97/untaped/pull/707))
+- `untaped plugin schema` describes recipe's thirteen record kinds, such as
+  `recipe.apply_outcome`, `recipe.pack`, `recipe.backup` and `recipe.test`,
+  which it could not find before.
+  ([#716](https://github.com/alexisbeaulieu97/untaped/pull/716))
+- `untaped.sdk.check_columns(Model, columns=columns, fmt=fmt)` refuses an
+  unknown `--columns` name before a command acts, for a plugin whose rows follow
+  a side effect but are not outcome records.
+  ([#719](https://github.com/alexisbeaulieu97/untaped/pull/719))
+- `untaped plugin schema` describes every record awx writes: each catalog
+  resource (`awx.job_template`, `awx.project` and the other thirteen), `awx.job`
+  and `awx.unified_template` list the fields untaped reads "plus any others"
+  (`additionalProperties`), since a resource row is AWX's own answer; and the
+  rows awx builds, from `awx.event`, `awx.log` and `awx.launch_outcome` to
+  `awx.document`, `awx.test_case` and `awx.prune_outcome`, which it could not
+  find before. ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- A record that passes a service's answer through can set `extra="allow"`,
+  with its extras typed `__pydantic_extra__: dict[str, JsonValue]`: its row
+  keeps every field it was given, its typed fields first (its base's ahead of
+  a subclass's, so the identity leads) and a declared field the answer left out
+  still left out; its schema allows other fields, and an unknown `--columns`
+  name on it only warns. `untaped.sdk` exports `NOT_COUNTED`, which marks a
+  `Failure` field a command reports on its own, so `emit` does not count the
+  row as failed. ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- A plugin can deprecate a flag that has no new spelling: mark the option
+  `Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3,
+  replacement="--limit 1")]`. Any spelling of it (`--dry-run`, `--no-dry-run`,
+  `--dry-run=false`, a short flag) warns once per run, `--help` lists it under
+  Deprecated options only with `--deprecated`, its help being its `Deprecated:`
+  line, and its surface line carries the date. `untaped lint` reports a marked
+  option outside that panel or with `show=False`, an unmarked one inside it, or
+  a mark on a parameter that is not an option (`lint.deprecated-option-panel`),
+  and checks the option's replacement and nesting as a command's
+  ([deprecation.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/deprecation.md)).
+  ([#717](https://github.com/alexisbeaulieu97/untaped/pull/717))
+- `untaped awx lint` (experimental) checks AWX resources against rules: apply
+  documents before you apply them (`FILES`, with references resolved in the
+  batch and then on the controller, or in the batch only with `--offline`), or
+  everything the controller holds, from a snapshot kept for an hour
+  (`awx.caches.resources.max_age_seconds`, `--refresh`/`--cached`). Ten rules
+  ship, from `awx.missing-reference` and `awx.ignored-launch-field` to
+  `awx.playbook-missing` and `awx.plaintext-secret`; a live finding carries
+  the `awx … patch` that fixes it. `--kind`, `--organization`, `--filter` and
+  `--search` narrow what is reported, and the ids, `--ignore`, `--select`,
+  `--strict` and exit codes are `untaped lint`'s. `untaped_awx.api` exports
+  the snapshot, its document views and the rules for a repository's or a
+  plugin's own rules, and `untaped_awx.testing.resources()` builds one from
+  YAML for their tests.
+  ([#726](https://github.com/alexisbeaulieu97/untaped/pull/726))
+- A repository of AWX apply documents lints them with `untaped lint`, offline
+  (experimental, as `awx lint` is): name awx under `readers:` in
+  `.untaped/lint.yml` (`awx: ["specs/**/*.yml"]`) and the files those globs
+  match are checked by the awx rules, and by any rule reading `awx.resources`,
+  as `untaped awx lint FILES --offline` would.
+  ([#726](https://github.com/alexisbeaulieu97/untaped/pull/726))
+- `untaped_lint.api.lint_config(start)` (experimental) builds the
+  configuration `lint()` takes (the profile's `lint.ignore` and the repository
+  lint file found from `start`), so a plugin's own lint command applies the
+  same ignores as `untaped lint` without reading lint's settings.
+  ([#726](https://github.com/alexisbeaulieu97/untaped/pull/726))
+- `untaped_lint.api.lint()` (experimental) takes `locations=`: it reports only
+  the findings at those locations, written as the table writes them
+  (`job_templates/14`, `templates.yml#2`), so a plugin can narrow a run to
+  exact resources where two share a target.
+  ([#726](https://github.com/alexisbeaulieu97/untaped/pull/726))
+- `lint`'s `example-command` rule checks that each `$ untaped ...` line in a
+  command docstring's `Examples` section parses
+  ([agent-pages.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/agent-pages.md#how-a-plugin-shapes-its-pages)).
+  ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- Each `untaped.sdk.ExitCode` member carries a one-line `description` of what
+  the code means. ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- `untaped.sdk.nearest_pyproject(start)` returns the nearest `pyproject.toml`
+  from a folder up to the farther of its git checkout's root and its project's
+  root. ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- `untaped agents` (experimental) prints what this untaped can do as Markdown
+  pages for coding agents: `untaped agents` is the map of core and every
+  installed plugin, `untaped agents PLUGIN` a plugin's commands, extension
+  points and settings, and `untaped agents PLUGIN COMMAND` a command's options
+  and examples. The map lists the exit codes and which one wins when a run sees
+  several. Each page names the untaped that answered, and says when the
+  folder's `pyproject.toml` requires another one
+  ([agent-pages.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/agent-pages.md)).
+  ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- A plugin can ship guides, pages for what belongs to no single command, on
+  `PluginSpec.guides`: `untaped agents PLUGIN GUIDE` (experimental) prints one,
+  and `lint` checks them
+  ([agent-pages.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/agent-pages.md#guides)).
+  ([#735](https://github.com/alexisbeaulieu97/untaped/pull/735))
+- `untaped skills install` writes a stub skill for a plugin that declares a
+  `SkillAsset` without `source`: a short `SKILL.md` from untaped's template and
+  the plugin's description that sends the agent to `untaped agents`, so one
+  stub serves every untaped on the machine. Its marker, `.untaped-stub.json`,
+  records the untaped and plugin versions that wrote it. untaped's own
+  `untaped` skill is now a stub. `skills update --force` also replaces a stub
+  someone edited or a newer untaped wrote.
+  ([#737](https://github.com/alexisbeaulieu97/untaped/pull/737))
+- A plugin marks what it needs set up on its settings model: `NeedsSetup` on an
+  `X | None = None` field it can't run without. `untaped setup`, `setup plan`,
+  `doctor` and `auth` read the marks; a misplaced mark quarantines the plugin
+  ([plugins.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/plugins.md#settings-and-the-plugin-app)).
+  ([#760](https://github.com/alexisbeaulieu97/untaped/pull/760))
+- Plugins keeping worktrees in the repo store can lock them so pruning keeps a
+  moved or unmounted folder's entry (`RepoStore.worktree_add(lock_reason=...)`,
+  `RepoStore.lock_worktree`), reconnect one after a move
+  (`RepoStore.repair_worktree`) and list their worktrees under a folder
+  (`RepoStore.worktrees_under`).
+  ([#775](https://github.com/alexisbeaulieu97/untaped/pull/775))
+- `untaped project` (experimental) makes any folder a project: `project init`
+  writes its `.untaped/project.json`, and the home records it by the folder's
+  filesystem identity, so a moved project is followed and a copy gets its own
+  id. `untaped project list` shows each recorded project and whether its folder
+  is present, missing or unreadable; `project move` moves one or repairs a hand
+  move, and `project remove` and `project prune` release what a project holds
+  through the plugins that own it, with a preview, then delete only what
+  untaped wrote. `untaped doctor`'s `references` row also lists projects and
+  warns about a missing one. For plugins, experimental: `Project`,
+  `current_project()`, `project_at()`, `known_projects()` and
+  `committed_path()` in `untaped.sdk`, which names a plugin's own committed
+  files under `.untaped/`, and `untaped.testing.make_project`. How it works:
+  [projects.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/projects.md).
+  ([#779](https://github.com/alexisbeaulieu97/untaped/pull/779))
+- A plugin can let projects hold its items with an `ItemStore` in
+  `PluginSpec.stores` (experimental, with `ReleaseAsk`, `MoveAsk`, `LetGo` and
+  `Refused` in `untaped.sdk` and test helpers in `untaped.testing`), and
+  untaped asks it how to release them when a project goes and to repair them
+  when one moves:
+  [projects.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/projects.md#holding-a-plugins-items).
+  ([#786](https://github.com/alexisbeaulieu97/untaped/pull/786))
+- `awx job-templates usage` and `awx workflow-templates usage` draw the
+  workflows that run a template as a tree with `--format tree` (add
+  `--recursive` for the whole chain), and each row now says what the workflow
+  runs (`contains`), for which queried template (`target`) and whether the
+  depth limit stopped there (`stopped`), so JSON holds the whole graph.
+  ([#794](https://github.com/alexisbeaulieu97/untaped/pull/794))
+- Plugins can draw a graph as a tree, the way `ansible graph` does, with
+  `TreeGraph`, `print_tree` and `tree_text` in `untaped.sdk` (experimental),
+  and offer it as `--format tree` with `TreeFormatOption` and `emit(tree=)`.
+  ([#794](https://github.com/alexisbeaulieu97/untaped/pull/794))
+- A plugin's cache can keep the data itself: `Cache(..., model=Snapshot)` stores
+  what each fill returns as `Filled(value=...)`, with its freshness, in one file
+  per version of the value, serves another version's data as outdated when a
+  refresh fails or under `--cached`, and keeps a credential's data apart with
+  `serve(partition=)`. `read_data_file`, `write_data_file` and `copy_data_file`
+  (experimental) give any other file a plugin keeps one stamped, owner-only
+  format that tells a damaged file from a missing one
+  ([caches.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/caches.md#a-cache-that-keeps-its-data)).
+  ([#801](https://github.com/alexisbeaulieu97/untaped/pull/801))
+- git's `RepoStore.read_private` and `RepoStore.write_private` (experimental)
+  keep a plugin's typed file in a store repo, on the shared data-file format.
+  github, workspace and ansible use them. github now keeps when it last fetched
+  a repo in the file's stamp, so each repo github's sweep had fetched under 11.0
+  is fetched once more after upgrading (only what changed downloads), and a
+  metadata file it can't read is refetched instead of leaving the repo
+  unscanned. Adopting a repo with `setup migrate-dirs` copies another plugin's
+  file whole, with only its freshness cleared.
+  ([#806](https://github.com/alexisbeaulieu97/untaped/pull/806))
+- Plugins can keep typed state rows with `StateRows` (experimental), listed on
+  `PluginSpec.stores`: each row is checked against its model, fields a newer
+  untaped added are written back as they were, and a damaged row stops the
+  command naming the file, the row and the fix.
+  `StateRows.per_project(...).of(project)` keeps a project's rows in its own
+  `state.yml`, as `StateMap(project=)` does for strings
+  ([state.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/state.md)).
+  ([#823](https://github.com/alexisbeaulieu97/untaped/pull/823))
+- Tokens leave `config.yml`. `untaped auth login [<plugin> [<name>]]` files a
+  token for the server this run uses (its URL and how its certificate is
+  checked) in the macOS keychain, a Secret Service or `pass`, or with
+  `--token-command` as a command that prints it; a token is then only ever sent
+  to that server. `auth list` shows every stored login, `auth forget` deletes
+  one (`--id` reaches any) and `auth status` says which source answers each
+  token for this run. `UNTAPED_<PLUGIN>__TOKEN` still overrides for one
+  process, and a missing token exits 4 naming `auth login`, marked as the
+  person's step (`fix_by: user`) so an agent hands it over
+  ([tokens](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/configuration.md#tokens)).
+  A plugin declares its secrets as `Credential`s on `PluginSpec(credentials=)`,
+  for a server held by a `CredentialKey` setting, and reads one with
+  `Credential.get`; `untaped.testing` keeps logins in memory in tests
+  ([credentials.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/credentials.md)).
+  ([#826](https://github.com/alexisbeaulieu97/untaped/pull/826))
+- `untaped doctor` has a `caches` row. It notes a cache's keys that hold only
+  another version's value, and the `cached/` folder of a plugin not installed
+  here. `untaped setup migrate-dirs` now offers to delete that folder; nothing
+  deletes it on its own, since another install sharing the home may use it.
+  ([#825](https://github.com/alexisbeaulieu97/untaped/pull/825))
+
+### Changed
+
+- Deprecation warnings reword: an undated one says "a future major release"
+  instead of "the next major release", a renamed command or flag names both
+  spellings in full, with the command path, and a setting ignored for its new
+  spelling says when it is removed. `ansible`'s deprecated
+  `stale_after_seconds` says "removed in 12.0".
+  ([#688](https://github.com/alexisbeaulieu97/untaped/pull/688))
+- At `ansible.index_path`'s default, the dependency index is now
+  `~/.untaped/plugins/ansible/index.v4.sqlite3`: the first command that opens
+  it renames `index.sqlite3` there, with nothing rebuilt. A path you set is used
+  as it is. Upgrade every install that shares `~/.untaped` to this release:
+  from the rename on, 11.0 no longer shares the index and builds its own.
+  ([#696](https://github.com/alexisbeaulieu97/untaped/pull/696))
+- The ansible index (schema 5) also stores the variables each indexed repo's
+  YAML files and templates define, set and read. The index is upgraded in
+  place, and the first refresh after the upgrade analyses each repo's files
+  once; later refreshes analyse only files that changed. The index now follows
+  the version of the variable analysis and of the dependency parser, so an
+  untaped upgrade that changes either refreshes each saved source once.
+  ([#699](https://github.com/alexisbeaulieu97/untaped/pull/699))
+- The git plugin's `untaped doctor` row about the repo store is now
+  `git.repo-store` (was `git.store`, the kind of `untaped git store`'s record).
+  ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- `untaped github cache delete --dry-run` and `cache prune --dry-run` show
+  `full_name`, `ref`, `status`, `fetched_at`, `path` and `disk_bytes` instead of
+  every field; `--columns +name`/`-name` edit those, and JSON is unchanged.
+  ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- An unknown `--columns` name is now a usage error (exit 2) listing the valid
+  columns, as it already was for other record rows, on the root `auth status`,
+  `doctor`, `plugin list`, `plugin check`, `skills list`, `skills status` and
+  `setup` commands, on `github cache status`, `delete` and `prune` (before they
+  delete anything), on `github sweep`'s repo rows and its `--show files` and
+  `--show matches` rows (before it fetches), on `ansible source list`,
+  `ansible source get` and `ansible source-alias list`, and on `untaped recipe`
+  `list`, `get`, `validate`, `packs list`, `packs get`, `hooks list`,
+  `hooks get`, `backups get`, `test` and `hooks run` (before they run a hook or
+  write a golden); it used to only warn. Rows reporting a change now only warn,
+  since the change already happened, as do `doctor`'s and `setup plan`'s
+  tables, which show a command to type, the table of `github sweep`'s repo
+  rows, and the tables of `recipe get` and `recipe backups get`, which reshape
+  a field.
+  An unknown name is also a usage error on awx's `jobs events`, `jobs logs`,
+  `workflow-templates nodes`, `job-templates usage`, `workflow-templates usage`,
+  `test list` and `test run` rows (`test run` before it launches anything), and
+  on `<resource> export`'s documents printed with a `--format` other than `yaml`
+  (no `--out`). ([#701](https://github.com/alexisbeaulieu97/untaped/pull/701))
+- A plugin that still reads a plain-text `<section>.token` (one that declares
+  no `Credential`) warns the same wherever it appears (loading, `config set`,
+  `doctor` and `setup plan`): "support for a plain-text acme.token in
+  config.yml is deprecated and will be removed in 12.0". Under `--format json`
+  it is an `untaped.deprecation` line with the id
+  `behaviour untaped.plaintext-token`, and `config set acme.token` names
+  `untaped auth set acme` as its replacement instead of a hint.
+  ([#703](https://github.com/alexisbeaulieu97/untaped/pull/703))
+- `jira issues search` and `jira issues assigned` rows now carry the detail
+  fields of `jira.issue` (`reporter`, `labels`, `created_at`, `resolution`,
+  `description`, `links`, `comments`) as `null`, the shape `jira issues get`
+  writes, instead of leaving them out; `--columns` on them now accepts those
+  names. ([#708](https://github.com/alexisbeaulieu97/untaped/pull/708))
+- `untaped dotfiles apply` and `dotfiles remove` show the plan they ask about
+  as unstyled, aligned text on stderr, now with each path's target, instead of
+  a table or the `--format` output; a column empty on every row is always left
+  out. The records on stdout are unchanged.
+  ([#709](https://github.com/alexisbeaulieu97/untaped/pull/709))
+- `ansible source list` and `ansible source get` now write
+  `ref_scan_default: null` for a source that does not set it, instead of
+  leaving the field out.
+  ([#715](https://github.com/alexisbeaulieu97/untaped/pull/715))
+- The deprecated stderr helpers now say when they go: `report_error`,
+  `report_row_errors`, `UiContext.message`, `.success` and `.progress` warn
+  "will be removed in 12.0" and name their replacement, and `echo(err=)` and
+  `UiContext.styled(err=)` warn whenever `err=` is passed, `err=False` included,
+  since 12.0 removes the parameter. `lint.warnings-warn` no longer lets a
+  `warnings.warn(..., DeprecationWarning)` through: a Python API deprecates
+  through its mark.
+  ([#707](https://github.com/alexisbeaulieu97/untaped/pull/707))
+- `untaped recipe apply`'s stderr preview prints plain aligned columns (or
+  `key: value` lines with `ui.collection_view: list`) instead of a themed
+  table. ([#716](https://github.com/alexisbeaulieu97/untaped/pull/716))
+- `untaped recipe` rows of one kind now share one set of fields, written as
+  null where a row has no value instead of left out: the `list` commands write
+  the fields only their `get` fills, `packs get` writes `manifest_name` (null
+  unless the pack was installed under another name, which `packs list` now
+  names too, with the pack's `project`), `hooks run` writes the other hook
+  kind's fields, and `test` writes `error` on every case. `packs get` adds
+  `source`, `rev` and `commit` and lists `path` before `recipes` and `hooks`;
+  `get` and `hooks get` add `pack` and `name`; `backups get` writes the
+  `backups list` fields (its `created_at` the bundle id's UTC time) plus
+  `inputs` and `files`, instead of the bundle's raw metadata.
+  ([#716](https://github.com/alexisbeaulieu97/untaped/pull/716))
+- `awx test run` names a case failed by a broken inventory source with
+  `failure.system` `awx.inventories`, not `awx.inventory`, which is the kind of
+  an inventory record.
+  ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- `awx jobs events --follow` and `jobs logs --follow` with `--columns '?'` list
+  the columns from the job's events or lines without following; on a job with
+  none yet, they list the default columns, as they do without `--follow`.
+  ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- awx rows write a field they used to leave out as `null`: `launch` and `sync`
+  rows write every field (`payload`, `detail` and the execution's, with `error`
+  last), `delete` rows `detail`, `add`/`remove` rows `partial` and `detail`, and
+  `test run` expectations `node` on a job case's checks.
+  ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- awx resource, job and unified-template rows in json and yaml lead with the
+  fields untaped reads (`id`, `name`, `type` and the resource's own on a
+  resource; `id`, `name`, `status` on a job), then AWX's other fields in its
+  order; table, raw and pipe output are unchanged.
+  ([#721](https://github.com/alexisbeaulieu97/untaped/pull/721))
+- `lint.hand-typed-mark` now reads a hidden option's help too: a flag
+  deprecated by typing `Deprecated:` in its help takes the mark instead
+  ([deprecation.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/reference/deprecation.md)).
+  ([#717](https://github.com/alexisbeaulieu97/untaped/pull/717))
+- `untaped setup --only` and `setup plan --only` take section names
+  (`--only ui`): `setup` lists just those sections, `setup plan` plans the
+  services among them, and `setup` now opens when no service is installed.
+  ([#725](https://github.com/alexisbeaulieu97/untaped/pull/725))
+- `untaped setup` lists every settings section, not only the services: select
+  one to see each setting's value, where it comes from and its help, press enter
+  to change it as `config set` would, or `delete` to unset it. Writing back the
+  value a field opened with changes nothing, and an empty secret field keeps the
+  secret. A service's first row holds every setting its plugin marks as needed,
+  each in the field its type takes, and a source for each of its secrets,
+  checked online before they are saved as before.
+  ([#725](https://github.com/alexisbeaulieu97/untaped/pull/725))
+- `untaped setup` edits lists: a list of names opens a list editor (add, edit,
+  remove and move items, then write the whole list), a setting that holds a
+  command to run is one shell-quoted line, and any other list or map is one line
+  of JSON, as `config set` takes it.
+  ([#727](https://github.com/alexisbeaulieu97/untaped/pull/727))
+- `untaped setup` edits symbol and color overrides (`ui.symbols`,
+  `ui.color_roles`) name by name: each name shows its value and whether a
+  profile, a variable or the theme sets it, and clearing one lets it inherit
+  again. ([#728](https://github.com/alexisbeaulieu97/untaped/pull/728))
+- `untaped setup` lists each provider ranking of a plugin's contracts as a row:
+  reorder or remove providers in the list editor, or add a ranking as
+  `untaped plugin rank` takes it. Rankings are written exactly as `plugin rank`
+  writes them, with the same checks.
+  ([#729](https://github.com/alexisbeaulieu97/untaped/pull/729))
+- `agents` is now a reserved root command name: a third-party plugin named
+  `agents` is quarantined, as one named `config` already is. Rename such a
+  plugin before upgrading.
+  ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- The `untaped.skill` record (`skills list`) gains `kind` (`stub` or `copy`),
+  and so does `untaped.installed_skill` (`skills status`). A stub's `source`
+  is `untaped:stub/1`, the template's identity, not a path: read `kind` before
+  treating `source` as a directory. `skills status` reports two new states,
+  `newer` and `edited`.
+  ([#737](https://github.com/alexisbeaulieu97/untaped/pull/737))
+- `skills.updates` now defaults to `auto` and acts only on the home folder
+  (`~/.agents/skills`, `~/.claude/skills`): each run refreshes stubs an older
+  untaped wrote, leaves ones a newer untaped wrote or you edited, and converts
+  copies from 11.0 to stubs once, keeping the old copies under
+  `~/.untaped/backups/skills` (never removed automatically, safe to delete).
+  The first command after upgrading rewrites those folders. A project's own
+  skills are never written by a run; copies from an older untaped there are
+  warned about until `untaped skills update` runs in that project, which
+  rewrites a committed `.claude/skills` or `.agents/skills` folder (the diff
+  shows copies becoming stubs; `--dry-run` previews it). A setting
+  of `warn` or `off` is kept. This changes a default in a minor release.
+  ([#737](https://github.com/alexisbeaulieu97/untaped/pull/737))
+- `untaped skills install workspace` now writes a stub skill that sends the
+  agent to `untaped agents workspace`. What the old skill said now lives in the
+  workspace commands' own help and examples, the record fields' descriptions
+  (`untaped plugin schema workspace.status`) and a `lifecycle` guide
+  (`untaped agents workspace lifecycle`). An installed copy of the old skill
+  becomes the stub as `skills.updates` describes.
+  ([#746](https://github.com/alexisbeaulieu97/untaped/pull/746))
+- `untaped-jira`'s skill is now a stub: `untaped skills install jira` writes
+  a short skill that sends the agent to `untaped agents jira`. What the old
+  skill said now lives in the commands' own help and in the `writes` guide
+  (`untaped agents jira writes`); its advice on when to ask the user is gone,
+  since that is the agent's and the user's call.
+  ([#748](https://github.com/alexisbeaulieu97/untaped/pull/748))
+- `untaped skills install github` now writes a stub skill that sends the agent
+  to `untaped agents github`. What the old skill said now lives in the github
+  commands' own help and examples, the sweep and cache records' field
+  descriptions (`untaped plugin schema github.sweep_repo`) and a `scopes` guide
+  (`untaped agents github scopes`). An installed copy of the old skill becomes
+  the stub as `skills.updates` describes.
+  ([#753](https://github.com/alexisbeaulieu97/untaped/pull/753))
+- `untaped-ansible`'s skill is now a stub: `untaped skills install ansible`
+  writes a short skill that sends the agent to `untaped agents ansible`. What
+  the old skill said now lives in the commands' own help, the record fields'
+  descriptions, and two guides: `source-data` (which data answered and when a
+  source refreshes) and `resolution` (refs, targets and where a walk stops).
+  ([#755](https://github.com/alexisbeaulieu97/untaped/pull/755))
+- `untaped-recipe`'s skill is now a stub: `untaped skills install recipe`
+  writes a short skill that sends the agent to `untaped agents recipe`. What
+  the old skill said now lives in the commands' own help and in four guides
+  (`untaped agents recipe inputs`, `trust`, `recipe-files` and
+  `writing-hooks`); its advice on when to ask the user is gone, since that is
+  the agent's and the user's call.
+  ([#754](https://github.com/alexisbeaulieu97/untaped/pull/754))
+- `untaped-dotfiles`'s skill is now a stub: `untaped skills install dotfiles`
+  writes a short skill that sends the agent to `untaped agents dotfiles`. What
+  the old skill said now lives in the commands' own help and in two guides,
+  `untaped agents dotfiles manifest` and `untaped agents dotfiles policies`;
+  its advice on when to ask the user is gone, since that is the agent's and
+  the user's call.
+  ([#756](https://github.com/alexisbeaulieu97/untaped/pull/756))
+- `untaped doctor` shows one `setup` row per service in place of the
+  `awx.connection`, `github.connection` and `jira.connection` rows: `not set up`
+  for a service you don't use, what is still missing with the command that sets
+  it, or where its token comes from. `doctor --online` contacts a service only
+  once all of it is set up, and a failure that is not a rejected token or an
+  untrusted certificate shows the settings it was set up with. `setup` and
+  `setup plan` read what each plugin marks, so a step's placeholder is the
+  setting's name, as in `<URL>`, and `setup plan` no longer lists a
+  `github.base_url` step: GitHub's default URL needs nothing set up.
+  ([#760](https://github.com/alexisbeaulieu97/untaped/pull/760))
+- The `untaped-git` skill is now a stub that sends the agent to
+  `untaped agents git`; the facts its copy held (authentication failures,
+  releasing repos, the store's rules) are on `untaped agents git hosts`,
+  `untaped agents git store` and `untaped agents git credential` and in
+  `--help`. ([#747](https://github.com/alexisbeaulieu97/untaped/pull/747))
+- `untaped skills install --scope local` and `untaped awx test` find the git
+  checkout without running git, so they no longer fail where git isn't
+  installed. ([#774](https://github.com/alexisbeaulieu97/untaped/pull/774))
+- `untaped-awx`'s skill is now a stub: `untaped skills install awx` writes a
+  short skill that sends the agent to `untaped agents awx`. What the old skill
+  said now lives in the commands' own help, the record fields' descriptions,
+  and guides on selecting and changing resources, export and apply documents,
+  workflow node graphs, launching and linting, and on `awx test`: writing
+  suites (`test-suites`, `test-cases`, `test-examples`), reading a run
+  (`test-results`), temporary copies at a git ref (`source-ref`) and the AWX
+  user an agent tests as (`agent-profile`).
+  ([#765](https://github.com/alexisbeaulieu97/untaped/pull/765))
+- `untaped.sdk.file_lock` is re-entrant within a thread: taking a lock the same
+  thread already holds no longer waits for itself and fails as busy. A write to
+  `config.yml` or `state.yml` (`StateCollection`, `StateMap`, config writes)
+  started inside another write to the same file now fails at once instead of
+  being lost when the outer write saves.
+  ([#779](https://github.com/alexisbeaulieu97/untaped/pull/779))
+- `project` is now a reserved root command name and `state` a reserved plugin
+  name: a third-party plugin named either is quarantined, as one named `config`
+  already is. Rename such a plugin before upgrading.
+  ([#779](https://github.com/alexisbeaulieu97/untaped/pull/779))
+- `ansible graph`'s tree draws a repeated subtree differently: its later
+  occurrence shows the repo on its own line, with one `… see [n]` line under it
+  pointing back to where it is drawn in full, instead of `<repo> see [n]`.
+  ([#794](https://github.com/alexisbeaulieu97/untaped/pull/794))
+- `awx <templates> usage` lists a workflow template that runs itself through
+  other workflows as a row of its own usage, and warns about each cycle by
+  naming both workflows, including two workflows that run each other.
+  ([#794](https://github.com/alexisbeaulieu97/untaped/pull/794))
+- A cache now keeps each key's data and freshness together under
+  `plugins/<plugin>/cached/`, so most caches refill once after upgrading, and a
+  registered install removes 11.0's `caches/` folders by itself, with one
+  `untaped.pruned` line each; the ansible index keeps its data and only its
+  freshness is read again from it. Each file is readable by its owner only.
+  Profiles whose plugin settings read the same now share its cached data.
+  ([#801](https://github.com/alexisbeaulieu97/untaped/pull/801))
+- Recipe backup metadata a newer untaped wrote is reported as such instead of
+  as damaged; backups 11.0 made still list, show and restore.
+  ([#804](https://github.com/alexisbeaulieu97/untaped/pull/804))
+- `github sweep` and `github cache sync` keep their repos' freshness like every
+  other cache: a sweep that scans a repo whose refresh failed, or an old copy
+  under `--cached`, says so in one `untaped.stale` line per repo, which replaces
+  the "refresh failed for N repos" and "stale REPO" warnings, and a repo whose
+  refresh failed is tried again after five minutes, or at once with `--refresh`.
+  ([#807](https://github.com/alexisbeaulieu97/untaped/pull/807))
+- An API token is only ever sent to the server it is set up for: a request or
+  redirect to another server is refused.
+  ([#821](https://github.com/alexisbeaulieu97/untaped/pull/821))
+- Token and password-store commands run in the config file's folder instead of
+  the current one, and a `.` on `PATH` finds them, and `git`, there too. A
+  token command whose program is a relative path (`./get-token`) is refused:
+  give a bare name found on `PATH` or an absolute path, and give a file the
+  command reads as an absolute path too.
+  ([#821](https://github.com/alexisbeaulieu97/untaped/pull/821))
+- `--verbose` lines mask a URL's whole user name and password and any
+  `Authorization` header value.
+  ([#821](https://github.com/alexisbeaulieu97/untaped/pull/821))
+- `awx`, `jira` and `github` take `server: {url, verify_tls}`: `base_url` is
+  now `server.url`, and `verify_tls` is that server's certificate check
+  (`true`, a CA file, or `false`). The old key and its variable still read,
+  with a warning, and `untaped config migrate` renames them; its value must now
+  be a URL. `GithubSettings(base_url=)` still works, with a warning.
+  `untaped config migrate` also files each profile's `token` and
+  `token_command` as stored logins and removes them from `config.yml`, after a
+  confirmation (`--yes` off a terminal); a line it can't move stays, listed as
+  kept. git's credential helper line in untaped's worktrees now carries a nonce
+  for its worktree, so a call by hand gets nothing.
+  ([#826](https://github.com/alexisbeaulieu97/untaped/pull/826))
+- Saving a service's form in `untaped setup` writes only the settings you
+  changed, in one write, and writes nothing when one of them changed in the
+  config file since the form opened.
+  ([#827](https://github.com/alexisbeaulieu97/untaped/pull/827))
+
+### Deprecated
+
+- `untaped plugin check` and `untaped.testing.check_conventions` are deprecated
+  in favour of `untaped lint` (experimental) and
+  `untaped_lint.testing.assert_clean`, and are removed in 12.0. Both still print
+  or fail on the same rows, but run the rules that read a plugin's files only
+  when `untaped[lint]` is installed, and warn when it is not. A plugin's
+  convention test calls `assert_clean(NAME)` with `untaped[lint]>=11.1` in its
+  `dev` dependencies, and its CI runs `untaped lint` in the plugin's directory,
+  which exits 3 on an error finding where `untaped plugin check NAME` exited 1.
+  ([#650](https://github.com/alexisbeaulieu97/untaped/pull/650))
+- A plugin whose settings have `base_url` and `token` fields (or a
+  `token_sources` attribute) but no `NeedsSetup` mark is deprecated and removed
+  in 12.0. It still works, warns once per run where `setup`, `setup plan`,
+  `doctor` or `auth` reads it, and `untaped lint` reports it as a warning
+  (`lint.unmarked-service`).
+  ([#760](https://github.com/alexisbeaulieu97/untaped/pull/760))
+- Calling `connected_client` without `base_url=`, which reads `base_url` and
+  `token` off the settings by name, and its `required=`, `base_url_field=` and
+  `bearer_token_field=` parameters are deprecated and removed in 12.0; pass the
+  values (`base_url=`, `bearer=`, `verify=`) instead. Both still work and
+  warn; passing both kinds is an error.
+  ([#766](https://github.com/alexisbeaulieu97/untaped/pull/766))
+- The SDK's `project_root()` is now `checkout_root()`, which returns `None`
+  outside a git checkout instead of the start folder, so the caller picks its
+  fallback. `project_root()` keeps its answer, warns, and is removed in 12.0:
+  use `checkout_root(start) or start`.
+  ([#774](https://github.com/alexisbeaulieu97/untaped/pull/774))
+- `SkillAsset(source=...)`, a plugin's skill shipped as a copied folder, is
+  deprecated and removed in 12.0: passing it warns. Leave `source` out to ship
+  a stub, and move the folder's facts into command docstrings, field
+  descriptions and guides, which `untaped agents` prints
+  ([plugin-skills.md](https://github.com/alexisbeaulieu97/untaped/blob/v11.1.0/docs/plugin-skills.md)).
+  ([#782](https://github.com/alexisbeaulieu97/untaped/pull/782))
+- `github.sweep.max_age_seconds` and `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS`
+  are deprecated in favour of `github.caches.sweep.max_age_seconds` and still
+  read, with a warning, until 12.0; `untaped config migrate` moves the key in
+  `config.yml`. ([#807](https://github.com/alexisbeaulieu97/untaped/pull/807))
+- A token in `<plugin>.token` or `<plugin>.token_command`, `auth set`, `auth
+  unset` and `auth migrate`, the SDK's `TokenCommand` and `TokenSources`,
+  `GithubSettings.base_url` and `GithubSettings.token`, root
+  `http.verify_ssl` (read as each server's `verify_tls: false` until then) and
+  `http.verify_hostname`, and a git credential helper line without `--nonce`
+  are deprecated and removed in 12.0. `UNTAPED_<PLUGIN>__TOKEN` stays.
+  ([#826](https://github.com/alexisbeaulieu97/untaped/pull/826))
+- untaped 12.0 starts from a fresh home: it reads nothing an 11.x install
+  wrote under `~/.untaped`, and on finding an 11.x home it stops with one line
+  saying to delete it or stay on 11.1. 11.1 adds no step toward 12.0, so
+  nothing here needs doing before then; what 11.1 deprecates is simply absent
+  from 12.0. ([#834](https://github.com/alexisbeaulieu97/untaped/pull/834))
+- For plugin authors: 12.0 replaces `PluginSpec` with a class each plugin
+  defines, and its commands become classes too; Cyclopts leaves `untaped.sdk`.
+  `create_app`, `@writes`, the `*Option` aliases, `get_config_section`,
+  `read_identifiers`, `emit` from command code, `SkillAsset`, `provides=`,
+  `guides=`, `table_columns`, `refresh_option`, `report_errors`,
+  `plugin_dir(SPEC)` and plain-string `kind=` and `system=` arguments go with
+  it. 11.1 prints no warning for these, since our own plugins still use them; a
+  plugin built on `PluginSpec` stops loading in 12.0.
+  ([#834](https://github.com/alexisbeaulieu97/untaped/pull/834))
+
+### Fixed
+
+- Commands no longer warn about installed skills that no plugin installed here
+  ships, such as plugin skills under `uvx untaped` without extras; `untaped
+  doctor` and `untaped skills status` still report them.
+  ([#692](https://github.com/alexisbeaulieu97/untaped/pull/692))
+- A development checkout and an installed untaped of another version no longer
+  share the ansible dependency index: each layout is its own file, and the old
+  one is removed once no registered install uses it.
+  ([#636](https://github.com/alexisbeaulieu97/untaped/issues/636))
+- An unknown `--columns` name on rows reporting a change, such as those of
+  `config set`, `profile create` or `awx job-templates copy`, now only warns
+  and the rows still print; the command made the change, then exited 2 printing
+  none of its rows. `dotfiles subscribe`, `github cache worktree` and
+  `workspace status --fetch` now refuse the name before they clone, check out or
+  fetch anything, not after.
+  ([#719](https://github.com/alexisbeaulieu97/untaped/pull/719))
+- `untaped awx export` reads a management job's schedule (AWX's stock cleanup
+  schedules) instead of failing on its parent: the parent is written as
+  `{kind: SystemJobTemplate, name: ...}`, global, and `apply` creates the
+  schedule under that system job template again.
+  ([#726](https://github.com/alexisbeaulieu97/untaped/pull/726))
+- A plugin whose requirement on untaped has an environment marker that cannot
+  be compared, such as `python_version ~= "3"`, is quarantined as bad metadata
+  instead of stopping every command with a traceback.
+  ([#733](https://github.com/alexisbeaulieu97/untaped/pull/733))
+- `untaped jira issues patch` sends its requests once instead of resending them
+  after Jira's 429 and 503 answers or a dropped connection, so an `update` add
+  (a comment, a label) from `--fields-file` can no longer be applied twice.
+  ([#751](https://github.com/alexisbeaulieu97/untaped/pull/751))
+- `untaped dotfiles apply` fetches every repo the selected items read from, so
+  it places a managed clone's current `copy` and `merge` files and reads its
+  current manifest instead of what the last `sync` fetched.
+  ([#761](https://github.com/alexisbeaulieu97/untaped/pull/761))
+- `untaped plugin schema` and `untaped awx schema` describe the record and
+  suite fields they showed bare before: core's records, awx's resources, test
+  results and suite checks, lint's findings, rules and trees, and the `error`
+  of a failed row.
+  ([#763](https://github.com/alexisbeaulieu97/untaped/pull/763))
+- `untaped setup plan` shows a set `SecretStr` setting as `set`, and a `doctor
+  --online` failure says it `is set`, rather than printing `***`.
+  ([#766](https://github.com/alexisbeaulieu97/untaped/pull/766))
+- Two `untaped recipe` commands that change the pack library at once (two
+  `packs add`, or `packs add` while `sync` records a commit) no longer lose a
+  row of `packs.toml`: library writes now take a lock, and a command that waits
+  too long on another fails as busy with a hint to retry.
+  ([#777](https://github.com/alexisbeaulieu97/untaped/pull/777))
+- `untaped recipe packs sync` no longer undoes a pack that another command
+  replaced or removed while sync was fetching it: that pack gets a `failed` row
+  and stays as the other command left it.
+  ([#781](https://github.com/alexisbeaulieu97/untaped/pull/781))
+- `awx <templates> usage --by-id` with an id that doesn't exist fails with
+  `not found` (exit 1) instead of printing no rows.
+  ([#794](https://github.com/alexisbeaulieu97/untaped/pull/794))
+- A full disk while writing `state.yml` reports an error, and leaves the file as
+  it was, instead of a traceback.
+  ([#823](https://github.com/alexisbeaulieu97/untaped/pull/823))
+
 ## 11.0.0
 
 ### Upgrading
