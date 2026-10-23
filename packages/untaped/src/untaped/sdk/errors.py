@@ -18,9 +18,10 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.runtime.redaction import redact_url_password
+from untaped.sdk.run import current_run
 
 if TYPE_CHECKING:
-    from pydantic import ValidationError
+    from pydantic import BaseModel, ValidationError
 
 
 class ExitCode(IntEnum):
@@ -146,6 +147,40 @@ _CATEGORY_EXIT_CODES: Mapping[ErrorCategory, ExitCode] = MappingProxyType(
 _NO_DETAILS: Mapping[str, object] = MappingProxyType({})
 
 
+class System(StrEnum):
+    """Who is responsible for a failure, when it is not a plugin's own service.
+
+    ``UNTAPED`` is untaped itself, ``LOCAL`` the user's files and machine,
+    ``GIT`` git, ``HTTP`` a server reached over HTTP. A plugin's own service
+    is :class:`Service`.
+    """
+
+    UNTAPED = "untaped"
+    LOCAL = "local"
+    GIT = "git"
+    HTTP = "http"
+
+
+class Service:
+    """A plugin's own service as an error's ``system``: ``system = Service(AwxSettings)``.
+
+    It names the plugin through its settings model, so the error follows a
+    renamed plugin; read on a class or an instance, it is the plugin's name
+    in the current run.
+    """
+
+    __slots__ = ("model",)
+
+    def __init__(self, model: type[BaseModel]) -> None:
+        self.model = model
+
+    def __get__(self, instance: object, owner: type | None = None) -> str:
+        return current_run().composition.owner_of_settings(self.model)
+
+    def __repr__(self) -> str:
+        return f"Service({self.model.__qualname__})"
+
+
 class UntapedError(Exception):
     """Root of the untaped exception hierarchy.
 
@@ -158,8 +193,8 @@ class UntapedError(Exception):
 
     category: ErrorCategory = ErrorCategory.FAILED
     """What kind of failure this is (selects the exit code)."""
-    system: str = "untaped"
-    """Who is responsible: ``untaped``, ``local``, ``git``, or a service section."""
+    system: str = System.UNTAPED
+    """Who is responsible: a :class:`System`, or a plugin's :class:`Service`."""
     hint: str | None = None
     """A follow-up for the user, such as ``run `untaped …```, without a ``hint:`` prefix."""
     details: Mapping[str, object] = _NO_DETAILS
