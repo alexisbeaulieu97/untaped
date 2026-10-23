@@ -51,6 +51,7 @@ from pydantic.fields import FieldInfo
 
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.fields import SettingKey
 from untaped.sdk.words import (
     EXPERIMENTAL_LINE,
     deprecated_ignored_message,
@@ -111,16 +112,17 @@ class Deprecated(_Marker):
     and reads "a future major release". ``replacement`` is a command function
     or :class:`~cyclopts.App` (untaped derives its path), or text:
     ``"untaped github sync"`` or a setting key (shown in backticks) or prose
-    (shown as is).
+    (shown as is). In the 12.0 shape it is a command class or a
+    ``key(Model).field``.
     """
 
-    replacement: Callable[..., Any] | App | str | None = None
+    replacement: Callable[..., Any] | App | SettingKey | str | None = None
     removed_in: int | None = None
 
     def __post_init__(self) -> None:
         check_removed_in(self.removed_in)
         replacement = self.replacement
-        if replacement is None or callable(replacement):
+        if replacement is None or callable(replacement) or isinstance(replacement, SettingKey):
             return
         if not isinstance(replacement, str) or not replacement.strip():
             raise TypeError(

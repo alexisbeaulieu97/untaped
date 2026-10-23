@@ -136,3 +136,11 @@ GithubSettings.token_command  # declared until 12.0; core adds it for other plug
 
 # Data file fields kept for the record and shown by `backups get`, never read by name.
 BackupEntry.before_hash
+
+# The 12.0 declaration: read by the mount and help, which later delivery steps add.
+OptionDecl.metavar
+OptionDecl.allow_hyphen
+OptionDecl.or_stdin
+CommandDecl.asks_first
+Declaration.spell
+Positional.__class_getitem__  # Positional[T, ...] at run time

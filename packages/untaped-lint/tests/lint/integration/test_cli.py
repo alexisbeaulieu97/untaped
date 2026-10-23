@@ -10,7 +10,7 @@ import pytest
 
 from lint.fakes import Acme, Gizmo, PluginReader, Raising, Sprocket, WarnOnly, Widget, pipe
 from untaped.runtime.registry import PluginContext
-from untaped.sdk import Plugin, PluginSpec
+from untaped.sdk import InstalledPlugin, PluginSpec
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.testing import CliResult, PluginCheckRow, compose_with, invoke_cli, invoke_root
 from untaped_lint import SPEC
@@ -239,7 +239,7 @@ def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(
 
     monkeypatch.setattr(conventions, "check_plugin", spied)
     listed = json.loads(invoke_root(["plugin", "list", "-f", "json"]).stdout)
-    lint = Plugin.model_validate(next(each for each in listed if each["name"] == "lint"))
+    lint = InstalledPlugin.model_validate(next(each for each in listed if each["name"] == "lint"))
     PluginReader.read.clear()
     with compose_with("lint", provides={"acme": [Reader()]}):
         result = _lint(input=pipe(lint, kind="untaped.plugin"))

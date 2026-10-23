@@ -106,7 +106,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   files a store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
-  `Footer` and the message classes `Key`, `Paste`, `Resize`, `CmdError`,
+  `Footer` and the message classes `Key` (from `untaped.screen.core`), `Paste`, `Resize`, `CmdError`,
   `Quit`, `Cancel`, `Back`, `Interrupt`, `NextField`, `PrevField`, `Activate`,
   `Submit` and `Help`), the components (`Field`, `TextInput`,
   `PathInput`, `SecretInput`, `NumberInput`, `Check`, `Select`, `SingleList`,

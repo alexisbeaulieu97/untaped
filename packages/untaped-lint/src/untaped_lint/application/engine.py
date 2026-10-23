@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, plural
+from untaped.sdk import ConfigError, ErrorCategory, Failure, InstalledPlugin, plural
 from untaped.sdk.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
 from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
@@ -155,12 +155,12 @@ def _conventions(
 ) -> list[Finding]:
     """Conventions' findings for each ``untaped.plugin`` subject, before anything is gathered."""
     found: list[Finding] = []
-    plugins: list[Plugin] | None = None
+    plugins: list[InstalledPlugin] | None = None
     for subject in subjects:
         if subject.kind != PLUGIN_KIND:
             continue
         try:
-            plugin = Plugin.model_validate(subject.record)
+            plugin = InstalledPlugin.model_validate(subject.record)
         except ValidationError as exc:
             report.failures.append(_invalid_plugin(subject, exc))
             continue

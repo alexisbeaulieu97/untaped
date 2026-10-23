@@ -4,8 +4,8 @@ A plugin with rules fills :class:`Linter`, normally through :class:`Rules`
 (a repository's ``.untaped/lint/*.py`` modules write the same ``@rule``
 functions and import only this module)::
 
-    @rule("no-print", reads=Plugin, severity="error", summary="No print() calls.")
-    def no_print(plugin: Plugin) -> Iterator[Finding]: ...
+    @rule("no-print", reads=InstalledPlugin, severity="error", summary="No print() calls.")
+    def no_print(plugin: InstalledPlugin) -> Iterator[Finding]: ...
 
     class AcmeRules(Rules):
         RULES = (no_print,)
@@ -20,7 +20,7 @@ and the repository's lint file), so the plugin never reads lint's settings.
 
 from __future__ import annotations
 
-from untaped.sdk import Plugin
+from untaped.sdk import InstalledPlugin
 from untaped_lint.application.output import lint
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule
@@ -47,10 +47,10 @@ __all__ = [
     "FileLocation",
     "Finding",
     "IgnoreOption",
+    "InstalledPlugin",
     "LintConfig",
     "Linter",
     "Location",
-    "Plugin",
     "ResourceLocation",
     "Rule",
     "RuleFunction",

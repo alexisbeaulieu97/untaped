@@ -30,7 +30,7 @@ from untaped.sdk.records import AbsolutePath, Record
 _UNKNOWN = "unknown"
 
 
-class Plugin(Record, kind="untaped.plugin"):
+class InstalledPlugin(Record, kind="untaped.plugin"):
     """One installed plugin: ready, or quarantined (then only its entry point names its package)."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "status", "distribution", "version")
@@ -63,14 +63,14 @@ class Plugin(Record, kind="untaped.plugin"):
 
 def plugin_records(
     result: CompositionResult, candidates: Sequence[PluginCandidate]
-) -> list[Plugin]:
+) -> list[InstalledPlugin]:
     """Every plugin of ``result``, ready or quarantined, by name then distribution."""
     # A distribution declares each entry-point name once, and a plugin whose
     # spec name differs from it is quarantined, so the reported (distribution,
     # name) finds the candidate of every row, an entry point that never resolved
     # and a blank distribution (reported as ``unknown``) included.
     by_key = {(candidate_distribution(item), item.name): item for item in candidates}
-    rows: list[Plugin] = []
+    rows: list[InstalledPlugin] = []
     for registered in result.plugins:
         distribution = registered.plugin_ref.distribution
         candidate = by_key.get((distribution, registered.spec.name))
@@ -79,7 +79,7 @@ def plugin_records(
         candidate = by_key.get((record.distribution, record.name))
         version = (candidate.distribution_version if candidate else None) or _UNKNOWN
         rows.append(
-            Plugin(
+            InstalledPlugin(
                 name=record.name,
                 status="quarantined",
                 distribution=record.distribution,
@@ -90,7 +90,7 @@ def plugin_records(
     return sorted(rows, key=lambda row: (row.name, row.distribution))
 
 
-def installed_plugins() -> list[Plugin]:
+def installed_plugins() -> list[InstalledPlugin]:
     """The plugins the current composition holds, as ``untaped plugin list`` shows them.
 
     Each record reads the candidate it was composed from, so a composition
@@ -102,7 +102,7 @@ def installed_plugins() -> list[Plugin]:
     return plugin_records(result, result.candidates)
 
 
-def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> Plugin:
+def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> InstalledPlugin:
     from untaped.runtime.plugin_package import package_of  # noqa: PLC0415 - not at startup
 
     spec, distribution = registered.spec, registered.plugin_ref.distribution
@@ -116,7 +116,7 @@ def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> P
     except LookupError:
         package, source_dir = None, None
     tests_dir = None if source_dir is None else _tests_dir(source_dir, name)
-    return Plugin(
+    return InstalledPlugin(
         name=name,
         status="ready",
         distribution=distribution,

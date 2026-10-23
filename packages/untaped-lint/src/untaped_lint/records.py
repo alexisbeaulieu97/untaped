@@ -27,9 +27,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from untaped.sdk import (
     AbsolutePath,
     Failure,
+    InstalledPlugin,
     Issued,
     OutcomeRecord,
-    Plugin,
     Record,
     Source,
     TargetRecord,
@@ -204,7 +204,7 @@ class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="lint.scaffold_outcome")
     table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
 
 
-def target_of(item: File | Plugin) -> str:
+def target_of(item: File | InstalledPlugin) -> str:
     """A finding's target for the subjects lint owns: a file's path, a plugin's name."""
     return item.path if isinstance(item, File) else item.name
 

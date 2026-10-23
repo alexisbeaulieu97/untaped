@@ -18,7 +18,7 @@ SDK = REPO_ROOT / "packages/untaped/src/untaped/sdk/_exports.py"
 
 SNIPPET = """\
 import untaped.sdk
-from untaped.sdk import Cmd, Key, Screen, TextInput, UiContext
+from untaped.sdk import Cmd, Screen, TextInput, UiContext
 from untaped.sdk import Scren  # line 3: a typo in an import
 from untaped.sdk import emmit  # line 4: a typo in a helper
 
@@ -42,6 +42,8 @@ def edit(field: TextInput) -> str:
 
 
 reveal_type(TextInput("name").value)  # line 25
+
+from untaped.screen.core import Key  # noqa: E402
 """
 
 

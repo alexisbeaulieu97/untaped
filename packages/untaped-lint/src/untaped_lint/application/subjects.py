@@ -14,11 +14,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import PipeEnvelope, Plugin, UsageError, nearest_pyproject
+from untaped.sdk import InstalledPlugin, PipeEnvelope, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
 from untaped_lint.records import Finding, Subject, declared_kind, public
 
-PLUGIN_KIND = declared_kind(Plugin)
+PLUGIN_KIND = declared_kind(InstalledPlugin)
 _GROUP = "untaped.plugins"
 
 
@@ -30,7 +30,7 @@ class Found:
     findings: list[Finding] = field(default_factory=list)
 
 
-def plugin_subject(plugin: Plugin) -> Subject:
+def plugin_subject(plugin: InstalledPlugin) -> Subject:
     return Subject(kind=PLUGIN_KIND, record=plugin.model_dump(mode="json"))
 
 
@@ -49,7 +49,7 @@ def _entry_points(project: Path) -> list[str]:
     return sorted(group) if isinstance(group, dict) else []
 
 
-def repository_subjects(names: Iterable[str], installed: Sequence[Plugin]) -> Found:
+def repository_subjects(names: Iterable[str], installed: Sequence[InstalledPlugin]) -> Found:
     """A subject per declared plugin that is installed; a finding for one that isn't."""
     by_name = {plugin.name: plugin for plugin in installed}
     found = Found()

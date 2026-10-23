@@ -52,7 +52,7 @@ from untaped.sdk._cli import (
 from untaped.sdk.diagnostic import WireModel
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.marks import deprecated
-from untaped.sdk.plugin_records import Plugin
+from untaped.sdk.plugin_records import InstalledPlugin
 from untaped.sdk.records import Record, record_kinds, record_model
 from untaped.sdk.words import not_found, run_hint
 
@@ -323,7 +323,7 @@ def _show(
 def _rows(
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
-) -> list[Plugin]:
+) -> list[InstalledPlugin]:
     from untaped.sdk.plugin_records import plugin_records  # noqa: PLC0415 - locates packages
 
     return plugin_records(result, candidates)

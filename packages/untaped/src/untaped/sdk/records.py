@@ -157,6 +157,8 @@ class Record(WireModel):
 
     #: The fields a table of these records shows by default (empty: every field).
     table_columns: ClassVar[tuple[str, ...]] = ()
+    #: Not a test class, though pytest would collect ``TestResult`` or ``TestCase``.
+    __test__: ClassVar[bool] = False
 
     @classmethod
     def _reorder(cls, names: list[str], declared_by: Mapping[str, type]) -> list[str]:
