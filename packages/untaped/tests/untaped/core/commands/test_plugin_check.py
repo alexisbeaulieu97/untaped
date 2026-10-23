@@ -152,12 +152,12 @@ def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Pat
 
 def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> None:
     (contract_plugins_site / "untaped_bin" / "leak.py").write_text(
-        "from untaped.runtime.bootstrap import composition\n", encoding="utf-8"
+        "class Leak(Exception):\n    pass\n", encoding="utf-8"
     )
-    [violation] = [row for row in _check() if row.check == "conventions"]
+    found = [row for row in _check() if row.check == "conventions"]
+    [violation] = [row for row in found if row.title == "exception-base"]
     assert violation.status == "fail"
-    assert violation.title == "import-boundary"
-    assert "untaped.runtime.bootstrap" in violation.detail
+    assert "untaped_bin.leak.Leak" in violation.detail
 
 
 def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) -> None:
