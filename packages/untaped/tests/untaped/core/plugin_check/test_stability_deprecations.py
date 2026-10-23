@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from core_test_support.conventions.support import Install
-from untaped.core.plugin_check import core_plugin_violations
+from core_test_support.plugin_check.support import Install
+from untaped.core.plugin_check.rules import core_plugin_violations
 from untaped.runtime.registry import PluginCandidate
 
 _API = '''

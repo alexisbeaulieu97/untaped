@@ -1,4 +1,4 @@
-"""Fixtures for the convention-check tests: a fresh composition and tmp packages."""
+"""Fixtures for plugin check's rule tests: a fresh composition and tmp packages."""
 
 from __future__ import annotations
 

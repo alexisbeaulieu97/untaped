@@ -32,7 +32,7 @@ from repo.support import (
     no_baseline,
     release_baseline,
 )
-from untaped.core.plugin_check import contracts as plugin_check
+from untaped.core.plugin_check import check as plugin_check
 from untaped.core.surface import DeprecatedMark, Line, LineMark, parse, removed
 from untaped.core.surface._lists import CONVENTIONS
 from untaped.runtime.contracts.fills import FILLS_FILE

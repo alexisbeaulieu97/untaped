@@ -5,7 +5,7 @@ lines of core's convention modules and lint's file rules (a literal, or a
 module constant such as ``RULE``), the ``(rule, detail)`` tuples their helpers
 yield, ``rule = "..."`` and a ``*_rule`` helper's return, ``rule=`` and
 ``_finding("<rule>", ...)`` in lint, and the check names of core's
-``plugin_check/contracts.py`` rows (a ``conventions`` row's title is a rule).
+``plugin_check/check.py`` rows (a ``conventions`` row's title is a rule).
 """
 
 from __future__ import annotations

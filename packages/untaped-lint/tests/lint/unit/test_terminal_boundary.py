@@ -9,7 +9,7 @@ from textwrap import dedent
 import pytest
 
 from lint.support import Install
-from untaped.core.plugin_check import plugin_violations
+from untaped.core.plugin_check.rules import plugin_violations
 from untaped.sdk import PluginSpec
 from untaped.sdk.testing import plugin_candidate
 from untaped_lint.infrastructure.files import source_files

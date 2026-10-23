@@ -16,7 +16,7 @@ import pytest
 
 from core_test_support.commands.support import make_spec, write_config
 from untaped.core.commands.doctor import collect_doctor_rows
-from untaped.core.plugin_check.contracts import check_plugins
+from untaped.core.plugin_check.check import check_plugins
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import (
     DirMigration,

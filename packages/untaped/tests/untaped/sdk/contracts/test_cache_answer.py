@@ -472,7 +472,7 @@ def _library_provider() -> Provider:
 
 
 def test_plugin_check_reports_a_stale_answer_as_its_failed_row_alone() -> None:
-    from untaped.core.plugin_check.contracts import _call
+    from untaped.core.plugin_check.check import _call
 
     compose(shelf_spec(), library_spec())
     configure(LIBRARY_CONFIG)

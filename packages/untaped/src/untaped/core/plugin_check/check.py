@@ -1,8 +1,8 @@
-"""``untaped plugin check``'s contract checks: an installed plugin fills its contracts.
+"""``untaped plugin check``: the rows an installed plugin is checked by, and their rendering.
 
 Every check runs against the installed code (a developer's editable install
-included). The conventions, the import lint among them, read the plugin's
-package; the contract checks compose only the plugin and the owners it
+included). The conventions (and lint's file rules, when ``untaped[lint]`` is
+installed) read the plugin's package; the contract checks compose only the plugin and the owners it
 provides for, so nothing else installed changes the verdict:
 
 - ``registration``: an offer the registry quarantined fails (one waiting for
@@ -76,7 +76,7 @@ def check_plugins(
     ``core_only`` leaves out the conventions that read only the plugin's
     files (``untaped.sdk.testing.check_plugin``'s rows).
     """
-    from untaped.core.plugin_check import (  # noqa: PLC0415 - imports the root
+    from untaped.core.plugin_check.rules import (  # noqa: PLC0415 - rules import the root
         core_plugin_violations,
         plugin_violations,
     )

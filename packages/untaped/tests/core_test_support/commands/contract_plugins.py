@@ -2,8 +2,8 @@
 
 ``rack`` declares ``ItemSource`` in ``untaped_rack.api`` with a conformance
 check in ``untaped_rack.testing``; ``bin`` fills it with its own ``Box``
-records through the bridge. The ``contract_plugins`` fixture (conftest)
-writes both on ``sys.path``.
+records through the bridge. The ``contract_plugins_site`` fixture
+(``tests/untaped/core/conftest.py``) writes both on ``sys.path``.
 """
 
 from __future__ import annotations
