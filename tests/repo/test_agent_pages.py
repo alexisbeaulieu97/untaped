@@ -15,10 +15,10 @@ import pytest
 from cyclopts import App
 
 from repo import quoted_commands
-from untaped.conventions.help_tree import example_violations
 from untaped.core.agents import page
 from untaped.core.agents._build import visible_children
 from untaped.core.agents._guides import guides
+from untaped.core.plugin_check.help_tree import example_violations
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.registry import PluginCandidate
 

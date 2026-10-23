@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Annotated
 
 import pytest
 
-from untaped.conventions.stability import deprecation_text_violations
+from untaped.core.plugin_check.stability import deprecation_text_violations
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._cli import echo, report_error
 from untaped.sdk._ui import UiContext

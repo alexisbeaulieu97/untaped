@@ -1,11 +1,13 @@
-"""Convention checks for plugins (the repo's tests run them on the root app too).
+"""The rules that read a composed plugin: what ``plugin check``'s ``conventions`` row runs.
 
-See ``docs/reference/conventions.md#enforcement``.
+Help tree, guides and map lines, stability marks, settings names and
+structure's class checks, each family in its module beside this one. See
+``docs/reference/conventions.md#enforcement``.
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
 third-party plugin is checked exactly like a first-party one. Plugin tests call
-:func:`untaped.sdk.testing.check_conventions`; this package is internal.
+:func:`untaped.sdk.testing.check_conventions`; this module is internal.
 """
 
 from __future__ import annotations
@@ -19,14 +21,14 @@ from pathlib import Path
 from cyclopts import App
 from packaging.utils import canonicalize_name
 
-from untaped.conventions.guides import guide_violations
-from untaped.conventions.help_tree import help_tree_violations
-from untaped.conventions.stability import (
+from untaped.core.plugin_check.guides import guide_violations
+from untaped.core.plugin_check.help_tree import help_tree_violations
+from untaped.core.plugin_check.stability import (
     deprecation_text_violations,
     stability_violations,
     undated_violations,
 )
-from untaped.conventions.structure import structure_class_violations, unimportable
+from untaped.core.plugin_check.structure import structure_class_violations, unimportable
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (
@@ -135,7 +137,7 @@ def _core_lines(checked: _Checked) -> list[str]:
 
 def _sdk_deprecations(package: str) -> list[str]:
     """``deprecation_text_violations`` of the plugin's ``api`` and ``testing`` modules."""
-    from untaped.core.surface import plugin_sdk_modules  # noqa: PLC0415 - surface imports this
+    from untaped.core.surface import plugin_sdk_modules  # noqa: PLC0415 - loaded only when checked
 
     return [
         line

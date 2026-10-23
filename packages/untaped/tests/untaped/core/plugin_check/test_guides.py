@@ -8,7 +8,7 @@ import pytest
 from cyclopts import App
 
 from core_test_support.runtime.plugin_harness import make_spec
-from untaped.conventions.guides import MAP_LINE_LIMIT, guide_violations
+from untaped.core.plugin_check.guides import MAP_LINE_LIMIT, guide_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import Record, create_app

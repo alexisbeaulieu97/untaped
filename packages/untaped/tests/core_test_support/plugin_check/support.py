@@ -1,4 +1,4 @@
-"""Types shared by the convention-check tests."""
+"""Types shared by plugin check's rule tests."""
 
 from __future__ import annotations
 

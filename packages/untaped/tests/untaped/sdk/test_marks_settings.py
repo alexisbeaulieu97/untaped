@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
-from untaped.conventions.settings_names import settings_name_violations
+from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk.errors import ConfigError

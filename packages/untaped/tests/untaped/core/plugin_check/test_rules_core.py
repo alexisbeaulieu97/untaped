@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import untaped
-from untaped.conventions.help_tree import help_tree_violations
-from untaped.conventions.settings_names import settings_name_violations
-from untaped.conventions.stability import stability_violations
+from untaped.core.plugin_check.help_tree import help_tree_violations
+from untaped.core.plugin_check.settings_names import settings_name_violations
+from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime.bootstrap import SHELL_SPEC, build_root_app, composition
 from untaped.runtime.registry import ROOT_MANAGEMENT_COMMANDS
 from untaped.runtime.settings import Settings, model_sections

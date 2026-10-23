@@ -1,7 +1,7 @@
 """AWX-specific layering rule: application code reads only domain ``ResourceSpec`` fields.
 
 The generic one-way layer and settings rules live in
-``untaped.conventions.layering``.
+``untaped_lint.providers.conventions.layering``.
 """
 
 from __future__ import annotations

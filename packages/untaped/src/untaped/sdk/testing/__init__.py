@@ -639,7 +639,7 @@ def check_plugin(
     :class:`~untaped.sdk.errors.UsageError`. Composing, it can't run inside a
     contract call.
     """
-    from untaped.core.commands.plugin_check import check_plugins  # noqa: PLC0415
+    from untaped.core.plugin_check.check import check_plugins  # noqa: PLC0415
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
 
@@ -677,7 +677,7 @@ def check_conventions(
     Composing, it brings back the composition it started with (and warns
     about no quarantined plugin), and can't run inside a contract call.
     """
-    from untaped.conventions import (  # noqa: PLC0415
+    from untaped.core.plugin_check.rules import (  # noqa: PLC0415
         FILE_RULES_MISSING,
         file_rules_installed,
         plugin_violations,

@@ -71,13 +71,11 @@ STILL_IMPORTS_THE_RUN = frozenset(
 )
 
 
-#: The top of ``untaped/``: the three roots, the screen kit, the entry point,
-#: and ``conventions/`` until the repository's checks find it a home.
+#: The top of ``untaped/``: the three roots, the screen kit and the entry point.
 TOP = frozenset(
     {
         "__init__.py",
         "__main__.py",
-        "conventions",
         "core",
         "py.typed",
         "runtime",
