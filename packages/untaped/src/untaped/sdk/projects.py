@@ -176,7 +176,11 @@ def committed_path(spec: PluginSpec, name: str, *, root: Path) -> Path:
     files or another plugin's. ``root`` is the caller's choice: the
     checkout's root, a project's, or ``Path()`` for a path relative to it.
     """
-    plugin = spec.name
+    return plugin_committed_path(spec.name, name, root=root)
+
+
+def plugin_committed_path(plugin: str, name: str, *, root: Path) -> Path:
+    """:func:`committed_path` by the plugin's name, for a plugin's handle."""
     rest = name.removeprefix(f"{plugin}/") if name.startswith(f"{plugin}/") else None
     if rest is not None:
         parts = PurePosixPath(rest).parts

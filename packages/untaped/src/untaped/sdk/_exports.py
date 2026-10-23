@@ -104,6 +104,8 @@ from untaped.sdk.errors import (
     HttpStatusError,
     HttpTransportError,
     OperationCancelledError,
+    Service,
+    System,
     UntapedError,
     UsageError,
     attribution,
@@ -213,6 +215,7 @@ from untaped.sdk.records import (
     kind_of,
     record_model,
 )
+from untaped.sdk.run import plugin_of, settings_of
 from untaped.sdk.storage._fs import atomic_write, file_lock, read_structured_file
 from untaped.sdk.storage._refs import RefHolder, RefTarget, holders
 from untaped.sdk.storage.cache import (
@@ -382,6 +385,10 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Following",
     "key",
     "SettingKey",
+    "System",
+    "Service",
+    "settings_of",
+    "plugin_of",
     # composition
     "PluginContext",
     "PluginSpec",

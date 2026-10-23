@@ -137,7 +137,12 @@ GithubSettings.token_command  # declared until 12.0; core adds it for other plug
 # Data file fields kept for the record and shown by `backups get`, never read by name.
 BackupEntry.before_hash
 
-# The 12.0 declaration: read by the mount and help, which later delivery steps add.
+# The 12.0 declaration and run: read by the mount and help, which later delivery steps add.
+build_run  # the mount builds a run per invocation
+run_scope  # and sets it
+System.LOCAL  # error systems the plugins' move PRs use
+System.GIT
+System.HTTP
 OptionDecl.metavar
 OptionDecl.allow_hyphen
 OptionDecl.or_stdin

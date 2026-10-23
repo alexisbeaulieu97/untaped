@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, create_model, model_validator
 
 from untaped.sdk._block import Block, FieldBlock
 from untaped.sdk.marks import Deprecated, Experimental
+from untaped.sdk.run import Context, context_for, settings_of
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -84,6 +85,22 @@ class Command[S: BaseModel](BaseModel):
             and (block := field_block(info.annotation)) is not None
         }
         return {**data, **missing} if missing else data
+
+    @property
+    def ctx(self) -> Context:
+        """What the command reaches without declaring it: ``diag``, ``terminal``,
+        ``project`` and ``plugin`` (its own plugin), from the current run."""
+        return context_for(type(self))
+
+    @property
+    def settings(self) -> S:
+        """The plugin's settings (``Command[S]``), as the current run picked them."""
+        model = settings_model(type(self))
+        if model is None:
+            raise TypeError(
+                f"{type(self).__name__} reads no settings: declare them as Command[YourSettings]"
+            )
+        return settings_of(model)  # type: ignore[return-value]  # S is the model read
 
     def run(self) -> object:
         """The command's body; core calls it after filling the fields."""

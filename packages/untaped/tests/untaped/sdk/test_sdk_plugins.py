@@ -37,6 +37,10 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Following",
         "key",
         "SettingKey",
+        "System",
+        "Service",
+        "settings_of",
+        "plugin_of",
     ),
     "composition": (
         "PluginContext",

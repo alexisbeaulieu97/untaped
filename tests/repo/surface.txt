@@ -4656,7 +4656,9 @@ sdk untaped.sdk.Column
 sdk untaped.sdk.ColumnsOption
 sdk untaped.sdk.Command()
 sdk untaped.sdk.Command.aliases class
+sdk untaped.sdk.Command.ctx
 sdk untaped.sdk.Command.run()
+sdk untaped.sdk.Command.settings
 sdk untaped.sdk.Command.spelled()
 sdk untaped.sdk.Command.spelled(*args)
 sdk untaped.sdk.Command.stability class
@@ -5638,6 +5640,9 @@ sdk untaped.sdk.Served.filled
 sdk untaped.sdk.Served.freshness
 sdk untaped.sdk.Served.stale
 sdk untaped.sdk.Served.value
+sdk untaped.sdk.Service(model)
+sdk untaped.sdk.Service.model
+sdk untaped.sdk.Service.name()
 sdk untaped.sdk.SettingKey(model)
 sdk untaped.sdk.SettingKey(parts@2=) default=[]
 sdk untaped.sdk.SettingKey.model_of(setting)
@@ -5782,6 +5787,10 @@ sdk untaped.sdk.Suggest(argv)
 sdk untaped.sdk.Suggest(note@2=) default=""
 sdk untaped.sdk.Suggest.argv
 sdk untaped.sdk.Suggest.note
+sdk untaped.sdk.System.GIT = git
+sdk untaped.sdk.System.HTTP = http
+sdk untaped.sdk.System.LOCAL = local
+sdk untaped.sdk.System.UNTAPED = untaped
 sdk untaped.sdk.Tab(fields@3=) default=[]  [experimental]
 sdk untaped.sdk.Tab(id, label)  [experimental]
 sdk untaped.sdk.Tab(note@4=) default=""  [experimental]
@@ -6273,6 +6282,7 @@ sdk untaped.sdk.parse_envelope_line(lineno, text)
 sdk untaped.sdk.parse_json_pairs(values, *, flag)
 sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
+sdk untaped.sdk.plugin_of(model)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
 sdk untaped.sdk.print_tree(graphs)  [experimental]
@@ -6341,6 +6351,7 @@ sdk untaped.sdk.safe_path_segment(value)
 sdk untaped.sdk.same_origin(url, base)
 sdk untaped.sdk.setting_guard(*keys)
 sdk untaped.sdk.setting_guard(section)
+sdk untaped.sdk.settings_of(model)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.summary(operation, counts)
