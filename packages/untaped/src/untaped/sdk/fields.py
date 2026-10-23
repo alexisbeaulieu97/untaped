@@ -349,7 +349,9 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks are the table's default columns. The default
+    agree); its ``Column`` marks are the table's default columns, and
+    ``--columns`` names its fields (checked before ``run``, so a subclass's own
+    fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
     its own default columns, ``Output(render={"tree": render_tree})`` adds a
     format of the plugin's own.

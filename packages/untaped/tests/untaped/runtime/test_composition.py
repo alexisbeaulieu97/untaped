@@ -493,9 +493,22 @@ def test_arguments_must_fill_in_field_order() -> None:
         def run(self) -> None:
             pass
 
-    assert sorted(_rules(_plugin_with(Copy, Move, Link))) == [
+    class Where(BaseModel):
+        place: Positional[str] = Field(description="Where from.")
+
+    class Send(Command):
+        """Send."""
+
+        where: Where | None = None
+        target: Positional[str] = Field(description="Where to.")
+
+        def run(self) -> None:
+            pass
+
+    assert sorted(_rules(_plugin_with(Copy, Move, Link, Send))) == [
         ("positional-order", "Copy.target"),
         ("positional-order", "Move.target"),
+        ("positional-order", "Send.target"),
     ]
 
 

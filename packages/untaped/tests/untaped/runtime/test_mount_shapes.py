@@ -14,6 +14,7 @@ from untaped.sdk import (
     Column,
     Command,
     Failure,
+    Group,
     Key,
     Output,
     Plugin,
@@ -64,6 +65,18 @@ Left = derive(Word, "Left", doc="Print left.", word="left")
 Right = derive(Word, "Right", doc="Print right.", word="right")
 
 
+class AGroup(Group):
+    """Group a."""
+
+    commands = (derive(Word, "List", doc="List a.", word="a"),)
+
+
+class BGroup(Group):
+    """Group b."""
+
+    commands = (derive(Word, "List", doc="List b.", word="b"),)
+
+
 class Count(Command):
     """Count the rows piped in, of any kind."""
 
@@ -106,15 +119,31 @@ class Limits(BaseModel):
     colour: bool = Field(True, description="Colour the output.")
 
 
+class Inner(BaseModel):
+    """The inner limit."""
+
+    floor: int = Field(description="The lowest.")
+
+
+class Outer(BaseModel):
+    """The outer limit."""
+
+    inner: Inner
+
+
 class Measure(Command):
     """Measure a shape."""
 
     limits: Limits
+    outer: Outer | None = None
+    max_sides: int = Field(0, validation_alias="maxSides", ge=0, description="At most.")
     output: Output[Shape]
 
     def run(self) -> Shape:
         level = self.limits.level
         sides = -1 if level is None else level.depth
+        sides = self.outer.inner.floor if self.outer is not None else sides
+        sides = self.max_sides or sides
         return Shape(name="red" if self.limits.colour else "plain", sides=sides)
 
 
@@ -156,18 +185,33 @@ class Shapes(Plugin):
     """Shapes, every way."""
 
     settings = ShapesSettings
-    commands = (Tag, Left, Right, Count, Note, Touch, Measure, Squares, Pick, Broke)
+    commands = (Tag, Left, Right, AGroup, BGroup, Count, Note, Touch, Measure, Squares, Pick, Broke)
 
 
 class TakenSettings(BaseModel):
     extensions: str = Field("", description="A key untaped reserves.")
 
 
+class Loot(BaseModel):
+    """What the taken plugin lists."""
+
+    name: Annotated[str, Key]
+
+
+class Grab(Command[TakenSettings]):
+    """List loot."""
+
+    output: Output[Loot]
+
+    def run(self) -> Iterator[Loot]:
+        yield Loot(name="gold")
+
+
 class Taken(Plugin):
     """A plugin whose settings take a reserved key."""
 
     settings = TakenSettings
-    commands = (derive(Word, "Taken", doc="Print taken.", word="taken"),)
+    commands = (Grab,)
 
 
 SHAPES = PluginCandidate(distribution="untaped-shapes", name="shapes", target=Shapes)
@@ -187,6 +231,8 @@ def test_a_list_option_leaves_the_argument_after_it() -> None:
 def test_derived_commands_of_one_base_each_run_their_own_class() -> None:
     assert _run("shapes", "left").stdout == "left\n"
     assert _run("shapes", "right").stdout == "right\n"
+    assert _run("shapes", "a", "list").stdout == "a\n"
+    assert _run("shapes", "b", "list").stdout == "b\n"
 
 
 def test_stdin_of_any_record_reads_known_kinds_and_refuses_an_unknown_one() -> None:
@@ -221,6 +267,17 @@ def test_an_optional_bundle_s_required_field_is_needed_only_when_used() -> None:
     assert deep.exit_code == 0, deep.stderr
     assert (json.loads(deep.stdout)["name"], json.loads(deep.stdout)["sides"]) == ("plain", 3)
     assert "--no-colour" in _run("shapes", "measure", "--help").stdout
+    floor = _run("shapes", "measure", "--floor", "2", "--format", "json")
+    assert json.loads(floor.stdout)["sides"] == 2
+
+
+def test_an_option_takes_its_field_s_validation_alias() -> None:
+    capped = _run("shapes", "measure", "--max-sides", "5", "--format", "json")
+    assert capped.exit_code == 0, capped.stderr
+    assert json.loads(capped.stdout)["sides"] == 5
+    refused = _run("shapes", "measure", "--max-sides", "-1")
+    assert refused.exit_code == 2
+    assert "--max-sides: Input should be greater than or equal to 0" in refused.stderr
 
 
 def test_a_row_of_a_subclass_carries_the_declared_kind() -> None:
@@ -247,6 +304,11 @@ def test_a_class_quarantined_after_composing_leaves_the_others_mounted() -> None
     assert [plugin.spec.name for plugin in result.plugins] == ["shapes"]
     [record] = result.quarantine
     assert (record.name, record.reason) == ("taken", "bad-settings-keys")
+
+    loot = json.dumps({"untaped": "1", "kind": "taken.loot", "record": {"name": "gold"}})
+    root = build_root_app(candidates=[SHAPES, taken])
+    refused = CliInvoker().invoke(root.meta, ["shapes", "count", "--stdin"], input=loot + "\n")
+    assert "no installed plugin declares the kind 'taken.loot'" in refused.stderr
 
 
 def test_a_plugin_class_s_name_is_checked_like_a_spec_s() -> None:

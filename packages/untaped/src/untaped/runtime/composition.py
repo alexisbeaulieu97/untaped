@@ -527,6 +527,8 @@ class _CommandWalk:
         self.path = path
         self.where = cls.__qualname__
         self.seen = _Seen()
+        #: How many optional bundles the walk is inside: their fields are never required.
+        self.optional_bundles = 0
 
     def problem(self, rule: str, where: str, detail: str) -> None:
         self.plugin.problem(rule, where, detail)
@@ -694,15 +696,17 @@ class _CommandWalk:
         value, repeated, inner = _unwrap(annotation)
         marks = (*info.metadata, *inner)
         if _is_model(value) and POSITIONAL not in marks and not repeated:
-            self._bundle(path, value)
+            self._bundle(path, value, required=info.is_required())
             return
         self._option(path, where, info, value=value, marks=marks, repeated=repeated, panel=panel)
 
-    def _bundle(self, path: str, model: type[BaseModel]) -> None:
+    def _bundle(self, path: str, model: type[BaseModel], *, required: bool) -> None:
         if _prose(model)[0]:
             self.seen.guides.append(target_of(model))
+        self.optional_bundles += not required
         for name, info in model.model_fields.items():
             self._field(name, info, prefix=f"{path}.", panel=model.__name__)
+        self.optional_bundles -= not required
 
     def _option(
         self,
@@ -744,7 +748,7 @@ class _CommandWalk:
                 choices=token[1],
                 negative=negative,
                 short=shorts[0] if shorts else None,
-                required=info.is_required(),
+                required=info.is_required() and not self.optional_bundles,
                 default=_jsonable(default),
                 help=info.description or "",
                 panel=panel,

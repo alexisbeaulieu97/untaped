@@ -193,7 +193,6 @@ _TOKENS: Mapping[str, type] = {"str": str, "int": int, "float": float, "bool": b
 
 def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
     """The generated Cyclopts command for ``decl``: one parameter per option, in order."""
-    cls = mount.command(decl)
     panels: dict[str, Group] = {}
     positionals: list[inspect.Parameter] = []
     flags: list[inspect.Parameter] = []
@@ -202,8 +201,7 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
         name = f"_{index}"
         options[name] = option
         panel = panels.setdefault(option.panel, Group(option.panel, sort_key=len(panels)))
-        required = option.required and _bundles_required(cls, option.field)
-        annotation, default = _parameter(option, panel, required=required)
+        annotation, default = _parameter(option, panel)
         kind = (
             inspect.Parameter.POSITIONAL_ONLY
             if option.positional
@@ -227,7 +225,7 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
     return mark(command) if mark is not None else command
 
 
-def _parameter(option: OptionDecl, panel: Group, *, required: bool) -> tuple[object, object]:
+def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
     """The annotation and default of the parameter standing for ``option``."""
     value: Any = _TOKENS[option.token.removeprefix("list[").removesuffix("]")]
     if option.choices:
@@ -259,7 +257,7 @@ def _parameter(option: OptionDecl, panel: Group, *, required: bool) -> tuple[obj
     if option.flag == "--format":
         settings["show_default"] = format_default
         return Annotated[value, Parameter(**settings), *metadata], "table"
-    if required and option.block is None:
+    if option.required and option.block is None:
         return Annotated[value, Parameter(**settings), *metadata], inspect.Parameter.empty
     shown = option.default is not None and option.default is not False
     shown = shown and option.default not in ([], "")
@@ -312,13 +310,17 @@ def _instance(
     for path, flags in blocks.items():
         info = _field(cls, path)
         _put(data, cls, path, _filled(mount, decl, info, flags))
+    # outermost first: a required bundle inside an optional one nobody used stays unbuilt
     for path in _bundles(decl):
+        parent = path.rpartition(".")[0]
+        if parent and _get(data, cls, parent) is None:
+            continue
         if _get(data, cls, path) is None and _field(cls, path).is_required():
             _put(data, cls, path, {})
     try:
         return cls.model_validate(data)
     except ValidationError as exc:
-        raise UsageError(_usage(decl, exc)) from exc
+        raise UsageError(_usage(decl, cls, exc)) from exc
 
 
 def _filled(
@@ -360,12 +362,6 @@ def _bundle_model(annotation: object) -> type[BaseModel]:
     raise TypeError(f"{annotation!r} is not a bundle")
 
 
-def _bundles_required(cls: type[BaseModel], path: str) -> bool:
-    """Whether every bundle around the field at ``path`` is required (none: ``True``)."""
-    parts = path.split(".")[:-1]
-    return all(_field(cls, ".".join(parts[: end + 1])).is_required() for end in range(len(parts)))
-
-
 def _value_type(cls: type[BaseModel], path: str) -> object:
     """The value type of the field at ``path``, ``Annotated`` and ``| None`` peeled."""
     annotation: object = _field(cls, path).annotation
@@ -392,12 +388,14 @@ def _bundles(decl: CommandDecl) -> list[str]:
 
 
 def _keys(cls: type[BaseModel], path: str) -> list[str]:
-    """The data keys of the field at ``path``: each step's alias when it has one."""
+    """The data keys of the field at ``path``: each step's validation alias or alias, if any."""
     keys: list[str] = []
     parts = path.split(".")
     for end in range(len(parts)):
         model, name = _owner(cls, ".".join(parts[: end + 1]))
-        keys.append(model.model_fields[name].alias or name)
+        info = model.model_fields[name]
+        alias = info.validation_alias if isinstance(info.validation_alias, str) else info.alias
+        keys.append(alias or name)
     return keys
 
 
@@ -417,11 +415,11 @@ def _get(data: Mapping[str, Any], cls: type[BaseModel], path: str) -> object:
     return current
 
 
-def _usage(decl: CommandDecl, exc: ValidationError) -> str:
+def _usage(decl: CommandDecl, cls: type[BaseModel], exc: ValidationError) -> str:
     """A validation error as the flag or argument it is about, and what is wrong."""
     error = exc.errors()[0]
-    path = ".".join(str(part) for part in error.get("loc", ()) if not isinstance(part, int))
-    option = next((o for o in decl.options if o.field == path and o.block is None), None)
+    loc = [str(part) for part in error.get("loc", ()) if not isinstance(part, int)]
+    option = next((o for o in decl.options if o.block is None and _keys(cls, o.field) == loc), None)
     if option is None:
         return first_validation_error(exc)
     message = str(error.get("msg", "invalid value")).removeprefix("Value error, ")
