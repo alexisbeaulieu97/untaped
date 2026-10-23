@@ -45,6 +45,7 @@ from untaped.runtime.settings import (
     section_model,
 )
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
@@ -167,18 +168,42 @@ class SkillAsset:
             raise ConfigError(f"skill asset {self.name!r} must have a description")
 
 
-@dataclass(frozen=True)
-class DoctorCheck:
+class DoctorCheck(OwnedBlock):
     """A health check contributed by the shell or a plugin.
 
-    An ``online`` check contacts a remote service, so only
-    ``untaped doctor --online`` runs it; every other check stays offline.
+    A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
+    is the check ``<plugin>.store``; the 11.x spelling passes its ``id``. An
+    ``online`` check contacts a remote service, so only ``untaped doctor
+    --online`` runs it; every other check stays offline.
     """
 
-    id: str
+    block_kind = "doctor-check"
+    name_style = "kebab"
+
     title: str
     run: Callable[[PluginContext], DoctorResult]
-    online: bool = False
+    online: bool
+
+    def __init__(
+        self,
+        id: str | None = None,
+        *,
+        title: str,
+        run: Callable[[PluginContext], DoctorResult],
+        online: bool = False,
+    ) -> None:
+        super().__init__(*_spelled(id))
+        self.title = title
+        self.run = run
+        self.online = online
+
+    @property
+    def id(self) -> str:
+        """``<plugin>.<name>``, or the id it was given."""
+        return _id_of(self)
+
+    def __repr__(self) -> str:
+        return f"DoctorCheck({self._where()!r}, title={self.title!r})"
 
 
 @dataclass(frozen=True)
@@ -266,11 +291,26 @@ class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
     detail: str = ""
 
 
-@dataclass(frozen=True)
-class DirMigration:
+def _spelled(id: str | None) -> tuple[str, str] | tuple[()]:
+    """The plugin and name an 11.x id spells, or nothing for a block a plugin class names."""
+    if id is None:
+        return ()
+    plugin, _, name = id.partition(".")
+    return plugin, name
+
+
+def _id_of(block: OwnedBlock) -> str:
+    """A check's or migration's id: ``<plugin>.<name>``, or an 11.x id without a dot."""
+    return block.plugin if not block.name else f"{block.plugin}.{block.name}"
+
+
+class DirMigration(OwnedBlock):
     """A plugin's own directory moves for ``untaped setup migrate-dirs``.
 
-    ``id`` is ``<plugin>.<noun>``, unique across plugins. ``preview``
+    A plugin class holding it names it (``greetings = DirMigration(...)`` is
+    ``<plugin>.greetings``); the 11.x spelling passes ``id``, which is
+    ``<plugin>.<noun>``, unique across plugins. First consumer of the
+    plugin class form: the 12 to 13 transition. ``preview``
     returns what would change and only reads; ``apply`` does it and returns
     its outcomes (usually one; core reports each).
     ``apply`` is idempotent: run again after a crash or a second time, it
@@ -281,10 +321,33 @@ class DirMigration:
     its docstring.
     """
 
-    id: str
+    block_kind = "dir-migration"
+    name_style = "kebab"
+
     title: str
     preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]]
     apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]]
+
+    def __init__(
+        self,
+        id: str | None = None,
+        *,
+        title: str,
+        preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]],
+        apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]],
+    ) -> None:
+        super().__init__(*_spelled(id))
+        self.title = title
+        self.preview = preview
+        self.apply = apply
+
+    @property
+    def id(self) -> str:
+        """``<plugin>.<name>``, or the id it was given."""
+        return _id_of(self)
+
+    def __repr__(self) -> str:
+        return f"DirMigration({self._where()!r}, title={self.title!r})"
 
 
 def _check_model(model: object, field: str, label: str) -> None:

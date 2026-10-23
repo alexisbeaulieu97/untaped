@@ -400,7 +400,11 @@ class _PluginWalk:
                     where,
                     f"is held by {other} too; a block belongs to one plugin",
                 )
-            name = attribute.replace("_", "-") if value.name_style == "kebab" else attribute
+            name = value.derived_name(attribute)
+            problem = value.name_problem(name)
+            if problem is not None:
+                self.problem("block-name", where, problem)
+                continue
             blocks.append(
                 BlockDecl(
                     block=value.block_kind, attribute=attribute, name=name, module=value.module

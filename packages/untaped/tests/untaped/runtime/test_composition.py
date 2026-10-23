@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Annotated, Literal
 
 import pytest
@@ -13,6 +14,7 @@ from core_test_support.contracts.support import BOOKS, BookSource, Shop
 from untaped.runtime.composition import PluginEntry, compose, kebab, snake, words
 from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
 from untaped.sdk import (
+    Cache,
     Column,
     Command,
     Confirm,
@@ -232,6 +234,18 @@ def test_a_block_on_the_plugin_class_is_named_by_its_attribute() -> None:
     [block] = compose([_entry(Stocked)]).plugin("hello").blocks
     assert (block.block, block.attribute, block.name) == ("thing", "repo_store", "repo-store")
     assert block.module == __name__
+
+
+def test_a_block_name_its_kind_refuses_is_a_problem() -> None:
+    class Shouty(Plugin):
+        """Shouty."""
+
+        settings = HelloSettings
+        MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
+
+    [problem] = _problems(Shouty)
+    assert (problem.rule, problem.where.rpartition("<locals>.")[2]) == ("block-name", "Shouty.MOTD")
+    assert "must be one settings segment" in problem.detail
 
 
 def test_one_block_held_twice_is_a_problem() -> None:

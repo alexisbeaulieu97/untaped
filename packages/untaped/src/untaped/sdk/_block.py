@@ -72,6 +72,16 @@ class Block:
         if isinstance(owner, type) and issubclass(owner, Plugin):
             self._bindings.append(Binding(owner, name))
 
+    @classmethod
+    def derived_name(cls, attribute: str) -> str:
+        """The name an attribute gives a block of this kind."""
+        return attribute.replace("_", "-") if cls.name_style == "kebab" else attribute
+
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        """Why ``name`` cannot name a block of this kind, or ``None``; composition reports it."""
+        return None
+
     @property
     def module(self) -> str:
         """The module that created the block."""
@@ -95,6 +105,61 @@ class Block:
                 "class yet: assign it to an attribute of the plugin class that owns it"
             )
         return self._bindings[0]
+
+
+class OwnedBlock(Block):
+    """A block that knows its plugin and its name, which make its ids, keys and folders.
+
+    A plugin class holding it names it: ``motd = Cache(...)`` is the plugin's
+    block ``motd``, and the plugin's name is the one this run composed for
+    the package defining that class, so it is read inside a run. The 11.x
+    spelling passes both (``Cache("hello", "motd", ...)``) and needs no run.
+    """
+
+    def __init__(self, plugin: str | None = None, name: str | None = None) -> None:
+        super().__init__()
+        if (plugin is None) != (name is None):
+            raise TypeError(
+                f"{type(self).__name__} takes its plugin and its name together, or neither "
+                "when a plugin class holds it"
+            )
+        self._plugin = plugin
+        self._name = name
+
+    @property
+    def spelled(self) -> bool:
+        """Whether the block was given its plugin and name rather than bound to a plugin class."""
+        return self._plugin is not None
+
+    @property
+    def plugin(self) -> str:
+        """The plugin the block belongs to."""
+        if self._plugin is not None:
+            return self._plugin
+        from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+
+        owner = self.binding.owner
+        try:
+            return current_run().composition.owner_of_module(owner.__module__)
+        except LookupError:
+            raise LookupError(
+                f"{type(self).__name__} {owner.__qualname__}.{self.binding.attribute} belongs "
+                f"to no composed plugin: its module {owner.__module__} is under no plugin's "
+                "package"
+            ) from None
+
+    @property
+    def name(self) -> str:
+        """The block's name: the attribute holding it, or the name it was given."""
+        if self._name is not None:
+            return self._name
+        return self.derived_name(self.binding.attribute)
+
+    def _where(self) -> str:
+        """How a message names the block: ``hello.motd``, or its kind and module while unnamed."""
+        if self._plugin is not None:
+            return f"{self._plugin}.{self._name}"
+        return f"{type(self).__name__} created in {self._module}"
 
 
 class FieldOption(NamedTuple):
