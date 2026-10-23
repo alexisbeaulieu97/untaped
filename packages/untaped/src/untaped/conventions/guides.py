@@ -40,7 +40,7 @@ import yaml
 from cyclopts import App
 from pydantic import ValidationError
 
-from untaped.conventions.commands import (
+from untaped.runtime.command_lines import (
     FENCE,
     argv_of,
     commands,

@@ -3,13 +3,13 @@
 Read by the docs tests: a command in a ``bash`` block must
 parse in full, one named in inline code may leave out required arguments.
 Finding them in Markdown and whether one parses is core's
-:mod:`untaped.conventions.commands`, which the ``Examples`` and guide
+:mod:`untaped.runtime.command_lines`, which the ``Examples`` and guide
 conventions read too.
 """
 
 from __future__ import annotations
 
-from untaped.conventions.commands import (
+from untaped.runtime.command_lines import (
     INLINE,
     PLACEHOLDER,
     argv_of,

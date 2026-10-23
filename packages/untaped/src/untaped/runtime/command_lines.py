@@ -1,8 +1,8 @@
 """Whether an ``untaped …`` command line parses against the composed root.
 
-Shared by the conventions (a docstring's ``Examples`` section, read here for
-them and for the command's agent page; a plugin's guides) and the
-repository's docs and skill tests. Synopsis notation is read the obvious way
+Shared by ``plugin check``'s conventions (a docstring's ``Examples`` section;
+a plugin's guides), the command's agent page, which reads ``Examples``
+here too, and the repository's docs and skill tests. Synopsis notation is read the obvious way
 (``[--flag X]`` is optional text, ``a|b`` takes ``a``, ``...`` repeats) and
 placeholders (``NAME``, ``<recipe>``) bind without being converted.
 """

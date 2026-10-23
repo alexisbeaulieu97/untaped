@@ -86,7 +86,7 @@ def installed_plugins() -> list[Plugin]:
 
 
 def _ready(spec: PluginSpec, distribution: str, candidate: PluginCandidate | None) -> Plugin:
-    from untaped.conventions import package_of  # noqa: PLC0415 - imports the root
+    from untaped.runtime.plugin_package import package_of  # noqa: PLC0415 - only plugin list reads it
 
     version = (candidate.distribution_version if candidate else None) or _UNKNOWN
     name = spec.name
