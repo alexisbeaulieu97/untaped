@@ -3,12 +3,14 @@
 The mount calls :func:`build_run` once per invocation and sets the result with
 :func:`untaped.sdk.run.run_scope`. Each member reads what the 11.x runtime
 already provides: settings sections through ``get_config_section`` (each
-section validated once per run), the stderr sink and the themed terminal
-(built once, on first use).
+section validated once per run), the install's plugins through
+``installed_plugins()`` (read once, on first use), the stderr sink and the
+themed terminal (built once, on first use).
 """
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +20,7 @@ from pydantic import BaseModel
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._app_context import app_context
+from untaped.sdk.plugin_records import installed_plugins
 from untaped.sdk.projects import untaped_home
 from untaped.sdk.run import Composition, Run
 
@@ -35,6 +38,7 @@ def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]
     return Composition(
         owners={plugins[plugin.name].settings: plugin.name for plugin in declaration.plugins},
         packages=packages,
+        installed=functools.cache(lambda: tuple(installed_plugins())),
     )
 
 

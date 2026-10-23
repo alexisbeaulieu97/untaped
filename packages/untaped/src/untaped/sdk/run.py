@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from untaped.sdk._ui import UiContext
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
+    from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.progress import ProgressHandle
     from untaped.sdk.projects import Project
 
@@ -75,12 +76,14 @@ class Clock:
 
 @dataclass(frozen=True)
 class Composition:
-    """Which plugin owns what: its settings model, and the classes under its package."""
+    """Which plugin owns what, and the plugins this install has."""
 
     #: The plugin each composed settings model identifies.
     owners: Mapping[type[BaseModel], str] = field(default_factory=dict)
     #: The plugin owning each top-level package (an entry point's module's).
     packages: Mapping[str, str] = field(default_factory=dict)
+    #: This install's plugins as ``untaped plugin list`` shows them, read on first use.
+    installed: Callable[[], tuple[InstalledPlugin, ...]] = tuple
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
         """The plugin whose settings model ``model`` is; :class:`LookupError` when none is."""
@@ -186,7 +189,8 @@ class Context:
 
     ``diag`` writes to stderr; ``terminal`` is the terminal handle for
     prompts and screens; ``project`` is the current project or ``None``;
-    ``plugin`` is the command's own plugin.
+    ``plugin`` is the command's own plugin; ``plugins`` is every plugin
+    this install has, as ``untaped plugin list`` shows them.
     """
 
     run: Run
@@ -199,6 +203,10 @@ class Context:
     @property
     def terminal(self) -> UiContext:
         return self.run.terminal()
+
+    @property
+    def plugins(self) -> tuple[InstalledPlugin, ...]:
+        return self.run.composition.installed()
 
     @property
     def project(self) -> Project | None:
