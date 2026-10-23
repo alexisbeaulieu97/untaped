@@ -170,7 +170,7 @@ def file_lines(
     *,
     plugin: str,
     tests_dir: Path | None = None,
-    plugins: Sequence[Plugin] = (),
+    plugins: Sequence[Plugin],
 ) -> list[str] | None:
     """The file rules' lines, from the lint plugin; ``None`` when it is not installed.
 

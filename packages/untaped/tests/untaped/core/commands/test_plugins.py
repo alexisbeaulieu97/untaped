@@ -8,6 +8,7 @@ touches settings, so invalid plugin values cannot block it.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,13 @@ def test_a_ready_plugin_says_what_it_may_import_from() -> None:
     requires = ("Untaped_Git>=1", "jinja2; python_version >= '3'", "rich; extra == 'pretty'")
     [row] = _listing([make_candidate(make_spec("acme"), "acme-dist", requires_dist=requires)])
     assert (row["requires"], row["fills"]) == (["jinja2", "untaped-git"], [])
+
+
+def test_an_extra_named_after_an_owner_it_fills_adds_to_requires() -> None:
+    spec = replace(make_spec("acme"), provides={"rack": lambda: ()})
+    requires = ("untaped-rack>=1; extra == 'rack'", "rich; extra == 'pretty'")
+    [row] = _listing([make_candidate(spec, "acme-dist", requires_dist=requires)])
+    assert (row["requires"], row["fills"]) == (["untaped-rack"], ["rack"])
 
 
 def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> None:

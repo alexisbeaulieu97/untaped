@@ -147,9 +147,17 @@ class Conventions:
         return list(RULES)
 
     def findings(
-        self, plugin: Plugin, *, candidates: Sequence[PluginCandidate] | None = None
+        self,
+        plugin: Plugin,
+        *,
+        candidates: Sequence[PluginCandidate] | None = None,
+        plugins: Sequence[Plugin] | None = None,
     ) -> list[Finding]:
-        """Every finding for ``plugin``; ``candidates`` replaces entry-point discovery."""
+        """Every finding for ``plugin``; ``candidates`` replaces entry-point discovery.
+
+        ``plugins`` are every installed plugin's records (:func:`installed`
+        builds them once for a run); left out, they are built here.
+        """
         try:
             rows = check_plugin(plugin.name, candidates=candidates)
         except UsageError:
@@ -171,7 +179,7 @@ class Conventions:
                 source_dir,
                 plugin=plugin.name,
                 tests_dir=tests_dir,
-                plugins=_installed(candidates),
+                plugins=installed(candidates) if plugins is None else plugins,
             )
             for line in lines:
                 tests = line.split("::")[1] == "private-test-import"
@@ -180,7 +188,7 @@ class Conventions:
         return found
 
 
-def _installed(candidates: Sequence[PluginCandidate] | None) -> list[Plugin]:
+def installed(candidates: Sequence[PluginCandidate] | None = None) -> list[Plugin]:
     """Every installed plugin's record; composed from ``candidates`` when they are given."""
     if candidates is None:
         return installed_plugins()
@@ -194,17 +202,19 @@ def file_lines(
     *,
     plugin: str,
     tests_dir: Path | None = None,
-    plugins: Sequence[Plugin] = (),
+    plugins: Sequence[Plugin],
 ) -> list[str]:
     """The file rules' ``<where>::<rule>::<detail>`` lines for ``package`` in ``source_dir``.
 
     Core's deprecated ``untaped plugin check`` and ``check_conventions`` read
     these lines to keep their rows unchanged until they are removed. An unreadable file is
     one ``unreadable-file`` line and the other rules don't run. ``plugins``
-    are every installed plugin's records; the import boundary runs when
-    ``plugin``'s is among them.
+    are every installed plugin's records, which the import boundary reads;
+    a ``plugin`` without one there is checked as requiring nothing.
     """
-    subject = next((each for each in plugins if each.name == plugin), None)
+    subject = next((each for each in plugins if each.name == plugin), None) or Plugin(
+        name=plugin, status="ready", distribution="", version="", package=package
+    )
     try:
         files: list[SourceFile] = list(source_files(source_dir))
         found = [
@@ -215,11 +225,7 @@ def file_lines(
             *terminal_boundary_violations(source_dir, files),
             *blob_reader_violations(package, source_dir, files),
             *store_format_violations(plugin, source_dir, files),
-            *(
-                []
-                if subject is None
-                else import_boundary_violations(subject, source_dir, files, plugins=plugins)
-            ),
+            *import_boundary_violations(subject, source_dir, files, plugins=plugins),
         ]
     except UnreadableSourceError as exc:
         where = _relative(exc.path, source_dir.parent)

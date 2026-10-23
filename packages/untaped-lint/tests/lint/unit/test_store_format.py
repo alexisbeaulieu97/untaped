@@ -158,6 +158,6 @@ def test_the_plugin_linter_runs_the_rule(tmp_path: Path) -> None:
     (source_dir / "db.py").write_text(
         'import sqlite3\nsqlite3.connect(plugin_dir(SPEC) / "x.db")\n', encoding="utf-8"
     )
-    assert _line(2) in file_lines("acme", source_dir, plugin="acme")
+    assert _line(2) in file_lines("acme", source_dir, plugin="acme", plugins=[])
     rule = next(rule for rule in RULES if rule.id == RULE)
     assert rule.severity == "error"

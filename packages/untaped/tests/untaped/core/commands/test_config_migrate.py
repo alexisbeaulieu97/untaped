@@ -363,3 +363,13 @@ def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
     assert _isolated_config.read_text() == (
         "profiles:\n  default: {}\n  other:\n    del: {}\n  work:\n    del:\n      parallel: 3\n"
     )
+
+
+def test_renames_the_ca_bundle_setting(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      ca_bundle: /ca.pem\n")
+
+    result = _migrate()
+
+    assert result.exit_code == 0, result.output
+    assert "ca_bundle_path: /ca.pem" in _isolated_config.read_text()
+    assert "ca_bundle:" not in _isolated_config.read_text()

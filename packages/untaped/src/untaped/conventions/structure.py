@@ -50,22 +50,23 @@ def _modules(package: str) -> Iterator[Any]:
 def unimportable(package: str, source_dir: Path) -> str | None:
     """The ``unreadable-file`` violation of the first module of ``package`` Python can't read.
 
-    The class checks import every module; one that isn't UTF-8 or valid
-    Python stops them, and is the plugin's one violation.
+    The class checks import every module; one of its own files that isn't
+    UTF-8 or valid Python stops them, and is the plugin's one violation. A
+    file outside ``source_dir`` (a dependency's) is raised, not reported.
     """
     try:
         for _ in _modules(package):
             pass
     except SyntaxError as exc:
-        where = Path(exc.filename or source_dir)
-        if where.is_relative_to(source_dir.parent):
-            where = where.relative_to(source_dir.parent)
+        where = Path(exc.filename or "")
+        if not where.is_relative_to(source_dir):
+            raise
         reason = (
             "is not UTF-8"
             if "UTF-8" in exc.msg or "codec" in exc.msg
             else f"is not valid Python (line {exc.lineno})"
         )
-        return f"{where.as_posix()}::unreadable-file::{reason}"
+        return f"{where.relative_to(source_dir.parent).as_posix()}::unreadable-file::{reason}"
     return None
 
 

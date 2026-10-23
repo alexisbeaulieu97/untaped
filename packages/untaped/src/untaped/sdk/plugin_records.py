@@ -91,11 +91,15 @@ def plugin_records(
 
 
 def installed_plugins() -> list[Plugin]:
-    """The plugins the current composition holds, as ``untaped plugin list`` shows them."""
-    from untaped.runtime.bootstrap import composition  # noqa: PLC0415 - bootstrap is the root
-    from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
+    """The plugins the current composition holds, as ``untaped plugin list`` shows them.
 
-    return plugin_records(composition(), discover_candidates())
+    Each record reads the candidate it was composed from, so a composition
+    of given candidates (a test's) lists them as it holds them.
+    """
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415 - bootstrap is the root
+
+    result = composition()
+    return plugin_records(result, result.candidates)
 
 
 def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> Plugin:

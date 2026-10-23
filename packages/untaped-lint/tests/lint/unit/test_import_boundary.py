@@ -220,7 +220,17 @@ def test_a_record_without_a_package_has_nothing_to_check(tmp_path: Path) -> None
 def test_file_lines_run_the_boundary_for_the_named_plugin(tmp_path: Path) -> None:
     source_dir = tmp_path / "demo"
     source_dir.mkdir()
-    (source_dir / "__init__.py").write_text('"""Demo."""\nimport untaped.runtime\n', "utf-8")
-    line = "demo/__init__.py:2::import-boundary::imports untaped.runtime; use untaped.sdk"
-    assert line in file_lines("demo", source_dir, plugin="demo", plugins=[plugin("demo")])
-    assert line not in file_lines("demo", source_dir, plugin="demo")
+    (source_dir / "__init__.py").write_text(
+        '"""Demo."""\nimport untaped.runtime\nfrom other.api import x\n', "utf-8"
+    )
+    core = "demo/__init__.py:2::import-boundary::imports untaped.runtime; use untaped.sdk"
+    undeclared = (
+        "demo/__init__.py:3::import-boundary::"
+        "imports other.api but its distribution does not depend on other's"
+    )
+    found = file_lines("demo", source_dir, plugin="demo", plugins=[plugin("other")])
+    assert {core, undeclared} <= set(found)  # no record of demo: it requires nothing
+    declared = [plugin("demo", requires=("other",)), plugin("other")]
+    found = file_lines("demo", source_dir, plugin="demo", plugins=declared)
+    assert core in found
+    assert undeclared not in found

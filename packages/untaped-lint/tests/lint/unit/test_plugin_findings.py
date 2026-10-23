@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import Literal
 
@@ -9,9 +10,9 @@ import pytest
 
 from lint.support import Install
 from untaped.sdk import Plugin
-from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
+from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with, plugin_candidate
 from untaped_lint.providers import conventions
-from untaped_lint.providers.conventions import Conventions, file_lines
+from untaped_lint.providers.conventions import Conventions, file_lines, installed
 from untaped_lint.records import FileLocation
 from untaped_lint.testing import run, subject
 
@@ -133,7 +134,7 @@ def test_a_plugin_not_installed_is_one_finding(install: Install) -> None:
 def test_an_unreadable_file_is_one_line_and_stops_the_file_rules(install: Install) -> None:
     site = install({**_PLUGIN})
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
-    lines = file_lines("demo_plugin", site / "demo_plugin", plugin="demo")
+    lines = file_lines("demo_plugin", site / "demo_plugin", plugin="demo", plugins=[])
     [line] = lines
     assert line.startswith("demo_plugin/broken.py::unreadable-file::")
 
@@ -282,3 +283,37 @@ def test_an_unmarked_service_is_a_warning(install: Install) -> None:
     assert (finding.rule, finding.severity) == (rule, "warning")
     assert "removed in 12.0" in finding.message
     assert not report.predicate_hit(strict=False)
+
+
+def test_the_import_boundary_knows_every_candidate_as_a_plugin(install: Install) -> None:
+    """A quarantined candidate and a spec candidate are plugins, read from the candidates."""
+    shelf_spec = (
+        "from untaped.sdk import PluginSpec, create_app\n"
+        "def build():\n"
+        '    return create_app(name="shelf", help="Shelf.")\n'
+        'SPEC = PluginSpec(name="shelf", app_factory=build)\n'
+    )
+    site = install({**_PLUGIN, "shelf_plugin/__init__.py": shelf_spec})
+    (site / "demo_plugin" / "reach.py").write_text(
+        (
+            '"""Reaching into other plugins."""\n\n\n'
+            "def reach() -> None:\n"
+            "    from ghost.domain import x\n"
+            "    from shelf_plugin.domain import y\n"
+        ),
+        encoding="utf-8",
+    )
+    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
+    shelf = plugin_candidate(importlib.import_module("shelf_plugin").SPEC)
+    candidates = [*_DEMO, ghost, shelf]
+    found = {each.name: (each.status, each.package) for each in installed(candidates)}
+    assert found["ghost"] == ("quarantined", "ghost")
+    assert found["shelf"] == ("ready", "shelf_plugin")
+    with compose_with("lint"):
+        report = run(
+            [subject(_plugin(site))], select=["lint.import-boundary"], candidates=candidates
+        )
+    assert sorted(each.message for each in report.findings) == [
+        "imports ghost.domain; use ghost.api",
+        "imports shelf_plugin.domain; use shelf_plugin.api",
+    ]

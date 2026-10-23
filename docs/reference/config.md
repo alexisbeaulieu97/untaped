@@ -165,6 +165,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
+| `http.ca_bundle` | `UNTAPED_HTTP__CA_BUNDLE` | `http.ca_bundle_path` | retired |
 | `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | retired |
 | `shell.aliases` | `UNTAPED_SHELL__ALIASES` | none | deleted in 11.0; use a shell alias or function |
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |

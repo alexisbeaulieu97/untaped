@@ -639,10 +639,15 @@ class PluginCandidate:
 
 @dataclass(frozen=True)
 class CompositionResult:
-    """Committed plugins plus quarantine records for one composition."""
+    """Committed plugins plus quarantine records for one composition.
+
+    ``candidates`` are the ones it was composed from, so a reader of the
+    composition (``untaped plugin list``'s records) reads the same ones.
+    """
 
     plugins: tuple[RegisteredPlugin, ...] = ()
     quarantine: tuple[QuarantineRecord, ...] = ()
+    candidates: tuple[PluginCandidate, ...] = field(default=(), compare=False)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -1430,6 +1435,7 @@ def compose(
     return CompositionResult(
         plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
+        candidates=tuple(ordered),
     )
 
 
