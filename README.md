@@ -20,7 +20,7 @@ the same output and piping rules:
   all; checks a plugin against the house conventions (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
-`skills`, `doctor` and `plugin`.
+`skills`, `doctor` and `plugin`, and the experimental `project` and `agents`.
 
 ## Install
 

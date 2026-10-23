@@ -81,10 +81,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
-- `lint`: its commands, the `lint.rule` and `lint.finding` records, the
-  `lint.ignore` setting, `untaped_lint.api` (the `Linter` contract, `Rules`,
-  `rule` and `finding`), `untaped_lint.testing`, and the rule ids lint
-  declares. See [Lint](./lint.md).
+- `lint`: its commands, its record kinds, the `lint.ignore` setting,
+  `untaped_lint.api` (the `Linter` and `TreeReader` contracts, `Rules`,
+  `rule`, `finding`, `lint` and `lint_config`), `untaped_lint.testing`, and
+  the rule ids lint declares. See [Lint](./lint.md).
 - `project`: its commands, the `untaped.project`, `untaped.project_outcome`
   and `untaped.hold_outcome` records, `.untaped/project.json` and project
   references, and `Project`, `current_project`, `project_at`,
@@ -94,13 +94,14 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `plan_release` in `untaped.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
+- `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
+  a plugin's typed private file in a store repo.
 - The fixtures in `untaped.testing.git`, for testing a plugin against the
   repo store.
 - `untaped.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
 - Stores: `Store`, `holders`, `RefHolder`, `RefTarget` and
-  `other_layouts_migration` in `untaped.sdk`, the `stores=` and `store=`
-  parameters that take one, and `untaped.testing.assert_schema_pinned` and
+  `other_layouts_migration` in `untaped.sdk`, `Cache(store=)`, and `untaped.testing.assert_schema_pinned` and
   `write_reference`. The files a
   store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
