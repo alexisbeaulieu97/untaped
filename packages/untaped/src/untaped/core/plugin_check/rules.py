@@ -39,7 +39,7 @@ from untaped.runtime.registry import (
     owner_requirement,
     parse_requirement,
 )
-from untaped.sdk.plugin_records import Plugin, plugin_records
+from untaped.sdk.plugin_records import InstalledPlugin, plugin_records
 
 
 def plugin_violations(
@@ -172,7 +172,7 @@ def file_lines(
     *,
     plugin: str,
     tests_dir: Path | None = None,
-    plugins: Sequence[Plugin],
+    plugins: Sequence[InstalledPlugin],
 ) -> list[str] | None:
     """The file rules' lines, from the lint plugin; ``None`` when it is not installed.
 

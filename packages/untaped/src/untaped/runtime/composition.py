@@ -1,0 +1,979 @@
+"""Composition: one walk from the plugin classes to the :class:`Declaration`, with its checks.
+
+Core starts from each plugin class an entry point names and follows its
+references. Everything it reaches is the plugin's, named after the
+attribute or class under the plugin's name: commands from class names in
+kebab case, kinds from the classes ``Output[R]`` and ``File[M]`` name, blocks
+from their attributes. What the shape cannot prevent is checked here, once,
+and each problem names the class or field it is about; a plugin with any
+problem is quarantined and the others compose.
+"""
+
+from __future__ import annotations
+
+import collections.abc
+import enum
+import inspect
+import re
+import sys
+import types
+import typing
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import PurePath
+from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
+
+from pydantic import BaseModel
+from pydantic_core import PydanticUndefined, to_jsonable_python
+
+from untaped.runtime.declaration import (
+    AliasDecl,
+    BlockDecl,
+    CommandDecl,
+    Declaration,
+    GroupDecl,
+    KindDecl,
+    OptionDecl,
+    PluginDecl,
+    Problem,
+    Quarantined,
+    Returns,
+    StabilityDecl,
+    target_of,
+)
+from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock
+from untaped.sdk.fields import (
+    CORE_SHORTS,
+    AllowHyphen,
+    File,
+    Output,
+    Parallel,
+    Refresh,
+    SettingKey,
+    Short,
+    Stdin,
+    Written,
+)
+from untaped.sdk.marks import Deprecated, Experimental
+from untaped.sdk.plugin import (
+    RESERVED_NAMES,
+    Command,
+    Group,
+    Plugin,
+    StubSkill,
+    field_block,
+    generic_argument,
+    settings_model,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
+    from pydantic.fields import FieldInfo
+
+#: Field names core or pydantic reserves on a command; ``run_`` still spells ``--run``.
+RESERVED_FIELDS: frozenset[str] = frozenset(
+    {
+        "run",
+        "ctx",
+        "settings",
+        "spelled",
+        "stability",
+        "aliases",
+        "json",
+        "copy",
+        "schema",
+        "validate",
+        "dict",
+        "construct",
+    }
+)
+
+_WORDS = re.compile(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+|[A-Z]+")
+_ITERATORS = frozenset(
+    {
+        collections.abc.Iterator,
+        collections.abc.Iterable,
+        collections.abc.Generator,
+        typing.Iterator,
+        typing.Iterable,
+        typing.Generator,
+    }
+)
+
+
+def words(name: str) -> list[str]:
+    """The words of a class name, a run of capitals one word: ``SSHKeys`` is ``ssh``, ``keys``."""
+    return [word.lower() for word in _WORDS.findall(name)]
+
+
+def kebab(name: str) -> str:
+    """A class name as a command word: ``JobTemplates`` is ``job-templates``."""
+    return "-".join(words(name))
+
+
+def snake(name: str) -> str:
+    """A class name as a kind's last part: ``TestResult`` is ``test_result``."""
+    return "_".join(words(name))
+
+
+@dataclass(frozen=True)
+class PluginEntry:
+    """One entry point: the plugin's name (its key), its target, and the object it loads."""
+
+    name: str
+    target: str
+    plugin: object
+
+
+def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Declaration:
+    """Walk ``entries`` in order into one :class:`Declaration`.
+
+    ``taken`` are names a plugin may not have: core's root commands and
+    config.yml's own top-level keys (core composes first and wins). A plugin
+    whose name is taken, by those or by an earlier entry, or whose walk finds
+    any problem, is quarantined with every problem named. A record class
+    belongs to the plugin whose package defines it, whichever plugins reach
+    it and in whatever order (shelf's ``Book``, which library's provider also
+    returns, is ``shelf.book``); a class no composed plugin's package defines
+    belongs to the plugin that reaches it. Two entry points in one top-level
+    package share it, the first owning its classes, as
+    :meth:`Declaration.owner_of` reads it.
+    """
+    reserved = frozenset(taken)
+    owners: dict[str, int] = {}
+    for index, entry in enumerate(entries):
+        owners.setdefault(_package(entry.target), index)
+    while True:
+        names = {package: entries[index].name for package, index in owners.items()}
+        declaration, refused = _compose(entries, reserved, names)
+        if not refused & set(owners.values()):
+            return declaration
+        # A quarantined plugin owns no kind: the plugins reaching its classes do.
+        owners = {package: index for package, index in owners.items() if index not in refused}
+
+
+def _compose(
+    entries: Sequence[PluginEntry], taken: frozenset[str], owners: dict[str, str]
+) -> tuple[Declaration, set[int]]:
+    """One pass over ``entries``: the declaration and the indexes of the entries refused."""
+    names = set(taken)
+    plugins: list[PluginDecl] = []
+    kinds: dict[str, KindDecl] = {}
+    quarantined: list[Quarantined] = []
+    refused: set[int] = set()
+    for index, entry in enumerate(entries):
+        walk = _PluginWalk(entry, owners)
+        problems = list(walk.problems)
+        if entry.name in names:
+            problems.insert(
+                0,
+                Problem(
+                    rule="duplicate-name",
+                    where=entry.name,
+                    detail="the name is taken by a root command, a config key or another plugin",
+                ),
+            )
+        claimed = _claim(walk, kinds, problems)
+        if problems or walk.decl is None:
+            quarantined.append(
+                Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
+            )
+            refused.add(index)
+            continue
+        names.add(entry.name)
+        plugins.append(walk.decl)
+        kinds.update(claimed)
+    declaration = Declaration(
+        plugins=tuple(plugins),
+        kinds=tuple(sorted(kinds.values(), key=lambda kind: kind.kind)),
+        quarantined=tuple(quarantined),
+    )
+    return declaration, refused
+
+
+def _package(target: str) -> str:
+    """The top-level package of an entry point's module: every class under it is the plugin's."""
+    return target.partition(":")[0].partition(".")[0]
+
+
+def _claim(
+    walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem]
+) -> dict[str, KindDecl]:
+    """The kinds ``walk`` reaches; two classes that would be one kind are a problem."""
+    claimed: dict[str, KindDecl] = {}
+    for cls, kind in walk.kinds.items():
+        target = target_of(cls)
+        held = claimed.get(kind) or kinds.get(kind)
+        if held is not None and held.target != target:
+            problems.append(
+                Problem(
+                    rule="duplicate-kind",
+                    where=cls.__qualname__,
+                    detail=f"would be the kind {kind}, which {held.target} is: rename one",
+                )
+            )
+            continue
+        claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
+    return claimed
+
+
+def _stability(mark: object) -> StabilityDecl | None:
+    if isinstance(mark, Experimental):
+        return StabilityDecl(stability="experimental")
+    if isinstance(mark, Deprecated):
+        replacement = mark.replacement
+        text = None
+        if isinstance(replacement, str | SettingKey):
+            text = str(replacement)
+        elif replacement is not None:
+            text = target_of(replacement)
+        return StabilityDecl(stability="deprecated", removed_in=mark.removed_in, replacement=text)
+    return None
+
+
+def _prose(cls: type) -> tuple[str, str]:
+    """The summary (first line) and the whole docstring of ``cls`` (its own, never inherited)."""
+    doc = inspect.cleandoc(cls.__dict__.get("__doc__") or "")
+    return doc.partition("\n")[0].strip(), doc
+
+
+class _PluginWalk:
+    """One plugin's walk: its declaration, the kinds it reaches, and its problems."""
+
+    def __init__(self, entry: PluginEntry, owners: dict[str, str]) -> None:
+        self.name = entry.name
+        self.target = entry.target
+        module = entry.target.partition(":")[0]
+        self.package = _package(entry.target)
+        self.owners = owners
+        self.problems: list[Problem] = []
+        self.kinds: dict[type, str] = {}
+        self.decl: PluginDecl | None = None
+        if getattr(sys.modules.get(module), "__path__", None) is not None:
+            self.problem(
+                "plugin-module",
+                entry.target,
+                "the plugin class lives in a package __init__; move it to a leaf module "
+                "(untaped_<name>.plugin) so importing the package stays light",
+            )
+        plugin = entry.plugin
+        if not _is_plugin(plugin):
+            self.problem("not-a-plugin", entry.target, "names no untaped.sdk.Plugin subclass")
+            return
+        self.cls = plugin
+        self.decl = self._plugin(plugin)
+
+    def problem(self, rule: str, where: str, detail: str) -> None:
+        self.problems.append(Problem(rule=rule, where=where, detail=detail))
+
+    def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
+        """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""
+        decl = _stability(mark)
+        if mark is not None and decl is None:
+            self.problem(
+                "reserved-name",
+                f"{cls.__qualname__}.stability",
+                f"holds {mark!r}, not experimental or deprecated(...)",
+            )
+        return decl
+
+    # --- the plugin class ---------------------------------------------------------
+
+    def _plugin(self, cls: type[Plugin]) -> PluginDecl | None:
+        settings = self._settings(cls)
+        self._reserved(cls)
+        blocks = self._blocks(cls)
+        self.held = {id(value) for value in self._attributes(cls).values()}
+        commands = self._nodes(cls.commands, (self.name,), where=f"{cls.__qualname__}.commands")
+        runs = None
+        if cls.runs is not None and _is_command(cls.runs):
+            runs = self._command(cls.runs, (self.name,))
+        summary, doc = _prose(cls)
+        if not summary:
+            self.problem(
+                "missing-docstring", cls.__qualname__, "the plugin's docstring is its help line"
+            )
+        if settings is None or self.problems:
+            return None
+        skill = cls.skill.description if isinstance(cls.skill, StubSkill) else None
+        return PluginDecl(
+            name=self.name,
+            target=self.target,
+            package=self.package,
+            summary=summary,
+            doc=doc,
+            settings=target_of(settings),
+            stability=_stability(cls.stability),
+            commands=commands,
+            runs=runs,
+            offers=tuple(target_of(c) for c in cls.offers),
+            fills=tuple(target_of(c) for c in cls.fills),
+            skill=skill,
+            blocks=blocks,
+        )
+
+    def _settings(self, cls: type[Plugin]) -> type[BaseModel] | None:
+        model = getattr(cls, "settings", None)
+        if model is None:
+            self.problem(
+                "reserved-name",
+                f"{cls.__qualname__}.settings",
+                "every plugin declares its settings model, an empty one when it has nothing to "
+                "configure: the model is its identity",
+            )
+            return None
+        if not (isinstance(model, type) and issubclass(model, BaseModel)):
+            self.problem(
+                "reserved-name",
+                f"{cls.__qualname__}.settings",
+                f"holds {model!r}, not a pydantic model class",
+            )
+            return None
+        self.settings = model
+        return model
+
+    def _reserved(self, cls: type[Plugin]) -> None:
+        """Each reserved name holds the one thing it names."""
+        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
+
+        where = cls.__qualname__
+        held: dict[str, object] = {name: getattr(cls, name) for name in RESERVED_NAMES[1:]}
+        if not isinstance(held["commands"], tuple):
+            self.problem(
+                "reserved-name", f"{where}.commands", "is a tuple of Command and Group classes"
+            )
+        self.stability_of(cls, cls.stability)
+        if held["skill"] is not None and not isinstance(held["skill"], StubSkill):
+            self.problem("reserved-name", f"{where}.skill", f"holds {cls.skill!r}, not a StubSkill")
+        if cls.runs is not None and not _is_command(cls.runs):
+            self.problem(
+                "reserved-name", f"{where}.runs", f"holds {cls.runs!r}, not a Command class"
+            )
+        self.offers = _tuple(self, cls, "offers")
+        self.fills = _tuple(self, cls, "fills")
+        for offered in self.offers:
+            info = contract_of(offered) if isinstance(offered, type) else None
+            if info is None or info.cls is not offered:
+                self.problem(
+                    "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
+                )
+        for filled in self.fills:
+            info = contract_of(filled) if isinstance(filled, type) else None
+            if info is None or info.cls is filled:
+                self.problem(
+                    "reserved-name", f"{where}.fills", f"{filled!r} is not a provider of a contract"
+                )
+
+    def _attributes(self, cls: type[Plugin]) -> dict[str, object]:
+        """Every attribute the plugin class has beyond the reserved names, its own and inherited."""
+        found: dict[str, object] = {}
+        for klass in reversed(cls.__mro__):
+            if klass in (Plugin, object):
+                continue
+            for name, value in vars(klass).items():
+                if not name.startswith("__") and name not in RESERVED_NAMES:
+                    found[name] = value
+        return found
+
+    def _blocks(self, cls: type[Plugin]) -> tuple[BlockDecl, ...]:
+        blocks: list[BlockDecl] = []
+        seen: dict[int, str] = {}
+        for attribute, value in self._attributes(cls).items():
+            if not isinstance(value, Block):
+                continue
+            where = f"{cls.__qualname__}.{attribute}"
+            if isinstance(value, StubSkill):
+                self.problem("reserved-name", where, "a stub skill is the plugin's `skill`")
+                continue
+            if id(value) in seen:
+                self.problem(
+                    "duplicate-block", where, f"is the same {value.block_kind} as {seen[id(value)]}"
+                )
+                continue
+            seen[id(value)] = attribute
+            owners = {binding.owner for binding in value.bindings} - set(cls.__mro__)
+            if owners:
+                other = ", ".join(sorted(owner.__qualname__ for owner in owners))
+                self.problem(
+                    "duplicate-block",
+                    where,
+                    f"is held by {other} too; a block belongs to one plugin",
+                )
+            name = attribute.replace("_", "-") if value.name_style == "kebab" else attribute
+            blocks.append(
+                BlockDecl(
+                    block=value.block_kind, attribute=attribute, name=name, module=value.module
+                )
+            )
+        return tuple(blocks)
+
+    # --- groups and commands ------------------------------------------------------
+
+    def _nodes(
+        self, nodes: object, path: tuple[str, ...], *, where: str
+    ) -> tuple[CommandDecl | GroupDecl, ...]:
+        found: list[CommandDecl | GroupDecl] = []
+        names: dict[str, str] = {}
+        for node in nodes if isinstance(nodes, tuple) else ():
+            decl = self._node(node, path, where=where)
+            if decl is None:
+                continue
+            spellings = [decl.name]
+            if isinstance(decl, CommandDecl):
+                spellings += [alias.name for alias in decl.aliases]
+            taken = [name for name in spellings if name in names]
+            if taken:
+                self.problem(
+                    "duplicate-command",
+                    where,
+                    f"{decl.target} and {names[taken[0]]} are both `{' '.join((*path, taken[0]))}`",
+                )
+                continue
+            names.update(dict.fromkeys(spellings, decl.target))
+            found.append(decl)
+        return tuple(found)
+
+    def _node(
+        self, node: object, path: tuple[str, ...], *, where: str
+    ) -> CommandDecl | GroupDecl | None:
+        if _is_group(node):
+            name = node.__name__
+            if name.endswith("Group") and len(name) > len("Group"):
+                name = name[: -len("Group")]
+            group_path = (*path, kebab(name))
+            summary, doc = _prose(node)
+            if not summary:
+                self.problem(
+                    "missing-docstring", node.__qualname__, "a group's docstring is its help line"
+                )
+            return GroupDecl(
+                name=group_path[-1],
+                path=group_path,
+                target=target_of(node),
+                summary=summary,
+                doc=doc,
+                stability=self.stability_of(node, node.stability),
+                commands=self._nodes(
+                    node.commands, group_path, where=f"{node.__qualname__}.commands"
+                ),
+            )
+        if _is_command(node):
+            return self._command(node, (*path, kebab(node.__name__)))
+        self.problem("reserved-name", where, f"holds {node!r}, not a Command or Group class")
+        return None
+
+    def _command(self, cls: type[Command[Any]], path: tuple[str, ...]) -> CommandDecl | None:
+        walk = _CommandWalk(self, cls, path)
+        return walk.decl()
+
+
+def _tuple(walk: _PluginWalk, cls: type[Plugin], name: str) -> tuple[object, ...]:
+    value = getattr(cls, name)
+    if not isinstance(value, tuple):
+        walk.problem("reserved-name", f"{cls.__qualname__}.{name}", "is a tuple of classes")
+        return ()
+    return value
+
+
+def _is_group(obj: object) -> typing.TypeGuard[type[Group]]:
+    return isinstance(obj, type) and issubclass(obj, Group)
+
+
+def _is_plugin(obj: object) -> typing.TypeGuard[type[Plugin]]:
+    return isinstance(obj, type) and issubclass(obj, Plugin)
+
+
+def _is_command(obj: object) -> typing.TypeGuard[type[Command[Any]]]:
+    return isinstance(obj, type) and issubclass(obj, Command)
+
+
+def _is_model(obj: object) -> typing.TypeGuard[type[BaseModel]]:
+    return isinstance(obj, type) and issubclass(obj, BaseModel)
+
+
+@dataclass
+class _Seen:
+    """What a command's fields add up to while they are walked."""
+
+    options: list[OptionDecl] = field(default_factory=list)
+    blocks: Counter[str] = field(default_factory=Counter)
+    guides: list[str] = field(default_factory=list)
+    inputs: list[str] = field(default_factory=list)
+    writes: list[str] = field(default_factory=list)
+    stdin: list[str] = field(default_factory=list)
+    output: type[BaseModel] | None = None
+    formats: tuple[str, ...] = ()
+
+
+class _CommandWalk:
+    """One command's walk: its options, what it reads and prints, and its problems."""
+
+    def __init__(self, plugin: _PluginWalk, cls: type[Command[Any]], path: tuple[str, ...]) -> None:
+        self.plugin = plugin
+        self.cls = cls
+        self.path = path
+        self.where = cls.__qualname__
+        self.seen = _Seen()
+
+    def problem(self, rule: str, where: str, detail: str) -> None:
+        self.plugin.problem(rule, where, detail)
+
+    def decl(self) -> CommandDecl | None:
+        cls = self.cls
+        if not cls.__pydantic_complete__:
+            try:
+                cls.model_rebuild(raise_errors=True)
+            except Exception as exc:
+                self.problem(
+                    "unresolved-type", self.where, f"a field type is not defined at run time: {exc}"
+                )
+                return None
+        self._settings()
+        returns = self._returns()
+        for name, info in cls.model_fields.items():
+            self._field(name, info, prefix="", panel="Options")
+        self._duplicates()
+        self._output(returns)
+        summary, doc = _prose(cls)
+        if not summary:
+            self.problem("missing-docstring", self.where, "a command's docstring is its help")
+        if returns is None:
+            return None
+        seen = self.seen
+        return CommandDecl(
+            name=self.path[-1],
+            path=self.path,
+            target=target_of(cls),
+            summary=summary,
+            doc=doc,
+            settings=self.plugin.name if settings_model(cls) is not None else None,
+            options=tuple(seen.options),
+            returns=returns[0],
+            output=None if seen.output is None else self._kind(seen.output),
+            formats=seen.formats,
+            stdin=tuple(seen.stdin),
+            inputs=tuple(seen.inputs),
+            writes=tuple(seen.writes),
+            guides=tuple(dict.fromkeys(seen.guides)),
+            asks_first=seen.blocks["confirm"] > 0,
+            stability=self._mark(cls),
+            aliases=self._aliases(),
+        )
+
+    def _mark(self, cls: type[Command[Any]]) -> StabilityDecl | None:
+        return self.plugin.stability_of(cls, cls.stability)
+
+    def _aliases(self) -> tuple[AliasDecl, ...]:
+        aliases = self.cls.aliases
+        if not isinstance(aliases, tuple) or not all(
+            isinstance(alias, Deprecated) and isinstance(alias.replacement, str)
+            for alias in aliases
+        ):
+            self.problem(
+                "reserved-name",
+                f"{self.where}.aliases",
+                f"holds {aliases!r}, not a tuple of "
+                'Deprecated(replacement="old-name", removed_in=...)',
+            )
+            return ()
+        return tuple(
+            AliasDecl(name=str(alias.replacement), removed_in=alias.removed_in) for alias in aliases
+        )
+
+    def _kind(self, model: type[BaseModel]) -> str:
+        owner = self.plugin.owners.get(model.__module__.partition(".")[0], self.plugin.name)
+        return self.plugin.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
+
+    def _settings(self) -> None:
+        model = settings_model(self.cls)
+        if model is not None and model is not getattr(self.plugin, "settings", None):
+            self.problem(
+                "settings-model",
+                self.where,
+                f"is Command[{model.__name__}], but the plugin's settings model is "
+                f"{getattr(self.plugin, 'settings', type(None)).__name__}",
+            )
+
+    # --- what run returns ----------------------------------------------------------
+
+    def _returns(self) -> tuple[Returns, type[BaseModel] | None] | None:
+        run = self.cls.run
+        if run is Command.run:
+            self.problem("missing-run", self.where, "defines no run()")
+            return None
+        try:
+            hints = get_type_hints(run)
+        except Exception as exc:
+            self.problem(
+                "unresolved-type",
+                f"{self.where}.run",
+                f"the return type is not defined at run time: {exc}",
+            )
+            return None
+        if "return" not in hints:
+            self.problem(
+                "missing-return",
+                f"{self.where}.run",
+                "needs a return annotation: it says what the command prints",
+            )
+            return None
+        shape = _shape(hints["return"])
+        if shape is None:
+            self.problem(
+                "output-return",
+                f"{self.where}.run",
+                f"returns {hints['return']!r}; core prints Iterator[R], R, R | None, "
+                "R | Iterator[R], str, str | None or None",
+            )
+        return shape
+
+    def _output(self, returns: tuple[Returns, type[BaseModel] | None] | None) -> None:
+        if returns is None:
+            return
+        shape, model = returns
+        output = self.seen.output
+        if model is not None and output is None:
+            self.problem(
+                "output-return",
+                self.where,
+                f"run returns {model.__name__} records but declares no Output[R] field",
+            )
+        elif output is not None and model is None:
+            self.problem(
+                "output-return",
+                self.where,
+                f"declares Output[{output.__name__}] but run returns {shape}, not records",
+            )
+        elif output is not None and model is not None and not issubclass(output, model):
+            self.problem(
+                "output-return",
+                self.where,
+                f"declares Output[{output.__name__}] but run returns {model.__name__}, "
+                "which is not it or a base of it",
+            )
+
+    # --- fields ------------------------------------------------------------------
+
+    def _field(self, name: str, info: FieldInfo, *, prefix: str, panel: str) -> None:
+        path = f"{prefix}{name}"
+        where = f"{self.where}.{path}"
+        if name in RESERVED_FIELDS:
+            self.problem(
+                "reserved-field",
+                where,
+                f"core or pydantic reserves `{name}`; name the field `{name}_` and it "
+                f"still spells --{name}",
+            )
+            return
+        annotation = info.annotation
+        block = field_block(annotation)
+        if block is not None:
+            self._core(path, where, block, info)
+            return
+        if _nested_block(annotation):
+            self.problem(
+                "field-type",
+                where,
+                "a core-filled field type is the whole field type, never inside another",
+            )
+            return
+        value, repeated, inner = _unwrap(annotation)
+        marks = (*info.metadata, *inner)
+        if _is_model(value) and POSITIONAL not in marks and not repeated:
+            self._bundle(path, value)
+            return
+        self._option(path, where, info, value=value, marks=marks, repeated=repeated, panel=panel)
+
+    def _bundle(self, path: str, model: type[BaseModel]) -> None:
+        if _prose(model)[0]:
+            self.seen.guides.append(target_of(model))
+        for name, info in model.model_fields.items():
+            self._field(name, info, prefix=f"{path}.", panel=model.__name__)
+
+    def _option(
+        self,
+        path: str,
+        where: str,
+        info: FieldInfo,
+        *,
+        value: object,
+        marks: tuple[object, ...],
+        repeated: bool,
+        panel: str,
+    ) -> None:
+        token = self._token(value, where)
+        if token is None:
+            return
+        name = path.rpartition(".")[2].rstrip("_")
+        positional = POSITIONAL in marks
+        if not info.description:
+            self.problem(
+                "missing-description",
+                where,
+                "every option and argument has help: Field(description=...)",
+            )
+        shorts = [mark.flag for mark in marks if isinstance(mark, Short)]
+        for short in shorts:
+            if short in CORE_SHORTS:
+                self.problem("core-short", where, f"{short} belongs to core's own flags")
+        default = None if info.default is PydanticUndefined else info.default
+        negative = None
+        if token[0] == "bool" and not positional and default is True:
+            negative = f"--no-{name.replace('_', '-')}"
+        self.seen.options.append(
+            OptionDecl(
+                field=path,
+                flag=None if positional else f"--{name.replace('_', '-')}",
+                metavar=name.upper(),
+                positional=positional,
+                token=f"list[{token[0]}]" if repeated else token[0],
+                choices=token[1],
+                negative=negative,
+                short=shorts[0] if shorts else None,
+                required=info.is_required(),
+                default=_jsonable(default),
+                help=info.description or "",
+                panel=panel,
+                allow_hyphen=AllowHyphen in marks,
+                or_stdin=OR_STDIN in marks,
+                stability=next((s for s in map(_stability, marks) if s is not None), None),
+            )
+        )
+        self._file(value, marks)
+
+    def _token(self, value: object, where: str) -> tuple[str, tuple[str, ...]] | None:
+        token = _token(value)
+        if token is None:
+            self.problem(
+                "field-type",
+                where,
+                f"core makes no option of {getattr(value, '__name__', value)!r}: use a plain type, "
+                "a Literal, an enum, a pydantic model (a bundle) or one of core's value types",
+            )
+            return None
+        if (
+            isinstance(value, type)
+            and issubclass(value, enum.Enum)
+            and _prose(value)[0]
+            and not value.__module__.startswith(("untaped.", "enum"))
+        ):
+            self.seen.guides.append(target_of(value))
+        return token
+
+    def _file(self, value: object, marks: tuple[object, ...]) -> None:
+        if get_origin(value) is not File:
+            return
+        model = generic_argument(value)
+        if not _is_model(model):
+            self.problem("field-type", self.where, "File[M] takes a pydantic model M")
+            return
+        (self.seen.writes if Written in marks else self.seen.inputs).append(self._kind(model))
+
+    def _core(self, path: str, where: str, block: type[FieldBlock], info: FieldInfo) -> None:
+        seen = self.seen
+        if seen.blocks[block.field_kind]:
+            self.problem("duplicate-core-field", where, f"a command has one {block.__name__} field")
+            return
+        seen.blocks[block.field_kind] += 1
+        default = info.default if isinstance(info.default, block) else block()
+        if isinstance(default, Output):
+            self._output_field(where, info.annotation, default)
+        elif isinstance(default, Stdin):
+            self._stdin_field(where, info.annotation)
+        elif isinstance(default, Refresh):
+            self._refresh_field(where, default)
+        elif (
+            isinstance(default, Parallel)
+            and isinstance(default.default, SettingKey)
+            and SettingKey.model_of(default.default) is not getattr(self.plugin, "settings", None)
+        ):
+            self.problem(
+                "settings-model", where, "Parallel's default reads another plugin's settings"
+            )
+        for option in block.options:
+            if option.flag == "--format" and isinstance(default, Output):
+                choices = default.formats
+            else:
+                choices = ()
+            seen.options.append(
+                OptionDecl(
+                    field=path,
+                    flag=option.flag,
+                    metavar=option.flag.removeprefix("--").upper(),
+                    token=option.token,
+                    choices=choices,
+                    negative=option.negative,
+                    short=option.short,
+                    help=option.help,
+                    panel=block.panel,
+                    block=block.field_kind,
+                )
+            )
+
+    def _output_field(self, where: str, annotation: object, default: Output[Any]) -> None:
+        model = generic_argument(annotation)
+        if not _is_model(model):
+            self.problem(
+                "field-type", where, "Output[R] takes the pydantic model of the records printed"
+            )
+            return
+        self.seen.output = model
+        self.seen.formats = default.formats
+        self._kind(model)
+
+    def _stdin_field(self, where: str, annotation: object) -> None:
+        accepted = generic_argument(annotation)
+        models = [accepted] if _is_model(accepted) else list(get_args(accepted))
+        if not models or not all(_is_model(model) for model in models):
+            self.problem(
+                "field-type", where, "Stdin[R] takes the pydantic model(s) of the rows accepted"
+            )
+            return
+        self.seen.stdin.extend(target_of(model) for model in models)
+
+    def _refresh_field(self, where: str, default: Refresh) -> None:
+        if not default.caches:
+            self.problem(
+                "refresh-cache",
+                where,
+                "Refresh names the caches its flags are about: Refresh(CACHE)",
+            )
+        for cache in default.caches:
+            if id(cache) in self.plugin.held or self._cached_method(cache):
+                continue
+            self.problem(
+                "refresh-cache",
+                where,
+                f"{cache!r} is neither a cache on the plugin class nor a cached method of a "
+                "contract the plugin offers or fills",
+            )
+
+    def _cached_method(self, method: object) -> bool:
+        if getattr(method, "__untaped_cached__", None) is None:
+            return False
+        name = getattr(method, "__name__", "")
+        classes = (*self.plugin.offers, *self.plugin.fills)
+        return any(getattr(cls, name, None) is method for cls in classes)
+
+    def _duplicates(self) -> None:
+        flags: dict[str, str] = {}
+        for option in self.seen.options:
+            for flag in (option.flag, option.short, option.negative):
+                if flag is None:
+                    continue
+                if flag in flags and flags[flag] != option.field:
+                    self.problem(
+                        "duplicate-field",
+                        f"{self.where}.{option.field}",
+                        f"{flag} is also {self.where}.{flags[flag]}'s",
+                    )
+                flags.setdefault(flag, option.field)
+
+
+# --- types -----------------------------------------------------------------------------
+
+
+def _unwrap(annotation: object) -> tuple[object, bool, tuple[object, ...]]:
+    """``(value type, repeated, marks)`` of a field annotation.
+
+    ``Annotated[list[str], Positional] | None`` is ``(str, True, (POSITIONAL,))``:
+    pydantic lifts only top-level ``Annotated`` marks into the field's metadata,
+    so the marks inside ``X | None`` or a list are collected here.
+    """
+    marks: list[object] = []
+
+    def peel(annotation: object) -> object:
+        while get_origin(annotation) is typing.Annotated:
+            annotation, *found = get_args(annotation)
+            marks.extend(found)
+        return annotation
+
+    if get_origin(annotation) in (typing.Union, types.UnionType):
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(members) == 1:
+            annotation = members[0]
+    annotation = peel(annotation)
+    repeated = False
+    if get_origin(annotation) in (
+        list,
+        tuple,
+        set,
+        frozenset,
+        collections.abc.Sequence,
+    ) and not _is_pair(annotation):
+        args = [arg for arg in get_args(annotation) if arg is not Ellipsis]
+        if len(args) == 1:
+            annotation, repeated = args[0], True
+    return peel(annotation), repeated, tuple(marks)
+
+
+def _is_pair(annotation: object) -> bool:
+    """``tuple[str, str]`` and ``tuple[str, JsonValue]``: ``KeyValue`` and ``KeyJson``."""
+    args = get_args(annotation)
+    return get_origin(annotation) is tuple and len(args) == 2 and Ellipsis not in args
+
+
+def _token(value: object) -> tuple[str, tuple[str, ...]] | None:
+    """The token shape the parser converts ``value`` from, with its choices."""
+    simple: dict[object, str] = {bool: "bool", int: "int", float: "float", str: "str"}
+    if value in simple:
+        return simple[value], ()
+    if isinstance(value, type) and issubclass(value, PurePath):
+        return "str", ()
+    if get_origin(value) is typing.Literal:
+        choices = get_args(value)
+        token = (
+            "int" if all(isinstance(c, int) and not isinstance(c, bool) for c in choices) else "str"
+        )
+        return token, tuple(str(c) for c in choices)
+    if isinstance(value, type) and issubclass(value, enum.Enum):
+        return "str", tuple(str(member.value) for member in value)
+    if get_origin(value) is File or value is File or _is_pair(value):
+        return "str", ()
+    return None
+
+
+def _shape(hint: object) -> tuple[Returns, type[BaseModel] | None] | None:
+    """What a return type says the command prints, and the record model it names."""
+    shapes: dict[object, Returns] = {None: "nothing", type(None): "nothing", str: "line"}
+    if hint in shapes:
+        return shapes[hint], None
+    if _is_model(hint):
+        return "record", hint
+    origin = get_origin(hint)
+    if origin in _ITERATORS:
+        model = get_args(hint)[0] if get_args(hint) else None
+        return ("rows", model) if _is_model(model) else None
+    if origin not in (typing.Union, types.UnionType):
+        return None
+    members = [arg for arg in get_args(hint) if arg is not type(None)]
+    has_none = len(members) < len(get_args(hint))
+    if has_none and members == [str]:
+        return "line-or-none", None
+    if has_none and len(members) == 1 and _is_model(members[0]):
+        return "record-or-none", members[0]
+    if not has_none and len(members) == 2:
+        records = [m for m in members if _is_model(m)]
+        rows = [m for m in members if get_origin(m) in _ITERATORS and get_args(m) == tuple(records)]
+        if len(records) == 1 and rows:
+            return "rows-or-record", records[0]
+    return None
+
+
+def _nested_block(annotation: object) -> bool:
+    """Whether a core-filled field type sits inside ``annotation`` (``Output[R] | None``)."""
+    return any(
+        field_block(arg) is not None or _nested_block(arg)
+        for arg in get_args(annotation)
+        if not isinstance(arg, str)
+    )
+
+
+def _jsonable(value: object) -> Any:
+    if isinstance(value, enum.Enum):
+        return value.value
+    try:
+        return to_jsonable_python(value)
+    except Exception:
+        return None

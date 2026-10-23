@@ -8,7 +8,7 @@ from typing import Literal
 import pytest
 
 from lint.support import Install
-from untaped.sdk import Plugin
+from untaped.sdk import InstalledPlugin
 from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
 from untaped_lint.providers import conventions
 from untaped_lint.providers.conventions import Conventions, file_lines
@@ -86,8 +86,8 @@ _PLUGIN = {
 _DEMO = [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:SPEC")]
 
 
-def _plugin(site: Path) -> Plugin:
-    return Plugin(
+def _plugin(site: Path) -> InstalledPlugin:
+    return InstalledPlugin(
         name="demo",
         status="ready",
         distribution="demo-plugin",
@@ -157,7 +157,9 @@ def test_a_plugin_composition_refuses_is_the_quarantined_finding(
     """Read from what the check found now, whatever the (maybe stale) record says."""
     install(_PLUGIN)
     broken = PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:NOPE")
-    record = Plugin(name="demo", status=status, distribution="demo-plugin", version="0.1.0")
+    record = InstalledPlugin(
+        name="demo", status=status, distribution="demo-plugin", version="0.1.0"
+    )
     [finding] = Conventions().findings(record, candidates=[broken])
     assert (finding.rule, finding.severity) == ("quarantined", "error")
 
@@ -184,7 +186,9 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
         _row("schema", "rack.item_source", "warn", "no recorded owner schema hash"),
     ]
     monkeypatch.setattr(conventions, "check_plugin", lambda name, candidates=None: rows)
-    plugin = Plugin(name="demo", status="ready", distribution="demo-plugin", version="0.1.0")
+    plugin = InstalledPlugin(
+        name="demo", status="ready", distribution="demo-plugin", version="0.1.0"
+    )
     found = Conventions().findings(plugin)
     assert [(each.rule, each.severity, each.message) for each in found] == [
         ("live", "error", "rack.item_source.items: NotImplementedError"),
@@ -274,7 +278,9 @@ _SERVICE = '''
 def test_an_unmarked_service_is_a_warning(install: Install) -> None:
     install({"svc_plugin/__init__.py": _SERVICE})
     candidate = PluginCandidate(distribution="untaped-old", name="old", target="svc_plugin:OLD")
-    record = Plugin(name="old", status="ready", distribution="untaped-old", version="0.1.0")
+    record = InstalledPlugin(
+        name="old", status="ready", distribution="untaped-old", version="0.1.0"
+    )
     rule = "lint.unmarked-service"
     with compose_with("lint"):
         report = run([subject(record)], select=[rule], candidates=[candidate])

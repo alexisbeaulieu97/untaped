@@ -14,7 +14,7 @@ from textwrap import dedent
 import pytest
 
 from untaped.core import surface
-from untaped.sdk import Plugin
+from untaped.sdk import InstalledPlugin
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions import file_lines
 from untaped_lint.providers.conventions.imports import SDK_MODULES, import_boundary_violations
@@ -27,9 +27,9 @@ def plugin(
     package: str = "",
     requires: tuple[str, ...] = (),
     quarantined: bool = False,
-) -> Plugin:
+) -> InstalledPlugin:
     """A record; ``dist`` and ``package`` default to ``name``."""
-    return Plugin(
+    return InstalledPlugin(
         name=name,
         status="quarantined" if quarantined else "ready",
         distribution=dist or name,
@@ -46,7 +46,9 @@ Check = Callable[..., list[str]]
 def check(tmp_path: Path) -> Check:
     """``check(files, *others, demo=...)``: the boundary lines of plugin ``demo``."""
 
-    def run(files: dict[str, str], *others: Plugin, demo: Plugin | None = None) -> list[str]:
+    def run(
+        files: dict[str, str], *others: InstalledPlugin, demo: InstalledPlugin | None = None
+    ) -> list[str]:
         subject = demo or plugin("demo")
         assert subject.package is not None
         source_dir = tmp_path.joinpath(*subject.package.split("."))
@@ -213,7 +215,7 @@ def test_a_relative_import_into_a_sibling_plugin_is_a_violation(check: Check) ->
 
 
 def test_a_record_without_a_package_has_nothing_to_check(tmp_path: Path) -> None:
-    subject = Plugin(name="demo", status="quarantined", distribution="demo", version="1.0")
+    subject = InstalledPlugin(name="demo", status="quarantined", distribution="demo", version="1.0")
     assert import_boundary_violations(subject, tmp_path, [], plugins=[subject]) == []
 
 

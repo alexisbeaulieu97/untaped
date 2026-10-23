@@ -5,7 +5,7 @@ asks for, so importing the package loads nothing else.
 The table shrinks as plugins move to the 12.0 shape and import each name from
 its group (``untaped.sdk.storage``, ``untaped.sdk.network``, ...).
 
-The screen names (``Screen``, ``Cmd``, ``Key``, the components such as
+The screen names (``Screen``, ``Cmd``, the components such as
 ``TextInput``, ...) are lazy here too, so a plugin that asks for ``Cache``
 loads no screen code and no prompt_toolkit; they are experimental
 (``docs/versioning.md``). So is core's data file (``read_data_file``,
@@ -110,6 +110,30 @@ from untaped.sdk.errors import (
     first_validation_error,
     most_severe,
 )
+from untaped.sdk.fields import (
+    AllowHyphen,
+    Column,
+    Confirm,
+    ExistingFile,
+    File,
+    Following,
+    Key,
+    KeyJson,
+    KeyValue,
+    Limit,
+    Lines,
+    Output,
+    Parallel,
+    PathOrStdin,
+    Positional,
+    Refresh,
+    SettingKey,
+    Short,
+    Stdin,
+    TextOrStdin,
+    Written,
+    key,
+)
 from untaped.sdk.git import (
     GitCommandError,
     GitResult,
@@ -164,7 +188,8 @@ from untaped.sdk.network.http import (
     resolve_verify,
     same_origin,
 )
-from untaped.sdk.plugin_records import Plugin, installed_plugins
+from untaped.sdk.plugin import Command, Group, Plugin, StubSkill, derive
+from untaped.sdk.plugin_records import InstalledPlugin, installed_plugins
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.projects import (
     Project,
@@ -257,7 +282,6 @@ if _typing.TYPE_CHECKING:
         Frame,
         Help,
         Interrupt,
-        Key,
         NextField,
         Paste,
         PrevField,
@@ -301,7 +325,6 @@ _LAZY_MODULES: dict[str, tuple[str, ...]] = {
         "Frame",
         "Help",
         "Interrupt",
-        "Key",
         "NextField",
         "Paste",
         "PrevField",
@@ -331,10 +354,38 @@ _LAZY_EXPORTS: dict[str, str] = {
 }
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
+    # the plugin and its commands (12.0)
+    "Plugin",
+    "Command",
+    "Group",
+    "derive",
+    "StubSkill",
+    "Positional",
+    "Short",
+    "AllowHyphen",
+    "Output",
+    "Stdin",
+    "Lines",
+    "Confirm",
+    "Refresh",
+    "Parallel",
+    "Limit",
+    "File",
+    "Written",
+    "TextOrStdin",
+    "PathOrStdin",
+    "ExistingFile",
+    "KeyValue",
+    "KeyJson",
+    "Column",
+    "Key",
+    "Following",
+    "key",
+    "SettingKey",
     # composition
     "PluginContext",
     "PluginSpec",
-    "Plugin",
+    "InstalledPlugin",
     "installed_plugins",
     "DoctorCheck",
     "DoctorResult",
@@ -565,7 +616,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Frame",
     "Help",
     "Interrupt",
-    "Key",
     "ListItem",
     "MultiList",
     "NextField",

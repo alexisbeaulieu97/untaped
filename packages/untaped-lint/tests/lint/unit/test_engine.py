@@ -18,7 +18,7 @@ from lint.fakes import (
     tall,
     wide,
 )
-from untaped.sdk import Plugin
+from untaped.sdk import InstalledPlugin
 from untaped.sdk.testing import compose_with
 from untaped_lint.api import Finding, Rules, finding, rule
 from untaped_lint.records import Subject
@@ -141,7 +141,9 @@ def test_an_invalid_plugin_record_is_a_failure_row_not_a_crash() -> None:
 
 
 def test_a_narrowed_run_still_reports_a_plugin_nothing_checked() -> None:
-    plugin = Plugin(name="ghost", status="ready", distribution="untaped-ghost", version="1")
+    plugin = InstalledPlugin(
+        name="ghost", status="ready", distribution="untaped-ghost", version="1"
+    )
     with compose_with("lint"):
         report = run([subject(plugin)], select=["lint.error-case"], candidates=[])
     assert [each.rule for each in report.findings] == ["lint.plugin-not-installed"]

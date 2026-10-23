@@ -19,7 +19,8 @@ returns a Rich renderable. `ui.run(screen)` returns what the screen quits with:
 from dataclasses import dataclass, replace
 
 from rich.text import Text
-from untaped.sdk import Cmd, Frame, Key, Quit, Screen, ui_context
+from untaped.screen.core import Key
+from untaped.sdk import Cmd, Frame, Quit, Screen, ui_context
 
 
 @dataclass(frozen=True)

@@ -555,7 +555,7 @@ def _samples() -> dict[str, WireModel]:
     from untaped.core.config.models import SettingOutcome, SettingRow
     from untaped.core.profile.models import ProfileOutcome, ProfileRow
     from untaped.runtime.registry import MigrationOutcome
-    from untaped.sdk.plugin_records import Plugin
+    from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.storage.holds import HoldOutcome
 
     rows: list[WireModel] = [
@@ -702,7 +702,7 @@ def _samples() -> dict[str, WireModel]:
             target_path=Path("/h/.claude/skills/untaped-hello"),
             action="updated",
         ),
-        Plugin(
+        InstalledPlugin(
             name="acme",
             status="ready",
             distribution="untaped-acme",

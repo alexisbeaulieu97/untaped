@@ -16,7 +16,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import Plugin, UsageError, installed_plugins
+from untaped.sdk import InstalledPlugin, UsageError, installed_plugins
 from untaped.sdk.contracts import providing
 from untaped.sdk.testing import PluginCandidate, PluginCheckRow, check_plugin
 from untaped_lint.errors import UnreadableSourceError
@@ -34,7 +34,7 @@ from untaped_lint.records import FileLocation, Finding, Rule, Severity, declared
 KEY = "lint"
 """The key of every Conventions id: ``lint.error-case``."""
 
-_PLUGIN = declared_kind(Plugin)
+_PLUGIN = declared_kind(InstalledPlugin)
 
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
     # The composed checks: names, requirements, the help tree, guides, marks, structure.
@@ -148,10 +148,10 @@ class Conventions:
 
     def findings(
         self,
-        plugin: Plugin,
+        plugin: InstalledPlugin,
         *,
         candidates: Sequence[PluginCandidate] | None = None,
-        plugins: Sequence[Plugin] | None = None,
+        plugins: Sequence[InstalledPlugin] | None = None,
     ) -> list[Finding]:
         """Every finding for ``plugin``; ``candidates`` replaces entry-point discovery.
 
@@ -188,7 +188,7 @@ class Conventions:
         return found
 
 
-def installed(candidates: Sequence[PluginCandidate] | None = None) -> list[Plugin]:
+def installed(candidates: Sequence[PluginCandidate] | None = None) -> list[InstalledPlugin]:
     """Every installed plugin's record; composed from ``candidates`` when they are given."""
     if candidates is None:
         return installed_plugins()
@@ -202,7 +202,7 @@ def file_lines(
     *,
     plugin: str,
     tests_dir: Path | None = None,
-    plugins: Sequence[Plugin],
+    plugins: Sequence[InstalledPlugin],
 ) -> list[str]:
     """The file rules' ``<where>::<rule>::<detail>`` lines for ``package`` in ``source_dir``.
 
@@ -212,7 +212,7 @@ def file_lines(
     are every installed plugin's records, which the import boundary reads;
     a ``plugin`` without one there is checked as requiring nothing.
     """
-    subject = next((each for each in plugins if each.name == plugin), None) or Plugin(
+    subject = next((each for each in plugins if each.name == plugin), None) or InstalledPlugin(
         name=plugin, status="ready", distribution="", version="", package=package
     )
     try:

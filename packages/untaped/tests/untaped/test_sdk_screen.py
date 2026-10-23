@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from rich.console import Group
 from rich.text import Text
 
+from untaped.screen.core import Key
 from untaped.sdk import (
     Binding,
     Button,
@@ -16,7 +17,6 @@ from untaped.sdk import (
     Cmd,
     Form,
     Frame,
-    Key,
     ListItem,
     NextField,
     Panes,

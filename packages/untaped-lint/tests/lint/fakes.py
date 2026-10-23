@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
-from untaped.sdk import Plugin, Record
+from untaped.sdk import InstalledPlugin, Record
 from untaped_lint.api import Finding, Linter, Rule, Rules, Subject, finding, rule
 
 
@@ -107,8 +107,8 @@ class MalformedRule(Linter):
         return []
 
 
-@rule("seen", reads=Plugin, severity="warning", summary="Records each plugin it reads.")
-def seen(plugin: Plugin) -> Iterator[Finding]:
+@rule("seen", reads=InstalledPlugin, severity="warning", summary="Records each plugin it reads.")
+def seen(plugin: InstalledPlugin) -> Iterator[Finding]:
     PluginReader.read.append(plugin)
     yield finding(seen, plugin.name, "seen")
 
@@ -117,7 +117,7 @@ class PluginReader(Rules):
     """A third-party provider of rules over ``untaped.plugin``."""
 
     RULES = (seen,)
-    read: list[Plugin] = []  # noqa: RUF012 - shared by the rule function, reset per test
+    read: list[InstalledPlugin] = []  # noqa: RUF012 - shared by the rule function, reset per test
 
 
 def pipe(*records: Record, kind: str | None = "linttest.widget") -> str:

@@ -21,7 +21,7 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
-from untaped.sdk import Plugin
+from untaped.sdk import InstalledPlugin
 from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import SourceFile, import_targets
 
@@ -83,11 +83,11 @@ def _detail(
 
 
 def import_boundary_violations(
-    plugin: Plugin,
+    plugin: InstalledPlugin,
     source_dir: Path,
     files: Sequence[SourceFile],
     *,
-    plugins: Sequence[Plugin],
+    plugins: Sequence[InstalledPlugin],
 ) -> list[str]:
     """Violations in ``files`` of ``plugin`` (its code in ``source_dir``).
 

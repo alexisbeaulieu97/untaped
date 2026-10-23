@@ -169,8 +169,12 @@ _STARTUP_PROBE = (
 #: (``untaped.sdk._exports``) and the screen kit's package (the picker moved
 #: into it), less ``untaped.output`` and ``untaped.plugins``: 150 against 144,
 #: 2026-10-23, so the budget goes to 153, and the total (706 with them) to 710.
+#: The 12.0 plugin classes (``untaped.sdk.plugin``, ``untaped.sdk.fields`` and
+#: ``untaped.sdk._block``), which every plugin's entry point imports from 12.0
+#: on, add three: 156 against 153 on their base, 2026-10-23, so the budget goes
+#: to 159.
 _TOTAL_BUDGET = 710
-_UNTAPED_BUDGET = 153
+_UNTAPED_BUDGET = 159
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

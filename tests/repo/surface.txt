@@ -4538,6 +4538,7 @@ convention module untaped.sdk.testing.plugin
 sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
+sdk untaped.sdk.AllowHyphen
 sdk untaped.sdk.AppContext()
 sdk untaped.sdk.AppContext(settings_model@1=) default=<computed>
 sdk untaped.sdk.AppContext.diag
@@ -4651,7 +4652,14 @@ sdk untaped.sdk.Cmd.suspend  [experimental]
 sdk untaped.sdk.Cmd.write  [experimental]
 sdk untaped.sdk.CmdError(error)  [experimental]
 sdk untaped.sdk.CmdError.error  [experimental]
+sdk untaped.sdk.Column
 sdk untaped.sdk.ColumnsOption
+sdk untaped.sdk.Command()
+sdk untaped.sdk.Command.aliases class
+sdk untaped.sdk.Command.run()
+sdk untaped.sdk.Command.spelled()
+sdk untaped.sdk.Command.spelled(*args)
+sdk untaped.sdk.Command.stability class
 sdk untaped.sdk.ConfigError()
 sdk untaped.sdk.ConfigError(*args)
 sdk untaped.sdk.ConfigError(category=) default=None
@@ -4666,6 +4674,10 @@ sdk untaped.sdk.ConfigError.fix_by class
 sdk untaped.sdk.ConfigError.hint class
 sdk untaped.sdk.ConfigError.retryable
 sdk untaped.sdk.ConfigError.system class
+sdk untaped.sdk.Confirm()
+sdk untaped.sdk.Confirm.field_kind class
+sdk untaped.sdk.Confirm.options class
+sdk untaped.sdk.Confirm.panel class
 sdk untaped.sdk.Credential(env=) default=[]
 sdk untaped.sdk.Credential(plugin, name, *, key)
 sdk untaped.sdk.Credential(suggest=) default=None
@@ -4782,6 +4794,7 @@ sdk untaped.sdk.ErrorCategory.UNAVAILABLE = unavailable
 sdk untaped.sdk.ErrorCategory.USAGE = usage
 sdk untaped.sdk.ErrorCategory.exit_code
 sdk untaped.sdk.ErrorCategory.retryable
+sdk untaped.sdk.ExistingFile
 sdk untaped.sdk.ExitCode.ENVIRONMENT = 4
 sdk untaped.sdk.ExitCode.FAILURE = 1
 sdk untaped.sdk.ExitCode.INTERRUPTED = 130
@@ -4822,6 +4835,13 @@ sdk untaped.sdk.Field.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Field.view(frame)  [experimental]
 sdk untaped.sdk.Field.view(width=) default=None  [experimental]
 sdk untaped.sdk.Field.with_error(text)  [experimental]
+sdk untaped.sdk.File(model=) default=None
+sdk untaped.sdk.File(path)
+sdk untaped.sdk.File.load()
+sdk untaped.sdk.File.model
+sdk untaped.sdk.File.path
+sdk untaped.sdk.File.save(model)
+sdk untaped.sdk.File.save(replace=) default=false
 sdk untaped.sdk.Filled()
 sdk untaped.sdk.Filled(partial=) default=None
 sdk untaped.sdk.Filled(retry_at=) default=None
@@ -4831,6 +4851,7 @@ sdk untaped.sdk.Filled.partial
 sdk untaped.sdk.Filled.retry_at
 sdk untaped.sdk.Filled.summary
 sdk untaped.sdk.Filled.value
+sdk untaped.sdk.Following
 sdk untaped.sdk.Footer()  [experimental]
 sdk untaped.sdk.Footer(bindings@1=) default=[]  [experimental]
 sdk untaped.sdk.Footer(labels@3=) default=<computed>  [experimental]
@@ -4926,6 +4947,9 @@ sdk untaped.sdk.GitResult.returncode
 sdk untaped.sdk.GitResult.stderr
 sdk untaped.sdk.GitResult.stdout
 sdk untaped.sdk.GitResult.text
+sdk untaped.sdk.Group()
+sdk untaped.sdk.Group.commands class
+sdk untaped.sdk.Group.stability class
 sdk untaped.sdk.Help()  [experimental]
 sdk untaped.sdk.HolderState choice=missing
 sdk untaped.sdk.HolderState choice=present
@@ -5022,6 +5046,23 @@ sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
+sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
+sdk untaped.sdk.InstalledPlugin(fills=) default=[]
+sdk untaped.sdk.InstalledPlugin(package=) default=None
+sdk untaped.sdk.InstalledPlugin(requires=) default=[]
+sdk untaped.sdk.InstalledPlugin(source_dir=) default=None
+sdk untaped.sdk.InstalledPlugin(tests_dir=) default=None
+sdk untaped.sdk.InstalledPlugin.__init_subclass__(kind=) default=None
+sdk untaped.sdk.InstalledPlugin.distribution
+sdk untaped.sdk.InstalledPlugin.fills
+sdk untaped.sdk.InstalledPlugin.name
+sdk untaped.sdk.InstalledPlugin.package
+sdk untaped.sdk.InstalledPlugin.requires
+sdk untaped.sdk.InstalledPlugin.source_dir
+sdk untaped.sdk.InstalledPlugin.status
+sdk untaped.sdk.InstalledPlugin.table_columns class
+sdk untaped.sdk.InstalledPlugin.tests_dir
+sdk untaped.sdk.InstalledPlugin.version
 sdk untaped.sdk.Interrupt()  [experimental]
 sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
@@ -5038,12 +5079,22 @@ sdk untaped.sdk.ItemStore.plugin  [experimental]
 sdk untaped.sdk.ItemStore.qualified  [experimental]
 sdk untaped.sdk.ItemStore.release  [experimental]
 sdk untaped.sdk.ItemStore.target(item)  [experimental]
-sdk untaped.sdk.Key(name)  [experimental]
-sdk untaped.sdk.Key.name  [experimental]
+sdk untaped.sdk.Key
+sdk untaped.sdk.KeyJson
+sdk untaped.sdk.KeyValue
 sdk untaped.sdk.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
 sdk untaped.sdk.LetGo.apply  [experimental]
 sdk untaped.sdk.LetGo.preview  [experimental]
+sdk untaped.sdk.Limit()
+sdk untaped.sdk.Limit(default=) default=None
+sdk untaped.sdk.Limit.field_kind class
+sdk untaped.sdk.Limit.options class
+sdk untaped.sdk.Limit.panel class
 sdk untaped.sdk.LimitOption
+sdk untaped.sdk.Lines()
+sdk untaped.sdk.Lines.field_kind class
+sdk untaped.sdk.Lines.options class
+sdk untaped.sdk.Lines.panel class
 sdk untaped.sdk.ListItem(description@5=) default=""  [experimental]
 sdk untaped.sdk.ListItem(detail@3=) default=""  [experimental]
 sdk untaped.sdk.ListItem(detail_role@4=) default=screen.muted  [experimental]
@@ -5189,6 +5240,13 @@ sdk untaped.sdk.OutcomeRecord.action
 sdk untaped.sdk.OutcomeRecord.error
 sdk untaped.sdk.OutcomeRecord.failed
 sdk untaped.sdk.OutcomeRecord.table_columns class
+sdk untaped.sdk.Output()
+sdk untaped.sdk.Output(columns=) default=[]
+sdk untaped.sdk.Output(render=) default=None callback(*)
+sdk untaped.sdk.Output.field_kind class
+sdk untaped.sdk.Output.formats
+sdk untaped.sdk.Output.options class
+sdk untaped.sdk.Output.panel class
 sdk untaped.sdk.OutputFormat choice=json
 sdk untaped.sdk.OutputFormat choice=pipe
 sdk untaped.sdk.OutputFormat choice=raw
@@ -5218,6 +5276,12 @@ sdk untaped.sdk.Panes.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Panes.view(frame)  [experimental]
 sdk untaped.sdk.Panes.view(width=) default=None  [experimental]
 sdk untaped.sdk.Panes.with_error(text)  [experimental]
+sdk untaped.sdk.Parallel()
+sdk untaped.sdk.Parallel(cap=) default=None
+sdk untaped.sdk.Parallel(default=) default=4
+sdk untaped.sdk.Parallel.field_kind class
+sdk untaped.sdk.Parallel.options class
+sdk untaped.sdk.Parallel.panel class
 sdk untaped.sdk.ParallelOption
 sdk untaped.sdk.Paste(text)  [experimental]
 sdk untaped.sdk.Paste.text  [experimental]
@@ -5252,6 +5316,7 @@ sdk untaped.sdk.PathInput.view(focused=) default=false  [experimental]
 sdk untaped.sdk.PathInput.view(frame)  [experimental]
 sdk untaped.sdk.PathInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.PathInput.with_error(text)  [experimental]
+sdk untaped.sdk.PathOrStdin
 sdk untaped.sdk.PickCatalog(items)
 sdk untaped.sdk.PickCatalog(note@2=) default=""
 sdk untaped.sdk.PickCatalog.items
@@ -5309,23 +5374,14 @@ sdk untaped.sdk.PipeEnvelope(kind, record, lineno)
 sdk untaped.sdk.PipeEnvelope.kind
 sdk untaped.sdk.PipeEnvelope.lineno
 sdk untaped.sdk.PipeEnvelope.record
-sdk untaped.sdk.Plugin(*, name, status, distribution, version)
-sdk untaped.sdk.Plugin(fills=) default=[]
-sdk untaped.sdk.Plugin(package=) default=None
-sdk untaped.sdk.Plugin(requires=) default=[]
-sdk untaped.sdk.Plugin(source_dir=) default=None
-sdk untaped.sdk.Plugin(tests_dir=) default=None
-sdk untaped.sdk.Plugin.__init_subclass__(kind=) default=None
-sdk untaped.sdk.Plugin.distribution
-sdk untaped.sdk.Plugin.fills
-sdk untaped.sdk.Plugin.name
-sdk untaped.sdk.Plugin.package
-sdk untaped.sdk.Plugin.requires
-sdk untaped.sdk.Plugin.source_dir
-sdk untaped.sdk.Plugin.status
-sdk untaped.sdk.Plugin.table_columns class
-sdk untaped.sdk.Plugin.tests_dir
-sdk untaped.sdk.Plugin.version
+sdk untaped.sdk.Plugin()
+sdk untaped.sdk.Plugin.commands class
+sdk untaped.sdk.Plugin.fills class
+sdk untaped.sdk.Plugin.offers class
+sdk untaped.sdk.Plugin.runs class
+sdk untaped.sdk.Plugin.settings
+sdk untaped.sdk.Plugin.skill class
+sdk untaped.sdk.Plugin.stability class
 sdk untaped.sdk.PluginContext(settings)
 sdk untaped.sdk.PluginContext.diag
 sdk untaped.sdk.PluginContext.settings
@@ -5361,6 +5417,7 @@ sdk untaped.sdk.PluginSpec.skills
 sdk untaped.sdk.PluginSpec.stability
 sdk untaped.sdk.PluginSpec.state
 sdk untaped.sdk.PluginSpec.stores
+sdk untaped.sdk.Positional()
 sdk untaped.sdk.Pressed(id)  [experimental]
 sdk untaped.sdk.Pressed.id  [experimental]
 sdk untaped.sdk.PrevField()  [experimental]
@@ -5429,6 +5486,11 @@ sdk untaped.sdk.RefTarget.item  [experimental]
 sdk untaped.sdk.RefTarget.layout  [experimental]
 sdk untaped.sdk.RefTarget.plugin  [experimental]
 sdk untaped.sdk.RefTarget.store  [experimental]
+sdk untaped.sdk.Refresh()
+sdk untaped.sdk.Refresh(*caches)
+sdk untaped.sdk.Refresh.field_kind class
+sdk untaped.sdk.Refresh.options class
+sdk untaped.sdk.Refresh.panel class
 sdk untaped.sdk.Refused(*, reason)  [experimental]
 sdk untaped.sdk.Refused(hint=) default=None  [experimental]
 sdk untaped.sdk.Refused.hint  [experimental]
@@ -5576,6 +5638,12 @@ sdk untaped.sdk.Served.filled
 sdk untaped.sdk.Served.freshness
 sdk untaped.sdk.Served.stale
 sdk untaped.sdk.Served.value
+sdk untaped.sdk.SettingKey(model)
+sdk untaped.sdk.SettingKey(parts@2=) default=[]
+sdk untaped.sdk.SettingKey.model_of(setting)
+sdk untaped.sdk.SettingKey.path_of(setting)
+sdk untaped.sdk.Short(flag)
+sdk untaped.sdk.Short.flag
 sdk untaped.sdk.SingleList(cursor@4=) default=None  [experimental]
 sdk untaped.sdk.SingleList(error@7=) default=""  [experimental]
 sdk untaped.sdk.SingleList(help@6=) default=""  [experimental]
@@ -5674,6 +5742,11 @@ sdk untaped.sdk.StateRows.qualified  [experimental]
 sdk untaped.sdk.StateRows.remove_hint  [experimental]
 sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental]
 sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
+sdk untaped.sdk.Stdin()
+sdk untaped.sdk.Stdin(via=) default=None callback(*)
+sdk untaped.sdk.Stdin.field_kind class
+sdk untaped.sdk.Stdin.options class
+sdk untaped.sdk.Stdin.panel class
 sdk untaped.sdk.StdinInput(values, records)
 sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
@@ -5696,6 +5769,12 @@ sdk untaped.sdk.Store.plugin  [experimental]
 sdk untaped.sdk.Store.prune()  [experimental]
 sdk untaped.sdk.Store.qualified  [experimental]
 sdk untaped.sdk.Store.target  [experimental]
+sdk untaped.sdk.StubSkill(description)
+sdk untaped.sdk.StubSkill.binding
+sdk untaped.sdk.StubSkill.bindings
+sdk untaped.sdk.StubSkill.block_kind class
+sdk untaped.sdk.StubSkill.module
+sdk untaped.sdk.StubSkill.name_style class
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
 sdk untaped.sdk.Submitted.values  [experimental]
@@ -5794,6 +5873,7 @@ sdk untaped.sdk.TextInput.view(focused=) default=false  [experimental]
 sdk untaped.sdk.TextInput.view(frame)  [experimental]
 sdk untaped.sdk.TextInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.TextInput.with_error(text)  [experimental]
+sdk untaped.sdk.TextOrStdin
 sdk untaped.sdk.TlsVerify
 sdk untaped.sdk.TokenCommand
 sdk untaped.sdk.TokenSources()  [deprecated, removed in 12.0; use untaped.sdk.Credential]
@@ -5967,6 +6047,7 @@ sdk untaped.sdk.Viewport.scrolled(by, rows)  [experimental]
 sdk untaped.sdk.Viewport.shown(rows)  [experimental]
 sdk untaped.sdk.Viewport.start(rows)  [experimental]
 sdk untaped.sdk.Viewport.update(message, rows)  [experimental]
+sdk untaped.sdk.Written
 sdk untaped.sdk.YesOption
 sdk untaped.sdk.app_context()
 sdk untaped.sdk.atomic_write(encoding=) default=utf-8
@@ -6121,6 +6202,10 @@ sdk untaped.sdk.deprecated_alias(removed_in=) default=None
 sdk untaped.sdk.deprecated_behaviour(name, *, removed_in)
 sdk untaped.sdk.deprecated_behaviour(replacement=) default=None
 sdk untaped.sdk.deprecated_parameters(function, /)
+sdk untaped.sdk.derive(**fields)
+sdk untaped.sdk.derive(base, name)
+sdk untaped.sdk.derive(doc=) default=None
+sdk untaped.sdk.derive(omit=) default=[]
 sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.echo()
 sdk untaped.sdk.echo(err=) default=false  [deprecated, removed in 12.0; use ctx.diag]
@@ -6149,6 +6234,7 @@ sdk untaped.sdk.hint(command)
 sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
+sdk untaped.sdk.key(model)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.known_projects()  [experimental]
 sdk untaped.sdk.most_severe(errors)
@@ -6953,6 +7039,23 @@ sdk untaped_lint.api.Finding.severity  [experimental]
 sdk untaped_lint.api.Finding.table_columns class  [experimental]
 sdk untaped_lint.api.Finding.target  [experimental]
 sdk untaped_lint.api.IgnoreOption  [experimental]
+sdk untaped_lint.api.InstalledPlugin base=untaped.sdk.Record  [experimental]
+sdk untaped_lint.api.InstalledPlugin(*, name, status, distribution, version)  [experimental]
+sdk untaped_lint.api.InstalledPlugin(fills=) default=[]  [experimental]
+sdk untaped_lint.api.InstalledPlugin(package=) default=None  [experimental]
+sdk untaped_lint.api.InstalledPlugin(requires=) default=[]  [experimental]
+sdk untaped_lint.api.InstalledPlugin(source_dir=) default=None  [experimental]
+sdk untaped_lint.api.InstalledPlugin(tests_dir=) default=None  [experimental]
+sdk untaped_lint.api.InstalledPlugin.distribution  [experimental]
+sdk untaped_lint.api.InstalledPlugin.fills  [experimental]
+sdk untaped_lint.api.InstalledPlugin.name  [experimental]
+sdk untaped_lint.api.InstalledPlugin.package  [experimental]
+sdk untaped_lint.api.InstalledPlugin.requires  [experimental]
+sdk untaped_lint.api.InstalledPlugin.source_dir  [experimental]
+sdk untaped_lint.api.InstalledPlugin.status  [experimental]
+sdk untaped_lint.api.InstalledPlugin.table_columns class  [experimental]
+sdk untaped_lint.api.InstalledPlugin.tests_dir  [experimental]
+sdk untaped_lint.api.InstalledPlugin.version  [experimental]
 sdk untaped_lint.api.LintConfig()  [experimental]
 sdk untaped_lint.api.LintConfig(ignore@1=) default=[]  [experimental]
 sdk untaped_lint.api.LintConfig(repo@2=) default=None  [experimental]
@@ -6965,23 +7068,6 @@ sdk untaped_lint.api.Linter implement=findings,rules  [experimental]
 sdk untaped_lint.api.Linter.findings(subject: Subject) -> Finding[]  [experimental]
 sdk untaped_lint.api.Linter.rules() -> Rule[]  [experimental]
 sdk untaped_lint.api.Location  [experimental]
-sdk untaped_lint.api.Plugin base=untaped.sdk.Record  [experimental]
-sdk untaped_lint.api.Plugin(*, name, status, distribution, version)  [experimental]
-sdk untaped_lint.api.Plugin(fills=) default=[]  [experimental]
-sdk untaped_lint.api.Plugin(package=) default=None  [experimental]
-sdk untaped_lint.api.Plugin(requires=) default=[]  [experimental]
-sdk untaped_lint.api.Plugin(source_dir=) default=None  [experimental]
-sdk untaped_lint.api.Plugin(tests_dir=) default=None  [experimental]
-sdk untaped_lint.api.Plugin.distribution  [experimental]
-sdk untaped_lint.api.Plugin.fills  [experimental]
-sdk untaped_lint.api.Plugin.name  [experimental]
-sdk untaped_lint.api.Plugin.package  [experimental]
-sdk untaped_lint.api.Plugin.requires  [experimental]
-sdk untaped_lint.api.Plugin.source_dir  [experimental]
-sdk untaped_lint.api.Plugin.status  [experimental]
-sdk untaped_lint.api.Plugin.table_columns class  [experimental]
-sdk untaped_lint.api.Plugin.tests_dir  [experimental]
-sdk untaped_lint.api.Plugin.version  [experimental]
 sdk untaped_lint.api.ResourceLocation(*, id)  [experimental]
 sdk untaped_lint.api.ResourceLocation(url=) default=None  [experimental]
 sdk untaped_lint.api.ResourceLocation.id  [experimental]
