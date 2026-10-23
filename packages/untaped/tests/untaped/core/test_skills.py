@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import untaped.core.skills as skills_module
-from core_test_support.management.support import copy_asset
+from core_test_support.commands.support import copy_asset
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget
 from untaped.sdk import SkillAsset, checkout_root, project_root
 from untaped.sdk.errors import ConfigError, UsageError

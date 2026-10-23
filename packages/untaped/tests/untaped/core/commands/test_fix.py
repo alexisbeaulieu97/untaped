@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from core_test_support.management.support import age_stub, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_spec, write_config
 from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
 from untaped.runtime import bootstrap

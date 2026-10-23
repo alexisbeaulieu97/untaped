@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
-from core_test_support.management.support import write_config
+from core_test_support.commands.support import write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk._schema import unwrap_optional

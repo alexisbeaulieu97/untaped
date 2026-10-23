@@ -7,7 +7,7 @@ from typing import Annotated
 import pytest
 from cyclopts import App, Parameter
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.root_options import _apply_help_root_options, _root_options, _RootOption

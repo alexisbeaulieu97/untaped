@@ -312,7 +312,7 @@ class HttpError(UntapedError):
     URL passwords are masked in the message, ``url`` and ``details``.
     ``system`` is the client's section (``connected_client(section=…)``),
     else ``http``. ``describes_body`` marks a subclass whose message
-    already carries the body's gist, so :func:`untaped.sdk._cli.format_error`
+    already carries the body's gist, so :func:`untaped.sdk.diagnostic.format_error`
     shows the raw body only under ``--verbose``.
     """
 

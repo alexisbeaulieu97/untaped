@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from rich.cells import cell_len
 
-from core_test_support.management.support import check, compose, make_spec, write_config
+from core_test_support.commands.support import check, compose, make_spec, write_config
 from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import build_root_doctor_app, report_check_rows
 from untaped.runtime import bootstrap

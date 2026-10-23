@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from core_test_support.management.stores import FakeStores, install_fake_stores
-from core_test_support.management.support import (
+from core_test_support.commands.stores import FakeStores, install_fake_stores
+from core_test_support.commands.support import (
     FAIL,
     PROBES,
     EnvProfile,

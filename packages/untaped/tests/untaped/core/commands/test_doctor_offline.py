@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     GithubProfile,
     asset,
     compose,

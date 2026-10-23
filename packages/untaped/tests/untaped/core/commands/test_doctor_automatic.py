@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     FAIL,
     UnmarkedWizProfile,
     WizProfile,

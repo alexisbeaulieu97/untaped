@@ -46,10 +46,12 @@ uv lock --check                                 # lock file is current
   `README.md`, `LICENSE`, `src/` and `tests/`. Core is `packages/untaped/`;
   its `src/untaped/` has three roots, named by who reads them, beside the
   experimental `screen/` kit:
-  - `sdk/` is what a plugin may import: everything in it is public except a
-    `_`-prefixed module or name. Its groups are subpackages (`storage/`,
-    `contracts/`, `network/`, `health/`, `prompt/`, `testing/`, and the
-    `git` and `projects` modules). `sdk/` is moving off `runtime/` and
+  - `sdk/` is what a plugin may import. Its groups are subpackages
+    (`storage/`, `contracts/`, `network/`, `health/`, `prompt/`, `testing/`,
+    and the `git` and `projects` modules). Today a plugin imports the names
+    `untaped.sdk` exports, `untaped.sdk.contracts` and `untaped.sdk.testing`;
+    the other groups become importable as they list names, and a
+    `_`-prefixed module or name is never public. `sdk/` is moving off `runtime/` and
     `core/`: `tests/repo/test_layout.py` names each SDK module that still
     imports them, and the list only shrinks.
   - `core/` is untaped's own plugin: its settings and its commands
@@ -144,9 +146,9 @@ or becomes an SDK helper that every plugin can use. Declare a
 - **Absolute imports only**, tests included.
 - **Lazy imports on CLI startup paths** (`tests/repo/test_import_cost.py`
   budgets them); `# noqa: PLC0415` only where Ruff flags it.
-- **Git through `untaped.sdk.git`** (`run_git`, `git_toplevel`) and advisory
-  file locks through `file_lock` (`untaped.sdk.storage`), both re-exported by
-  `untaped.sdk`; never hand-rolled `subprocess` git plumbing.
+- **Git through `run_git` and `git_toplevel`**, and advisory file locks
+  through `file_lock`, all exported by `untaped.sdk`; never hand-rolled
+  `subprocess` git plumbing.
 - **Module docstrings.** Every module opens with a docstring saying what it
   owns (re-export stubs are exempt; `house.module-docstring` checks source
   modules). Rationale that protects code goes there.

@@ -1,7 +1,7 @@
 """Every name ``untaped.sdk`` exports today, imported from the module that defines it.
 
 ``untaped.sdk`` reads this table lazily (PEP 562), on the first name a plugin
-asks for, so importing the package or any of its groups loads nothing else.
+asks for, so importing the package loads nothing else.
 The table shrinks as plugins move to the 12.0 shape and import each name from
 its group (``untaped.sdk.storage``, ``untaped.sdk.network``, ...).
 

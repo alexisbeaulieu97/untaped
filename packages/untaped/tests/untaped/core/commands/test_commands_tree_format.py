@@ -14,7 +14,7 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from core_test_support.management.support import GithubProfile, write_config
+from core_test_support.commands.support import GithubProfile, write_config
 from untaped.runtime import bootstrap
 from untaped.sdk import (
     ColumnsOption,

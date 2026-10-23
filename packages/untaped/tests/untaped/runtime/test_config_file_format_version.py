@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from core_test_support.management.support import write_config
+from core_test_support.commands.support import write_config
 from untaped.runtime.config_file import (
     mutate_config,
     mutate_plugin_state,

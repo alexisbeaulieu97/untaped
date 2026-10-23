@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.runtime.registry as registry
-from core_test_support.plugins.plugin_harness import make_candidate, make_shell, make_spec
+from core_test_support.runtime.plugin_harness import make_candidate, make_shell, make_spec
 from untaped.runtime.registry import (
     PluginCandidate,
     compose,

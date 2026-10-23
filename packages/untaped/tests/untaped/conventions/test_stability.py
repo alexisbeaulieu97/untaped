@@ -11,7 +11,7 @@ import pytest
 from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.conventions.stability import stability_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec

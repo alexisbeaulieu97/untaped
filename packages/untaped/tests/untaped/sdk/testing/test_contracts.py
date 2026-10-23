@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from abc import abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated
 
@@ -19,6 +20,7 @@ from core_test_support.contracts.support import (
     Shop,
     Volume,
     compose,
+    fresh_providers,
     library_spec,
     shelf_spec,
 )
@@ -30,6 +32,12 @@ from untaped.sdk.contracts import Contract, Issued, Ok, Record, Source, bridge, 
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._schema import schema_hash
 from untaped.sdk.testing import assert_fills, assert_surface, compose_with
+
+
+@pytest.fixture(autouse=True)
+def _fresh_providers() -> Iterator[None]:
+    with fresh_providers():
+        yield
 
 
 @pytest.fixture

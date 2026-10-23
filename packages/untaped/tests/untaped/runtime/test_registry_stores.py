@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from core_test_support.plugins.plugin_harness import make_candidate, make_shell
+from core_test_support.runtime.plugin_harness import make_candidate, make_shell
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime.registry import (
     PluginSpec,

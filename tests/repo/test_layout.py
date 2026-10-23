@@ -105,13 +105,17 @@ def _module_name(path: Path) -> str:
 
 
 def _imports(path: Path) -> set[str]:
-    """Every module ``path`` imports, at any depth, ``TYPE_CHECKING`` blocks included."""
+    """Every module ``path`` imports, at any depth, ``TYPE_CHECKING`` blocks included.
+
+    ``from a import b`` counts as both ``a`` and ``a.b``: ``b`` may be a module.
+    """
     found: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             found |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             found.add(node.module)
+            found |= {f"{node.module}.{alias.name}" for alias in node.names}
     return found
 
 
@@ -142,7 +146,8 @@ def test_importing_the_sdk_loads_nothing_else() -> None:
     code = (
         "import sys, untaped.sdk\nprint(sorted(m for m in sys.modules if m.startswith('untaped.')))"
     )
-    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "['untaped.sdk']"
 
 

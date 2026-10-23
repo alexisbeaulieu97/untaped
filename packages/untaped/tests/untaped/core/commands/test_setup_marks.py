@@ -19,8 +19,8 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.management.stores import install_fake_stores
-from core_test_support.management.support import (
+from core_test_support.commands.stores import install_fake_stores
+from core_test_support.commands.support import (
     FAIL,
     PROBES,
     WIZ_TOKEN,

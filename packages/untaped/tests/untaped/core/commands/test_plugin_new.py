@@ -14,7 +14,7 @@ from types import ModuleType
 
 import pytest
 
-from core_test_support.management.contract_plugins import CORE_RANGE, candidates
+from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
 from untaped.conventions import plugin_violations
 from untaped.core.commands.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, _range, scaffold
 from untaped.runtime import bootstrap

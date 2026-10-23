@@ -24,8 +24,8 @@ import pytest
 from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
-from core_test_support.management.contract_plugins import candidates as contract_candidates
-from core_test_support.plugins.plugin_harness import make_candidate
+from core_test_support.commands.contract_plugins import candidates as contract_candidates
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk._cli import DryRunOption, FormatOption, YesOption, create_app, writes

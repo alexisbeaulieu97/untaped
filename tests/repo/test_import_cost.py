@@ -147,22 +147,22 @@ _STARTUP_PROBE = (
 #: sink (``untaped.output``: four modules for the two it replaced) adds two
 #: more: 126 against 124 on its base, measured 2026-10-11 in a container.
 #: Progress lines and JSON (#537) replace ``untaped.progress`` with
-#: ``untaped.sdk.progress``: 127 on A2a and on its base, 2026-10-12.
+#: ``untaped.output.progress``: 127 on A2a and on its base, 2026-10-12.
 #: Messages on ``ctx.diag`` with the user's theme (A2b): 127, unchanged.
-#: The freshness SDK (#537 B1) adds ``untaped.sdk.storage.cache`` (the call state moved
-#: there from ``untaped.sdk.contracts``) and ``untaped.sdk.network.upstream`` (read by
-#: ``untaped.sdk.network.http``): 129, 2026-10-12. The answer cache on ``Cache.serve()``
+#: The freshness SDK (#537 B1) adds ``untaped.cache`` (the call state moved
+#: there from ``untaped.contracts``) and ``untaped.upstream`` (read by
+#: ``untaped.http``): 129, 2026-10-12. The answer cache on ``Cache.serve()``
 #: (#537 B3) adds none: 129 on it and on its base, 2026-10-13. The lint
 #: plugin (#640) adds three (its package, settings and doctor row) and the SDK's
-#: ``untaped.sdk.plugin_records`` one: 133, 2026-10-14. Core's record models in
-#: ``untaped.core.commands.records`` (#607) add one: 131 against 130 on its
+#: ``untaped.plugin_records`` one: 133, 2026-10-14. Core's record models in
+#: ``untaped.management.records`` (#607) add one: 131 against 130 on its
 #: base, 2026-10-16. The budget stays a few above the measure (six when it
 #: was set) to absorb dependency and patch-release drift; a new built-in
 #: plugin adds a few ``untaped.*`` modules (its SPEC and settings). Setting
-#: marks (``untaped.sdk.health.marks``, and ``untaped.sdk.health._setup_status`` read by
+#: marks (``untaped.setting_marks``, and ``untaped.setup_status`` read by
 #: ``doctor`` and ``auth``) add two: the measure is 140 against 138 on their
 #: base, 2026-10-20, so the budget goes from 139 to 143 to keep three spare.
-#: The SDK's tree renderer (``untaped.sdk.tree``, #789) adds one: 144 against 143
+#: The SDK's tree renderer (``untaped.tree``, #789) adds one: 144 against 143
 #: on its base, 2026-10-21, so the budget goes to 147. Core's three roots and
 #: the SDK's groups add their package modules (``untaped.core``,
 #: ``untaped.runtime``, four groups), the SDK's name table

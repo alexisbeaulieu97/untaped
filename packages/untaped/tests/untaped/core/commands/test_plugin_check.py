@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.contract_plugins import CORE_RANGE, candidates
+from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
 from untaped.conventions import file_rules_installed
 from untaped.core.commands.plugin_check import PluginCheckRow, check_plugins, report_check_rows
 from untaped.runtime import bootstrap

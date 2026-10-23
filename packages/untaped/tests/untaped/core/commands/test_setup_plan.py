@@ -16,8 +16,8 @@ import pytest
 import yaml
 from pydantic import BaseModel, HttpUrl
 
-from core_test_support.management.stores import install_fake_stores
-from core_test_support.management.support import (
+from core_test_support.commands.stores import install_fake_stores
+from core_test_support.commands.support import (
     FAIL,
     PROBES,
     WIZ_TOKEN,

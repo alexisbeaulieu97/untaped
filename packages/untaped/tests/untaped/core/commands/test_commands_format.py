@@ -14,7 +14,7 @@ import pytest
 import yaml
 from cyclopts import App
 
-from core_test_support.management.support import GithubProfile, make_spec, write_config
+from core_test_support.commands.support import GithubProfile, make_spec, write_config
 from untaped.runtime import bootstrap
 from untaped.sdk import Diagnostics, FormatOption, PluginSpec, create_app, emit
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate

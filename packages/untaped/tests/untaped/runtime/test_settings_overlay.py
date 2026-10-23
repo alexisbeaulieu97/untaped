@@ -185,7 +185,7 @@ def test_get_settings_cache_still_works_without_an_overlay(_isolated_config: Pat
 def test_overlay_does_not_write_config_or_keychain(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from core_test_support.management.stores import install_fake_stores
+    from core_test_support.commands.stores import install_fake_stores
 
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")

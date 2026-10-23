@@ -9,7 +9,7 @@ from typing import ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.management.support import compose, make_spec, write_config
+from core_test_support.commands.support import compose, make_spec, write_config
 from untaped.core.commands.config import build_root_config_app
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict

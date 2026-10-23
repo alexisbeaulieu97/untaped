@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from core_test_support.management.support import age_stub, asset, make_spec, write_config
+from core_test_support.commands.support import age_stub, asset, make_spec, write_config
 from untaped.core import skill_stubs
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skill_stubs import STUB_MARKER

@@ -9,7 +9,7 @@ from typing import Annotated
 import pytest
 from cyclopts import App, Parameter
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.core.surface._cli import subtree_lines
 from untaped.runtime import bootstrap
 from untaped.sdk._cli import create_app

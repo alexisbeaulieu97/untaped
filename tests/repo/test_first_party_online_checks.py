@@ -10,7 +10,7 @@ import httpx
 import pytest
 import respx
 
-from core_test_support.management.support import write_config
+from core_test_support.commands.support import write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.testing import CliInvoker

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core_test_support.management.support import make_spec
+from core_test_support.commands.support import make_spec
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 

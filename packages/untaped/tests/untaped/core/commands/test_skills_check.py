@@ -15,7 +15,7 @@ from typing import Annotated
 import pytest
 from cyclopts import App, Parameter
 
-from core_test_support.management.support import asset, make_spec, write_config
+from core_test_support.commands.support import asset, make_spec, write_config
 from untaped.runtime import bootstrap
 from untaped.sdk import SkillAsset
 from untaped.sdk._cli import create_app

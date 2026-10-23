@@ -17,7 +17,7 @@ import pytest
 import release
 from cyclopts import App
 
-from core_test_support.plugins.plugin_harness import make_shell
+from core_test_support.runtime.plugin_harness import make_shell
 from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginRef, PluginSpec, compose

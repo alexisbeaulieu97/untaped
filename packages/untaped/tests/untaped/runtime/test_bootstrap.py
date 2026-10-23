@@ -22,7 +22,7 @@ import pytest
 from cyclopts import App, Group
 from pydantic import BaseModel
 
-from core_test_support.plugins.plugin_harness import make_candidate, make_spec
+from core_test_support.runtime.plugin_harness import make_candidate, make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_quiet, is_verbose
 from untaped.runtime.profile_resolver import profile_override, set_profile_override

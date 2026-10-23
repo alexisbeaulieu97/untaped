@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.support import asset, compose, make_spec
+from core_test_support.commands.support import asset, compose, make_spec
 from untaped.core.commands import skills as skills_cli
 from untaped.core.commands.skills import build_root_skills_app
 from untaped.runtime import bootstrap

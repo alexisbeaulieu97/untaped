@@ -1,10 +1,11 @@
 """The untaped SDK: what plugin code (first- or third-party) imports from core.
 
-Everything importable from ``untaped.sdk`` and its groups is public; a
-``_``-prefixed module or name is not. The groups are subpackages:
-``storage``, ``contracts``, ``network``, ``health``, ``git``, ``projects``,
-``prompt`` and ``testing``. Additions are backwards compatible; removals or
-signature breaks are a major release.
+The public surface today is the names ``untaped.sdk`` exports, plus
+``untaped.sdk.contracts`` and ``untaped.sdk.testing``; a ``_``-prefixed
+module or name is never public. The other groups (``storage``, ``network``,
+``health``, ``prompt``, ``git`` and ``projects``) become importable as they
+list names. Additions are backwards compatible; removals or signature breaks
+are a major release.
 
 Importing the package loads nothing: each name resolves on first use from
 :mod:`untaped.sdk._exports`, so a group's module never pays for the rest.

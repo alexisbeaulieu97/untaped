@@ -17,7 +17,7 @@ import pytest
 import respx
 from pydantic import BaseModel, SecretStr
 
-from core_test_support.management.support import GithubProfile, compose, make_spec, write_config
+from core_test_support.commands.support import GithubProfile, compose, make_spec, write_config
 from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_scope

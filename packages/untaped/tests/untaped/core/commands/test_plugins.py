@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     GithubProfile,
     JiraProfile,
     compose,
     make_spec,
     write_config,
 )
-from core_test_support.plugins.plugin_harness import make_candidate
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.core.commands.plugins import INSTALL_HINT, build_root_plugin_app
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import (
@@ -58,8 +58,8 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
 def test_a_ready_plugin_says_where_its_code_is() -> None:
     """``untaped.plugin`` records carry what lint's plugin subject reads."""
     [row] = _listing([make_candidate(make_spec("acme"), "acme-dist")])
-    assert row["package"] == "core_test_support.management"
-    assert row["source_dir"] == str(Path(__file__).parents[3] / "core_test_support" / "management")
+    assert row["package"] == "core_test_support.commands"
+    assert row["source_dir"] == str(Path(__file__).parents[3] / "core_test_support" / "commands")
     assert row["tests_dir"] is None  # no pyproject.toml declaring acme above it
 
 

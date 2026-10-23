@@ -14,8 +14,8 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, HttpUrl
 
-from core_test_support.management.stores import install_fake_stores
-from core_test_support.management.support import compose, make_spec, write_config
+from core_test_support.commands.stores import install_fake_stores
+from core_test_support.commands.support import compose, make_spec, write_config
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands import setup_write
 from untaped.core.commands.setup_screen import SetupModel, SetupResult, setup_screen

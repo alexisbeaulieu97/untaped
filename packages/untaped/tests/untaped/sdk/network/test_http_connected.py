@@ -17,7 +17,7 @@ import pytest
 import respx
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.management.support import compose, make_spec
+from core_test_support.commands.support import compose, make_spec
 from untaped.runtime.settings import HttpSettings
 from untaped.sdk import BoundSecret, Credential, CredentialKey, NeedsSetup
 from untaped.sdk.errors import ConfigError, HttpError

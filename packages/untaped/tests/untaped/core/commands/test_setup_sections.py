@@ -16,14 +16,14 @@ import pytest
 from pydantic import BaseModel, Field, SecretStr
 from rich.console import Console
 
-from core_test_support.contracts import support as shelf
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     UnmarkedWizProfile,
     WizProfile,
     compose,
     make_spec,
     write_config,
 )
+from core_test_support.contracts import support as shelf
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands.setup_screen import SetupModel, SetupResult, setup_screen
 from untaped.core.commands.setup_state import setup_sections, setup_services

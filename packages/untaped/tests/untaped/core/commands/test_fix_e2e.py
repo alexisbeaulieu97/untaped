@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from core_test_support.management.stores import install_fake_stores
-from core_test_support.management.support import age_stub, write_config
+from core_test_support.commands.stores import install_fake_stores
+from core_test_support.commands.support import age_stub, write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.sdk.testing import CliResult, invoke_cli

@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from core_test_support.contracts.support import BookSource
-from core_test_support.plugins.plugin_harness import make_candidate, make_shell
+from core_test_support.runtime.plugin_harness import make_candidate, make_shell
 from untaped.runtime.registry import (
     CompositionResult,
     PluginSpec,

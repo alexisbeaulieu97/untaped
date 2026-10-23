@@ -16,7 +16,7 @@ from typing import Annotated, ClassVar
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.plugins.plugin_harness import make_shell, nullary_app
+from core_test_support.runtime.plugin_harness import make_shell, nullary_app
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import CompositionResult, PluginSpec, compose, section_settings

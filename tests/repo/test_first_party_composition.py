@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options

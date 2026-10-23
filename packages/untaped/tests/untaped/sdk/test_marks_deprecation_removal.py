@@ -16,7 +16,7 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap, sink
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import get_settings

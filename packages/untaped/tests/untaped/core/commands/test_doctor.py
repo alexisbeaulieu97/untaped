@@ -20,8 +20,8 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-from core_test_support.management.stores import install_fake_stores
-from core_test_support.management.support import (
+from core_test_support.commands.stores import install_fake_stores
+from core_test_support.commands.support import (
     ExtProfile,
     GithubProfile,
     GithubState,

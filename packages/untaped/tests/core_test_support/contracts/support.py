@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar
@@ -156,3 +157,18 @@ profiles:
         - {id: 1, name: Dune}
         - {id: 2, name: Emma}
 """
+
+
+@contextmanager
+def fresh_providers() -> Iterator[None]:
+    """Fresh provider counters and an empty contract registry, before and after."""
+    Library.calls = 0
+    Library.error = None
+    Shop.rows = []
+    Shop.error = None
+    Shop.asked = []
+    Shop.total = 0
+    Kiosk.rows = []
+    reset()
+    yield
+    reset()

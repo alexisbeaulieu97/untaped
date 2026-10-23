@@ -12,7 +12,7 @@ from types import ModuleType
 import pytest
 from cyclopts import App
 
-from core_test_support.plugins.plugin_harness import (
+from core_test_support.runtime.plugin_harness import (
     OtherProfile,
     Profile,
     exploding_check,

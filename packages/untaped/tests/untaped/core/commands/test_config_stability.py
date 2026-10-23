@@ -10,7 +10,7 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.management.support import compose, make_spec, write_config
+from core_test_support.commands.support import compose, make_spec, write_config
 from untaped.core.commands.config import _emit_split_tables, build_root_config_app
 from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.core.config.models import SettingEntry, Source

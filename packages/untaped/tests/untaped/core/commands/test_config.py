@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     GithubProfile,
     GithubState,
     JiraProfile,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management import contract_plugins
+from core_test_support.commands import contract_plugins
 
 
 @pytest.fixture(autouse=True)

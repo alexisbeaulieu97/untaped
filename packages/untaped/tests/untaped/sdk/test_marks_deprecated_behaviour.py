@@ -11,7 +11,7 @@ from dataclasses import replace
 import pytest
 from cyclopts import App
 
-from core_test_support.plugins.plugin_harness import make_spec
+from core_test_support.runtime.plugin_harness import make_spec
 from untaped.conventions.stability import stability_violations
 from untaped.core.surface import DeprecatedMark, Line, plugin_lines
 from untaped.runtime import bootstrap

@@ -15,8 +15,8 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from core_test_support.management.stores import FakeStores, install_fake_stores
-from core_test_support.management.support import make_spec, write_config
+from core_test_support.commands.stores import FakeStores, install_fake_stores
+from core_test_support.commands.support import make_spec, write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import get_config_section

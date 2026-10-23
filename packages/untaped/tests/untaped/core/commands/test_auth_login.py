@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, HttpUrl
 
-from core_test_support.management.support import compose, make_spec, write_config
+from core_test_support.commands.support import compose, make_spec, write_config
 from untaped.core.commands.auth import build_root_auth_app
 from untaped.runtime.settings import load_settings_section
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify

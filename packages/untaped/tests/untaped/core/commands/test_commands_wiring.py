@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.support import (
+from core_test_support.commands.support import (
     ExtProfile,
     GithubProfile,
     JiraProfile,
@@ -22,7 +22,7 @@ from core_test_support.management.support import (
     make_spec,
     write_config,
 )
-from core_test_support.plugins.plugin_harness import make_candidate
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import profile_override
@@ -145,7 +145,7 @@ def test_skills_short_selector_through_root(tmp_path: Path) -> None:
 
 
 def test_state_write_rejected_through_root(_isolated_config: Path) -> None:
-    from core_test_support.management.support import GithubState
+    from core_test_support.commands.support import GithubState
 
     root = _root(make_spec("github", settings=GithubProfile, state=GithubState))
     result = CliInvoker().invoke(root.meta, ["config", "set", "github.cursor", "x"])  # type: ignore[union-attr]

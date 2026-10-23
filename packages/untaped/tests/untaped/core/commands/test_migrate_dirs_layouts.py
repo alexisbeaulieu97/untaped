@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.management.support import make_spec
+from core_test_support.commands.support import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import (
     MigrationOptions,

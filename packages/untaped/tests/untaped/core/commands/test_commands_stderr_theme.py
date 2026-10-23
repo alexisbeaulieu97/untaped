@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from core_test_support.management.support import ExtProfile, write_config
+from core_test_support.commands.support import ExtProfile, write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import current_policy
 from untaped.runtime.registry import PluginSpec
