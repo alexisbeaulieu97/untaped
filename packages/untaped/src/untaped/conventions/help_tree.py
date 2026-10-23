@@ -43,7 +43,7 @@ from typing import Any
 
 from cyclopts import App, Group
 
-from untaped.conventions.commands import console_lines, examples_of, parse_problem, segments
+from untaped.runtime.command_lines import console_lines, examples_of, parse_problem, segments
 from untaped.runtime.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
 from untaped.sdk._cli import write_kind
 

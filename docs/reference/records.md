@@ -29,7 +29,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `setup plan` | `untaped.setup_step` |
 | `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`) |
 | `setup migrate-dirs` | `untaped.migration` (`id` of the migration, core's `untaped.references` or `untaped.uninstalled-caches`, or a plugin's, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
-| `plugin list` | `untaped.plugin` (`name`, `status`, `distribution`, `version`; a ready plugin's `package`, `source_dir` and, from a checkout, `tests_dir`) |
+| `plugin list` | `untaped.plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions it requires, canonical, including an extra named after an owner it fills) and `fills` (those owners)) |
 | `plugin list --contracts` | `untaped.contract` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
 | `plugin new` | `untaped.scaffold_outcome` (one per file, its `target_path`) |

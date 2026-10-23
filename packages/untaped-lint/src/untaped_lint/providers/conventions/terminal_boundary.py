@@ -16,8 +16,8 @@ import ast
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk.testing import allows, import_targets
-from untaped_lint.infrastructure.files import SourceFile
+from untaped_lint.domain.allow import allows
+from untaped_lint.infrastructure.files import SourceFile, import_targets
 
 RULE = "terminal-boundary"
 _LIBRARY = "prompt_toolkit"

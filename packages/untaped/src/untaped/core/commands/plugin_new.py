@@ -38,6 +38,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from untaped.core.commands.records import ScaffoldOutcome
+from untaped.runtime.plugin_package import candidate_package
 from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
@@ -378,8 +379,6 @@ def _api(
     owner: PluginCandidate, candidates: Sequence[PluginCandidate], info: ContractInfo
 ) -> ModuleType:
     """The owner's ``api`` module, which must export the contract."""
-    from untaped.conventions import candidate_package  # noqa: PLC0415 - imports the root
-
     package = candidate_package(owner.target) or info.cls.__module__.partition(".")[0]
     module_name = f"{package.partition('.')[0]}.api"
     try:

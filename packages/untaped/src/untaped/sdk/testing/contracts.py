@@ -157,7 +157,7 @@ def _bound(cls: type) -> Provider:
 
 def _installed_for(cls: type) -> list[str]:
     """The installed plugin offering ``cls`` and the installed owners it provides for."""
-    from untaped.conventions import candidate_package  # noqa: PLC0415
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
     from untaped.runtime.registry import (  # noqa: PLC0415
         PluginSpec,
         discover_candidates,

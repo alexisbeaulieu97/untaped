@@ -8,7 +8,7 @@ Three rules decide where a plugin's settings and secrets go:
   certificate is checked) is stored with it, so a secret is only ever used
   for the exact server it was filed for;
 - what applies to every request (the proxy, the timeout, root
-  `http.ca_bundle`) stays outside, in core's `http` settings.
+  `http.ca_bundle_path`) stays outside, in core's `http` settings.
 
 In code, the server is a `CredentialKey` subclass held by one marked setting,
 and each secret is a `Credential` listed on `PluginSpec(credentials=...)`:

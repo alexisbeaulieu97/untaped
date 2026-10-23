@@ -37,7 +37,7 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
     assert s.demo.base_url is None
     assert s.demo.token is None
     assert s.http.verify_ssl is True
-    assert s.http.ca_bundle is None
+    assert s.http.ca_bundle_path is None
 
 
 def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,7 +51,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
             skills:
               updates: auto
             http:
-              ca_bundle: /etc/ssl/corp-ca.pem
+              ca_bundle_path: /etc/ssl/corp-ca.pem
               verify_ssl: true
             demo:
               base_url: https://aap.example.com
@@ -61,7 +61,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.skills.updates == "auto"
-    assert s.http.ca_bundle == Path("/etc/ssl/corp-ca.pem")
+    assert s.http.ca_bundle_path == Path("/etc/ssl/corp-ca.pem")
     assert s.demo.base_url == "https://aap.example.com"
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "secret"

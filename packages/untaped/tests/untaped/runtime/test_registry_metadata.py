@@ -233,3 +233,20 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
     result = compose(make_shell(), candidates)
     assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
     assert looked_up == ["untaped"]
+
+
+@pytest.mark.parametrize(
+    ("requirement", "declared"),
+    [
+        ("Untaped_Other>=1", {"untaped-other"}),
+        ("other>=1; python_version >= '3' and sys_platform != 'nowhere'", {"other"}),
+        ("other; extra == 'x'", set()),
+        ("other>=1,<2; extra == 'shelf'", {"other"}),
+        ("other=>", set()),
+    ],
+    ids=["default", "platform-marker", "other-extra", "owner-extra", "malformed"],
+)
+def test_declared_distributions_add_only_the_extras_of_owners_filled(
+    requirement: str, declared: set[str]
+) -> None:
+    assert registry.declared_distributions([requirement], frozenset({"shelf"})) == declared

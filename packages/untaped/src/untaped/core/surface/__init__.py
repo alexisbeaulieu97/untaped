@@ -151,8 +151,8 @@ def _plugin_marks(result: CompositionResult, root: App) -> dict[str, LineMark | 
 
 def _plugin_modules(spec: PluginSpec, target: object, tree: App) -> dict[str, LineMark | None]:
     """``<package>.api`` and ``<package>.testing`` of a plugin, when importable, with its mark."""
-    from untaped.conventions import candidate_package  # noqa: PLC0415
     from untaped.core.surface._sdk import line_mark  # noqa: PLC0415
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
 
     package = candidate_package(target)
     if package is None:

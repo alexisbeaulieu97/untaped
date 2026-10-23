@@ -23,8 +23,8 @@ def _write_valid_bundle(path: Path) -> None:
     "settings",
     [
         HttpSettings(verify_ssl=False),
-        # An explicit disable wins over ca_bundle and the narrower hostname toggle.
-        HttpSettings(verify_ssl=False, ca_bundle=Path("/x.pem")),
+        # An explicit disable wins over ca_bundle_path and the narrower hostname toggle.
+        HttpSettings(verify_ssl=False, ca_bundle_path=Path("/x.pem")),
         HttpSettings(verify_ssl=False, verify_hostname=False),
     ],
 )
@@ -35,7 +35,7 @@ def test_returns_false_when_verify_disabled(settings: HttpSettings) -> None:
 def test_ca_bundle_takes_precedence_over_default(tmp_path: Path) -> None:
     bundle = tmp_path / "corp-ca.pem"
     _write_valid_bundle(bundle)
-    assert resolve_verify(HttpSettings(ca_bundle=bundle)) == str(bundle)
+    assert resolve_verify(HttpSettings(ca_bundle_path=bundle)) == str(bundle)
 
 
 def test_default_returns_truststore_ssl_context() -> None:
@@ -47,7 +47,7 @@ def test_default_returns_truststore_ssl_context() -> None:
 def test_ca_bundle_expanduser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     _write_valid_bundle(tmp_path / "ca.pem")
-    assert resolve_verify(HttpSettings(ca_bundle=Path("~/ca.pem"))) == str(tmp_path / "ca.pem")
+    assert resolve_verify(HttpSettings(ca_bundle_path=Path("~/ca.pem"))) == str(tmp_path / "ca.pem")
 
 
 # ── verify_hostname: self-signed certs that fail modern Python's SAN check ─────
@@ -97,11 +97,11 @@ def test_verify_hostname_false_with_ca_bundle_loads_cert_and_skips_hostname(
     tmp_path: Path,
 ) -> None:
     cert = _self_signed_cert(tmp_path)
-    ctx = resolve_verify(HttpSettings(ca_bundle=cert, verify_hostname=False))
+    ctx = resolve_verify(HttpSettings(ca_bundle_path=cert, verify_hostname=False))
     assert isinstance(ctx, ssl.SSLContext)
     assert ctx.check_hostname is False
     # The self-signed cert is actually loaded into the trust store.
-    assert ctx.get_ca_certs(), "ca_bundle should be loaded into the context"
+    assert ctx.get_ca_certs(), "ca_bundle_path should be loaded into the context"
 
 
 # ── unreadable / invalid bundles are config errors, not tracebacks ───────────
@@ -115,8 +115,8 @@ def test_bad_ca_bundle_is_a_config_error_naming_the_path(
     bundle = tmp_path / "bad.pem"
     if content is not None:
         bundle.write_text(content)
-    with pytest.raises(ConfigError, match=r"http\.ca_bundle.*bad\.pem"):
-        resolve_verify(HttpSettings(ca_bundle=bundle, verify_hostname=verify_hostname))
+    with pytest.raises(ConfigError, match=r"http\.ca_bundle_path.*bad\.pem"):
+        resolve_verify(HttpSettings(ca_bundle_path=bundle, verify_hostname=verify_hostname))
 
 
 def test_unreadable_ca_bundle_is_a_config_error(
@@ -129,8 +129,8 @@ def test_unreadable_ca_bundle_is_a_config_error(
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(ssl, "create_default_context", deny)
-    with pytest.raises(ConfigError, match=r"http\.ca_bundle.*locked\.pem"):
-        resolve_verify(HttpSettings(ca_bundle=bundle, verify_hostname=False))
+    with pytest.raises(ConfigError, match=r"http\.ca_bundle_path.*locked\.pem"):
+        resolve_verify(HttpSettings(ca_bundle_path=bundle, verify_hostname=False))
 
 
 def test_http_client_with_invalid_ca_bundle_raises_config_error(tmp_path: Path) -> None:
@@ -140,10 +140,10 @@ def test_http_client_with_invalid_ca_bundle_raises_config_error(tmp_path: Path) 
 
     bundle = tmp_path / "garbage.pem"
     bundle.write_text("not a certificate")
-    with pytest.raises(ConfigError, match=r"http\.ca_bundle"):
+    with pytest.raises(ConfigError, match=r"http\.ca_bundle_path"):
         connected_client(
             Conn(),
             section="demo",
             base_url=Conn().base_url,
-            http=HttpSettings(ca_bundle=bundle, verify_hostname=False),
+            http=HttpSettings(ca_bundle_path=bundle, verify_hostname=False),
         )

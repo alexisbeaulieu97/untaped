@@ -13,7 +13,7 @@ way, ``TYPE_CHECKING`` blocks included, is flagged as
   does, as the composition root (flagged as ``<file>::settings::<layer> -> <name>``).
 
 ``# untaped: allow layer`` (or ``settings``) on the import line suppresses one.
-Imports between plugins are checked by ``untaped.conventions.imports``.
+Imports between plugins are checked by the ``import-boundary`` rule (``imports.py``).
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.sdk.testing import allows, import_targets
-from untaped_lint.infrastructure.files import SourceFile
+from untaped_lint.domain.allow import allows
+from untaped_lint.infrastructure.files import SourceFile, import_targets
 
 FORBIDDEN = {
     "domain": ("application", "infrastructure", "cli"),

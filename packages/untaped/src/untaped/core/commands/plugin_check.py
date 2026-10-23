@@ -38,6 +38,7 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import PluginCheckRow
+from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (
     CompositionResult,
     MigrationOptions,
@@ -326,8 +327,6 @@ def _owner_conformance(
     owner: str, composed: CompositionResult, candidates: Sequence[PluginCandidate]
 ) -> Callable[[object], object] | None:
     """``conformance`` from the owner package's ``testing`` module, when it has one."""
-    from untaped.conventions import package_of  # noqa: PLC0415
-
     spec = next((plugin.spec for plugin in composed.plugins if plugin.spec.name == owner), None)
     if spec is None:
         return None

@@ -25,8 +25,8 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.sdk.testing import allows, import_targets
-from untaped_lint.infrastructure.files import SourceFile, callee
+from untaped_lint.domain.allow import allows
+from untaped_lint.infrastructure.files import SourceFile, callee, import_targets
 
 RULE = "blob-reader"
 _STORE = "untaped_git"

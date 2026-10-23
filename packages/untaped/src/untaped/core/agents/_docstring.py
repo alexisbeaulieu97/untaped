@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import docstring_parser
 
-from untaped.conventions.commands import examples_of
+from untaped.runtime.command_lines import examples_of
 
 
 @dataclass(frozen=True)

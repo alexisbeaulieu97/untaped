@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.testing import import_targets
-from untaped_lint.infrastructure.files import source_files
+from untaped_lint.infrastructure.files import import_targets, source_files
 from untaped_lint.providers.conventions.layering import layering_violations
 
 

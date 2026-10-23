@@ -12,7 +12,7 @@ import pytest
 from cyclopts import App
 
 from core_test_support.conventions.support import Install
-from untaped.conventions.structure import structure_class_violations
+from untaped.conventions.structure import structure_class_violations, unimportable
 from untaped.runtime.registry import PluginSpec
 
 _ERRORS = dedent('''
@@ -139,3 +139,18 @@ def test_mutable_settings_models_are_flagged(install: Install) -> None:
         "acme.settings.AcmeSettings::settings-not-frozen::settings",
         "acme.settings.AcmeState::settings-not-frozen::state",
     ]
+
+
+def test_an_own_file_python_cannot_read_is_the_one_violation(install: Install) -> None:
+    site = install({"acme/__init__.py": '"""Acme."""\n', "acme/broken.py": "def (:\n"})
+    assert unimportable("acme", site / "acme") == (
+        "acme/broken.py::unreadable-file::is not valid Python (line 1)"
+    )
+    (site / "acme" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
+    assert unimportable("acme", site / "acme") == "acme/broken.py::unreadable-file::is not UTF-8"
+
+
+def test_a_dependency_python_cannot_read_is_raised(install: Install) -> None:
+    site = install({"acme/__init__.py": "import dep\n", "dep/__init__.py": "def (:\n"})
+    with pytest.raises(SyntaxError):
+        unimportable("acme", site / "acme")

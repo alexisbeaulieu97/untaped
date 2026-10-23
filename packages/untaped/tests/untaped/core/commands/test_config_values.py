@@ -66,7 +66,7 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
         ("http.verify_ssl", "no", False),
         ("http.verify_ssl", "true", True),
         ("http.timeout_seconds", "5", 5.0),
-        ("http.ca_bundle", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
+        ("http.ca_bundle_path", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
         ("github.mode", "on", "on"),
         ("ui.theme", "high-contrast", "high-contrast"),
         ("ui.symbols", '{"success": "Y", "error": "N"}', {"success": "Y", "error": "N"}),
@@ -234,7 +234,7 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     rows = {row["key"]: row for row in json.loads(result.stdout)}
     assert rows["http.timeout_seconds"]["value"] == 30.0
-    assert rows["http.ca_bundle"]["value"] is None
+    assert rows["http.ca_bundle_path"]["value"] is None
     assert rows["http.verify_ssl"]["value"] is True
     assert "—" not in result.stdout
 
@@ -242,11 +242,11 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
 def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path) -> None:
     assert _invoke(["get", "github.token"]).stdout == ""
     raw = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
-    assert "http.ca_bundle\t" in raw.stdout.splitlines()
+    assert "http.ca_bundle_path\t" in raw.stdout.splitlines()
     assert "http.verify_ssl\tTrue" in raw.stdout.splitlines()
     assert "—" not in raw.stdout
     table = _invoke(["list", "--format", "table"])
-    assert any("http.ca_bundle" in line and "—" in line for line in table.stdout.splitlines())
+    assert any("http.ca_bundle_path" in line and "—" in line for line in table.stdout.splitlines())
     single = _invoke(["get", "github.token", "--format", "table"])
     assert any("value" in line and "—" in line for line in single.stdout.splitlines())
 
@@ -278,7 +278,7 @@ def test_secret_stays_masked_in_every_format(_isolated_config: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("key", "current"), [("github.mode", "on"), ("http.ca_bundle", "/etc/ssl/ca.pem")]
+    ("key", "current"), [("github.mode", "on"), ("http.ca_bundle_path", "/etc/ssl/ca.pem")]
 )
 def test_null_clears_optional_typed_setting(_isolated_config: Path, key: str, current: str) -> None:
     section, leaf = key.split(".")

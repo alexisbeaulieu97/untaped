@@ -22,16 +22,23 @@ from pydantic import ValidationError
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, plural
 from untaped.sdk.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
-from untaped.sdk.testing import PluginCandidate, allowed_names
+from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.application.tree_paths import tree_paths
+from untaped_lint.domain.allow import allowed_names
 from untaped_lint.domain.glob import matches
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression
-from untaped_lint.providers.conventions import KEY, UNCHECKED, UNREADABLE, Conventions
+from untaped_lint.providers.conventions import (
+    KEY,
+    UNCHECKED,
+    UNREADABLE,
+    Conventions,
+    installed,
+)
 from untaped_lint.records import (
     FileLocation,
     Finding,
@@ -148,6 +155,7 @@ def _conventions(
 ) -> list[Finding]:
     """Conventions' findings for each ``untaped.plugin`` subject, before anything is gathered."""
     found: list[Finding] = []
+    plugins: list[Plugin] | None = None
     for subject in subjects:
         if subject.kind != PLUGIN_KIND:
             continue
@@ -156,9 +164,10 @@ def _conventions(
         except ValidationError as exc:
             report.failures.append(_invalid_plugin(subject, exc))
             continue
-        found.extend(
-            public(KEY, each) for each in Conventions().findings(plugin, candidates=candidates)
-        )
+        if plugins is None:
+            plugins = installed(candidates)
+        rows = Conventions().findings(plugin, candidates=candidates, plugins=plugins)
+        found.extend(public(KEY, each) for each in rows)
     return found
 
 

@@ -133,7 +133,7 @@ def test_a_plugin_not_installed_is_one_finding(install: Install) -> None:
 def test_an_unreadable_file_is_one_line_and_stops_the_file_rules(install: Install) -> None:
     site = install({**_PLUGIN})
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
-    lines = file_lines("demo_plugin", site / "demo_plugin", plugin="demo")
+    lines = file_lines("demo_plugin", site / "demo_plugin", plugin="demo", plugins=[])
     [line] = lines
     assert line.startswith("demo_plugin/broken.py::unreadable-file::")
 
@@ -282,3 +282,20 @@ def test_an_unmarked_service_is_a_warning(install: Install) -> None:
     assert (finding.rule, finding.severity) == (rule, "warning")
     assert "removed in 12.0" in finding.message
     assert not report.predicate_hit(strict=False)
+
+
+def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(install: Install) -> None:
+    """The records come from the candidates given, not from what is installed."""
+    site = install(_PLUGIN)
+    (site / "demo_plugin" / "reach.py").write_text(
+        '"""Reaching into another plugin."""\n\n\n'
+        "def reach() -> None:\n"
+        "    from ghost.domain import x\n",
+        encoding="utf-8",
+    )
+    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
+    with compose_with("lint"):
+        report = run(
+            [subject(_plugin(site))], select=["lint.import-boundary"], candidates=[*_DEMO, ghost]
+        )
+    assert [each.message for each in report.findings] == ["imports ghost.domain; use ghost.api"]

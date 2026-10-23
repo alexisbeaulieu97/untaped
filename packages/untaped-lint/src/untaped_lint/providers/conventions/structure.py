@@ -19,7 +19,7 @@ import ast
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.sdk.testing import allows
+from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import SourceFile, callee, source_files
 
 SECTION_READERS = frozenset({"get_config_section", "section"})

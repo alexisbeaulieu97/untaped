@@ -39,7 +39,7 @@ class Credential(BaseModel):
         default=True,
         description=(
             "How git checks the host: `True` (git's own trust), a CA file for this host "
-            "(the key's, or root `http.ca_bundle` when the key keeps untaped's trust), "
+            "(the key's, or root `http.ca_bundle_path` when the key keeps untaped's trust), "
             "or `False` (git still verifies)."
         ),
     )

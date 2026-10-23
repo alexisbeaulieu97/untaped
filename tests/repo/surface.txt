@@ -58,7 +58,7 @@ cfg github.sweep.max_age_seconds -> github.caches.sweep.max_age_seconds  [deprec
 cfg github.sweep.parallel integer(minimum=1) default=12
 cfg github.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
 cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
-cfg http.ca_bundle string(format=path)? default=unset
+cfg http.ca_bundle_path string(format=path)? default=unset
 cfg http.proxy string? default=unset
 cfg http.timeout_seconds number(exclusiveMinimum=0) default=30.0
 cfg http.verify_hostname boolean default=true  [deprecated, removed in 12.0]
@@ -4979,12 +4979,12 @@ sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
 sdk untaped.sdk.HttpSettings()
-sdk untaped.sdk.HttpSettings(ca_bundle=) default=None
+sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
 sdk untaped.sdk.HttpSettings(proxy=) default=None
 sdk untaped.sdk.HttpSettings(timeout_seconds=) default=30.0
 sdk untaped.sdk.HttpSettings(verify_hostname=) default=true
 sdk untaped.sdk.HttpSettings(verify_ssl=) default=true
-sdk untaped.sdk.HttpSettings.ca_bundle
+sdk untaped.sdk.HttpSettings.ca_bundle_path
 sdk untaped.sdk.HttpSettings.proxy
 sdk untaped.sdk.HttpSettings.retired_keys class
 sdk untaped.sdk.HttpSettings.timeout_seconds
@@ -5310,13 +5310,17 @@ sdk untaped.sdk.PipeEnvelope.kind
 sdk untaped.sdk.PipeEnvelope.lineno
 sdk untaped.sdk.PipeEnvelope.record
 sdk untaped.sdk.Plugin(*, name, status, distribution, version)
+sdk untaped.sdk.Plugin(fills=) default=[]
 sdk untaped.sdk.Plugin(package=) default=None
+sdk untaped.sdk.Plugin(requires=) default=[]
 sdk untaped.sdk.Plugin(source_dir=) default=None
 sdk untaped.sdk.Plugin(tests_dir=) default=None
 sdk untaped.sdk.Plugin.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Plugin.distribution
+sdk untaped.sdk.Plugin.fills
 sdk untaped.sdk.Plugin.name
 sdk untaped.sdk.Plugin.package
+sdk untaped.sdk.Plugin.requires
 sdk untaped.sdk.Plugin.source_dir
 sdk untaped.sdk.Plugin.status
 sdk untaped.sdk.Plugin.table_columns class
@@ -6340,8 +6344,6 @@ sdk untaped.sdk.testing.ScriptedPromptBackend.text(message, *, default)
 sdk untaped.sdk.testing.TtyStringIO()
 sdk untaped.sdk.testing.TtyStringIO(initial_value@1=) default=""
 sdk untaped.sdk.testing.TtyStringIO(newline@2=) default="\n"
-sdk untaped.sdk.testing.allowed_names(line)
-sdk untaped.sdk.testing.allows(source_lines, lineno, rule)
 sdk untaped.sdk.testing.assert_destructive_contract(assert_unchanged=) default=None callback(0)
 sdk untaped.sdk.testing.assert_destructive_contract(command, args) callback(command, *)
 sdk untaped.sdk.testing.assert_fills(provider)
@@ -6402,7 +6404,6 @@ sdk untaped.sdk.testing.git.global_config(add=) default=false  [experimental]
 sdk untaped.sdk.testing.git.global_config(key, value)  [experimental]
 sdk untaped.sdk.testing.git.hostile_git_home()  [experimental]
 sdk untaped.sdk.testing.git.trace2_events(path)  [experimental]
-sdk untaped.sdk.testing.import_targets(node, package)
 sdk untaped.sdk.testing.invoke_cli(args@2=) default=None
 sdk untaped.sdk.testing.invoke_cli(catch_exceptions=) default=true
 sdk untaped.sdk.testing.invoke_cli(command) callback(command, *)
@@ -6966,12 +6967,16 @@ sdk untaped_lint.api.Linter.rules() -> Rule[]  [experimental]
 sdk untaped_lint.api.Location  [experimental]
 sdk untaped_lint.api.Plugin base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.Plugin(*, name, status, distribution, version)  [experimental]
+sdk untaped_lint.api.Plugin(fills=) default=[]  [experimental]
 sdk untaped_lint.api.Plugin(package=) default=None  [experimental]
+sdk untaped_lint.api.Plugin(requires=) default=[]  [experimental]
 sdk untaped_lint.api.Plugin(source_dir=) default=None  [experimental]
 sdk untaped_lint.api.Plugin(tests_dir=) default=None  [experimental]
 sdk untaped_lint.api.Plugin.distribution  [experimental]
+sdk untaped_lint.api.Plugin.fills  [experimental]
 sdk untaped_lint.api.Plugin.name  [experimental]
 sdk untaped_lint.api.Plugin.package  [experimental]
+sdk untaped_lint.api.Plugin.requires  [experimental]
 sdk untaped_lint.api.Plugin.source_dir  [experimental]
 sdk untaped_lint.api.Plugin.status  [experimental]
 sdk untaped_lint.api.Plugin.table_columns class  [experimental]

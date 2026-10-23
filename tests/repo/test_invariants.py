@@ -4,7 +4,7 @@
   :func:`redact_secrets` covers it and ``repr(settings)`` won't leak it).
 - Every ``HttpClient(...)`` under ``src/`` passes
   ``verify=resolve_verify(...)`` (TLS flows through OS trust +
-  ``http.ca_bundle``, never a hard-coded ``True``/``False``/path).
+  ``http.ca_bundle_path``, never a hard-coded ``True``/``False``/path).
 - Tree connectors are drawn only by core's tree module (``untaped.sdk.print_tree``
   and ``tree_text``), never by a private copy.
 

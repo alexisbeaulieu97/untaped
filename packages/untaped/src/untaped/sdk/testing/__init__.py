@@ -39,7 +39,6 @@ installs one around a block of a suite that doesn't load the plugin.
 
 from __future__ import annotations
 
-import ast
 import copy
 import io
 import sys
@@ -110,8 +109,6 @@ __all__ = [
     "ScreenRun",
     "ScriptedPromptBackend",
     "TtyStringIO",
-    "allowed_names",
-    "allows",
     "assert_destructive_contract",
     "assert_fills",
     "assert_schema_pinned",
@@ -123,7 +120,6 @@ __all__ = [
     "current_memory_store",
     "damage",
     "drive_screen",
-    "import_targets",
     "invoke_cli",
     "invoke_root",
     "keep_value",
@@ -650,41 +646,6 @@ def check_plugin(
     found = list(discover_candidates()) if candidates is None else list(candidates)
     with bootstrap.composed_with(found, quiet=True) as result:
         return check_plugins(result, found, name, core_only=True)
-
-
-def allows(source_lines: list[str], lineno: int, rule: str) -> bool:
-    """Whether line ``lineno`` (1-based) carries ``# untaped: allow`` for bare id ``rule``.
-
-    The one reading of the marker every source rule shares: it names rules
-    bare (``print``) or as ``lint.print``, comma-separated.
-    """
-    from untaped.conventions.allow import allowed  # noqa: PLC0415
-
-    return allowed(source_lines, lineno, rule)
-
-
-def allowed_names(line: str) -> frozenset[str]:
-    """The rule names a source line's ``# untaped: allow`` marker names, as written.
-
-    The same marker :func:`allows` reads, for a reader that resolves the
-    names itself: ``lint`` honours ``house.no-print`` and a bare ``no-print``
-    on a repository rule's findings.
-    """
-    from untaped.conventions.allow import allowed_names as names  # noqa: PLC0415
-
-    return names(line)
-
-
-def import_targets(node: ast.Import | ast.ImportFrom, package: str) -> list[str]:
-    """The absolute modules an import statement imports, from a module of ``package``.
-
-    ``from . import x`` binds the submodule; a relative import reaching above
-    the top-level package resolves to nothing. The one import resolver every
-    source rule shares.
-    """
-    from untaped.conventions.source import import_targets as resolve  # noqa: PLC0415
-
-    return resolve(node, package)
 
 
 # untaped's mark dates it on the surface; the literal under it is what mypy reports

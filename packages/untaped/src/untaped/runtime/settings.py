@@ -73,9 +73,12 @@ FORMAT_VERSION = 1
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a plugin's HTTP client (per-profile)."""
 
-    retired_keys: ClassVar[Mapping[str, str]] = {"timeout": "timeout_seconds"}
+    retired_keys: ClassVar[Mapping[str, str]] = {
+        "timeout": "timeout_seconds",
+        "ca_bundle": "ca_bundle_path",
+    }
 
-    ca_bundle: Path | None = Field(  # untaped: allow settings-naming
+    ca_bundle_path: Path | None = Field(
         default=None,
         description="PEM file of extra CA certificates to trust instead of the OS trust store.",
     )

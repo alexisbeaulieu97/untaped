@@ -260,7 +260,7 @@ def test_a_folder_proxy_carries_a_credential_only_over_verified_https(
 def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "untaped.sdk.network.credentials.folder_leaves",
-        lambda: {("http", "ca_bundle"): "/work/.untaped.yml"},
+        lambda: {("http", "ca_bundle_path"): "/work/.untaped.yml"},
     )
 
     with pytest.raises(ConfigError, match="won't send a credential under a trust setting"):
@@ -279,11 +279,11 @@ def test_a_keys_client_takes_root_trust_without_verify_ssl(
         return True
 
     monkeypatch.setattr("untaped.sdk.network.http.resolve_verify", trust)
-    root = HttpSettings(verify_ssl=False, ca_bundle=Path("/etc/ca.pem"))
+    root = HttpSettings(verify_ssl=False, ca_bundle_path=Path("/etc/ca.pem"))
 
     connected_client(
         Marked(), section="demo", base_url=_URL, bearer="tok", http=root, verify=verify
     ).close()
 
     [used] = seen
-    assert (used.verify_ssl, used.ca_bundle) == (verify_ssl, Path("/etc/ca.pem"))
+    assert (used.verify_ssl, used.ca_bundle_path) == (verify_ssl, Path("/etc/ca.pem"))
