@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, Service, System, UntapedError, plugin_of, settings_of
+from untaped.sdk import (
+    Command,
+    Service,
+    System,
+    UntapedError,
+    attribution,
+    plugin_of,
+    settings_of,
+)
 from untaped.sdk.run import (
     Clock,
     Composition,
@@ -70,7 +78,6 @@ def _run(tmp_path: Path, sections: dict[str, BaseModel] | None = None) -> Run:
         picks=picks,
         diag=Recorder(),  # type: ignore[arg-type]
         terminal=lambda: pytest.fail("no terminal in this test"),
-        project=lambda: None,
     )
 
 
@@ -126,7 +133,10 @@ def test_plugin_of_is_the_plugin_named_by_its_model(run: Run, tmp_path: Path) ->
         lint.committed("awx.yml")
 
 
-def test_the_context_is_the_run_seen_by_the_commands_plugin(run: Run) -> None:
+def test_the_context_is_the_run_seen_by_the_commands_plugin(
+    run: Run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
     ctx = context_for(Say)
     assert ctx.plugin == plugin_of(HelloSettings)
     assert ctx.project is None
@@ -137,13 +147,47 @@ def test_the_context_is_the_run_seen_by_the_commands_plugin(run: Run) -> None:
 def test_a_module_no_plugin_owns_is_a_lookup_error(run: Run) -> None:
     with pytest.raises(LookupError, match="no composed plugin owns module elsewhere"):
         run.composition.owner_of_module("elsewhere.commands")
+    stray = type("Stray", (Version,), {"__module__": "elsewhere.commands"})
+    with pytest.raises(LookupError, match="Stray belongs to no composed plugin"):
+        _ = stray().ctx
+
+
+def test_a_subclass_reads_its_bases_settings(run: Run) -> None:
+    class Shout(Say):
+        """Shout hello."""
+
+    assert Shout().settings == HelloSettings(greeting="hi")
+
+
+def test_a_run_that_picks_the_wrong_model_is_a_bug(tmp_path: Path) -> None:
+    broken = _run(tmp_path, {"hello": LintSettings()})
+    with run_scope(broken), pytest.raises(TypeError, match="picked LintSettings"):
+        settings_of(HelloSettings)
 
 
 def test_a_service_names_its_plugin_in_the_run(run: Run) -> None:
     assert HelloError.system == "hello"
     assert HelloError("boom").system == "hello"
     assert HelloError("boom", system=System.LOCAL).system == "local"
+    assert UntapedError("boom", system=Service(LintSettings)).system == "lint"
     assert repr(HelloError.__dict__["system"]) == "Service(HelloSettings)"
+
+
+def test_an_error_keeps_its_service_after_the_run(tmp_path: Path) -> None:
+    with run_scope(_run(tmp_path)):
+        error = HelloError("boom")
+    assert error.system == "hello"
+    assert attribution(error)["system"] == "hello"
+
+
+def test_a_service_never_fails_a_read() -> None:
+    class Stray(BaseModel):
+        pass
+
+    assert hasattr(HelloError, "system")
+    assert HelloError.system == "Service(HelloSettings)"
+    assert HelloError("boom").system == "Service(HelloSettings)"
+    assert Service(Stray).name().endswith(".Stray)")
 
 
 def test_system_is_a_closed_vocabulary_of_strings() -> None:

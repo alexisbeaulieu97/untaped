@@ -110,8 +110,6 @@ class Run:
     diag: Diag
     #: The terminal handle, built on first use (prompts and screens need one).
     terminal: Callable[[], UiContext]
-    #: The project the run is in, or ``None``.
-    project: Callable[[], Project | None]
     clock: Clock = field(default_factory=Clock)
 
 
@@ -177,7 +175,9 @@ def settings_of[M: BaseModel](model: type[M]) -> M:
     """The settings of the plugin whose model is ``model``, as this run picked them."""
     run = current_run()
     section = run.picks(run.composition.owner_of_settings(model), model)
-    return section if isinstance(section, model) else model.model_validate(section.model_dump())
+    if not isinstance(section, model):
+        raise TypeError(f"the run picked {type(section).__qualname__} for {model.__qualname__}")
+    return section
 
 
 @dataclass(frozen=True)
@@ -202,11 +202,19 @@ class Context:
 
     @property
     def project(self) -> Project | None:
-        return self.run.project()
+        from untaped.sdk.projects import project_at  # noqa: PLC0415 - projects' cost
+
+        return project_at(Path.cwd())
 
 
 def context_for(cls: type) -> Context:
     """The :class:`Context` of a command class: the run, seen by the plugin defining ``cls``."""
     run = current_run()
-    plugin = PluginHandle(name=run.composition.owner_of_module(cls.__module__), home=run.home)
-    return Context(run=run, plugin=plugin)
+    try:
+        name = run.composition.owner_of_module(cls.__module__)
+    except LookupError:
+        raise LookupError(
+            f"{cls.__qualname__} belongs to no composed plugin: its module {cls.__module__} "
+            "is under no plugin's package"
+        ) from None
+    return Context(run=run, plugin=PluginHandle(name=name, home=run.home))

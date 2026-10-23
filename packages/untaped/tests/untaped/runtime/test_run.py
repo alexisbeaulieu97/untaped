@@ -59,3 +59,4 @@ def test_a_built_run_reads_settings_from_the_config(
         assert plugin_of(HelloSettings).dir == tmp_path / "plugins" / "hello"
         assert Version().ctx.plugin.name == "hello"
         assert Version().ctx.project is None
+        assert Version().ctx.terminal is Version().ctx.terminal

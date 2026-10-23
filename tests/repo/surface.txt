@@ -5642,6 +5642,7 @@ sdk untaped.sdk.Served.stale
 sdk untaped.sdk.Served.value
 sdk untaped.sdk.Service(model)
 sdk untaped.sdk.Service.model
+sdk untaped.sdk.Service.name()
 sdk untaped.sdk.SettingKey(model)
 sdk untaped.sdk.SettingKey(parts@2=) default=[]
 sdk untaped.sdk.SettingKey.model_of(setting)

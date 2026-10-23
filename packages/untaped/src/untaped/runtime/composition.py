@@ -143,7 +143,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     reserved = frozenset(taken)
     owners: dict[str, int] = {}
     for index, entry in enumerate(entries):
-        owners.setdefault(package_of(entry.target), index)
+        owners.setdefault(_package(entry.target), index)
     while True:
         names = {package: entries[index].name for package, index in owners.items()}
         declaration, refused = _compose(entries, reserved, names)
@@ -192,7 +192,7 @@ def _compose(
     return declaration, refused
 
 
-def package_of(target: str) -> str:
+def _package(target: str) -> str:
     """The top-level package of an entry point's module: every class under it is the plugin's."""
     return target.partition(":")[0].partition(".")[0]
 
@@ -245,7 +245,7 @@ class _PluginWalk:
         self.name = entry.name
         self.target = entry.target
         module = entry.target.partition(":")[0]
-        self.package = package_of(entry.target)
+        self.package = _package(entry.target)
         self.owners = owners
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
