@@ -22,15 +22,19 @@ from untaped.runtime.output_policy import current_policy, note_format, note_them
 from untaped.runtime.render import column_value, render_document
 from untaped.runtime.sink import (
     Diagnostics,
-    count_row_failures,
     current_sink,
     derived_exit_code,
     diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
 )
+from untaped.runtime.sink import (
+    count_row_failures as count_row_failures,  # re-exported: untaped.sdk.fields imports no runtime
+)
 from untaped.runtime.theme import (
-    OutputFormat,
+    OutputFormat as OutputFormat,
+)
+from untaped.runtime.theme import (
     ThemeSpec,
     TreeOutputFormat,
     resolve_theme_or_default,

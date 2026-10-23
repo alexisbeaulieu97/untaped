@@ -534,6 +534,7 @@ class _CommandWalk:
         for name, info in cls.model_fields.items():
             self._field(name, info, prefix="", panel="Options")
         self._duplicates()
+        self._positionals()
         self._output(returns)
         summary, doc = _prose(cls)
         if not summary:
@@ -869,6 +870,24 @@ class _CommandWalk:
                         f"{flag} is also {self.where}.{flags[flag]}'s",
                     )
                 flags.setdefault(flag, option.field)
+
+    def _positionals(self) -> None:
+        """Arguments fill in field order: none may follow an optional or a list one."""
+        before: OptionDecl | None = None
+        for option in (each for each in self.seen.options if each.positional):
+            if before is not None and before.token.startswith("list["):
+                self.problem(
+                    "positional-order",
+                    f"{self.where}.{option.field}",
+                    f"follows {before.field}, a list argument that takes every value left",
+                )
+            elif before is not None and option.required and not before.required:
+                self.problem(
+                    "positional-order",
+                    f"{self.where}.{option.field}",
+                    f"is required but follows {before.field}, an optional argument",
+                )
+            before = option
 
 
 # --- types -----------------------------------------------------------------------------

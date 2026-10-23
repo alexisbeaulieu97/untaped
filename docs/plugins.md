@@ -63,8 +63,8 @@ as entry point, config section, command group and data directory. Names core
 keeps, such as `core`, `http` or `config`, are quarantined (`reserved-name`).
 The entry point names the module's `SPEC` constant, one self-validating
 `PluginSpec`, or a 12.0 plugin class in a leaf module
-(`untaped_acme.plugin:Acme`), quarantined (`bad-plugin-class`) with every
-problem composition finds in it. Anything else, a function returning one
+(`untaped_acme.plugin:Acme`); one that composition refuses is quarantined
+(`bad-plugin-class`) with every problem it names. Anything else, a function returning one
 included, is quarantined (`not-a-spec`) and never called.
 
 The plugin's `untaped` requirement (`Requires-Dist`) is the only

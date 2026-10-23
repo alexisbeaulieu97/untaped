@@ -922,13 +922,17 @@ def reserved_as(name: str) -> str | None:
 
 
 def _check_reserved_name(spec: PluginSpec, state: _CompositionState) -> None:
-    reserved = reserved_as(spec.name)
+    _check_free_name(spec.name, state)
+
+
+def _check_free_name(name: str, state: _CompositionState) -> None:
+    reserved = reserved_as(name)
     if reserved is not None:
-        raise _Quarantine("reserved-name", f"reserved {reserved}: {spec.name!r}")
-    if spec.name in (state.shell.name, state.shell.section):
+        raise _Quarantine("reserved-name", f"reserved {reserved}: {name!r}")
+    if name in (state.shell.name, state.shell.section):
         raise _Quarantine(
             "duplicate-name",
-            f"duplicate plugin name: {spec.name!r} (already provided by the shell)",
+            f"duplicate plugin name: {name!r} (already provided by the shell)",
         )
 
 
@@ -1462,26 +1466,32 @@ def _mounted(
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
-    entries = [
-        PluginEntry(ordered[index].name, _entry_target(ordered[index], cls), cls)
-        for index, cls in classes.items()
-    ]
-    mount = compose_plugins(entries)
-    refused = {each.name: each for each in mount.declaration.quarantined}
-    for index in classes:
-        candidate = ordered[index]
-        if candidate.name in refused:
-            detail = "; ".join(str(problem) for problem in refused[candidate.name].problems)
-            quarantined[index] = _Quarantine("bad-plugin-class", detail).to_record(candidate)
-            continue
-        spec = plugin_spec(mount, candidate.name)
-        try:
-            _check_declaration(spec, state)
-        except _Quarantine as failed:
-            quarantined[index] = failed.to_record(candidate)
-            continue
-        claims[index] = spec
-    return dict(sorted(claims.items()))
+    while True:
+        mount = compose_plugins(
+            [
+                PluginEntry(ordered[index].name, _entry_target(ordered[index], cls), cls)
+                for index, cls in classes.items()
+            ]
+        )
+        refused = {each.name: each for each in mount.declaration.quarantined}
+        mounted: dict[int, PluginSpec] = {}
+        for index in classes:
+            candidate = ordered[index]
+            try:
+                if candidate.name in refused:
+                    problems = refused[candidate.name].problems
+                    raise _Quarantine("bad-plugin-class", "; ".join(map(str, problems)))
+                spec = plugin_spec(mount, candidate.name)
+                _check_declaration(spec, state)
+            except _Quarantine as failed:
+                quarantined[index] = failed.to_record(candidate)
+                continue
+            mounted[index] = spec
+        if len(mounted) == len(classes):
+            return dict(sorted({**claims, **mounted}.items()))
+        # A class quarantined here must not shape the others' declaration
+        # (a kind it owned, a command another one derives): compose without it.
+        classes = {index: cls for index, cls in classes.items() if index in mounted}
 
 
 def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
@@ -1577,6 +1587,8 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             entry_point="",
         ) from None
     if _is_plugin_class(spec):
+        _check_distribution(candidate)
+        _check_free_name(candidate.name, state)
         return spec
     if not isinstance(spec, PluginSpec):
         raise _Quarantine(
@@ -1591,12 +1603,16 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             "bad-metadata",
             f"entry-point name {candidate.name!r} does not match plugin name {spec.name!r}",
         )
+    _check_distribution(candidate)
+    return spec
+
+
+def _check_distribution(candidate: PluginCandidate) -> None:
     if not candidate.distribution.strip():
         raise _Quarantine(
             "bad-metadata",
             f"plugin {candidate.name!r} declares an empty distribution name",
         )
-    return spec
 
 
 def _is_item_store(value: object) -> bool:

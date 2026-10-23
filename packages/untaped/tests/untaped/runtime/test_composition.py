@@ -436,6 +436,40 @@ def test_field_problems_name_the_field() -> None:
     ]
 
 
+def test_arguments_must_fill_in_field_order() -> None:
+    class Copy(Command):
+        """Copy."""
+
+        sources: Positional[list[str]] = Field(description="What to copy.")
+        target: Positional[str] = Field(description="Where to.")
+
+        def run(self) -> None:
+            pass
+
+    class Move(Command):
+        """Move."""
+
+        source: Positional[str] = Field("", description="What to move.")
+        target: Positional[str] = Field(description="Where to.")
+
+        def run(self) -> None:
+            pass
+
+    class Link(Command):
+        """Link."""
+
+        target: Positional[str] = Field(description="Where to.")
+        names: Positional[list[str]] = Field(default_factory=list, description="What to link.")
+
+        def run(self) -> None:
+            pass
+
+    assert sorted(_rules(_plugin_with(Copy, Move, Link))) == [
+        ("positional-order", "Copy.target"),
+        ("positional-order", "Move.target"),
+    ]
+
+
 def test_an_unresolved_field_type_quarantines_the_plugin() -> None:
     class Later(Command):
         """Later."""
