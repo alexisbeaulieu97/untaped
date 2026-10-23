@@ -521,6 +521,35 @@ def test_a_quarantined_plugin_owns_no_kind() -> None:
     assert {kind.plugin for kind in declaration.kinds} == {"peer"}
 
 
+def test_taken_names_hold_on_every_pass() -> None:
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    entries = [_entry(Hello, "config"), _entry(Peer, "peer", module="untaped_peer.plugin")]
+    declaration = compose(entries, taken=(name for name in ["config"]))
+    assert [q.name for q in declaration.quarantined] == ["config"]
+
+
+def test_a_refused_duplicate_leaves_the_first_entry_its_kinds() -> None:
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    entries = [
+        _entry(Hello),
+        _entry(Hello, module="untaped_other.plugin"),
+        _entry(Peer, "peer", module="untaped_peer.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [q.name for q in declaration.quarantined] == ["hello"]
+    assert {c.output for c in declaration.commands() if c.name == "say"} == {"hello.salutation"}
+
+
 def test_a_class_no_plugin_defines_belongs_to_the_plugin_reaching_it() -> None:
     declaration = compose([_entry(Hello, module="untaped_hello.plugin")])
     assert [kind.kind for kind in declaration.kinds] == ["hello.salutation", "hello.suite"]

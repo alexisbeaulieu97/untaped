@@ -140,26 +140,29 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     package share it, the first owning its classes, as
     :meth:`Declaration.owner_of` reads it.
     """
-    owners: dict[str, str] = {}
-    for entry in entries:
-        owners.setdefault(_package(entry.target), entry.name)
+    reserved = frozenset(taken)
+    owners: dict[str, int] = {}
+    for index, entry in enumerate(entries):
+        owners.setdefault(_package(entry.target), index)
     while True:
-        declaration = _compose(entries, taken, owners)
-        refused = {q.name for q in declaration.quarantined}
+        names = {package: entries[index].name for package, index in owners.items()}
+        declaration, refused = _compose(entries, reserved, names)
         if not refused & set(owners.values()):
             return declaration
         # A quarantined plugin owns no kind: the plugins reaching its classes do.
-        owners = {package: name for package, name in owners.items() if name not in refused}
+        owners = {package: index for package, index in owners.items() if index not in refused}
 
 
 def _compose(
-    entries: Sequence[PluginEntry], taken: Iterable[str], owners: dict[str, str]
-) -> Declaration:
+    entries: Sequence[PluginEntry], taken: frozenset[str], owners: dict[str, str]
+) -> tuple[Declaration, set[int]]:
+    """One pass over ``entries``: the declaration and the indexes of the entries refused."""
     names = set(taken)
     plugins: list[PluginDecl] = []
     kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
-    for entry in entries:
+    refused: set[int] = set()
+    for index, entry in enumerate(entries):
         walk = _PluginWalk(entry, owners)
         problems = list(walk.problems)
         if entry.name in names:
@@ -176,15 +179,17 @@ def _compose(
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
             )
+            refused.add(index)
             continue
         names.add(entry.name)
         plugins.append(walk.decl)
         kinds.update(claimed)
-    return Declaration(
+    declaration = Declaration(
         plugins=tuple(plugins),
         kinds=tuple(sorted(kinds.values(), key=lambda kind: kind.kind)),
         quarantined=tuple(quarantined),
     )
+    return declaration, refused
 
 
 def _package(target: str) -> str:
