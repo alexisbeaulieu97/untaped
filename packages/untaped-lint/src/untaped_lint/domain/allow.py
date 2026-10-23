@@ -1,9 +1,9 @@
 """The inline ``# untaped: allow <rule>[, <rule>...]`` marker.
 
-A source-level convention check skips a violation whose line carries this
-marker for its rule. Use it only where the code must do the flagged thing.
-A rule is named bare (``error-case``) or with the key of whoever reports it
-(``lint.error-case``), as ``untaped lint`` prints it.
+A source rule skips a violation whose line carries this marker for its rule.
+Use it only where the code must do the flagged thing. A rule is named bare
+(``error-case``) or with the key of whoever reports it (``lint.error-case``),
+as ``untaped lint`` prints it.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ def allowed_names(line: str) -> frozenset[str]:
     return frozenset(name.strip() for name in match.group(1).split(","))
 
 
-def allowed(source_lines: list[str], lineno: int, rule: str) -> bool:
+def allows(source_lines: list[str], lineno: int, rule: str) -> bool:
     """Whether line ``lineno`` (1-based) of ``source_lines`` allows ``rule``.
 
     ``rule`` is the bare id of one of lint's conventions; the marker may name

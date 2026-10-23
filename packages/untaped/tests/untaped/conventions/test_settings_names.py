@@ -130,12 +130,14 @@ def test_bad_names_are_flagged_at_their_line_with_the_full_key(install: Install)
     ]
 
 
-def test_the_allow_comment_and_class_vars_are_skipped(install: Install) -> None:
+def test_class_vars_are_skipped_and_no_marker_waives_a_name(install: Install) -> None:
     body = """
     retry_after: ClassVar[int] = 3
     ca_bundle: Path | None = None  # untaped: allow settings-naming
     """
-    assert _violations(install, body) == []
+    assert _violations(install, body) == [
+        "acme/settings.py:17::settings-naming::acme.ca_bundle: a path setting ends in _dir or _path"
+    ]
 
 
 def test_broken_renames_are_flagged_at_the_class_line(install: Install) -> None:

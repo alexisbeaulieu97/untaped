@@ -7,7 +7,7 @@ about httpx-specific exceptions.
 TLS verification is centralised in :func:`resolve_verify`. By default we read
 the OS trust store via :mod:`truststore`, which transparently picks up
 corporate CAs that have been installed system-wide. Override this with
-``http.ca_bundle`` to pin a specific PEM file, ``http.verify_hostname: false``
+``http.ca_bundle_path`` to pin a specific PEM file, ``http.verify_hostname: false``
 to keep chain verification but skip the hostname/SAN check (for a self-signed
 cert that modern Python rejects on hostname), or ``http.verify_ssl: false`` to
 disable verification entirely (escape hatch — leaves traffic open to MITM).
@@ -154,50 +154,50 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
     Resolution order:
 
     1. ``verify_ssl`` is ``False`` → ``False`` (no verification at all).
-    2. ``verify_hostname`` and ``ca_bundle`` set → the absolute path of that
+    2. ``verify_hostname`` and ``ca_bundle_path`` set → the absolute path of that
        file (httpx builds a default, hostname-checking context from it).
     3. Otherwise → an :class:`ssl.SSLContext` whose ``check_hostname`` mirrors
        ``verify_hostname``: the OS trust store (``truststore``) when no
-       ``ca_bundle``, else a default context loaded from the bundle.
+       ``ca_bundle_path``, else a default context loaded from the bundle.
 
     ``verify_hostname: false`` keeps chain verification but drops the
     hostname/SAN check — the case where a trusted self-signed cert is still
     rejected by modern Python. The truststore default makes corporate CAs in
     the OS keychain "just work" without per-user configuration.
 
-    A ``ca_bundle`` that does not exist raises :class:`ConfigError` naming
+    A ``ca_bundle_path`` that does not exist raises :class:`ConfigError` naming
     the path (instead of a bare ``FileNotFoundError`` at request time).
     """
     if not http.verify_ssl:
         return False
-    if http.ca_bundle is not None and not http.ca_bundle.expanduser().is_file():
+    if http.ca_bundle_path is not None and not http.ca_bundle_path.expanduser().is_file():
         raise ConfigError(
-            f"http.ca_bundle points to a missing file: {http.ca_bundle.expanduser()} "
-            "(fix it with `untaped config set http.ca_bundle <path>` or unset it)"
+            f"http.ca_bundle_path points to a missing file: {http.ca_bundle_path.expanduser()} "
+            "(fix it with `untaped config set http.ca_bundle_path <path>` or unset it)"
         )
-    context = _ssl_context(http.ca_bundle)
+    context = _ssl_context(http.ca_bundle_path)
     # Hostname-checked + a pinned CA → hand httpx the path and let it build
     # the (equivalent) default, hostname-checking context itself. The bundle
     # was still loaded above so an unreadable/invalid one fails here.
-    if http.verify_hostname and http.ca_bundle is not None:
-        return str(http.ca_bundle.expanduser())
+    if http.verify_hostname and http.ca_bundle_path is not None:
+        return str(http.ca_bundle_path.expanduser())
     context.check_hostname = http.verify_hostname
     return context
 
 
-def _ssl_context(ca_bundle: Path | None) -> ssl.SSLContext:
+def _ssl_context(ca_bundle_path: Path | None) -> ssl.SSLContext:
     """Build an SSLContext: a bundle-loaded default context, else OS trust.
 
-    An unreadable or unparsable ``ca_bundle`` raises :class:`ConfigError`.
+    An unreadable or unparsable ``ca_bundle_path`` raises :class:`ConfigError`.
     """
-    if ca_bundle is not None:
-        path = ca_bundle.expanduser()
+    if ca_bundle_path is not None:
+        path = ca_bundle_path.expanduser()
         try:
             return ssl.create_default_context(cafile=str(path))
         except (ssl.SSLError, OSError) as exc:
             raise ConfigError(
-                f"http.ca_bundle could not be loaded from {path}: {exc} "
-                "(fix it with `untaped config set http.ca_bundle <path>` or unset it)"
+                f"http.ca_bundle_path could not be loaded from {path}: {exc} "
+                "(fix it with `untaped config set http.ca_bundle_path <path>` or unset it)"
             ) from exc
     import truststore  # noqa: PLC0415
 
@@ -754,7 +754,7 @@ def connected_client(
     :class:`~untaped.sdk.network.credentials.BoundSecret` from ``Credential.get``, or
     ``None`` for a client without one (an unauthenticated ``ping``).
     ``verify`` is the key's :data:`~untaped.sdk.network.credentials.TlsVerify`: ``True``
-    keeps untaped's trust (root ``http.ca_bundle``, else the OS store),
+    keeps untaped's trust (root ``http.ca_bundle_path``, else the OS store),
     ``False`` checks nothing, a CA file replaces it for this server. Left
     out, the client applies the deprecated root ``http.verify_ssl`` too.
 
@@ -895,7 +895,7 @@ def _refuse_folder_transport(
     leaves = folder_leaves()
     if not leaves:
         return
-    for leaf in (("http", "ca_bundle"), ("http", "verify_ssl"), ("http", "verify_hostname")):
+    for leaf in (("http", "ca_bundle_path"), ("http", "verify_ssl"), ("http", "verify_hostname")):
         if leaf in leaves:
             raise ConfigError(
                 f"{leaves[leaf]} sets {'.'.join(leaf)}; untaped won't send a credential under a "

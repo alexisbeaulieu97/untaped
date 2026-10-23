@@ -16,12 +16,14 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import Plugin, UsageError
+from untaped.sdk import Plugin, UsageError, installed_plugins
+from untaped.sdk.contracts import providing
 from untaped.sdk.testing import PluginCandidate, PluginCheckRow, check_plugin
 from untaped_lint.errors import UnreadableSourceError
 from untaped_lint.infrastructure.files import SourceFile, source_files
 from untaped_lint.providers.conventions.blob_reader import blob_reader_violations
 from untaped_lint.providers.conventions.deprecations import deprecation_violations
+from untaped_lint.providers.conventions.imports import import_boundary_violations
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.messages import message_violations
 from untaped_lint.providers.conventions.store_format import store_format_violations
@@ -35,7 +37,7 @@ KEY = "lint"
 _PLUGIN = declared_kind(Plugin)
 
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
-    # The composed checks: names, requirements, the help tree, guides, marks, structure, imports.
+    # The composed checks: names, requirements, the help tree, guides, marks, structure.
     ("plugin-name", "error", "A plugin's distribution and import package are named after it."),
     ("provides-requirement", "error", "A provider requires untaped and each owner with a range."),
     ("missing-help", "error", "Every visible parameter has help text."),
@@ -76,7 +78,6 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("settings-not-frozen", "error", "Settings models are frozen."),
     ("settings-naming", "error", "Setting names follow the naming rules (_dir, _path, parallel)."),
     ("settings-renames", "error", "Renamed setting keys are declared consistently."),
-    ("import-boundary", "error", "A plugin imports core and other plugins only by public modules."),
     # The file rules: stderr wording, structure, layering, boundaries and stores, read from files.
     ("echo-error", "error", "Errors are raised as UntapedError, never echoed."),
     ("echo-warning", "error", "Warnings go through ctx.diag.warning, never echo."),
@@ -98,6 +99,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("private-test-import", "error", "Tests import no private module or name."),
     ("layer", "error", "Layers point one way: cli, application, domain; infrastructure, domain."),
     ("settings", "error", "Only the cli layer resolves settings."),
+    ("import-boundary", "error", "A plugin imports core and other plugins only by public modules."),
     ("terminal-boundary", "error", "No prompt_toolkit import: build screens with the SDK."),
     ("blob-reader", "error", "Repo store blobs are read through store.prefetched(...).run()."),
     ("store-format", "error", "A database under plugin_dir() is opened through a Store."),
@@ -164,7 +166,13 @@ class Conventions:
         ]
         unreadable = any(finding.rule == "unreadable-file" for finding in found)
         if plugin.package is not None and source_dir is not None and not unreadable:
-            lines = file_lines(plugin.package, source_dir, plugin=plugin.name, tests_dir=tests_dir)
+            lines = file_lines(
+                plugin.package,
+                source_dir,
+                plugin=plugin.name,
+                tests_dir=tests_dir,
+                plugins=_installed(candidates),
+            )
             for line in lines:
                 tests = line.split("::")[1] == "private-test-import"
                 base = tests_dir.parent if tests and tests_dir is not None else code
@@ -172,15 +180,31 @@ class Conventions:
         return found
 
 
+def _installed(candidates: Sequence[PluginCandidate] | None) -> list[Plugin]:
+    """Every installed plugin's record; composed from ``candidates`` when they are given."""
+    if candidates is None:
+        return installed_plugins()
+    with providing(KEY, {}, candidates=candidates):
+        return installed_plugins()
+
+
 def file_lines(
-    package: str, source_dir: Path, *, plugin: str, tests_dir: Path | None = None
+    package: str,
+    source_dir: Path,
+    *,
+    plugin: str,
+    tests_dir: Path | None = None,
+    plugins: Sequence[Plugin] = (),
 ) -> list[str]:
     """The file rules' ``<where>::<rule>::<detail>`` lines for ``package`` in ``source_dir``.
 
     Core's deprecated ``untaped plugin check`` and ``check_conventions`` read
     these lines to keep their rows unchanged until they are removed. An unreadable file is
-    one ``unreadable-file`` line and the other rules don't run.
+    one ``unreadable-file`` line and the other rules don't run. ``plugins``
+    are every installed plugin's records; the import boundary runs when
+    ``plugin``'s is among them.
     """
+    subject = next((each for each in plugins if each.name == plugin), None)
     try:
         files: list[SourceFile] = list(source_files(source_dir))
         found = [
@@ -191,6 +215,11 @@ def file_lines(
             *terminal_boundary_violations(source_dir, files),
             *blob_reader_violations(package, source_dir, files),
             *store_format_violations(plugin, source_dir, files),
+            *(
+                []
+                if subject is None
+                else import_boundary_violations(subject, source_dir, files, plugins=plugins)
+            ),
         ]
     except UnreadableSourceError as exc:
         where = _relative(exc.path, source_dir.parent)

@@ -64,7 +64,7 @@ active: prod
 profiles:
   default:
     http:
-      ca_bundle: ~/certs/corp-ca.pem
+      ca_bundle_path: ~/certs/corp-ca.pem
     ui:
       theme: default
       border: rounded
@@ -261,7 +261,7 @@ CA (a proxy that inspects TLS, say) for every client and for git, set a CA
 bundle once:
 
 ```bash
-untaped config set http.ca_bundle /path/to/corp-ca.pem
+untaped config set http.ca_bundle_path /path/to/corp-ca.pem
 ```
 
 One server's own certificate check belongs to that server: its

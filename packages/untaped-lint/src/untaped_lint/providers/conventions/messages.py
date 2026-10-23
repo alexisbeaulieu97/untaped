@@ -40,7 +40,7 @@ import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from untaped.sdk.testing import allows
+from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import SourceFile, callee
 
 USAGE_PHRASES = ("mutually exclusive", "must be >=", "not both", "cannot be combined")

@@ -22,12 +22,13 @@ from pydantic import ValidationError
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, Plugin, plural
 from untaped.sdk.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
-from untaped.sdk.testing import PluginCandidate, allowed_names
+from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.application.tree_paths import tree_paths
+from untaped_lint.domain.allow import allowed_names
 from untaped_lint.domain.glob import matches
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import Resolver, Selection, Suppression

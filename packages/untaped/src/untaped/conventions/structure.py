@@ -47,6 +47,28 @@ def _modules(package: str) -> Iterator[Any]:
             yield importlib.import_module(info.name)
 
 
+def unimportable(package: str, source_dir: Path) -> str | None:
+    """The ``unreadable-file`` violation of the first module of ``package`` Python can't read.
+
+    The class checks import every module; one that isn't UTF-8 or valid
+    Python stops them, and is the plugin's one violation.
+    """
+    try:
+        for _ in _modules(package):
+            pass
+    except SyntaxError as exc:
+        where = Path(exc.filename or source_dir)
+        if where.is_relative_to(source_dir.parent):
+            where = where.relative_to(source_dir.parent)
+        reason = (
+            "is not UTF-8"
+            if "UTF-8" in exc.msg or "codec" in exc.msg
+            else f"is not valid Python (line {exc.lineno})"
+        )
+        return f"{where.as_posix()}::unreadable-file::{reason}"
+    return None
+
+
 def _own_classes(module: Any) -> Iterator[type]:
     for _, value in inspect.getmembers(module, inspect.isclass):
         if value.__module__ == module.__name__:

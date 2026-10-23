@@ -7,7 +7,7 @@ from textwrap import dedent
 
 import pytest
 
-from untaped.sdk.testing import allows
+from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
@@ -72,3 +72,44 @@ def test_a_keyed_marker_suppresses_the_rule(tmp_path: Path) -> None:
 
 def test_a_marker_naming_another_key_allows_nothing() -> None:
     assert not allows(["print('x')  # untaped: allow house.print"], 1, "print")
+
+
+LINES = [
+    "x = 1",
+    "data = sys.stdin.read()  # untaped: allow sys-stdin",
+    "print(x)  # untaped: allow sys-stdin, print",
+    "y = 2  # untaped: allow print",
+]
+
+
+def test_marker_on_the_line_allows_that_rule() -> None:
+    assert allows(LINES, 2, "sys-stdin")
+
+
+def test_comma_list() -> None:
+    assert allows(LINES, 3, "print") and allows(LINES, 3, "sys-stdin")
+
+
+def test_wrong_rule_does_not_allow() -> None:
+    assert not allows(LINES, 4, "sys-stdin")
+
+
+def test_wrong_line_does_not_allow() -> None:
+    assert not allows(LINES, 1, "sys-stdin")
+
+
+def test_a_rule_name_prefix_does_not_allow() -> None:
+    assert not allows(["x  # untaped: allow sys-stdin-extra"], 1, "sys-stdin")
+
+
+def test_a_line_past_the_end_does_not_allow() -> None:
+    assert not allows(LINES, 5, "print")
+
+
+def test_a_rule_named_with_its_key_allows_it() -> None:
+    lines = ["x  # untaped: allow lint.error-case, print"]
+    assert allows(lines, 1, "error-case") and allows(lines, 1, "print")
+
+
+def test_a_keyed_name_allows_only_its_own_rule() -> None:
+    assert not allows(["x  # untaped: allow lint.error-case"], 1, "print")

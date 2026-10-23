@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -731,6 +732,47 @@ def owner_requirement(
         if added:
             return parsed
     return None
+
+
+def declared_distributions(
+    requirements: Sequence[str], extras: frozenset[str] = frozenset()
+) -> set[str]:
+    """Canonical names of the distributions ``requirements`` (its ``Requires-Dist``) declare.
+
+    That is what a default install pulls in, plus what an extra in
+    ``extras`` (the owner keys the plugin fills) adds: the owner a provider
+    declares under ``untaped-acme[<owner>]``. Other extra-guarded
+    requirements are left out; other markers (``python_version``,
+    ``sys_platform``…) are ignored; invalid strings are skipped.
+    """
+    names: set[str] = set()
+    for requirement in requirements:
+        parsed = parse_requirement(requirement)
+        if parsed is None:
+            continue
+        if (
+            parsed.marker is None
+            or not mentions_extra(str(parsed.marker))
+            or _added_by(parsed, extras)
+        ):
+            names.add(canonicalize_name(parsed.name))
+    return names
+
+
+def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
+    """Whether one of ``extras`` turns ``requirement`` on."""
+    marker = requirement.marker
+    if marker is None:
+        return False
+    try:
+        return any(marker.evaluate({"extra": extra}) for extra in extras)
+    except KeyError:  # a variable the environment can't fill (``extras``)
+        return False
+
+
+def mentions_extra(marker: str) -> bool:
+    """Whether ``marker`` tests the ``extra`` variable (quoted values aside)."""
+    return re.search(r"\bextra\b", re.sub(r"\"[^\"]*\"|'[^']*'", "", marker)) is not None
 
 
 def admits(requirement: Requirement, version: str) -> bool:

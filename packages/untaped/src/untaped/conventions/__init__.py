@@ -11,35 +11,33 @@ third-party plugin is checked exactly like a first-party one. Plugin tests call
 from __future__ import annotations
 
 import importlib
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
 from cyclopts import App
-from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 from untaped.conventions.guides import guide_violations
 from untaped.conventions.help_tree import help_tree_violations
-from untaped.conventions.imports import import_boundary_violations
-from untaped.conventions.source import SourceFile, UnreadableSource, source_files
 from untaped.conventions.stability import (
     deprecation_text_violations,
     stability_violations,
     undated_violations,
 )
-from untaped.conventions.structure import structure_class_violations
+from untaped.conventions.structure import structure_class_violations, unimportable
 from untaped.runtime.bootstrap import build_root_app, composition
-from untaped.runtime.plugin_package import candidate_package, package_of
+from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (
     PluginCandidate,
     PluginSpec,
     discover_candidates,
+    mentions_extra,
     owner_requirement,
     parse_requirement,
 )
+from untaped.sdk.plugin_records import Plugin, plugin_records
 
 
 def plugin_violations(
@@ -71,10 +69,10 @@ def core_plugin_violations(
     """The violations only the composed root can tell: what ``check_plugin`` reports.
 
     Plugin and distribution names, provides requirements, the help tree,
-    guides and map lines, stability marks, structure's class checks
-    (exceptions, ports, frozen settings, setting names) and the import
-    boundary. The rules that read
-    only the plugin's files are not run here. Lines and a quarantined
+    guides and map lines, stability marks and structure's class checks
+    (exceptions, ports, frozen settings, setting names). The rules that read
+    the plugin's files, the import boundary among them, are lint's and are
+    not run here. Lines and a quarantined
     plugin's one violation are as :func:`plugin_violations` gives them.
     """
     found = _checked(name, candidates)
@@ -94,7 +92,6 @@ class _Checked:
     candidates: Sequence[PluginCandidate]
     package: str
     source_dir: Path
-    files: list[SourceFile]
 
 
 def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checked | list[str]:
@@ -114,18 +111,15 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     package, source_dir = package_of(spec, None if own is None else own.target)
-    try:
-        files = list(source_files(source_dir))
-    except UnreadableSource as exc:
-        # The rules that parse the plugin can't run; the file is its one violation.
-        where = exc.path.relative_to(source_dir.parent).as_posix()
-        return [f"{where}::unreadable-file::{exc.reason}"]
-    return _Checked(name, root, spec, own, candidates, package, source_dir, files)
+    unreadable = unimportable(package, source_dir)
+    if unreadable is not None:
+        # The class checks can't import the plugin; the file is its one violation.
+        return [unreadable]
+    return _Checked(name, root, spec, own, candidates, package, source_dir)
 
 
 def _core_lines(checked: _Checked) -> list[str]:
     spec, name = checked.spec, checked.name
-    plugin_packages, declared = _boundary(name, checked.candidates, frozenset(spec.provides))
     commands = [] if spec.app_factory is None else [name]  # its mounted subtree
     return [
         *_name_violations(name, checked.package, checked.own),
@@ -136,13 +130,6 @@ def _core_lines(checked: _Checked) -> list[str]:
         *undated_violations(spec),
         *_sdk_deprecations(checked.package),
         *structure_class_violations(spec, checked.package, checked.source_dir),
-        *import_boundary_violations(
-            checked.package,
-            checked.source_dir,
-            checked.files,
-            plugin_packages=plugin_packages,
-            declared=declared,
-        ),
     ]
 
 
@@ -159,7 +146,11 @@ def _sdk_deprecations(package: str) -> list[str]:
 
 def _file_lines(checked: _Checked, tests_dir: Path | None) -> list[str]:
     lines = file_lines(
-        checked.package, checked.source_dir, plugin=checked.name, tests_dir=tests_dir
+        checked.package,
+        checked.source_dir,
+        plugin=checked.name,
+        tests_dir=tests_dir,
+        plugins=plugin_records(composition(), checked.candidates),
     )
     return [] if lines is None else lines
 
@@ -174,20 +165,27 @@ def file_rules_installed() -> bool:
 
 
 def file_lines(
-    package: str, source_dir: Path, *, plugin: str, tests_dir: Path | None = None
+    package: str,
+    source_dir: Path,
+    *,
+    plugin: str,
+    tests_dir: Path | None = None,
+    plugins: Sequence[Plugin] = (),
 ) -> list[str] | None:
     """The file rules' lines, from the lint plugin; ``None`` when it is not installed.
 
     The rules that read only a plugin's files moved to ``untaped[lint]``; the
     deprecated ``plugin check`` and ``check_conventions`` reach them here, by
     name, until both go at 12.0. This is the one place core calls a plugin.
+    ``plugins`` are every composed plugin's records, which the import
+    boundary reads.
     """
     try:
         conventions = importlib.import_module("untaped_lint.providers.conventions")
     except ImportError:
         return None
     lines: list[str] = conventions.file_lines(
-        package, source_dir, plugin=plugin, tests_dir=tests_dir
+        package, source_dir, plugin=plugin, tests_dir=tests_dir, plugins=plugins
     )
     return lines
 
@@ -216,45 +214,6 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
     return violations
 
 
-def _required(requirements: Sequence[str], extras: frozenset[str] = frozenset()) -> set[str]:
-    """Canonical names of the ``Requires-Dist`` strings the plugin may import from.
-
-    That is what a default install pulls in, plus what an extra in
-    ``extras`` (the plugin's ``provides`` keys) adds: the owner a provider
-    declares under ``untaped-acme[<owner>]``. Other extra-guarded
-    requirements are left out; other markers (``python_version``,
-    ``sys_platform``…) are ignored; invalid strings are skipped.
-    """
-    names: set[str] = set()
-    for requirement in requirements:
-        parsed = parse_requirement(requirement)
-        if parsed is None:
-            continue
-        if (
-            parsed.marker is None
-            or not _mentions_extra(str(parsed.marker))
-            or _added_by(parsed, extras)
-        ):
-            names.add(canonicalize_name(parsed.name))
-    return names
-
-
-def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
-    """Whether one of ``extras`` turns ``requirement`` on."""
-    marker = requirement.marker
-    if marker is None:
-        return False
-    try:
-        return any(marker.evaluate({"extra": extra}) for extra in extras)
-    except KeyError:  # a variable the environment can't fill (``extras``)
-        return False
-
-
-def _mentions_extra(marker: str) -> bool:
-    """Whether ``marker`` tests the ``extra`` variable (quoted values aside)."""
-    return re.search(r"\bextra\b", re.sub(r"\"[^\"]*\"|'[^']*'", "", marker)) is not None
-
-
 def _provides_violations(
     spec: PluginSpec, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
 ) -> list[str]:
@@ -275,7 +234,7 @@ def _provides_violations(
         for parsed in (parse_requirement(line) for line in requires)
         if parsed is not None
         and canonicalize_name(parsed.name) == "untaped"
-        and not _mentions_extra(str(parsed.marker or ""))
+        and not mentions_extra(str(parsed.marker or ""))
     ]
     if not any(parsed.specifier or parsed.url for parsed in core):
         found.append(f"{rule}requires no untaped version range (untaped>=M,<M+1)")
@@ -290,28 +249,3 @@ def _provides_violations(
         elif not (requirement.specifier or requirement.url):
             found.append(f"{rule}its {owner!r} extra requires {distribution} with no version range")
     return found
-
-
-def _boundary(
-    name: str, candidates: Sequence[PluginCandidate], extras: frozenset[str] = frozenset()
-) -> tuple[dict[str, str], frozenset[str]]:
-    """Plugin packages (to distributions) and what plugin ``name`` may import from.
-
-    Every candidate counts as a plugin, composed or quarantined: a
-    ``module:attr`` target names its package; a spec target (as from
-    :func:`untaped.sdk.testing.plugin_candidate`) gives it through what the spec
-    declares, and is skipped when that cannot be resolved. The checked
-    plugin's own distribution is always declared, as is what one of
-    ``extras`` (its ``provides`` keys) requires.
-    """
-    found = list(candidates)
-    packages: dict[str, str] = {}
-    for candidate in found:
-        package = candidate_package(candidate.target)
-        if package is not None:
-            packages[package] = canonicalize_name(candidate.distribution)
-    own = next((candidate for candidate in found if candidate.name == name), None)
-    if own is None:
-        return packages, frozenset()
-    declared = {str(canonicalize_name(own.distribution)), *_required(own.requires_dist, extras)}
-    return packages, frozenset(declared)

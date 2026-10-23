@@ -1,32 +1,38 @@
-"""Import boundary of a plugin: core only through its public modules.
+"""Import boundary of a plugin: core only through the SDK, other plugins only through ``api``.
 
-A plugin's own source may import ``untaped`` only as ``untaped.sdk``,
-``untaped.sdk.contracts`` (declaring and filling contracts) or
-``untaped.sdk.testing`` and ``untaped.sdk.testing.git`` (an owner's conformance
-checks and fixtures: :data:`untaped.core.surface.SDK_MODULES`), and another plugin only
-as that plugin's ``api`` module, and only when its distribution declares a
-dependency on the other's, by default or under an extra named after a
-``provides`` key. Its own package
-is always allowed; third-party libraries are not this rule's business.
-Every import counts, including function-level and ``TYPE_CHECKING`` ones.
-Violations are ``<file>:<line>::import-boundary::<detail>``;
+A plugin's own source may import ``untaped`` only as one of the SDK modules
+(``untaped.sdk``, ``untaped.sdk.contracts``, ``untaped.sdk.testing`` and
+``untaped.sdk.testing.git``), and another plugin only as that
+plugin's ``api`` module, and only when its distribution requires the
+other's (by default, or under an extra named after an owner it fills: the
+``requires`` of its ``untaped.plugin`` record). Which packages are plugins
+comes from every installed plugin's record, quarantined ones included. Its
+own package is always allowed; third-party libraries are not this rule's
+business. Every import counts, including function-level and
+``TYPE_CHECKING`` ones. Violations are
+``<file>:<line>::import-boundary::<detail>``;
 ``# untaped: allow import-boundary`` on the import line waives one.
 """
 
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
-from untaped.conventions.allow import allowed
-from untaped.conventions.source import SourceFile, import_targets
-from untaped.core.surface import SDK_MODULES
+from untaped.sdk import Plugin
+from untaped_lint.domain.allow import allows
+from untaped_lint.infrastructure.files import SourceFile, import_targets
 
 RULE = "import-boundary"
 _SDK = "untaped.sdk"
-#: The core modules a plugin's own source may import: the SDK the surface promises.
-_PUBLIC = frozenset(SDK_MODULES)
+#: The modules of ``untaped`` a plugin may import: those the surface promises
+#: (core's ``SDK_MODULES``; lint's tests hold the two equal). The SDK's other
+#: groups join as they list names.
+SDK_MODULES = frozenset(
+    {"untaped.sdk", "untaped.sdk.contracts", "untaped.sdk.testing", "untaped.sdk.testing.git"}
+)
 
 
 def _targets(
@@ -38,6 +44,11 @@ def _targets(
             yield f"{node.module}.{alias.name}"
         return
     yield from import_targets(node, module_package)
+
+
+def _canonical(distribution: str) -> str:
+    """``distribution`` normalised as ``requires`` spells names (PEP 503)."""
+    return re.sub(r"[-_.]+", "-", distribution).lower()
 
 
 def _is_within(target: str, package: str) -> bool:
@@ -66,26 +77,31 @@ def _detail(
                 f"{plugin_packages[other]}'s"
             )
         return None
-    if _is_within(target, "untaped") and target not in _PUBLIC:
+    if _is_within(target, "untaped") and target not in SDK_MODULES:
         return f"imports {target}; use {_SDK}"
     return None
 
 
 def import_boundary_violations(
-    package: str,
+    plugin: Plugin,
     source_dir: Path,
     files: Sequence[SourceFile],
     *,
-    plugin_packages: Mapping[str, str],
-    declared: frozenset[str],
+    plugins: Sequence[Plugin],
 ) -> list[str]:
-    """Violations in ``files`` of ``package`` (code in ``source_dir``).
+    """Violations in ``files`` of ``plugin`` (its code in ``source_dir``).
 
-    ``plugin_packages`` maps each plugin's package to its canonical
-    distribution name; ``declared`` holds the canonical distribution names
-    the checked plugin may import from (its own and its requirements).
-    Paths are relative to ``source_dir``'s parent.
+    ``plugins`` are every installed plugin's records: their packages are the
+    plugins another import may reach. Paths are relative to ``source_dir``'s
+    parent. A plugin whose record names no package has nothing to check.
     """
+    package = plugin.package
+    if package is None:
+        return []
+    plugin_packages = {
+        each.package: _canonical(each.distribution) for each in plugins if each.package is not None
+    }
+    declared = frozenset({_canonical(plugin.distribution), *plugin.requires})
     roots = frozenset({"untaped", *plugin_packages})
     found: list[str] = []
     for source in files:
@@ -97,6 +113,6 @@ def import_boundary_violations(
                 continue
             for target in _targets(node, module_package, roots):
                 detail = _detail(target, package, plugin_packages, declared)
-                if detail is not None and not allowed(source.lines, node.lineno, RULE):
+                if detail is not None and not allows(source.lines, node.lineno, RULE):
                     found.append(f"{rel}:{node.lineno}::{RULE}::{detail}")
     return found

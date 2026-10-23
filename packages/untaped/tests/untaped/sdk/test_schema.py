@@ -42,7 +42,7 @@ def test_walks_nested_models() -> None:
     descriptors = walk_settings(get_settings_model())
     keys = {d.key for d in descriptors}
     # HttpSettings
-    assert "http.ca_bundle" in keys
+    assert "http.ca_bundle_path" in keys
     assert "http.verify_ssl" in keys
     # Plugin settings
     assert "demo.directory" in keys
@@ -144,9 +144,9 @@ def test_defaults_are_captured() -> None:
 
 def test_optional_unwrapped() -> None:
     descriptors = walk_settings(get_settings_model())
-    ca_bundle = find_descriptor(descriptors, "http.ca_bundle")
-    assert ca_bundle is not None
-    assert ca_bundle.annotation is Path
+    ca_bundle_path = find_descriptor(descriptors, "http.ca_bundle_path")
+    assert ca_bundle_path is not None
+    assert ca_bundle_path.annotation is Path
 
 
 def test_find_descriptor_returns_none_for_unknown() -> None:

@@ -10,8 +10,8 @@
 
 Only settings models and the models their fields reach are checked, and a
 state model only for stability marks. Violations are
-``<file>:<line>::<rule>::<detail>``;
-``# untaped: allow settings-naming`` on a field's line waives that field.
+``<file>:<line>::<rule>::<detail>``. A name is vocabulary, not a type, so no
+marker waives one.
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from untaped.conventions.allow import allowed
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.health.deprecated_keys import mapping_errors
 from untaped.sdk.marks import mark_errors
@@ -83,7 +82,7 @@ def _naming_violations(prefix: str, model: type[BaseModel], root: Path) -> Itera
     located = _class_source(model)
     if located is None:
         return
-    path, offset, lines, node = located
+    path, offset, _, node = located
     for statement in node.body:
         if not (isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)):
             continue
@@ -97,7 +96,7 @@ def _naming_violations(prefix: str, model: type[BaseModel], root: Path) -> Itera
             yield from _naming_violations(key, nested, root)
             continue
         problem = name_problem(name, field.annotation)
-        if problem is not None and not allowed(lines, statement.lineno, NAMING):
+        if problem is not None:
             line = offset + statement.lineno
             yield f"{_relative(path, root)}:{line}::{NAMING}::{key}: {problem}"
 

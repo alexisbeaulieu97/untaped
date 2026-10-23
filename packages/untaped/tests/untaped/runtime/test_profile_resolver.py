@@ -139,23 +139,23 @@ def test_nested_dicts_are_deep_merged() -> None:
     config = {
         "profiles": {
             "default": {
-                "http": {"verify_ssl": True, "ca_bundle": "/default/ca"},
+                "http": {"verify_ssl": True, "ca_bundle_path": "/default/ca"},
                 "awx": {"api_prefix": "/api/v2/"},
             },
             "prod": {
-                "http": {"ca_bundle": "/prod/ca"},
+                "http": {"ca_bundle_path": "/prod/ca"},
             },
         },
         "active": "prod",
     }
     effective, provenance = resolve_profiles(config)
     assert effective == {
-        "http": {"verify_ssl": True, "ca_bundle": "/prod/ca"},
+        "http": {"verify_ssl": True, "ca_bundle_path": "/prod/ca"},
         "awx": {"api_prefix": "/api/v2/"},
     }
     assert provenance == {
         ("http", "verify_ssl"): "default",
-        ("http", "ca_bundle"): "prod",
+        ("http", "ca_bundle_path"): "prod",
         ("awx", "api_prefix"): "default",
     }
 

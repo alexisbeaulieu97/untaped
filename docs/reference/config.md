@@ -17,7 +17,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `http.ca_bundle` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE` | PEM file of extra CA certificates to trust instead of the OS trust store. |
+| `http.ca_bundle_path` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE_PATH` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks, and reads as `verify_tls: false` on every server key; `config migrate` writes it there. Deprecated: removed in 12.0; use each server's verify_tls. |
 | `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. Deprecated: removed in 12.0. |
 | `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |

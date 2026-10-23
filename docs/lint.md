@@ -17,7 +17,7 @@ Each plugin is checked against:
 
 - what core can only tell from the composed root: names, the provider's
   requirements, the help tree, guides and map lines, stability marks, error
-  and settings classes, the import boundary, and each contract it fills,
+  and settings classes, and each contract it fills,
   called live
   (`lint.registration`, `lint.conformance`, `lint.live`, `lint.fills`,
   `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`,
@@ -26,7 +26,7 @@ Each plugin is checked against:
   `token` instead of a marked server and a declared credential
   (`lint.unmarked-service`);
 - the rules that read its files: stderr wording, layering, structure, the
-  terminal and blob-reader boundaries, databases opened through a store
+  import, terminal and blob-reader boundaries, databases opened through a store
   ([conventions](reference/conventions.md#enforcement)).
 
 `untaped plugin list -f pipe | untaped lint --stdin` checks every installed

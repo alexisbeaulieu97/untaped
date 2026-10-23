@@ -39,8 +39,8 @@ class GithubHost(GitHost):
         if not token:
             return None
         verify = settings.server.verify_tls
-        if verify is True:  # untaped's trust: root http.ca_bundle, when one is set
-            verify = app_context().http.ca_bundle or True
+        if verify is True:  # untaped's trust: root http.ca_bundle_path, when one is set
+            verify = app_context().http.ca_bundle_path or True
         return Credential(username=TOKEN_USERNAME, password=SecretStr(token), verify_tls=verify)
 
     def proxy(self, url: str) -> str | None:

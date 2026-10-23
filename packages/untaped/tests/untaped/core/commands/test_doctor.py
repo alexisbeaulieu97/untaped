@@ -630,7 +630,7 @@ def test_state_left_in_config_is_ignored(
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:
     missing = tmp_path / "nope.pem"
     write_config(
-        _isolated_config, f"profiles:\n  default:\n    http:\n      ca_bundle: {missing}\n"
+        _isolated_config, f"profiles:\n  default:\n    http:\n      ca_bundle_path: {missing}\n"
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
@@ -646,7 +646,7 @@ def test_invalid_ca_bundle_fails_http_row(
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    http:\n"
-        f"      ca_bundle: {bundle}\n      verify_hostname: {verify_hostname}\n",
+        f"      ca_bundle_path: {bundle}\n      verify_hostname: {verify_hostname}\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
