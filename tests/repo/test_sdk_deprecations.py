@@ -16,7 +16,7 @@ import importlib
 import pytest
 
 from repo.support import FIRST_PARTY, REPO_ROOT, SURFACE_FILE
-from untaped.conventions.stability import deprecation_text_violations
+from untaped.core.plugin_check.stability import deprecation_text_violations
 from untaped.core.surface import SDK_MODULES, DeprecatedMark, parse, plugin_sdk_modules
 
 SURFACE = REPO_ROOT / SURFACE_FILE

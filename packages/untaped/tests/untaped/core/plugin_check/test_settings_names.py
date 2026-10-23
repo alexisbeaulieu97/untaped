@@ -11,8 +11,8 @@ from cyclopts import App
 from pydantic import BaseModel, create_model
 
 from core_test_support.conventions.support import Install
-from untaped.conventions.settings_names import name_problem, settings_name_violations
-from untaped.conventions.structure import structure_class_violations
+from untaped.core.plugin_check.settings_names import name_problem, settings_name_violations
+from untaped.core.plugin_check.structure import structure_class_violations
 from untaped.runtime.registry import PluginSpec
 
 _ERRORS = dedent('''

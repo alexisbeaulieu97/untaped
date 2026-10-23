@@ -15,8 +15,8 @@ from types import ModuleType
 import pytest
 
 from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
-from untaped.conventions import plugin_violations
 from untaped.core.commands.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, _range, scaffold
+from untaped.core.plugin_check import plugin_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError

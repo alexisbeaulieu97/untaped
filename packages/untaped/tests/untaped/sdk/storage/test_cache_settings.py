@@ -18,7 +18,7 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, Field
 
-from untaped.conventions.settings_names import name_problem, settings_name_violations
+from untaped.core.plugin_check.settings_names import name_problem, settings_name_violations
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec, settings_model

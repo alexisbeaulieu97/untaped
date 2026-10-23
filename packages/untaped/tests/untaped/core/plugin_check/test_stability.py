@@ -12,7 +12,7 @@ from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
-from untaped.conventions.stability import stability_violations
+from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk._cli import create_app

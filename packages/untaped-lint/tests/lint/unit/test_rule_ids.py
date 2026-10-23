@@ -5,7 +5,7 @@ lines of core's convention modules and lint's file rules (a literal, or a
 module constant such as ``RULE``), the ``(rule, detail)`` tuples their helpers
 yield, ``rule = "..."`` and a ``*_rule`` helper's return, ``rule=`` and
 ``_finding("<rule>", ...)`` in lint, and the check names of core's
-``plugin_check.py`` rows (a ``conventions`` row's title is a rule).
+``plugin_check/contracts.py`` rows (a ``conventions`` row's title is a rule).
 """
 
 from __future__ import annotations
@@ -21,8 +21,7 @@ from untaped_lint.records import RULE_ID
 PACKAGES = Path(__file__).resolve().parents[4]
 CORE = PACKAGES / "untaped" / "src" / "untaped"
 SOURCES = (
-    *sorted((CORE / "conventions").glob("*.py")),
-    CORE / "core" / "commands" / "plugin_check.py",
+    *sorted((CORE / "core" / "plugin_check").glob("*.py")),
     *sorted((PACKAGES / "untaped-lint/src/untaped_lint/providers/conventions").glob("*.py")),
 )
 _ID = re.compile(RULE_ID)

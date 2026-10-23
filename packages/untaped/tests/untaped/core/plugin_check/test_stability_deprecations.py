@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core_test_support.conventions.support import Install
-from untaped.conventions import core_plugin_violations
+from untaped.core.plugin_check import core_plugin_violations
 from untaped.runtime.registry import PluginCandidate
 
 _API = '''

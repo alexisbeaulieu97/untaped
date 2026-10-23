@@ -1,6 +1,10 @@
-"""Convention checks for plugins (the repo's tests run them on the root app too).
+"""``untaped plugin check``'s logic: the rules that read a composed plugin.
 
-See ``docs/reference/conventions.md#enforcement``.
+Core keeps these because they read the composition (the help tree, marks,
+settings models, guides); the rules that read only a plugin's files are
+untaped-lint's, and ``plugin check`` runs without lint installed. The contract
+checks are :mod:`untaped.core.plugin_check.contracts`. See
+``docs/reference/conventions.md#enforcement``.
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
@@ -19,14 +23,14 @@ from pathlib import Path
 from cyclopts import App
 from packaging.utils import canonicalize_name
 
-from untaped.conventions.guides import guide_violations
-from untaped.conventions.help_tree import help_tree_violations
-from untaped.conventions.stability import (
+from untaped.core.plugin_check.guides import guide_violations
+from untaped.core.plugin_check.help_tree import help_tree_violations
+from untaped.core.plugin_check.stability import (
     deprecation_text_violations,
     stability_violations,
     undated_violations,
 )
-from untaped.conventions.structure import structure_class_violations, unimportable
+from untaped.core.plugin_check.structure import structure_class_violations, unimportable
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (

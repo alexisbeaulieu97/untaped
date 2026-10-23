@@ -13,7 +13,7 @@ For one plugin package this flags:
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``settings-not-frozen`` — the settings or state model is mutable;
 - ``settings-naming`` and ``settings-renames`` — see
-  :mod:`untaped.conventions.settings_names`.
+  :mod:`untaped.core.plugin_check.settings_names`.
 
 These checks import the package and report ``<module>.<class>::<rule>``;
 they have no source line, so no inline marker can suppress them. The checks
@@ -30,7 +30,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from untaped.conventions.settings_names import settings_name_violations
+from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.runtime.registry import PluginSpec, settings_model
 from untaped.sdk.errors import UntapedError
 

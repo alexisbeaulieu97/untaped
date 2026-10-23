@@ -43,7 +43,7 @@ Every deprecation is a promise with a date, so:
   ``test_sdk_deprecations`` runs over core's SDK modules).
 
 A group named after a stability panel is ``reserved-panel``, one of the help
-tree's rules (:mod:`untaped.conventions.help_tree`).
+tree's rules (:mod:`untaped.core.plugin_check.help_tree`).
 
 Lines are ``<command path or setting key>::<rule>::<detail>``; they carry no
 source line, so no inline marker can suppress them.
@@ -59,7 +59,7 @@ from typing import Any
 
 from cyclopts import App, Parameter
 
-from untaped.conventions.help_tree import as_groups
+from untaped.core.plugin_check.help_tree import as_groups
 from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.root_options import resolve_command
 from untaped.runtime.settings import get_profile_settings_model, profile_section_models

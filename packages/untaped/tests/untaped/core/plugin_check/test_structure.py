@@ -12,7 +12,7 @@ import pytest
 from cyclopts import App
 
 from core_test_support.conventions.support import Install
-from untaped.conventions.structure import structure_class_violations, unimportable
+from untaped.core.plugin_check.structure import structure_class_violations, unimportable
 from untaped.runtime.registry import PluginSpec
 
 _ERRORS = dedent('''

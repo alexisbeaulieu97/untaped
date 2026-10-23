@@ -8,8 +8,8 @@ from importlib.metadata import version
 import pytest
 
 from core_test_support.conventions.support import Install
-from untaped.conventions import plugin_violations
 from untaped.core.commands.plugin_new import _range
+from untaped.core.plugin_check import plugin_violations
 from untaped.runtime.registry import PluginCandidate
 
 _PLUGIN = {

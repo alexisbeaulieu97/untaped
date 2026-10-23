@@ -10,7 +10,7 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from core_test_support.conventions.support import Install
-from untaped.conventions import file_rules_installed, plugin_violations
+from untaped.core.plugin_check import file_rules_installed, plugin_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import kind_of

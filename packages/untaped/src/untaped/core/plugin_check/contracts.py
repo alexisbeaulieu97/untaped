@@ -1,4 +1,4 @@
-"""``untaped plugin check``: an installed plugin follows the conventions and fills its contracts.
+"""``untaped plugin check``'s contract checks: an installed plugin fills its contracts.
 
 Every check runs against the installed code (a developer's editable install
 included). The conventions, the import lint among them, read the plugin's
@@ -76,7 +76,7 @@ def check_plugins(
     ``core_only`` leaves out the conventions that read only the plugin's
     files (``untaped.sdk.testing.check_plugin``'s rows).
     """
-    from untaped.conventions import (  # noqa: PLC0415 - imports the root
+    from untaped.core.plugin_check import (  # noqa: PLC0415 - imports the root
         core_plugin_violations,
         plugin_violations,
     )
