@@ -43,7 +43,6 @@ from untaped.stability import (
     Stability,
     check_removed_in,
     field_marks,
-    first_notice,
     forget_notices,
     mark_errors,
     notify_deprecation,
@@ -701,22 +700,6 @@ def old_spellings(model: type[BaseModel], key: str) -> list[str]:
     return sorted(olds, key=lambda old: (mappings.distance[old], old))
 
 
-def warn_once(message: str, *, key: str | None = None, hint: str | None = None) -> None:
-    """Print ``message`` as a warning, once per process per ``key`` (else per text).
-
-    Callers warning about one old key in different words pass the same
-    ``key``, so only the first of them prints; a deprecation goes through
-    :func:`notify_use` or :func:`~untaped.stability.notify_deprecation`
-    instead, which share the same memory. ``hint`` is the warning's
-    follow-up (:func:`~untaped.messages.run_hint`), its own field under JSON.
-    """
-    if not first_notice(message if key is None else key):
-        return
-    from untaped.output.sink import Diagnostics  # noqa: PLC0415 - keeps rendering off this path
-
-    Diagnostics().warning(message, hint=hint)
-
-
 def reset_key_warnings() -> None:
     """Forget which deprecation warnings were printed (tests, embedding)."""
     forget_notices()
@@ -777,5 +760,4 @@ __all__ = [
     "rename_keys",
     "reset_key_warnings",
     "scan_keys",
-    "warn_once",
 ]

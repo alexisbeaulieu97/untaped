@@ -282,15 +282,6 @@ def key_origin(key: CredentialKey) -> str | None:
     return None if origin is None else str(origin)
 
 
-def key_tls(key: CredentialKey) -> bool | str | None:
-    """``key``'s :data:`TlsVerify` value (a CA file as an absolute path); ``None`` without one."""
-    shape = key_shape(type(key))
-    if shape.tls is None:
-        return None
-    value = getattr(key, shape.tls)
-    return str(_absolute(value)) if isinstance(value, Path) else bool(value)
-
-
 # --------------------------------------------------------------------------- #
 # Secrets
 # --------------------------------------------------------------------------- #
@@ -840,6 +831,5 @@ __all__ = [
     "key_id",
     "key_origin",
     "key_shape",
-    "key_tls",
     "legacy_section_refused",
 ]

@@ -22,5 +22,5 @@ explains them.
 To see what a command actually sent and ran, add `--verbose`: see
 [Debug logs](./configuration.md#debug-logs). Plugin-specific failures
 (cloning private repos, an AWX job that will not launch, a recipe hook that
-fails) are in each plugin's skill (its Setup and Pitfalls, and the
-references it links).
+fails) are on each plugin's agent pages: `untaped agents <plugin>` and the
+guides it lists.

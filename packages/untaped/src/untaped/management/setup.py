@@ -104,7 +104,9 @@ RemoveOption = Annotated[
 
 def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
     """Return the root ``setup`` command (the setup screen) and its subcommands."""
-    app = create_app(name="setup", help="Configure a profile's services interactively.")
+    app = create_app(
+        name="setup", help="Configure a profile's settings and services interactively."
+    )
 
     @app.default
     def setup_command(

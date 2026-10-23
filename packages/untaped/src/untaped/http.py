@@ -735,7 +735,7 @@ def connected_client(
     headers: Mapping[str, str] | None = None,
     base_url_field: Annotated[str, deprecated(removed_in=12, replacement="base_url=")] = "base_url",
     bearer_token_field: Annotated[
-        str | None, deprecated(removed_in=12, replacement="base_url=")
+        str | None, deprecated(removed_in=12, replacement="bearer=")
     ] = "token",
     http: HttpSettings | None = None,
     verify: bool | Path | None = None,

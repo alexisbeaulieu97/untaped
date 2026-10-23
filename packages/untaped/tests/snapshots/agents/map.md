@@ -30,7 +30,7 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
 - `project` [experimental]: Make a folder a project and list the projects this home records.
 - `skills`: List, install, update, and remove agent skills shipped by untaped.
 - `doctor`: Check the health of the shell and every composed plugin.
-- `setup`: Configure a profile's services interactively.
+- `setup`: Configure a profile's settings and services interactively.
 - `auth`: Log in to the servers plugins talk to; keep tokens safe.
 - `plugin`: Inspect installed plugins and their contracts.
 
