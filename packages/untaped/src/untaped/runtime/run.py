@@ -9,6 +9,7 @@ section validated once per run), the stderr sink and the themed terminal
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._app_context import app_context
+from untaped.sdk.plugin_records import installed_plugins
 from untaped.sdk.projects import untaped_home
 from untaped.sdk.run import Composition, Run
 
@@ -28,13 +30,17 @@ if TYPE_CHECKING:
 
 
 def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]) -> Composition:
-    """Who owns what among the composed plugins of ``declaration`` (``plugins`` by name)."""
+    """Who owns what among the composed plugins of ``declaration`` (``plugins`` by name).
+
+    The install's rows are today's ``installed_plugins()``, read once on first use.
+    """
     packages: dict[str, str] = {}
     for plugin in declaration.plugins:
         packages.setdefault(plugin.package, plugin.name)
     return Composition(
         owners={plugins[plugin.name].settings: plugin.name for plugin in declaration.plugins},
         packages=packages,
+        installed=functools.cache(lambda: tuple(installed_plugins())),
     )
 
 

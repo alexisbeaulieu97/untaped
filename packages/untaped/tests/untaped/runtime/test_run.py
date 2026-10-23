@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped.runtime import bootstrap
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import Declaration
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.run import build_run, composition_of
 from untaped.sdk import Command, Plugin, plugin_of, settings_of
 from untaped.sdk.run import run_scope
@@ -60,3 +62,14 @@ def test_a_built_run_reads_settings_from_the_config(
         assert Version().ctx.plugin.name == "hello"
         assert Version().ctx.project is None
         assert Version().ctx.terminal is Version().ctx.terminal
+
+
+@pytest.mark.usefixtures("fresh_composition")
+def test_the_installs_rows_are_read_once(tmp_path: Path) -> None:
+    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
+    bootstrap.compose_root(candidates=[ghost])
+    declaration, plugins = _composed()
+    with run_scope(build_run(declaration, plugins, home=tmp_path)):
+        rows = Version().ctx.plugins
+        assert [row.name for row in rows] == ["ghost"]
+        assert Version().ctx.plugins is rows

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from untaped.sdk import (
     Command,
+    InstalledPlugin,
     Service,
     System,
     UntapedError,
@@ -201,3 +203,15 @@ def test_the_clock_tells_wall_and_monotonic_time() -> None:
     before = clock.monotonic()
     clock.sleep(0)
     assert clock.monotonic() >= before
+
+
+def test_ctx_plugins_is_the_installs_rows(tmp_path: Path) -> None:
+    row = InstalledPlugin(name="hello", status="ready", distribution="untaped-hello", version="1.0")
+    base = _run(tmp_path)
+    composition = Composition(
+        owners=base.composition.owners, packages=base.composition.packages, installed=lambda: (row,)
+    )
+    with run_scope(replace(base, composition=composition)):
+        assert Version().ctx.plugins == (row,)
+    with run_scope(base):
+        assert Version().ctx.plugins == ()
