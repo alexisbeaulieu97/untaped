@@ -51,9 +51,9 @@ uv lock --check                                 # lock file is current
     and the `git` and `projects` modules). Today a plugin imports the names
     `untaped.sdk` exports, `untaped.sdk.contracts` and `untaped.sdk.testing`;
     the other groups become importable as they list names, and a
-    `_`-prefixed module or name is never public. `sdk/` is moving off `runtime/` and
-    `core/`: `tests/repo/test_layout.py` names each SDK module that still
-    imports them, and the list only shrinks.
+    `_`-prefixed module or name is never public. `sdk/` is moving off
+    `runtime/` and `core/`: `tests/repo/test_layout.py` names each SDK module
+    that still imports them, and the list only shrinks.
   - `core/` is untaped's own plugin: its settings and its commands
     (`core/commands/`) with their logic.
   - `runtime/` is how a run happens: discovery and composition

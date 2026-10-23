@@ -1,6 +1,6 @@
 """``untaped auth``: store tokens outside ``config.yml`` and move plaintext ones there.
 
-Stores are fakes on a narrowed ``PATH`` (:mod:`test_management.stores`);
+Stores are fakes on a narrowed ``PATH`` (:mod:`core_test_support.commands.stores`);
 no test touches a real keychain. The sentinel token must never appear in
 any output, error or argv.
 """

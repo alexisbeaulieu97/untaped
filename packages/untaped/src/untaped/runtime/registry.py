@@ -493,10 +493,10 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
 
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
-    ``caches`` (:func:`untaped.runtime.settings.section_model`).
-    ``extensions=False`` leaves ``extensions`` out (the config reference
-    documents it elsewhere). So does a plugin declaring credentials: it
-    carries their deprecated 11.0 settings.
+    ``caches`` (:func:`untaped.runtime.settings.section_model`). So does the
+    section of a plugin declaring credentials: it carries their deprecated
+    11.0 settings. ``extensions=False`` leaves ``extensions`` out (the config
+    reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
     if owner or spec.caches or spec.credentials:
