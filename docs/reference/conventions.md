@@ -243,7 +243,7 @@ and in [Depending on another plugin](#depending-on-another-plugin);
 keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database under `plugin_dir()` through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
-except the stability rules, `settings-naming`, and the command, option and panel rules.
+except the stability rules, the settings rules, and the command, option and panel rules.
 
 ## Depending on another plugin
 
