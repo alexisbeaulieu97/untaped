@@ -61,6 +61,7 @@ from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, Validat
 
 from untaped.runtime.settings import load_settings_section, registered_profile_model
 from untaped.runtime.sink import current_sink
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc, parse_utc
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.git import safe_path_segment
@@ -371,10 +372,12 @@ _VERSIONED = re.compile(r"(?P<stem>.+)\.v[0-9a-f]{8}\.json")
 _PLAIN = re.compile(r"(?P<stem>.+)\.json")
 
 
-class Cache[M = None]:
-    """Data plugin ``plugin`` keeps from an upstream, refreshed past ``max_age``.
+class Cache[M = None](OwnedBlock):
+    """Data a plugin keeps from an upstream, refreshed past ``max_age``.
 
-    ``name`` is one settings segment (``[a-z][a-z0-9_]*``); ``label`` names
+    A plugin class holding it names it (``motd = Cache(label=..., max_age=...)``
+    is the plugin's cache ``motd``); the 11.x spelling passes ``plugin`` and
+    ``name`` first. The name is one settings segment (``[a-z][a-z0-9_]*``); ``label`` names
     the data for a human (``source data``). ``max_age`` is the declared
     default, in whole seconds (``0``: check every time); list the cache on
     ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
@@ -404,25 +407,22 @@ class Cache[M = None]:
     Two declarations with the same values (the same callables) are equal.
     """
 
-    __slots__ = (
-        "_resolved",
-        "default_max_age",
-        "label",
-        "model",
-        "name",
-        "plugin",
-        "removed_in",
-        "renamed_from",
-        "split",
-        "store",
-        "version",
-    )
+    block_kind = "cache"
+
+    label: str
+    default_max_age: timedelta
+    renamed_from: tuple[str, ...]
+    removed_in: int | None
+    version: Callable[[], str] | None
+    store: Store | None
+    model: type[M] | Callable[[], type[M]] | None
+    split: Literal["settings", "none"]
 
     @overload
     def __init__(
         self: Cache[None],
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
         label: str,
         max_age: timedelta,
@@ -436,8 +436,8 @@ class Cache[M = None]:
     @overload
     def __init__(
         self,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
         label: str,
         max_age: timedelta,
@@ -451,8 +451,8 @@ class Cache[M = None]:
 
     def __init__(
         self,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
         label: str,
         max_age: timedelta,
@@ -466,38 +466,36 @@ class Cache[M = None]:
         from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415 - no cycle
         from untaped.sdk.marks import check_removed_in  # noqa: PLC0415 - no cycle
 
-        check_plugin_name(plugin)
-        if not _NAME.fullmatch(name):
-            raise ConfigError(
-                f"cache name {name!r} must be one settings segment (pattern {_NAME.pattern})"
-            )
+        super().__init__(plugin, name)
+        if plugin is not None and name is not None:
+            check_plugin_name(plugin)
+            if (problem := self.name_problem(name)) is not None:
+                raise ConfigError(problem)
+        where = self.where
         if max_age < timedelta(0) or max_age % timedelta(seconds=1):
-            raise ConfigError(f"cache {plugin}.{name}: max_age must be whole seconds, not negative")
-        self.plugin = plugin
-        self.name = name
+            raise ConfigError(f"cache {where}: max_age must be whole seconds, not negative")
         self.label = label
         self.default_max_age = max_age
-        self.renamed_from = _old_keys(f"{plugin}.{name}", renamed_from)
+        self.renamed_from = _old_keys(where, renamed_from)
         if check_removed_in(removed_in) is not None and not self.renamed_from:
-            raise ConfigError(
-                f"cache {plugin}.{name}: removed_in dates renamed_from, which is empty"
-            )
+            raise ConfigError(f"cache {where}: removed_in dates renamed_from, which is empty")
         self.removed_in = removed_in
         self.version = version
         if store is not None and not isinstance(store, Store):
-            raise ConfigError(f"cache {plugin}.{name}: store takes a Store, not {store!r}")
-        if store is not None and store.plugin != plugin:
+            raise ConfigError(f"cache {where}: store takes a Store, not {store!r}")
+        if store is not None and plugin is None:
             raise ConfigError(
-                f"cache {plugin}.{name}: store {store.qualified} belongs to another plugin"
+                f"cache {where}: store goes with the plugin and name; a plugin class's cache "
+                "will follow a Dir instead"
             )
+        if store is not None and store.plugin != plugin:
+            raise ConfigError(f"cache {where}: store {store.qualified} belongs to another plugin")
         if model is not None and not callable(model):
             raise ConfigError(
-                f"cache {plugin}.{name}: model takes a model class or a function returning one"
+                f"cache {where}: model takes a model class or a function returning one"
             )
         if split not in ("settings", "none"):
-            raise ConfigError(
-                f"cache {plugin}.{name}: split is 'settings' or 'none', not {split!r}"
-            )
+            raise ConfigError(f"cache {where}: split is 'settings' or 'none', not {split!r}")
         self.model = model
         self.split = split
         self._resolved: ValueTyping | None = None
@@ -505,10 +503,18 @@ class Cache[M = None]:
         if store is not None:
             store._follow(self)  # its folder moves with the store's layouts
 
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        if _NAME.fullmatch(name):
+            return None
+        return f"cache name {name!r} must be one settings segment (pattern {_NAME.pattern})"
+
     def _identity(self) -> tuple[object, ...]:
+        if not self.spelled:
+            return (id(self),)  # a bound cache is itself, as every block is
         return (
-            self.plugin,
-            self.name,
+            self._plugin,
+            self._name,
             self.label,
             self.default_max_age,
             self.renamed_from,
@@ -528,7 +534,9 @@ class Cache[M = None]:
         return hash(self._identity())
 
     def __repr__(self) -> str:
-        return f"Cache({self.plugin!r}, {self.name!r}, label={self.label!r})"
+        if not self.spelled:
+            return f"Cache(label={self.label!r})"
+        return f"Cache({self._plugin!r}, {self._name!r}, label={self.label!r})"
 
     @property
     def qualified(self) -> str:

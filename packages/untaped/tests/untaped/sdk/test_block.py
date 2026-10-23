@@ -1,12 +1,15 @@
-"""Blocks learn their name from the plugin class attribute holding them."""
+"""A block takes its name from the plugin class attribute holding it, its plugin from the run."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
 from untaped.sdk import Plugin
-from untaped.sdk._block import Binding, Block, UnboundBlockError
+from untaped.sdk._block import Binding, Block, OwnedBlock, UnboundBlockError
+from untaped.sdk.run import Composition, NoRunError, Run, run_scope
 
 
 class Thing(Block):
@@ -65,3 +68,58 @@ def test_blocks_hash_by_identity() -> None:
     first, second = Thing(), Thing()
     assert first != second
     assert len({first, second}) == 2
+
+
+class Owned(OwnedBlock):
+    block_kind = "owned"
+    name_style = "kebab"
+
+
+def _run_owning(package: str, plugin: str, tmp_path: Path) -> Run:
+    return Run(
+        home=tmp_path,
+        composition=Composition(packages={package: plugin}),
+        picks=lambda _section, model: model(),
+        diag=None,  # type: ignore[arg-type]
+        terminal=lambda: pytest.fail("no terminal in this test"),
+    )
+
+
+def test_an_owned_block_is_named_by_its_attribute_and_the_composed_plugin(
+    tmp_path: Path,
+) -> None:
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = Settings
+        repo_store = Owned()
+
+    with run_scope(_run_owning(__name__.partition(".")[0], "demo", tmp_path)):
+        assert (Demo.repo_store.plugin, Demo.repo_store.name) == ("demo", "repo-store")
+    with (
+        run_scope(_run_owning("elsewhere", "demo", tmp_path)),
+        pytest.raises(LookupError, match=r"Demo\.repo_store belongs to no composed plugin"),
+    ):
+        _ = Demo.repo_store.plugin
+
+
+def test_an_owned_block_reads_its_plugin_in_a_run() -> None:
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = Settings
+        owned = Owned()
+
+    assert Demo.owned.name == "owned"
+    with pytest.raises(NoRunError):
+        _ = Demo.owned.plugin
+    with pytest.raises(UnboundBlockError):
+        _ = Owned().name
+
+
+def test_the_11x_spelling_names_the_block_itself() -> None:
+    owned = Owned("demo", "store")
+    assert (owned.plugin, owned.name, owned.spelled) == ("demo", "store", True)
+    assert not Owned().spelled
+    with pytest.raises(TypeError, match="its plugin and its name together"):
+        Owned("demo")

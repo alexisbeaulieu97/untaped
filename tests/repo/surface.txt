@@ -4586,18 +4586,24 @@ sdk untaped.sdk.Buttons.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Buttons.view(frame)  [experimental]
 sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
 sdk untaped.sdk.Buttons.with_error(text)  [experimental]
+sdk untaped.sdk.Cache(*, label, max_age)
 sdk untaped.sdk.Cache(model=) default=None callback(0)
-sdk untaped.sdk.Cache(plugin, name, *, label, max_age)
+sdk untaped.sdk.Cache(name@2=) default=None
+sdk untaped.sdk.Cache(plugin@1=) default=None
 sdk untaped.sdk.Cache(removed_in=) default=None
 sdk untaped.sdk.Cache(renamed_from=) default=[]
 sdk untaped.sdk.Cache(split=) default=settings
 sdk untaped.sdk.Cache(store=) default=None
 sdk untaped.sdk.Cache(version=) default=None callback(0)
+sdk untaped.sdk.Cache.binding
+sdk untaped.sdk.Cache.bindings
+sdk untaped.sdk.Cache.block_kind class
 sdk untaped.sdk.Cache.cached(key)
 sdk untaped.sdk.Cache.cached(partition=) default=None
 sdk untaped.sdk.Cache.cached(read@2=) default=None callback(0)
 sdk untaped.sdk.Cache.default_max_age
 sdk untaped.sdk.Cache.default_max_age_text
+sdk untaped.sdk.Cache.derived_name(attribute)
 sdk untaped.sdk.Cache.forget(key)
 sdk untaped.sdk.Cache.forget(partition=) default=None
 sdk untaped.sdk.Cache.freshness(key)
@@ -4605,7 +4611,10 @@ sdk untaped.sdk.Cache.freshness(partition=) default=None
 sdk untaped.sdk.Cache.label
 sdk untaped.sdk.Cache.max_age()
 sdk untaped.sdk.Cache.model
+sdk untaped.sdk.Cache.module
 sdk untaped.sdk.Cache.name
+sdk untaped.sdk.Cache.name_problem(name)
+sdk untaped.sdk.Cache.name_style class
 sdk untaped.sdk.Cache.plugin
 sdk untaped.sdk.Cache.qualified
 sdk untaped.sdk.Cache.removed_in
@@ -4617,9 +4626,11 @@ sdk untaped.sdk.Cache.serve(partition=) default=None
 sdk untaped.sdk.Cache.serve(progress=) default=NO_PROGRESS
 sdk untaped.sdk.Cache.serve(read=) default=None callback(0)
 sdk untaped.sdk.Cache.setting
+sdk untaped.sdk.Cache.spelled
 sdk untaped.sdk.Cache.split
 sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
+sdk untaped.sdk.Cache.where
 sdk untaped.sdk.Cancel()  [experimental]
 sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
 sdk untaped.sdk.Cancel.interrupted  [experimental]
@@ -4762,17 +4773,41 @@ sdk untaped.sdk.Diagnostics.relay(text)
 sdk untaped.sdk.Diagnostics.success(text)
 sdk untaped.sdk.Diagnostics.warning(hint=) default=None
 sdk untaped.sdk.Diagnostics.warning(text)
-sdk untaped.sdk.DirMigration(id, title, preview, apply) callback(preview, 2) callback(apply, 2)
+sdk untaped.sdk.DirMigration(*, title, preview, apply) callback(preview, 2) callback(apply, 2)
+sdk untaped.sdk.DirMigration(id@1=) default=None
 sdk untaped.sdk.DirMigration.apply
+sdk untaped.sdk.DirMigration.binding
+sdk untaped.sdk.DirMigration.bindings
+sdk untaped.sdk.DirMigration.block_kind class
+sdk untaped.sdk.DirMigration.derived_name(attribute)
 sdk untaped.sdk.DirMigration.id
+sdk untaped.sdk.DirMigration.module
+sdk untaped.sdk.DirMigration.name
+sdk untaped.sdk.DirMigration.name_problem(name)
+sdk untaped.sdk.DirMigration.name_style class
+sdk untaped.sdk.DirMigration.plugin
 sdk untaped.sdk.DirMigration.preview
+sdk untaped.sdk.DirMigration.spelled
 sdk untaped.sdk.DirMigration.title
-sdk untaped.sdk.DoctorCheck(id, title, run) callback(run, 1)
-sdk untaped.sdk.DoctorCheck(online@4=) default=false
+sdk untaped.sdk.DirMigration.where
+sdk untaped.sdk.DoctorCheck(*, title, run) callback(run, 1)
+sdk untaped.sdk.DoctorCheck(id@1=) default=None
+sdk untaped.sdk.DoctorCheck(online=) default=false
+sdk untaped.sdk.DoctorCheck.binding
+sdk untaped.sdk.DoctorCheck.bindings
+sdk untaped.sdk.DoctorCheck.block_kind class
+sdk untaped.sdk.DoctorCheck.derived_name(attribute)
 sdk untaped.sdk.DoctorCheck.id
+sdk untaped.sdk.DoctorCheck.module
+sdk untaped.sdk.DoctorCheck.name
+sdk untaped.sdk.DoctorCheck.name_problem(name)
+sdk untaped.sdk.DoctorCheck.name_style class
 sdk untaped.sdk.DoctorCheck.online
+sdk untaped.sdk.DoctorCheck.plugin
 sdk untaped.sdk.DoctorCheck.run
+sdk untaped.sdk.DoctorCheck.spelled
 sdk untaped.sdk.DoctorCheck.title
+sdk untaped.sdk.DoctorCheck.where
 sdk untaped.sdk.DoctorResult(automatic@6=) default=false
 sdk untaped.sdk.DoctorResult(fix@5=) default=None
 sdk untaped.sdk.DoctorResult(id, ok, detail)
@@ -5788,7 +5823,9 @@ sdk untaped.sdk.StubSkill(description)
 sdk untaped.sdk.StubSkill.binding
 sdk untaped.sdk.StubSkill.bindings
 sdk untaped.sdk.StubSkill.block_kind class
+sdk untaped.sdk.StubSkill.derived_name(attribute)
 sdk untaped.sdk.StubSkill.module
+sdk untaped.sdk.StubSkill.name_problem(name)
 sdk untaped.sdk.StubSkill.name_style class
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]

@@ -11,6 +11,7 @@ import shutil
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -67,6 +68,17 @@ def _move_row(name: str, *, raises: bool = False) -> DirMigration:
         return [MigrationOutcome(id=f"{name}.data", action="moved")]
 
     return DirMigration(id=f"{name}.data", title="old data", preview=preview, apply=apply)
+
+
+def _changed(migration: DirMigration, **changes: Any) -> DirMigration:
+    """``migration`` with some of its parts changed."""
+    parts = {
+        "id": migration.id,
+        "title": migration.title,
+        "preview": migration.preview,
+        "apply": migration.apply,
+    }
+    return DirMigration(**{**parts, **changes})
 
 
 def _spec(name: str, *migrations: DirMigration) -> PluginSpec:
@@ -172,7 +184,7 @@ def test_a_declined_confirmation_changes_nothing() -> None:
     [(("alpha.data", "alpha.data"), "duplicate-migration"), (("data",), "bad-migration")],
 )
 def test_a_bad_or_repeated_row_id_quarantines_the_plugin(ids: tuple[str, ...], reason: str) -> None:
-    rows = [replace(_move_row("alpha"), id=row_id) for row_id in ids]
+    rows = [_changed(_move_row("alpha"), id=row_id) for row_id in ids]
     specs = [_spec("alpha", *rows), _spec("beta")]
     result = bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
@@ -208,7 +220,7 @@ def test_plugin_check_runs_each_preview_on_an_empty_home() -> None:
         seen.append(_old("alpha").exists())
         return []
 
-    spec = _spec("alpha", replace(_move_row("alpha"), preview=preview))
+    spec = _spec("alpha", _changed(_move_row("alpha"), preview=preview))
     candidates = [plugin_candidate(spec)]
     rows = check_plugins(bootstrap.compose_root(candidates=candidates), candidates, "alpha")
 
@@ -222,7 +234,7 @@ def test_plugin_check_fails_a_preview_returning_the_wrong_type() -> None:
     def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
         return ["move it"]  # type: ignore[list-item]
 
-    spec = _spec("alpha", replace(_move_row("alpha"), preview=preview))
+    spec = _spec("alpha", _changed(_move_row("alpha"), preview=preview))
     candidates = [plugin_candidate(spec)]
     rows = check_plugins(bootstrap.compose_root(candidates=candidates), candidates, "alpha")
 
@@ -280,7 +292,7 @@ def _raising_preview(name: str) -> DirMigration:
     def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
         raise RuntimeError("cannot read")
 
-    return replace(_move_row(name), preview=preview)
+    return _changed(_move_row(name), preview=preview)
 
 
 def test_a_preview_that_raises_is_a_failed_row_in_the_preview_doctor_and_check() -> None:
@@ -311,7 +323,7 @@ def test_rows_with_nothing_to_move_are_shown_without_asking() -> None:
     def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
         return [MigrationRow(action="keep", source="/somewhere", detail="kept")]
 
-    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    specs = (_spec("alpha", _changed(_move_row("alpha"), preview=preview)),)
     result = _run("--format", "json", specs=specs)
 
     assert result.exit_code == 0
@@ -327,7 +339,7 @@ def test_a_row_subclass_previews_with_the_base_fields() -> None:
     def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
         return [_NotedRow(action="keep", source="/somewhere", detail="kept")]
 
-    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    specs = (_spec("alpha", _changed(_move_row("alpha"), preview=preview)),)
     result = _run("--format", "json", specs=specs)
 
     assert result.exit_code == 0, result.stderr
@@ -341,7 +353,7 @@ def test_an_apply_returning_the_wrong_type_is_a_failed_outcome() -> None:
     def apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
         return "done"  # type: ignore[return-value]
 
-    specs = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    specs = (_spec("alpha", _changed(_move_row("alpha"), apply=apply)),)
     result = _run("--yes", "--format", "json", specs=specs)
 
     assert result.exit_code == 1
@@ -353,7 +365,7 @@ def test_a_preview_returning_the_wrong_type_fails_its_row() -> None:
     def preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
         return {"action": "move"}  # type: ignore[return-value]
 
-    specs = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    specs = (_spec("alpha", _changed(_move_row("alpha"), preview=preview)),)
     (row,) = json.loads(_run("--dry-run", "--format", "json", specs=specs).stdout)
 
     assert row["action"] == "failed" and "expected MigrationRow" in row["detail"]
@@ -366,14 +378,14 @@ def test_an_untaped_error_reads_as_its_own_message() -> None:
         raise UntapedError("the disk is full")
 
     _plant()
-    specs = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    specs = (_spec("alpha", _changed(_move_row("alpha"), apply=apply)),)
     (outcome,) = json.loads(_run("--yes", "--format", "json", specs=specs).stdout)
 
     assert outcome["detail"] == "the disk is full"
 
 
 def test_a_malformed_row_quarantines_the_plugin() -> None:
-    spec = _spec("alpha", replace(_move_row("alpha"), preview="not callable"))  # type: ignore[arg-type]
+    spec = _spec("alpha", _changed(_move_row("alpha"), preview="not callable"))  # type: ignore[arg-type]
     result = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
 
     assert [record.reason for record in result.quarantine] == ["bad-migration"]
@@ -427,7 +439,7 @@ def test_shown_path_writes_home_as_a_tilde() -> None:
 
 def test_a_preview_that_raised_is_never_applied() -> None:
     _plant()
-    specs = (_spec("alpha", replace(_raising_preview("alpha"), apply=_move_row("alpha").apply)),)
+    specs = (_spec("alpha", _changed(_raising_preview("alpha"), apply=_move_row("alpha").apply)),)
 
     result = _run("--yes", "--format", "json", specs=specs)
 
@@ -671,14 +683,14 @@ def test_a_failed_row_keeps_the_error_s_category_and_exit_code() -> None:
         raise ConfigError("the old directory is not readable")
 
     _plant()
-    previewing = (_spec("alpha", replace(_move_row("alpha"), preview=preview)),)
+    previewing = (_spec("alpha", _changed(_move_row("alpha"), preview=preview)),)
     result = _run("--dry-run", "--format", "json", specs=previewing)
     assert result.exit_code == 4
     (row,) = json.loads(result.stdout)
     assert row["detail"] == "cannot read the old settings"
     assert (row["error"]["category"], row["error"]["hint"]) == ("config", "fix config.yml")
 
-    applying = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    applying = (_spec("alpha", _changed(_move_row("alpha"), apply=apply)),)
     result = _run("--yes", "--format", "json", specs=applying)
     assert result.exit_code == 4
     (outcome,) = json.loads(result.stdout)
@@ -691,7 +703,7 @@ def test_a_failed_row_a_migration_builds_itself_carries_an_error() -> None:
         return [MigrationOutcome(id="alpha.data", action="failed", detail="disk full")]
 
     _plant()
-    applying = (_spec("alpha", replace(_move_row("alpha"), apply=apply)),)
+    applying = (_spec("alpha", _changed(_move_row("alpha"), apply=apply)),)
     result = _run("--yes", "--format", "json", specs=applying)
 
     assert result.exit_code == 1
