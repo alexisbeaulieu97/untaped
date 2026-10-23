@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from pydantic import BaseModel
 
+from core_test_support.runtime.run import run_owning
 from untaped.sdk import DirMigration, DoctorCheck, DoctorResult, Plugin
 from untaped.sdk.health.doctor import executable_check
-from untaped.sdk.run import Composition, Run, run_scope
+from untaped.sdk.run import run_scope
 
 
 class DemoSettings(BaseModel):
@@ -28,18 +28,8 @@ class Demo(Plugin):
     greetings = DirMigration(title="greetings", preview=lambda *_: [], apply=lambda *_: [])
 
 
-def _run(tmp_path: Path) -> Run:
-    return Run(
-        home=tmp_path,
-        composition=Composition(packages={__name__.partition(".")[0]: "demo"}),
-        picks=lambda _section, model: model(),
-        diag=None,  # type: ignore[arg-type]
-        terminal=lambda: pytest.fail("no terminal in this test"),
-    )
-
-
 def test_a_plugin_classs_check_and_migration_take_kebab_ids(tmp_path: Path) -> None:
-    with run_scope(_run(tmp_path)):
+    with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
         assert Demo.repo_store.id == "demo.repo-store"
         assert Demo.greetings.id == "demo.greetings"
         assert repr(Demo.repo_store).startswith("DoctorCheck('DoctorCheck created in ")

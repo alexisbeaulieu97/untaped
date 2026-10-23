@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from core_test_support.runtime.run import run_owning
 from untaped.sdk import Plugin
 from untaped.sdk._block import Binding, Block, OwnedBlock, UnboundBlockError
-from untaped.sdk.run import Composition, NoRunError, Run, run_scope
+from untaped.sdk.run import NoRunError, run_scope
 
 
 class Thing(Block):
@@ -75,16 +76,6 @@ class Owned(OwnedBlock):
     name_style = "kebab"
 
 
-def _run_owning(package: str, plugin: str, tmp_path: Path) -> Run:
-    return Run(
-        home=tmp_path,
-        composition=Composition(packages={package: plugin}),
-        picks=lambda _section, model: model(),
-        diag=None,  # type: ignore[arg-type]
-        terminal=lambda: pytest.fail("no terminal in this test"),
-    )
-
-
 def test_an_owned_block_is_named_by_its_attribute_and_the_composed_plugin(
     tmp_path: Path,
 ) -> None:
@@ -94,10 +85,10 @@ def test_an_owned_block_is_named_by_its_attribute_and_the_composed_plugin(
         settings = Settings
         repo_store = Owned()
 
-    with run_scope(_run_owning(__name__.partition(".")[0], "demo", tmp_path)):
+    with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
         assert (Demo.repo_store.plugin, Demo.repo_store.name) == ("demo", "repo-store")
     with (
-        run_scope(_run_owning("elsewhere", "demo", tmp_path)),
+        run_scope(run_owning(tmp_path, "elsewhere", "demo")),
         pytest.raises(LookupError, match=r"Demo\.repo_store belongs to no composed plugin"),
     ):
         _ = Demo.repo_store.plugin

@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from core_test_support.runtime.run import run_owning
 from untaped.sdk import Cache, ConfigError, Plugin
-from untaped.sdk.run import Composition, Run, run_scope
+from untaped.sdk.run import Run, run_scope
 from untaped.sdk.storage.store import Store
 
 
@@ -27,14 +28,7 @@ class Demo(Plugin):
 
 @pytest.fixture
 def run(tmp_path: Path) -> Iterator[Run]:
-    active = Run(
-        home=tmp_path,
-        composition=Composition(packages={__name__.partition(".")[0]: "demo"}),
-        picks=lambda _section, model: model(),
-        diag=None,  # type: ignore[arg-type]
-        terminal=lambda: pytest.fail("no terminal in this test"),
-    )
-    with run_scope(active):
+    with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")) as active:
         yield active
 
 
