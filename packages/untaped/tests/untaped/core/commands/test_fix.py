@@ -358,7 +358,7 @@ def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.Monke
     _FIXES.clear()
     _FIXES["svc.api"] = "auth migrate"
     spec = make_spec(
-        "svc", doctor_checks=(DoctorCheck("svc.api", "svc API", counted, online=True),)
+        "svc", doctor_checks=(DoctorCheck("svc.api", title="svc API", run=counted, online=True),)
     )
     offline = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert (offline.stdout, calls) == ("[]\n", [])

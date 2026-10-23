@@ -41,7 +41,7 @@ from untaped.runtime.declaration import (
     StabilityDecl,
     target_of,
 )
-from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock
+from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
 from untaped.sdk.fields import (
     CORE_SHORTS,
     AllowHyphen,
@@ -400,7 +400,19 @@ class _PluginWalk:
                     where,
                     f"is held by {other} too; a block belongs to one plugin",
                 )
-            name = attribute.replace("_", "-") if value.name_style == "kebab" else attribute
+            if isinstance(value, OwnedBlock) and value.spelled:
+                self.problem(
+                    "block-name",
+                    where,
+                    f"is named {value.where} by hand; a plugin class's "
+                    f"{value.block_kind} takes its name from the attribute, so leave it out",
+                )
+                continue
+            name = value.derived_name(attribute)
+            problem = value.name_problem(name)
+            if problem is not None:
+                self.problem("block-name", where, problem)
+                continue
             blocks.append(
                 BlockDecl(
                     block=value.block_kind, attribute=attribute, name=name, module=value.module

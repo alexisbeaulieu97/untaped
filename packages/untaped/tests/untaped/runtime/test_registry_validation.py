@@ -140,7 +140,7 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
     ),
     (
         "doctor-empty-id",
-        lambda: _with(make_spec(name="d"), doctor_checks=(_check_with(id="  "),)),
+        lambda: _with(make_spec(name="d"), doctor_checks=(make_check("  "),)),
         "doctor-check-failed",
         "d",
     ),
