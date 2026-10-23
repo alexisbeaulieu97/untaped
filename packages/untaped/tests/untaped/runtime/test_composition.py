@@ -505,6 +505,22 @@ def test_a_record_class_belongs_to_the_plugin_whose_package_defines_it() -> None
         assert ("hello.salutation", "hello") in [(k.kind, k.plugin) for k in declaration.kinds]
 
 
+def test_a_quarantined_plugin_owns_no_kind() -> None:
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    declaration = compose(
+        [_entry(Hello, "config"), _entry(Peer, "peer", module="untaped_peer.plugin")],
+        taken=("config",),
+    )
+    assert [q.name for q in declaration.quarantined] == ["config"]
+    assert [c.output for c in declaration.commands() if c.name == "say"] == ["peer.salutation"]
+    assert {kind.plugin for kind in declaration.kinds} == {"peer"}
+
+
 def test_a_class_no_plugin_defines_belongs_to_the_plugin_reaching_it() -> None:
     declaration = compose([_entry(Hello, module="untaped_hello.plugin")])
     assert [kind.kind for kind in declaration.kinds] == ["hello.salutation", "hello.suite"]

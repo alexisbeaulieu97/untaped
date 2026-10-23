@@ -135,13 +135,27 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     any problem, is quarantined with every problem named. A record class
     belongs to the plugin whose package defines it, whichever plugins reach
     it and in whatever order (shelf's ``Book``, which library's provider also
-    returns, is ``shelf.book``); a class no plugin's package defines belongs
-    to the plugin that reaches it.
+    returns, is ``shelf.book``); a class no composed plugin's package defines
+    belongs to the plugin that reaches it. Two entry points in one top-level
+    package share it, the first owning its classes, as
+    :meth:`Declaration.owner_of` reads it.
     """
-    names = set(taken)
     owners: dict[str, str] = {}
     for entry in entries:
         owners.setdefault(_package(entry.target), entry.name)
+    while True:
+        declaration = _compose(entries, taken, owners)
+        refused = {q.name for q in declaration.quarantined}
+        if not refused & set(owners.values()):
+            return declaration
+        # A quarantined plugin owns no kind: the plugins reaching its classes do.
+        owners = {package: name for package, name in owners.items() if name not in refused}
+
+
+def _compose(
+    entries: Sequence[PluginEntry], taken: Iterable[str], owners: dict[str, str]
+) -> Declaration:
+    names = set(taken)
     plugins: list[PluginDecl] = []
     kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
