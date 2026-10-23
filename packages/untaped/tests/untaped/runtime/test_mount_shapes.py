@@ -305,10 +305,11 @@ def test_a_class_quarantined_after_composing_leaves_the_others_mounted() -> None
     [record] = result.quarantine
     assert (record.name, record.reason) == ("taken", "bad-settings-keys")
 
-    loot = json.dumps({"untaped": "1", "kind": "taken.loot", "record": {"name": "gold"}})
+    # one module holds both plugins, so composition names Loot's kind after its first walker
+    loot = json.dumps({"untaped": "1", "kind": "shapes.loot", "record": {"name": "gold"}})
     root = build_root_app(candidates=[SHAPES, taken])
     refused = CliInvoker().invoke(root.meta, ["shapes", "count", "--stdin"], input=loot + "\n")
-    assert "no installed plugin declares the kind 'taken.loot'" in refused.stderr
+    assert "no installed plugin declares the kind 'shapes.loot'" in refused.stderr
 
 
 def test_a_plugin_class_s_name_is_checked_like_a_spec_s() -> None:
