@@ -120,6 +120,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "ConfigError",
         "ErrorCategory",
         "Failure",
+        "NeedsYesError",
         "OperationCancelledError",
         "UntapedError",
         "UsageError",

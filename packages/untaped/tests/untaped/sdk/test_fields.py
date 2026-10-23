@@ -13,15 +13,19 @@ from untaped.sdk import (
     AllowHyphen,
     Column,
     ConfigError,
+    Confirm,
     ExistingFile,
     File,
     Key,
     KeyJson,
     KeyValue,
+    Limit,
+    NeedsYesError,
     Output,
     Parallel,
     Positional,
     Record,
+    Refresh,
     Short,
     Stdin,
     UntapedError,
@@ -256,3 +260,24 @@ def test_the_key_and_column_marks_name_their_fields() -> None:
     assert key_field(Row) == "name"
     assert column_fields(Row) == ("name",)
     assert key_field(Suite) is None
+
+
+def test_an_unfilled_confirm_never_goes_ahead_unasked() -> None:
+    confirm = Confirm()
+    with pytest.raises(NeedsYesError, match=r'this command requires --yes .* it asks "Go\?"'):
+        confirm("Go?")
+    assert confirm("Go?", needed=False) is True
+
+
+def test_a_confirm_filled_with_yes_goes_ahead() -> None:
+    confirm = Confirm()._fill({"--yes": True}, _call(Confirm))
+    assert (confirm.yes, confirm.dry_run, confirm("Go?")) == (True, False, True)
+
+
+def test_unfilled_refresh_parallel_and_limit_read_their_defaults() -> None:
+    assert Refresh(object()).directive is None
+    assert Parallel(default=2).value == 2
+    assert Parallel(default=9, cap=4)._fill({"--parallel": 3}, _call(Parallel)).value == 3
+    with pytest.raises(UsageError, match="--limit: must be at least 1"):
+        Limit()._fill({"--limit": 0}, _call(Limit))
+    assert (Limit().value, Limit(default=5).value) == (None, 5)

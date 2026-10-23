@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
@@ -34,6 +35,8 @@ from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, In
 from untaped.sdk.errors import (
     ConfigError,
     ErrorCategory,
+    NeedsYesError,
+    OperationCancelledError,
     UntapedError,
     UsageError,
     first_validation_error,
@@ -42,6 +45,7 @@ from untaped.sdk.errors import (
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler
     from pydantic.fields import FieldInfo
+    from rich.text import Text
 
     from untaped.sdk._cli import OutputFormat
     from untaped.sdk._pipe import PipeEnvelope
@@ -597,7 +601,11 @@ class Lines(FieldBlock):
 
 
 class Confirm(FieldBlock):
-    """This command asks before it commits: adds ``--yes`` and ``--dry-run`` (#818)."""
+    """This command asks before it commits: adds ``--yes`` and ``--dry-run``.
+
+    ``run`` calls it once, where it is about to commit:
+    ``if self.confirm("Delete profile 'x'?", preview=lambda: lines): ...``.
+    """
 
     field_kind = "confirm"
     panel = "Confirmation"
@@ -605,6 +613,76 @@ class Confirm(FieldBlock):
         FieldOption("--yes", "bool", "Go ahead without asking.", short="-y"),
         FieldOption("--dry-run", "bool", "Show what would change and change nothing."),
     )
+
+    def __init__(self) -> None:
+        self._yes = False
+        self._dry_run = False
+        #: The command line asking (``untaped hello delete``); ``None`` while unfilled.
+        self._command: str | None = None
+
+    @property
+    def yes(self) -> bool:
+        """``--yes`` was passed."""
+        return self._yes
+
+    @property
+    def dry_run(self) -> bool:
+        """``--dry-run`` was passed."""
+        return self._dry_run
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Confirm:
+        """A copy for one invocation, from ``--yes`` and ``--dry-run``."""
+        filled = _copy(self)
+        filled._yes = flags.get("--yes") is True
+        filled._dry_run = flags.get("--dry-run") is True
+        filled._command = " ".join(call.words)
+        return filled
+
+    def __call__(
+        self,
+        question: str,
+        *,
+        preview: Callable[[], Iterable[str | Text]] | None = None,
+        needed: bool = True,
+    ) -> bool:
+        """Whether to carry out what the command is about to do.
+
+        ``True``: go ahead. ``False`` only under ``--dry-run``, after the preview:
+        nothing happens, and the command prints its planned rows. A decline never
+        returns (exit 1); without a terminal and ``--yes`` it raises
+        :class:`NeedsYesError` (exit 2), and so does an unfilled field, so a command
+        built outside a run never goes ahead unasked. ``preview`` returns the lines
+        printed on stderr before the question; ``--yes`` and ``needed=False`` skip it.
+        """
+        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a command asking pays
+
+        if self._dry_run:
+            self._preview(preview)
+            return False
+        if not needed or self._yes:
+            return True
+        if self._command is None:
+            raise NeedsYesError(question)
+        terminal = current_run().terminal()
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(terminal.terminal())
+            except UsageError:
+                raise NeedsYesError(question, command=self._command) from None
+            self._preview(preview)
+            if not terminal.confirm(question):
+                raise OperationCancelledError
+        return True
+
+    @staticmethod
+    def _preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
+        if preview is None:
+            return
+        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a command asking pays
+
+        diag = current_run().diag
+        for line in preview():
+            diag.info(line, unmuted=True)
 
 
 class Refresh(FieldBlock):
@@ -626,6 +704,17 @@ class Refresh(FieldBlock):
 
     def __init__(self, *caches: object) -> None:
         self.caches = caches
+        #: ``True`` after ``--refresh``, ``False`` after ``--cached``, ``None`` otherwise:
+        #: what a cache's ``serve(refresh=...)`` takes.
+        self.directive: bool | None = None
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Refresh:
+        """A copy for one invocation, from ``--refresh`` / ``--cached``."""
+        del call
+        directive = flags.get("--refresh")
+        filled = _copy(self)
+        filled.directive = directive if isinstance(directive, bool) else None
+        return filled
 
 
 class Parallel(FieldBlock):
@@ -649,6 +738,48 @@ class Parallel(FieldBlock):
             raise ValueError("Parallel's cap is at least 1")
         self.default = default
         self.cap = cap
+        self._requested: int | None = None
+        self._value: int | None = None
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Parallel:
+        """A copy for one invocation, from ``-j/--parallel``; below 1 is a usage error."""
+        del call
+        requested = _count(flags, "--parallel")
+        filled = _copy(self)
+        filled._requested, filled._value = requested, None
+        return filled
+
+    @property
+    def value(self) -> int:
+        """How many operations run at once: ``-j``, else the default or its setting, capped.
+
+        A value above ``cap`` is clamped with a warning, once.
+        """
+        if self._value is None:
+            self._value = self._clamped(self._requested or self._default())
+        return self._value
+
+    def _default(self) -> int:
+        if isinstance(self.default, int):
+            return self.default
+        from untaped.sdk.run import settings_of  # noqa: PLC0415 - only a setting default pays
+
+        value: object = settings_of(SettingKey.model_of(self.default))
+        for part in SettingKey.path_of(self.default):
+            value = getattr(value, part)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ConfigError(
+                f"{self.default!r} is {value!r}, not a number of at least 1", category="invalid"
+            )
+        return value
+
+    def _clamped(self, value: int) -> int:
+        if self.cap is None or value <= self.cap:
+            return value
+        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a clamp pays
+
+        current_run().diag.warning(f"--parallel {value} clamped to {self.cap} (this command's cap)")
+        return self.cap
 
 
 class Limit(FieldBlock):
@@ -659,6 +790,26 @@ class Limit(FieldBlock):
 
     def __init__(self, *, default: int | None = None) -> None:
         self.default = default
+        #: At most this many results; ``None`` is no limit.
+        self.value = default
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Limit:
+        """A copy for one invocation, from ``--limit``; below 1 is a usage error."""
+        del call
+        requested = _count(flags, "--limit")
+        filled = _copy(self)
+        filled.value = self.default if requested is None else requested
+        return filled
+
+
+def _count(flags: Mapping[str, object], flag: str) -> int | None:
+    """The number ``flag`` was given, if any; below 1 is a usage error."""
+    value = flags.get(flag)
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    if value < 1:
+        raise UsageError(f"{flag}: must be at least 1, got {value}")
+    return value
 
 
 FIELD_BLOCKS: tuple[type[FieldBlock], ...] = (
