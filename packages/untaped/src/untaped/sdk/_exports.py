@@ -144,7 +144,13 @@ from untaped.sdk.git import (
     safe_path_segment,
 )
 from untaped.sdk.health.deprecated_keys import Renamed, Retired, retired_values
-from untaped.sdk.health.doctor import connection_check, executable_check, online_check
+from untaped.sdk.health.doctor import (
+    ExecutableCheck,
+    OnlineCheck,
+    connection_check,
+    executable_check,
+    online_check,
+)
 from untaped.sdk.health.marks import NeedsSetup, Suggest
 from untaped.sdk.health.migrations import (
     delete_migration,
@@ -395,6 +401,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "InstalledPlugin",
     "installed_plugins",
     "DoctorCheck",
+    "ExecutableCheck",
+    "OnlineCheck",
     "DoctorResult",
     "DirMigration",
     "MigrationOptions",

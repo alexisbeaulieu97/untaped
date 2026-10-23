@@ -49,6 +49,7 @@ from cyclopts.command_spec import CommandSpec
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import SettingKey
@@ -1172,29 +1173,78 @@ class _Default:
 _OWN = _Default()
 
 
-@dataclass(frozen=True)
-class DeprecatedBehaviour:
+class DeprecatedBehaviour(OwnedBlock):
     """A deprecated behaviour: a promise with no object to mark, so it carries a name.
 
-    Declare it with :func:`deprecated_behaviour` and list it on the spec of
-    the plugin that owns it (``PluginSpec(deprecations=lambda: (ROW_KIND,))``);
-    the surface writes ``behaviour <plugin>.<name>`` for it, so the release
-    check holds it to its date. A site never types the words: it names the
-    subject and calls :meth:`sentence`, :meth:`notify` or :meth:`warn`.
+    A plugin class holding it names it: ``plaintext_token =
+    DeprecatedBehaviour(removed_in=13, replacement="untaped auth migrate")`` is
+    the plugin's behaviour ``plaintext-token``. The 11.x spelling is
+    :func:`deprecated_behaviour`, listed on the spec of the plugin that owns it
+    (``PluginSpec(deprecations=lambda: (ROW_KIND,))``). The surface writes
+    ``behaviour <plugin>.<name>`` for it, so the release check holds it to its
+    date. A site never types the words: it names the subject and calls
+    :meth:`sentence`, :meth:`notify` or :meth:`warn`.
     """
 
-    name: str
+    block_kind = "deprecated-behaviour"
+    name_style = "kebab"
+
     mark: Deprecated
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not _BEHAVIOUR_NAME.fullmatch(self.name):
+    def __init__(
+        self,
+        name: str | None = None,
+        mark: Deprecated | None = None,
+        *,
+        removed_in: int | None = None,
+        replacement: str | None = None,
+    ) -> None:
+        super().__init__()
+        if (name is None) != (mark is None):
             raise TypeError(
-                f"a deprecated behaviour's name is kebab-case (plaintext-token), not {self.name!r}"
+                "a deprecated behaviour takes its name and mark together, or removed_in= and "
+                "replacement= when a plugin class holds it"
             )
-        if not isinstance(self.mark, Deprecated) or callable(self.mark.replacement):
+        if name is not None and (problem := self.name_problem(name)) is not None:
+            raise TypeError(problem)
+        if mark is None:
+            mark = Deprecated(replacement=replacement, removed_in=removed_in)
+        elif removed_in is not None or replacement is not None:
+            raise TypeError("a deprecated behaviour's mark already says removed_in and replacement")
+        if not isinstance(mark, Deprecated) or callable(mark.replacement):
             raise TypeError("a deprecated behaviour's replacement is text or None")
-        if self.mark.removed_in is None:
+        if mark.removed_in is None:
             raise TypeError("a deprecated behaviour names the major that removes it: removed_in=12")
+        self._spelled_name = name
+        self.mark = mark
+
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        if isinstance(name, str) and _BEHAVIOUR_NAME.fullmatch(name):
+            return None
+        return f"a deprecated behaviour's name is kebab-case (plaintext-token), not {name!r}"
+
+    @property
+    def spelled(self) -> bool:
+        return self._spelled_name is not None
+
+    @property
+    def name(self) -> str:
+        return self._spelled_name if self._spelled_name is not None else super().name
+
+    @property
+    def plugin(self) -> str:
+        """The plugin it belongs to: the one holding it, or listing it (``untaped`` for core's)."""
+        if self._spelled_name is None:
+            return super().plugin
+        return behaviour_owner(self) or _CORE_OWNER
+
+    @property
+    def where(self) -> str:
+        return self._spelled_name if self._spelled_name is not None else super().where
+
+    def __repr__(self) -> str:
+        return f"DeprecatedBehaviour({self.where!r}, removed_in={self.mark.removed_in})"
 
     @property
     def replacement(self) -> str | None:
@@ -1205,9 +1255,9 @@ class DeprecatedBehaviour:
     def id(self) -> str:
         """Its surface identity: ``behaviour <plugin>.<name>``, with ``untaped`` for core's.
 
-        The plugin is the one whose spec lists it (:func:`behaviour_owner`).
+        The plugin is the one holding or listing it (:attr:`plugin`).
         """
-        return f"behaviour {behaviour_owner(self) or _CORE_OWNER}.{self.name}"
+        return f"behaviour {self.plugin}.{self.name}"
 
     def _shown(self, replacement: str | None | _Default) -> str | None:
         if isinstance(replacement, _Default):
@@ -1318,8 +1368,8 @@ def behaviour_owner(behaviour: DeprecatedBehaviour) -> str | None:
 
 def _distribution(behaviour: DeprecatedBehaviour) -> str | None:
     """The distribution whose major ``behaviour`` names; ``None`` for core's."""
-    plugin = behaviour_owner(behaviour)
-    return None if plugin is None else owner(plugin)
+    plugin = behaviour.plugin
+    return None if plugin == _CORE_OWNER else owner(plugin)
 
 
 def _listed() -> Iterator[tuple[str, list[DeprecatedBehaviour]]]:

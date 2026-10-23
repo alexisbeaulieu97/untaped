@@ -7,15 +7,19 @@ import json
 import warnings
 from collections.abc import Sequence
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from cyclopts import App
+from pydantic import BaseModel
 
 from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.runtime.run import run_owning
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.core.surface import DeprecatedMark, Line, plugin_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Plugin
 from untaped.sdk.diagnostic import DeprecationNotice
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
@@ -27,6 +31,7 @@ from untaped.sdk.marks import (
     marks,
 )
 from untaped.sdk.network.auth import PLAINTEXT_TOKEN
+from untaped.sdk.run import run_scope
 from untaped.sdk.testing import invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -71,6 +76,37 @@ def test_a_behaviour_names_its_major() -> None:
 def test_a_behaviour_s_replacement_is_text() -> None:
     with pytest.raises(TypeError, match="text or None"):
         DeprecatedBehaviour("x", deprecated(removed_in=3, replacement=print))
+
+
+class _Settings(BaseModel):
+    pass
+
+
+def test_a_plugin_class_names_its_behaviour(tmp_path: Path) -> None:
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = _Settings
+        plaintext_token = DeprecatedBehaviour(removed_in=13, replacement="untaped auth migrate")
+
+    behaviour = Demo.plaintext_token
+    assert (behaviour.name, behaviour.spelled, behaviour.module) == (
+        "plaintext-token",
+        False,
+        __name__,
+    )
+    with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
+        assert behaviour.id == "behaviour demo.plaintext-token"
+    assert repr(behaviour).endswith("removed_in=13)")
+
+
+def test_a_behaviour_takes_its_name_and_mark_together() -> None:
+    with pytest.raises(TypeError, match="its name and mark together"):
+        DeprecatedBehaviour("x")
+    with pytest.raises(TypeError, match="mark already says"):
+        DeprecatedBehaviour("x", deprecated(removed_in=3), removed_in=4)
+    with pytest.raises(TypeError, match="names the major"):
+        DeprecatedBehaviour(replacement="y")
 
 
 @pytest.mark.parametrize("value", [(), None])

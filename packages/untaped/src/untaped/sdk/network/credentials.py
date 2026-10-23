@@ -49,6 +49,7 @@ from pydantic import (
 )
 from pydantic.fields import FieldInfo
 
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 
@@ -358,10 +359,12 @@ def credential_env_names() -> frozenset[str]:
     return frozenset(_ENV_NAMES)
 
 
-class Credential[K: CredentialKey]:
+class Credential[K: CredentialKey](OwnedBlock):
     """A secret a plugin needs, filed under the :class:`CredentialKey` it is for.
 
-    Declare it at import, beside the plugin's settings, and list it in
+    A plugin class holding it names it: ``token = Credential(key=AwxServer,
+    env=("CONTROLLER_OAUTH_TOKEN",))`` is the plugin's credential ``token``.
+    The 11.x spelling passes the plugin and name first and is listed in
     ``PluginSpec(credentials=)``: ``TOKEN = Credential("awx", "token",
     key=AwxServer, env=("CONTROLLER_OAUTH_TOKEN",))``. ``env`` names the
     variables tried last, in order; ``suggest`` is a command that prints the
@@ -374,10 +377,16 @@ class Credential[K: CredentialKey]:
     convention.
     """
 
+    block_kind = "credential"
+
+    key: type[K]
+    env: tuple[str, ...]
+    suggest: Suggest | None
+
     def __init__(
         self,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
         key: type[K],
         env: Sequence[str] = (),
@@ -385,23 +394,26 @@ class Credential[K: CredentialKey]:
     ) -> None:
         from untaped.sdk.health.marks import Suggest  # noqa: PLC0415 - marks import settings
 
-        if not isinstance(plugin, str) or not _NAME.match(plugin):
+        if plugin is not None and (not isinstance(plugin, str) or not _NAME.match(plugin)):
             raise TypeError(f"Credential plugin must be a plugin name, not {plugin!r}")
-        if not isinstance(name, str) or not _NAME.match(name):
-            raise TypeError(
-                f"Credential name must be lower case letters, digits, '_' and '-', not {name!r}"
-            )
+        if name is not None and (problem := self.name_problem(name)) is not None:
+            raise TypeError(problem)
+        super().__init__(plugin, name)
         env = tuple(env)
         if not all(isinstance(each, str) and each.strip() for each in env):
             raise TypeError(f"Credential(env=...) takes variable names, not {env!r}")
         if suggest is not None and not isinstance(suggest, Suggest):
             raise TypeError(f"Credential(suggest=...) takes a Suggest, not {suggest!r}")
-        self.plugin = plugin
-        self.name = name
         self.key = key
         self.env = env
         self.suggest = suggest
         _ENV_NAMES.update(env)
+
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        if isinstance(name, str) and _NAME.match(name):
+            return None
+        return f"Credential name must be lower case letters, digits, '_' and '-', not {name!r}"
 
     @property
     def qualified(self) -> str:
@@ -414,6 +426,8 @@ class Credential[K: CredentialKey]:
         return f"{self.plugin} {self.name.replace('_', ' ')}"
 
     def __repr__(self) -> str:
+        if not self.spelled:
+            return f"Credential(key={self.key.__name__})"
         return f"Credential({self.plugin!r}, {self.name!r}, key={self.key.__name__})"
 
     def id(self, key: K) -> str:

@@ -4691,21 +4691,37 @@ sdk untaped.sdk.Confirm()
 sdk untaped.sdk.Confirm.field_kind class
 sdk untaped.sdk.Confirm.options class
 sdk untaped.sdk.Confirm.panel class
+sdk untaped.sdk.Credential(*, key)
 sdk untaped.sdk.Credential(env=) default=[]
-sdk untaped.sdk.Credential(plugin, name, *, key)
+sdk untaped.sdk.Credential(name@2=) default=None
+sdk untaped.sdk.Credential(plugin@1=) default=None
 sdk untaped.sdk.Credential(suggest=) default=None
 sdk untaped.sdk.Credential.answer(key)
+sdk untaped.sdk.Credential.binding
+sdk untaped.sdk.Credential.bindings
+sdk untaped.sdk.Credential.block_kind class
+sdk untaped.sdk.Credential.derived_name(attribute)
+sdk untaped.sdk.Credential.env
 sdk untaped.sdk.Credential.find(key)
 sdk untaped.sdk.Credential.forget(key)
 sdk untaped.sdk.Credential.get(key)
 sdk untaped.sdk.Credential.id(key)
+sdk untaped.sdk.Credential.key
 sdk untaped.sdk.Credential.label
+sdk untaped.sdk.Credential.module
+sdk untaped.sdk.Credential.name
+sdk untaped.sdk.Credential.name_problem(name)
+sdk untaped.sdk.Credential.name_style class
+sdk untaped.sdk.Credential.plugin
 sdk untaped.sdk.Credential.qualified
 sdk untaped.sdk.Credential.refusal(key, what)
+sdk untaped.sdk.Credential.spelled
 sdk untaped.sdk.Credential.store(backend=) default=None
 sdk untaped.sdk.Credential.store(command=) default=None
 sdk untaped.sdk.Credential.store(key)
 sdk untaped.sdk.Credential.store(token=) default=None
+sdk untaped.sdk.Credential.suggest
+sdk untaped.sdk.Credential.where
 sdk untaped.sdk.CredentialKey()
 sdk untaped.sdk.CredentialKey.origin class
 sdk untaped.sdk.Cycle(error@6=) default=""  [experimental]
@@ -4741,19 +4757,33 @@ sdk untaped.sdk.Deprecated(removed_in=) default=None
 sdk untaped.sdk.Deprecated(replacement=) default=None callback(*)
 sdk untaped.sdk.Deprecated.removed_in
 sdk untaped.sdk.Deprecated.replacement
-sdk untaped.sdk.DeprecatedBehaviour(name, mark)
+sdk untaped.sdk.DeprecatedBehaviour()
+sdk untaped.sdk.DeprecatedBehaviour(mark@2=) default=None
+sdk untaped.sdk.DeprecatedBehaviour(name@1=) default=None
+sdk untaped.sdk.DeprecatedBehaviour(removed_in=) default=None
+sdk untaped.sdk.DeprecatedBehaviour(replacement=) default=None
+sdk untaped.sdk.DeprecatedBehaviour.binding
+sdk untaped.sdk.DeprecatedBehaviour.bindings
+sdk untaped.sdk.DeprecatedBehaviour.block_kind class
+sdk untaped.sdk.DeprecatedBehaviour.derived_name(attribute)
 sdk untaped.sdk.DeprecatedBehaviour.id
 sdk untaped.sdk.DeprecatedBehaviour.mark
+sdk untaped.sdk.DeprecatedBehaviour.module
 sdk untaped.sdk.DeprecatedBehaviour.name
+sdk untaped.sdk.DeprecatedBehaviour.name_problem(name)
+sdk untaped.sdk.DeprecatedBehaviour.name_style class
 sdk untaped.sdk.DeprecatedBehaviour.notify(hint=) default=None
 sdk untaped.sdk.DeprecatedBehaviour.notify(replacement=) default=<computed>
 sdk untaped.sdk.DeprecatedBehaviour.notify(subject, *, key)
+sdk untaped.sdk.DeprecatedBehaviour.plugin
 sdk untaped.sdk.DeprecatedBehaviour.replacement
 sdk untaped.sdk.DeprecatedBehaviour.sentence(replacement=) default=<computed>
 sdk untaped.sdk.DeprecatedBehaviour.sentence(subject)
+sdk untaped.sdk.DeprecatedBehaviour.spelled
 sdk untaped.sdk.DeprecatedBehaviour.warn(replacement=) default=<computed>
 sdk untaped.sdk.DeprecatedBehaviour.warn(stacklevel=) default=2
 sdk untaped.sdk.DeprecatedBehaviour.warn(subject)
+sdk untaped.sdk.DeprecatedBehaviour.where
 sdk untaped.sdk.Diagnostic(*, message)
 sdk untaped.sdk.Diagnostic(hint=) default=None
 sdk untaped.sdk.Diagnostic.__init_subclass__(kind=) default=None
@@ -4831,6 +4861,24 @@ sdk untaped.sdk.ErrorCategory.UNAVAILABLE = unavailable
 sdk untaped.sdk.ErrorCategory.USAGE = usage
 sdk untaped.sdk.ErrorCategory.exit_code
 sdk untaped.sdk.ErrorCategory.retryable
+sdk untaped.sdk.ExecutableCheck(program, *, purpose)
+sdk untaped.sdk.ExecutableCheck.binding
+sdk untaped.sdk.ExecutableCheck.bindings
+sdk untaped.sdk.ExecutableCheck.block_kind class
+sdk untaped.sdk.ExecutableCheck.derived_name(attribute)
+sdk untaped.sdk.ExecutableCheck.id
+sdk untaped.sdk.ExecutableCheck.module
+sdk untaped.sdk.ExecutableCheck.name
+sdk untaped.sdk.ExecutableCheck.name_problem(name)
+sdk untaped.sdk.ExecutableCheck.name_style class
+sdk untaped.sdk.ExecutableCheck.online
+sdk untaped.sdk.ExecutableCheck.plugin
+sdk untaped.sdk.ExecutableCheck.program
+sdk untaped.sdk.ExecutableCheck.purpose
+sdk untaped.sdk.ExecutableCheck.run
+sdk untaped.sdk.ExecutableCheck.spelled
+sdk untaped.sdk.ExecutableCheck.title
+sdk untaped.sdk.ExecutableCheck.where
 sdk untaped.sdk.ExistingFile
 sdk untaped.sdk.ExitCode.ENVIRONMENT = 4
 sdk untaped.sdk.ExitCode.FAILURE = 1
@@ -5258,6 +5306,24 @@ sdk untaped.sdk.NumberInput.view(focused=) default=false  [experimental]
 sdk untaped.sdk.NumberInput.view(frame)  [experimental]
 sdk untaped.sdk.NumberInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.NumberInput.with_error(text)  [experimental]
+sdk untaped.sdk.OnlineCheck(*, probe) callback(probe, 0)
+sdk untaped.sdk.OnlineCheck(title=) default=None
+sdk untaped.sdk.OnlineCheck.binding
+sdk untaped.sdk.OnlineCheck.bindings
+sdk untaped.sdk.OnlineCheck.block_kind class
+sdk untaped.sdk.OnlineCheck.derived_name(attribute)
+sdk untaped.sdk.OnlineCheck.id
+sdk untaped.sdk.OnlineCheck.module
+sdk untaped.sdk.OnlineCheck.name
+sdk untaped.sdk.OnlineCheck.name_problem(name)
+sdk untaped.sdk.OnlineCheck.name_style class
+sdk untaped.sdk.OnlineCheck.online
+sdk untaped.sdk.OnlineCheck.plugin
+sdk untaped.sdk.OnlineCheck.probe
+sdk untaped.sdk.OnlineCheck.run
+sdk untaped.sdk.OnlineCheck.spelled
+sdk untaped.sdk.OnlineCheck.title
+sdk untaped.sdk.OnlineCheck.where
 sdk untaped.sdk.OperationCancelledError()
 sdk untaped.sdk.OperationCancelledError(message@1=) default="cancelled; no changes made"
 sdk untaped.sdk.OperationCancelledError.category class

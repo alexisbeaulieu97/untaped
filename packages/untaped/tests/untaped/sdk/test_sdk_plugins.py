@@ -48,6 +48,8 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "InstalledPlugin",
         "installed_plugins",
         "DoctorCheck",
+        "ExecutableCheck",
+        "OnlineCheck",
         "DoctorResult",
         "DirMigration",
         "MigrationOptions",

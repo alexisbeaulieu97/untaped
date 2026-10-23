@@ -37,19 +37,42 @@ from untaped.sdk.network.auth import (
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
     """Warn when ``program`` is not on ``PATH``; ``purpose`` says what needs it."""
+    return DoctorCheck(
+        id=check_id,
+        title=f"{program} on PATH",
+        run=lambda _ctx: _on_path(check_id, program, purpose=purpose),
+    )
 
-    def run(_ctx: PluginContext) -> DoctorResult:
-        found = find_program(program)
-        if found is None:
-            return DoctorResult(
-                id=check_id,
-                ok=True,
-                warn=True,
-                detail=f"`{program}` not found on PATH; {purpose} will fail",
-            )
-        return DoctorResult(id=check_id, ok=True, detail=found)
 
-    return DoctorCheck(id=check_id, title=f"{program} on PATH", run=run)
+def _on_path(check_id: str, program: str, *, purpose: str) -> DoctorResult:
+    found = find_program(program)
+    if found is None:
+        return DoctorResult(
+            id=check_id,
+            ok=True,
+            warn=True,
+            detail=f"`{program}` not found on PATH; {purpose} will fail",
+        )
+    return DoctorResult(id=check_id, ok=True, detail=found)
+
+
+class ExecutableCheck(DoctorCheck):
+    """A program on ``PATH``: ``git = ExecutableCheck("git", purpose="cloning")``.
+
+    Held by a plugin class, it is the check ``<plugin>.<attribute>``; a
+    missing program is a warning naming ``purpose``, what fails without it.
+    """
+
+    program: str
+    purpose: str
+
+    def __init__(self, program: str, *, purpose: str) -> None:
+        super().__init__(title=f"{program} on PATH", run=self._run)
+        self.program = program
+        self.purpose = purpose
+
+    def _run(self, _ctx: PluginContext) -> DoctorResult:
+        return _on_path(self.id, self.program, purpose=self.purpose)
 
 
 def connection_check(check_id: str, *, section: str) -> DoctorCheck:
@@ -144,44 +167,78 @@ def online_check(
     ``http.ca_bundle_path`` for an untrusted certificate, otherwise the first
     marked field (``base_url`` for an unmarked one).
     """
+    return DoctorCheck(
+        id=check_id,
+        title=title or f"{section} API reachable",
+        run=lambda ctx: _probed(check_id, ctx.settings, section=section, probe=probe),
+        online=True,
+    )
 
-    def run(ctx: PluginContext) -> DoctorResult:
-        settings = ctx.settings
-        if settings is None:
-            return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
-        marks = section_marks(section, type(settings))
-        if marks is not None and not marks.legacy:
-            return _marked_probe(check_id, settings, marks, section=section, probe=probe)
-        if not service_configured(settings, section=section):
-            return DoctorResult(id=check_id, ok=True, detail="not configured")
-        url_fix = f"config set {section}.base_url <URL>"
-        if not str(getattr(settings, "base_url", None) or "").strip():
-            detail = f"{section}.base_url is not set"
-            return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
-        has_token = describe_token_source(settings, section=section) is not None
-        from untaped.sdk.network.upstream import (  # noqa: PLC0415 - keep SPEC imports light
-            quick_probe,
-        )
 
-        try:
-            with quick_probe():
-                detail = probe()
-        except UntapedError as exc:
-            detail = _first_line(exc) or type(exc).__name__
-            token_fix = _token_fix(section, settings)
-            fix = _online_fix(exc, section=section, has_token=has_token, token_fix=token_fix)
-            alternatives = token_alternatives(settings, section=section)
-            if fix == token_fix and alternatives:
-                detail = f"{detail} (the token can also come from {alternatives})"
-            return DoctorResult(id=check_id, ok=False, detail=detail, fix=fix)
-        except Exception as exc:
-            # Not a service error (e.g. an unexpected response shape): keep one
-            # line, never the response body a validation dump would carry.
-            detail = f"{type(exc).__name__}: {_first_line(exc)}".rstrip(": ")
-            return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
-        return DoctorResult(id=check_id, ok=True, detail=detail)
+def _probed(
+    check_id: str, settings: BaseModel | None, *, section: str, probe: Callable[[], str]
+) -> DoctorResult:
+    """:func:`online_check`'s row: ``probe`` run against the settings, when they are set up."""
+    if settings is None:
+        return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
+    marks = section_marks(section, type(settings))
+    if marks is not None and not marks.legacy:
+        return _marked_probe(check_id, settings, marks, section=section, probe=probe)
+    if not service_configured(settings, section=section):
+        return DoctorResult(id=check_id, ok=True, detail="not configured")
+    url_fix = f"config set {section}.base_url <URL>"
+    if not str(getattr(settings, "base_url", None) or "").strip():
+        detail = f"{section}.base_url is not set"
+        return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
+    has_token = describe_token_source(settings, section=section) is not None
+    from untaped.sdk.network.upstream import (  # noqa: PLC0415 - keep SPEC imports light
+        quick_probe,
+    )
 
-    return DoctorCheck(id=check_id, title=title or f"{section} API reachable", run=run, online=True)
+    try:
+        with quick_probe():
+            detail = probe()
+    except UntapedError as exc:
+        detail = _first_line(exc) or type(exc).__name__
+        token_fix = _token_fix(section, settings)
+        fix = _online_fix(exc, section=section, has_token=has_token, token_fix=token_fix)
+        alternatives = token_alternatives(settings, section=section)
+        if fix == token_fix and alternatives:
+            detail = f"{detail} (the token can also come from {alternatives})"
+        return DoctorResult(id=check_id, ok=False, detail=detail, fix=fix)
+    except Exception as exc:
+        # Not a service error (e.g. an unexpected response shape): keep one
+        # line, never the response body a validation dump would carry.
+        detail = f"{type(exc).__name__}: {_first_line(exc)}".rstrip(": ")
+        return DoctorResult(id=check_id, ok=False, detail=detail, fix=url_fix)
+    return DoctorResult(id=check_id, ok=True, detail=detail)
+
+
+class OnlineCheck(DoctorCheck):
+    """The plugin's service reached through ``probe``, under ``doctor --online`` only.
+
+    ``probe = OnlineCheck(probe=whoami)`` on a plugin class is the check
+    ``<plugin>.probe`` over the plugin's own settings section, run as
+    :func:`online_check` runs it; ``title`` defaults to ``<plugin> API reachable``.
+    """
+
+    probe: Callable[[], str]
+
+    def __init__(self, *, probe: Callable[[], str], title: str | None = None) -> None:
+        super().__init__(title=title or "", run=self._run, online=True)
+        self.probe = probe
+        self._title = title
+
+    @property
+    def title(self) -> str:
+        return self._title or f"{self.plugin} API reachable"
+
+    @title.setter
+    def title(self, value: str) -> None:
+        self._title = value or None
+
+    def _run(self, ctx: PluginContext) -> DoctorResult:
+        return _probed(self.id, ctx.settings, section=self.plugin, probe=self.probe)
 
 
 def _marked_probe(
