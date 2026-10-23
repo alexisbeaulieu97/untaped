@@ -168,6 +168,17 @@ class SkillAsset:
             raise ConfigError(f"skill asset {self.name!r} must have a description")
 
 
+def _spelled(id: str | None) -> tuple[str, str] | tuple[()]:
+    """The plugin and name an 11.x id spells, or nothing for a block a plugin class names.
+
+    A shell check's id has no dot: its plugin part is the whole id and its name is empty.
+    """
+    if id is None:
+        return ()
+    plugin, _, name = id.partition(".")
+    return plugin, name
+
+
 class DoctorCheck(OwnedBlock):
     """A health check contributed by the shell or a plugin.
 
@@ -193,6 +204,7 @@ class DoctorCheck(OwnedBlock):
         online: bool = False,
     ) -> None:
         super().__init__(*_spelled(id))
+        self._id = id
         self.title = title
         self.run = run
         self.online = online
@@ -200,7 +212,7 @@ class DoctorCheck(OwnedBlock):
     @property
     def id(self) -> str:
         """``<plugin>.<name>``, or the id it was given."""
-        return _id_of(self)
+        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
 
     def __repr__(self) -> str:
         return f"DoctorCheck({self._where()!r}, title={self.title!r})"
@@ -291,26 +303,13 @@ class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
     detail: str = ""
 
 
-def _spelled(id: str | None) -> tuple[str, str] | tuple[()]:
-    """The plugin and name an 11.x id spells, or nothing for a block a plugin class names."""
-    if id is None:
-        return ()
-    plugin, _, name = id.partition(".")
-    return plugin, name
-
-
-def _id_of(block: OwnedBlock) -> str:
-    """A check's or migration's id: ``<plugin>.<name>``, or an 11.x id without a dot."""
-    return block.plugin if not block.name else f"{block.plugin}.{block.name}"
-
-
 class DirMigration(OwnedBlock):
     """A plugin's own directory moves for ``untaped setup migrate-dirs``.
 
     A plugin class holding it names it (``greetings = DirMigration(...)`` is
     ``<plugin>.greetings``); the 11.x spelling passes ``id``, which is
-    ``<plugin>.<noun>``, unique across plugins. First consumer of the
-    plugin class form: the 12 to 13 transition. ``preview``
+    ``<plugin>.<noun>``, unique across plugins. First consumer of a plugin
+    class's migration: the 12 to 13 transition. ``preview``
     returns what would change and only reads; ``apply`` does it and returns
     its outcomes (usually one; core reports each).
     ``apply`` is idempotent: run again after a crash or a second time, it
@@ -337,6 +336,7 @@ class DirMigration(OwnedBlock):
         apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]],
     ) -> None:
         super().__init__(*_spelled(id))
+        self._id = id
         self.title = title
         self.preview = preview
         self.apply = apply
@@ -344,7 +344,7 @@ class DirMigration(OwnedBlock):
     @property
     def id(self) -> str:
         """``<plugin>.<name>``, or the id it was given."""
-        return _id_of(self)
+        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
 
     def __repr__(self) -> str:
         return f"DirMigration({self._where()!r}, title={self.title!r})"

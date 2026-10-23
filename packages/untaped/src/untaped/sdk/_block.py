@@ -33,12 +33,13 @@ class Binding(NamedTuple):
     attribute: str
 
 
-def _creating_module() -> str:
-    """The module that created the block: the first frame outside ``untaped.sdk``."""
-    frame: FrameType | None = sys._getframe(2)
+def _creating_module(block: object) -> str:
+    """The module that created ``block``: the first frame outside its constructors and the SDK."""
+    frame: FrameType | None = sys._getframe(1)
     while frame is not None:
         name = str(frame.f_globals.get("__name__", ""))
-        if name != "untaped.sdk" and not name.startswith("untaped.sdk."):
+        building = frame.f_locals.get("self") is block
+        if not building and name != "untaped.sdk" and not name.startswith("untaped.sdk."):
             return name
         frame = frame.f_back
     return "__main__"  # pragma: no cover - a block created inside the SDK alone
@@ -63,7 +64,7 @@ class Block:
     name_style: ClassVar[Literal["attribute", "kebab"]] = "attribute"
 
     def __init__(self) -> None:
-        self._module = _creating_module()
+        self._module = _creating_module(self)
         self._bindings: list[Binding] = []
 
     def __set_name__(self, owner: type, name: str) -> None:
@@ -158,7 +159,7 @@ class OwnedBlock(Block):
     def _where(self) -> str:
         """How a message names the block: ``hello.motd``, or its kind and module while unnamed."""
         if self._plugin is not None:
-            return f"{self._plugin}.{self._name}"
+            return f"{self._plugin}.{self._name}" if self._name else self._plugin
         return f"{type(self).__name__} created in {self._module}"
 
 

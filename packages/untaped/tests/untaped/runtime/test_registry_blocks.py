@@ -8,6 +8,7 @@ import pytest
 from pydantic import BaseModel
 
 from untaped.sdk import DirMigration, DoctorCheck, DoctorResult, Plugin
+from untaped.sdk.health.doctor import executable_check
 from untaped.sdk.run import Composition, Run, run_scope
 
 
@@ -44,9 +45,17 @@ def test_a_plugin_classs_check_and_migration_take_kebab_ids(tmp_path: Path) -> N
         assert repr(Demo.repo_store).startswith("DoctorCheck('DoctorCheck created in ")
 
 
+def test_a_check_and_a_migration_record_the_module_creating_them() -> None:
+    assert Demo.repo_store.module == __name__
+    assert Demo.greetings.module == __name__
+    assert executable_check("demo.git", "git", purpose="cloning").module == __name__
+
+
 def test_the_11x_spelling_keeps_its_id() -> None:
     assert DoctorCheck("git.repo-store", title="git store", run=_fine).id == "git.repo-store"
-    assert DoctorCheck("config", title="config", run=_fine).id == "config"
+    shell = DoctorCheck("config", title="config", run=_fine)
+    assert (shell.id, repr(shell)) == ("config", "DoctorCheck('config', title='config')")
+    assert DoctorCheck("a.", title="t", run=_fine).id == "a."
     migration = DirMigration(
         "hello.greetings", title="t", preview=lambda *_: [], apply=lambda *_: []
     )

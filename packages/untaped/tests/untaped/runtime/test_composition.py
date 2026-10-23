@@ -248,6 +248,21 @@ def test_a_block_name_its_kind_refuses_is_a_problem() -> None:
     assert "must be one settings segment" in problem.detail
 
 
+def test_a_plugin_class_names_its_blocks_itself() -> None:
+    class Spelled(Plugin):
+        """Spelled."""
+
+        settings = HelloSettings
+        other = Cache("hello", "motd", label="message of the day", max_age=timedelta(hours=1))
+
+    [problem] = _problems(Spelled)
+    assert (problem.rule, problem.where.rpartition("<locals>.")[2]) == (
+        "block-name",
+        "Spelled.other",
+    )
+    assert "is named hello.motd by hand" in problem.detail
+
+
 def test_one_block_held_twice_is_a_problem() -> None:
     class Thing(Block):
         block_kind = "thing"
@@ -463,10 +478,12 @@ def test_an_unresolved_field_type_quarantines_the_plugin() -> None:
 
 
 def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
+    held = Cache(label="books", max_age=timedelta(hours=1))
+
     class Books(Command):
         """Books."""
 
-        refresh: Refresh = Refresh(BOOKS, BookSource.books)
+        refresh: Refresh = Refresh(held, BookSource.books)
 
         def run(self) -> None:
             return None
@@ -477,7 +494,7 @@ def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
         settings = HelloSettings
         commands = (Books,)
         offers = (BookSource,)
-        books = BOOKS
+        books = held
 
     assert compose([_entry(Shelf)]).quarantined == ()
 
