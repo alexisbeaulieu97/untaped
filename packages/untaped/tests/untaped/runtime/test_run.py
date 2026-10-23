@@ -73,3 +73,15 @@ def test_the_installs_rows_are_read_once(tmp_path: Path) -> None:
         rows = Version().ctx.plugins
         assert [row.name for row in rows] == ["ghost"]
         assert Version().ctx.plugins is rows
+
+
+@pytest.mark.usefixtures("fresh_composition")
+def test_each_run_reads_the_installs_rows_afresh(tmp_path: Path) -> None:
+    declaration, plugins = _composed()
+    for name in ("ghost", "spook"):
+        candidate = PluginCandidate(
+            distribution=f"untaped-{name}", name=name, target=f"{name}:SPEC"
+        )
+        bootstrap.compose_root(candidates=[candidate])
+        with run_scope(build_run(declaration, plugins, home=tmp_path)):
+            assert [row.name for row in Version().ctx.plugins] == [name]

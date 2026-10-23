@@ -208,9 +208,7 @@ def test_the_clock_tells_wall_and_monotonic_time() -> None:
 def test_ctx_plugins_is_the_installs_rows(tmp_path: Path) -> None:
     row = InstalledPlugin(name="hello", status="ready", distribution="untaped-hello", version="1.0")
     base = _run(tmp_path)
-    composition = Composition(
-        owners=base.composition.owners, packages=base.composition.packages, installed=lambda: (row,)
-    )
+    composition = replace(base.composition, installed=lambda: (row,))
     with run_scope(replace(base, composition=composition)):
         assert Version().ctx.plugins == (row,)
     with run_scope(base):

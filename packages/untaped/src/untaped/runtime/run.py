@@ -3,8 +3,9 @@
 The mount calls :func:`build_run` once per invocation and sets the result with
 :func:`untaped.sdk.run.run_scope`. Each member reads what the 11.x runtime
 already provides: settings sections through ``get_config_section`` (each
-section validated once per run), the stderr sink and the themed terminal
-(built once, on first use).
+section validated once per run), the install's plugins through
+``installed_plugins()`` (read once, on first use), the stderr sink and the
+themed terminal (built once, on first use).
 """
 
 from __future__ import annotations
@@ -30,10 +31,7 @@ if TYPE_CHECKING:
 
 
 def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]) -> Composition:
-    """Who owns what among the composed plugins of ``declaration`` (``plugins`` by name).
-
-    The install's rows are today's ``installed_plugins()``, read once on first use.
-    """
+    """Who owns what among the composed plugins of ``declaration`` (``plugins`` by name)."""
     packages: dict[str, str] = {}
     for plugin in declaration.plugins:
         packages.setdefault(plugin.package, plugin.name)

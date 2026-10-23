@@ -76,7 +76,7 @@ class Clock:
 
 @dataclass(frozen=True)
 class Composition:
-    """Which plugin owns what: its settings model, and the classes under its package."""
+    """Which plugin owns what, and the plugins this install has."""
 
     #: The plugin each composed settings model identifies.
     owners: Mapping[type[BaseModel], str] = field(default_factory=dict)
