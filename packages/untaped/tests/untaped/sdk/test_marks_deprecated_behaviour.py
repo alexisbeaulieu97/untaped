@@ -97,6 +97,9 @@ def test_a_plugin_class_names_its_behaviour(tmp_path: Path) -> None:
     )
     with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
         assert behaviour.id == "behaviour demo.plaintext-token"
+        assert behaviour.sentence("a plain token").startswith(
+            "a plain token is deprecated and will be removed in"
+        )
     assert repr(behaviour).endswith("removed_in=13)")
 
 

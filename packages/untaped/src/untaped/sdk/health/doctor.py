@@ -227,7 +227,6 @@ class OnlineCheck(DoctorCheck):
     def __init__(self, *, probe: Callable[[], str], title: str | None = None) -> None:
         super().__init__(title=title or "", run=self._run, online=True)
         self.probe = probe
-        self._title = title
 
     @property
     def title(self) -> str:
@@ -236,6 +235,9 @@ class OnlineCheck(DoctorCheck):
     @title.setter
     def title(self, value: str) -> None:
         self._title = value or None
+
+    def __repr__(self) -> str:
+        return f"OnlineCheck({self.where!r}, title={self._title!r})"
 
     def _run(self, ctx: PluginContext) -> DoctorResult:
         return _probed(self.id, ctx.settings, section=self.plugin, probe=self.probe)

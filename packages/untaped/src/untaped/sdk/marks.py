@@ -1181,8 +1181,9 @@ class DeprecatedBehaviour(OwnedBlock):
     the plugin's behaviour ``plaintext-token``. The 11.x spelling is
     :func:`deprecated_behaviour`, listed on the spec of the plugin that owns it
     (``PluginSpec(deprecations=lambda: (ROW_KIND,))``). The surface writes
-    ``behaviour <plugin>.<name>`` for it, so the release check holds it to its
-    date. A site never types the words: it names the subject and calls
+    ``behaviour <plugin>.<name>`` for a listed one, so the release check holds
+    it to its date; a held one reaches the surface once it is read from the
+    declaration, with the mount. A site never types the words: it names the subject and calls
     :meth:`sentence`, :meth:`notify` or :meth:`warn`.
     """
 

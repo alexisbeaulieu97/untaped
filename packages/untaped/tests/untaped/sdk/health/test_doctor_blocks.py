@@ -47,3 +47,8 @@ def test_an_online_check_probes_the_plugins_own_section() -> None:
     result = Demo.probe.run(PluginContext(settings=None))
     assert (result.id, result.detail) == ("demo.probe", "skipped: settings are invalid")
     assert OnlineCheck(probe=str, title="Demo API").title == "Demo API"
+
+
+def test_an_online_checks_repr_needs_no_run() -> None:
+    assert repr(OnlineCheck(probe=str)).startswith("OnlineCheck('OnlineCheck created in ")
+    assert repr(OnlineCheck(probe=str, title="Demo API")).endswith("title='Demo API')")

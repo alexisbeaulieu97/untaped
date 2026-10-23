@@ -18,7 +18,10 @@ from untaped.sdk import (
     Column,
     Command,
     Confirm,
+    Credential,
+    CredentialKey,
     Deprecated,
+    DeprecatedBehaviour,
     File,
     Group,
     Key,
@@ -34,12 +37,17 @@ from untaped.sdk import (
     TextOrStdin,
     Written,
     deprecated,
+    deprecated_behaviour,
     experimental,
     key,
 )
 from untaped.sdk._block import Block
 
 PACKAGE = __name__.partition(".")[0]
+
+
+class HelloKey(CredentialKey):
+    name: str = "hello"
 
 
 class HelloSettings(BaseModel):
@@ -261,6 +269,24 @@ def test_a_plugin_class_names_its_blocks_itself() -> None:
         "Spelled.other",
     )
     assert "is named hello.motd by hand" in problem.detail
+
+
+def test_every_owned_block_is_named_by_the_plugin_class() -> None:
+    class Spelled(Plugin):
+        """Spelled."""
+
+        settings = HelloSettings
+        token = Credential("hello", "token", key=HelloKey)
+        old = deprecated_behaviour("old-way", removed_in=13)
+        Tok = Credential(key=HelloKey)
+        Gone = DeprecatedBehaviour(removed_in=13)
+
+    assert sorted(_rules(Spelled)) == [
+        ("block-name", "Spelled.Gone"),
+        ("block-name", "Spelled.Tok"),
+        ("block-name", "Spelled.old"),
+        ("block-name", "Spelled.token"),
+    ]
 
 
 def test_one_block_held_twice_is_a_problem() -> None:
