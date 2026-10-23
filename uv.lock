@@ -790,7 +790,7 @@ wheels = [
 
 [[package]]
 name = "untaped"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped" }
 dependencies = [
     { name = "cyclopts" },
@@ -884,7 +884,7 @@ provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira",
 
 [[package]]
 name = "untaped-ansible"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-ansible" }
 dependencies = [
     { name = "jinja2" },
@@ -903,7 +903,7 @@ requires-dist = [
 
 [[package]]
 name = "untaped-awx"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-awx" }
 dependencies = [
     { name = "jinja2" },
@@ -927,7 +927,7 @@ provides-extras = ["lint"]
 
 [[package]]
 name = "untaped-dotfiles"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-dotfiles" }
 dependencies = [
     { name = "untaped" },
@@ -938,7 +938,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-git"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-git" }
 dependencies = [
     { name = "untaped" },
@@ -949,7 +949,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-github"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
@@ -975,7 +975,7 @@ provides-extras = ["git", "workspace"]
 
 [[package]]
 name = "untaped-jira"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-jira" }
 dependencies = [
     { name = "untaped" },
@@ -986,7 +986,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-lint"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-lint" }
 dependencies = [
     { name = "untaped" },
@@ -997,7 +997,7 @@ requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-recipe"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-recipe" }
 dependencies = [
     { name = "jinja2" },
@@ -1014,7 +1014,7 @@ requires-dist = [
 
 [[package]]
 name = "untaped-workspace"
-version = "11.0.0"
+version = "11.1.0"
 source = { editable = "packages/untaped-workspace" }
 dependencies = [
     { name = "untaped" },

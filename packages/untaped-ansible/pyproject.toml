@@ -1,6 +1,6 @@
 [project]
 name = "untaped-ansible"
-version = "11.0.0"
+version = "11.1.0"
 description = "Ansible plugin for untaped."
 readme = "README.md"
 license = "MIT"
@@ -9,9 +9,9 @@ authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
 dependencies = [
     "jinja2>=3.1.6,<4",
-    "untaped==11.0.0",
-    "untaped-git==11.0.0",
-    "untaped-github==11.0.0",
+    "untaped==11.1.0",
+    "untaped-git==11.1.0",
+    "untaped-github==11.1.0",
 ]
 
 [project.entry-points."untaped.plugins"]

@@ -1,17 +1,17 @@
 [project]
 name = "untaped-awx"
-version = "11.0.0"
+version = "11.1.0"
 description = "AWX plugin for untaped."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.14.1"
-dependencies = ["jinja2>=3.1.6,<4", "untaped==11.0.0", "untaped-lint==11.0.0"]
+dependencies = ["jinja2>=3.1.6,<4", "untaped==11.1.0", "untaped-lint==11.1.0"]
 
 [project.optional-dependencies]
 # awx fills the lint plugin's Linter and TreeReader contracts: the owner extra providers declare.
-lint = ["untaped-lint==11.0.0"]
+lint = ["untaped-lint==11.1.0"]
 
 [project.entry-points."untaped.plugins"]
 awx = "untaped_awx:SPEC"
