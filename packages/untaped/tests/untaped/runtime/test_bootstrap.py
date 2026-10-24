@@ -1063,3 +1063,14 @@ def test_an_11x_command_runs_under_the_invocation_s_run() -> None:
     result = CliInvoker().invoke(root.meta, ["ext", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == str(untaped_home())
+
+
+def test_a_home_that_does_not_resolve_is_reported_and_root_flags_still_print(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = bootstrap.build_root_app(candidates=[])
+    monkeypatch.setenv("UNTAPED_HOME", "relative/home")
+    assert CliInvoker().invoke(root.meta, ["--version"]).exit_code == 0
+    result = CliInvoker().invoke(root.meta, ["plugin", "list"])
+    assert result.exit_code == 4, result.output
+    assert "error: UNTAPED_HOME" in result.stderr

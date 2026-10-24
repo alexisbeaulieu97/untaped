@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from importlib import metadata
 from itertools import chain
@@ -540,9 +540,14 @@ def _install_root_callback(
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
-                result = _dispatch_with_root_options(
-                    app, command_tokens, root_options, applied_tokens
-                )
+                with ExitStack() as stack:
+                    if command_tokens and not command_tokens[0].startswith("-"):
+                        # A command runs under the run; root --help and --version need none,
+                        # so a home that doesn't resolve still lets them print.
+                        stack.enter_context(run_scope(run()))
+                    result = _dispatch_with_root_options(
+                        app, command_tokens, root_options, applied_tokens
+                    )
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
@@ -560,9 +565,9 @@ def _install_root_callback(
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # One diagnostics scope covers the command and the checks after it,
-        # so their warnings follow the command's --format. One run covers every
+        # so their warnings follow the command's --format. One run covers the
         # command, an 11.x one included; a declared command's own nests inside.
-        with diagnostics_scope(), dispatching() as ran, run_scope(run()):
+        with diagnostics_scope(), dispatching() as ran:
             return _dispatch_root(ran, *tokens)
 
     signature = _root_callback_signature(root_options)
