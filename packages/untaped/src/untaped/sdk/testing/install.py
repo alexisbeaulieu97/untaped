@@ -49,16 +49,13 @@ class Ran:
     rows: list[BaseModel] = field(default_factory=list)
     text: str | None = None
     diagnostics: tuple[Diagnostic, ...] = ()
-    #: The format a command line printed its rows in, when they are not read back.
+    #: Why a command line's rows were not read back, if they were not.
     _unread: str | None = field(default=None, repr=False)
 
     def rows_as[M: BaseModel](self, model: type[M]) -> list[M]:
         """The rows, each checked to be a ``model``; a table's rows were never read back."""
         if self._unread is not None:
-            raise TypeError(
-                f"the rows were printed as --format {self._unread}, which is not read back; "
-                "run it with --format json or pipe, or through .run"
-            )
+            raise TypeError(f"the rows were not read back: {self._unread}")
         for row in self.rows:
             if not isinstance(row, model):
                 raise TypeError(f"a row is a {type(row).__qualname__}, not a {model.__qualname__}")
@@ -347,13 +344,18 @@ def _ran(result: CliResult, printed: Printed | None, *, read_back: bool) -> Ran:
     """``result`` as a :class:`Ran`, with what the command printed (read back, under ``.cli``)."""
     rows: list[BaseModel] = []
     unread: str | None = None
-    if printed is not None:
-        if not read_back:
-            rows = printed.rows
-        elif printed.format in ("json", "pipe"):
-            rows = [type(row).model_validate_json(row.model_dump_json()) for row in printed.rows]
-        elif printed.rows:
-            unread = printed.format
+    if printed is not None and not read_back:
+        rows = printed.rows
+    elif printed is None:
+        if read_back:
+            unread = "the line ran no command of a plugin installed (core's own print text)"
+    elif printed.format in ("json", "pipe"):
+        rows = [type(row).model_validate_json(row.model_dump_json()) for row in printed.rows]
+    elif printed.format is not None:
+        unread = (
+            f"they were printed as --format {printed.format}; "
+            "run it with --format json or pipe, or through .run"
+        )
     return Ran(
         exit=result.exit_code,
         stdout=result.stdout,

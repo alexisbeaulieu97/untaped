@@ -490,9 +490,9 @@ def run_built(
     """Run a command built outside the parser, its core fields filled from ``flags``, and print.
 
     ``flags`` gives each core field's flags by field path (``{"output":
-    {"--format": "json"}}``); a field inside an optional bundle that was
-    not built is not filled, as the parser leaves it. Errors propagate:
-    the caller reports them.
+    {"--format": "json"}}``); an optional bundle holding a core field is
+    built around it, as the parser builds it. Errors propagate: the
+    caller reports them.
     """
     with run_scope(build_run(mount.declaration, mount.settings)):
         return _ran(mount, decl, _refilled(mount, decl, command, flags))
@@ -520,22 +520,38 @@ def _refilled(
     command: Command[Any],
     flags: Mapping[str, Mapping[str, object]],
 ) -> Command[Any]:
-    """``command`` with each core field at a path in ``flags`` filled from its flags."""
+    """``command`` with each core field at a path in ``flags`` filled from its flags.
+
+    An optional bundle nobody built is built around its core field, as the
+    parser builds it; one that needs more is a usage error.
+    """
     filled: BaseModel = command
     for path, given in flags.items():
         parts = path.split(".")
-        holders: list[BaseModel] = [filled]
+        # each holder down the path: the built model, or the bundle model nobody built
+        holders: list[BaseModel | type[BaseModel]] = [filled]
         for part in parts[:-1]:
-            inner = getattr(holders[-1], part)
-            if not isinstance(inner, BaseModel):
-                break  # an optional bundle nobody built: its fields stay unbuilt
-            holders.append(inner)
-        else:
-            info = type(holders[-1]).model_fields[parts[-1]]
-            value: object = _filled(mount, decl, info, given, getattr(holders[-1], parts[-1]))
-            for holder, part in zip(reversed(holders), reversed(parts), strict=True):
+            above = holders[-1]
+            inner = getattr(above, part) if isinstance(above, BaseModel) else None
+            if isinstance(inner, BaseModel):
+                holders.append(inner)
+            else:
+                cls = above if isinstance(above, type) else type(above)
+                holders.append(_bundle_model(cls.model_fields[part].annotation))
+        last = holders[-1]
+        cls = last if isinstance(last, type) else type(last)
+        current = getattr(last, parts[-1]) if isinstance(last, BaseModel) else None
+        value: object = _filled(mount, decl, cls.model_fields[parts[-1]], given, current)
+        for holder, part in zip(reversed(holders), reversed(parts), strict=True):
+            if isinstance(holder, BaseModel):
                 value = holder.model_copy(update={part: value})
-            filled = cast("BaseModel", value)
+                continue
+            try:
+                value = holder.model_validate({part: value})
+            except ValidationError as exc:
+                # the bundle's own fields are no flags of this command
+                raise UsageError(first_validation_error(exc)) from exc
+        filled = cast("BaseModel", value)
     return cast("Command[Any]", filled)
 
 

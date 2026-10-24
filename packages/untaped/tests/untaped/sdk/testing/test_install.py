@@ -125,19 +125,19 @@ class Broken(Command):
         return {}["x"]  # type: ignore[no-any-return]
 
 
-class Restock(BaseModel):
-    """How to restock."""
+class Listing(BaseModel):
+    """How the shelf is listed."""
 
-    refresh: Refresh = Refresh(PRICES)
+    output: Output[Item]
 
 
 class Shelf(Command):
-    """Show the shelf, restocking only when asked."""
+    """List the shelf."""
 
-    restock: Restock | None = None
+    listing: Listing | None = None
 
-    def run(self) -> str:
-        return "as is" if self.restock is None else repr(self.restock.refresh.directive)
+    def run(self) -> Iterator[Item]:
+        yield Item(name="tea")
 
 
 class Shop(Plugin):
@@ -172,8 +172,10 @@ def test_cli_reads_json_and_pipe_rows_back_and_refuses_a_table(install: Installe
     assert [row.name for row in piped.rows_as(Item)] == ["tea", "jam"]
     again = shop.cli(["shop", "stock", "--stdin", "-f", "json"], input=piped.stdout)
     assert [row.name for row in again.rows_as(Item)] == ["tea", "jam"]
-    with pytest.raises(TypeError, match="--format table"):
+    with pytest.raises(TypeError, match="printed as --format table"):
         shop.cli("shop stock tea").rows_as(Item)
+    with pytest.raises(TypeError, match="no command of a plugin installed"):
+        shop.cli("plugin list --format json").rows_as(Item)
 
 
 def test_stdin_takes_rows_or_bare_lines(install: Installer) -> None:
@@ -275,10 +277,10 @@ def test_failed_after_rows_keeps_the_rows(install: Installer) -> None:
     assert (line.exit, line.rows_as(Item)) == (1, [Item(name="tea")])
 
 
-def test_a_field_of_a_bundle_nobody_built_stays_unbuilt(install: Installer) -> None:
-    shop = install(Shop)
-    assert shop.run(Shelf()).text == "as is"
-    assert shop.run(Shelf(restock=Restock()), refresh=True).text == "True"
+def test_an_optional_bundle_is_built_around_its_core_field(install: Installer) -> None:
+    ran = install(Shop).run(Shelf(), format="json")
+    assert (ran.exit, ran.rows_as(Item)) == (0, [Item(name="tea")])
+    assert '"name": "tea"' in ran.stdout
 
 
 def test_cli_reads_rows_back_whatever_spelled_the_format(
