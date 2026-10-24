@@ -27,16 +27,17 @@ from untaped.sdk.run import Composition, Run
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration
     from untaped.sdk._ui import UiContext
-    from untaped.sdk.plugin import Plugin
 
 
-def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]) -> Composition:
-    """Who owns what among the composed plugins of ``declaration`` (``plugins`` by name)."""
+def composition_of(
+    declaration: Declaration, settings: Mapping[str, type[BaseModel]]
+) -> Composition:
+    """Who owns what among the composed plugins of ``declaration`` (``settings`` models by name)."""
     packages: dict[str, str] = {}
     for plugin in declaration.plugins:
         packages.setdefault(plugin.package, plugin.name)
     return Composition(
-        owners={plugins[plugin.name].settings: plugin.name for plugin in declaration.plugins},
+        owners={settings[plugin.name]: plugin.name for plugin in declaration.plugins},
         packages=packages,
         installed=functools.cache(lambda: tuple(installed_plugins())),
         spell=declaration.spell,
@@ -44,7 +45,7 @@ def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]
 
 
 def build_run(
-    declaration: Declaration, plugins: Mapping[str, type[Plugin]], *, home: Path | None = None
+    declaration: Declaration, settings: Mapping[str, type[BaseModel]], *, home: Path | None = None
 ) -> Run:
     """The run of one invocation over ``declaration``'s plugins."""
     picked: dict[str, BaseModel] = {}
@@ -63,7 +64,7 @@ def build_run(
 
     return Run(
         home=untaped_home() if home is None else home,
-        composition=composition_of(declaration, plugins),
+        composition=composition_of(declaration, settings),
         picks=picks,
         diag=Diagnostics(),
         terminal=terminal,

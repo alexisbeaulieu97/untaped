@@ -159,7 +159,7 @@ def test_an_unmounted_command_reads_its_setting_afresh(monkeypatch: pytest.Monke
     seen = []
     for workers in ("3", "5"):
         monkeypatch.setenv("UNTAPED_TOOL__WORKERS", workers)
-        with run_scope(build_run(mount.declaration, mount.plugins)):
+        with run_scope(build_run(mount.declaration, mount.settings)):
             seen.append(Work().parallel.value)
     assert seen == [3, 5]
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from untaped.core.commands.records import MigrationPreviewRow
+from untaped.core.plugin import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import (
     CompositionResult,
@@ -119,9 +120,10 @@ def _migrations(result: CompositionResult) -> list[tuple[str, DirMigration]]:
 
 
 def installed_names(result: CompositionResult) -> frozenset[str]:
-    """Every plugin installed here: composed, or quarantined (its data is still its own)."""
+    """Every plugin installed here: composed or quarantined (its data is its own), and core."""
     return frozenset(
-        [registered.spec.name for registered in result.plugins]
+        [NAME]
+        + [registered.spec.name for registered in result.plugins]
         + [record.name for record in result.quarantine]
     )
 
