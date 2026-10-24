@@ -29,6 +29,7 @@ from core_test_support.commands.support import (
     EnvProfile,
     EnvyServer,
     LegacyProfile,
+    OldWizProfile,
     UnmarkedWizProfile,
     WizProfile,
     WizServer,
@@ -285,8 +286,25 @@ def test_a_stray_token_line_is_not_offered_to_move(_isolated_config: Path) -> No
 
     run = drive_screen(_build())
 
-    state = run.model.states["wiz"]
-    assert (state.plaintext, state.own_command) == (None, None)
+    assert run.model.states["wiz"].plaintext is None
+
+
+def test_a_stray_token_command_keeps_its_entry(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
+        "      token_command: [pass, show, untaped/default/wiz]\n",
+    )
+    _seed(stores, tmp_path, {"untaped/default/wiz": "tok"})
+
+    run = drive_screen(_build(), [*_keys(token="new"), "esc", "esc"])
+
+    # The line is not wiz's to read, so the entry it names is not the login's to retire.
+    assert stores.entries() == {"untaped/default/wiz": "tok"}
+    assert not any("deleted the replaced" in text for _, text in _result(run).notes)
 
 
 def test_check_passes_then_keeps_the_current_token(
@@ -814,7 +832,8 @@ def test_tabs_offer_the_same_choices_as_before(
     def offered(
         state: ServiceState, spec: PluginSpec | None = None, *, has_command: bool = True
     ) -> list[str]:
-        spec = spec or _wiz()
+        # A plaintext or inherited token is read only where the settings declare it.
+        spec = spec or make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,))
         return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
 
     plain = ServiceState(values={}, secret_sources={"token": "wiz.token"}, plaintext="old")
