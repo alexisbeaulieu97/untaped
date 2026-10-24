@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from filelock import FileLock
 from pydantic import BaseModel
 
+from core_test_support.runtime.run import run_owning
 from untaped.sdk import (
     Absent,
     ConfigError,
@@ -19,6 +21,7 @@ from untaped.sdk import (
     Unreadable,
     UntapedError,
 )
+from untaped.sdk.run import run_scope
 from untaped.sdk.storage import data_file
 
 
@@ -29,6 +32,14 @@ class Mark(BaseModel):
 
 class Other(BaseModel):
     name: str
+
+
+@pytest.fixture(autouse=True)
+def home(tmp_path: Path) -> Iterator[Path]:
+    """A run whose home keeps the write locks, apart from the files written."""
+    home = tmp_path / "home"
+    with run_scope(run_owning(home, __name__.partition(".")[0], "demo")):
+        yield home
 
 
 def test_a_written_file_reads_back_found(tmp_path: Path) -> None:
@@ -201,7 +212,7 @@ def test_a_write_waits_for_another_writer_then_says_it_is_busy(
     with FileLock(str(data_file._lock_path(path))), pytest.raises(ConfigError, match=busy):
         DataFile[Mark].at(path).write(Mark(name="ada"))
     assert not path.exists()
-    assert not list(tmp_path.iterdir())  # no lock file beside it
+    assert [each.name for each in tmp_path.iterdir()] == ["home"]  # no lock file beside it
 
 
 def test_a_write_inside_a_write_to_the_same_file_is_refused(tmp_path: Path) -> None:

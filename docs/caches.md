@@ -343,11 +343,11 @@ stamp's.
 
 A 12.0 plugin names the file and its model once: `DataFile[Mark].at(path)`
 reads with `read()` (no unstamped files) and writes with `write(value,
-refreshed_at=, exclusive=)` under the file's lock (a 10 s wait, the lock
-kept in your temp folder, never beside the file). A write keeps the keys a
-newer untaped added and never writes over a newer untaped's file or one it
-cannot read; `copy_to(path)` copies a file that reads, the same way. An
-operation that must not run twice at once declares a lock on the plugin
+refreshed_at=, exclusive=)` under the file's lock (a 10 s wait; the lock
+lives under the home's `locks/`, never beside the file). A write keeps the
+keys a newer untaped added and never writes over a newer untaped's file or
+one it cannot read; `copy_to(path)` copies a file that reads, the same way.
+An operation that must not run twice at once declares a lock on the plugin
 class, `sync = Lock(wait=timedelta(minutes=10))`: `with
 DotfilesPlugin.sync.locked():` waits that long for another process
 (`dotfiles.sync is busy (another untaped process)` after it),

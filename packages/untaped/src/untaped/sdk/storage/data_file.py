@@ -443,17 +443,23 @@ _NOT_FOUND = {Absent: "does not exist", OtherVersion: "was written by a newer un
 
 
 def _lock_path(path: Path) -> Path:
-    """Where a data file's write lock lives: the user's temp folder, keyed by its real path.
+    """Where a data file's write lock lives: ``<home>/locks/``, keyed by its real path.
 
     Never beside the file, whose folder another owner keeps (a skill folder, a
-    project, a backup) and which may be read-only.
+    project, a backup) and which may be read-only. Two machines writing one
+    file on a share exclude each other only when they share the home too.
     """
-    import getpass  # noqa: PLC0415 - writes only
-    import tempfile  # noqa: PLC0415 - as above
+    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
     key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
-    folder = Path(tempfile.gettempdir()) / f"untaped-{getpass.getuser()}" / "locks"
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    folder = current_run().home / "locks"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(
+            f"could not lock {path}: cannot create {folder} ({exc.strerror or exc})",
+            details={"path": str(path)},
+        ) from exc
     return folder / f"{key}.lock"
 
 
