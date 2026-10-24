@@ -90,6 +90,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
     :class:`SurfaceError` for anything the walker can't classify.
     """
     from untaped.core.surface._cli import cli_lines  # noqa: PLC0415
+    from untaped.core.surface._records import record_lines  # noqa: PLC0415
     from untaped.core.surface._settings import check_quarantine, settings_lines  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
@@ -109,6 +110,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         lines.extend(settings_lines(result, tree=root))
         lines.extend(_owned(result, modules, marks))
         lines.extend(_behaviour_lines(result, root))
+        lines.extend(record_lines(result, marks))
         lines.extend(_convention_lines())
     return sorted(set(lines))
 

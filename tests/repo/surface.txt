@@ -4535,6 +4535,80 @@ convention entry-point untaped.plugins
 convention file fills.json
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
+record untaped.debug
+record untaped.debug.hint string?
+record untaped.debug.logger string
+record untaped.debug.message string
+record untaped.deprecation
+record untaped.deprecation.distribution string?
+record untaped.deprecation.hint string?
+record untaped.deprecation.id string
+record untaped.deprecation.message string
+record untaped.deprecation.removed_in integer?
+record untaped.deprecation.replacement string?
+record untaped.failure
+record untaped.failure.category choice=auth
+record untaped.failure.category choice=config
+record untaped.failure.category choice=conflict
+record untaped.failure.category choice=failed
+record untaped.failure.category choice=interrupted
+record untaped.failure.category choice=invalid
+record untaped.failure.category choice=not_found
+record untaped.failure.category choice=permission
+record untaped.failure.category choice=unavailable
+record untaped.failure.category choice=usage
+record untaped.failure.category string
+record untaped.failure.details object
+record untaped.failure.exit_code integer
+record untaped.failure.fix_by choice=user
+record untaped.failure.fix_by string?
+record untaped.failure.hint string?
+record untaped.failure.item string?
+record untaped.failure.message string
+record untaped.failure.retryable boolean
+record untaped.failure.system string
+record untaped.message
+record untaped.message.hint string?
+record untaped.message.level choice=hint
+record untaped.message.level choice=info
+record untaped.message.level choice=success
+record untaped.message.level choice=warning
+record untaped.message.level string
+record untaped.message.message string
+record untaped.progress
+record untaped.progress.done integer?
+record untaped.progress.elapsed number
+record untaped.progress.hint string?
+record untaped.progress.label string
+record untaped.progress.message string
+record untaped.progress.phase string?
+record untaped.progress.state choice=done
+record untaped.progress.state choice=failed
+record untaped.progress.state choice=running
+record untaped.progress.state string
+record untaped.progress.total integer?
+record untaped.pruned
+record untaped.pruned.bytes integer
+record untaped.pruned.hint string?
+record untaped.pruned.layout integer?
+record untaped.pruned.message string
+record untaped.pruned.path string
+record untaped.pruned.plugin string
+record untaped.pruned.store string?
+record untaped.stale
+record untaped.stale.age_seconds number
+record untaped.stale.attempted_at string(format=date-time)?
+record untaped.stale.cache string
+record untaped.stale.error Failure?
+record untaped.stale.hint string?
+record untaped.stale.key string
+record untaped.stale.max_age_seconds integer
+record untaped.stale.message string
+record untaped.stale.outdated boolean
+record untaped.stale.partial boolean
+record untaped.stale.plugin string
+record untaped.stale.refreshed_at string(format=date-time)
+record untaped.stale.retry_at string(format=date-time)?
 sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]

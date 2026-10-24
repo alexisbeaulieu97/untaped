@@ -157,4 +157,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   opens with an upgrade section listing them.
 
 `tests/repo/surface.txt` lists what this page promises, one line per
-promise, and its test fails a minor release that removes a stable line.
+promise, and its test fails a minor release that removes a stable line. A
+record kind gets `record` lines: one per field with its JSON type, and an
+owner line naming its required fields when a command reads it on `--stdin`.
+Core's stderr kinds (`untaped.failure`, `untaped.progress`...) are listed; a
+plugin's kinds are listed once the plugin is a 12.0 plugin class.

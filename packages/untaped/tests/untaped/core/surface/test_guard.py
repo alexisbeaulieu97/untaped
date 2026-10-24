@@ -308,6 +308,49 @@ CASES = {
         "cli untaped acme sync --refresh VALUE default=unset",
         False,
     ),
+    "a printed record gains a field": (
+        "record acme.thing\nrecord acme.thing.name string",
+        "record acme.thing\nrecord acme.thing.name string\nrecord acme.thing.size integer",
+        True,
+    ),
+    "a printed record drops a field": (
+        "record acme.thing\nrecord acme.thing.name string\nrecord acme.thing.size integer",
+        "record acme.thing\nrecord acme.thing.name string",
+        False,
+    ),
+    "a printed record's field changes its type": (
+        "record acme.thing\nrecord acme.thing.size integer",
+        "record acme.thing\nrecord acme.thing.size string",
+        False,
+    ),
+    "a printed record's field becomes nullable": (
+        "record acme.thing\nrecord acme.thing.size integer",
+        "record acme.thing\nrecord acme.thing.size integer?",
+        False,
+    ),
+    "a record read on stdin gains a required field": (
+        "record acme.thing(name)\nrecord acme.thing.name string",
+        "record acme.thing(name, size)\nrecord acme.thing.name string\n"
+        "record acme.thing.size integer",
+        False,
+    ),
+    "a record read on stdin gains an optional field": (
+        "record acme.thing(name)\nrecord acme.thing.name string",
+        "record acme.thing(name)\nrecord acme.thing.name string\n"
+        "record acme.thing.size integer default=0",
+        True,
+    ),
+    "a record kind goes": (
+        "record acme.thing\nrecord acme.thing.name string",
+        "",
+        False,
+    ),
+    "a record's choice goes": (
+        "record acme.thing\nrecord acme.thing.state choice=open\n"
+        "record acme.thing.state choice=shut\nrecord acme.thing.state string",
+        "record acme.thing\nrecord acme.thing.state choice=open\nrecord acme.thing.state string",
+        False,
+    ),
 }
 
 

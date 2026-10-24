@@ -116,14 +116,21 @@ def method_mark(info: ContractInfo, name: str, plugin_mark: LineMark | None) -> 
     return line_mark(own) or plugin_mark
 
 
-def model_lines(subject: str, model: type[BaseModel], mark: LineMark | None) -> list[Line]:
-    """A payload model's owner line (its required fields) and one typed line per field."""
+def model_lines(
+    subject: str, model: type[BaseModel], mark: LineMark | None, *, written: bool = True
+) -> list[Line]:
+    """A payload model's owner line (its required fields) and one typed line per field.
+
+    A model only read from untaped (``written=False``, a record it prints) has a
+    bare owner line and no defaults: what its writer requires or fills in is
+    not the reader's promise.
+    """
     schema = schema_of(model)
     # A model that refers to itself is a reference to its own def.
     body: Mapping[str, Any] = schema["$defs"][schema["$ref"]] if "$ref" in schema else schema
     properties: Mapping[str, Any] = body.get("properties", {})
     required = sorted(body.get("required", ()))
-    lines = [Line(f"{subject}({', '.join(required)})", mark)]
+    lines = [Line(f"{subject}({', '.join(required)})" if written else subject, mark)]
     by_alias = {
         (info.validation_alias if isinstance(info.validation_alias, str) else None)
         or info.alias
@@ -134,7 +141,7 @@ def model_lines(subject: str, model: type[BaseModel], mark: LineMark | None) -> 
     for key in sorted(properties):
         token = node_token(properties[key], defs)
         text = f"{subject}.{key} {token.token}"
-        if key not in required:
+        if written and key not in required:
             info = by_alias.get(key)
             text += f" default={'None' if info is None else _field_default(info)}"
         lines.append(Line(text, mark))
