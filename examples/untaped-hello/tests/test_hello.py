@@ -18,7 +18,7 @@ def test_hello_passes_lint() -> None:
 
 
 def test_hello_loads_lazily() -> None:
-    """A fresh interpreter: rendering the root help never imports the CLI.
+    """A fresh interpreter after the first start: rendering the root help never imports the CLI.
 
     The first start composes the plugin class, which imports its commands,
     and core keeps what it composed; every start after that reads it.
@@ -28,7 +28,8 @@ def test_hello_loads_lazily() -> None:
         "r = invoke_root(['--help']); "
         "print(r.exit_code, 'hello' in r.stdout, 'untaped_hello.cli' in sys.modules)"
     )
-    subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    first = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert first.stdout.split()[:2] == ["0", "True"]
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.split() == ["0", "True", "False"]
 

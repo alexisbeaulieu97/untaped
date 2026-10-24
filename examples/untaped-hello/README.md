@@ -15,11 +15,11 @@ The entry point names the class, `hello = "untaped_hello.plugin:Hello"`, in
 a leaf module so the rest of the package imports without the commands. Copy
 this directory to start a plugin of your own.
 
-It is not published. In a virtualenv in a copy of this directory,
-`uv pip install 'untaped[lint]' . pytest` installs `untaped` and its `lint`
-plugin from PyPI. To test against an unreleased core, build the wheels from
-the repository root and install them by path (the copy outside the repository keeps uv from treating
-it as part of the workspace):
+It is not published, and the plugin class it uses is not in a released
+`untaped` yet: until the next major it runs only against a core built from this
+repository. Build the wheels from the repository root and install them by
+path (the copy outside the repository keeps uv from treating it as part of
+the workspace):
 
 ```bash
 uv build --package untaped --no-sources --out-dir dist

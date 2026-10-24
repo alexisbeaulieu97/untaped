@@ -15,9 +15,13 @@ from untaped.runtime.registry import PluginSpec
 
 
 def candidate_package(target: object) -> str | None:
-    """The plugin package of a candidate ``target``, or ``None`` when unresolvable."""
+    """The plugin package of a candidate ``target``, or ``None`` when unresolvable.
+
+    A string target's module is the package (``untaped_acme:SPEC``) or a
+    module in it (a plugin class in its leaf ``untaped_acme.plugin``).
+    """
     if isinstance(target, str):
-        return target.partition(":")[0] if ":" in target else None
+        return _package_of_module(target.partition(":")[0]) if ":" in target else None
     if not isinstance(target, PluginSpec):
         return None
     try:
@@ -53,6 +57,20 @@ def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
             f"plugin {spec.name!r}: its app factory or settings are not defined in a package"
         )
     return package, _source_dir(package)
+
+
+def _package_of_module(module: str) -> str:
+    """``module`` when it is a package or can't be found, else the package holding it.
+
+    Finding a submodule imports its parent package, never the module itself.
+    """
+    try:
+        found = find_spec(module)
+    except ImportError, ValueError:
+        return module
+    if found is None or found.submodule_search_locations:
+        return module
+    return module.rpartition(".")[0] or module
 
 
 def _source_dir(package: str) -> Path:
