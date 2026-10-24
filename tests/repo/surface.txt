@@ -6494,6 +6494,8 @@ sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.hint(command)
 sdk untaped.sdk.holders(target)  [experimental]
+sdk untaped.sdk.installed_code()
+sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.key(model)

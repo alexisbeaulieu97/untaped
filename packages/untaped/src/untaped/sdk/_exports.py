@@ -245,6 +245,7 @@ from untaped.sdk.storage.holds import (
     ReleaseAsk,
     UnknownHolder,
 )
+from untaped.sdk.storage.installed_code import installed_code
 from untaped.sdk.storage.state import (
     ProjectStateRows,
     RowExists,
@@ -570,6 +571,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Store",
     "code_version",
     "holders",
+    "installed_code",
     "refresh_option",
     # data files
     "Absent",
