@@ -203,9 +203,8 @@ def _key(
                 fix_by="user",
             )
         return target.key
-    data = {name.replace("-", "_"): value for name, value in fields.items()}
     try:
-        key: CredentialKey = credential.key.model_validate(data)
+        key: CredentialKey = credential.key.model_validate(fields)
     except ValidationError as exc:
         names = " ".join(
             f"--key {name.replace('_', '-')}=…" for name in credential.key.model_fields
@@ -550,9 +549,12 @@ def _key_fields(given: list[str]) -> dict[str, str]:
     fields: dict[str, str] = {}
     for pair in given:
         name, sep, value = pair.partition("=")
-        if not sep or not name.strip():
+        field = name.strip().replace("-", "_")
+        if not sep or not field:
             raise UsageError(f"--key takes FIELD=VALUE, not {pair!r}")
-        fields[name.strip()] = value
+        if field in fields:
+            raise UsageError(f"--key names {name.strip()} more than once")
+        fields[field] = value
     return fields
 
 
@@ -571,8 +573,8 @@ class Login(Command[CoreSettings]):
     --token-command stores a command instead (its program a bare name or an
     absolute path, run from the config file's folder). The store is macOS
     security, secret-tool (Secret Service), then pass, or --store. A login
-    wins over the deprecated <plugin>.token settings and the plugin's
-    variables; UNTAPED_<PLUGIN>__TOKEN still wins over it. Logging in again
+    wins over the deprecated PLUGIN.token settings and the plugin's
+    variables; UNTAPED_PLUGIN__TOKEN still wins over it. Logging in again
     replaces it. A server a folder's settings chose is refused.
 
     Examples:
@@ -675,9 +677,9 @@ class Set(Command[CoreSettings]):
 
     Tries macOS security, secret-tool (Secret Service), then pass. The token
     is read from a hidden prompt (or --stdin), stored on the tool's stdin,
-    read back, and only then written as <section>.token_command in the
+    read back, and only then written as SECTION.token_command in the
     profile --profile names, else the base, replacing any plaintext
-    <section>.token. Running it again replaces the stored token.
+    SECTION.token. Running it again replaces the stored token.
 
     Examples:
         $ printf %s "$TOKEN" | untaped auth set github --stdin
@@ -695,7 +697,7 @@ class Set(Command[CoreSettings]):
 
 
 class Unset(Command[CoreSettings]):
-    """Delete the token auth set stored and unset <section>.token_command.
+    """Delete the token auth set stored and unset SECTION.token_command.
 
     Acts on the picked profile's own setting only (or the base); an
     inherited one is left alone. A token_command untaped did not write is

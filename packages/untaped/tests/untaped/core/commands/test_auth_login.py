@@ -198,6 +198,13 @@ def test_a_key_option_without_a_value_is_refused() -> None:
     assert "--key takes FIELD=VALUE, not 'vault-id'" in result.stderr
 
 
+def test_a_key_field_given_twice_is_refused() -> None:
+    result = _auth("login", "vlt", "--key", "vault-id=a", "--key", "vault_id=b", input="pw\n")
+
+    assert result.exit_code == 2, result.output
+    assert "--key names vault_id more than once" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "message"),
     [

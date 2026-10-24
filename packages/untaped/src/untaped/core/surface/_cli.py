@@ -122,10 +122,6 @@ def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) 
     marked = {argument.field_info.name: option for argument, option in marked_options(app)}
     for argument in _arguments(app, " ".join(path), frozenset(marked)):
         own = line_mark(marked.get(argument.field_info.name), root) or mark
-        if argument.field_info.kind is inspect.Parameter.VAR_KEYWORD:
-            # Options the command reads by name at run time (``auth login``'s key fields).
-            yield Line(f"{subject} --<{str(argument.field_info.name).upper()}> VALUE", own)
-            continue
         if argument.field_info.kind in _POSITIONAL:
             position += 1
             main = _positional_name(argument)
