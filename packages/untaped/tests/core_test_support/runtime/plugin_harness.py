@@ -95,7 +95,6 @@ def make_spec(
 def make_shell(
     name: str = "untaped",
     section: str = "untaped",
-    skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
     commands: tuple[str, ...] = (),
 ) -> ApplicationSpec:
@@ -104,7 +103,6 @@ def make_shell(
         app_factory=nullary_app("root"),
         section=section,
         settings=OtherProfile,
-        skills=skills,
         doctor_checks=checks,
         commands=commands,
     )

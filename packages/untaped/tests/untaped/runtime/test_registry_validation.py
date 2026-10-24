@@ -238,10 +238,10 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate plugin name: 'root' is taken by a root command",
         ),
         (
-            make_shell(skills=(make_skill("shell-skill"),)),
-            make_spec(name="s", skills=(make_skill("shell-skill"),)),
+            make_shell(),
+            make_spec(name="s", skills=(make_skill("untaped"),)),
             "duplicate-skill",
-            "duplicate skill name: 'shell-skill'",
+            "duplicate skill name: 'untaped'",
         ),
         (
             make_shell(checks=(make_check("shell.health"),)),
