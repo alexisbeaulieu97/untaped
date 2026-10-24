@@ -16,11 +16,12 @@ ages, progress cadence and HTTP back-off. Under :func:`manual_clock` it is a
 is "a rerun an hour later") and on a block's sleep, which never waits.
 
 :func:`cache_clock` and :func:`progress_clock` are the older clocks, each
-for one kind of time; the other kind stays real (or the manual clock's,
-inside one). :func:`invoke_cli` freezes progress time for the invocation
-unless the test installed a clock for it, so ``CliResult.diagnostics``
-carries no ``untaped.progress`` line however slow the run (``--verbose``
-still prints every update); a deadline or a back-off inside keeps its time.
+for one kind of time: :func:`cache_clock` for the wall time caches read,
+:func:`progress_clock` for the progress cadence alone. :func:`invoke_cli`
+freezes the cadence for the invocation unless the test set it, so
+``CliResult.diagnostics`` carries no ``untaped.progress`` line however
+slow the run (``--verbose`` still prints every update); a deadline or a
+back-off inside keeps its time.
 
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
@@ -57,7 +58,13 @@ from rich.console import Console
 
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.sink import frozen_cadence, recording, tick
+from untaped.runtime.sink import (
+    cadence_clock,
+    cadence_is_set,
+    frozen_cadence,
+    recording,
+    tick,
+)
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.errors import ConfigError, PromptInterruptedError
@@ -260,34 +267,25 @@ def manual_clock(start: datetime | None = None) -> Iterator[ManualClock]:
         yield clock
 
 
-class _OneHalf(Clock):
-    """A clock that answers one half itself and the rest from the clock installed before it."""
+class _WallOnly(Clock):
+    """A clock that answers wall time itself and the rest from the clock below it."""
 
-    def __init__(
-        self,
-        below: Clock,
-        *,
-        wall: Callable[[], datetime] | None = None,
-        monotonic: Callable[[], float] | None = None,
-    ) -> None:
-        self._below, self._wall, self._monotonic = below, wall, monotonic
+    def __init__(self, below: Clock, wall: Callable[[], datetime]) -> None:
+        self._below, self._wall = below, wall
 
     def now(self) -> datetime:
-        return self._wall() if self._wall is not None else self._below.now()
+        return self._wall()
 
     def monotonic(self) -> float:
-        return self._monotonic() if self._monotonic is not None else self._below.monotonic()
+        return self._below.monotonic()
 
     def sleep(self, seconds: float) -> None:
         self._below.sleep(seconds)
 
 
-def _monotonic_is_manual() -> bool:
-    """Whether the test installed a clock that answers monotonic time (progress) itself."""
-    clock = _installed[0]
-    return isinstance(clock, ManualClock) or (
-        isinstance(clock, _OneHalf) and clock._monotonic is not None
-    )
+def _cadence_is_the_tests() -> bool:
+    """Whether the test already set what progress time reads (a manual clock, a progress clock)."""
+    return cadence_is_set() or isinstance(_installed[0], ManualClock)
 
 
 class ProgressClock:
@@ -309,10 +307,10 @@ class ProgressClock:
 def progress_clock() -> Iterator[ProgressClock]:
     """Run the block on a progress clock the test advances (``invoke_cli`` keeps it).
 
-    Only monotonic time is the test's; wall time stays the clock's installed before.
+    Only the progress cadence reads it; a deadline or a back-off keeps its time.
     """
     clock = ProgressClock()
-    with installed_clock(_OneHalf(run_clock(), monotonic=clock)):
+    with cadence_clock(clock):
         yield clock
 
 
@@ -342,7 +340,7 @@ def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
     Only wall time is the test's; monotonic time stays the clock's installed before.
     """
     clock = CacheClock(_utc(start))
-    with installed_clock(_OneHalf(run_clock(), wall=clock)):
+    with installed_clock(_WallOnly(run_clock(), clock)):
         yield clock
 
 
@@ -500,7 +498,7 @@ def invoke_cli(
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
     terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
-        frozen = nullcontext() if _monotonic_is_manual() else frozen_cadence()
+        frozen = nullcontext() if _cadence_is_the_tests() else frozen_cadence()
         with (
             frozen,
             redirect_stdout(stdout),

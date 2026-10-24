@@ -143,12 +143,11 @@ def test_caches_read_their_ages_from_the_clock() -> None:
         assert cache_module._utcnow() == START + timedelta(hours=2)
 
 
-def test_the_one_half_clocks_keep_the_other_half_of_the_clock_below() -> None:
+def test_the_older_clocks_leave_the_rest_of_the_clock_alone() -> None:
     with manual_clock(START) as clock:
         with progress_clock() as progress:
             progress.advance(5)
-            assert run_clock().monotonic() == 5
-            assert run_clock().now() == START
+            assert run_clock() is clock  # only the cadence reads the progress clock
         with cache_clock(START + timedelta(days=1)):
             assert run_clock().now() == START + timedelta(days=1)
             clock.sleep(2)
@@ -180,13 +179,20 @@ def test_a_deadline_keeps_the_clock_it_was_set_on() -> None:
     clock = ManualClock(START)
     with installed_clock(clock), request_deadline(10):
         clock.advance(4)
-        with progress_clock() as progress:
-            progress.advance(100)
+        with installed_clock(ManualClock(START)) as other:
+            other.advance(100)
             assert _time_left() == 6
             with request_deadline(20):
                 assert _time_left() == 6
             with request_deadline(1):
                 assert _time_left() == 1
+
+
+def test_a_deadline_runs_out_under_a_progress_clock() -> None:
+    with progress_clock(), request_deadline(0.05):
+        time.sleep(0.1)
+        left = _time_left()
+    assert left is not None and left < 0
 
 
 def _waiting(left: list[float | None]) -> App:

@@ -222,7 +222,8 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
     last error stands). A request past it raises :class:`HttpTransportError`
     (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
     deadline is a context variable, so threads started with a copied context
-    (``bounded_map``) share it.
+    (``bounded_map``) share it. It counts down on the clock it was set on
+    (:func:`~untaped.sdk.run.run_clock` then).
     """
     if seconds is None:
         yield

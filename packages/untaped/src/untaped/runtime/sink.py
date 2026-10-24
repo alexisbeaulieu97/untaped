@@ -223,27 +223,35 @@ type _Mode = Literal["spinner", "lines", "silent"]
 
 #: Open tasks, by open time: the first is the line's, the last owns its phase. Guarded by the lock.
 _tasks: list[_Task] = []
-#: Whether progress time stands still (:func:`frozen_cadence`), for a test's invocation.
-_frozen: list[bool] = [False]
-
-
-def _still() -> float:
-    return 0.0
+#: What progress time a test holds tasks to (:func:`cadence_clock`), else the run's clock.
+_cadence: list[Callable[[], float] | None] = [None]
 
 
 @contextmanager
-def frozen_cadence() -> Iterator[None]:
-    """Hold progress time still for tasks opened in the block: no line falls due.
+def cadence_clock(clock: Callable[[], float]) -> Iterator[None]:
+    """Time the progress cadence of tasks opened in the block by ``clock`` (a test's).
 
-    Only the cadence stands still; every other reader of the run's clock
-    (a deadline, a back-off) keeps its time. ``--verbose`` still prints
-    every update.
+    Only the cadence reads it; every other reader of the run's clock (a
+    deadline, a back-off) keeps its time.
     """
-    previous, _frozen[0] = _frozen[0], True
+    previous, _cadence[0] = _cadence[0], clock
     try:
         yield
     finally:
-        _frozen[0] = previous
+        _cadence[0] = previous
+
+
+def frozen_cadence() -> AbstractContextManager[None]:
+    """Hold progress time still in the block: no line falls due.
+
+    ``--verbose`` still prints every update.
+    """
+    return cadence_clock(lambda: 0.0)
+
+
+def cadence_is_set() -> bool:
+    """Whether a test holds the progress cadence to its own clock now."""
+    return _cadence[0] is not None
 
 
 #: The thread driving the spinner and the deadlines while a task is open. Guarded by the lock.
@@ -278,7 +286,7 @@ class _Task:
         self.verbose = verbose
         self.frames = frames
         #: The clock at open, so a task outliving a test's clock keeps its own.
-        self.clock = _still if _frozen[0] else run_clock().monotonic
+        self.clock = _cadence[0] or run_clock().monotonic
         self.opened = self.clock()
         self.phase: str | None = None
         self.done: int | None = None
