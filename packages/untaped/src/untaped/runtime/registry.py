@@ -566,15 +566,24 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
-    if owner or spec.caches or spec.credentials:
+    caches = timed_caches(spec)
+    if owner or caches or spec.credentials:
         return section_model(
             spec.settings or _NoSettings,
             extensions=owner,
-            caches=spec.caches,
+            caches=caches,
             section=spec.name,
             credentials=spec.credentials,
         )
     return spec.settings
+
+
+def timed_caches(spec: PluginSpec) -> tuple[Cache[Any], ...]:
+    """The plugin's caches with a max age, each a ``caches.<name>.max_age_seconds`` setting.
+
+    A version-only cache (``max_age=None``) has none.
+    """
+    return tuple(cache for cache in spec.caches if not cache.version_only)
 
 
 def settings_model(spec: PluginSpec) -> type[BaseModel]:
@@ -1006,7 +1015,7 @@ def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
-        | ({"caches"} if spec.caches else set())
+        | ({"caches"} if timed_caches(spec) else set())
         | set(
             legacy_credential_fields(
                 spec.settings or _NoSettings, spec.credentials, section=spec.name

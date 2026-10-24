@@ -190,6 +190,17 @@ release is refreshed on its first read. Two installs at different versions
 that share settings (a release and a development checkout) refill each
 other's keys on every read. Without `version=` nothing changes.
 
+A value that depends only on the code that computes it, never on an
+upstream, is a version-only cache: `max_age=None` with `model=` and
+`version=`. Core keeps its composed plugin declaration this way
+(`version=installed_code()`). Time never makes it due: it is filled when this
+version has no value and served from then on. It has no
+`caches.<name>.max_age_seconds` setting and no `--refresh`/`--cached`
+(`Refresh` refuses it). It never serves another version's value, and its
+complete fill removes the key's other versions. It writes nothing on stderr: a
+home it can't write leaves the value in memory, and the next run fills it
+again. A fill that raises propagates.
+
 A default is not part of the settings digest, so a release that changes a
 default leaves every folder where it is. When that changed default alters
 what a cache holds, bump the cache's `version=` in the same release (a

@@ -65,6 +65,7 @@ from untaped.sdk.plugin import (
     generic_argument,
     settings_model,
 )
+from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -859,6 +860,13 @@ class _CommandWalk:
                 "Refresh names the caches its flags are about: Refresh(CACHE)",
             )
         for cache in default.caches:
+            if isinstance(cache, Cache) and cache.version_only:
+                self.problem(
+                    "refresh-cache",
+                    where,
+                    f"{cache!r} is version-only: it has no max age for --refresh to override",
+                )
+                continue
             if id(cache) in self.plugin.held or self._cached_method(cache):
                 continue
             self.problem(
