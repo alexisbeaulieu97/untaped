@@ -55,7 +55,6 @@ import json
 import shutil
 import sys
 import threading
-import time
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -99,6 +98,7 @@ from untaped.sdk.diagnostic import (
 from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.records import OutcomeRecord
+from untaped.sdk.run import run_clock
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -227,24 +227,6 @@ _tasks: list[_Task] = []
 _ticker: _Ticker | None = None
 #: The spinner's frame counter. Guarded by the lock.
 _frame = 0
-#: The progress clock: ``time.monotonic`` unless a test installed its own.
-_clock: Callable[[], float] = time.monotonic
-
-
-@contextmanager
-def installed_clock(clock: Callable[[], float]) -> Iterator[None]:
-    """Read the progress cadence from ``clock`` inside the block (``untaped.sdk.testing``'s)."""
-    global _clock
-    previous, _clock = _clock, clock
-    try:
-        yield
-    finally:
-        _clock = previous
-
-
-def current_clock() -> Callable[[], float]:
-    """The clock the progress cadence reads now."""
-    return _clock
 
 
 class _Task:
@@ -273,7 +255,7 @@ class _Task:
         self.verbose = verbose
         self.frames = frames
         #: The clock at open, so a task outliving a test's clock keeps its own.
-        self.clock = _clock
+        self.clock = run_clock().monotonic
         self.opened = self.clock()
         self.phase: str | None = None
         self.done: int | None = None

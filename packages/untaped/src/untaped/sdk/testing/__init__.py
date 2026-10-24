@@ -10,17 +10,20 @@ plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
 public surface (``untaped.sdk.testing.surface``).
 
-Progress lines follow a clock, not the wall: :func:`invoke_cli` freezes the
-progress clock for the invocation, so ``CliResult.diagnostics`` carries no
-``untaped.progress`` line however slow the run (``--verbose`` still prints
-every update). A test that wants the cadence runs under
-:func:`progress_clock` and calls ``advance(seconds)`` from inside the
-command (a fake the command calls, say).
+Blocks read time from the run's clock (``untaped.sdk.run.run_clock``):
+cache ages, progress cadence and HTTP back-off. Under :func:`manual_clock`
+that clock is a :class:`ManualClock`, which moves only on ``advance(...)``
+(``advance(hours=1)`` is "a rerun an hour later") and on a block's sleep,
+which never waits.
 
-A cache (``untaped.sdk.Cache``) reads its ages from the wall clock; under
-:func:`cache_clock` it reads the test's instead, which moves only on
-``advance(timedelta)``, so "a rerun an hour later" is one call. The two
-clocks are independent.
+The 11.x clocks each move one half and leave the other to the clock below:
+:func:`invoke_cli` freezes progress time for the invocation unless the test
+installed its own, so ``CliResult.diagnostics`` carries no
+``untaped.progress`` line however slow the run (``--verbose`` still prints
+every update); a test that wants the cadence runs under
+:func:`progress_clock` and calls ``advance(seconds)`` from inside the
+command. Under :func:`cache_clock` caches read the test's wall time, which
+moves only on ``advance(timedelta)``.
 
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
@@ -56,7 +59,7 @@ from rich.console import Console
 
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.sink import current_clock, installed_clock, recording, tick
+from untaped.runtime.sink import recording, tick
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.errors import ConfigError, PromptInterruptedError
@@ -70,8 +73,9 @@ from untaped.sdk.prompt.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
+from untaped.sdk.run import Clock, installed_clock, run_clock
 from untaped.sdk.storage._refs import PROJECT, RefHolder, write_reference
-from untaped.sdk.storage.cache import Cache, installed_utcnow, versioned
+from untaped.sdk.storage.cache import Cache, versioned
 from untaped.sdk.storage.holds import (
     HolderState,
     HolderView,
@@ -100,6 +104,7 @@ __all__ = [
     "CacheClock",
     "CliInvoker",
     "CliResult",
+    "ManualClock",
     "MemoryStore",
     "PluginCandidate",
     "PluginCheckRow",
@@ -124,6 +129,7 @@ __all__ = [
     "invoke_root",
     "keep_value",
     "make_project",
+    "manual_clock",
     "memory_store",
     "move_ask",
     "plan_release",
@@ -200,6 +206,85 @@ def current_memory_store() -> MemoryStore:
     return store
 
 
+class ManualClock(Clock):
+    """A run's clock that moves only when the test moves it.
+
+    Wall and monotonic time move together: :meth:`advance` and a block's
+    :meth:`sleep` (an HTTP back-off, say) move both and never wait, and
+    :meth:`advance` then runs one progress tick, so a due line prints now.
+    ``start`` is the wall time it begins at (now, to the second, by default;
+    naive is UTC).
+    """
+
+    def __init__(self, start: datetime | None = None) -> None:
+        if start is None:
+            start = datetime.now(UTC).replace(microsecond=0)
+        elif start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
+        self._wall = start
+        self._monotonic = 0.0
+        #: Each wait a block asked for, in seconds, in order.
+        self.slept: list[float] = []
+
+    def now(self) -> datetime:
+        return self._wall
+
+    def monotonic(self) -> float:
+        return self._monotonic
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self._move(seconds)
+
+    def advance(self, by: timedelta | float = 0, /, **parts: float) -> None:
+        """Move the clock on by ``by`` (seconds or a timedelta) plus ``parts`` (``hours=1``)."""
+        step = by if isinstance(by, timedelta) else timedelta(seconds=by)
+        self._move((step + timedelta(**parts)).total_seconds())
+        tick()
+
+    def _move(self, seconds: float) -> None:
+        self._wall += timedelta(seconds=seconds)
+        self._monotonic += seconds
+
+
+@contextmanager
+def manual_clock(start: datetime | None = None) -> Iterator[ManualClock]:
+    """Run the block, and any run inside it, on a :class:`ManualClock`."""
+    clock = ManualClock(start)
+    with installed_clock(clock):
+        yield clock
+
+
+class _OneHalf(Clock):
+    """A clock that answers one half itself and the rest from the clock installed before it."""
+
+    def __init__(
+        self,
+        below: Clock,
+        *,
+        wall: Callable[[], datetime] | None = None,
+        monotonic: Callable[[], float] | None = None,
+    ) -> None:
+        self._below, self._wall, self._monotonic = below, wall, monotonic
+
+    def now(self) -> datetime:
+        return self._wall() if self._wall is not None else self._below.now()
+
+    def monotonic(self) -> float:
+        return self._monotonic() if self._monotonic is not None else self._below.monotonic()
+
+    def sleep(self, seconds: float) -> None:
+        self._below.sleep(seconds)
+
+
+def _monotonic_is_manual() -> bool:
+    """Whether the clock installed now is a test's for monotonic time (progress)."""
+    clock = run_clock()
+    return isinstance(clock, ManualClock) or (
+        isinstance(clock, _OneHalf) and clock._monotonic is not None
+    )
+
+
 class ProgressClock:
     """The progress clock of :func:`progress_clock`: time moves only when a test advances it."""
 
@@ -217,9 +302,12 @@ class ProgressClock:
 
 @contextmanager
 def progress_clock() -> Iterator[ProgressClock]:
-    """Run the block on a progress clock the test advances (``invoke_cli`` keeps it)."""
+    """Run the block on a progress clock the test advances (``invoke_cli`` keeps it).
+
+    Only monotonic time is the test's; wall time stays the clock's installed before.
+    """
     clock = ProgressClock()
-    with installed_clock(clock):
+    with installed_clock(_OneHalf(run_clock(), monotonic=clock)):
         yield clock
 
 
@@ -244,13 +332,16 @@ class CacheClock:
 
 @contextmanager
 def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
-    """Run the block with caches on a wall clock the test advances (``start``: now)."""
+    """Run the block with caches on a wall clock the test advances (``start``: now).
+
+    Only wall time is the test's; monotonic time stays the clock's installed before.
+    """
     if start is None:
         start = datetime.now(UTC).replace(microsecond=0)
     elif start.tzinfo is None:
         start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
     clock = CacheClock(start)
-    with installed_utcnow(clock):
+    with installed_clock(_OneHalf(run_clock(), wall=clock)):
         yield clock
 
 
@@ -408,7 +499,7 @@ def invoke_cli(
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
     terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
-        frozen = nullcontext() if isinstance(current_clock(), ProgressClock) else progress_clock()
+        frozen = nullcontext() if _monotonic_is_manual() else progress_clock()
         with (
             frozen,
             redirect_stdout(stdout),

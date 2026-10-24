@@ -26,7 +26,7 @@ from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -61,6 +61,7 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import deprecated, deprecated_behaviour, deprecated_parameters
 from untaped.sdk.network.auth import takes_token_command, token_alternatives
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
+from untaped.sdk.run import run_clock
 from untaped.sdk.words import command_line, q, run_hint
 
 if TYPE_CHECKING:
@@ -141,11 +142,12 @@ def _parse_retry_after(value: str) -> float | None:
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+    return max(0.0, (when - run_clock().now()).total_seconds())
 
 
-def _sleep(seconds: float) -> None:  # pragma: no cover - thin wrapper, patched in tests
-    time.sleep(seconds)
+def _sleep(seconds: float) -> None:
+    """Wait ``seconds`` before a retry, on the run's clock (a test's clock moves at once)."""
+    run_clock().sleep(seconds)
 
 
 def resolve_verify(http: HttpSettings) -> VerifyTypes:

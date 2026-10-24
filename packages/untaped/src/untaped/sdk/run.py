@@ -121,10 +121,35 @@ class Run:
     diag: Diag
     #: The terminal handle, built on first use (prompts and screens need one).
     terminal: Callable[[], UiContext]
-    clock: Clock = field(default_factory=Clock)
+    #: What every block reads time from: by default the clock outside a run (:func:`run_clock`).
+    clock: Clock = field(default_factory=lambda: _outside[0])
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)
+
+#: The clock code outside a run reads, and the one a new run starts with; a test installs its own.
+_outside: list[Clock] = [Clock()]
+
+
+def run_clock() -> Clock:
+    """The current run's clock, else the clock outside a run.
+
+    Cache ages, progress cadence and HTTP back-off read time here, so a
+    test's clock (:func:`installed_clock`) moves all three. A thread a block
+    starts doesn't see the run: the block reads the clock before starting it.
+    """
+    run = _RUN.get()
+    return run.clock if run is not None else _outside[0]
+
+
+@contextmanager
+def installed_clock(clock: Clock) -> Iterator[Clock]:
+    """Use ``clock`` outside a run, and for each run built inside the block (a test's)."""
+    previous, _outside[0] = _outside[0], clock
+    try:
+        yield clock
+    finally:
+        _outside[0] = previous
 
 
 @contextmanager
