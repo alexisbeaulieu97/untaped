@@ -22,6 +22,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Stdin",
         "Lines",
         "Confirm",
+        "DryRun",
         "Refresh",
         "Parallel",
         "Limit",

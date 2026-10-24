@@ -94,6 +94,7 @@ class List(Command[CoreSettings]):
         $ untaped skills list
     """
 
+    repairs = True
     output: Output[records.Skill]
 
     def run(self) -> Iterator[records.Skill]:
@@ -109,6 +110,7 @@ class Install(Command[CoreSettings]):
         $ untaped skills install awx --scope local
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     all: bool = Field(False, description="Install every registered skill.")
@@ -147,6 +149,7 @@ class Status(Command[CoreSettings]):
         $ untaped skills status --check
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     project_dir: Path | None = Field(None, description=_PROJECT)
@@ -178,6 +181,7 @@ class Update(Command[CoreSettings]):
         $ untaped skills update untaped-awx --force
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     project_dir: Path | None = Field(None, description=_PROJECT)
@@ -208,6 +212,7 @@ class Remove(Command[CoreSettings]):
         $ untaped skills remove --all --target claude --yes
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     all: bool = Field(False, description="Remove every installed untaped skill.")

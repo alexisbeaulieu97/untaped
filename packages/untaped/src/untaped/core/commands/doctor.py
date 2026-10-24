@@ -139,6 +139,7 @@ class Check(Command[CoreSettings]):
         $ untaped doctor --online --format json
     """
 
+    repairs = True
     online: bool = Field(False, description=_ONLINE)
     output: Output[records.DoctorCheck]
 
@@ -171,6 +172,7 @@ class Fix(Command[CoreSettings]):
         $ untaped doctor fix --yes
     """
 
+    repairs = True
     online: bool = Field(False, description=_ONLINE)
     confirm: Confirm
     output: Output[records.FixOutcome]

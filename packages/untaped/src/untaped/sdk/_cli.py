@@ -91,9 +91,10 @@ TreeFormatOption = Annotated[
 
 #: Environment variable naming the default ``--format`` (wins over ``untaped.ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
-#: Root commands that diagnose the setup: an invalid ``UNTAPED_FORMAT`` is
-#: ignored there instead of blocking them.
-_FORMAT_ENV_LENIENT = frozenset({"doctor", "setup"})
+#: Root commands mounted through the 11.x seam that repair the setup: an
+#: invalid ``UNTAPED_FORMAT`` is ignored there instead of blocking them. A
+#: declared command says so with ``repairs = True``; this goes with setup's move.
+_FORMAT_ENV_LENIENT = frozenset({"setup"})
 
 
 def apply_default_format(
@@ -108,8 +109,8 @@ def apply_default_format(
     then the ``untaped.ui.format`` setting. An explicit ``--format`` has tokens
     already and always wins. A ``ui`` section that fails to load is ignored
     here so ``config set`` can still repair it; ``doctor`` reports it. An
-    invalid ``UNTAPED_FORMAT`` is a usage error, except under ``doctor`` and
-    ``setup``, which ignore it.
+    invalid ``UNTAPED_FORMAT`` is a usage error, except under a command marked
+    ``repairs`` (``doctor``, ``skills``) and ``setup``, which ignore it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
     ``untaped.ui.format``; not a command's own default) is recorded for the stderr
     diagnostics (:func:`untaped.runtime.output_policy.note_format`, phase 2), and,
@@ -117,8 +118,7 @@ def apply_default_format(
     (:func:`untaped.runtime.output_policy.note_theme`; a broken ``ui`` section
     degrades to the default theme).
     """
-    del app
-    _default_format(commands, arguments)
+    _default_format(_repairs(app, commands), arguments)
     chosen = [
         str(argument.tokens[-1].value)
         for argument in arguments
@@ -137,7 +137,18 @@ def _user_theme() -> ThemeSpec:
     return resolve_theme_or_default(lambda: load_core_part("ui"), strict=False)
 
 
-def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
+def _repairs(app: App, commands: tuple[str, ...]) -> bool:
+    """Whether the command parsed (``app``, at ``commands``) repairs the setup."""
+    # Lazy: the mount imports this module.
+    from untaped.runtime.mount import declared  # noqa: PLC0415
+
+    decl = declared(app.default_command)
+    if decl is not None:
+        return decl.repairs
+    return bool(commands[:1]) and commands[0] in _FORMAT_ENV_LENIENT
+
+
+def _default_format(repairs: bool, arguments: ArgumentCollection) -> None:
     """Append the user's default format to an omitted table-default ``--format``.
 
     That is a ``--format`` whose choices include every shared format
@@ -161,7 +172,7 @@ def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) ->
     value = os.environ.get(FORMAT_ENV) or None
     source = FORMAT_ENV
     if value is not None and value not in choices:
-        if commands[:1] and commands[0] in _FORMAT_ENV_LENIENT:
+        if repairs:
             value = None
         else:
             raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")

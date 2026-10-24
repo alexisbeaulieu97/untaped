@@ -28,7 +28,7 @@ from untaped.core.config.models import SettingOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.registry import CompositionResult, owns_contracts, run_deferred_factory
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.fields import Output, Positional
+from untaped.sdk.fields import DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.plugin_records import InstalledPlugin
 from untaped.sdk.records import Record, record_model
@@ -106,7 +106,7 @@ class Rank(Command[CoreSettings]):
     plugins: Positional[list[str]] = Field(
         default_factory=list, description="Providers, first first; none removes the ranking."
     )
-    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    dry_run: DryRun
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
@@ -116,7 +116,7 @@ class Rank(Command[CoreSettings]):
         from untaped.runtime.registry import contract_owners  # noqa: PLC0415
 
         rank = RankProviders(SettingsFileRepository(), contract_owners(_composition()))
-        change = rank(self.contract, self.method, list(self.plugins), dry_run=self.dry_run)
+        change = rank(self.contract, self.method, list(self.plugins), dry_run=bool(self.dry_run))
         print_notes(change.notes)
         return change.outcome
 
@@ -135,7 +135,7 @@ class New(Command[CoreSettings]):
         description="The contract the plugin fills, as OWNER.CONTRACT (plugin contracts)."
     )
     path: Path = Field(Path(), description="Where to create untaped-NAME.")
-    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    dry_run: DryRun
     output: Output[ScaffoldOutcome]
 
     def run(self) -> Iterator[ScaffoldOutcome]:
@@ -143,7 +143,12 @@ class New(Command[CoreSettings]):
 
         result = _composition()
         yield from scaffold(
-            result, result.candidates, self.name, self.fills, path=self.path, dry_run=self.dry_run
+            result,
+            result.candidates,
+            self.name,
+            self.fills,
+            path=self.path,
+            dry_run=bool(self.dry_run),
         )
 
 

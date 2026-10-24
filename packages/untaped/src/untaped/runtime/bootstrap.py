@@ -27,7 +27,7 @@ from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import PackagedSkill
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
-from untaped.runtime.mount import Mount, add_commands
+from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import set_profile_override
 from untaped.runtime.registry import (
@@ -300,8 +300,8 @@ def build_root_app(
     _install_root_callback(
         root,
         _root_options(),
-        after_command=lambda tokens, failed: _check_skills_after(
-            root, tokens, skills, failed=failed
+        after_command=lambda tokens, ran, failed: _check_skills_after(
+            tokens, ran, skills, failed=failed
         ),
     )
     for flag in chain(root.help_flags, root.version_flags):
@@ -453,31 +453,37 @@ def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
     root._commands[spec.name] = _LazyPluginCommand(plugin, root)
 
 
-#: Root commands that manage or diagnose skills themselves: the per-run
-#: skills check stays quiet after them.
-_SKILLS_CHECK_EXEMPT = frozenset({"skills", "doctor"})
-#: Flags that make a command a preview (``recipe apply --check``, every
-#: ``--dry-run``): the skills check must not write after one.
+#: Flags that make a command mounted through the 11.x seam a preview
+#: (``recipe apply --check``, every ``--dry-run``): the skills check must not
+#: write after one. A declared command says so itself (:class:`Dispatched`);
+#: this goes when the last 11.x command moves.
 _PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
 def _check_skills_after(
-    root: App, tokens: list[str], skills: Mapping[str, PackagedSkill], *, failed: bool
+    tokens: list[str],
+    ran: Sequence[Dispatched],
+    skills: Mapping[str, PackagedSkill],
+    *,
+    failed: bool,
 ) -> None:
     """Run the per-run installed-skills check after a command.
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
-    the skills-managing commands. After a failed or previewing command (a
-    ``_PREVIEW_FLAGS`` option before any ``--``) it writes nothing: ``warn``
-    still reports, ``auto`` waits for the next successful command. Never lets
-    the check break the command.
+    a command marked ``repairs``. After a failed or previewing command
+    (``--dry-run``; for an 11.x command a ``_PREVIEW_FLAGS`` option before
+    any ``--``) it writes nothing: ``warn`` still reports, ``auto`` waits for
+    the next successful command. Never lets the check break the command.
     """
     if not tokens or tokens[0].startswith("-"):
         return
-    if resolve_command(root, tokens[0]) in _SKILLS_CHECK_EXEMPT:
+    if ran and ran[0].decl.repairs:
         return
     try:
-        preview = not _PREVIEW_FLAGS.isdisjoint(_before_separator(tokens))
+        if ran:
+            preview = ran[0].preview
+        else:
+            preview = not _PREVIEW_FLAGS.isdisjoint(_before_separator(tokens))
         check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
@@ -487,7 +493,7 @@ def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
     *,
-    after_command: Callable[[list[str], bool], None] | None = None,
+    after_command: Callable[[list[str], Sequence[Dispatched], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
     # meta callback instead of the inner app's command listing. The inner app
@@ -498,7 +504,7 @@ def _install_root_callback(
     # so the command sees it and root options never match past it.
     app.meta.end_of_options_delimiter = ""
 
-    def _dispatch_root(*tokens: str) -> object:
+    def _dispatch_root(ran: Sequence[Dispatched], *tokens: str) -> object:
         applied_tokens: list[tuple[_RootOption, object]] = []
         dispatched = False
         command_tokens: list[str] = []
@@ -525,15 +531,15 @@ def _install_root_callback(
         finally:
             # Runs on failures too: a stale skill is a likely cause of one.
             if after_command is not None and dispatched:
-                after_command(command_tokens, failed)
+                after_command(command_tokens, ran, failed)
             for option, token in reversed(applied_tokens):
                 option.resetter(token)
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # One diagnostics scope covers the command and the checks after it,
         # so their warnings follow the command's --format.
-        with diagnostics_scope():
-            return _dispatch_root(*tokens)
+        with diagnostics_scope(), dispatching() as ran:
+            return _dispatch_root(ran, *tokens)
 
     signature = _root_callback_signature(root_options)
     _root_callback.__signature__ = signature  # type: ignore[attr-defined]

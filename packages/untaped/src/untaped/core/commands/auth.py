@@ -47,7 +47,7 @@ from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error, most_severe
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.marks import deprecated
 from untaped.sdk.network._credential_store import (
     CredentialRow,
@@ -731,11 +731,11 @@ class Migrate(Command[CoreSettings]):
     stability = deprecated(removed_in=_REMOVED, replacement="untaped auth login")
 
     store: StoreName | None = Field(None, description=_STORE)
-    dry_run: bool = Field(False, description="Check the moves and write nothing.")
+    dry_run: DryRun
     output: Output[AuthOutcome]
 
     def run(self) -> Iterator[AuthOutcome]:
-        yield from _migrate(_composition(), store=self.store, dry_run=self.dry_run)
+        yield from _migrate(_composition(), store=self.store, dry_run=bool(self.dry_run))
 
 
 class Auth(Group):

@@ -51,7 +51,7 @@ from untaped.sdk._cli import report_errors
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
-from untaped.sdk.fields import Output
+from untaped.sdk.fields import Confirm, DryRun, Output
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -63,7 +63,7 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.plugin import Command, Plugin, field_block
 from untaped.sdk.plugin import Group as CommandGroup
-from untaped.sdk.run import run_scope
+from untaped.sdk.run import Run, run_scope
 from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
@@ -483,8 +483,62 @@ def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl,
 
     with report_errors():
         cls = mount.command(decl)
-        with run_scope(build_run(mount.declaration, mount.settings)):
-            _ran(mount, decl, _instance(mount, decl, cls, given))
+        with run_scope(build_run(mount.declaration, mount.settings)) as run:
+            command = _instance(mount, decl, cls, given)
+            dispatched_now = _DISPATCHED.get()
+            if dispatched_now is not None:
+                dispatched_now.append(Dispatched(decl, run, dry_run=_dry_run(decl, command)))
+            _ran(mount, decl, command)
+
+
+@dataclass(frozen=True)
+class Dispatched:
+    """A declared command the parser dispatched: what core's checks after it read."""
+
+    decl: CommandDecl
+    run: Run
+    #: ``--dry-run`` was passed to its ``Confirm`` or ``DryRun``.
+    dry_run: bool
+
+    @property
+    def preview(self) -> bool:
+        """It only previewed: ``--dry-run``, or a ``Confirm.as_dry_run()`` during ``run``."""
+        return self.dry_run or self.run.notes.preview
+
+
+_DISPATCHED: ContextVar[list[Dispatched] | None] = ContextVar(
+    "untaped_mount_dispatched", default=None
+)
+
+
+@contextmanager
+def dispatching() -> Iterator[list[Dispatched]]:
+    """Record each declared command dispatched in the block, before it runs."""
+    seen: list[Dispatched] = []
+    token = _DISPATCHED.set(seen)
+    try:
+        yield seen
+    finally:
+        _DISPATCHED.reset(token)
+
+
+def _dry_run(decl: CommandDecl, command: Command[Any]) -> bool:
+    """Whether ``command``'s ``Confirm`` or ``DryRun`` was given ``--dry-run``."""
+    for option in decl.options:
+        if option.block is None:
+            continue
+        block = _at(command, option.field)
+        if (isinstance(block, Confirm) and block.dry_run) or (isinstance(block, DryRun) and block):
+            return True
+    return False
+
+
+def _at(command: Command[Any], path: str) -> object:
+    """The value at ``path`` (``controls.confirm``); ``None`` past a bundle nobody built."""
+    value: object = command
+    for part in path.split("."):
+        value = getattr(value, part, None)
+    return value
 
 
 @dataclass
@@ -790,12 +844,14 @@ def _output(decl: CommandDecl, command: Command[Any]) -> Output[Any]:
 
 
 __all__ = [
+    "Dispatched",
     "Mount",
     "Printed",
     "add_commands",
     "build_app",
     "compose_plugins",
     "declared",
+    "dispatching",
     "is_declared",
     "plugin_spec",
     "run_built",

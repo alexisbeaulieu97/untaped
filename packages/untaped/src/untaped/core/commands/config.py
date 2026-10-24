@@ -48,7 +48,7 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk._cli import echo, emit
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import Output, Positional
+from untaped.sdk.fields import DryRun, Output, Positional
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,
@@ -60,8 +60,6 @@ from untaped.sdk.marks import show_deprecated
 from untaped.sdk.network.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import hint, plural
-
-_DRY_RUN = "Check the change and write nothing."
 
 
 @dataclass(frozen=True)
@@ -268,7 +266,7 @@ class Set(Command[CoreSettings]):
     value: Positional[str | None] = Field(None, description="The new value, checked for its type.")
     stdin: bool = Field(False, description="Read the value from stdin.")
     prompt: bool = Field(False, description="Ask for the value, by the setting's type.")
-    dry_run: bool = Field(False, description=_DRY_RUN)
+    dry_run: DryRun
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
@@ -280,7 +278,7 @@ class Set(Command[CoreSettings]):
         )
         _warn_plaintext_token(ctx, resolved)
         _warn_deprecated_setting(ctx, resolved)
-        change = SetSetting(repo)(resolved, value, dry_run=self.dry_run)
+        change = SetSetting(repo)(resolved, value, dry_run=bool(self.dry_run))
         print_notes(change.notes)
         return change.outcome
 
@@ -293,12 +291,12 @@ class Unset(Command[CoreSettings]):
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")
-    dry_run: bool = Field(False, description=_DRY_RUN)
+    dry_run: DryRun
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
         resolved = _context().resolve_key(self.key)
-        change = UnsetSetting(SettingsFileRepository())(resolved, dry_run=self.dry_run)
+        change = UnsetSetting(SettingsFileRepository())(resolved, dry_run=bool(self.dry_run))
         print_notes(change.notes)
         return change.outcome
 
@@ -316,11 +314,11 @@ class Migrate(Command[CoreSettings]):
         $ untaped config migrate
     """
 
-    dry_run: bool = Field(False, description=_DRY_RUN)
+    dry_run: DryRun
     output: Output[ConfigMigrationOutcome]
 
     def run(self) -> Iterator[ConfigMigrationOutcome]:
-        keys = SettingsFileRepository().migrate_keys(dry_run=self.dry_run)
+        keys = SettingsFileRepository().migrate_keys(dry_run=bool(self.dry_run))
         rows = [{**row, "action": "planned"} for row in keys] if self.dry_run else keys
         diag = self.ctx.diag
         if not rows:

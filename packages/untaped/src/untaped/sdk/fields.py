@@ -671,7 +671,13 @@ class Confirm(FieldBlock):
         return self._dry_run
 
     def as_dry_run(self) -> Confirm:
-        """The same answers with ``--dry-run`` on: what a ``--check`` flag passes on."""
+        """The same answers with ``--dry-run`` on: what a ``--check`` flag passes on.
+
+        Noted on the current run, so core treats the invocation as a preview.
+        """
+        from untaped.sdk.run import note_preview  # noqa: PLC0415 - only a --check pays
+
+        note_preview()
         dry = _copy(self)
         dry._dry_run = True
         return dry
@@ -729,6 +735,33 @@ class Confirm(FieldBlock):
         diag = current_run().diag
         for line in preview():
             diag.info(line, unmuted=True)
+
+
+class DryRun(FieldBlock):
+    """This command writes without asking and can preview instead: adds ``--dry-run`` alone.
+
+    ``if self.dry_run: ...`` is true after ``--dry-run``. A command that asks
+    first takes :class:`Confirm`, which has its own ``--dry-run``; one command
+    takes one of the two.
+    """
+
+    field_kind = "dry_run"
+    panel = "Confirmation"
+    options = (FieldOption("--dry-run", "bool", "Show what would change and change nothing."),)
+
+    def __init__(self) -> None:
+        self._dry_run = False
+
+    def __bool__(self) -> bool:
+        """``--dry-run`` was passed."""
+        return self._dry_run
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> DryRun:
+        """A copy for one invocation, from ``--dry-run``."""
+        del call
+        filled = _copy(self)
+        filled._dry_run = flags.get("--dry-run") is True
+        return filled
 
 
 class Refresh(FieldBlock):

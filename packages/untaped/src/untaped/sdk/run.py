@@ -110,6 +110,14 @@ class Composition:
             raise LookupError(f"no composed plugin owns module {module}") from None
 
 
+@dataclass(kw_only=True)
+class RunNotes:
+    """What blocks note on a run while its command runs."""
+
+    #: The command previewed through ``Confirm.as_dry_run()`` (a ``--check``).
+    preview: bool = False
+
+
 @dataclass(frozen=True, kw_only=True)
 class Run:
     """One invocation's state, built by the runtime and read by the blocks."""
@@ -123,6 +131,8 @@ class Run:
     terminal: Callable[[], UiContext]
     #: What every block reads time from (:func:`run_clock`).
     clock: Clock = field(default_factory=Clock)
+    #: What blocks noted during ``run``, for core to read after it.
+    notes: RunNotes = field(default_factory=RunNotes)
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)
@@ -166,6 +176,13 @@ def run_scope(run: Run) -> Iterator[Run]:
         yield run
     finally:
         _RUN.reset(token)
+
+
+def note_preview() -> None:
+    """Note on the current run, if any, that its command only previews."""
+    run = _RUN.get()
+    if run is not None:
+        run.notes.preview = True
 
 
 def current_run() -> Run:

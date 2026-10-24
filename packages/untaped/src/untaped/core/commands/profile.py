@@ -31,11 +31,9 @@ from untaped.core.profile.use_cases import (
 from untaped.core.settings import CoreSettings
 from untaped.runtime.settings import get_profile_settings_model, resolve_config_path
 from untaped.sdk._schema import redact_secrets, secret_field_paths
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import q
-
-_DRY_RUN = "Check the change and write nothing."
 
 
 class List(Command[CoreSettings]):
@@ -117,12 +115,12 @@ class Create(Command[CoreSettings]):
     copy_from: str | None = Field(
         None, description="An existing profile (or default) to copy as a starting point."
     )
-    dry_run: bool = Field(False, description=_DRY_RUN)
+    dry_run: DryRun
     output: Output[ProfileOutcome]
 
     def run(self) -> ProfileOutcome:
         CreateProfile(ProfileFileRepository())(
-            self.name, copy_from=self.copy_from, dry_run=self.dry_run
+            self.name, copy_from=self.copy_from, dry_run=bool(self.dry_run)
         )
         if not self.dry_run:
             suffix = f" (copied from {self.copy_from})" if self.copy_from else ""
@@ -173,11 +171,13 @@ class Rename(Command[CoreSettings]):
 
     old_name: Positional[str] = Field(description="The profile's name now.")
     new_name: Positional[str] = Field(description="Its new name.")
-    dry_run: bool = Field(False, description=_DRY_RUN)
+    dry_run: DryRun
     output: Output[ProfileOutcome]
 
     def run(self) -> ProfileOutcome:
-        RenameProfile(ProfileFileRepository())(self.old_name, self.new_name, dry_run=self.dry_run)
+        RenameProfile(ProfileFileRepository())(
+            self.old_name, self.new_name, dry_run=bool(self.dry_run)
+        )
         if not self.dry_run:
             self.ctx.diag.success(f"renamed profile: {self.old_name} → {self.new_name}")
         return ProfileOutcome(

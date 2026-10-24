@@ -22,6 +22,7 @@ from untaped.sdk import (
     CredentialKey,
     Deprecated,
     DeprecatedBehaviour,
+    DryRun,
     File,
     Group,
     Key,
@@ -506,6 +507,49 @@ def test_field_problems_name_the_field() -> None:
         ("field-type", "nested"),
         ("missing-description", "nodoc"),
         ("reserved-field", "ctx"),
+    ]
+
+
+def test_a_dry_run_beside_a_confirmation_is_one_flag_twice() -> None:
+    class Both(Command):
+        """Both."""
+
+        confirm: Confirm
+        dry_run: DryRun
+
+        def run(self) -> None:
+            pass
+
+    problems = _problems(_plugin_with(Both))
+    assert [
+        (p.rule, p.where.rpartition(".")[2], p.detail.endswith("Both.confirm's")) for p in problems
+    ] == [("duplicate-field", "dry_run", True)]
+
+
+def test_marks_on_a_command_reach_its_declaration() -> None:
+    class Mend(Command):
+        """Mend."""
+
+        repairs = True
+        dry_run: DryRun
+
+        def run(self) -> None:
+            pass
+
+    class Broken(Command):
+        """Broken."""
+
+        repairs = "yes"  # type: ignore[assignment]
+
+        def run(self) -> None:
+            pass
+
+    (mend,) = compose([_entry(_plugin_with(Mend))]).commands()
+    assert (mend.repairs, mend.asks_first) == (True, False)
+    assert [o.flag for o in mend.options] == ["--dry-run"]
+    problems = _problems(_plugin_with(Broken))
+    assert [(p.rule, p.where.rpartition(".")[2]) for p in problems] == [
+        ("reserved-name", "repairs")
     ]
 
 

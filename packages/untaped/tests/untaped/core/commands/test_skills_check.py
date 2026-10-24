@@ -14,12 +14,16 @@ from typing import Annotated
 
 import pytest
 from cyclopts import App, Parameter
+from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import age_stub, asset, make_spec, write_config
 from untaped.core.commands import skills as skills_cli
 from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import Command, Confirm, DryRun, Plugin
 from untaped.sdk._cli import create_app
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.plugin import StubSkill
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -192,3 +196,81 @@ def test_auto_treats_only_preview_flags_before_double_dash_as_previews(
     code, output = _run(root, *args)
     assert code == 0, output
     assert (_installed("untaped-demo").read_text() != _OLDER) is updated
+
+
+class _Apply(Command):
+    """Apply, asking first."""
+
+    confirm: Confirm
+    check: bool = Field(False, description="Preview through the confirmation.")
+
+    def run(self) -> None:
+        confirm = self.confirm.as_dry_run() if self.check else self.confirm
+        confirm("Apply?", needed=False)
+
+
+class _Move(Command):
+    """Move, never asking."""
+
+    dry_run: DryRun
+
+    def run(self) -> None:
+        pass
+
+
+class _Repair(Command):
+    """Repair the setup."""
+
+    repairs = True
+
+    def run(self) -> None:
+        pass
+
+
+class _DemoSettings(BaseModel):
+    pass
+
+
+class _Demo(Plugin):
+    """A 12.0 demo plugin."""
+
+    settings = _DemoSettings
+    commands = (_Apply, _Move, _Repair)
+    skill = StubSkill("Teach agents how to use untaped-demo.")
+
+
+def _declared_root() -> object:
+    candidate = PluginCandidate(distribution="untaped-demo", name="demo", target=_Demo)
+    root = bootstrap.build_root_app(candidates=(candidate,))
+    assert _run(root, "skills", "install", "demo")[0] == 0
+    age_stub(_installed("untaped-demo").parent, text=_OLDER)
+    return root
+
+
+@pytest.mark.parametrize(
+    ("args", "updated"),
+    [
+        (("demo", "apply", "--dry-run"), False),
+        (("demo", "apply", "--yes"), True),
+        (("demo", "apply", "--check"), False),
+        (("demo", "move", "--dry-run"), False),
+        (("demo", "move"), True),
+        (("demo", "repair"), False),
+    ],
+    ids=["confirm-previews", "confirm-writes", "check", "dry-run-previews", "writes", "repairs"],
+)
+def test_a_declared_command_says_whether_the_check_may_write(
+    _isolated_config: Path, args: tuple[str, ...], updated: bool
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
+    root = _declared_root()
+    code, output = _run(root, *args)
+    assert code == 0, output
+    assert (_installed("untaped-demo").read_text() != _OLDER) is updated
+
+
+@pytest.mark.usefixtures("_warn")
+def test_a_repairing_command_does_not_warn() -> None:
+    root = _declared_root()
+    assert "from an older untaped" not in _run(root, "demo", "repair")[1]
+    assert "from an older untaped" in _run(root, "demo", "move")[1]
