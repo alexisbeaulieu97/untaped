@@ -43,7 +43,7 @@ def test_walks_nested_models() -> None:
     keys = {d.key for d in descriptors}
     # HttpSettings
     assert "untaped.http.ca_bundle_path" in keys
-    assert "untaped.http.verify_ssl" in keys
+    assert "untaped.http.timeout_seconds" in keys
     # Plugin settings
     assert "demo.directory" in keys
     assert "demo.token" in keys
@@ -137,9 +137,9 @@ def test_defaults_are_captured() -> None:
     assert updates.has_default
     assert updates.default == "auto"
 
-    verify = find_descriptor(descriptors, "untaped.http.verify_ssl")
-    assert verify is not None
-    assert verify.default is True
+    timeout = find_descriptor(descriptors, "untaped.http.timeout_seconds")
+    assert timeout is not None
+    assert timeout.default == 30.0
 
 
 def test_optional_unwrapped() -> None:

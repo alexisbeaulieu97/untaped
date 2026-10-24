@@ -97,11 +97,11 @@ def test_unset_fully_qualified_key_removes_value(_isolated_config: Path) -> None
 
 def test_core_s_key_resolves_to_core_settings(_isolated_config: Path) -> None:
     app = _config_app()
-    result = CliInvoker().invoke(app, ["set", "untaped.http.verify_ssl", "false"])  # type: ignore[arg-type]
+    result = CliInvoker().invoke(app, ["set", "untaped.http.timeout_seconds", "5"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert "set untaped.http.verify_ssl in profile default" in result.output
+    assert "set untaped.http.timeout_seconds in profile default" in result.output
     data = read_config_dict(_isolated_config)
-    assert data["profiles"]["default"]["untaped"]["http"] == {"verify_ssl": False}
+    assert data["profiles"]["default"]["untaped"]["http"] == {"timeout_seconds": 5.0}
     assert "http" not in data["profiles"]["default"].get("github", {})
 
 

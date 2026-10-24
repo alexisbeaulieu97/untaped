@@ -23,7 +23,6 @@ from typing import Annotated
 from cyclopts import App, Parameter
 from pydantic import BaseModel
 
-from untaped.core.commands import credential_migration
 from untaped.core.commands.config_editor import run_config_editor
 from untaped.core.commands.config_prompting import resolve_set_value
 from untaped.core.commands.notes import print_notes
@@ -55,14 +54,12 @@ from untaped.sdk._cli import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
-    YesOption,
     create_app,
     echo,
     emit,
     report_errors,
     writes,
 )
-from untaped.sdk._ui import ui_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
@@ -285,22 +282,18 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @writes
     def migrate_command(
         *,
-        yes: YesOption = False,
         dry_run: DryRunOption = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """Give renamed and retired keys their new names, and move tokens out of config.yml.
+        """Give renamed and retired keys their new names.
 
         A key also set under its new name (or a closer old name) in the same
         profile is dropped. A deleted key is removed, and the preview prints
-        the value it held so you can carry it over. Each profile's token and
-        token command become stored logins (`untaped auth list`), after a
-        confirmation (`--yes` off a terminal); a line that can't move stays
-        and is listed as kept. Environment variables and ``state.yml`` are not
-        changed.
+        the value it held so you can carry it over. Environment variables
+        are not changed.
         """
-        _migrate(dry_run=dry_run, yes=yes, fmt=fmt, columns=columns)
+        _migrate(dry_run=dry_run, fmt=fmt, columns=columns)
 
     @app.command(name="edit")
     def edit_command() -> None:
@@ -459,42 +452,21 @@ def _unset(
         emit(change.outcome, fmt=fmt, columns=columns)
 
 
-def _migrate(*, dry_run: bool, yes: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
-    from untaped.sdk.network._credential_store import (  # noqa: PLC0415 - probes the stores
-        store_available,
-    )
-
+def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
     with report_errors():
-        moves = credential_migration.plan(read_config_dict(), store_available=store_available())
-        moving = [move for move in moves if move.how != "leftover"]
-        if moving and not dry_run:
-            _diag.warning(
-                f"this files {plural(len(moving), 'token line')} as stored logins and removes "
-                "them from config.yml; an older untaped sharing this config stops reading them"
-            )
-            ui_context(strict=False).confirm_or_cancel(
-                "Move them?",
-                assume_yes=yes,
-                refusal="config migrate requires --yes to move tokens when not interactive",
-            )
-            moves = credential_migration.apply(moves)
         keys = SettingsFileRepository().migrate_keys(dry_run=dry_run)
         rows = [{**row, "action": "planned"} for row in keys] if dry_run else keys
-        rows += credential_migration.rows(moves, planned=dry_run)
         if not rows:
-            _diag.info("no renamed, retired or deleted keys or tokens in the config")
+            _diag.info("no renamed, retired or deleted keys in the config")
         else:
             others = _other_readers()
-            summary = _migration_summary(keys, moves, past=not dry_run)
+            summary = _migration_summary(keys, past=not dry_run)
             if dry_run:
                 _diag.info(f"would {summary}")
             else:
                 _diag.success(summary)
             if others:
                 _diag.warning(others)
-            kept = sum(1 for move in moves if move.how == "leftover")
-            if kept:
-                _diag.warning(f"{plural(kept, 'token line')} stay in config.yml; see the kept rows")
         emit([ConfigMigrationOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
 
 
@@ -511,21 +483,15 @@ def _other_readers() -> str:
     )
 
 
-def _migration_summary(
-    rows: list[dict[str, str]], moves: list[credential_migration.CredentialMove], *, past: bool
-) -> str:
-    """``rename 2 keys, delete 1, store 1 token``: the counts of each action, nouns first."""
+def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:
+    """``rename 2 keys, delete 1``: the counts of each action, nouns first."""
     counts = Counter(row["action"] for row in rows)
     verbs = (("renamed", "rename"), ("dropped", "drop"), ("deleted", "delete"))
     parts = [(done if past else do, counts[done]) for done, do in verbs if counts[done]]
-    text = []
-    if parts:
-        first, *rest = parts
-        text = [f"{first[0]} {plural(first[1], 'key')}", *(f"{verb} {n}" for verb, n in rest)]
-    stored = sum(1 for move in moves if move.how not in ("leftover", "same", "outranked"))
-    if stored:
-        text.append(f"{'stored' if past else 'store'} {plural(stored, 'token')}")
-    return ", ".join(text) or f"{'kept' if past else 'keep'} every token line"
+    first, *rest = parts
+    return ", ".join(
+        [f"{first[0]} {plural(first[1], 'key')}", *(f"{verb} {n}" for verb, n in rest)]
+    )
 
 
 __all__ = [

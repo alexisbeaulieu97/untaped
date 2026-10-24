@@ -49,7 +49,6 @@ from untaped.runtime.settings import (
     PLUGIN_NAME_PATTERN,
     RESERVED_SECTION_KEYS,
     RESERVED_SECTIONS,
-    legacy_credential_fields,
     plugins_root,
     reserved_section_keys,
     section_model,
@@ -407,8 +406,8 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
     ``caches`` (:func:`untaped.runtime.settings.section_model`). So does the
-    section of a plugin declaring credentials: it carries their deprecated
-    11.0 settings. ``extensions=False`` leaves ``extensions`` out (the config
+    section of a plugin declaring credentials, whose ``UNTAPED_<SECTION>__<NAME>``
+    overrides one. ``extensions=False`` leaves ``extensions`` out (the config
     reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
@@ -848,11 +847,6 @@ def _check_section_keys(spec: PluginSpec) -> None:
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
         | ({"caches"} if _timed_caches(spec) else set())
-        | set(
-            legacy_credential_fields(
-                spec.settings or _NoSettings, spec.credentials, section=spec.name
-            )
-        )
     )
     for label, model, keys in (
         ("settings", spec.settings, injected),

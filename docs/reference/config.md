@@ -18,8 +18,6 @@ overridden for one process with the environment variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `untaped.http.ca_bundle_path` | path (optional) | unset | `UNTAPED_UNTAPED__HTTP__CA_BUNDLE_PATH` | PEM file of extra CA certificates to trust instead of the OS trust store. |
-| `untaped.http.verify_ssl` | boolean | `true` | `UNTAPED_UNTAPED__HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks, and reads as `verify_tls: false` on every server key; `config migrate` writes it there. Deprecated: removed in 12.0; use each server's verify_tls. |
-| `untaped.http.verify_hostname` | boolean | `true` | `UNTAPED_UNTAPED__HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. Deprecated: removed in 12.0. |
 | `untaped.http.timeout_seconds` | number | `30.0` | `UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |
 | `untaped.http.proxy` | string (optional) | unset | `UNTAPED_UNTAPED__HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
 | `untaped.ui.theme` | string | `default` | `UNTAPED_UNTAPED__UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
@@ -67,8 +65,6 @@ overridden for one process with the environment variable shown.
 | `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Above 0. Experimental: may change in a minor release. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Above 0. Experimental: may change in a minor release. |
 | `awx.caches.resources.max_age_seconds` | integer | `3600` | `UNTAPED_AWX__CACHES__RESOURCES__MAX_AGE_SECONDS` | Seconds controller resources is served before untaped checks upstream; 0 checks every time. 0 or more. |
-| `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | The awx token in plain text. Deprecated: removed in untaped-awx 12.0; use `untaped auth login awx`. |
-| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) printing the awx token. Deprecated: removed in untaped-awx 12.0; use `untaped auth login awx`. |
 
 ## `dotfiles`
 
@@ -123,8 +119,6 @@ overridden for one process with the environment variable shown.
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
 | `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
-| `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | The jira token in plain text. Deprecated: removed in untaped-jira 12.0; use `untaped auth login jira`. |
-| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) printing the jira token. Deprecated: removed in untaped-jira 12.0; use `untaped auth login jira`. |
 
 ## `lint`
 

@@ -7,14 +7,11 @@ resolves through it.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from untaped.sdk.network.credentials import CredentialKey
 
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
@@ -22,7 +19,7 @@ from untaped.runtime.profile_resolver import (
     resolve_profiles,
 )
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.health.deprecated_keys import KeyUse, old_spellings, rename_keys
+from untaped.sdk.health.deprecated_keys import KeyUse, rename_keys
 from untaped.sdk.words import hint, not_found
 
 SectionModels = Mapping[str, type[BaseModel]]
@@ -36,8 +33,6 @@ class ResolvedConfig:
     provenance: dict[tuple[str, ...], str]
     uses: dict[str, dict[str, tuple[KeyUse, ...]]]
     """``profile -> section -> uses``, for the layered profiles only."""
-    tls_off: frozenset[tuple[str, ...]] = frozenset()
-    """The key ``verify_tls`` leaves a layer's ``untaped.http.verify_ssl: false`` turned off."""
 
 
 class ProfilesSettingsLayout:
@@ -78,20 +73,16 @@ class ProfilesSettingsLayout:
         *,
         profile: str | None = None,
         sections: SectionModels | None = None,
-        environ: Mapping[str, str] | None = None,
     ) -> ResolvedConfig:
         """Resolve effective settings, provenance and old-key uses.
 
-        ``sections`` overrides the constructor's section models; ``environ``
-        (a run's variables) adds ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` to how
-        ``untaped.http.verify_ssl`` reads on keys.
+        ``sections`` overrides the constructor's section models.
         """
         override = profile or effective_active_profile_name(raw)
         models = sections if sections is not None else self._sections_now()
         renamed, uses = _rename_profiles(raw, models, override)
         effective, provenance = resolve_profiles(renamed, active_override=override)
-        tls_off = _root_tls_off(renamed, override, effective, models, environ or {})
-        return ResolvedConfig(effective, provenance, uses, tls_off)
+        return ResolvedConfig(effective, provenance, uses)
 
     def _sections_now(self) -> SectionModels:
         return self._sections() if self._sections is not None else {}
@@ -138,149 +129,6 @@ class ProfilesSettingsLayout:
         if not isinstance(target, dict):
             raise ConfigError(f"profile {name!r} must be a mapping")
         return target, name
-
-
-def _layers(raw: dict[str, Any], active: str | None) -> list[dict[str, Any]]:
-    """The layered profiles' own data, ``default`` first."""
-    profiles = raw.get("profiles")
-    if not isinstance(profiles, dict):
-        return []
-    names = dict.fromkeys((DEFAULT_PROFILE, active or DEFAULT_PROFILE))
-    return [profiles[name] for name in names if isinstance(profiles.get(name), dict)]
-
-
-def _root_tls_off(
-    raw: dict[str, Any],
-    active: str | None,
-    effective: dict[str, Any],
-    models: SectionModels,
-    environ: Mapping[str, str],
-) -> frozenset[tuple[str, ...]]:
-    """Read ``untaped.http.verify_ssl: false`` as each key's ``verify_tls: false``.
-
-    11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
-    its TLS from the key alone. The key's TLS field is found by type; a key
-    with no URL (set in the file or a variable, or by default) is left alone. A layer's own
-    ``verify_tls`` wins over its ``verify_ssl``, a later layer wins over an
-    earlier one, and ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` in ``environ`` over both.
-    ``effective`` is updated in place; returns the leaves turned off.
-    """
-    from untaped.sdk.network.credentials import (  # noqa: PLC0415 - credentials is heavy
-        key_fields,
-        key_shape,
-    )
-
-    layers: list[Mapping[str, Any]] = list(_layers(raw, active))
-    variable = environ.get("UNTAPED_UNTAPED__HTTP__VERIFY_SSL")
-    if variable is not None:
-        layers.append({"untaped": {"http": {"verify_ssl": variable.strip().lower() not in _FALSE}}})
-    if not any(_dig(layer, _ROOT_VERIFY_SSL) is False for layer in layers):
-        return frozenset()
-    turned: set[tuple[str, ...]] = set()
-    for section, model in models.items():
-        for path, key in key_fields(model):
-            tls = key_shape(key).tls
-            if tls is None or not _keyed(effective, environ, section, model, path, key):
-                continue
-            leaf = (section, *path, tls)
-            if _root_decides(layers, leaf):
-                _place(effective, leaf, False)
-                turned.add(leaf)
-    return frozenset(turned)
-
-
-def _keyed(
-    effective: Mapping[str, Any],
-    environ: Mapping[str, str],
-    section: str,
-    model: type[BaseModel],
-    path: tuple[str, ...],
-    key: type[CredentialKey],
-) -> bool:
-    """Whether this run has a whole key at ``path`` with a URL and TLS still on."""
-    from untaped.sdk.network.credentials import key_shape  # noqa: PLC0415 - credentials is heavy
-
-    shape = key_shape(key)
-    node = _dig(effective, (section, *path))
-    if node is not None and not isinstance(node, dict):
-        return False
-    node = node or {}
-    if node.get(shape.tls, True) is not True:
-        return False
-    present = {**dict.fromkeys(_env_fields(environ, section, model, path, key), True), **node}
-    return any(_url(present, key, url) for url in shape.urls) and _complete(present, key)
-
-
-#: Core's ``untaped.http.verify_ssl``, which 11.x reads as every key's ``verify_tls``.
-_ROOT_VERIFY_SSL = ("untaped", "http", "verify_ssl")
-
-
-def _root_decides(layers: Sequence[Mapping[str, Any]], leaf: tuple[str, ...]) -> bool:
-    """Whether ``untaped.http.verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
-    decided = None
-    for layer in layers:
-        root = _dig(layer, _ROOT_VERIFY_SSL)
-        if _dig(layer, leaf) is not None:
-            decided = "key"
-        elif root is not None:
-            decided = "root" if root is False else None
-    return decided == "root"
-
-
-def _env_fields(
-    environ: Mapping[str, str],
-    section: str,
-    model: type[BaseModel],
-    path: tuple[str, ...],
-    key: type[BaseModel],
-) -> set[str]:
-    """The key's fields a variable in ``environ`` sets (old spellings and JSON objects too)."""
-    from untaped.runtime.settings import (  # noqa: PLC0415 - settings imports this module
-        env_var_setting,
-    )
-
-    if not environ:
-        return set()
-    found: set[str] = set()
-    for name in key.model_fields:
-        relative = ".".join((*path, name))
-        for spelling in (relative, *old_spellings(model, relative)):
-            if env_var_setting((section, *spelling.split(".")), environ=environ) is not None:
-                found.add(name)
-    return found
-
-
-def _url(node: Mapping[str, Any], key: type[BaseModel], name: str) -> bool:
-    """Whether the key has a URL ``name``: set in the file or a variable, or a real default."""
-    field = key.model_fields[name]
-    return bool(node.get(name)) or (
-        not field.is_required() and field.get_default(call_default_factory=True) is not None
-    )
-
-
-def _complete(node: Mapping[str, Any], key: type[BaseModel]) -> bool:
-    """Whether ``node`` sets each required field, so turning TLS off never makes a key invalid."""
-    return all(name in node for name, field in key.model_fields.items() if field.is_required())
-
-
-_FALSE = frozenset({"0", "off", "f", "false", "n", "no"})
-
-
-def _place(data: dict[str, Any], path: tuple[str, ...], value: object) -> None:
-    for part in path[:-1]:
-        child = data.get(part)
-        if not isinstance(child, dict):
-            child = data[part] = {}
-        data = child
-    data[path[-1]] = value
-
-
-def _dig(data: Any, path: tuple[str, ...]) -> Any:
-    for part in path:
-        if not isinstance(data, dict):
-            return None
-        data = data.get(part)
-    return data
 
 
 def _rename_profiles(

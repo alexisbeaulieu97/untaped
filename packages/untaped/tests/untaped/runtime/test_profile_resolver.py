@@ -140,7 +140,7 @@ def test_nested_dicts_are_deep_merged() -> None:
         "profiles": {
             "default": {
                 "awx": {"api_prefix": "/api/v2/"},
-                "untaped": {"http": {"verify_ssl": True, "ca_bundle_path": "/default/ca"}},
+                "untaped": {"http": {"timeout_seconds": 5, "ca_bundle_path": "/default/ca"}},
             },
             "prod": {"untaped": {"http": {"ca_bundle_path": "/prod/ca"}}},
         },
@@ -149,10 +149,10 @@ def test_nested_dicts_are_deep_merged() -> None:
     effective, provenance = resolve_profiles(config)
     assert effective == {
         "awx": {"api_prefix": "/api/v2/"},
-        "untaped": {"http": {"verify_ssl": True, "ca_bundle_path": "/prod/ca"}},
+        "untaped": {"http": {"timeout_seconds": 5, "ca_bundle_path": "/prod/ca"}},
     }
     assert provenance == {
-        ("untaped", "http", "verify_ssl"): "default",
+        ("untaped", "http", "timeout_seconds"): "default",
         ("untaped", "http", "ca_bundle_path"): "prod",
         ("awx", "api_prefix"): "default",
     }

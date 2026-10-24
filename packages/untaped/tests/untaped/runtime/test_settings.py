@@ -36,7 +36,7 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
     assert s.untaped.skills.updates == "auto"
     assert s.demo.base_url is None
     assert s.demo.token is None
-    assert s.untaped.http.verify_ssl is True
+    assert s.untaped.http.timeout_seconds == 30.0
     assert s.untaped.http.ca_bundle_path is None
 
 
@@ -53,7 +53,6 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
                 updates: auto
               http:
                 ca_bundle_path: /etc/ssl/corp-ca.pem
-                verify_ssl: true
             demo:
               base_url: https://aap.example.com
               token: secret
@@ -224,10 +223,12 @@ def test_validate_settings_section_ignores_env_source(
     # Validation judges the dict alone: an env var must not paper over a bad
     # value on its way to disk.
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
-    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__VERIFY_SSL", "true")
-    assert load_core_part("http").verify_ssl is True
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "5")
+    assert load_core_part("http").timeout_seconds == 5.0
     with pytest.raises(ValidationError):
-        validate_settings_section({"untaped": {"http": {"verify_ssl": "not-a-bool"}}}, "untaped")
+        validate_settings_section(
+            {"untaped": {"http": {"timeout_seconds": "not-a-number"}}}, "untaped"
+        )
 
 
 def test_validate_settings_section_ignores_other_sections(

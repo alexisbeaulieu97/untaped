@@ -62,11 +62,11 @@ def _write(cfg: Path, text: str | None) -> None:
         # YAML scalars are coerced; ``http`` is an ordinary per-profile setting.
         (
             None,
-            "untaped.http.verify_ssl",
-            "false",
+            "untaped.http.timeout_seconds",
+            "5",
             None,
             "default",
-            {"default": {"untaped": {"http": {"verify_ssl": False}}}},
+            {"default": {"untaped": {"http": {"timeout_seconds": 5.0}}}},
         ),
         (
             None,
@@ -159,7 +159,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
 @pytest.mark.parametrize(
     ("initial", "key", "value", "profile", "match"),
     [
-        (None, "untaped.http.verify_ssl", "not-a-bool", None, "verify_ssl"),
+        (None, "untaped.http.timeout_seconds", "not-a-number", None, "timeout_seconds"),
         (None, "bogus.key", "x", None, "unknown setting"),
         (None, "plugins.tool.spec", "untaped", None, "unknown setting"),
         (None, "untaped.skills.updates", "auto", "prod", "profile not found.*prod"),
@@ -215,9 +215,9 @@ def test_set_validation_isolated_from_env_overlay(
     """Regression (#136): validation judges the written YAML alone, so a
     valid env var can't mask an invalid value landing on disk (which would
     break ``get_settings()`` the day the env var goes away)."""
-    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__VERIFY_SSL", "true")
-    with pytest.raises(ConfigError, match="verify_ssl"):
-        SettingsFileRepository().set_value("untaped.http.verify_ssl", "not-a-bool-or-anything")
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "5")
+    with pytest.raises(ConfigError, match="timeout_seconds"):
+        SettingsFileRepository().set_value("untaped.http.timeout_seconds", "not-a-number")
 
 
 # ── unset ────────────────────────────────────────────────────────────────────

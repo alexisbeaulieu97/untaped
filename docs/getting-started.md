@@ -129,7 +129,6 @@ In scripts, pipe the token in instead:
 printf '%s\n' "$GITHUB_TOKEN" | untaped auth login github
 ```
 
-Already have tokens in `config.yml`? `untaped config migrate` moves them all.
 More in [Tokens](./configuration.md#tokens).
 
 Check what is set:

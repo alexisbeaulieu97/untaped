@@ -22,13 +22,18 @@ profiles:
   default:
     awx:
       base_url: https://aap.example.com
-      token: awx-token
     github:
       token: ghp_test
     jira:
       base_url: https://jira.example.com
-      token: jira-token
 """
+
+
+@pytest.fixture(autouse=True)
+def _tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    """awx's and jira's tokens: a credential reads no config setting."""
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "awx-token")
+    monkeypatch.setenv("UNTAPED_JIRA__TOKEN", "jira-token")
 
 
 def _online_rows(candidates: tuple[PluginCandidate, ...], *args: str) -> dict[str, dict[str, Any]]:

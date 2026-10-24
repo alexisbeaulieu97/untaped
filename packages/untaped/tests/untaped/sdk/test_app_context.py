@@ -52,7 +52,7 @@ def test_app_context_exposes_http_settings(_isolated_config: Path) -> None:
     ctx = app_context()
 
     assert isinstance(ctx.http, HttpSettings)
-    assert ctx.http.verify_ssl is True
+    assert ctx.http.timeout_seconds == 30.0
 
 
 def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path) -> None:
@@ -113,7 +113,7 @@ def test_invalid_sibling_section_does_not_block_this_section(_isolated_config: P
     ctx = app_context()
 
     assert ctx.section("demo", DemoSettings).endpoint == "https://configured.example"
-    assert ctx.http.verify_ssl is True
+    assert ctx.http.timeout_seconds == 30.0
     assert ctx.ui(strict=True).theme == BUILTIN_THEMES["default"]
 
 

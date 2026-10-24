@@ -78,11 +78,9 @@ def test_a_plaintext_token_fix_is_automatic(_isolated_config: Path) -> None:
     assert row["fix"] == ["--profile", "default", "auth", "migrate"]
 
 
-def test_an_online_fix_is_manual(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "profiles:\n  default:\n    wiz: {server: {url: https://w}, token_command: [x]}\n",
-    )
+def test_an_online_fix_is_manual(_isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WIZ_TOKEN", "t")
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {server: {url: https://w}}\n")
     FAIL.append(True)
     try:
         wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))

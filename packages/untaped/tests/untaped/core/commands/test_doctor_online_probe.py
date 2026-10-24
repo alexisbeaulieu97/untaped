@@ -142,8 +142,11 @@ def test_candidate_command_source_removes_the_token(_isolated_config: Path) -> N
     assert SEEN[0]["source"] == "setup's wiz token command"
 
 
-def test_a_new_profile_is_checked_over_default_before_it_exists(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz:\n      token: shared\n")
+def test_a_new_profile_is_checked_over_default_before_it_exists(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WIZ_TOKEN", "shared")
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {}\n")
 
     rows = _rows({"server.url": "https://prod"}, profile="prod")
 

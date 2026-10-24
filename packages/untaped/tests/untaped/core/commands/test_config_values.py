@@ -64,8 +64,8 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
         ("github.base_url", "null", "null"),
         ("untaped.http.proxy", "null", "null"),
         # Typed fields are coerced from the raw string.
-        ("untaped.http.verify_ssl", "no", False),
-        ("untaped.http.verify_ssl", "true", True),
+        ("untaped.ui.hide_empty_columns", "no", False),
+        ("untaped.ui.hide_empty_columns", "true", True),
         ("untaped.http.timeout_seconds", "5", 5.0),
         ("untaped.http.ca_bundle_path", "/etc/ssl/ca.pem", "/etc/ssl/ca.pem"),
         ("github.mode", "on", "on"),
@@ -214,7 +214,11 @@ def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, tex
 @pytest.mark.parametrize(
     ("config", "key", "row"),
     [
-        ("", "untaped.http.verify_ssl", {"value": True, "default": True, "source": "default"}),
+        (
+            "",
+            "untaped.http.timeout_seconds",
+            {"value": 30.0, "default": 30.0, "source": "default"},
+        ),
         ("", "github.token", {"value": None, "default": None}),
         (
             "profiles:\n  default:\n    github:\n      token: t0k\n",
@@ -255,7 +259,6 @@ def test_list_json_emits_native_values(_isolated_config: Path) -> None:
     rows = {row["key"]: row for row in json.loads(result.stdout)}
     assert rows["untaped.http.timeout_seconds"]["value"] == 30.0
     assert rows["untaped.http.ca_bundle_path"]["value"] is None
-    assert rows["untaped.http.verify_ssl"]["value"] is True
     assert "—" not in result.stdout
 
 
@@ -263,7 +266,7 @@ def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path)
     assert _invoke(["get", "github.token"]).stdout == ""
     raw = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
     assert "untaped.http.ca_bundle_path\t" in raw.stdout.splitlines()
-    assert "untaped.http.verify_ssl\tTrue" in raw.stdout.splitlines()
+    assert "untaped.http.timeout_seconds\t30.0" in raw.stdout.splitlines()
     assert "—" not in raw.stdout
     table = _invoke(["list", "--format", "table"])
     assert any(

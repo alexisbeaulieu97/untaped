@@ -208,20 +208,18 @@ def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
 def _credential_row(spec: PluginSpec, field: MarkedField, state: ServiceState, profile: str) -> Row:
     """A found credential: done, unless it is still plain text in its deprecated setting.
 
-    ``config migrate`` moves it to a stored login inside its own process, but
-    it asks first (an older untaped sharing the home stops reading it), so the
-    step is the user's.
+    ``auth login`` prompts for the secret, so storing it is the user's step.
     """
     name = spec.name
     step = f"{name}.{field.key}"
     source = state.sources.get(field.key, "")
     detail = f"{field.key} from {source}"
+    login = set_command(field, service_marks(spec), section=name)
     if source == f"{name}.{field.key}":
-        detail = f"{detail}, plain text in the config file; move it to a stored login"
-        run = command_argv("config migrate", profile=profile)
-        return _row(step, name, "failed", detail, run, by="user")
+        detail = f"{detail}, plain text in the config file; store it as a login"
+        return _row(step, name, "failed", detail, command_argv(login, profile=profile), by="user")
     if source.startswith(f"{name}."):
-        detail = f"{detail}; `config migrate` moves {source} to a stored login"
+        detail = f"{detail}; `{' '.join(login)}` replaces {source} with a stored login"
     return _row(step, name, "done", detail)
 
 

@@ -10,7 +10,7 @@ never from an argument.
 
 ``auth set``, ``auth unset`` and ``auth migrate`` keep their 11.0 meaning
 (a section's ``token_command`` in the config file) and are deprecated:
-``auth login``, ``auth forget`` and ``config migrate`` replace them.
+``auth login`` and ``auth forget`` replace them.
 """
 
 from __future__ import annotations
@@ -290,10 +290,13 @@ def _name_outranked(credential: Credential[Any]) -> None:
         _diag.warning(f"${variable} is set and wins over this login until you unset it")
     legacy = legacy_setting(credential)
     if legacy is not None:
-        _diag.info(
-            f"this login now wins over {legacy[0]}; "
-            f"{run_hint('config migrate')} to drop the old setting"
+        setting = legacy[0]
+        drop = (
+            f"unset ${setting}"
+            if setting.startswith("UNTAPED_")
+            else f"{run_hint(f'config unset {setting}')} to drop the old setting"
         )
+        _diag.info(f"this login now wins over {setting}; {drop}")
     found = next((each for each in credential.env if os.environ.get(each, "").strip()), None)
     if found is not None:
         _diag.info(f"this login now wins over ${found}")
@@ -461,8 +464,9 @@ class _TokenSection:
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
     """Every composed section whose settings take ``token`` and ``token_command``.
 
-    A plugin that declares a ``token`` credential still reads those
-    settings in 11.x, deprecated, so ``auth set`` keeps writing them.
+    A plugin that declares a ``token`` credential and still declares those
+    settings itself (github's, until it moves) reads them, deprecated, so
+    ``auth set`` keeps writing them.
     """
     found: dict[str, _TokenSection] = {}
     for registered in result.plugins:
@@ -734,7 +738,7 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
             _unset(result, section, yes=yes, dry_run=dry_run, fmt=fmt, columns=columns)
 
     @app.command(name="migrate")
-    @deprecated(removed_in=12, replacement="untaped config migrate")
+    @deprecated(removed_in=12, replacement="untaped auth login")
     @writes
     def migrate_command(
         *,

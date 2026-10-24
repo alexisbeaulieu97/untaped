@@ -185,7 +185,7 @@ def test_state_and_deprecated_settings_are_left_alone(_isolated_config: Path) ->
     result = _migrate()
 
     assert result.exit_code == 0, result.output
-    assert "no renamed, retired or deleted keys or tokens in the config" in result.stderr
+    assert "no renamed, retired or deleted keys in the config" in result.stderr
     assert state.read_text() == "mig:\n  corpus_path: /s\n"
     assert "legacy: true" in _isolated_config.read_text()
 

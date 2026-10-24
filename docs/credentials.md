@@ -45,8 +45,7 @@ def client(settings: AcmeSettings):
 ```
 
 `TOKEN.get(server)` answers from `UNTAPED_ACME__TOKEN`, then the login stored
-for exactly this server, then (in 11.x) the old `acme.token` and
-`acme.token_command` settings, then `ACME_TOKEN`; with none it raises
+for exactly this server, then `ACME_TOKEN`; with none it raises
 `NoCredential` (exit 4) naming `untaped auth login acme`, a step only the
 person takes. The token is bound to the server's origin (scheme, host and
 port): `connected_client` refuses to build a client for another one, and a

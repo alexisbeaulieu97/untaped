@@ -26,7 +26,7 @@ from untaped.sdk import (  # type: ignore[deprecated]
 )
 from untaped.sdk._cli import create_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.marks import Stability, UntapedDeprecationWarning
+from untaped.sdk.marks import Stability, UntapedDeprecationWarning, deprecated
 from untaped.sdk.testing import plugin_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
@@ -84,6 +84,13 @@ class WizProfile(BaseModel):
 
 #: The ``wiz`` token, read last from ``$WIZ_TOKEN``.
 WIZ_TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
+
+
+class OldWizProfile(WizProfile):
+    """``wiz`` with 11.0's ``token`` settings still declared, as github's are until it moves."""
+
+    token: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
+    token_command: Annotated[TokenCommand, deprecated(removed_in=12)] = None
 
 
 class EnvyServer(CredentialKey):

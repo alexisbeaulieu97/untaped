@@ -11,7 +11,7 @@ command runs and needs at least one row, so use it on a read command or add
 |---|---|
 | `config list`, `config get` | `untaped.setting` (`stability`: `stable`, `experimental` or `deprecated`; `table` lists the last two apart) |
 | `config set`, `config unset` | `untaped.setting_outcome` (never the value) |
-| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`; for a token line `stored` (with the login in `to`), `dropped` (another profile's or a stored login answers) or `kept` (it stays, `detail` says why); `copied` for `untaped.http.verify_ssl` written into a server's `verify_tls`; `planned` under `--dry-run`) |
+| `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`; `planned` under `--dry-run`) |
 | `auth login`, `auth forget` | `untaped.credential_outcome` (never the secret; `plugin`, `name`, `key` described, `id` short, `store`, `action`) |
 | `auth list` | `untaped.stored_credential` (`id`, `plugin`, `name`, `key`, `backend`, `where`: the store entry or the command's program alone) |
 | `auth status` | `untaped.token_source` (for a declared credential, one row for this run: `key`, `step` `variable`, `stored`, `setting` or `env`, `source`, `id`, or `refusal`; for a plugin on 11.0's settings, one per profile) |

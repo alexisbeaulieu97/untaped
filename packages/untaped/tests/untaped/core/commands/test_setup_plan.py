@@ -22,6 +22,7 @@ from core_test_support.commands.support import (
     PROBES,
     WIZ_TOKEN,
     LegacyProfile,
+    OldWizProfile,
     WizProfile,
     WizServer,
     make_spec,
@@ -88,6 +89,11 @@ def _wiz() -> PluginSpec:
         settings=WizProfile,
         doctor_checks=(wiz_api_check(),),
     )
+
+
+def _old_wiz() -> PluginSpec:
+    """``wiz`` still declaring 11.0's ``token`` settings, as github does until it moves."""
+    return make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,))
 
 
 def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
@@ -183,20 +189,21 @@ def test_the_token_step_is_auth_login_with_or_without_a_password_store(
         assert token["detail"] == "no wiz token for this run's wiz settings"
 
 
-def test_a_plaintext_token_fails_and_moves_with_config_migrate(
+def test_a_plaintext_token_fails_and_is_stored_with_auth_login(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
-    token = _step(_plan(), "wiz.token")
-    # `config migrate` asks first: an older untaped sharing the home stops reading the token.
+    token = _step(_plan(specs=(_old_wiz(),)), "wiz.token")
+    # `auth login` prompts for the token, so the step is the user's.
     assert (token["state"], token["by"]) == ("failed", "user")
-    assert token["run"] == ["--profile", "default", "config", "migrate"]
+    assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
     assert token["detail"] == (
-        "token from wiz.token, plain text in the config file; move it to a stored login"
+        "token from wiz.token, plain text in the config file; store it as a login"
     )
     for fmt in ("json", "yaml", "table", "pipe"):
-        assert "s3cret" not in _cli("setup", "plan", "--format", fmt).output
+        plan = _cli("setup", "plan", "--format", fmt, specs=(_old_wiz(),))
+        assert "s3cret" not in plan.output
 
 
 @pytest.mark.parametrize(
@@ -235,10 +242,11 @@ def test_a_token_command_in_the_config_is_done_and_deprecated(_isolated_config: 
         _isolated_config,
         "profiles:\n  default:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
     )
-    token = _step(_plan(), "wiz.token")
+    token = _step(_plan(specs=(_old_wiz(),)), "wiz.token")
     assert (token["state"], token["run"]) == ("done", [])
     assert token["detail"] == (
-        "token from wiz.token_command; `config migrate` moves wiz.token_command to a stored login"
+        "token from wiz.token_command; `auth login wiz` replaces wiz.token_command "
+        "with a stored login"
     )
 
 
@@ -419,10 +427,10 @@ def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
         "profiles:\n  default:\n    wiz: {token: s3cret}\n"
         "  work:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
     )
-    token = _step(_plan(profile="work"), "wiz.token")
+    token = _step(_plan(profile="work", specs=(_old_wiz(),)), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
     assert token["detail"].startswith("token from wiz.token, plain text")
-    assert token["run"] == ["--profile", "work", "config", "migrate"]
+    assert token["run"] == ["--profile", "work", "auth", "login", "wiz"]
 
 
 def test_a_plaintext_token_without_token_command_is_exported_instead(
