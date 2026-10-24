@@ -51,7 +51,7 @@ def test_a_relative_home_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_an_unknown_user_s_tilde_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_HOME", "~no-such-user-untaped/home")
-    with pytest.raises(ConfigError, match="must be an absolute path"):
+    with pytest.raises(ConfigError, match="unknown user's home"):
         home()
 
 
@@ -84,3 +84,11 @@ def test_a_checkout_holding_a_moved_home_can_be_a_project(
     assert _reserved(checkout) is None
     assert _reserved(checkout / ".untaped-home") is not None
     assert _reserved((Path.home() / ".untaped").resolve()) is not None
+
+
+def test_a_project_s_own_folder_cannot_be_the_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = (tmp_path / "repo").resolve()
+    monkeypatch.setenv("UNTAPED_HOME", str(checkout / ".untaped"))
+    assert "would hold" in (_reserved(checkout) or "")

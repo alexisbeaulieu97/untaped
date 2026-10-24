@@ -782,8 +782,10 @@ def _reserved(folder: Path) -> str | None:
     home = Path.home().resolve()
     if folder == home:
         return "it is the home folder"
-    default = DEFAULT_HOME.expanduser().resolve()
-    for untaped in dict.fromkeys((untaped_home().resolve(), default)):
+    default, current = DEFAULT_HOME.expanduser().resolve(), untaped_home().resolve()
+    if current.is_relative_to(folder / DIRECTORY):
+        return f"its {DIRECTORY} would hold {shown_path(current)}, untaped's own folder"
+    for untaped in dict.fromkeys((current, default)):
         if folder == untaped:
             return f"it is {shown_path(untaped)}, untaped's own folder"
         for name in _CORE_FOLDERS:

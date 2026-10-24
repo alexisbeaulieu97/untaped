@@ -46,8 +46,11 @@ def home() -> Path:
     path = Path(spelled)
     try:
         absolute = path.expanduser().is_absolute()
-    except RuntimeError:  # ``~nosuchuser``
-        absolute = False
+    except RuntimeError as exc:  # ``~nosuchuser``
+        raise ConfigError(
+            f"{HOME_ENV} names an unknown user's home, got {spelled!r}",
+            hint=f"set {HOME_ENV} to a full path, or unset it for {DEFAULT_HOME}",
+        ) from exc
     if not absolute:
         raise ConfigError(
             f"{HOME_ENV} must be an absolute path (or start with ~), got {spelled!r}",
