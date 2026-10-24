@@ -39,6 +39,7 @@ def composition_of(declaration: Declaration, plugins: Mapping[str, type[Plugin]]
         owners={plugins[plugin.name].settings: plugin.name for plugin in declaration.plugins},
         packages=packages,
         installed=functools.cache(lambda: tuple(installed_plugins())),
+        spell=declaration.spell,
     )
 
 

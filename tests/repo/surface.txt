@@ -4616,6 +4616,7 @@ sdk untaped.sdk.Cache.name
 sdk untaped.sdk.Cache.name_problem(name)
 sdk untaped.sdk.Cache.name_style class
 sdk untaped.sdk.Cache.plugin
+sdk untaped.sdk.Cache.problems()
 sdk untaped.sdk.Cache.qualified
 sdk untaped.sdk.Cache.removed_in
 sdk untaped.sdk.Cache.renamed_from
@@ -4713,6 +4714,7 @@ sdk untaped.sdk.Credential.name
 sdk untaped.sdk.Credential.name_problem(name)
 sdk untaped.sdk.Credential.name_style class
 sdk untaped.sdk.Credential.plugin
+sdk untaped.sdk.Credential.problems()
 sdk untaped.sdk.Credential.qualified
 sdk untaped.sdk.Credential.refusal(key, what)
 sdk untaped.sdk.Credential.spelled
@@ -4776,6 +4778,7 @@ sdk untaped.sdk.DeprecatedBehaviour.notify(hint=) default=None
 sdk untaped.sdk.DeprecatedBehaviour.notify(replacement=) default=<computed>
 sdk untaped.sdk.DeprecatedBehaviour.notify(subject, *, key)
 sdk untaped.sdk.DeprecatedBehaviour.plugin
+sdk untaped.sdk.DeprecatedBehaviour.problems()
 sdk untaped.sdk.DeprecatedBehaviour.replacement
 sdk untaped.sdk.DeprecatedBehaviour.sentence(replacement=) default=<computed>
 sdk untaped.sdk.DeprecatedBehaviour.sentence(subject)
@@ -4817,6 +4820,7 @@ sdk untaped.sdk.DirMigration.name_problem(name)
 sdk untaped.sdk.DirMigration.name_style class
 sdk untaped.sdk.DirMigration.plugin
 sdk untaped.sdk.DirMigration.preview
+sdk untaped.sdk.DirMigration.problems()
 sdk untaped.sdk.DirMigration.spelled
 sdk untaped.sdk.DirMigration.title
 sdk untaped.sdk.DirMigration.where
@@ -4834,6 +4838,7 @@ sdk untaped.sdk.DoctorCheck.name_problem(name)
 sdk untaped.sdk.DoctorCheck.name_style class
 sdk untaped.sdk.DoctorCheck.online
 sdk untaped.sdk.DoctorCheck.plugin
+sdk untaped.sdk.DoctorCheck.problems()
 sdk untaped.sdk.DoctorCheck.run
 sdk untaped.sdk.DoctorCheck.spelled
 sdk untaped.sdk.DoctorCheck.title
@@ -4873,6 +4878,7 @@ sdk untaped.sdk.ExecutableCheck.name_problem(name)
 sdk untaped.sdk.ExecutableCheck.name_style class
 sdk untaped.sdk.ExecutableCheck.online
 sdk untaped.sdk.ExecutableCheck.plugin
+sdk untaped.sdk.ExecutableCheck.problems()
 sdk untaped.sdk.ExecutableCheck.program
 sdk untaped.sdk.ExecutableCheck.purpose
 sdk untaped.sdk.ExecutableCheck.run
@@ -5320,6 +5326,7 @@ sdk untaped.sdk.OnlineCheck.name_style class
 sdk untaped.sdk.OnlineCheck.online
 sdk untaped.sdk.OnlineCheck.plugin
 sdk untaped.sdk.OnlineCheck.probe
+sdk untaped.sdk.OnlineCheck.problems()
 sdk untaped.sdk.OnlineCheck.run
 sdk untaped.sdk.OnlineCheck.spelled
 sdk untaped.sdk.OnlineCheck.title
@@ -5557,17 +5564,33 @@ sdk untaped.sdk.Project.release(force=) default=[]  [experimental]
 sdk untaped.sdk.Project.release(items=) default=None  [experimental]
 sdk untaped.sdk.Project.release(store)  [experimental]
 sdk untaped.sdk.Project.root  [experimental]
+sdk untaped.sdk.ProjectStateRows()  [experimental]
+sdk untaped.sdk.ProjectStateRows(key_field=) default=None  [experimental]
+sdk untaped.sdk.ProjectStateRows(model=) default=None callback(0)  [experimental]
+sdk untaped.sdk.ProjectStateRows(name@2=) default=None  [experimental]
 sdk untaped.sdk.ProjectStateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.ProjectStateRows(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.ProjectStateRows(plugin@1=) default=None  [experimental]
+sdk untaped.sdk.ProjectStateRows(remove=) default=None  [experimental]
 sdk untaped.sdk.ProjectStateRows(remove_hint=) default=None  [experimental]
+sdk untaped.sdk.ProjectStateRows.binding  [experimental]
+sdk untaped.sdk.ProjectStateRows.bindings  [experimental]
+sdk untaped.sdk.ProjectStateRows.block_kind class  [experimental]
+sdk untaped.sdk.ProjectStateRows.derived_name(attribute)  [experimental]
 sdk untaped.sdk.ProjectStateRows.key_field  [experimental]
 sdk untaped.sdk.ProjectStateRows.model  [experimental]
+sdk untaped.sdk.ProjectStateRows.module  [experimental]
 sdk untaped.sdk.ProjectStateRows.name  [experimental]
+sdk untaped.sdk.ProjectStateRows.name_problem(name)  [experimental]
+sdk untaped.sdk.ProjectStateRows.name_style class  [experimental]
 sdk untaped.sdk.ProjectStateRows.of(project)  [experimental]
 sdk untaped.sdk.ProjectStateRows.omit_none  [experimental]
 sdk untaped.sdk.ProjectStateRows.plugin  [experimental]
+sdk untaped.sdk.ProjectStateRows.problems()  [experimental]
 sdk untaped.sdk.ProjectStateRows.qualified  [experimental]
+sdk untaped.sdk.ProjectStateRows.remove  [experimental]
 sdk untaped.sdk.ProjectStateRows.remove_hint  [experimental]
+sdk untaped.sdk.ProjectStateRows.spelled  [experimental]
+sdk untaped.sdk.ProjectStateRows.where  [experimental]
 sdk untaped.sdk.PromptChoice(description@3=) default=None
 sdk untaped.sdk.PromptChoice(value, label)
 sdk untaped.sdk.PromptChoice.description
@@ -5827,28 +5850,50 @@ sdk untaped.sdk.StateMap.entries()
 sdk untaped.sdk.StateMap.get(key)
 sdk untaped.sdk.StateMap.remove(key)
 sdk untaped.sdk.StateMap.set(key, value)
+sdk untaped.sdk.StateRows()  [experimental]
+sdk untaped.sdk.StateRows(key_field=) default=None  [experimental]
+sdk untaped.sdk.StateRows(model=) default=None callback(0)  [experimental]
+sdk untaped.sdk.StateRows(name@2=) default=None  [experimental]
 sdk untaped.sdk.StateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.StateRows(plugin@1=) default=None  [experimental]
+sdk untaped.sdk.StateRows(remove=) default=None  [experimental]
 sdk untaped.sdk.StateRows(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.StateRows.add(value)  [experimental]
 sdk untaped.sdk.StateRows.all()  [experimental]
+sdk untaped.sdk.StateRows.append(value)  [experimental]
+sdk untaped.sdk.StateRows.binding  [experimental]
+sdk untaped.sdk.StateRows.bindings  [experimental]
+sdk untaped.sdk.StateRows.block_kind class  [experimental]
 sdk untaped.sdk.StateRows.delete(key)  [experimental]
+sdk untaped.sdk.StateRows.derived_name(attribute)  [experimental]
 sdk untaped.sdk.StateRows.get(key)  [experimental]
 sdk untaped.sdk.StateRows.key_field  [experimental]
 sdk untaped.sdk.StateRows.keys()  [experimental]
 sdk untaped.sdk.StateRows.model  [experimental]
+sdk untaped.sdk.StateRows.module  [experimental]
 sdk untaped.sdk.StateRows.name  [experimental]
+sdk untaped.sdk.StateRows.name_problem(name)  [experimental]
+sdk untaped.sdk.StateRows.name_style class  [experimental]
 sdk untaped.sdk.StateRows.omit_none  [experimental]
 sdk untaped.sdk.StateRows.path()  [experimental]
+sdk untaped.sdk.StateRows.per_project()  [experimental]
+sdk untaped.sdk.StateRows.per_project(key_field=) default=None  [experimental]
+sdk untaped.sdk.StateRows.per_project(model=) default=None callback(0)  [experimental]
+sdk untaped.sdk.StateRows.per_project(name@2=) default=None  [experimental]
 sdk untaped.sdk.StateRows.per_project(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows.per_project(plugin, name, *, model, key_field) callback(model, 0)  [experimental]
+sdk untaped.sdk.StateRows.per_project(plugin@1=) default=None  [experimental]
+sdk untaped.sdk.StateRows.per_project(remove=) default=None  [experimental]
 sdk untaped.sdk.StateRows.per_project(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.StateRows.plugin  [experimental]
+sdk untaped.sdk.StateRows.problems()  [experimental]
 sdk untaped.sdk.StateRows.put(value)  [experimental]
 sdk untaped.sdk.StateRows.qualified  [experimental]
+sdk untaped.sdk.StateRows.remove  [experimental]
 sdk untaped.sdk.StateRows.remove_hint  [experimental]
 sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental]
+sdk untaped.sdk.StateRows.spelled  [experimental]
 sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
+sdk untaped.sdk.StateRows.where  [experimental]
 sdk untaped.sdk.Stdin()
 sdk untaped.sdk.Stdin(via=) default=None callback(*)
 sdk untaped.sdk.Stdin.field_kind class
@@ -5893,6 +5938,7 @@ sdk untaped.sdk.StubSkill.derived_name(attribute)
 sdk untaped.sdk.StubSkill.module
 sdk untaped.sdk.StubSkill.name_problem(name)
 sdk untaped.sdk.StubSkill.name_style class
+sdk untaped.sdk.StubSkill.problems()
 sdk untaped.sdk.Submit()  [experimental]
 sdk untaped.sdk.Submitted(values)  [experimental]
 sdk untaped.sdk.Submitted.values  [experimental]

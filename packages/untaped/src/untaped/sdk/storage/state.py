@@ -18,22 +18,32 @@ a project live in its own ``.untaped/state.yml``
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 import typing
 import weakref
 from collections.abc import Callable, Mapping, Sequence
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
 from pydantic import AliasChoices, BaseModel, ValidationError
 
-from untaped.runtime.config_file import mutate_plugin_state, read_plugin_state
+from untaped.runtime.config_file import (
+    mutate_plugin_state,
+    read_config_dict,
+    read_plugin_state,
+    write_config_dict,
+)
 from untaped.runtime.settings import CORE_STATE_SECTIONS, RESERVED_SECTIONS, resolve_state_path
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
 from untaped.sdk.marks import experimental
+from untaped.sdk.storage._fs import file_lock
 
 if TYPE_CHECKING:
+    from untaped.sdk.plugin import Command
     from untaped.sdk.projects import Project
 
 type Rows = list[dict[str, Any]]
@@ -132,68 +142,103 @@ class RowExists(ConfigError):
 
 
 @experimental
-class StateRows[M: BaseModel]:
-    """Typed rows a plugin keeps as the only copy, in ``state.yml`` → ``<plugin>.<name>``.
+class StateRows[M: BaseModel](OwnedBlock):
+    """Typed rows a plugin keeps as the only copy.
 
-    ``model`` is the rows' pydantic model, or a function of no arguments
-    returning it when importing the class would load more than a declaration
-    should; it is resolved on first use. ``key_field`` names the model's
-    required ``str`` field that keys the rows: one row per key. A row is
-    written ``mode="json"``, by alias; ``omit_none`` leaves its ``None``
-    fields out. ``remove_hint`` is the plugin's command that removes a row,
-    with ``{key}`` for its key (``"untaped acme forget {key}"``): a damaged
-    row's error offers it.
+    A plugin class holding it names it: ``items = StateRows[Item](remove=Remove)``
+    keeps ``Item`` rows under ``items`` in the plugin's own
+    ``plugins/<plugin>/state.yml``, stamped and written under that file's
+    lock. The row's key is its one required ``str`` field marked ``Key``; a
+    model with no such field makes the rows a list (:meth:`all`,
+    :meth:`append`, :meth:`replace_all`). ``remove`` is the command that
+    removes a row, called with its key: a damaged row's error offers it.
 
-    Rows are read with ``extra="ignore"``, nested models included, and the
-    fields a newer untaped added are written back as they were. A row that
-    fails its model, has no key, or shares its key with another is damaged:
-    reading it (``get``, ``all``) or changing it stops with a
-    :class:`~untaped.sdk.errors.ConfigError` (exit 4) naming the file, the row and
-    the fix, while ``keys``, other rows and ``delete`` keep working.
+    The 11.x spelling keeps them in the shared ``state.yml`` →
+    ``<plugin>.<name>``: ``model`` is the rows' pydantic model, or a function
+    of no arguments returning it when importing the class would load more
+    than a declaration should; it is resolved on first use. ``key_field``
+    names the model's required ``str`` field that keys the rows: one row per
+    key. ``remove_hint`` is the plugin's command that removes a row, with
+    ``{key}`` for its key (``"untaped acme forget {key}"``). List it on the
+    plugin's ``PluginSpec.stores``.
 
-    List it on the plugin's ``PluginSpec.stores``. Change a row with
-    :meth:`update`, never ``get`` then ``put``: ``update`` runs under the
-    state file's lock.
+    A row is written ``mode="json"``, by alias; ``omit_none`` leaves its
+    ``None`` fields out. Rows are read with ``extra="ignore"``, nested models
+    included, and the fields a newer untaped added are written back as they
+    were. A row that fails its model, has no key, or shares its key with
+    another is damaged: reading it (``get``, ``all``) or changing it stops
+    with a :class:`~untaped.sdk.errors.ConfigError` (exit 4) naming the file,
+    the row and the fix, while ``keys``, other rows and ``delete`` keep
+    working. Change a row with :meth:`update`, never ``get`` then ``put``:
+    ``update`` runs under the state file's lock.
     """
 
-    __slots__ = (
-        "__weakref__",
-        "_file",
-        "_resolved",
-        "key_field",
-        "model",
-        "name",
-        "omit_none",
-        "plugin",
-        "remove_hint",
-    )
+    block_kind = "state-rows"
+
+    model: type[M] | Callable[[], type[M]] | None
+    key_field: str | None
+    omit_none: bool
+    remove_hint: str | None
+    remove: type[Command[Any]] | None
 
     def __init__(
         self,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
-        model: type[M] | Callable[[], type[M]],
-        key_field: str,
+        model: type[M] | Callable[[], type[M]] | None = None,
+        key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
+        remove: type[Command[Any]] | None = None,
     ) -> None:
-        _check_declaration(plugin, name, model, key_field, remove_hint)
+        if plugin is None and name is None:
+            if key_field is not None or remove_hint is not None:
+                raise ConfigError(
+                    "state rows a plugin class holds take their key from the field marked "
+                    "Key and their remove command as remove=, not key_field= or remove_hint="
+                )
+        else:
+            if plugin is None or name is None or model is None or key_field is None:
+                raise ConfigError(
+                    f"state rows {plugin}.{name}: the 11.x spelling takes the plugin, the name, "
+                    "model= and key_field="
+                )
+            if remove is not None:
+                raise ConfigError(f"state rows {plugin}.{name}: remove= goes with a plugin class")
+            _check_declaration(plugin, name, model, key_field, remove_hint)
+        if model is not None and not callable(model):
+            raise ConfigError("state rows: model takes a model class or a function returning one")
         self._setup(plugin, name, model, key_field, omit_none, remove_hint, None)
-        _declare(self)
+        self.remove = remove
+        if plugin is not None:
+            _declare(self)
+
+    @classmethod
+    def __class_getitem__(cls, params: object) -> object:
+        # ``StateRows[Item]`` keeps its model for ``.per_project()``, which a
+        # plain alias hands to the class without its arguments.
+        alias = super().__class_getitem__(params)  # type: ignore[misc]
+        return _RowsAlias(alias.__origin__, alias.__args__)
 
     @classmethod
     def per_project(
         cls,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
-        model: type[M] | Callable[[], type[M]],
-        key_field: str,
+        model: type[M] | Callable[[], type[M]] | None = None,
+        key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
+        remove: type[Command[Any]] | None = None,
     ) -> ProjectStateRows[M]:
-        """Rows each project keeps in its ``.untaped/state.yml``; ``.of(project)`` opens them."""
+        """Rows each project keeps; ``.of(project)`` opens them.
+
+        On a plugin class, ``StateRows[Item].per_project()`` keeps them in the
+        project's ``.untaped/plugins/<plugin>/state.yml``; the 11.x spelling,
+        in its ``.untaped/state.yml``.
+        """
         return ProjectStateRows(
             plugin,
             name,
@@ -201,6 +246,7 @@ class StateRows[M: BaseModel]:
             key_field=key_field,
             omit_none=omit_none,
             remove_hint=remove_hint,
+            remove=remove,
         )
 
     @classmethod
@@ -209,51 +255,83 @@ class StateRows[M: BaseModel]:
         plugin: str,
         name: str,
         model: type[M] | Callable[[], type[M]],
-        key_field: str,
+        key_field: str | None,
         omit_none: bool,
         remove_hint: str | None,
         path: Path | None,
         *,
         core: bool = False,
+        own: bool = False,
+        remove: type[Command[Any]] | None = None,
     ) -> StateRows[M]:
         rows: StateRows[M] = object.__new__(cls)
         rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path, core=core)
+        rows._own = own
+        rows.remove = remove
         return rows
 
     def _setup(
         self,
-        plugin: str,
-        name: str,
-        model: type[M] | Callable[[], type[M]],
-        key_field: str,
+        plugin: str | None,
+        name: str | None,
+        model: type[M] | Callable[[], type[M]] | None,
+        key_field: str | None,
         omit_none: bool,
         remove_hint: str | None,
         path: Path | None,
         *,
         core: bool = False,
     ) -> None:
-        self.plugin = plugin
-        self.name = name
+        OwnedBlock.__init__(self, plugin, name)
         self.model = model
         self.key_field = key_field
         self.omit_none = omit_none
         self.remove_hint = remove_hint
+        self.remove = None
         self._resolved: _Shape | None = None
-        self._file = _RowFile(plugin, name, path, core=core)
+        self._path = path
+        self._own = plugin is None
+        self._rows_file = (
+            None if plugin is None or name is None else _RowFile(plugin, name, path, core=core)
+        )
+
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        if name == STAMP:
+            return f"state rows cannot be named {STAMP!r}: the state file keeps its stamp there"
+        return None
+
+    def problems(self) -> tuple[str, ...]:
+        try:
+            self._shape()
+        except ConfigError as exc:
+            return (str(exc),)
+        return ()
+
+    @property
+    def _file(self) -> _RowFile | _PluginFile:
+        if not self._own:
+            assert self._rows_file is not None  # an 11.x spelling made it
+            return self._rows_file
+        path = self._path or _plugin_state_path(self.plugin)
+        return _PluginFile(self.plugin, self.name, path)
 
     @property
     def qualified(self) -> str:
         return f"{self.plugin}.{self.name}"
 
     def _identity(self) -> tuple[object, ...]:
+        if not self.spelled:
+            return (id(self),)  # a bound block is itself, as every block is
         return (
-            self.plugin,
-            self.name,
+            self._plugin,
+            self._name,
             self.model,
             self.key_field,
             self.omit_none,
             self.remove_hint,
-            self._file._path,
+            self._path,
+            self._own,
         )
 
     def __eq__(self, other: object) -> bool:
@@ -265,7 +343,7 @@ class StateRows[M: BaseModel]:
         return hash(self._identity())
 
     def __repr__(self) -> str:
-        return f"StateRows({self.plugin!r}, {self.name!r})"
+        return f"StateRows({self.where!r})"
 
     def path(self) -> Path:
         """The state file these rows live in."""
@@ -275,6 +353,7 @@ class StateRows[M: BaseModel]:
 
     def get(self, key: str) -> M | None:
         """The row keyed ``key``, or ``None``; a damaged one stops (exit 4)."""
+        self._key_name("get")
         found = self._find(self._file.read(), key)
         return None if found is None else found[1]
 
@@ -284,15 +363,24 @@ class StateRows[M: BaseModel]:
 
     def keys(self) -> list[str]:
         """Every row's key, in file order and once each; never stops on a damaged row."""
-        shape = self._shape()
+        name = self._key_name("keys")
         seen: dict[str, None] = {}
         for row in self._file.read():
-            key = row.get(shape.key) if isinstance(row, dict) else None
+            key = row.get(name) if isinstance(row, dict) else None
             if isinstance(key, str):
                 seen[key] = None
         return list(seen)
 
     # -- writes -----------------------------------------------------------
+
+    def append(self, value: M) -> None:
+        """Append ``value`` to rows that are a list (their model has no ``Key`` field)."""
+        if self._shape().key is not None:
+            raise TypeError(
+                f"{self.where} rows are keyed: add, put or update one instead of appending"
+            )
+        self._check_type(value)
+        self._file.mutate(lambda rows: [*rows, self._dump(value)])
 
     def add(self, value: M) -> None:
         """Append ``value``; :class:`RowExists` when its key already has a row."""
@@ -360,6 +448,11 @@ class StateRows[M: BaseModel]:
         def _replace(rows: list[Any]) -> list[Any]:
             nonlocal replaced
             current = self._all(rows)
+            if self._shape().key is None:
+                replaced = list(change([value for _, value in current]))
+                for value in replaced:
+                    self._check_type(value)
+                return [self._dump(value) for value in replaced]
             stored = {self._key_of(value): (rows[index], value) for index, value in current}
             replaced = list(change([value for _, value in current]))
             keys = [self._key_of(value) for value in replaced]
@@ -378,6 +471,7 @@ class StateRows[M: BaseModel]:
 
     def delete(self, key: str) -> int:
         """Remove every row keyed ``key``, damaged ones included; the number removed."""
+        self._key_name("delete")
         removed = 0
 
         def _delete(rows: list[Any]) -> list[Any] | None:
@@ -393,17 +487,37 @@ class StateRows[M: BaseModel]:
 
     def _shape(self) -> _Shape:
         if self._resolved is None:
-            model = self.model if isinstance(self.model, type) else self.model()
-            self._resolved = _shape_of(self.qualified, model, self.key_field)
+            model: object = self.model
+            if model is None:
+                model = _model_argument(self)
+            elif not isinstance(model, type):
+                model = model()  # type: ignore[operator]
+            if self.key_field is None:
+                self._resolved = _marked_shape(self.where, model)
+            else:
+                self._resolved = _shape_of(self.where, model, self.key_field)
         return self._resolved
 
-    def _key_of(self, value: M) -> str:
+    def _key_name(self, method: str) -> str:
+        """The stored key's name; :class:`TypeError` naming ``method`` for rows that are a list."""
+        key = self._shape().key
+        if key is None:
+            raise TypeError(
+                f"{self.where} rows are a list (their model has no Key field), which {method} "
+                "cannot read: use all, append and replace_all"
+            )
+        return key
+
+    def _check_type(self, value: M) -> None:
         shape = self._shape()
         if not isinstance(value, shape.model):
             raise UntapedError(
                 f"{self.qualified} keeps {shape.model.__name__} rows, not {type(value).__name__}"
             )
-        key: str = getattr(value, self.key_field)
+
+    def _key_of(self, value: M) -> str:
+        self._check_type(value)
+        key: str = getattr(value, self._shape().field)
         return key
 
     def _dump(self, value: M) -> dict[str, Any]:
@@ -415,7 +529,7 @@ class StateRows[M: BaseModel]:
         return _write_back(shape.model, stored, self._dump(current), self._dump(new))
 
     def _indexes(self, rows: Sequence[Any], key: str) -> list[int]:
-        name = self._shape().key
+        name = self._key_name("this")
         return [i for i, row in enumerate(rows) if isinstance(row, dict) and row.get(name) == key]
 
     def _find(self, rows: Sequence[Any], key: str) -> tuple[int, M] | None:
@@ -434,6 +548,9 @@ class StateRows[M: BaseModel]:
             label = f"#{index + 1}"
             if not isinstance(row, dict):
                 raise self._damaged(label, None, "it is not a mapping")
+            if name is None:
+                found.append((index, self._validate(row, label)))
+                continue
             key = row.get(name)
             if not isinstance(key, str):
                 problem = f"it has no {name}" if key is None else f"its {name} is not a string"
@@ -445,20 +562,30 @@ class StateRows[M: BaseModel]:
             found.append((index, self._validate(row, key)))
         return found
 
-    def _validate(self, row: Any, key: str) -> M:
+    def _validate(self, row: Any, label: str) -> M:
         try:
             value: M = self._shape().model.model_validate(row, extra="ignore")  # type: ignore[assignment]
         except ValidationError as exc:
-            raise self._damaged(key, key, first_validation_error(exc)) from None
+            key = label if self._shape().key is not None else None
+            raise self._damaged(label, key, first_validation_error(exc)) from None
         return value
+
+    def _remove_line(self, key: str | None) -> str | None:
+        """The command line removing the row keyed ``key``, when the rows name one."""
+        if key is None:
+            return None
+        if self.remove is not None:
+            from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+
+            return current_run().composition.spell(self.remove.spelled(key))
+        return None if self.remove_hint is None else self.remove_hint.format(key=key)
 
     def _damaged(self, label: str, key: str | None, problem: str) -> ConfigError:
         path = self.path()
         fix = "correct or remove that row by hand"
-        if key is not None and self.remove_hint is not None:
-            fix = (
-                f"correct that row by hand, or remove it with `{self.remove_hint.format(key=key)}`"
-            )
+        remove = self._remove_line(key)
+        if remove is not None:
+            fix = f"correct that row by hand, or remove it with `{remove}`"
         return ConfigError(
             f"{self.qualified} row {label} in {path} is damaged: {problem}",
             hint=fix,
@@ -467,42 +594,81 @@ class StateRows[M: BaseModel]:
 
 
 @experimental
-class ProjectStateRows[M: BaseModel]:
-    """Typed rows each project keeps in its ``.untaped/state.yml`` (:meth:`StateRows.per_project`).
+class ProjectStateRows[M: BaseModel](OwnedBlock):
+    """Typed rows each project keeps (:meth:`StateRows.per_project`); :meth:`of` opens one's.
 
-    List it on the plugin's ``PluginSpec.stores``; :meth:`of` opens one
-    project's rows.
+    On a plugin class they live in the project's
+    ``.untaped/plugins/<plugin>/state.yml``; the 11.x spelling's, listed on
+    the plugin's ``PluginSpec.stores``, in its ``.untaped/state.yml``.
     """
 
-    __slots__ = ("__weakref__", "key_field", "model", "name", "omit_none", "plugin", "remove_hint")
+    block_kind = "state-rows"
+
+    model: type[M] | Callable[[], type[M]] | None
+    key_field: str | None
+    omit_none: bool
+    remove_hint: str | None
+    remove: type[Command[Any]] | None
 
     def __init__(
         self,
-        plugin: str,
-        name: str,
+        plugin: str | None = None,
+        name: str | None = None,
         *,
-        model: type[M] | Callable[[], type[M]],
-        key_field: str,
+        model: type[M] | Callable[[], type[M]] | None = None,
+        key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
+        remove: type[Command[Any]] | None = None,
     ) -> None:
-        _check_declaration(plugin, name, model, key_field, remove_hint)
-        self.plugin = plugin
-        self.name = name
+        if plugin is not None or name is not None:
+            if plugin is None or name is None or model is None or key_field is None:
+                raise ConfigError(
+                    f"state rows {plugin}.{name}: the 11.x spelling takes the plugin, the name, "
+                    "model= and key_field="
+                )
+            _check_declaration(plugin, name, model, key_field, remove_hint)
+        elif key_field is not None or remove_hint is not None:
+            raise ConfigError(
+                "state rows a plugin class holds take their key from the field marked "
+                "Key and their remove command as remove=, not key_field= or remove_hint="
+            )
+        super().__init__(plugin, name)
         self.model = model
         self.key_field = key_field
         self.omit_none = omit_none
         self.remove_hint = remove_hint
-        _declare(self)
+        self.remove = remove
+        if plugin is not None:
+            _declare(self)
+
+    @classmethod
+    def name_problem(cls, name: str) -> str | None:
+        return StateRows.name_problem(name)
+
+    def problems(self) -> tuple[str, ...]:
+        try:
+            model = self.model if self.model is not None else _model_argument(self)
+            if not isinstance(model, type):
+                model = model()  # type: ignore[operator]
+            if self.key_field is None:
+                _marked_shape(self.where, model)
+            else:
+                _shape_of(self.where, model, self.key_field)
+        except ConfigError as exc:
+            return (str(exc),)
+        return ()
 
     @property
     def qualified(self) -> str:
         return f"{self.plugin}.{self.name}"
 
     def _identity(self) -> tuple[object, ...]:
+        if not self.spelled:
+            return (id(self),)
         return (
-            self.plugin,
-            self.name,
+            self._plugin,
+            self._name,
             self.model,
             self.key_field,
             self.omit_none,
@@ -518,18 +684,34 @@ class ProjectStateRows[M: BaseModel]:
         return hash(self._identity())
 
     def __repr__(self) -> str:
-        return f"ProjectStateRows({self.plugin!r}, {self.name!r})"
+        return f"ProjectStateRows({self.where!r})"
 
     def of(self, project: Project) -> StateRows[M]:
-        """This project's rows, in ``<project>/.untaped/state.yml``."""
+        """This project's rows."""
+        from untaped.sdk.projects import DIRECTORY  # noqa: PLC0415 - projects imports the registry
+
+        model = self.model if self.model is not None else _model_argument(self)
+        if self.spelled:
+            return StateRows._bound(
+                self.plugin,
+                self.name,
+                model,  # type: ignore[arg-type]
+                self.key_field,
+                self.omit_none,
+                self.remove_hint,
+                project.root / DIRECTORY / _STATE_FILE,
+            )
+        plugin, name = self.plugin, self.name
         return StateRows._bound(
-            self.plugin,
-            self.name,
-            self.model,
-            self.key_field,
+            plugin,
+            name,
+            model,  # type: ignore[arg-type]
+            None,
             self.omit_none,
-            self.remove_hint,
-            project_state_path(project),
+            None,
+            project.root / DIRECTORY / "plugins" / plugin / _STATE_FILE,
+            own=True,
+            remove=self.remove,
         )
 
 
@@ -589,20 +771,171 @@ def _check_declaration(
 
 class _Shape(typing.NamedTuple):
     model: type[BaseModel]
-    key: str
-    """The key field's name in a stored row (its alias, when it has one)."""
+    key: str | None
+    """The key field's name in a stored row (its alias, when it has one); ``None``: a list."""
+    field: str = ""
+    """The key field's name on the model."""
 
 
 def _shape_of(qualified: str, model: object, key_field: str) -> _Shape:
-    if not (isinstance(model, type) and issubclass(model, BaseModel)):
-        raise ConfigError(f"state rows {qualified}: model is not a pydantic model: {model!r}")
+    model = _row_model(qualified, model)
     field = model.model_fields.get(key_field)
     if field is None or field.annotation is not str or not field.is_required():
         raise ConfigError(
             f"state rows {qualified}: key_field {key_field!r} must be a required str field "
             f"of {model.__name__}"
         )
-    return _Shape(model, field.serialization_alias or field.alias or key_field)
+    return _Shape(model, field.serialization_alias or field.alias or key_field, key_field)
+
+
+def _marked_shape(qualified: str, model: object) -> _Shape:
+    """The rows' shape from the model's one field marked ``Key``; none makes them a list."""
+    from untaped.sdk.fields import Key  # noqa: PLC0415 - fields imports the declaration's blocks
+
+    model = _row_model(qualified, model)
+    marked = [name for name, field in model.model_fields.items() if Key in field.metadata]
+    if not marked:
+        return _Shape(model, None)
+    if len(marked) > 1:
+        raise ConfigError(
+            f"state rows {qualified}: {model.__name__} marks {' and '.join(marked)} Key; "
+            "a row has one key"
+        )
+    return _shape_of(qualified, model, marked[0])
+
+
+def _row_model(qualified: str, model: object) -> type[BaseModel]:
+    if not (isinstance(model, type) and issubclass(model, BaseModel)):
+        raise ConfigError(f"state rows {qualified}: model is not a pydantic model: {model!r}")
+    return model
+
+
+def _model_argument(rows: StateRows[Any] | ProjectStateRows[Any]) -> object:
+    """The model a plugin class's rows were subscripted with (``StateRows[Item]()``)."""
+    alias = getattr(rows, "__orig_class__", None)
+    args: tuple[object, ...] = getattr(alias, "__args__", ())
+    if len(args) != 1:
+        raise ConfigError(f"state rows {rows.where}: name the rows' model, as in StateRows[Item]()")
+    return args[0]
+
+
+class _RowsAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,name-defined,misc]
+    """``StateRows[Item]``: the alias that hands its model to ``.per_project()`` too."""
+
+    def per_project(self, **options: Any) -> ProjectStateRows[Any]:
+        return ProjectStateRows(model=self.__args__[0], **options)
+
+
+def _plugin_state_path(plugin: str) -> Path:
+    """``~/.untaped/plugins/<plugin>/state.yml``: the plugin's own rows."""
+    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+
+    return current_run().home / "plugins" / plugin / _STATE_FILE
+
+
+#: The key a state file keeps its stamp under (the data file format's).
+STAMP = "untaped"
+#: The state file's name, in the home's plugin folder and a project's alike.
+_STATE_FILE = "state.yml"
+#: How long a write waits for another process writing the same state file.
+_WRITE_WAIT = 10.0
+#: The plugin state files this context is writing: a nested write would be saved over.
+_WRITING: ContextVar[frozenset[str]] = ContextVar("untaped_state_writing", default=frozenset())
+
+
+class _PluginFile:
+    """The rows under ``<name>`` of one plugin's own ``state.yml``, stamped, under its lock."""
+
+    __slots__ = ("_path", "name", "plugin")
+
+    def __init__(self, plugin: str, name: str, path: Path) -> None:
+        self.plugin = plugin
+        self.name = name
+        self._path = path
+
+    def path(self) -> Path:
+        return self._path
+
+    def read(self) -> list[Any]:
+        return self.rows(self._load())
+
+    def mutate(self, fn: Callable[[list[Any]], list[Any] | None]) -> None:
+        """Replace the rows under the file's lock; ``None`` from ``fn`` writes nothing."""
+        real = os.path.realpath(self._path)
+        writing = _WRITING.get()
+        if real in writing:
+            raise UntapedError(
+                f"a write to {self._path} started inside another write to it; the inner "
+                "write is refused so the outer one cannot save over it",
+                details={"path": str(self._path)},
+            )
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ConfigError(
+                f"could not create the directory for {self._path}: {exc.strerror or exc}"
+            ) from exc
+        with file_lock(
+            self._path.with_name(f".{_STATE_FILE}.lock"),
+            timeout=_WRITE_WAIT,
+            error=ConfigError,
+            busy=f"{self.plugin} state is busy (another untaped process)",
+            failed=f"could not lock {self._path}",
+        ):
+            state = self._load()
+            token = _WRITING.set(writing | {real})
+            try:
+                replacement = fn(self.rows(state))
+            finally:
+                _WRITING.reset(token)
+            if replacement is None:
+                return
+            if replacement:
+                state[self.name] = replacement
+            else:
+                state.pop(self.name, None)
+            from untaped.sdk.storage.data_file import (  # noqa: PLC0415 - writes only
+                FILE,
+                written_by,
+            )
+
+            state[STAMP] = {"file": FILE, "by": written_by()}
+            write_config_dict(state, self._path)
+
+    def _load(self) -> dict[str, Any]:
+        from untaped.sdk.storage.data_file import (  # noqa: PLC0415 - kept off startup
+            OtherVersion,
+            check_stamp,
+        )
+
+        state = read_config_dict(self._path)
+        stamp = state.get(STAMP)
+        if stamp is None:
+            return state
+        checked = check_stamp(stamp) if isinstance(stamp, Mapping) else None
+        if isinstance(checked, OtherVersion):
+            raise ConfigError(
+                f"{self._path} was written by a newer untaped ({checked.by or 'unknown'}), "
+                "whose format this release cannot read",
+                hint="upgrade untaped",
+                details={"path": str(self._path)},
+            )
+        if not isinstance(checked, dict):
+            raise ConfigError(
+                f"{self._path} has a damaged {STAMP!r} stamp; correct it by hand",
+                details={"path": str(self._path)},
+            )
+        return state
+
+    def rows(self, state: Mapping[str, Any]) -> list[Any]:
+        raw = state.get(self.name)
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise ConfigError(
+                f"invalid state: `{self.name}` must be a list of mappings (in {self._path})"
+            )
+        return list(raw)
 
 
 def _rows_text(indexes: Sequence[int]) -> str:
