@@ -62,15 +62,22 @@ def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
 def _package_of_module(module: str) -> str:
     """``module`` when it is a package or can't be found, else the package holding it.
 
-    Finding a submodule imports its parent package, never the module itself.
+    It reads the files under the top package's folder, so no plugin code runs.
     """
+    top, *rest = module.split(".")
     try:
-        found = find_spec(module)
-    except ImportError, ValueError:
+        found = find_spec(top)
+    except Exception:  # a broken finder or name: say the target as written
         return module
-    if found is None or found.submodule_search_locations:
+    if found is None or not found.submodule_search_locations or not rest:
         return module
-    return module.rpartition(".")[0] or module
+    folder = Path(found.submodule_search_locations[0])
+    for index, part in enumerate(rest):
+        if not (folder / part / "__init__.py").is_file():
+            leaf = index == len(rest) - 1 and (folder / f"{part}.py").is_file()
+            return ".".join([top, *rest[:index]]) if leaf else module
+        folder = folder / part
+    return module
 
 
 def _source_dir(package: str) -> Path:
