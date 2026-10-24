@@ -127,6 +127,7 @@ Lock.try_locked  # documented SDK: dotfiles' move PR is the first caller
 _clear_for_tests  # test hook for the composed root
 ScreenRun.commands_run  # read by tests that drive screens
 ProgressClock.advance  # untaped.sdk.testing: a test moves the progress clock
+Ran.rows_as  # untaped.sdk.testing: a test reads its rows typed
 open_tasks  # tests check that no progress task is left open
 drop_tasks  # the root conftest's cleanup of a leaked progress task
 
