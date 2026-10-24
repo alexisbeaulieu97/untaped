@@ -5,8 +5,7 @@ aliases, so a deprecated spelling is seen as an alias. A command's owner line
 carries what a caller must pass (required positionals in order, then required
 options sorted); every optional positional, option, alias, negative flag and
 choice has a line of its own, so adding one adds a line. Flattened dataclass
-parameters are containers: their fields are the options; a ``**kwargs``
-parameter (options read by name at run time) is one ``--<NAME> VALUE`` line.
+parameters are containers: their fields are the options.
 Hidden commands and parameters are skipped unless deprecated (an option
 marked ``deprecated(...)`` in its annotation counts) or listed in
 :data:`~untaped.core.surface._lists.WRITTEN_OUTSIDE`. Defaults are the declared
@@ -146,9 +145,6 @@ def _arguments(app: App, where: str, marked: frozenset[str]) -> Iterator[Any]:
     for argument in app.assemble_argument_collection(parse_docstring=False):
         if argument.children:
             continue  # a flattened dataclass: its fields are the options
-        if argument.field_info.kind is inspect.Parameter.VAR_KEYWORD:
-            yield argument
-            continue
         visible = (
             argument.show
             or argument.field_info.name in marked
