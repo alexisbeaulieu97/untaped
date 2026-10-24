@@ -32,7 +32,7 @@ def test_hello_keeps_its_surface() -> None:
 
 
 def test_hello_loads_lazily() -> None:
-    """A fresh interpreter after the first start: rendering the root help never imports the CLI.
+    """A fresh interpreter after the first start: rendering the root help imports no command.
 
     The first start composes the plugin class, which imports its commands,
     and core keeps what it composed; every start after that reads it.
@@ -40,7 +40,8 @@ def test_hello_loads_lazily() -> None:
     code = (
         "import sys; from untaped.sdk.testing import invoke_root; "
         "r = invoke_root(['--help']); "
-        "print(r.exit_code, 'hello' in r.stdout, 'untaped_hello.commands.greet' in sys.modules)"
+        "print(r.exit_code, 'hello' in r.stdout, "
+        "any(m.startswith('untaped_hello.commands') for m in sys.modules))"
     )
     first = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert first.stdout.split()[:2] == ["0", "True"]

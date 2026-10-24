@@ -41,5 +41,4 @@ fixture composes `Hello` into the test's home: `install(Hello).run(Greet())`
 runs a command, `.cli("hello say ada")` a command line, and the `clock`
 fixture ages the cache. `check(install(Hello))` runs the composition checks
 and `assert_surface(Hello)` keeps `tests/untaped_hello/snapshots/surface.txt`.
-The building guide
-is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).
+The building guide is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).
