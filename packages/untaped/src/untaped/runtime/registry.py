@@ -1328,6 +1328,8 @@ _EMPTY: dict[type, Callable[[], object]] = {
 
 def _declared_type(declared: StateDeclaration) -> Any:
     if isinstance(declared, StateRows | ProjectStateRows):
+        if declared.model is None:  # a plugin class's rows, never on a spec
+            return list[Any]
         model = declared.model if isinstance(declared.model, type) else declared.model()
         return list[model]  # type: ignore[valid-type]
     if isinstance(declared, StateMap):

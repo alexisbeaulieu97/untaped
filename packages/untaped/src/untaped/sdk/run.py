@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from untaped.sdk._ui import UiContext
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
+    from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.progress import ProgressHandle
     from untaped.sdk.projects import Project
@@ -74,6 +75,11 @@ class Clock:
         time.sleep(seconds)
 
 
+def _unspelled(spelled: SpelledCommand) -> str:
+    """A command line for a run that composed no declaration: the class's name and arguments."""
+    return " ".join([spelled.command.__name__, *map(str, spelled.args)])
+
+
 @dataclass(frozen=True)
 class Composition:
     """Which plugin owns what, and the plugins this install has."""
@@ -84,6 +90,8 @@ class Composition:
     packages: Mapping[str, str] = field(default_factory=dict)
     #: This install's plugins as ``untaped plugin list`` shows them, read on first use.
     installed: Callable[[], tuple[InstalledPlugin, ...]] = tuple
+    #: The command line a ``Command.spelled(...)`` stands for, as this run names commands.
+    spell: Callable[[SpelledCommand], str] = _unspelled
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
         """The plugin whose settings model ``model`` is; :class:`LookupError` when none is."""

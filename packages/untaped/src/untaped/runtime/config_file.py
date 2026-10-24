@@ -127,12 +127,25 @@ def mutate_config(
 
 @contextlib.contextmanager
 def _locked(target: Path) -> Iterator[None]:
-    """Hold the advisory ``<target>.lock`` (creating the parent directory).
+    """Hold the config lock of ``target``: :func:`locked_write` with the config's wait."""
+    timeout = _lock_timeout()
+    busy = (
+        f"could not acquire lock on {target}; another untaped process is "
+        f"writing to it (waited {timeout}s)."
+    )
+    with locked_write(target, timeout=timeout, busy=busy):
+        yield
 
-    A write to ``target`` started inside another write to it in this thread
-    raises :class:`UntapedError` and writes nothing: ``file_lock`` is
-    re-entrant, so the inner write would succeed and the outer one would then
-    save over it.
+
+@contextlib.contextmanager
+def locked_write(target: Path, *, timeout: float, busy: str) -> Iterator[None]:
+    """Hold the advisory ``<target>.lock`` (creating the parent directory) to write ``target``.
+
+    Waits up to ``timeout`` seconds for another process, then raises
+    :class:`ConfigError` saying ``busy``. A write to ``target`` started inside
+    another write to it in this thread raises :class:`UntapedError` and
+    writes nothing: ``file_lock`` is re-entrant, so the inner write would
+    succeed and the outer one would then save over it.
     """
     real = os.path.realpath(target)
     writing: frozenset[str] = getattr(_WRITING, "paths", frozenset())
@@ -148,15 +161,11 @@ def _locked(target: Path) -> Iterator[None]:
         raise ConfigError(
             f"could not create the directory for {target}: {exc.strerror or exc}"
         ) from exc
-    timeout = _lock_timeout()
     with file_lock(
         Path(f"{target}.lock"),
         timeout=timeout,
         error=ConfigError,
-        busy=(
-            f"could not acquire lock on {target}; another untaped process is "
-            f"writing to it (waited {timeout}s)."
-        ),
+        busy=busy,
         failed=f"could not lock {target}",
     ):
         _WRITING.paths = writing | {real}

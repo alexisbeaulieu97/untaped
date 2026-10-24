@@ -37,11 +37,14 @@ class Binding(NamedTuple):
 
 
 def _creating_module(block: object) -> str:
-    """The module that created ``block``: the first frame outside its constructors and the SDK."""
+    """The module that created ``block``: the first frame outside its constructors and the SDK.
+
+    A subscripted block (``StateRows[Item]()``) is built through ``typing``'s alias, skipped too.
+    """
     frame: FrameType | None = sys._getframe(1)
     while frame is not None:
         name = str(frame.f_globals.get("__name__", ""))
-        building = frame.f_locals.get("self") is block
+        building = frame.f_locals.get("self") is block or name == "typing"  # StateRows[M]()
         if not building and name != "untaped.sdk" and not name.startswith("untaped.sdk."):
             return name
         frame = frame.f_back
@@ -85,6 +88,10 @@ class Block:
     def name_problem(cls, name: str) -> str | None:
         """Why ``name`` cannot name a block of this kind, or ``None``; composition reports it."""
         return None
+
+    def problems(self) -> tuple[str, ...]:
+        """Why the block's own declaration cannot work (its model, its marks), for composition."""
+        return ()
 
     @property
     def module(self) -> str:

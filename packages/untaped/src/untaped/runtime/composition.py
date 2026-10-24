@@ -413,6 +413,8 @@ class _PluginWalk:
             if problem is not None:
                 self.problem("block-name", where, problem)
                 continue
+            for problem in value.problems():
+                self.problem("block-shape", where, problem)
             blocks.append(
                 BlockDecl(
                     block=value.block_kind, attribute=attribute, name=name, module=value.module

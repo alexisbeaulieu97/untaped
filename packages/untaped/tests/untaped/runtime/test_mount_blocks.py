@@ -31,6 +31,7 @@ from untaped.sdk import (
     PluginContext,
     ProgressHandle,
     Refresh,
+    StateRows,
 )
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -97,6 +98,7 @@ class Keeper(Plugin):
     readable = DoctorCheck(title="notes are readable", run=_healthy)
     token = Credential(key=KeeperServer, env=("KEEPER_TOKEN",))
     plain_notes = DeprecatedBehaviour(removed_in=13, replacement="untaped keeper read")
+    kept = StateRows[Note]()
 
 
 KEEPER = PluginCandidate(distribution="untaped-keeper", name="keeper", target=Keeper)
@@ -148,6 +150,7 @@ def test_credentials_and_behaviours_reach_the_spec_named_and_compose_again() -> 
     assert token.qualified == "keeper.token"
     assert token is first.plugins[0].spec.credentials[0]
     assert [each.name for each in plugin.spec.deprecations()] == ["plain-notes"]
+    assert plugin.spec.stores == ()  # its rows live in its own file, not the shared one
     assert _run("keeper", "show").exit_code == 0
 
 
