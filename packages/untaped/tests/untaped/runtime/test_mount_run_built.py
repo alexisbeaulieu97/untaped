@@ -5,7 +5,8 @@ from __future__ import annotations
 import io
 from collections.abc import Iterator
 from contextlib import redirect_stdout
-from typing import Annotated
+from datetime import timedelta
+from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel, Field
@@ -14,8 +15,9 @@ from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.composition import PluginEntry
 from untaped.runtime.mount import Mount, compose_plugins, run_built, watching
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import Command, Confirm, Key, Output, Plugin, Positional, Record
+from untaped.sdk import Command, Confirm, Key, Output, Plugin, Positional, Record, Refresh
 from untaped.sdk.errors import UsageError
+from untaped.sdk.storage import Cache
 from untaped.sdk.testing import CliInvoker
 
 
@@ -43,6 +45,15 @@ class Both(BaseModel):
 
     output: Output[Crate]
     confirm: Confirm
+
+
+STOCK: Cache[Any] = Cache(label="stock", max_age=timedelta(hours=1))
+
+
+class Knobs(BaseModel):
+    """A bundle whose core field is configured by its default."""
+
+    refresh: Refresh = Refresh(STOCK)
 
 
 class Crates(Command):
@@ -82,6 +93,16 @@ class Paired(Command):
         yield Crate(name="paired")
 
 
+class Tuned(Command):
+    """Print the caches its refresh names."""
+
+    knobs: Knobs | None = None
+
+    def run(self) -> str:
+        assert self.knobs is not None
+        return " ".join(cache.label for cache in self.knobs.refresh.caches)
+
+
 class Label(Command):
     """Print one label."""
 
@@ -97,7 +118,8 @@ class Depot(Plugin):
     """Keep crates (a test's plugin)."""
 
     settings = DepotSettings
-    commands = (Crates, Shelved, Picky, Paired, Label)
+    commands = (Crates, Shelved, Picky, Paired, Tuned, Label)
+    stock = STOCK
 
 
 @pytest.fixture
@@ -141,6 +163,16 @@ def test_run_built_builds_a_bundle_once_from_all_its_core_fields(mount: Mount) -
             {"both.output": {"--format": "json"}, "both.confirm": {}},
         )
     assert (printed.format, printed.rows) == ("json", [Crate(name="paired")])
+
+
+def test_run_built_keeps_a_block_s_configured_default_in_an_unbuilt_bundle(
+    mount: Mount,
+) -> None:
+    with redirect_stdout(io.StringIO()):
+        printed = run_built(
+            mount, _decl(mount, "tuned"), Tuned(), {"knobs.refresh": {"--refresh": True}}
+        )
+    assert printed.text == "stock"
 
 
 def test_run_built_keeps_a_line(mount: Mount) -> None:

@@ -550,7 +550,7 @@ def _refill(
     values: dict[str, object] = {}
     for part, node in tree.items():
         info = cls.model_fields[part]
-        current = getattr(holder, part) if isinstance(holder, BaseModel) else None
+        current = getattr(holder, part) if isinstance(holder, BaseModel) else info.default
         if isinstance(node, _Given):
             values[part] = _filled(mount, decl, info, node.flags, current)
         elif isinstance(current, BaseModel):
