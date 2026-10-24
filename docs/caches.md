@@ -168,6 +168,18 @@ that shapes the data in that module or hash its modules too
 (`extra=(code_version("acme.domain.identity"),)`). A `version` that raises
 fails every read of the cache, `--cached` included.
 
+A 12.0 plugin class names the code instead:
+`version=installed_code(acme.domain.parser)` hashes every file of that
+module or package (a module or its dotted name; neither is imported to find
+it), and `version=installed_code()` versions by the whole install: untaped
+and every plugin distribution, by version, `RECORD` and, for an editable
+install, the modification times and sizes under its source folder (hidden
+and editor files, `node_modules` and virtual environments left out). A
+`setup.py develop` install counts by its version alone, and files a plugin
+reads from outside its source folder never count. A named top-level package
+an import hook installs (a setuptools editable finder) is found once
+imported.
+
 Each key's file keeps the version it was filled at. A key filled at
 another version is *outdated*: due the way a key past its max age is (auto
 refreshes it, its data is kept, and after a failed refresh the retry window

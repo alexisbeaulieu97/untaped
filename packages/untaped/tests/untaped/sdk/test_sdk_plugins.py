@@ -225,6 +225,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Store",
         "code_version",
         "holders",
+        "installed_code",
         "refresh_option",
     ),
     "data files": (
