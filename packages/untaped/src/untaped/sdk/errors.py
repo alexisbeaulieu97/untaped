@@ -307,6 +307,21 @@ class UsageError(UntapedError):
     category = ErrorCategory.USAGE
 
 
+class NeedsYesError(UsageError):
+    """A command that asks first ran without a terminal and without ``--yes``; exits ``2``.
+
+    The message names the command and its question, which carries the reason. Raise it
+    yourself for an early refusal before costly work; ``self.confirm(...)`` raises it otherwise.
+    """
+
+    def __init__(self, question: str, *, command: str = "this command") -> None:
+        super().__init__(
+            f'{command} requires --yes when not interactive: it asks "{question}"',
+            hint="pass --yes to go ahead, or --dry-run to preview",
+            details={"command": command, "question": question},
+        )
+
+
 class OperationCancelledError(UntapedError):
     """Raised when the user declines a confirmation; exits ``1``.
 
