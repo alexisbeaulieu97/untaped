@@ -90,6 +90,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
     :class:`SurfaceError` for anything the walker can't classify.
     """
     from untaped.core.surface._cli import cli_lines  # noqa: PLC0415
+    from untaped.core.surface._records import record_lines  # noqa: PLC0415
     from untaped.core.surface._settings import check_quarantine, settings_lines  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
@@ -109,6 +110,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         lines.extend(settings_lines(result, tree=root))
         lines.extend(_owned(result, modules, marks))
         lines.extend(_behaviour_lines(result, root))
+        lines.extend(record_lines(result, marks))
         lines.extend(_convention_lines())
     return sorted(set(lines))
 
@@ -117,10 +119,11 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
     """The surface of one plugin, composed alone with the shell.
 
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
-    their payload models, and its ``api`` and ``testing`` modules when it has
-    them.
+    their payload models, its record kinds once it is a 12.0 plugin class, and
+    its ``api`` and ``testing`` modules when it has them.
     """
     from untaped.core.surface._cli import subtree_lines  # noqa: PLC0415
+    from untaped.core.surface._records import record_lines  # noqa: PLC0415
     from untaped.core.surface._settings import check_quarantine, settings_lines  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
@@ -140,6 +143,7 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
         lines.extend(settings_lines(result, root=False, tree=root))
         lines.extend(_owned(result, modules, marks, core=False))
         lines.extend(_behaviour_lines(result, root, owner=spec.name))
+        lines.extend(record_lines(result, marks, owner=spec.name))
     return sorted(set(lines))
 
 
