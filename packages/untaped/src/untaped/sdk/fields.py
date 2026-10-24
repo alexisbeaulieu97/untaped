@@ -385,8 +385,8 @@ class Output[R: BaseModel](FieldBlock):
             raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
         #: The format a run without ``--format`` prints.
         self.default_format = format
-        #: The format ``--format`` chose (``table`` when unfilled).
-        self.format = "table"
+        #: The format ``--format`` chose (the default when unfilled).
+        self.format = format
         #: The table's default columns this run: the declared ones, or ``R``'s
         #: (:func:`default_columns`); ``.add(...)`` adds more. ``--columns`` applies on top.
         self.columns = Columns(self._declared)
