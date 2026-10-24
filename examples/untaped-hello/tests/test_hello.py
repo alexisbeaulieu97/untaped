@@ -178,11 +178,8 @@ def test_hello_motd_serves_its_copy_when_the_file_is_gone(
     assert "refresh failed (could not read" in stale.message
 
 
-def test_hello_motd_keeps_one_copy_per_file(
-    install: Installer, clock: ManualClock, tmp_path: Path
-) -> None:
+def test_hello_motd_keeps_one_copy_per_file(install: Installer, tmp_path: Path) -> None:
     """Pointing ``hello.motd_path`` elsewhere never serves the other file's copy."""
-    del clock  # the copies never age
     first = _motd(tmp_path)
     other = tmp_path / "other.txt"
     other.write_text("other\n", encoding="utf-8")

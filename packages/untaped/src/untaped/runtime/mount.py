@@ -23,6 +23,8 @@ import types
 import typing
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from functools import cached_property, partial
@@ -451,8 +453,90 @@ def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl,
     with report_errors():
         cls = mount.command(decl)
         with run_scope(build_run(mount.declaration, mount.settings)):
-            command = _instance(mount, decl, cls, given)
-            _print(mount, decl, command, command.run())
+            _ran(mount, decl, _instance(mount, decl, cls, given))
+
+
+@dataclass
+class Printed:
+    """What one dispatched command printed: its rows as objects, or its line."""
+
+    decl: CommandDecl
+    #: The format its ``Output`` printed in; ``None`` for a command without one.
+    format: str | None
+    rows: list[BaseModel] = field(default_factory=list)
+    text: str | None = None
+
+
+_WATCHING: ContextVar[list[Printed] | None] = ContextVar("untaped_mount_watching", default=None)
+
+
+@contextmanager
+def watching() -> Iterator[list[Printed]]:
+    """Record what each command dispatched in the block printed (a test's ``.cli``)."""
+    seen: list[Printed] = []
+    token = _WATCHING.set(seen)
+    try:
+        yield seen
+    finally:
+        _WATCHING.reset(token)
+
+
+def run_built(
+    mount: Mount,
+    decl: CommandDecl,
+    command: Command[Any],
+    flags: Mapping[str, Mapping[str, object]],
+) -> Printed:
+    """Run a command built outside the parser, its core fields filled from ``flags``, and print.
+
+    ``flags`` gives each core field's flags by field path (``{"output":
+    {"--format": "json"}}``); a field inside an optional bundle that was
+    not built is not filled, as the parser leaves it. Errors propagate:
+    the caller reports them.
+    """
+    with run_scope(build_run(mount.declaration, mount.settings)):
+        return _ran(mount, decl, _refilled(mount, decl, command, flags))
+
+
+def _ran(mount: Mount, decl: CommandDecl, command: Command[Any]) -> Printed:
+    """Run ``command`` under the current run, print what it returns, and say what it printed."""
+    printed = Printed(decl=decl, format=_format_of(decl, command))
+    watching_now = _WATCHING.get()
+    if watching_now is not None:
+        watching_now.append(printed)
+    _print(mount, decl, command, command.run(), printed)
+    return printed
+
+
+def _format_of(decl: CommandDecl, command: Command[Any]) -> str | None:
+    if not any(option.block == "output" for option in decl.options):
+        return None
+    return _output(decl, command).format
+
+
+def _refilled(
+    mount: Mount,
+    decl: CommandDecl,
+    command: Command[Any],
+    flags: Mapping[str, Mapping[str, object]],
+) -> Command[Any]:
+    """``command`` with each core field at a path in ``flags`` filled from its flags."""
+    filled: BaseModel = command
+    for path, given in flags.items():
+        parts = path.split(".")
+        holders: list[BaseModel] = [filled]
+        for part in parts[:-1]:
+            inner = getattr(holders[-1], part)
+            if not isinstance(inner, BaseModel):
+                break  # an optional bundle nobody built: its fields stay unbuilt
+            holders.append(inner)
+        else:
+            info = type(holders[-1]).model_fields[parts[-1]]
+            value: object = _filled(mount, decl, info, given, getattr(holders[-1], parts[-1]))
+            for holder, part in zip(reversed(holders), reversed(parts), strict=True):
+                value = holder.model_copy(update={part: value})
+            filled = cast("BaseModel", value)
+    return cast("Command[Any]", filled)
 
 
 def _instance(
@@ -473,7 +557,7 @@ def _instance(
             _put(data, cls, option.field, value)
     for path, flags in blocks.items():
         info = _field(cls, path)
-        _put(data, cls, path, _filled(mount, decl, info, flags))
+        _put(data, cls, path, _filled(mount, decl, info, flags, info.default))
     # outermost first: a required bundle inside an optional one nobody used stays unbuilt
     for path in _bundles(decl):
         parent = path.rpartition(".")[0]
@@ -488,12 +572,20 @@ def _instance(
 
 
 def _filled(
-    mount: Mount, decl: CommandDecl, info: FieldInfo, flags: Mapping[str, object]
+    mount: Mount,
+    decl: CommandDecl,
+    info: FieldInfo,
+    flags: Mapping[str, object],
+    current: object,
 ) -> FieldBlock:
-    """The core field ``info`` declares, filled by itself from its flags for this invocation."""
+    """The core field ``info`` declares, filled by itself from its flags for this invocation.
+
+    ``current`` is the field's value before (its default, or a built
+    command's): it configures the block.
+    """
     block = field_block(info.annotation)
     assert block is not None  # the declaration's block options come from core fields
-    default = info.default if isinstance(info.default, block) else block()
+    default = current if isinstance(current, block) else block()
     call = Invocation(
         words=("untaped", *decl.path),
         annotation=info.annotation,
@@ -593,17 +685,21 @@ def _usage(decl: CommandDecl, cls: type[BaseModel], exc: ValidationError) -> str
 # --- printing --------------------------------------------------------------------
 
 
-def _print(mount: Mount, decl: CommandDecl, command: Command[Any], result: object) -> None:
-    """Print what ``run`` returned, as its return type declares."""
+def _print(
+    mount: Mount, decl: CommandDecl, command: Command[Any], result: object, printed: Printed
+) -> None:
+    """Print what ``run`` returned, as its return type declares, keeping it in ``printed``."""
     if decl.returns == "nothing" or result is None:
         return
     if decl.returns in ("line", "line-or-none"):
+        printed.text = str(result)
         print(result)
         return
     if isinstance(result, BaseModel):
+        printed.rows.append(result)
         _print_rows(mount, decl, command, result)
         return
-    rows: list[BaseModel] = []
+    rows = printed.rows
     try:
         rows.extend(cast("Iterable[BaseModel]", result))
     except UntapedError as exc:  # ``raise Failed()`` after the rows: they are printed first
@@ -633,4 +729,12 @@ def _output(decl: CommandDecl, command: Command[Any]) -> Output[Any]:
     return value
 
 
-__all__ = ["Mount", "build_app", "compose_plugins", "plugin_spec"]
+__all__ = [
+    "Mount",
+    "Printed",
+    "build_app",
+    "compose_plugins",
+    "plugin_spec",
+    "run_built",
+    "watching",
+]

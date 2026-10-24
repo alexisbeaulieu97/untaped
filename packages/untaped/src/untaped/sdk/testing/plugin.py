@@ -21,7 +21,6 @@ import os
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -34,6 +33,7 @@ from untaped.sdk.prompt.prompts import reset_terminal_override, set_terminal_ove
 from untaped.sdk.storage.store import _forget_opened
 from untaped.sdk.testing import (
     Home,
+    Install,
     ManualClock,
     manual_clock,
     memory_store,
@@ -120,7 +120,7 @@ def home() -> Home:
 
 
 @pytest.fixture
-def install() -> Callable[..., Any]:
+def install() -> Callable[..., Install]:
     """Compose plugin classes into the home: ``install(Hello, settings=HelloSettings(...))``."""
     return _install
 

@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from untaped.sdk import (
     Column,
     Command,
     Confirm,
+    Failed,
     Filled,
     Key,
     Output,
@@ -32,6 +33,8 @@ Installer = Callable[..., Install]
 
 class ShopSettings(BaseModel):
     greeting: str = Field("hello", description="What a greeting says.")
+    token: SecretStr | None = Field(None, description="The till's token.")
+    max_items: int = Field(1, alias="max-items", description="At most this many.")
 
 
 class Item(Record, kind="shop.item"):
@@ -97,11 +100,51 @@ def _read() -> int:
     return len(FETCHED)
 
 
+class Till(Command[ShopSettings]):
+    """Print what the till was set up with."""
+
+    def run(self) -> str:
+        token = self.settings.token
+        return f"{None if token is None else token.get_secret_value()} {self.settings.max_items}"
+
+
+class Sold(Command):
+    """List what sold, then fail."""
+
+    output: Output[Item]
+
+    def run(self) -> Iterator[Item]:
+        yield Item(name="tea")
+        raise Failed("the till jammed")
+
+
+class Broken(Command):
+    """Crash."""
+
+    def run(self) -> str:
+        return {}["x"]  # type: ignore[no-any-return]
+
+
+class Restock(BaseModel):
+    """How to restock."""
+
+    refresh: Refresh = Refresh(PRICES)
+
+
+class Shelf(Command):
+    """Show the shelf, restocking only when asked."""
+
+    restock: Restock | None = None
+
+    def run(self) -> str:
+        return "as is" if self.restock is None else repr(self.restock.refresh.directive)
+
+
 class Shop(Plugin):
     """Sell things (a test's plugin)."""
 
     settings = ShopSettings
-    commands = (Greet, Stock, Remove, Prices)
+    commands = (Greet, Stock, Remove, Prices, Till, Sold, Broken, Shelf)
     prices = PRICES
 
 
@@ -203,3 +246,50 @@ def test_ran_is_one_type_for_both_spellings(install: Installer) -> None:
     shop = install(Shop)
     assert isinstance(shop.run(Greet()), Ran)
     assert isinstance(shop.cli("shop greet"), Ran)
+
+
+def test_settings_are_written_by_alias_and_secrets_in_clear(install: Installer) -> None:
+    settings = ShopSettings.model_validate({"token": "s3cret", "max-items": 5})
+    assert install(Shop, settings=settings).run(Till()).text == "s3cret 5"
+
+
+def test_core_keys_in_a_section_stay_when_settings_change(install: Installer) -> None:
+    assert install(Shop).cli("config set shop.caches.prices.max_age_seconds 0").exit == 0
+    install(Shop, settings=ShopSettings(greeting="hi"))
+    shown = install(Shop).cli("config get shop.caches.prices.max_age_seconds")
+    assert shown.stdout.strip() == "0"
+
+
+def test_a_crash_is_the_tests_error(install: Installer) -> None:
+    with pytest.raises(KeyError):
+        install(Shop).run(Broken())
+    with pytest.raises(KeyError):
+        install(Shop).cli("shop broken")
+
+
+def test_failed_after_rows_keeps_the_rows(install: Installer) -> None:
+    shop = install(Shop)
+    ran = shop.run(Sold())
+    assert (ran.exit, ran.rows_as(Item)) == (1, [Item(name="tea")])
+    line = shop.cli("shop sold --format json")
+    assert (line.exit, line.rows_as(Item)) == (1, [Item(name="tea")])
+
+
+def test_a_field_of_a_bundle_nobody_built_stays_unbuilt(install: Installer) -> None:
+    shop = install(Shop)
+    assert shop.run(Shelf()).text == "as is"
+    assert shop.run(Shelf(restock=Restock()), refresh=True).text == "True"
+
+
+def test_cli_reads_rows_back_whatever_spelled_the_format(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shop = install(Shop)
+    assert shop.cli("--verbose shop stock tea -f json").rows_as(Item) == [Item(name="tea")]
+    monkeypatch.setenv("UNTAPED_FORMAT", "json")
+    assert shop.cli("shop stock tea").rows_as(Item) == [Item(name="tea")]
+
+
+def test_cli_goes_ahead_with_yes(install: Installer) -> None:
+    ran = install(Shop).cli("shop remove tea --yes")
+    assert (ran.exit, ran.text) == (0, "removed")
