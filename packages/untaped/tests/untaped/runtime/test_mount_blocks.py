@@ -161,8 +161,12 @@ def test_an_unknown_kind_suggests_the_declaration_s_kinds() -> None:
 
 
 def test_every_owned_block_core_ships_reaches_a_spec_field() -> None:
+    import untaped.sdk as sdk
     from untaped.runtime.mount import _SPEC_FIELDS
     from untaped.sdk._block import OwnedBlock
+
+    for name in sdk.__all__:  # load the blocks the SDK exports lazily (Lock)
+        getattr(sdk, name)
 
     def subclasses(cls: type) -> set[type]:
         return {sub for each in cls.__subclasses__() for sub in (each, *subclasses(each))}
