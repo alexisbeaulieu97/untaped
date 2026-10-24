@@ -14,9 +14,9 @@ Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares, renamed, retired, deleted or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
-installed skills an older untaped wrote, someone edited or no plugin
-ships, and a plugin check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
-(:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
+installed skills an older untaped wrote, someone edited or no plugin ships,
+and a plugin check that returns ``DoctorResult(..., warn=True)``. ``doctor
+fix`` (:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
 """
 
 from __future__ import annotations

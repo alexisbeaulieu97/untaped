@@ -41,7 +41,8 @@ directory outright; it cannot be combined with `--target all` or
 Each skill lands in `<root>/<full-id>/` with a marker, `.untaped-stub.json`,
 that records the untaped version and the plugin's distribution and version
 that wrote it, and a digest of what it wrote. The full ID is used even when
-you installed by short selector. An existing directory is replaced only with `--force`.
+you installed by short selector. An existing directory is replaced only with
+`--force`.
 
 Agents usually pick up changed skills on their own. Restart the agent if a
 new skill does not appear in its catalog.
@@ -96,9 +97,9 @@ untaped skills remove awx --target claude --scope local
 
 `status` reports each install's `state`: `current`, `outdated` (an older
 untaped wrote it), `newer` (a newer untaped or plugin wrote this stub),
-`edited` (someone changed this stub), or `orphaned` (no plugin installed here ships it: either it was
-dropped, or the plugin that ships it is missing, as with `uvx untaped`
-without extras). The per-run check never reports orphaned skills;
+`edited` (someone changed this stub), or `orphaned` (no plugin installed
+here ships it: either it was dropped, or the plugin that ships it is
+missing, as with `uvx untaped` without extras). The per-run check never reports orphaned skills;
 `untaped doctor` and `skills status` do. Install the plugin, or run
 `untaped skills remove`.
 `update` rewrites an install where it is, keeping its target and scope; it
