@@ -195,15 +195,15 @@ def kept_composition(*, quiet: bool = False) -> Iterator[None]:
     plugins again. Raises ``RuntimeError`` inside a contract call, as
     :func:`compose_root` does, since leaving the block re-registers the settings.
     """
-    global _COMPOSED_RESULT
+    global _COMPOSED_RESULT, _BUILT_ROOT
     _refuse_inside_a_contract_call()
-    previous = _COMPOSED_RESULT
+    previous, previous_root = _COMPOSED_RESULT, _BUILT_ROOT
     token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
     try:
         yield
     finally:
         _QUIET_QUARANTINE.reset(token)
-        _COMPOSED_RESULT = previous
+        _COMPOSED_RESULT, _BUILT_ROOT = previous, previous_root
         _reregister()
 
 
