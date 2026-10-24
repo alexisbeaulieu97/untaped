@@ -120,13 +120,14 @@ def test_a_working_pass_and_a_missing_pass_are_reported(
     assert (row["status"], row["detail"]) == ("fail", "pass is not installed")
 
 
-def test_an_unused_pass_adds_no_doctor_row(
+def test_an_unused_pass_fails_nothing(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     monkeypatch.setenv("STUB_MODE", "no-secret-key")
     result = CliInvoker().invoke(_doctor_app(), ["--format", "json"])  # type: ignore[arg-type]
-    assert all(r["title"] != "pass token store" for r in json.loads(result.stdout))
+    [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
+    assert (row["check"], row["status"]) == ("untaped.token-store", "pass")
 
 
 def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> None:
@@ -457,7 +458,7 @@ def test_removed_log_level_is_reported_as_an_unknown_key(_isolated_config: Path)
     write_config(_isolated_config, "format_version: 2\nlog_level: DEBUG\n")
     code, rows = _rows(_doctor_app())
     assert code == 0
-    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    (row,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert row["status"] == "warn"
     assert "log_level" in row["detail"]
 
@@ -470,7 +471,7 @@ def test_top_level_keys_no_plugin_reads_are_unknown(_isolated_config: Path) -> N
     )
     code, rows = _rows(_doctor_app())
     assert code == 0
-    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    (row,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert row["status"] == "warn"
     assert row["detail"] == "ignored: log_level, workspace"
 
@@ -527,7 +528,7 @@ def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path
     (_isolated_config.parent / "state.yml").write_text(f"format_version: {STATE_FORMAT_VERSION}\n")
     code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 0, _failed(rows)
-    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
+    (unknown,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert unknown["status"] == _PASS
 
 

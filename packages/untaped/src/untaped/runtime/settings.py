@@ -269,7 +269,7 @@ class CacheSettings(BaseModel):
     """One cache's settings under ``<plugin>.caches.<cache>``; each cache's model subclasses it.
 
     An unknown key here loads, as anywhere in a plugin's section: doctor's
-    unknown-keys row names it, and it never breaks the plugin's commands.
+    ``untaped.unknown-keys`` row names it, and it never breaks the plugin's commands.
     """
 
     model_config = ConfigDict(extra="ignore")

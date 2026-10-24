@@ -107,9 +107,9 @@ Things that surprise people:
 
 - A top-level section no installed plugin reads (a misspelt name, or a
   plugin you uninstalled) is ignored; `untaped doctor` flags it in its
-  `unknown-keys` row. `active:` and `profiles.default` are 11.x keys and are
-  refused: a run picks its profiles with `--profile` or `UNTAPED_PROFILE`, and
-  the base is the top level.
+  `untaped.unknown-keys` row. `active:` and `profiles.default` are 11.x keys and
+  are refused: a run picks its profiles with `--profile` or `UNTAPED_PROFILE`,
+  and the base is the top level.
 - Each section is validated only when a command reads it. An invalid
   `awx.page_size: abc` breaks `untaped awx ...` but not `untaped github ...`;
   the error names the section and the file. `untaped doctor` and
@@ -148,8 +148,8 @@ noticed (its folder no longer holds untaped), and `untaped setup migrate-dirs`
 removes its reference. `untaped doctor` lists every registered install and,
 for each store, the layouts on disk and what holds them.
 
-`untaped config migrate` (with or without `--dry-run`) and `doctor`'s
-unknown-keys row name the other registered installs, since an older install may still read the keys a
+`untaped config migrate` (with or without `--dry-run`) and `doctor`'s `untaped.unknown-keys`
+row name the other registered installs, since an older install may still read the keys a
 migration would rewrite: migrate once every install is upgraded.
 
 ## Profiles
