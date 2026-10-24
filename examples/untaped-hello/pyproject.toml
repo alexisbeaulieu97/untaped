@@ -7,7 +7,7 @@ requires-python = ">=3.14.1"
 dependencies = ["untaped>=11.1,<12", "pydantic>=2.13.3,<3"]
 
 [project.entry-points."untaped.plugins"]
-hello = "untaped_hello:SPEC"
+hello = "untaped_hello.plugin:Hello"
 
 [dependency-groups]
 dev = ["pytest>=9", "untaped[lint]>=11.1,<12"]

@@ -1,15 +1,19 @@
 # untaped-hello
 
-A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untaped):
-a command (`untaped hello greet`) and its setting (`hello.greeting`), a
-record (`Salutation` in `records.py`, kind `hello.salutation`) that `untaped hello
-say` writes and reads back with `--stdin` (`accepts=(Salutation,)`), a
-stub skill (`untaped skills install hello` writes it, and it sends the agent
-to `untaped agents hello`) and one `untaped setup migrate-dirs` row (moving an older
-version's directory into the plugin's own). `untaped hello motd` serves a
-file through a cache (`MOTD` in `settings.py`, listed on the spec, so
-`hello.caches.motd.max_age_seconds` tunes it), the way a plugin keeps what an
-upstream answered. Copy this directory to start a plugin of your own.
+A minimal, tested plugin for [untaped](https://github.com/alexisbeaulieu97/untaped),
+in the 12.0 shape: the plugin is a class, `Hello` in `plugin.py`, and what it
+has are its attributes. Its commands are classes in `cli.py`: `Greet`
+(`untaped hello greet`) reads its setting (`hello.greeting`), `Say` writes
+a record (`Salutation` in `records.py`, kind `hello.salutation` because `Say`
+prints it) and reads it back with `--stdin`, and `Motd` serves a file through
+a cache (`motd = MOTD` on the class, so `hello.caches.motd.max_age_seconds`
+tunes it), the way a plugin keeps what an upstream answered. The class also
+has a stub skill (`untaped skills install hello` writes it, and it sends the
+agent to `untaped agents hello`) and one `untaped setup migrate-dirs` row
+(`greetings`, moving an older version's directory into the plugin's own).
+The entry point names the class, `hello = "untaped_hello.plugin:Hello"`, in
+a leaf module so the rest of the package imports without the commands. Copy
+this directory to start a plugin of your own.
 
 It is not published. In a virtualenv in a copy of this directory,
 `uv pip install 'untaped[lint]' . pytest` installs `untaped` and its `lint`

@@ -183,7 +183,9 @@ def _migrations(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
         try:
             for migration in spec.migrations:
                 try:
-                    found = migration.preview(PluginContext(settings=None), MigrationOptions())
+                    found = migration.preview(
+                        PluginContext(settings=None, owner=spec.name), MigrationOptions()
+                    )
                 except Exception as exc:  # the row reports a plugin's failure
                     rows.append(row("migrations", migration.id, "fail", _message(exc)))
                     continue

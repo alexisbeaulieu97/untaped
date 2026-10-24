@@ -251,9 +251,13 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     has_commands = bool(plugin.commands) or plugin.runs is not None
     skills = (SkillAsset(name=f"untaped-{name}", description=plugin.skill),) if plugin.skill else ()
     loaded = functools.cache(partial(_spelled_blocks, mount, name))
+    factory = partial(build_app, mount, name)
+    # the factory builds the plugin's app, so it stands for the plugin's module
+    # where its package is looked for (untaped.runtime.plugin_package)
+    factory.__module__ = plugin.target.partition(":")[0]
     spec = PluginSpec(
         name=name,
-        app_factory=partial(build_app, mount, name) if has_commands else None,
+        app_factory=factory if has_commands else None,
         settings=mount.settings[name],
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),

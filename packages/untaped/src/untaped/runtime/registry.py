@@ -78,6 +78,7 @@ from untaped.sdk.network.credentials import (
     key_fields,
 )
 from untaped.sdk.records import KindError, OutcomeRecord
+from untaped.sdk.run import PluginHandle
 from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.state import (
     ProjectStateRows,
@@ -264,9 +265,21 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check or migration body."""
+    """Frozen per-invocation snapshot handed to a doctor-check or migration body.
+
+    ``owner`` names the plugin the body runs for, which core sets; the body
+    reaches its folder as ``ctx.plugin.dir``, as a command does.
+    """
 
     settings: BaseModel | None
+    owner: str | None = None
+
+    @property
+    def plugin(self) -> PluginHandle:
+        """The plugin the body runs for: its folder and the files it names."""
+        if self.owner is None:
+            raise LookupError("this context runs for no plugin: core sets owner= when it builds it")
+        return PluginHandle(name=self.owner, home=plugins_root().parent)
 
     @property
     def diag(self) -> Diagnostics:
@@ -311,11 +324,15 @@ class MigrationRow(BaseModel):
 
 
 class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
-    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…"""
+    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…
+
+    ``id`` is the migration's; a plugin class's migration leaves it out and
+    core stamps it.
+    """
 
     table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "detail")
 
-    id: str
+    id: str = ""
     detail: str = ""
 
 

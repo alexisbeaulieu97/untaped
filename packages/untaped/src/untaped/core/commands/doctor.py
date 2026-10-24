@@ -1137,7 +1137,7 @@ def _setup_rows(
 def _run_check(
     scope: _SectionScope, check_item: DoctorCheck, settings: BaseModel | None, *, profile: str
 ) -> dict[str, object]:
-    ctx = PluginContext(settings=settings)
+    ctx = PluginContext(settings=settings, owner=scope.plugin)
     try:
         # Typed as ``object``: provider bodies may return anything at runtime;
         # the shape checks below are the validation.
