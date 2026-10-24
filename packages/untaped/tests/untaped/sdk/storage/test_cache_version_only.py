@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel
 
-from untaped.runtime.registry import PluginSpec, named_plugin_dir, section_settings
+from untaped.runtime.bootstrap import SHELL_SPEC
+from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
 from untaped.runtime.sink import diagnostics_scope, recording
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.storage.cache import Cache, Filled, NeverRefreshed, refresh_option
 from untaped.sdk.storage.store import Store
-from untaped.sdk.testing import CacheClock, cache_clock, damage
+from untaped.sdk.testing import CacheClock, cache_clock, damage, plugin_candidate
 
 START = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
 KEY = "everything"
@@ -191,6 +193,15 @@ def test_it_creates_no_setting() -> None:
         COMPOSED.max_age()
     with pytest.raises(ConfigError, match="version-only"):
         COMPOSED.setting  # noqa: B018 - the property raises
+
+
+def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -> None:
+    class Own(BaseModel):
+        retired_keys: ClassVar[Mapping[str, str | Retired]] = {"caches.old": Retired(note="gone")}
+
+    spec = PluginSpec(name="toy", settings=Own, caches=(COMPOSED,))
+    result = compose(SHELL_SPEC, [plugin_candidate(spec)])
+    assert [plugin.spec.name for plugin in result.plugins] == ["toy"], result.quarantine
 
 
 @pytest.mark.parametrize(

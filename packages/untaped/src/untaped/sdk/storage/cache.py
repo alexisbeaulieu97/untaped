@@ -36,8 +36,8 @@ way a key past its max age is.
 
 A cache declared with ``max_age=None`` is *version-only*: its value depends on
 the code that fills it and on nothing upstream, so it is refreshed only when
-that code's version changes (core's composed declaration, keyed by
-``installed_code()``). It has no max-age setting, never serves another
+that code's version changes. It takes ``model=``, ``version=`` and
+``split="none"``. It has no max-age setting, never serves another
 version's value, drops the key's other versions once it fills this one, and
 says nothing on stderr: a home it cannot write leaves the value in memory.
 """

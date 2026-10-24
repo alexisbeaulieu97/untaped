@@ -438,7 +438,8 @@ class PluginSpec:
     surface, and its warnings name this plugin's distribution.
 
     ``caches`` are the :class:`~untaped.sdk.storage.cache.Cache` objects the plugin
-    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
+    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``,
+    except a version-only one (``max_age=None``), which has none.
     ``stores`` is what the plugin keeps on disk outside its settings: the
     :class:`~untaped.sdk.storage.store.Store` objects, each file in a layout of its own
     (``doctor`` lists them), and the :class:`~untaped.sdk.storage.holds.ItemStore`
