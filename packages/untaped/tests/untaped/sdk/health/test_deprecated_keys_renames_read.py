@@ -105,6 +105,17 @@ def test_an_empty_profiles_key_still_reads_the_base_s_old_keys(
     assert RENAMED in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("value", ["[]", "''", "false", "0"])
+def test_a_malformed_profiles_key_is_refused_with_renames_declared(
+    config: Path, value: str
+) -> None:
+    register_profile_settings("demo", DemoSettings)
+    config.write_text(f"format_version: 2\ndemo:\n  corpus_path: /old\nprofiles: {value}\n")
+
+    with pytest.raises(ConfigError, match="'profiles' must be a mapping"):
+        validate_config_file(config)
+
+
 def test_both_spellings_in_one_profile_the_new_key_wins(
     config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
