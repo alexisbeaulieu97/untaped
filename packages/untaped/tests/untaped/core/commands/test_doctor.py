@@ -214,7 +214,7 @@ def test_failing_check_does_not_block_other_rows(_isolated_config: Path) -> None
 
 
 def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
-    from untaped.runtime.registry import DoctorCheck
+    from untaped.sdk.health.doctor import DoctorCheck
 
     def _boom(ctx: object) -> object:
         raise RuntimeError("kaput")
@@ -228,7 +228,7 @@ def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
 
 
 def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> None:
-    from untaped.runtime.registry import DoctorCheck, DoctorResult
+    from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 
     def _wrong_id(ctx: object) -> DoctorResult:
         return DoctorResult(id="other.id", ok=True, detail="x")
@@ -252,7 +252,7 @@ def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> N
 
 
 def test_a_detail_that_is_not_a_string_fails_its_row_under_json(_isolated_config: Path) -> None:
-    from untaped.runtime.registry import DoctorCheck, DoctorResult
+    from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 
     def _none_detail(ctx: object) -> DoctorResult:
         return DoctorResult(id="ext.a", ok=False, detail=None)  # type: ignore[arg-type]

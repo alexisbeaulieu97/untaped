@@ -403,7 +403,7 @@ def test_only_online_probes_run_before_saving(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     offline: list[str] = []
-    from untaped.runtime.registry import DoctorCheck, DoctorResult
+    from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 
     def offline_run(_ctx: object) -> DoctorResult:
         offline.append("ran")

@@ -219,6 +219,43 @@ def find_root(start: Path) -> Path | None:
     return None
 
 
+def checkout_root(start: Path) -> Path | None:
+    """Return the nearest ancestor of ``start`` holding ``.git``, else ``None``.
+
+    The git checkout a command acts on: where ``skills install --scope local``
+    puts skills and where a plugin looks for its repo file. Unlike
+    :func:`~untaped.sdk.git.git_toplevel` it runs no git (the per-run skills check
+    stays cheap) and never fails: outside a checkout, or with no git
+    installed, there is no checkout and the caller picks its fallback.
+    """
+    start = start.resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def nearest_pyproject(start: Path) -> Path | None:
+    """The nearest ``pyproject.toml`` from ``start`` up to its checkout or project, if any.
+
+    The walk stops at the farther of the checkout root (:func:`checkout_root`)
+    and the project root (the folder holding ``.untaped/project.json``), each
+    only when ``start`` is in one, as ``uv`` finds a project from a worktree
+    inside it; a stray ``pyproject.toml`` above both is never read. Outside
+    both, only ``start`` is looked at.
+    """
+    start = start.resolve()
+    bounds = [root for root in (checkout_root(start), find_root(start)) if root is not None]
+    top = min(bounds, key=lambda root: len(root.parts)) if bounds else start
+    for folder in (start, *start.parents):
+        candidate = folder / "pyproject.toml"
+        if candidate.is_file():
+            return candidate
+        if folder == top:
+            break
+    return None
+
+
 @experimental
 def project_at(path: Path) -> Project | None:
     """The project ``path`` is in, or ``None``.
@@ -769,4 +806,12 @@ def _forget(root: Path | None = None) -> None:
             _SEEN.pop(str(root), None)
 
 
-__all__ = ["Project", "committed_path", "current_project", "known_projects", "project_at"]
+__all__ = [
+    "Project",
+    "checkout_root",
+    "committed_path",
+    "current_project",
+    "known_projects",
+    "nearest_pyproject",
+    "project_at",
+]

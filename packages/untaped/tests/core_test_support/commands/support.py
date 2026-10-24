@@ -12,13 +12,7 @@ from pydantic import BaseModel, HttpUrl, SecretStr
 
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    CompositionResult,
-    DoctorCheck,
-    DoctorResult,
-    PluginSpec,
-    SkillAsset,
-)
+from untaped.runtime.registry import CompositionResult, PluginSpec, SkillAsset
 from untaped.runtime.settings import get_settings
 from untaped.sdk import (  # type: ignore[deprecated]
     Credential,
@@ -31,6 +25,7 @@ from untaped.sdk import (  # type: ignore[deprecated]
     online_check,
 )
 from untaped.sdk._cli import create_app
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability, UntapedDeprecationWarning
 from untaped.sdk.testing import plugin_candidate
 

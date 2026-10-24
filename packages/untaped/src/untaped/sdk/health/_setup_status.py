@@ -20,9 +20,10 @@ from __future__ import annotations
 from pydantic import BaseModel, SecretStr
 
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import DoctorResult, PluginSpec
+from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout, resolve_config_path
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health.doctor import DoctorResult
 from untaped.sdk.health.marks import (
     UNMARKED_SERVICE,
     MarkedField,

@@ -21,12 +21,8 @@ from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_scope
-from untaped.runtime.registry import (
-    DoctorCheck,
-    DoctorResult,
-    PluginContext,
-    PluginSpec,
-)
+from untaped.runtime.registry import PluginSpec
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

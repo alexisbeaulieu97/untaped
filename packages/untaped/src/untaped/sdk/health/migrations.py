@@ -22,16 +22,10 @@ import shutil
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Literal
 
-from untaped.runtime.registry import (
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
-    plugins_root,
-)
+from pydantic import BaseModel, ConfigDict
+
 from untaped.runtime.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -39,14 +33,113 @@ from untaped.runtime.settings import (
     resolve_config_path,
     resolve_state_path,
 )
+from untaped.sdk._block import OwnedBlock, spelled_id
 from untaped.sdk.health.deprecated_keys import retired_values
+from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.marks import experimental
+from untaped.sdk.records import OutcomeRecord
 from untaped.sdk.storage._refs import refs_dir
 from untaped.sdk.storage.store import Store
 from untaped.sdk.words import shown_path, size_text
 
 if TYPE_CHECKING:
     from untaped.sdk.storage.store import Kept, Layout
+
+
+class MigrationOptions(BaseModel):
+    """``untaped setup migrate-dirs``'s flags, passed to every migration.
+
+    ``dissociate`` names one plugin's step (repacking clones that borrow
+    objects from a directory, so it can go); every migration receives it.
+    ``measure`` is false when only whether anything is left matters (doctor):
+    a preview then leaves ``bytes`` at 0 instead of walking each directory.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    dry_run: bool = False
+    dissociate: bool = False
+    measure: bool = True
+
+
+class MigrationRow(BaseModel):
+    """One line of ``setup migrate-dirs``' preview: what a migration would do to one directory.
+
+    ``action`` is ``move`` (``source`` → ``destination``), ``delete``,
+    ``keep`` (left in place, ``detail`` says why) or ``then`` (what happens
+    afterwards, such as a one-time download). ``source`` and ``destination``
+    are absolute paths: core refuses to apply two migrations when one would
+    delete what the other moves or keeps. ``bytes`` is the size of
+    ``source`` (0 when not measured).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    action: Literal["move", "delete", "keep", "then"]
+    source: str = ""
+    destination: str = ""
+    detail: str = ""
+    bytes: int = 0
+
+
+class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
+    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…
+
+    ``id`` is the migration's; a plugin class's migration leaves it out and
+    core stamps it.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "detail")
+
+    id: str = ""
+    detail: str = ""
+
+
+class DirMigration(OwnedBlock):
+    """A plugin's own directory moves for ``untaped setup migrate-dirs``.
+
+    A plugin class holding it names it (``greetings = DirMigration(...)`` is
+    ``<plugin>.greetings``); the 11.x spelling passes ``id``, which is
+    ``<plugin>.<noun>``, unique across plugins. First consumer of a plugin
+    class's migration: the 12 to 13 transition. ``preview``
+    returns what would change and only reads; ``apply`` does it and returns
+    its outcomes (usually one; core reports each).
+    ``apply`` is idempotent: run again after a crash or a second time, it
+    finishes what is left and changes nothing else. A migration is
+    self-contained: it owns its old directory and everything pointing
+    there. Core runs every plugin's migrations in registry order (by plugin
+    name); one that relies on another plugin's having run first says so in
+    its docstring.
+    """
+
+    block_kind = "dir-migration"
+    name_style = "kebab"
+
+    title: str
+    preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]]
+    apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]]
+
+    def __init__(
+        self,
+        id: str | None = None,
+        *,
+        title: str,
+        preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]],
+        apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]],
+    ) -> None:
+        super().__init__(*spelled_id(id))
+        self._id = id
+        self.title = title
+        self.preview = preview
+        self.apply = apply
+
+    @property
+    def id(self) -> str:
+        """``<plugin>.<name>``, or the id it was given."""
+        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"DirMigration({self.where!r}, title={self.title!r})"
 
 
 def dir_bytes(path: Path) -> int:
@@ -148,6 +241,8 @@ def _unsafe(path: Path, *, plugins: bool) -> str | None:
             return f"it holds {shown_path(held)}"
     if overlapping(path, refs_dir()):
         return f"it overlaps the install references in {shown_path(refs_dir())}"
+    from untaped.runtime.registry import plugins_root  # noqa: PLC0415 - the registry imports this
+
     if plugins and overlapping(path, plugins_root()):
         return f"it overlaps the plugins' data in {shown_path(plugins_root())}"
     return None
@@ -298,6 +393,8 @@ UNINSTALLED_CACHES = "untaped.uninstalled-caches"
 
 def uninstalled_caches(installed: Collection[str]) -> list[Path]:
     """Each ``plugins/<name>/cached`` folder whose plugin isn't one of ``installed``, by name."""
+    from untaped.runtime.registry import plugins_root  # noqa: PLC0415 - the registry imports this
+
     try:
         folders = sorted(plugins_root().iterdir())
     except OSError:

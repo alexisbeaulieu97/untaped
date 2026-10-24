@@ -26,11 +26,12 @@ from core_test_support.commands.support import (
     write_config,
 )
 from untaped.core.commands.doctor import online_probe_rows
-from untaped.runtime.registry import CompositionResult, DoctorCheck, DoctorResult
+from untaped.runtime.registry import CompositionResult
 from untaped.runtime.settings import active_overlay
 from untaped.sdk import online_check
 from untaped.sdk._app_context import app_context
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.testing import current_memory_store
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

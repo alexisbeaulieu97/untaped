@@ -5,7 +5,7 @@ are gone (:func:`~untaped.sdk.health.migrations.references_migration`) and the c
 of plugins not installed here
 (:func:`~untaped.sdk.health.migrations.uninstalled_caches_migration`). Each plugin
 contributes its own rows through ``PluginSpec.migrations``
-(:class:`~untaped.runtime.registry.DirMigration`): a ``preview`` that reads
+(:class:`~untaped.sdk.health.migrations.DirMigration`): a ``preview`` that reads
 and an ``apply`` that changes. This command previews core's rows, then every
 composed plugin's migrations in registry order (by plugin name), shows
 them as one table, confirms (``--yes`` skips it; with no terminal it exits 2),
@@ -28,16 +28,7 @@ from typing import Any
 from untaped.core.commands.records import MigrationPreviewRow
 from untaped.core.plugin import NAME
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import (
-    CompositionResult,
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
-    PluginSpec,
-    section_settings,
-)
+from untaped.runtime.registry import CompositionResult, PluginSpec, section_settings
 from untaped.runtime.settings import active_settings_layout, check_settings_field
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
@@ -45,7 +36,12 @@ from untaped.sdk._cli import emit, report_declined
 from untaped.sdk._ui import ui_context
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, OperationCancelledError, UntapedError
+from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.migrations import (
+    DirMigration,
+    MigrationOptions,
+    MigrationOutcome,
+    MigrationRow,
     overlapping,
     references_migration,
     uninstalled_caches,

@@ -24,7 +24,7 @@ from untaped.sdk._cli import existing_directory
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.marks import deprecated
-from untaped.sdk.projects import find_root
+from untaped.sdk.projects import checkout_root
 from untaped.sdk.storage._fs import atomic_write, is_write_temp
 
 
@@ -280,22 +280,6 @@ class InstalledSkill:
         return self.path.parent.resolve() in {root.resolve() for root in home_skill_roots()}
 
 
-def checkout_root(start: Path) -> Path | None:
-    """Return the nearest ancestor of ``start`` holding ``.git``, else ``None``.
-
-    The git checkout a command acts on: where ``skills install --scope local``
-    puts skills and where a plugin looks for its repo file. Unlike
-    :func:`~untaped.sdk.git.git_toplevel` it runs no git (the per-run skills check
-    stays cheap) and never fails: outside a checkout, or with no git
-    installed, there is no checkout and the caller picks its fallback.
-    """
-    start = start.resolve()
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return None
-
-
 # untaped's mark dates it on the surface; the literal under it is what mypy reports.
 @deprecated(removed_in=12, replacement=checkout_root)
 @warnings.deprecated("project_root is deprecated and will be removed in 12.0; use `checkout_root`")
@@ -306,27 +290,6 @@ def project_root(start: Path) -> Path:
     ``checkout_root(start) or start``.
     """
     return checkout_root(start) or start.resolve()
-
-
-def nearest_pyproject(start: Path) -> Path | None:
-    """The nearest ``pyproject.toml`` from ``start`` up to its checkout or project, if any.
-
-    The walk stops at the farther of the checkout root (:func:`checkout_root`)
-    and the project root (the folder holding ``.untaped/project.json``), each
-    only when ``start`` is in one, as ``uv`` finds a project from a worktree
-    inside it; a stray ``pyproject.toml`` above both is never read. Outside
-    both, only ``start`` is looked at.
-    """
-    start = start.resolve()
-    bounds = [root for root in (checkout_root(start), find_root(start)) if root is not None]
-    top = min(bounds, key=lambda root: len(root.parts)) if bounds else start
-    for folder in (start, *start.parents):
-        candidate = folder / "pyproject.toml"
-        if candidate.is_file():
-            return candidate
-        if folder == top:
-            break
-    return None
 
 
 def home_skill_roots() -> frozenset[Path]:

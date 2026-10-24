@@ -735,3 +735,6 @@ def _core_ssh_command_set(
         proc.communicate()
         return False
     return proc.returncode == 0 and bool(out.strip())
+
+
+__all__ = ["GitCommandError", "GitResult", "git_toplevel", "run_git", "safe_path_segment"]

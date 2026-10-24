@@ -14,13 +14,12 @@ from pydantic import BaseModel
 from untaped.runtime.registry import (
     PLUGINS_ENTRY_POINT_GROUP,
     ApplicationSpec,
-    DoctorCheck,
-    DoctorResult,
     PluginCandidate,
     PluginSpec,
     SkillAsset,
 )
 from untaped.sdk._cli import create_app
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability
 
 
