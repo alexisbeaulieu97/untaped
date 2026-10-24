@@ -172,7 +172,7 @@ def test_a_typo_under_a_cache_loads_and_doctor_names_it() -> None:
         assert _run("hello", "show").exit_code == 0
     assert MOTD.max_age() == timedelta(hours=1)
     rows = json.loads(_run("doctor", "--format", "json").stdout)
-    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    (row,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert row["status"] == "warn"
     assert "hello.caches.motd.max_age" in row["detail"]
 
@@ -187,7 +187,7 @@ def test_an_unknown_cache_loads_and_doctor_names_it() -> None:
     _write(_hello("caches:\n  typo:\n    max_age_seconds: 5"))
     assert _run("config", "get", SETTING).stdout.strip() == "3600"
     rows = json.loads(_run("doctor", "--format", "json").stdout)
-    (row,) = [row for row in rows if row["check"] == "unknown-keys"]
+    (row,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert row["status"] == "warn"
     assert "hello.caches.typo" in row["detail"]
 

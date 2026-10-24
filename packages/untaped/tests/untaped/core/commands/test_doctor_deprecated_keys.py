@@ -64,7 +64,7 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
         "      sweep:\n        sync_concurrency: 2\n",
     )
 
-    rows = _rows(**{"deprecated-keys": "", "unknown-keys": ""})
+    rows = _rows(**{"deprecated-keys": "", "untaped.unknown-keys": ""})
 
     row = rows["deprecated-keys"]
     assert (row["status"], row["title"]) == ("warn", "deprecated config keys")
@@ -77,7 +77,7 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
         "→ old.sweep.parallel"
     )
     assert (row["fix"], row["automatic"]) == (["--profile", "default", "config", "migrate"], True)
-    assert rows["unknown-keys"]["status"] == "pass"
+    assert rows["untaped.unknown-keys"]["status"] == "pass"
 
 
 def test_the_fix_names_the_active_profile(
@@ -139,9 +139,9 @@ def test_a_deleted_key_is_unknown_with_its_note_and_the_migrate_fix(
         "format_version: 2\nold:\n  store_dir: /s\n  typo: 1\n",
     )
 
-    rows = _rows(**{"deprecated-keys": "", "unknown-keys": ""})
+    rows = _rows(**{"deprecated-keys": "", "untaped.unknown-keys": ""})
 
-    row = rows["unknown-keys"]
+    row = rows["untaped.unknown-keys"]
     assert row["status"] == "warn"
     assert row["detail"] == (
         "ignored: old.typo; old.store_dir (profile default): deleted in 11.0; set git.store_dir"

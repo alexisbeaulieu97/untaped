@@ -10,9 +10,12 @@ the human view shows it under its row as the command line to type. A row's
 ``automatic`` says the fix is safe to run unattended (see ``DoctorResult``).
 Each row is isolated: invalid settings for one plugin surface as failed
 rows while every other row still runs.
-Quarantine records render as failed rows (nonzero exit). A config file other
-users can read renders as a ``warn`` row, which does not fail the run; so do
-profile keys no settings model declares, renamed, retired, deleted or deprecated keys
+Quarantine records render as failed rows (nonzero exit). Core's own checks
+(config file permissions, unknown keys, the ``pass`` store) are
+``DoctorCheck`` attributes on ``Core`` (:mod:`untaped.core.doctor_checks`),
+run like any plugin's. A ``warn`` row does not fail the run: a config file
+other users can read, profile keys no settings model declares, renamed,
+retired, deleted or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
 installed skills an older untaped wrote, someone edited or no plugin ships,
 and a plugin check that returns ``DoctorResult(..., warn=True)``. ``doctor
@@ -22,10 +25,8 @@ automatic fix the checks name.
 
 from __future__ import annotations
 
-import os
 import re
 import shlex
-import stat
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,11 +42,9 @@ from untaped.core.skills import SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict, read_state_dict
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
-    base_sections,
     current_pick,
     fix_target,
     picked_names,
-    profile_entries,
     profile_override,
     profile_scope,
     selected_profile,
@@ -65,7 +64,6 @@ from untaped.runtime.settings import (
     HttpSettings,
     active_settings_layout,
     check_settings_field,
-    get_profile_settings_model,
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
@@ -76,16 +74,14 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
-from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import ConfigError, ExitCode, Failed, UntapedError, first_validation_error
 from untaped.sdk.fields import Confirm, Output
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
-from untaped.sdk.health.deprecated_keys import key_mappings, scan_keys
+from untaped.sdk.health.deprecated_keys import scan_keys
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.health.marks import section_marks
 from untaped.sdk.health.migrations import MigrationOptions
 from untaped.sdk.marks import owner, removal_text
-from untaped.sdk.network._token_store import pass_problem
 from untaped.sdk.network.http import resolve_verify
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.storage.state import ProjectStateRows, StateRows
@@ -335,11 +331,18 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
             # settings: one reads its part with load_core_part.
             settings_model=None,
             state_model=shell.state,
-            checks=tuple(shell.doctor_checks),
+            checks=tuple(_core_spec(result).doctor_checks),
         )
     ]
     scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
     return scopes
+
+
+def _core_spec(result: CompositionResult) -> PluginSpec:
+    """Core's own class as the spec doctor reads: its checks and caches."""
+    from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - imports Core's class
+
+    return plugin_spec(result.mount, NAME)
 
 
 def _plugin_scope(spec: PluginSpec) -> _SectionScope:
@@ -373,7 +376,7 @@ def collect_doctor_rows(
     raw, config_row = _config_row(shell)
     rows.append(config_row)
     if raw is not None:
-        rows.extend(_config_file_rows(shell, raw))
+        rows.append(_deprecated_keys_row(shell, raw))
     state, state_file_row = _state_file_row(shell)
     rows.append(state_file_row)
     settings_error: str | None = None
@@ -500,97 +503,6 @@ def _check_rows(
     ]
 
 
-def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
-    """Warn when other users can read or write the config file (it may hold tokens)."""
-    title = "config file permissions"
-    path = resolve_config_path()
-    if os.name == "nt" or not path.is_file():
-        return _row("config", shell.name, _PASS, title, "not checked")
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
-        detail = f"{path} has mode {mode:04o}; restrict it with `chmod 600 {path}`"
-        return _row("config", shell.name, _WARN, title, detail)
-    return _row("config", shell.name, _PASS, title, f"mode {mode:04o}")
-
-
-def _config_file_rows(shell: ApplicationSpec, raw: dict[str, Any]) -> list[dict[str, object]]:
-    rows = [
-        _permissions_row(shell),
-        _unknown_keys_row(shell, raw),
-        _deprecated_keys_row(shell, raw),
-    ]
-    if (store_row := _token_store_row(shell, raw)) is not None:
-        rows.append(store_row)
-    return rows
-
-
-def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, object] | None:
-    """Fail when a ``pass`` token command cannot work here (no key, no gpg).
-
-    Only checked once a profile's ``token_command`` runs ``pass``, so
-    installing ``pass`` alone never adds a row.
-    """
-    layout = active_settings_layout()
-    uses_pass = any(
-        isinstance(node, dict)
-        and isinstance(argv := node.get("token_command"), list)
-        and argv
-        and Path(str(argv[0])).name == "pass"
-        for profile in layout.profile_names(raw)
-        for node in (layout.profile_data(raw, profile) or {}).values()
-    )
-    if not uses_pass:
-        return None
-    title = "pass token store"
-    if (problem := pass_problem()) is not None:
-        return _row("config", shell.name, _FAIL, title, problem)
-    return _row("config", shell.name, _PASS, title, "gpg holds a key for the password store")
-
-
-def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
-    """Warn about keys no settings model reads, in the base and in each named profile.
-
-    The top level is the base, so a section there no installed plugin reads
-    (``log_level``, an uninstalled plugin's section) is flagged, not moved.
-    """
-    title = "unknown config keys"
-    model = get_profile_settings_model()
-    leaves = {d.path for d in walk_settings(model, include_collections=True)}
-    # Old keys are the deprecated-keys row's to report; deleted ones are listed below.
-    leaves |= {
-        (section, *old.split("."))
-        for section, section_model in profile_section_models().items()
-        for old in (*key_mappings(section_model).migratable, *key_mappings(section_model).deleted)
-    }
-    prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
-    unknown: list[str] = []
-    for _, data, location in profile_entries(dict(raw)):
-        sections = base_sections(data) if not location else data
-        _collect_unknown(sections, location, (), leaves, prefixes, unknown)
-    deleted = [
-        f"{item.section}.{item.old} (profile {item.profile}): {item.message}"
-        for item in scan_keys(raw, profile_section_models())
-        if item.kind == "deleted"
-    ]
-    parts = ([f"ignored: {', '.join(unknown)}{_other_readers()}"] if unknown else []) + deleted
-    if not parts:
-        return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
-    fix = None
-    if deleted:
-        fix = command_argv("config migrate", profile=fix_target())
-    return _row(
-        "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
-    )
-
-
-def _other_readers() -> str:
-    """`` (another untaped here may read them: …)`` when other installs are registered."""
-    from untaped.sdk.storage._refs import others_text  # noqa: PLC0415 - reads refs/ only here
-
-    others = others_text()
-    return f" (another untaped here may read them: {others})" if others else ""
-
-
 def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about old keys and deprecated settings in any profile."""
     title = "deprecated config keys"
@@ -622,25 +534,6 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
     if any(item.kind != "deprecated" for item in found):
         fix = command_argv("config migrate", profile=fix_target())
     return _row("deprecated-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=True)
-
-
-def _collect_unknown(
-    node: Mapping[str, Any],
-    location: tuple[str, ...],
-    path: tuple[str, ...],
-    leaves: set[tuple[str, ...]],
-    prefixes: set[tuple[str, ...]],
-    unknown: list[str],
-) -> None:
-    for key, value in node.items():
-        child = (*path, str(key))
-        if child in leaves:
-            continue
-        if child in prefixes:
-            if isinstance(value, dict):
-                _collect_unknown(value, location, child, leaves, prefixes, unknown)
-            continue
-        unknown.append(".".join((*location, *child)))
 
 
 def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
@@ -732,8 +625,8 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
     title = "no caches of another version or of a plugin not installed here"
     parts: list[str] = []
-    for registered in result.plugins:
-        for cache in registered.spec.caches:
+    for spec in (_core_spec(result), *(registered.spec for registered in result.plugins)):
+        for cache in spec.caches:
             try:
                 outdated = outdated_keys(cache)
             except Exception as exc:  # the plugin's version= or model= code runs here

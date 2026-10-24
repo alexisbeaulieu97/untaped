@@ -40,11 +40,11 @@ def test_removed_freshness_ttl_is_reported_as_an_unknown_key(_isolate: Path) -> 
     rows = _doctor_rows(_isolate, _ANSIBLE_PROFILE.format("freshness_ttl: 3600"))
 
     assert "ansible.deprecated-settings" not in rows
-    assert rows["unknown-keys"]["status"] == "warn"
-    assert "ansible.freshness_ttl" in str(rows["unknown-keys"]["detail"])
+    assert rows["untaped.unknown-keys"]["status"] == "warn"
+    assert "ansible.freshness_ttl" in str(rows["untaped.unknown-keys"]["detail"])
 
 
 def test_default_source_is_a_known_key(_isolate: Path) -> None:
     rows = _doctor_rows(_isolate, _ANSIBLE_PROFILE.format("default_source: prod"))
 
-    assert rows["unknown-keys"]["status"] == "pass"
+    assert rows["untaped.unknown-keys"]["status"] == "pass"
