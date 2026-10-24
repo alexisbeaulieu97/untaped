@@ -132,9 +132,9 @@ def apply_default_format(
 def _user_theme() -> ThemeSpec:
     """The user's ``untaped.ui.theme`` for stderr messages; the default on a broken ``ui``."""
     # Keep settings lazy, as ``_default_format`` does.
-    from untaped.runtime.settings import load_core_settings  # noqa: PLC0415
+    from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
-    return resolve_theme_or_default(lambda: load_core_settings().ui, strict=False)
+    return resolve_theme_or_default(lambda: load_core_part("ui"), strict=False)
 
 
 def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
@@ -167,10 +167,10 @@ def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) ->
             raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
     if value is None:
         # Keep settings lazy: only commands printing rows need them here.
-        from untaped.runtime.settings import load_core_settings  # noqa: PLC0415
+        from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
         try:
-            value = load_core_settings().ui.format
+            value = load_core_part("ui").format
         except UntapedError:
             return
         source = "untaped.ui.format"

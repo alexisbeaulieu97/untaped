@@ -45,9 +45,7 @@ from untaped.runtime.registry import (
     state_keys,
 )
 from untaped.runtime.settings import (
-    Settings,
     active_settings_layout,
-    model_sections,
     notify_config_key,
     resolve_config_path,
 )
@@ -175,16 +173,8 @@ def _split_first(key: str) -> tuple[str, str | None]:
 def section_scopes(
     shell: ApplicationSpec, result: CompositionResult
 ) -> dict[str, RootSectionScope]:
-    """Build the root resolution scopes for core, the shell and composed plugins."""
-    scopes = {
-        section: RootSectionScope(
-            plugin=shell.name,
-            state_fields=frozenset(),
-            mappings=key_mappings(model),
-            model=model,
-        )
-        for section, model in model_sections(Settings).items()
-    }
+    """Build the root resolution scopes for core and composed plugins."""
+    scopes: dict[str, RootSectionScope] = {}
     scopes[shell.section] = RootSectionScope(
         plugin=shell.name,
         state_fields=state_keys(shell),

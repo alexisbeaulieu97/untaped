@@ -49,7 +49,7 @@ from untaped.core.skills import (
     update_installed_skill,
 )
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
-from untaped.runtime.settings import SkillsSettings, load_core_settings
+from untaped.runtime.settings import SkillsSettings, load_core_part
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._batch import batch_apply, finish
@@ -386,7 +386,7 @@ _DEFAULT_MODE: str = SkillsSettings.model_fields["updates"].default
 
 def _updates_mode() -> str:
     try:
-        return load_core_settings().skills.updates
+        return load_core_part("skills").updates
     except UntapedError, ValueError:
         return _DEFAULT_MODE
 

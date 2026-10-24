@@ -2,7 +2,7 @@
 
 Two panes under a profile field. The left lists this install, then every
 settings section: the services first (those that still need something above
-the configured ones, each with a status), then core's sections and the other
+the configured ones, each with a status), then core's section and the other
 plugins' (each with its plugin's stability mark, or ``invalid settings``); the
 order is fixed when the screen opens, so a saved service does not jump. The
 right shows the selected section's settings

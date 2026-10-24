@@ -46,7 +46,7 @@ from untaped.runtime.settings import (
     active_settings_layout,
     env_sets_key,
     env_var_name,
-    load_core_settings,
+    load_core_part,
     registered_profile_model,
 )
 from untaped.sdk._schema import walk_settings
@@ -761,9 +761,9 @@ def connected_client(
     :class:`~untaped.sdk.network.credentials.BoundSecret` from ``Credential.get``, or
     ``None`` for a client without one (an unauthenticated ``ping``).
     ``verify`` is the key's :data:`~untaped.sdk.network.credentials.TlsVerify`: ``True``
-    keeps untaped's trust (root ``untaped.http.ca_bundle_path``, else the OS store),
+    keeps untaped's trust (``untaped.http.ca_bundle_path``, else the OS store),
     ``False`` checks nothing, a CA file replaces it for this server. Left
-    out, the client applies the deprecated root ``untaped.http.verify_ssl`` too.
+    out, the client applies the deprecated ``untaped.http.verify_ssl`` too.
 
     The credential is bound to its origin (the ``BoundSecret``'s, else
     ``base_url``'s): it is added to each request to that origin, and a
@@ -808,7 +808,7 @@ def connected_client(
         token = _text(bearer)
         origin = _bound_origin(bearer, url, section=section)
         override = None if verify is None else _key_verify(verify)
-    http_settings = http if http is not None else load_core_settings().http
+    http_settings = http if http is not None else load_core_part("http")
     request_headers = dict(headers or {})
     credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
     base = url.rstrip("/")
@@ -836,16 +836,16 @@ def connected_client(
 
 
 def _verified(override: VerifyTypes | None, http: HttpSettings, *, keyed: bool) -> bool:
-    """Whether a client's TLS checks the chain and the host: its key's, else the root's."""
+    """Whether a client's TLS checks the chain and the host: its key's, else ``untaped.http``'s."""
     if override is not None:
         return override is not False
     return (keyed or http.verify_ssl) and http.verify_hostname
 
 
 def _trust(http: HttpSettings, *, keyed: bool) -> HttpSettings:
-    """The root settings untaped's own trust comes from; a key's client leaves ``verify_ssl``.
+    """The settings untaped's own trust comes from; a key's client leaves ``verify_ssl``.
 
-    Root ``verify_ssl: false`` already reads as the key's ``verify_tls:
+    ``untaped.http.verify_ssl: false`` already reads as the key's ``verify_tls:
     false`` (the settings layout), so a key that still says ``true`` set it.
     """
     if keyed and not http.verify_ssl:

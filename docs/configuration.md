@@ -62,13 +62,13 @@ active: prod
 
 profiles:
   default:
-    http:
-      ca_bundle_path: ~/certs/corp-ca.pem
-    ui:
-      theme: default
-      border: rounded
-      collection_view: table
-      detail_view: list
+    untaped:
+      http:
+        ca_bundle_path: ~/certs/corp-ca.pem
+      ui:
+        theme: default
+        border: rounded
+        detail_view: list
     awx:
       server: {url: https://aap.example.com}
     github:
@@ -104,8 +104,8 @@ workspace:
 Things that surprise people:
 
 - Only `active` and `profiles` are read at the top level of `config.yml`. A
-  section placed there by mistake (`http:` instead of
-  `profiles.default.http:`), or a state section left there, is ignored;
+  section placed there by mistake (`untaped:` instead of
+  `profiles.default.untaped:`), or a state section left there, is ignored;
   `untaped doctor` flags it in its `unknown-keys` row. Move it by hand.
 - Each section is validated only when a command reads it. An invalid
   `awx.page_size: abc` breaks `untaped awx ...` but not `untaped github ...`;

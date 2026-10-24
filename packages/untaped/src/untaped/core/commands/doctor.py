@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Parameter
-from pydantic import BaseModel, ValidationError, create_model
+from pydantic import BaseModel, ValidationError
 
 from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import DoctorCheckRow
@@ -62,6 +62,7 @@ from untaped.runtime.settings import (
     active_settings_layout,
     check_settings_field,
     get_profile_settings_model,
+    part_model,
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
@@ -324,7 +325,7 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
         _SectionScope(
             plugin=shell.name,
             section=shell.section,
-            settings_model=shell.settings,
+            settings_model=None,  # core's parts get a row each (_core_row)
             state_model=shell.state,
             checks=tuple(shell.doctor_checks),
         )
@@ -377,8 +378,8 @@ def collect_doctor_rows(
         except ConfigError as exc:
             settings_error = str(exc)
         rows.append(_profile_row(shell, raw, settings_error))
-    for field in CoreSettings.model_fields:
-        rows.append(_core_row(shell, field, effective, settings_error))
+    for part in CoreSettings.model_fields:
+        rows.append(_core_row(shell, part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
     profile = selected_profile(raw or {})
@@ -973,21 +974,27 @@ def _profile_row(
 
 def _core_row(
     shell: ApplicationSpec,
-    field: str,
+    part: str,
     effective: Mapping[str, Any] | None,
     settings_error: str | None,
 ) -> dict[str, object]:
-    """Validate one of core's settings (``untaped.http``/``ui``/``skills``) plus env overrides."""
-    title = f"validate {field}"
+    """Validate one part of core's section (``untaped.http``/``ui``/``skills``) plus env overrides.
+
+    Each part is read apart (:func:`~untaped.runtime.settings.load_core_part`),
+    so each gets its own row.
+    """
+    title = f"validate {NAME}.{part}"
     if effective is None:
         return _row("settings", shell.name, _FAIL, title, settings_error or "config unreadable")
-    info = CoreSettings.model_fields[field]
-    definition: Any = (info.annotation, info)
-    alone = create_model(f"Core{field.title()}Check", **{field: definition})
-    node = (effective.get(NAME) or {}).get(field)
+    section = effective.get(NAME)
+    if section is not None and not isinstance(section, dict):
+        return _row("settings", shell.name, _FAIL, title, f"section {NAME!r} must be a mapping")
+    node = (section or {}).get(part)
     try:
-        checked = check_settings_field(NAME, None if node is None else {field: node}, model=alone)
-        value = getattr(checked, field)
+        checked = check_settings_field(
+            NAME, None if node is None else {part: node}, model=part_model(CoreSettings, part)
+        )
+        value = getattr(checked, part)
         if isinstance(value, UiSettings):
             resolve_theme(value)
             check_declared_tokens(value)

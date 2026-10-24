@@ -411,6 +411,6 @@ def test_a_shell_with_broken_key_declarations_fails_loudly() -> None:
         ApplicationSpec(
             name="untaped",
             app_factory=lambda: App(),
-            section="shell",
+            section="untaped",
             settings=BadKeysProfile,
         )

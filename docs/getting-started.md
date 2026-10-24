@@ -36,8 +36,8 @@ untaped doctor --online
 
 `untaped setup` is one full-screen screen for one profile, in a terminal. The
 left lists every settings section: the services (`awx`, `github`, `jira`)
-first, with their status, then `http`, `ui`, `skills` and the other plugins'
-sections. The right lists the selected section's settings, one row each, with
+first, with their status, then `untaped` (untaped's own) and the other
+plugins' sections. The right lists the selected section's settings, one row each, with
 its value and where it comes from (`profile:work`, `profile:default`,
 `default` for the built-in value, or the environment variable that sets it);
 under the rows is the focused setting's description, its bounds, its built-in

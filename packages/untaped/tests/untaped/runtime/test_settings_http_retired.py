@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from untaped.runtime.settings import HttpSettings, load_core_settings
+from untaped.runtime.settings import HttpSettings, load_core_part
 from untaped.sdk._home import config_path
 
 
@@ -20,7 +20,7 @@ def test_the_retired_http_timeout_is_not_read(capsys: pytest.CaptureFixture[str]
         yaml.safe_dump({"profiles": {"default": {"untaped": {"http": {"timeout": 9}}}}})
     )
 
-    assert load_core_settings().http.timeout_seconds == HttpSettings().timeout_seconds
+    assert load_core_part("http").timeout_seconds == HttpSettings().timeout_seconds
     assert "untaped.http.timeout" not in capsys.readouterr().err
 
 
@@ -33,5 +33,5 @@ def test_the_retired_variable_is_not_read(
 ) -> None:
     monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT", "7")
 
-    assert load_core_settings().http.timeout_seconds == HttpSettings().timeout_seconds
+    assert load_core_part("http").timeout_seconds == HttpSettings().timeout_seconds
     assert capsys.readouterr().err == ""

@@ -58,7 +58,7 @@ output that does not go to a terminal is not wrapped.
 
 When the `untaped.http.proxy` setting is unset, the HTTP client honors the standard
 proxy variables: `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY`. TLS
-trust comes from the `http.*` settings (the OS trust store by default), not
+trust comes from the `untaped.http.*` settings (the OS trust store by default), not
 from environment variables.
 
 ## Git

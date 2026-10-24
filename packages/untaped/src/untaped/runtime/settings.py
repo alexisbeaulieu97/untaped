@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from functools import cache, lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, cast, overload
 
 import yaml
 from pydantic import (
@@ -40,7 +40,7 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
-from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT
+from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import config_path, home
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
@@ -55,7 +55,6 @@ from untaped.sdk.marks import Stability, deprecated
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
-    from untaped.core.settings import CoreSettings
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.storage.cache import Cache
 
@@ -474,7 +473,7 @@ def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
 
 
 def profile_section_models() -> SectionModels:
-    """``section -> model`` for every profile section: core, the shell and each plugin."""
+    """``section -> model`` for every profile section: core's and each plugin's."""
     return model_sections(get_profile_settings_model())
 
 
@@ -963,14 +962,13 @@ RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
 CORE_STATE_SECTIONS = frozenset({"credentials"})
 
 
-#: Config sections core owns: the ``Settings`` fields, the top-level layout
-#: keys and the keys injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
+#: Config sections core owns: the top-level layout keys and the keys
+#: injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
 #: No plugin section or state section may take one, so a plugin named after
 #: one is quarantined (``duplicate-name``).
 RESERVED_SECTIONS = frozenset(
     {
         *RESERVED_SECTION_KEYS,
-        *Settings.model_fields,
         *RESERVED_STATE_SECTIONS,
         *CORE_STATE_SECTIONS,
     }
@@ -1115,12 +1113,62 @@ def validate_settings_section(
     return getattr(validated, name)
 
 
-def load_core_settings(settings_cls: type[Settings] | None = None) -> CoreSettings:
-    """Core's own section, ``untaped``: ``http``, ``ui`` and ``skills``, validated alone."""
+#: The parts of core's section, each validated alone (:func:`load_core_part`).
+CorePart = Literal["http", "ui", "skills"]
+
+
+def part_model(model: type[BaseModel], part: str) -> type[BaseModel]:
+    """``model`` with only its field ``part``: validates that part as if the others were absent."""
+    info = model.model_fields[part]
+    definition: Any = (info.annotation, info)
+    return create_model(f"{model.__name__}{part.title()}", **{part: definition})
+
+
+@overload
+def load_core_part(part: Literal["http"]) -> HttpSettings: ...
+@overload
+def load_core_part(part: Literal["ui"]) -> UiSettings: ...
+@overload
+def load_core_part(part: Literal["skills"]) -> SkillsSettings: ...
+def load_core_part(part: CorePart) -> BaseModel:
+    """One part of core's section (``untaped.http``, ``.ui`` or ``.skills``), validated alone.
+
+    A bad value in one part never breaks a reader of another: a ``ui`` typo
+    leaves every HTTP client working. Raises :class:`ConfigError` as
+    :func:`load_settings_section` does.
+    """
     from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
 
-    value = load_settings_section(NAME, settings_cls)
-    return value if isinstance(value, CoreSettings) else CoreSettings.model_validate(value)
+    alone = part_model(CoreSettings, part)
+    definition: Any = (alone, Field(default_factory=alone))
+    loader = create_model("UntapedCorePart", __base__=_SettingsSources, **{NAME: definition})
+    try:
+        return cast("BaseModel", getattr(getattr(loader(), NAME), part))
+    except ValidationError as exc:
+        raise ConfigError(settings_error_message(exc, loader)) from exc
+
+
+def validate_core_part(
+    data: Mapping[str, Any], part: CorePart, *, written_key: str | None = None
+) -> BaseModel:
+    """:func:`validate_settings_section` for one part of core's section, its siblings unread.
+
+    A ``config set untaped.http.proxy`` is never refused for a bad ``untaped.ui`` value.
+    """
+    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
+
+    alone = part_model(CoreSettings, part)
+    definition: Any = (alone, Field(default_factory=alone))
+    validator = create_model("UntapedCorePartValidator", **{NAME: definition})
+    section = data.get(NAME)
+    payload = (
+        {NAME: {part: section[part]}} if isinstance(section, Mapping) and part in section else {}
+    )
+    validated = validator.model_validate(
+        payload,
+        context={CONFIG_WRITE_CONTEXT: True, CONFIG_WRITTEN_KEY_CONTEXT: written_key},
+    )
+    return cast("BaseModel", getattr(getattr(validated, NAME), part))
 
 
 def load_settings_section(name: str, settings_cls: type[Settings] | None = None) -> Any:
@@ -1159,20 +1207,15 @@ class _EnvOverInit(BaseSettings):
         return (_RenamingEnvSource(settings_cls), init_settings)
 
 
-def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None = None) -> Any:
-    """Validate one top-level field from an effective YAML ``node`` plus env.
+def check_settings_field(name: str, node: Any, *, model: type[BaseModel]) -> Any:
+    """Validate the section ``name`` (``model``) from an effective YAML ``node`` plus env.
 
-    ``model`` validates a plugin section; without it ``name`` must be a
-    core :class:`Settings` field (``http``/``ui``/``skills``). ``node``
-    ``None`` means the YAML does not set the field. Diagnostic helper for
-    ``doctor``: raises :class:`ConfigError` via :func:`settings_error_message`
-    (naming the env var when an override is the culprit).
+    ``node`` ``None`` means the YAML does not set the section. Diagnostic
+    helper for ``doctor``: raises :class:`ConfigError` via
+    :func:`settings_error_message` (naming the env var when an override is the
+    culprit).
     """
-    if model is not None:
-        definition: Any = (model, Field(default_factory=model))
-    else:
-        core = Settings.model_fields[name]
-        definition = (core.annotation, core)
+    definition: Any = (model, Field(default_factory=model))
     checker = create_model("UntapedFieldCheck", __base__=_EnvOverInit, **{name: definition})
     try:
         return getattr(checker(**({} if node is None else {name: node})), name)
@@ -1252,7 +1295,8 @@ def _build_settings_model(
 ) -> type[Settings]:
     from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
 
-    # Core's section is always there, composed or not, as any built-in's would be.
+    # Core's section is there before composition registers it too (``SHELL_SPEC``),
+    # so a model built before composition (or for a test's own sections) has it.
     profile_sections = {NAME: CoreSettings, **profile_sections}
     fields: dict[str, Any] = {}
     for section in [*profile_sections, *state_sections]:

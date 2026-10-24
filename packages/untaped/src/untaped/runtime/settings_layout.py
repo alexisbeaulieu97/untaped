@@ -83,8 +83,8 @@ class ProfilesSettingsLayout:
         """Resolve effective settings, provenance and old-key uses.
 
         ``sections`` overrides the constructor's section models; ``environ``
-        (a run's variables) adds ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` to how root
-        ``verify_ssl`` reads on keys.
+        (a run's variables) adds ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` to how
+        ``untaped.http.verify_ssl`` reads on keys.
         """
         override = profile or effective_active_profile_name(raw)
         models = sections if sections is not None else self._sections_now()
@@ -156,7 +156,7 @@ def _root_tls_off(
     models: SectionModels,
     environ: Mapping[str, str],
 ) -> frozenset[tuple[str, ...]]:
-    """Read root ``untaped.http.verify_ssl: false`` as each key's ``verify_tls: false``.
+    """Read ``untaped.http.verify_ssl: false`` as each key's ``verify_tls: false``.
 
     11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
     its TLS from the key alone. The key's TLS field is found by type; a key
@@ -216,7 +216,7 @@ _ROOT_VERIFY_SSL = ("untaped", "http", "verify_ssl")
 
 
 def _root_decides(layers: Sequence[Mapping[str, Any]], leaf: tuple[str, ...]) -> bool:
-    """Whether root ``verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
+    """Whether ``untaped.http.verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
     decided = None
     for layer in layers:
         root = _dig(layer, _ROOT_VERIFY_SSL)

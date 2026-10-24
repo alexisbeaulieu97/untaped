@@ -39,7 +39,7 @@ class GithubHost(GitHost):
         if not token:
             return None
         verify = settings.server.verify_tls
-        if verify is True:  # untaped's trust: root untaped.http.ca_bundle_path, when one is set
+        if verify is True:  # untaped's trust: untaped.http.ca_bundle_path, when one is set
             verify = app_context().http.ca_bundle_path or True
         return Credential(username=TOKEN_USERNAME, password=SecretStr(token), verify_tls=verify)
 

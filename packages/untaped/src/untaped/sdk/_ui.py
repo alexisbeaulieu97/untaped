@@ -610,9 +610,9 @@ def ui_context(
         # Keep settings lazy so render-only imports avoid the settings chain.
         # Load only the ``ui`` section: an invalid value in an unrelated
         # section must not break rendering.
-        from untaped.runtime.settings import load_core_settings  # noqa: PLC0415
+        from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
-        theme = resolve_theme_or_default(lambda: load_core_settings().ui, strict=strict)
+        theme = resolve_theme_or_default(lambda: load_core_part("ui"), strict=strict)
     return UiContext(
         theme=theme,
         stdin=stdin,

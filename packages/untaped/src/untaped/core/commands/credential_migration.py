@@ -2,7 +2,7 @@
 
 For each profile (``default`` first) and each declared credential, the key
 is resolved from the config file alone (``default`` under the profile,
-renames applied; root ``untaped.http.verify_ssl: false`` read as the key's
+renames applied; ``untaped.http.verify_ssl: false`` read as the key's
 ``verify_tls: false``, as every run reads it, and written there). Each
 source the profile reads becomes its own row:
 
@@ -72,7 +72,7 @@ class CredentialMove:
     owner: str | None = None
     """The profile whose file holds the line (``default`` for an inherited one)."""
     tls: tuple[str, ...] | None = None
-    """Where this profile gets ``verify_tls: false`` from root ``verify_ssl``."""
+    """Where this profile gets ``verify_tls: false`` from ``untaped.http.verify_ssl``."""
     clash: str | None = None
     """The profile whose different line for the same server holds this one back."""
 
@@ -203,9 +203,9 @@ def _key(
     effective: Mapping[str, Any],
     tls_off: frozenset[tuple[str, ...]],
 ) -> tuple[CredentialKey | None, tuple[str, ...] | None]:
-    """The key from the file's values, and its TLS leaf when root ``verify_ssl`` turned it off.
+    """The key from the file's values, and its TLS leaf when ``untaped.http.verify_ssl`` is off.
 
-    The key is the one this run uses (root ``verify_ssl: false`` already
+    The key is the one this run uses (``untaped.http.verify_ssl: false`` already
     read as its ``verify_tls: false``), so a login filed for it is found.
     """
     section = credential.plugin
@@ -348,7 +348,7 @@ def rows(moves: Sequence[CredentialMove], *, planned: bool) -> list[dict[str, st
                     "from": "untaped.http.verify_ssl",
                     "to": ".".join(move.tls),
                     "action": "planned" if planned else "copied",
-                    "detail": "root untaped.http.verify_ssl stays for an older untaped",
+                    "detail": "untaped.http.verify_ssl stays for clients without a server key",
                 }
             )
     return found

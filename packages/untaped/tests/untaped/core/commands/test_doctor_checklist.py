@@ -141,7 +141,7 @@ def test_a_broken_ui_section_still_renders(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    untaped:\n      ui: {theme: nope}\n")
     result = _doctor()
     assert result.exit_code == 1
-    ui = next(line for line in result.stdout.splitlines() if "validate ui" in line)
+    ui = next(line for line in result.stdout.splitlines() if "validate untaped.ui" in line)
     assert ui.split()[0] == "✗"
     assert "unknown UI theme" in ui
 

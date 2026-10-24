@@ -141,6 +141,20 @@ def test_an_invalid_section_does_not_block_other_keys_or_its_repair(
         assert _default_profile(_isolated_config)[section] == stored
 
 
+@pytest.mark.parametrize(
+    "argv", [["get", "untaped.ui.theme"], ["set", "untaped.skills.updates", "off"]]
+)
+def test_a_bad_part_of_core_s_section_does_not_block_another(
+    _isolated_config: Path, argv: list[str]
+) -> None:
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: -1\n",
+    )
+    result = _invoke(argv)
+    assert result.exit_code == 0, result.output
+
+
 def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
     result = _invoke(["get", "jira.timeout"])

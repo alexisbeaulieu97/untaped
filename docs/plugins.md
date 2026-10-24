@@ -60,7 +60,7 @@ Package data below that module root, such as a folder of
 A plugin has one name, lowercase words joined by single hyphens (`@` is kept
 for later): `untaped-<name>` on PyPI, `untaped_<name>` to import, and `<name>`
 as entry point, config section, command group and data directory. Names core
-keeps, such as `core`, `http` or `config`, are quarantined (`reserved-name`).
+holds, such as `untaped`, `config` or `profiles`, are quarantined (`duplicate-name`).
 The entry point names the module's `SPEC` constant, one self-validating
 `PluginSpec`, or a 12.0 plugin class in a leaf module
 (`untaped_acme.plugin:Acme`); one that composition refuses is quarantined

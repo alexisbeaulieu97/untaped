@@ -344,9 +344,7 @@ def _settings(result: CompositionResult, plugin: RegisteredPlugin | None) -> tup
 
     if plugin is None:
         wanted = [
-            section
-            for section in sections(result, extensions=False)
-            if section.prefix in ("", CORE)
+            section for section in sections(result, extensions=False) if section.prefix == CORE
         ]
         strip = ""
     else:
