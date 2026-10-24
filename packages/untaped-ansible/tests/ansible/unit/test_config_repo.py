@@ -36,7 +36,7 @@ def test_repositories_reject_malformed_state(
     message: str,
 ) -> None:
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}), encoding="utf-8")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
 
     with pytest.raises(ConfigError, match=message):
         repository().entries()

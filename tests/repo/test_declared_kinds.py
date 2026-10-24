@@ -143,7 +143,7 @@ _REACHABLE = """
 import json, os, sys, tempfile
 from pathlib import Path
 
-os.environ["UNTAPED_CONFIG"] = str(Path(tempfile.mkdtemp()) / "config.yml")
+os.environ["UNTAPED_HOME"] = tempfile.mkdtemp()
 sys.path[:0] = {example_src!r}
 
 from untaped.runtime.bootstrap import build_root_app, composition
@@ -199,7 +199,7 @@ def test_plugin_schema_prints_a_core_kind_in_a_fresh_process(tmp_path: Path) -> 
         text=True,
         check=False,
         cwd=REPO_ROOT,
-        env={**os.environ, "UNTAPED_CONFIG": str(tmp_path / "config.yml")},
+        env={**os.environ, "UNTAPED_HOME": str(tmp_path)},
     )
 
     assert proc.returncode == 0, proc.stderr

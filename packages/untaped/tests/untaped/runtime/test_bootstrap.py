@@ -519,7 +519,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     env = dict(
         os.environ,
         PYTHONPATH=str(link_dir),
-        UNTAPED_CONFIG=str(tmp_path / "smoke-config.yml"),
+        UNTAPED_HOME=str(tmp_path / "smoke-home"),
     )
     version = subprocess.run(
         [str(venv_dir / "bin" / "untaped"), "--version"],

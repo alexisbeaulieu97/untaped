@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import yaml
 from pydantic import ValidationError
 
-from untaped.sdk import get_config_section
+from untaped.sdk import get_config_section, home
 from untaped_awx.settings import AwxSettings
 
 
@@ -31,7 +28,7 @@ def test_api_prefix_must_start_with_a_slash() -> None:
 
 
 def test_the_retired_test_timeout_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"awx": {"test_timeout": 90.0}}}}))
 

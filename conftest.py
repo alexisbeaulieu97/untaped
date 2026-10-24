@@ -114,7 +114,7 @@ def _explicit_bare_repositories(
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the flattened config/profile stack at a temp config file."""
     cfg = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 

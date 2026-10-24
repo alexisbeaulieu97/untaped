@@ -6770,6 +6770,7 @@ sdk untaped.sdk.health.Suggest.argv
 sdk untaped.sdk.health.Suggest.note
 sdk untaped.sdk.hint(command)
 sdk untaped.sdk.holders(target)  [experimental]
+sdk untaped.sdk.home()
 sdk untaped.sdk.installed_code()
 sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
@@ -6930,6 +6931,8 @@ sdk untaped.sdk.parse_json_pairs(values, *, flag)
 sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plugin_of(model)
+sdk untaped.sdk.plugin_path(*parts)
+sdk untaped.sdk.plugin_path(name)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
 sdk untaped.sdk.print_tree(graphs)  [experimental]

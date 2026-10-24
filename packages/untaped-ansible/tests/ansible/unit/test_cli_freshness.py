@@ -47,6 +47,12 @@ _PROD = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
 _TWO = {"sources": [{"name": "a", "repos": ["acme/site"]}, {"name": "b", "repos": ["acme/app"]}]}
 
 
+@pytest.fixture(autouse=True)
+def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The home is the test's folder from the start, so a cache seeded first is read back."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+
+
 def _run(*args: str) -> CliResult:
     return CliInvoker().invoke(app, list(args))
 

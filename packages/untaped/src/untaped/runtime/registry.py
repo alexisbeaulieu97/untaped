@@ -55,6 +55,7 @@ from untaped.runtime.settings import (
     section_model,
     timed_caches,
 )
+from untaped.sdk._home import HOME_ENV
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
@@ -824,6 +825,8 @@ class _CompositionState:
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS | {shell.section}, "a config key"),
             **dict.fromkeys(shell.commands, "a root command"),
+            # ``UNTAPED_HOME`` would be read as a ``home`` section's whole value.
+            "home": f"the variable {HOME_ENV}",
         }
         #: Core's name and its commands' words (:func:`_core`), held as ``taken`` is.
         self.core: dict[str, str] = {}

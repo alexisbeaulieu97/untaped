@@ -1,8 +1,8 @@
 """Pytest plugin: a hermetic environment for tests of untaped plugins.
 
 Enable it with ``pytest_plugins = ["untaped.sdk.testing.plugin"]`` in a suite's
-top-level ``conftest.py``. Every test then runs with its own ``HOME`` and
-``UNTAPED_CONFIG``, no ``UNTAPED_*``/``GIT_CONFIG_*`` variables, no ambient
+top-level ``conftest.py``. Every test then runs with its own ``HOME``, and so
+its own untaped home (``~/.untaped``), no ``UNTAPED_*``/``GIT_CONFIG_*`` variables, no ambient
 tokens (the variables every declared ``Credential`` reads among them), an
 in-memory password store (:class:`untaped.sdk.testing.MemoryCredentials`), no
 controlling terminal, plain non-colour output, and a fresh settings
@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from untaped.runtime.settings import get_settings, reset_config_registry
+from untaped.sdk._home import home as untaped_home
 from untaped.sdk.health.deprecated_keys import reset_key_warnings
 from untaped.sdk.network.auth import clear_token_cache
 from untaped.sdk.network.credentials import credential_env_names
@@ -80,9 +81,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         # Python for real hook workers instead of downloading it for each test.
         patch.setenv("UV_PYTHON", sys.executable)
         patch.setenv("UV_PYTHON_DOWNLOADS", "never")
-        patch.setenv("UNTAPED_CONFIG", str(home / ".untaped" / "config.yml"))
-        # ``UNTAPED_STATE`` was cleared above, so state.yml resolves next to
-        # whichever temp config a test points ``UNTAPED_CONFIG`` at.
+        # ``UNTAPED_HOME`` was cleared above: the home is this HOME's ``.untaped``.
         patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
         for key, value in _TERMINAL_ENV.items():
             patch.setenv(key, value)
@@ -122,7 +121,7 @@ def _forget_contract_providers() -> None:
 @pytest.fixture
 def home() -> Home:
     """The hermetic home this test runs in: ``home.path``, ``home.plugin(Hello)``."""
-    return Home(Path.home())
+    return Home(untaped_home().expanduser())
 
 
 @pytest.fixture

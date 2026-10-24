@@ -86,6 +86,7 @@ TAKEN = {
     "credentials": "a config key",
     "extensions": "a config key",
     "caches": "a config key",
+    "home": "the variable UNTAPED_HOME",
 }
 
 #: Names 11.x reserved that nothing holds any more.

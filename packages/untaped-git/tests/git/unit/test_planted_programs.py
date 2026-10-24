@@ -21,7 +21,7 @@ def planted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     program = repo / "git"
     program.write_text(f"#!{sys.executable}\nprint('git version 9.9.9')\n")
     program.chmod(0o755)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "home" / "config.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "home"))
     monkeypatch.chdir(repo)
     monkeypatch.setenv("PATH", f".{os.pathsep}{os.environ['PATH']}")
     return repo

@@ -38,7 +38,7 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     register_profile_settings("demo", DemoSettings)
     register_profile_settings("pair", PairSettings)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 

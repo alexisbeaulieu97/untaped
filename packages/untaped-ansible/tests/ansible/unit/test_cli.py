@@ -49,6 +49,12 @@ _RATE_LIMIT_EXCEEDED = httpx.Response(
 )
 
 
+@pytest.fixture(autouse=True)
+def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The home is the test's folder from the start, so a cache seeded first is read back."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+
+
 def _prod(*repos: str) -> dict[str, object]:
     return {"sources": [{"name": "prod", "repos": list(repos or ["acme/site"])}]}
 
@@ -63,7 +69,7 @@ def _use_config(
     github: dict[str, object] | None = None,
     ui: dict[str, object] | None = None,
 ) -> Path:
-    """Write ``config.yml`` (+ the ansible ``state.yml``) and point UNTAPED_CONFIG at it."""
+    """Write ``config.yml`` (+ the ansible ``state.yml``) and point UNTAPED_HOME at their folder."""
     profile: dict[str, object] = {
         "ansible": {
             "index_path": str(tmp_path / "index.sqlite3"),
@@ -82,7 +88,7 @@ def _use_config(
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}, sort_keys=False))
     if state is not None:
         (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}, sort_keys=False))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 

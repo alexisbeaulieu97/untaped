@@ -43,8 +43,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
-from untaped.runtime.settings import DEFAULT_CONFIG_PATH
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk._home import home
 from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import atomic_write
@@ -202,8 +202,8 @@ def holder_of(project: Project) -> RefHolder:
 
 
 def untaped_home() -> Path:
-    """``~/.untaped``: the home folder, never a project."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent
+    """untaped's home (:func:`untaped.sdk.home`), expanded: never a project."""
+    return home().expanduser()
 
 
 def find_root(start: Path) -> Path | None:

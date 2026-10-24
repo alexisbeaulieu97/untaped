@@ -320,7 +320,7 @@ def test_ui_context_reflects_active_verbose_state(
     from untaped.runtime import verbose
     from untaped.runtime.settings import get_settings
 
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     get_settings.cache_clear()
     verbose.reset()
 
@@ -341,7 +341,7 @@ def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
 
     cfg = tmp_path / "config.yml"
     cfg.write_text("ui:\n  theme: nonexistent\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
     try:
         assert ui_context(strict=False).theme == BUILTIN_THEMES["default"]
@@ -356,7 +356,7 @@ def test_ui_context_raises_on_unknown_theme_when_strict(
 
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    ui:\n      theme: nonexistent\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
     try:
         with pytest.raises(ConfigError, match="unknown UI theme"):

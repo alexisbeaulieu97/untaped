@@ -7,8 +7,6 @@ Defaults are pinned by the generated ``docs/reference/config.md`` (see
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import settings_model
-from untaped.sdk import get_config_section
+from untaped.sdk import get_config_section, home
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
 from untaped.sdk.testing import CliInvoker
 from untaped_ansible import SPEC
@@ -73,7 +71,7 @@ def test_source_definition_is_frozen_and_normalized() -> None:
 def test_a_retired_key_is_not_read(
     capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": data}}}))
 
@@ -118,7 +116,7 @@ def test_the_raw_and_composed_settings_map_their_old_keys_cleanly() -> None:
 def test_config_migrate_moves_or_deletes_the_old_stale_setting(
     old: str, action: str, kept: dict[str, object]
 ) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": {old: 3600}}}}))
 

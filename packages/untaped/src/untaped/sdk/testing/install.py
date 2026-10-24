@@ -418,7 +418,7 @@ def _ran(result: CliResult, printed: Printed | None, *, read_back: bool) -> Ran:
 
 @dataclass(frozen=True)
 class Home:
-    """The hermetic home every test of an opted-in suite runs in."""
+    """The hermetic untaped home every test runs in: ``config.yml``, ``plugins/<name>/``."""
 
     path: Path
 

@@ -28,6 +28,7 @@ from untaped.sdk import (
     retired_values,
     setting_guard,
 )
+from untaped.sdk._home import home
 from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.migrations import (
     DirMigration,
@@ -285,7 +286,7 @@ def test_a_guard_keeps_a_path_another_plugin_uses() -> None:
 
 
 def test_plugin_dir_is_where_a_row_moves_data() -> None:
-    assert plugin_dir(make_spec("alpha")) == Path.home() / ".untaped" / "plugins" / "alpha"
+    assert plugin_dir(make_spec("alpha")) == home().expanduser() / "plugins" / "alpha"
 
 
 def _raising_preview(name: str) -> DirMigration:
@@ -631,23 +632,21 @@ def test_setting_guard_keeps_a_place_any_profile_still_names(_isolated_config: P
     assert guard(_old("beta")) is None
 
 
-def test_delete_migration_keeps_the_dirs_holding_the_config_and_state_files(
+def test_delete_migration_keeps_the_dirs_holding_the_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config_dir, state_dir = tmp_path / "conf", tmp_path / "elsewhere" / "state"
-    config_dir.mkdir()
-    state_dir.mkdir(parents=True)
-    (config_dir / "config.yml").write_text("{}\n", encoding="utf-8")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(config_dir / "config.yml"))
-    monkeypatch.setenv("UNTAPED_STATE", str(state_dir / "state.yml"))
-    row = delete_migration("alpha.x", "x", lambda: [config_dir, state_dir.parent])
+    untaped = tmp_path / "elsewhere" / "home"
+    untaped.mkdir(parents=True)
+    (untaped / "config.yml").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setenv("UNTAPED_HOME", str(untaped))
+    row = delete_migration("alpha.x", "x", lambda: [untaped, untaped.parent])
     ctx, options = PluginContext(settings=None), MigrationOptions()
 
     rows = row.preview(ctx, options)
     assert [r.action for r in rows] == ["keep", "keep"]
     assert all("it holds" in r.detail for r in rows)
     assert [o.action for o in row.apply(ctx, options)] == ["unchanged"]
-    assert (config_dir / "config.yml").is_file() and state_dir.is_dir()
+    assert (untaped / "config.yml").is_file()
 
 
 def test_delete_migration_reports_what_it_deleted_before_a_failure(

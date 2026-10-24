@@ -31,7 +31,7 @@ def _register_demo() -> None:
 
 
 def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
     assert s.skills.updates == "auto"
     assert s.demo.base_url is None
@@ -58,7 +58,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
               token: secret
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.skills.updates == "auto"
     assert s.http.ca_bundle_path == Path("/etc/ssl/corp-ca.pem")
@@ -75,7 +75,7 @@ def test_env_var_overrides_yaml(
     cfg.write_text(
         f"active: {profile}\nprofiles:\n  {profile}:\n    demo:\n      token: from-yaml\n"
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     baseline = get_settings()
     assert baseline.demo.token is not None
     assert baseline.demo.token.get_secret_value() == "from-yaml"
@@ -87,7 +87,7 @@ def test_env_var_overrides_yaml(
 
 
 def test_plugin_defaults_are_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
     assert s.demo.api_prefix == "/api/demo/v1/"
     assert s.demo.default_organization is None
@@ -97,7 +97,7 @@ def test_plugin_defaults_are_available(tmp_path: Path, monkeypatch: pytest.Monke
 def test_ui_settings_default_to_global_default_theme(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
     assert s.ui.theme == "default"
     assert s.ui.border is None
@@ -124,7 +124,7 @@ def test_ui_settings_load_from_profile_yaml(
                 warning: "!"
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.skills.updates == "auto"
     assert s.ui.theme == "compact"
@@ -146,7 +146,7 @@ def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.Monkey
               page_size: 100
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.demo.api_prefix == "/api/v2/"
     assert s.demo.default_organization == "Default"
@@ -154,19 +154,19 @@ def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_plugin_api_prefix_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     monkeypatch.setenv("UNTAPED_DEMO__API_PREFIX", "/api/v2/")
     s = get_settings()
     assert s.demo.api_prefix == "/api/v2/"
 
 
-def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", "~/custom-config.yml")
-    assert resolve_config_path() == Path("~/custom-config.yml").expanduser()
+def test_resolve_config_path_follows_the_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_HOME", "~/custom-home")
+    assert resolve_config_path() == Path("~/custom-home/config.yml").expanduser()
 
 
 def test_resolve_config_path_defaults_to_home(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("UNTAPED_CONFIG", raising=False)
+    monkeypatch.delenv("UNTAPED_HOME", raising=False)
     assert resolve_config_path() == Path("~/.untaped/config.yml").expanduser()
 
 
@@ -181,7 +181,7 @@ def test_get_settings_translates_yaml_error_to_config_error(
     bubbling out of ``LayoutSettingsSource._load_raw_yaml``."""
     cfg = tmp_path / "config.yml"
     cfg.write_text("skills: [unterminated\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match=str(cfg)):
         get_settings()
 
@@ -203,7 +203,7 @@ def test_get_settings_translates_validation_error_to_config_error(
               page_size: not-an-int
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     # Match the dotted ``loc`` so a regression that stops joining the path
     # tuple in ``first_validation_error`` would fail the assertion.
     with pytest.raises(ConfigError, match=r"demo\.page_size") as exc_info:
@@ -221,7 +221,7 @@ def test_validate_settings_section_ignores_env_source(
 ) -> None:
     # Validation judges the dict alone: an env var must not paper over a bad
     # value on its way to disk.
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
     assert Settings().http.verify_ssl is True
     with pytest.raises(ValidationError):
@@ -231,7 +231,7 @@ def test_validate_settings_section_ignores_env_source(
 def test_validate_settings_section_ignores_other_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     data = {"skills": {"updates": "auto"}, "demo": {"page_size": "lots"}}
     assert validate_settings_section(data, "skills").updates == "auto"
     with pytest.raises(ValidationError):
@@ -243,7 +243,7 @@ def test_load_settings_section_isolated_from_invalid_sibling(
 ) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    demo:\n      page_size: lots\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     assert load_settings_section("http").timeout_seconds == 30.0
     with pytest.raises(ConfigError, match=r"demo\.page_size"):
         load_settings_section("demo")
@@ -252,7 +252,7 @@ def test_load_settings_section_isolated_from_invalid_sibling(
 def test_load_settings_section_names_the_env_var_culprit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT_SECONDS", "abc")
     with pytest.raises(ConfigError, match="environment variable UNTAPED_HTTP__TIMEOUT_SECONDS"):
         load_settings_section("http")

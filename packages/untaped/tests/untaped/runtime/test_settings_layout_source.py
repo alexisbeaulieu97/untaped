@@ -51,7 +51,7 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
               token: secret-value
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.skills.updates == "auto"
     assert s.demo.base_url == "https://aap.local"
@@ -73,7 +73,7 @@ def test_registered_state_lives_in_the_state_file(
             - stage
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.demo.entries == ["prod", "stage"]
 
@@ -96,7 +96,7 @@ def test_state_and_profile_fields_share_one_section(
         """
     )
     (tmp_path / "state.yml").write_text("demo:\n  entries:\n    - prod\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
     assert s.demo.cache_dir == Path("/from/config")
     assert s.demo.entries == ["prod"]
@@ -114,7 +114,7 @@ def test_invalid_state_section_raises_config_error(
           entries: not-a-list
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match="demo"):
         get_settings_model()()
 
@@ -122,7 +122,7 @@ def test_invalid_state_section_raises_config_error(
 def test_empty_config_file_yields_schema_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
     assert s.skills.updates == "auto"
     assert s.demo.token is None
@@ -134,7 +134,7 @@ def test_non_dict_yaml_root_is_a_config_error(
     """A list/scalar document root is a broken config, not an empty one."""
     cfg = tmp_path / "config.yml"
     cfg.write_text("- just\n- a\n- list\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match="root must be a mapping"):
         get_settings_model()()
 
@@ -144,7 +144,7 @@ def test_empty_yaml_document_is_treated_as_empty(
 ) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("# only a comment\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings_model()()
     assert s.skills.updates == "auto"
 
@@ -156,6 +156,6 @@ def test_source_translates_yaml_error_to_config_error(
     from the source — not as a raw ``yaml.YAMLError`` traceback."""
     cfg = tmp_path / "config.yml"
     cfg.write_text("skills: [unterminated\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match=str(cfg)):
         LayoutSettingsSource(get_settings_model(), yaml_file=cfg)

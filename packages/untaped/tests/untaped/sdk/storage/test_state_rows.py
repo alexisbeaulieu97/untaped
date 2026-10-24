@@ -454,7 +454,7 @@ def test_core_rows_live_in_a_section_core_reserves() -> None:
 
 _WORKER = """
 import os, sys
-os.environ["UNTAPED_CONFIG"] = sys.argv[1]
+os.environ["UNTAPED_HOME"] = sys.argv[1]
 from pydantic import BaseModel
 from untaped.sdk.storage.state import StateRows
 
@@ -471,7 +471,7 @@ for n in range(10):
 
 def test_two_processes_changing_rows_both_land(_isolated_config: Path) -> None:
     workers = [
-        subprocess.Popen([sys.executable, "-c", _WORKER, str(_isolated_config), prefix])
+        subprocess.Popen([sys.executable, "-c", _WORKER, str(_isolated_config.parent), prefix])
         for prefix in ("p", "q")
     ]
     assert [worker.wait(60) for worker in workers] == [0, 0]

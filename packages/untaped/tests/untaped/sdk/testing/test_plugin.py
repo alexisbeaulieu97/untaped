@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from untaped.sdk._home import config_path
+
 pytest_plugins = ["pytester"]
 
 
@@ -15,8 +17,8 @@ def test_home_and_config_are_isolated(tmp_path_factory: pytest.TempPathFactory) 
     home = Path(os.environ["HOME"])
     assert home != Path(pwd.getpwuid(os.getuid()).pw_dir)
     assert home.is_relative_to(tmp_path_factory.getbasetemp())
-    assert os.environ["UNTAPED_CONFIG"] == str(home / ".untaped" / "config.yml")
-    assert [n for n in os.environ if n.startswith("UNTAPED_")] == ["UNTAPED_CONFIG"]
+    assert config_path() == home / ".untaped" / "config.yml"
+    assert [n for n in os.environ if n.startswith("UNTAPED_")] == []
 
 
 def test_the_plugin_alone_isolates_a_foreign_suite(
@@ -31,11 +33,13 @@ def test_the_plugin_alone_isolates_a_foreign_suite(
         import os
         from pathlib import Path
 
+        from untaped.sdk._home import config_path
+
         def test_isolated():
             assert "GH_TOKEN" not in os.environ
             assert os.environ["HOME"] != os.environ["OUTER_HOME"]
             home = Path(os.environ["HOME"])
-            assert os.environ["UNTAPED_CONFIG"] == str(home / ".untaped" / "config.yml")
+            assert config_path() == home / ".untaped" / "config.yml"
         """
     )
     pytester.runpytest_subprocess().assert_outcomes(passed=1)

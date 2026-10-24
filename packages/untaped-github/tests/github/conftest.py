@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -12,7 +11,7 @@ import pytest
 
 from untaped.runtime.registry import section_settings
 from untaped.runtime.settings import get_settings, register_profile_settings
-from untaped.sdk import GitResult
+from untaped.sdk import GitResult, home
 from untaped.sdk.network.credentials import bind_credentials
 from untaped_git.infrastructure import remote as remote_module
 from untaped_git.infrastructure import store as store_module
@@ -54,7 +53,7 @@ def _commit_file(repo: Path, rel: str, content: str, message: str = "change") ->
 @pytest.fixture
 def default_org() -> str:
     """Set ``github.default_org: acme`` in the test config, whose ``github`` section is last."""
-    cfg = Path(os.environ["UNTAPED_CONFIG"])
+    cfg = home().expanduser() / "config.yml"
     cfg.write_text(cfg.read_text() + "      default_org: acme\n")
     get_settings.cache_clear()
     return "acme"

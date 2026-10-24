@@ -30,20 +30,13 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.runtime.settings import (
-    DEFAULT_CONFIG_PATH,
-    PLUGIN_NAME_PATTERN,
-    env_var_name,
-    plugins_root,
-    resolve_config_path,
-    resolve_state_path,
-)
+from untaped.runtime.settings import PLUGIN_NAME_PATTERN, env_var_name, plugins_root
 from untaped.sdk._block import OwnedBlock, spelled_id
+from untaped.sdk._home import DEFAULT_HOME, home
 from untaped.sdk.health.deprecated_keys import retired_values
 from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.marks import experimental
 from untaped.sdk.records import OutcomeRecord
-from untaped.sdk.storage._refs import refs_dir
 from untaped.sdk.storage.store import Store
 from untaped.sdk.words import shown_path, size_text
 
@@ -222,10 +215,9 @@ def overlapping(left: Path, right: Path) -> bool:
 def unsafe_dir(path: Path) -> str | None:
     """Why ``path`` must never be deleted or moved whole, or ``None``.
 
-    It holds the home directory, untaped's default config directory or the
-    directory of the active config or state file (``UNTAPED_CONFIG``,
-    ``UNTAPED_STATE``), or overlaps the install references
-    (``~/.untaped/refs``) or the plugins' own data (``~/.untaped/plugins``);
+    It holds the home directory, untaped's home (``UNTAPED_HOME``) or
+    ``~/.untaped``, or overlaps the install references (the home's
+    ``refs``) or the plugins' own data (the home's ``plugins``);
     a symlink is judged by what it points to.
     """
     return _unsafe(path, plugins=True)
@@ -237,17 +229,18 @@ def _unsafe(path: Path, *, plugins: bool) -> str | None:
     A store's layout, or an uninstalled plugin's caches.
     """
     real = _real(path)
-    untaped = Path(DEFAULT_CONFIG_PATH).expanduser().parent
     if _real(Path.home()).is_relative_to(real):
         return "it holds your home directory"
-    kept = (untaped, resolve_config_path().parent, resolve_state_path().parent)
-    for held in dict.fromkeys(kept):
-        if _real(held).is_relative_to(real):
-            return f"it holds {shown_path(held)}"
-    if overlapping(path, refs_dir()):
-        return f"it overlaps the install references in {shown_path(refs_dir())}"
-    if plugins and overlapping(path, plugins_root()):
-        return f"it overlaps the plugins' data in {shown_path(plugins_root())}"
+    # The real ~/.untaped stays protected when UNTAPED_HOME points elsewhere.
+    homes = dict.fromkeys((home().expanduser(), DEFAULT_HOME.expanduser()))
+    for untaped in homes:
+        if _real(untaped).is_relative_to(real):
+            return f"it holds {shown_path(untaped)}"
+    for untaped in homes:
+        if overlapping(path, untaped / "refs"):
+            return f"it overlaps the install references in {shown_path(untaped / 'refs')}"
+        if plugins and overlapping(path, untaped / "plugins"):
+            return f"it overlaps the plugins' data in {shown_path(untaped / 'plugins')}"
     return None
 
 

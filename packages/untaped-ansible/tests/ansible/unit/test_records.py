@@ -152,7 +152,7 @@ def test_source_get_writes_an_unset_ref_scan_default_as_null(
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}]}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     result = invoke_cli(app, ["source", "get", "prod", "-f", "json"])
 
@@ -188,7 +188,7 @@ def test_an_unknown_column_is_a_usage_error(
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     result = invoke_cli(app, argv)
 
@@ -204,7 +204,7 @@ def test_an_unknown_column_on_an_outcome_only_warns_after_the_change(
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     argv = ["source-alias", "set", "common", "acme/common", "--columns", "alias,bogus"]
     result = invoke_cli(app, argv)

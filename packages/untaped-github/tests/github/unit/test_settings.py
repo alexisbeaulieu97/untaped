@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import yaml
 from pydantic import ValidationError
 
 from untaped.runtime.bootstrap import build_root_app
-from untaped.sdk import get_config_section
+from untaped.sdk import get_config_section, home
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.testing import CliInvoker
 from untaped_github.settings import SWEEP, GithubSettings
@@ -50,7 +47,7 @@ def test_sweep_settings_reject_out_of_range_values(sweep: dict[str, int]) -> Non
 
 
 def _write(data: dict[str, object]) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"github": data}}}))
 

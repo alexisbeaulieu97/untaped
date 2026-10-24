@@ -215,6 +215,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "known_projects",
         "project_at",
     ),
+    "the home": ("home", "plugin_path"),
     "caches and stores": (
         "Cache",
         "Dir",

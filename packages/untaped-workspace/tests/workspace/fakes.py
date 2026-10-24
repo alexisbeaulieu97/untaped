@@ -8,12 +8,11 @@ workspace knows nothing about, as it knows nothing about the real ones.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from untaped.runtime.settings import get_settings
-from untaped.sdk import UntapedError, UsageError
+from untaped.sdk import UntapedError, UsageError, home
 from untaped.sdk.contracts import NotReady, Record
 from untaped_git.api import Credential, GitHost
 from untaped_workspace.api import Repo, RepoSource
@@ -102,7 +101,7 @@ class Host(GitHost):
 
 def rank(*plugins: str) -> None:
     """Rank ``plugins`` (first first) for ``RepoSource.repos`` in the default profile."""
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "profiles:\n  default:\n    workspace:\n      extensions:\n        repo_source:\n"

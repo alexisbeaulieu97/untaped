@@ -50,7 +50,7 @@ def test_job_templates_list_pipe_tags_spec_kind(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A spec-driven ``list`` derives its kind from the spec (snake-cased)."""
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
+    monkeypatch.setenv("UNTAPED_HOME", str(_config(tmp_path).parent))
     get_settings.cache_clear()
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(return_value=_page({"id": 5, "name": "deploy"}))
@@ -64,7 +64,7 @@ def test_job_templates_list_pipe_tags_spec_kind(
 
 
 def test_jobs_list_pipe_tags_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
+    monkeypatch.setenv("UNTAPED_HOME", str(_config(tmp_path).parent))
     get_settings.cache_clear()
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/jobs/").mock(
@@ -79,7 +79,7 @@ def test_jobs_list_pipe_tags_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_ping_pipe_tags_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
+    monkeypatch.setenv("UNTAPED_HOME", str(_config(tmp_path).parent))
     get_settings.cache_clear()
     with respx.mock(base_url="https://aap.example.com") as mock:
         _mock_me(mock)
@@ -97,7 +97,7 @@ def test_get_stdin_consumes_pipe_envelope_by_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Typed records always resolve the fixed ID even without --by-id."""
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
+    monkeypatch.setenv("UNTAPED_HOME", str(_config(tmp_path).parent))
     get_settings.cache_clear()
     envelope = json.dumps(
         {"untaped": "1", "kind": "awx.job_template", "record": {"id": 5, "name": "deploy"}}
@@ -122,7 +122,7 @@ def test_get_stdin_consumes_pipe_envelope_by_id(
 
 def test_get_stdin_bare_line_still_works(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Back-compat: a bare newline-separated name still resolves."""
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
+    monkeypatch.setenv("UNTAPED_HOME", str(_config(tmp_path).parent))
     get_settings.cache_clear()
     with respx.mock(base_url="https://aap.example.com") as mock:
         route = mock.get("/api/v2/job_templates/").mock(

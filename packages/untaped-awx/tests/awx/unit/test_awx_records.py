@@ -267,7 +267,7 @@ def test_plugin_schema_names_the_fields_untaped_reads_plus_any_others(tmp_path: 
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "UNTAPED_CONFIG": str(tmp_path / "config.yml")},
+        env={**os.environ, "UNTAPED_HOME": str(tmp_path)},
     )
 
     assert proc.returncode == 0, proc.stderr

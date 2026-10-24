@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 import yaml
@@ -13,7 +11,7 @@ from pydantic import SecretStr
 
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, home
 from untaped.sdk.testing import invoke_cli, plugin_candidate
 from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
@@ -26,7 +24,7 @@ from untaped_github.settings import GH, GithubServer
 
 
 def configure(github: dict[str, object], **sections: dict[str, object]) -> None:
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     profile = {"github": github, **sections}
     path.write_text(yaml.safe_dump({"profiles": {"default": profile}}), encoding="utf-8")

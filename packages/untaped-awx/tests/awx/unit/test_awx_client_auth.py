@@ -61,7 +61,7 @@ def test_token_falls_back_to_the_controller_collection_variables(
     config.write_text(
         "profiles:\n  default:\n    awx:\n      server: {url: https://aap.example.com}\n"
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     server = get_config_section("awx", AwxSettings).server

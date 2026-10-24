@@ -258,8 +258,8 @@ class BareProfile(BaseModel):
 def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = tmp_path / "work.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    config = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
     write_config(config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n")
     spec = make_spec(
         "bare",
@@ -269,7 +269,7 @@ def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
     row = _row(_rows(spec), "bare.connection")
     assert row["status"] == "warn"
     assert row["detail"] == (
-        "https://b; support for a plain-text bare.token in work.yml is deprecated and will be"
+        "https://b; support for a plain-text bare.token in config.yml is deprecated and will be"
         " removed in 12.0; use $UNTAPED_BARE__TOKEN"
     )
 

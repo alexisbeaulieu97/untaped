@@ -23,7 +23,7 @@ from untaped.runtime.redaction import redact_credentials, redact_url_password
 from untaped.runtime.settings import HttpSettings
 from untaped.sdk.errors import HttpError, HttpTransportError
 from untaped.sdk.git import run_git
-from untaped.sdk.network.auth import command_folder, find_program, run_command
+from untaped.sdk.network.auth import find_program, run_command
 from untaped.sdk.network.http import HttpClient, RetryPolicy, connected_client, same_origin
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -302,15 +302,6 @@ def test_git_planted_in_the_folder_it_runs_in_is_not_run(
     assert not (tmp_path / "ran").exists()
 
 
-def test_a_relative_config_path_is_read_from_where_untaped_started(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "conf").mkdir()
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", "conf/config.yml")
-    assert command_folder() == tmp_path / "conf"
-
-
 @pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
 def test_a_command_runs_from_the_config_folder_even_with_dot_on_path(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -327,7 +318,7 @@ def test_a_command_runs_from_the_config_folder_even_with_dot_on_path(
 def test_a_command_runs_from_home_until_the_config_folder_exists(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing" / "config.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "missing"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
     monkeypatch.chdir(tmp_path)

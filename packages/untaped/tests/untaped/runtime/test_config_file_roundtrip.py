@@ -53,7 +53,7 @@ workspace:
 @pytest.fixture
 def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(path))
+    monkeypatch.setenv("UNTAPED_HOME", str(path.parent))
     path.write_text(COMMENTED, encoding="utf-8")
     return path
 

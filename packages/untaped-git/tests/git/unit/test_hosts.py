@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
 import subprocess
 from collections.abc import Iterator
@@ -16,7 +15,7 @@ from pydantic import SecretStr
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import get_settings
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, home
 from untaped.sdk.testing import invoke_cli, plugin_candidate
 from untaped.sdk.testing.git import global_config
 from untaped_git import SPEC
@@ -68,7 +67,7 @@ def _fresh() -> Iterator[None]:
 
 def rank(method: str, *plugins: str) -> None:
     """Rank ``plugins`` for ``GitHost.<method>`` in config, as `untaped plugin rank` writes it."""
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     listed = ", ".join(plugins)
     path.write_text(

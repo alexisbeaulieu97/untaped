@@ -53,7 +53,7 @@ class DemoState(BaseModel):
 @pytest.fixture
 def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     path = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(path))
+    monkeypatch.setenv("UNTAPED_HOME", str(path.parent))
     reset_config_registry()
     yield path
     reset_config_registry()
@@ -74,66 +74,31 @@ def test_state_path_defaults_next_to_config(cfg: Path) -> None:
     assert resolve_state_path() == cfg.parent / "state.yml"
 
 
-@pytest.mark.parametrize(
-    ("config_name", "state_name"),
-    [
-        ("config.yml", "state.yml"),
-        ("a.yml", "a.state.yml"),
-        ("work.yaml", "work.state.yml"),
-        ("untaped", "untaped.state.yml"),
-        ("state.yml", "state.state.yml"),
-    ],
-)
-def test_state_path_is_derived_from_the_config_name(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_name: str, state_name: str
-) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / config_name))
-    assert resolve_state_path() == tmp_path / state_name
-
-
-def test_sibling_configs_keep_separate_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    a, b = tmp_path / "a.yml", tmp_path / "b.yml"
-    (tmp_path / "a.state.yml").write_text("demo:\n  items:\n    - name: from-a\n")
-    (tmp_path / "b.state.yml").write_text("demo:\n  items:\n    - name: from-b\n")
+def test_sibling_homes_keep_separate_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    a, b = tmp_path / "a", tmp_path / "b"
+    for folder, name in ((a, "from-a"), (b, "from-b")):
+        folder.mkdir()
+        (folder / "state.yml").write_text(f"demo:\n  items:\n    - name: {name}\n")
     items = StateCollection("demo", "items")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(a))
+    monkeypatch.setenv("UNTAPED_HOME", str(a))
     items.upsert({"name": "a2"})
-    monkeypatch.setenv("UNTAPED_CONFIG", str(b))
+    monkeypatch.setenv("UNTAPED_HOME", str(b))
     assert items.entries() == [{"name": "from-b"}]
     items.upsert({"name": "b2"})
     assert items.entries() == [{"name": "from-b"}, {"name": "b2"}]
-    assert not b.exists()
-    monkeypatch.setenv("UNTAPED_CONFIG", str(a))
+    assert not (b / "config.yml").exists()
+    monkeypatch.setenv("UNTAPED_HOME", str(a))
     assert items.entries() == [{"name": "from-a"}, {"name": "a2"}]
 
 
 def test_unwritable_state_location_is_a_config_error(
-    cfg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     blocker = tmp_path / "blocker"
     blocker.write_text("not a directory")
-    target = blocker / "state.yml"
-    monkeypatch.setenv("UNTAPED_STATE", str(target))
+    monkeypatch.setenv("UNTAPED_HOME", str(blocker / "home"))
     with pytest.raises(ConfigError, match=f"could not create .*{blocker}"):
         StateCollection("demo", "items").upsert({"name": "a"})
-
-
-def test_state_path_env_override(
-    cfg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_STATE", str(tmp_path / "elsewhere" / "s.yml"))
-    assert resolve_state_path() == tmp_path / "elsewhere" / "s.yml"
-    StateCollection("demo", "items").upsert({"name": "a"})
-    assert (tmp_path / "elsewhere" / "s.yml").is_file()
-    assert not (cfg.parent / "state.yml").exists()
-
-
-def test_state_path_must_not_be_the_config_file(cfg: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_STATE", str(cfg))
-    with pytest.raises(ConfigError, match="must not be the config file"):
-        resolve_state_path()
 
 
 @pytest.mark.parametrize(
@@ -227,14 +192,14 @@ def test_malformed_state_section_is_not_overwritten(cfg: Path) -> None:
 
 
 def test_state_write_creates_missing_directories(
-    cfg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     target = tmp_path / "a" / "b" / "state.yml"
-    monkeypatch.setenv("UNTAPED_STATE", str(target))
+    monkeypatch.setenv("UNTAPED_HOME", str(target.parent))
     StateCollection("demo", "items").upsert({"name": "a"})
     assert yaml.safe_load(target.read_text()) == {"demo": {"items": [{"name": "a"}]}}
     assert target.stat().st_mode & 0o777 == 0o600
-    assert not cfg.exists()
+    assert not (target.parent / "config.yml").exists()
 
 
 # ── settings writes never touch state ────────────────────────────────────────

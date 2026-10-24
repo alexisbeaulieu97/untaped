@@ -17,7 +17,7 @@ from untaped_ansible import SPEC
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_composition: None) -> Path:
     cfg = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 

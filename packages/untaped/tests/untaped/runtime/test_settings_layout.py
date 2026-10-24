@@ -33,7 +33,7 @@ class TestDefaultLayout:
         """The profiles layout resolves profiles.default."""
         cfg = tmp_path / "config.yml"
         cfg.write_text("profiles:\n  default:\n    skills:\n      updates: auto\nactive: default\n")
-        monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+        monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
         get_settings.cache_clear()
 
         assert get_settings().skills.updates == "auto"
@@ -44,7 +44,7 @@ class TestDefaultLayout:
         """Profiles-first: a bare top-level key (no profile) is not effective."""
         cfg = tmp_path / "config.yml"
         cfg.write_text("skills:\n  updates: auto\n")
-        monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+        monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
         get_settings.cache_clear()
 
         assert get_settings().skills.updates == "auto"

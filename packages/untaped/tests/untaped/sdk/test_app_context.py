@@ -25,7 +25,7 @@ class DemoSettings(BaseModel):
 @pytest.fixture(autouse=True)
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 
