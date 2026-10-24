@@ -165,12 +165,12 @@ def test_delete_clears_the_name_and_an_emptied_value_is_kept_blank() -> None:
 
 
 def test_a_value_the_map_sets_says_what_wins_over_it() -> None:
+    variable = "UNTAPED_UNTAPED__UI__SYMBOLS"
     editor = MapEditor(
-        "Symbols", (MapEntry("ok", "V", "UNTAPED_UI__SYMBOLS", wins="UNTAPED_UI__SYMBOLS"),),
-        (("ok", "S"),), "profile:work",
-    )  # fmt: skip
+        "Symbols", (MapEntry("ok", "V", variable, wins=variable),), (("ok", "S"),), "profile:work"
+    )
 
-    assert "profile:work, UNTAPED_UI__SYMBOLS wins" in run_solo(editor).frame
+    assert "profile:work, UNTAPED_UNTAPED__UI__SYMBOLS wins" in run_solo(editor).frame
 
 
 def test_an_open_value_counts_as_kept() -> None:

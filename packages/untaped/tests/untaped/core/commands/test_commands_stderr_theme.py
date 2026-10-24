@@ -1,4 +1,4 @@
-"""stderr messages follow ``ui.theme``, resolved once settings load (text diagnostics only)."""
+"""stderr messages follow ``untaped.ui.theme``, resolved once settings load (text only)."""
 
 from __future__ import annotations
 
@@ -49,7 +49,9 @@ def test_a_warning_follows_ui_theme(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FORCE_COLOR", "1")
-    write_config(_isolated_config, _CONFIG + "    ui:\n      theme: high-contrast\n")
+    write_config(
+        _isolated_config, _CONFIG + "    untaped:\n      ui:\n        theme: high-contrast\n"
+    )
     result = _invoke(["ext", "warn"])
     assert result.exit_code == 0, result.output
     assert result.stderr == _YELLOW
@@ -59,7 +61,9 @@ def test_an_unknown_theme_still_runs_with_the_default(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FORCE_COLOR", "1")
-    write_config(_isolated_config, _CONFIG + "    ui:\n      theme: no-such-theme\n")
+    write_config(
+        _isolated_config, _CONFIG + "    untaped:\n      ui:\n        theme: no-such-theme\n"
+    )
     result = _invoke(["ext", "warn"])
     assert result.exit_code == 0, result.output
     assert result.stderr.endswith("warning: careful\n")
@@ -67,7 +71,9 @@ def test_an_unknown_theme_still_runs_with_the_default(
 
 
 def test_json_diagnostics_resolve_no_theme(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _CONFIG + "    ui:\n      theme: high-contrast\n")
+    write_config(
+        _isolated_config, _CONFIG + "    untaped:\n      ui:\n        theme: high-contrast\n"
+    )
     assert _invoke(["ext", "theme"]).stderr == "warning: theme resolved: True\n"
     structured = _invoke(["ext", "theme", "-f", "json"])
     assert '"message": "theme resolved: False"' in structured.stderr

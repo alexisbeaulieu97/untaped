@@ -31,11 +31,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Parameter
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, create_model
 
 from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import DoctorCheckRow
 from untaped.core.commands.skills import composed_skills
+from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import (
@@ -58,7 +59,6 @@ from untaped.runtime.registry import (
 from untaped.runtime.settings import (
     RESERVED_STATE_SECTIONS,
     HttpSettings,
-    Settings,
     active_settings_layout,
     check_settings_field,
     get_profile_settings_model,
@@ -377,7 +377,7 @@ def collect_doctor_rows(
         except ConfigError as exc:
             settings_error = str(exc)
         rows.append(_profile_row(shell, raw, settings_error))
-    for field in Settings.model_fields:
+    for field in CoreSettings.model_fields:
         rows.append(_core_row(shell, field, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
@@ -977,12 +977,17 @@ def _core_row(
     effective: Mapping[str, Any] | None,
     settings_error: str | None,
 ) -> dict[str, object]:
-    """Validate one core setting (``http``/``ui``/``skills``) plus env overrides."""
+    """Validate one of core's settings (``untaped.http``/``ui``/``skills``) plus env overrides."""
     title = f"validate {field}"
     if effective is None:
         return _row("settings", shell.name, _FAIL, title, settings_error or "config unreadable")
+    info = CoreSettings.model_fields[field]
+    definition: Any = (info.annotation, info)
+    alone = create_model(f"Core{field.title()}Check", **{field: definition})
+    node = (effective.get(NAME) or {}).get(field)
     try:
-        value = check_settings_field(field, effective.get(field))
+        checked = check_settings_field(NAME, None if node is None else {field: node}, model=alone)
+        value = getattr(checked, field)
         if isinstance(value, UiSettings):
             resolve_theme(value)
             check_declared_tokens(value)

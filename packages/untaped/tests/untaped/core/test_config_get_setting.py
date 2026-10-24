@@ -36,48 +36,49 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         # Profile-scoped fields are only effective under ``profiles.<name>``;
         # the resolved source names the profile that supplied the value.
         (
-            "profiles:\n  default:\n    skills:\n      updates: warn\n",
-            "skills.updates",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n",
+            "untaped.skills.updates",
             "warn",
             "auto",
             "profile:default",
             "default",
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n"
-            "  stage:\n    skills:\n      updates: warn\nactive: stage\n",
-            "skills.updates",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
+            "  stage:\n    untaped:\n      skills:\n        updates: warn\nactive: stage\n",
+            "untaped.skills.updates",
             "warn",
             "auto",
             "profile:stage",
             "stage",
         ),
         (
-            "profiles:\n  default:\n    ui:\n      theme: classic\n",
-            "ui.theme",
+            "profiles:\n  default:\n    untaped:\n      ui:\n        theme: classic\n",
+            "untaped.ui.theme",
             "classic",
             "default",
             "profile:default",
             "default",
         ),
-        ("", "ui.theme", "default", "default", "default", None),
+        ("", "untaped.ui.theme", "default", "default", "default", None),
         (
-            "profiles:\n  default:\n    ui:\n      color_roles:\n        error: red\n",
-            "ui.color_roles",
+            "profiles:\n  default:\n    untaped:\n"
+            "      ui:\n        color_roles:\n          error: red\n",
+            "untaped.ui.color_roles",
             {"error": "red"},
             {},
             "profile:default",
             "default",
         ),
         (
-            "profiles:\n  default:\n    http:\n      verify_ssl: false\n",
-            "http.verify_ssl",
+            "profiles:\n  default:\n    untaped:\n      http:\n        verify_ssl: false\n",
+            "untaped.http.verify_ssl",
             False,
             True,
             "profile:default",
             "default",
         ),
-        ("", "http.verify_ssl", True, True, "default", None),
+        ("", "untaped.http.verify_ssl", True, True, "default", None),
     ],
     ids=[
         "default-profile",
@@ -111,11 +112,13 @@ def test_get_honours_environment_override(
     _isolate_settings: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    skills:\n      updates: warn\n")
-    monkeypatch.setenv("UNTAPED_SKILLS__UPDATES", "off")
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n"
+    )
+    monkeypatch.setenv("UNTAPED_UNTAPED__SKILLS__UPDATES", "off")
     get_settings.cache_clear()
 
-    entry = GetSetting(SettingsFileRepository())("skills.updates")
+    entry = GetSetting(SettingsFileRepository())("untaped.skills.updates")
 
     assert entry.value == "off"
     assert entry.source.label == "env"
@@ -149,8 +152,8 @@ def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> Non
 
 
 _SYMBOLS = (
-    "profiles:\n  default:\n    ui: {theme: plain, symbols: {error: X, bogus: y}}\n"
-    "  work:\n    ui: {symbols: {success: S}}\nactive: work\n"
+    "profiles:\n  default:\n    untaped:\n      ui: {theme: plain, symbols: {error: X, bogus: y}}\n"
+    "  work:\n    untaped:\n      ui: {symbols: {success: S}}\nactive: work\n"
 )
 
 
@@ -160,7 +163,7 @@ def test_list_names_gives_each_declared_name_its_value_and_source(_isolate_setti
 
     _isolate_settings.write_text(_SYMBOLS)
 
-    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols")}
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.symbols")}
 
     assert list(names)[: len(SYMBOL_NAMES)] == list(SYMBOL_NAMES)
     assert (names["success"].value, names["success"].source) == ("S", "profile:work")
@@ -176,11 +179,11 @@ def test_list_names_says_which_names_a_variable_sets(
     from untaped.core.config.use_cases import ListNames
 
     _isolate_settings.write_text(_SYMBOLS)
-    monkeypatch.setenv("UNTAPED_UI__SYMBOLS", '{"info": "i"}')
+    monkeypatch.setenv("UNTAPED_UNTAPED__UI__SYMBOLS", '{"info": "i"}')
 
-    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols")}
+    names = {item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.symbols")}
 
-    assert (names["info"].value, names["info"].source) == ("i", "UNTAPED_UI__SYMBOLS")
+    assert (names["info"].value, names["info"].source) == ("i", "UNTAPED_UNTAPED__UI__SYMBOLS")
     assert names["success"].source == "profile:work"  # the variable is merged over the profiles
 
 
@@ -188,7 +191,7 @@ def test_list_names_refuses_a_key_that_declares_none() -> None:
     from untaped.core.config.use_cases import ListNames
 
     with pytest.raises(ConfigError, match="declares no names"):
-        ListNames(SettingsFileRepository())("ui.theme")
+        ListNames(SettingsFileRepository())("untaped.ui.theme")
 
 
 def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
@@ -198,12 +201,13 @@ def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
     from untaped.runtime.theme import BUILTIN_THEMES
 
     _isolate_settings.write_text(
-        "profiles:\n  default:\n    ui: {symbols: {error: X}}\n"
-        "  work:\n    ui: {symbols: {success: S, error: E}}\nactive: work\n"
+        "profiles:\n  default:\n    untaped:\n      ui: {symbols: {error: X}}\n"
+        "  work:\n    untaped:\n      ui: {symbols: {success: S, error: E}}\nactive: work\n"
     )
 
     names = {
-        item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols", under="work")
+        item.name: item
+        for item in ListNames(SettingsFileRepository())("untaped.ui.symbols", under="work")
     }
 
     assert (names["error"].value, names["error"].source) == ("X", "profile:default")
@@ -213,7 +217,10 @@ def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
 
 @pytest.mark.parametrize(
     ("variable", "value"),
-    [("UNTAPED_UI__SYMBOLS__SUCCESS", "W"), ("UNTAPED_UI", '{"symbols": {"success": "W"}}')],
+    [
+        ("UNTAPED_UNTAPED__UI__SYMBOLS__SUCCESS", "W"),
+        ("UNTAPED_UNTAPED__UI", '{"symbols": {"success": "W"}}'),
+    ],
 )
 def test_list_names_finds_a_variable_at_any_depth(
     _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
@@ -224,7 +231,8 @@ def test_list_names_finds_a_variable_at_any_depth(
     monkeypatch.setenv(variable, value)
 
     names = {
-        item.name: item for item in ListNames(SettingsFileRepository())("ui.symbols", under="work")
+        item.name: item
+        for item in ListNames(SettingsFileRepository())("untaped.ui.symbols", under="work")
     }
 
     assert (names["success"].value, names["success"].source) == ("W", variable)
@@ -237,7 +245,9 @@ def test_list_names_leaves_a_name_its_defaults_lack_unset(_isolate_settings: Pat
 
     _isolate_settings.write_text("profiles:\n  default: {}\n")
 
-    names = {item.name: item for item in ListNames(SettingsFileRepository())("ui.color_roles")}
+    names = {
+        item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.color_roles")
+    }
 
     assert (names["header"].value, names["header"].source) == (None, "theme")
     assert (names["success"].value, names["success"].source) == ("green", "theme")
@@ -280,6 +290,8 @@ def test_env_var_setting_finds_the_deepest_variable_holding_a_leaf(
 ) -> None:
     from untaped.runtime.settings import env_var_setting
 
-    monkeypatch.setenv("UNTAPED_UI", value)
+    monkeypatch.setenv("UNTAPED_UNTAPED__UI", value)
 
-    assert env_var_setting(("ui", "symbols", "info")) == ("UNTAPED_UI" if found else None)
+    assert env_var_setting(("untaped", "ui", "symbols", "info")) == (
+        "UNTAPED_UNTAPED__UI" if found else None
+    )

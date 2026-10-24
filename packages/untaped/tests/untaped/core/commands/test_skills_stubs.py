@@ -82,7 +82,7 @@ def _marker(path: Path) -> dict[str, object]:
 
 
 def _mode(config: Path, mode: str) -> None:
-    write_config(config, f"profiles:\n  default:\n    skills: {{updates: '{mode}'}}\n")
+    write_config(config, f"profiles:\n  default:\n    untaped: {{skills: {{updates: '{mode}'}}}}\n")
 
 
 def _install_copy(tmp_path: Path, *, target: str = "codex", where: list[str] | None = None) -> Path:
@@ -253,7 +253,10 @@ def test_an_edited_stub_is_never_rewritten_by_a_run(
 
 @pytest.mark.parametrize(
     ("args", "code"),
-    [(("demo", "--no-such-flag"), 2), (("config", "set", "ui.theme", "default", "--dry-run"), 0)],
+    [
+        (("demo", "--no-such-flag"), 2),
+        (("config", "set", "untaped.ui.theme", "default", "--dry-run"), 0),
+    ],
     ids=["failed", "dry-run"],
 )
 def test_nothing_is_written_after_a_failed_or_previewing_command(
@@ -366,7 +369,9 @@ def test_a_project_s_old_copy_is_warned_about_and_not_converted(
         "warning: copied skills from an older untaped in this project: untaped-demo"
         in result.stderr
     )
-    assert "run `untaped skills update` here (or set skills.updates to off)" in result.stderr
+    assert (
+        "run `untaped skills update` here (or set untaped.skills.updates to off)" in result.stderr
+    )
     assert (project / ".agents" / "skills" / "untaped-demo" / _COPY_MARKER).is_file()
 
 

@@ -14,7 +14,7 @@ from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"
 _THEMELESS_CONFIG = (
-    "profiles:\n  default:\n    ui:\n      theme: missing\n"
+    "profiles:\n  default:\n    untaped:\n      ui:\n        theme: missing\n"
     f"    jira:\n      base_url: {BASE}\n      token: jira_pat\n"
 )
 

@@ -164,7 +164,7 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
 @pytest.mark.parametrize(
     "config",
     [
-        pytest.param("ui:\n  theme: bogus\n", id="unknown-theme"),
+        pytest.param("untaped:\n  ui:\n    theme: bogus\n", id="unknown-theme"),
         pytest.param("active: nosuch\n", id="unknown-profile"),
         pytest.param("profiles: [unclosed\n", id="unparseable"),
     ],

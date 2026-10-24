@@ -11,12 +11,12 @@ from typing import Annotated, ClassVar, Literal
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped.core.settings import CoreSettings
 from untaped.core.surface import DeprecatedMark, Line, SurfaceError, plugin_lines
 from untaped.core.surface._sdk import own_mark
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
-from untaped.runtime.settings import SkillsSettings
 from untaped.sdk.contracts import Contract
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.marks import experimental
@@ -115,17 +115,19 @@ def test_lines_do_not_depend_on_home(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 @pytest.fixture
 def renamed_skills_key(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """``skills.updates`` as if it had been renamed from ``skills.auto_update``."""
-    monkeypatch.setattr(SkillsSettings, "renamed_keys", {"auto_update": "updates"}, raising=False)
+    """``untaped.skills.updates`` as if it had been renamed from ``untaped.skills.auto_update``."""
+    renamed = {"skills.auto_update": "skills.updates"}
+    monkeypatch.setattr(CoreSettings, "renamed_keys", renamed, raising=False)
     key_mappings.cache_clear()
     yield
     key_mappings.cache_clear()
 
 
 @pytest.mark.usefixtures("renamed_skills_key")
-def test_a_root_section_keeps_its_renamed_key() -> None:
+def test_core_s_section_keeps_its_renamed_key() -> None:
     lines = settings_lines(bootstrap.compose_root(candidates=[]))
-    assert Line("cfg skills.auto_update -> skills.updates", DeprecatedMark()) in lines
+    renamed = Line("cfg untaped.skills.auto_update -> untaped.skills.updates", DeprecatedMark())
+    assert renamed in lines
 
 
 def test_extension_rank_keys_take_their_methods_marks() -> None:

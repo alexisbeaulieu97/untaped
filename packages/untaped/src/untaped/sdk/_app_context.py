@@ -12,7 +12,7 @@ here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
@@ -21,13 +21,17 @@ from untaped.runtime.settings import (
     Settings,
     get_settings,
     get_settings_model,
+    load_core_settings,
     load_settings_section,
 )
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import UiSettings, resolve_theme_or_default
+from untaped.runtime.theme import resolve_theme_or_default
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.auth import resolve_token
+
+if TYPE_CHECKING:
+    from untaped.core.settings import CoreSettings
 
 
 @dataclass(frozen=True)
@@ -81,9 +85,16 @@ class AppContext:
         return selected_profile()
 
     @property
+    def _core(self) -> CoreSettings:
+        """Core's own section, ``untaped``, validated once per context."""
+        if "untaped" not in self._resolved:
+            self._resolved["untaped"] = load_core_settings(self.settings_model)
+        return cast("CoreSettings", self._resolved["untaped"])
+
+    @property
     def http(self) -> HttpSettings:
         """Cross-cutting HTTP settings for building clients."""
-        return self.section("http", HttpSettings)
+        return self._core.http
 
     @property
     def diag(self) -> Diagnostics:
@@ -101,7 +112,7 @@ class AppContext:
         invalidated. ``strict=False`` degrades a theme-resolution
         :class:`ConfigError` (e.g. an unknown theme name) to the default theme.
         """
-        theme = resolve_theme_or_default(lambda: self.section("ui", UiSettings), strict=strict)
+        theme = resolve_theme_or_default(lambda: self._core.ui, strict=strict)
         return ui_context(theme=theme)
 
 

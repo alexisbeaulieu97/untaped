@@ -192,9 +192,9 @@ Plugin keys are always fully qualified (`awx.server.url`, never
 ```bash
 untaped config list --all-profiles
 untaped config get awx.server.url
-untaped config set http.timeout_seconds 60 --dry-run
+untaped config set untaped.http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset jira.default_project
-untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
+untaped config set untaped.ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
 
@@ -260,7 +260,7 @@ CA (a proxy that inspects TLS, say) for every client and for git, set a CA
 bundle once:
 
 ```bash
-untaped config set http.ca_bundle_path /path/to/corp-ca.pem
+untaped config set untaped.http.ca_bundle_path /path/to/corp-ca.pem
 ```
 
 One server's own certificate check belongs to that server: its
@@ -273,12 +273,13 @@ another way than when it was stored:
 untaped --profile work config set awx.server.verify_tls /path/to/aap-ca.pem
 ```
 
-Root `http.verify_ssl` and `http.verify_hostname` are deprecated. In 11.x,
-`http.verify_ssl: false` reads as each server's `verify_tls: false` (unless
-the server sets its own) and `config migrate` writes it there. `ui.theme` picks a built-in
-theme and `ui.format` the default `--format`; the
-[configuration reference](./reference/config.md#root) lists every `http.*`
-and `ui.*` setting, including the names `ui.symbols` and `ui.color_roles`
+`untaped.http.verify_ssl` and `untaped.http.verify_hostname` are deprecated:
+`verify_ssl: false` reads as each server's `verify_tls: false` (unless the
+server sets its own) and `config migrate` writes it there. untaped's own
+settings sit in its `untaped` section: `untaped.ui.theme` picks a built-in
+theme and `untaped.ui.format` the default `--format`; the
+[configuration reference](./reference/config.md#untaped) lists each one,
+including the names `untaped.ui.symbols` and `untaped.ui.color_roles`
 accept. `config set` and `doctor` reject any other name; a stray name already
 in `config.yml` keeps working.
 
@@ -385,7 +386,7 @@ An older untaped sharing the config stops reading the lines it moved.
 `DEBUG untaped.<area>: <message>` lines:
 
 - `untaped.http`: each request's method, URL, outcome and time, each retry
-  wait and redirect, and the `http.proxy` a service's client uses;
+  wait and redirect, and the `untaped.http.proxy` a service's client uses;
 - `untaped.git`: each `git` command's arguments (URL credentials masked), its
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);

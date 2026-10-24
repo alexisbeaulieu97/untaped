@@ -83,7 +83,7 @@ def _use_config(
     if github_section:
         profile["github"] = github_section
     if ui is not None:
-        profile["ui"] = ui
+        profile["untaped"] = {"ui": ui}
     cfg = tmp_path / "config.yml"
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}, sort_keys=False))
     if state is not None:

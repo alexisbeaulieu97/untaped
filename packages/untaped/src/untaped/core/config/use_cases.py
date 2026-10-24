@@ -352,7 +352,7 @@ def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str])
 
 @dataclass(frozen=True)
 class NamedValue:
-    """One name of a mapping that declares its names (``ui.symbols``), and its value's source."""
+    """One name of a mapping that declares its names (``untaped.ui.symbols``), and its source."""
 
     name: str
     value: str | None
@@ -634,7 +634,7 @@ def _iter_leaves(
     """Yield ``(path, value)`` pairs for every leaf of ``data``.
 
     A mapping whose path is in ``stop_at`` (a mapping-typed setting such as
-    ``ui.symbols``) is one leaf rather than a subtree.
+    ``untaped.ui.symbols``) is one leaf rather than a subtree.
     """
     out: list[tuple[tuple[str, ...], Any]] = []
     for key, value in data.items():

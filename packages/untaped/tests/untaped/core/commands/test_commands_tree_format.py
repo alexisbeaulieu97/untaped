@@ -1,6 +1,6 @@
 """``--format tree``: a command opts in with ``TreeFormatOption`` and passes ``emit(tree=)``.
 
-The user's default format (``UNTAPED_FORMAT``, ``ui.format``) still applies
+The user's default format (``UNTAPED_FORMAT``, ``untaped.ui.format``) still applies
 to such a command, and stays one of the shared formats.
 """
 
@@ -118,10 +118,10 @@ def test_other_formats_ignore_the_tree() -> None:
 @pytest.mark.parametrize(
     ("setting", "env", "expected"),
     [
-        ("    ui:\n      format: yaml\n", None, "- name: alpha\n"),
+        ("    untaped:\n      ui:\n        format: yaml\n", None, "- name: alpha\n"),
         ("", "json", '[{"name": "alpha"}]\n'),
     ],
-    ids=["ui.format", "UNTAPED_FORMAT"],
+    ids=["untaped.ui.format", "UNTAPED_FORMAT"],
 )
 def test_the_users_default_format_applies_to_a_tree_command(
     _isolated_config: Path,
@@ -151,10 +151,10 @@ def test_untaped_format_cannot_be_tree(monkeypatch: pytest.MonkeyPatch, command:
 
 
 def test_ui_format_cannot_be_tree() -> None:
-    result = _invoke(["config", "set", "ui.format", "tree"])
+    result = _invoke(["config", "set", "untaped.ui.format", "tree"])
 
     assert result.exit_code == 1
-    assert "invalid value for 'ui.format'" in result.stderr
+    assert "invalid value for 'untaped.ui.format'" in result.stderr
 
 
 def test_only_a_tree_command_offers_the_tree_choice() -> None:

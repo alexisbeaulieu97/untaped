@@ -211,7 +211,7 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
 
     result = invoke_cli(
         bootstrap.build_root_app(candidates=()),
-        ["config", "set", "ui.theme", "--prompt"],
+        ["config", "set", "untaped.ui.theme", "--prompt"],
         interactive=True,
         prompt_backend=ScriptedPromptBackend(interrupt=True),
     )

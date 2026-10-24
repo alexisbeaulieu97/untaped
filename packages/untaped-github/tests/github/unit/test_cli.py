@@ -23,7 +23,7 @@ def _whoami(
     response: httpx.Response | None = None,
 ) -> CliResult:
     cfg = tmp_path / "config.yml"
-    ui_section = f"    ui:\n      {ui}\n" if ui else ""
+    ui_section = f"    untaped:\n      ui:\n        {ui}\n" if ui else ""
     cfg.write_text(f"profiles:\n  default:\n{ui_section}    github:\n      {github}\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})

@@ -99,11 +99,11 @@ and every 30 s while a step waits, and one `done` or `failed` line if a
 line printed; `--verbose` prints every update and `--quiet` none.
 
 - The format counts whether it comes from the flag, `UNTAPED_FORMAT` or
-  `ui.format`. A command's own default, such as `export`'s YAML, does not.
+  `untaped.ui.format`. A command's own default, such as `export`'s YAML, does not.
 - `UNTAPED_DIAGNOSTICS=json` turns JSON Lines on for any format;
   `UNTAPED_DIAGNOSTICS=text` keeps text lines.
 - A parse error (an unknown flag or command), a warning about a quarantined
-  provider and the warning for a deprecated alias come before `ui.format` is
+  provider and the warning for a deprecated alias come before `untaped.ui.format` is
   read, so only a `--format` on the command line or in `UNTAPED_FORMAT`
   switches them.
 

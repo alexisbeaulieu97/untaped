@@ -40,7 +40,7 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
-from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
+from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT
 from untaped.sdk._home import config_path, home
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
@@ -55,6 +55,7 @@ from untaped.sdk.marks import Stability, deprecated
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
+    from untaped.core.settings import CoreSettings
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.storage.cache import Cache
 
@@ -77,11 +78,6 @@ FORMAT_VERSION = 1
 
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a plugin's HTTP client (per-profile)."""
-
-    retired_keys: ClassVar[Mapping[str, str]] = {
-        "timeout": "timeout_seconds",
-        "ca_bundle": "ca_bundle_path",
-    }
 
     ca_bundle_path: Path | None = Field(
         default=None,
@@ -210,10 +206,6 @@ class _SettingsSources(BaseSettings):
 
 class Settings(_SettingsSources):
     """Base settings class; concrete aggregate models are built dynamically."""
-
-    http: HttpSettings = Field(default_factory=HttpSettings)
-    ui: UiSettings = Field(default_factory=UiSettings)
-    skills: SkillsSettings = Field(default_factory=SkillsSettings)
 
 
 #: A contract's or a contract method's name in settings: snake_case.
@@ -1109,7 +1101,7 @@ def validate_settings_section(
 
     A missing key validates the field's default (so a required field that is
     absent is reported). Write-time checks (``CONFIG_WRITE_CONTEXT``) run
-    too, e.g. an unknown ``ui.theme`` is rejected. ``written_key`` (the full
+    too, e.g. an unknown ``untaped.ui.theme`` is rejected. ``written_key`` (the full
     key being written) limits the per-key declared-name checks to that key, so
     a stray value in another key does not block the write. Raises
     :class:`pydantic.ValidationError`; error locations start with ``name``.
@@ -1121,6 +1113,14 @@ def validate_settings_section(
         context={CONFIG_WRITE_CONTEXT: True, CONFIG_WRITTEN_KEY_CONTEXT: written_key},
     )
     return getattr(validated, name)
+
+
+def load_core_settings(settings_cls: type[Settings] | None = None) -> CoreSettings:
+    """Core's own section, ``untaped``: ``http``, ``ui`` and ``skills``, validated alone."""
+    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
+
+    value = load_settings_section(NAME, settings_cls)
+    return value if isinstance(value, CoreSettings) else CoreSettings.model_validate(value)
 
 
 def load_settings_section(name: str, settings_cls: type[Settings] | None = None) -> Any:
@@ -1250,6 +1250,10 @@ def _build_settings_model(
     profile_sections: Mapping[str, type[BaseModel]],
     state_sections: Mapping[str, type[BaseModel]],
 ) -> type[Settings]:
+    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
+
+    # Core's section is always there, composed or not, as any built-in's would be.
+    profile_sections = {NAME: CoreSettings, **profile_sections}
     fields: dict[str, Any] = {}
     for section in [*profile_sections, *state_sections]:
         model = _section_model(section, profile_sections, state_sections)

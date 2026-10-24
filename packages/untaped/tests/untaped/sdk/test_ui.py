@@ -340,7 +340,7 @@ def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
     from untaped.runtime.settings import get_settings
 
     cfg = tmp_path / "config.yml"
-    cfg.write_text("ui:\n  theme: nonexistent\n")
+    cfg.write_text("untaped:\n  ui:\n    theme: nonexistent\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
     try:
@@ -355,7 +355,7 @@ def test_ui_context_raises_on_unknown_theme_when_strict(
     from untaped.runtime.settings import get_settings
 
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    ui:\n      theme: nonexistent\n")
+    cfg.write_text("profiles:\n  default:\n    untaped:\n      ui:\n        theme: nonexistent\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
     try:

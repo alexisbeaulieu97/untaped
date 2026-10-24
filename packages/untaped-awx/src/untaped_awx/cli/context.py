@@ -87,7 +87,7 @@ class AwxContext:
         return self._context.diag
 
     def ui(self) -> UiContext:
-        """Themed UI for prompts and ``ui=`` callers; a bad ``ui.theme`` falls back."""
+        """Themed UI for prompts and ``ui=`` callers; a bad ``untaped.ui.theme`` falls back."""
         return self._context.ui(strict=False)
 
     def close(self) -> None:

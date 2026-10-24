@@ -43,7 +43,7 @@ class OutputPolicy:
     ``format`` is the ``--format`` the user chose (``None``: the command's
     default), ``forced`` the ``UNTAPED_DIAGNOSTICS`` choice read when the
     policy was built (``None``: follow the format). ``theme`` is the
-    ``ui.theme`` text messages render with, resolved once settings load
+    ``untaped.ui.theme`` text messages render with, resolved once settings load
     (``None``: the default theme); it is left out of the hash, since a
     ``ThemeSpec`` has none.
     """

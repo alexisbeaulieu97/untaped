@@ -266,7 +266,7 @@ def online_check(
     set; an unmarked one only once it is :func:`service_configured`. A
     failure keeps one line of its message and names the command that fixes
     it: a new token for a rejected (or, unmarked, missing) one,
-    ``http.ca_bundle_path`` for an untrusted certificate, otherwise the first
+    ``untaped.http.ca_bundle_path`` for an untrusted certificate, otherwise the first
     marked field (``base_url`` for an unmarked one).
     """
     return DoctorCheck(
@@ -356,7 +356,7 @@ def _marked_probe(
     """``probe`` for a plugin that marks what it needs: only once every marked field is set.
 
     A rejected secret names its ``auth login``, an untrusted certificate
-    ``http.ca_bundle_path``; any other failure names the marked fields' values and
+    ``untaped.http.ca_bundle_path``; any other failure names the marked fields' values and
     the command that sets the first of them (none when every mark is a secret).
     """
     if unset_fields(settings, marks, section=section):
@@ -411,7 +411,7 @@ def _shown(settings: BaseModel, field: MarkedField) -> str:
     return "is set" if field.masked else f"is {shown_value(settings, field)}"
 
 
-_CA_FIX = "config set http.ca_bundle_path <PATH>"
+_CA_FIX = "config set untaped.http.ca_bundle_path <PATH>"
 
 #: OpenSSL's verify code for a certificate that does not match the host name.
 _HOSTNAME_MISMATCH = 62

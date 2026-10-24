@@ -44,8 +44,13 @@ def test_every_builtin_theme_defines_the_caret_and_emphasis_roles_as_today_s_loo
 
 def test_the_caret_and_emphasis_roles_are_declared_for_writes() -> None:
     ui = validate_settings_section(
-        {"ui": {"color_roles": {"screen.caret": "underline", "screen.emphasis": "italic"}}}, "ui"
-    )
+        {
+            "untaped": {
+                "ui": {"color_roles": {"screen.caret": "underline", "screen.emphasis": "italic"}}
+            }
+        },
+        "untaped",
+    ).ui
     assert ui.color_roles == {"screen.caret": "underline", "screen.emphasis": "italic"}
     assert resolve_theme(ui).color_roles["screen.caret"] == "underline"
 
@@ -114,7 +119,7 @@ def test_screen_roles_are_valid_rich_styles(name: str) -> None:
 
 def test_unknown_symbol_name_is_refused_on_write() -> None:
     with pytest.raises(ValidationError) as caught:
-        validate_settings_section({"ui": {"symbols": {"checkd": "x"}}}, "ui")
+        validate_settings_section({"untaped": {"ui": {"symbols": {"checkd": "x"}}}}, "untaped")
     message = str(caught.value)
     assert "checkd" in message
     assert all(name in message for name in ("checked", "chosen", "success"))
@@ -122,7 +127,9 @@ def test_unknown_symbol_name_is_refused_on_write() -> None:
 
 def test_unknown_color_role_name_is_refused_on_write() -> None:
     with pytest.raises(ValidationError) as caught:
-        validate_settings_section({"ui": {"color_roles": {"screen.acent": "red"}}}, "ui")
+        validate_settings_section(
+            {"untaped": {"ui": {"color_roles": {"screen.acent": "red"}}}}, "untaped"
+        )
     message = str(caught.value)
     assert "screen.acent" in message
     assert "screen.accent" in message
@@ -131,13 +138,15 @@ def test_unknown_color_role_name_is_refused_on_write() -> None:
 def test_declared_names_are_accepted_on_write() -> None:
     ui = validate_settings_section(
         {
-            "ui": {
-                "symbols": {"checked": "x", "success": "+"},
-                "color_roles": {"screen.accent": "red"},
+            "untaped": {
+                "ui": {
+                    "symbols": {"checked": "x", "success": "+"},
+                    "color_roles": {"screen.accent": "red"},
+                }
             }
         },
-        "ui",
-    )
+        "untaped",
+    ).ui
     assert ui.symbols == {"checked": "x", "success": "+"}
     assert ui.color_roles == {"screen.accent": "red"}
 
@@ -158,13 +167,13 @@ def test_check_declared_tokens_names_the_stray_and_lists_valid_ones() -> None:
 
 
 def test_a_written_key_scopes_mapping_checks_but_a_stray_theme_always_refuses() -> None:
-    strays = {"ui": {"symbols": {"zzz": "x"}, "format": "json"}}
-    validate_settings_section(strays, "ui", written_key="ui.format")
+    strays = {"untaped": {"ui": {"symbols": {"zzz": "x"}, "format": "json"}}}
+    validate_settings_section(strays, "untaped", written_key="untaped.ui.format")
     with pytest.raises(ValidationError, match="unknown name zzz"):
-        validate_settings_section(strays, "ui", written_key="ui.symbols")
-    stale = {"ui": {"theme": "gone", "format": "json"}}
+        validate_settings_section(strays, "untaped", written_key="untaped.ui.symbols")
+    stale = {"untaped": {"ui": {"theme": "gone", "format": "json"}}}
     with pytest.raises(ValidationError, match="unknown UI theme 'gone'; valid themes: "):
-        validate_settings_section(stale, "ui", written_key="ui.format")
+        validate_settings_section(stale, "untaped", written_key="untaped.ui.format")
 
 
 def test_resolving_an_unknown_theme_words_it_as_the_write_check_does() -> None:

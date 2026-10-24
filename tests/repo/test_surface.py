@@ -86,11 +86,11 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
 #: Name the exact line; an entry stops matching once its baseline is not the
 #: newest release, and the next pre-release cleanup removes it.
 MINOR_WAIVERS: dict[str, frozenset[str]] = {
-    # skills.updates moves to auto with stub skills (#694): under warn, every
+    # untaped.skills.updates moves to auto with stub skills (#694): under warn, every
     # upgrader would see a warning after every command until they updated.
     "v11.0.0": frozenset(
         {
-            "cfg skills.updates string default=warn",
+            "cfg untaped.skills.updates string default=warn",
             # base_url moves into each server's credential key (#811): the old key is
             # still read as server.url, but the value is now checked as a URL up front,
             # and github's default comes from its key.

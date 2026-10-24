@@ -651,7 +651,9 @@ def test_apply_table_preview_uses_configured_collection_view(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("COLUMNS", "240")
-    isolate_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    isolate_config.write_text(
+        "profiles:\n  default:\n    untaped:\n      ui:\n        collection_view: list\n"
+    )
     get_settings.cache_clear()
     recipe, target = _out_recipe(tmp_path)
 

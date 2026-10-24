@@ -23,10 +23,12 @@ from untaped_github.providers.git import GithubHost
 from untaped_github.settings import GH, GithubServer
 
 
-def configure(github: dict[str, object], **sections: dict[str, object]) -> None:
+def configure(github: dict[str, object], *, http: dict[str, object] | None = None) -> None:
     path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    profile = {"github": github, **sections}
+    profile: dict[str, object] = {"github": github}
+    if http is not None:
+        profile["untaped"] = {"http": http}
     path.write_text(yaml.safe_dump({"profiles": {"default": profile}}), encoding="utf-8")
 
 

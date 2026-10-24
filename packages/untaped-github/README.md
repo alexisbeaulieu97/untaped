@@ -27,7 +27,7 @@ commands given no `--org`, `--team` or `--repo` use it. The token can also
 come from the GitHub CLI or `GH_TOKEN`; see
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens).
 `sweep` and `cache` need `git` on your `PATH`; they fetch over HTTPS with the
-same token (and through `http.proxy` when set), or over SSH with your own
+same token (and through `untaped.http.proxy` when set), or over SSH with your own
 keys after `untaped config set github.git_protocol ssh`. Every setting is in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github).
 

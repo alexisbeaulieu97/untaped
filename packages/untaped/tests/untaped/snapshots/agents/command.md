@@ -9,6 +9,6 @@ A widget with that name already there is reported `unchanged`.
 
 - `NAME`: The widget's name.
 - `--size`: How big it is. Default: `3`.
-- `--format`, `-f`: Output format. One of `json`, `yaml`, `table`, `raw`, `pipe`. Default: `table, or UNTAPED_FORMAT / ui.format`.
+- `--format`, `-f`: Output format. One of `json`, `yaml`, `table`, `raw`, `pipe`. Default: `table, or UNTAPED_FORMAT / untaped.ui.format`.
 
 The map of this untaped: `untaped agents`

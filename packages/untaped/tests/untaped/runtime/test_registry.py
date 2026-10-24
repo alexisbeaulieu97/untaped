@@ -195,7 +195,7 @@ def test_failed_provider_registers_nothing() -> None:
     good = make_spec(
         name="good", skills=(make_skill("good-skill"),), checks=(make_check("good.ok"),)
     )
-    bad = make_spec(name="shell")
+    bad = make_spec(name="untaped")
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     result = compose(
         make_shell(),

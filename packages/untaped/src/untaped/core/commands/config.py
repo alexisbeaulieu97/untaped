@@ -85,7 +85,7 @@ class RootSectionScope:
     """One section's key-resolution scope for the root config command."""
 
     plugin: str
-    """Owning plugin name (the shell name for the shell section)."""
+    """Owning plugin name (``untaped`` for core's own section)."""
 
     state_fields: frozenset[str]
     """Tool-managed field names of the section's state model (never settable)."""
@@ -355,7 +355,7 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
     set in a file or the environment it is listed, as is every setting read
     through an old spelling (whatever its stability, so the deprecated
     spelling is never missed). Each table has its own columns, so
-    ``ui.hide_empty_columns`` and ``--columns`` apply per table, and only the
+    ``untaped.ui.hide_empty_columns`` and ``--columns`` apply per table, and only the
     deprecated table carries ``note``.
     """
     stable: list[SettingEntry] = []

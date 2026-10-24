@@ -823,7 +823,7 @@ class _CompositionState:
         self.migration_ids: set[str] = set()
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
-            **dict.fromkeys(RESERVED_SECTIONS | {shell.section}, "a config key"),
+            **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
             **dict.fromkeys(shell.commands, "a root command"),
             # ``UNTAPED_HOME`` would be read as a ``home`` section's whole value.
             "home": f"the variable {HOME_ENV}",

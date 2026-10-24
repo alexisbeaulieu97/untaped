@@ -95,7 +95,7 @@ def _tls_value(value: object) -> object:
 
 TlsVerify = Annotated[bool | Path, _TlsVerifyMark(), BeforeValidator(_tls_value)]
 """How a server's certificate is checked: ``true`` (untaped's trust, root
-``http.ca_bundle_path`` or the OS store), ``false`` (not at all), or a CA file
+``untaped.http.ca_bundle_path`` or the OS store), ``false`` (not at all), or a CA file
 that replaces it for this server. A relative path is read from the config
 file's folder."""
 

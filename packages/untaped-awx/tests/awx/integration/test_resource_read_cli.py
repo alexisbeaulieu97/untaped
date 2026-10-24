@@ -189,8 +189,9 @@ def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
         """
         profiles:
           default:
-            ui:
-              theme: missing
+            untaped:
+              ui:
+                theme: missing
             awx:
               base_url: https://aap.example.com
               token: secret

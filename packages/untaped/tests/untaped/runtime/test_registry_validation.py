@@ -79,18 +79,14 @@ TAKEN = {
     "plugin": "a root command",
     "profiles": "a config key",
     "active": "a config key",
-    "shell": "a config key",
-    "http": "a config key",
-    "ui": "a config key",
-    "skills": "a config key",
     "credentials": "a config key",
     "extensions": "a config key",
     "caches": "a config key",
     "home": "the variable UNTAPED_HOME",
 }
 
-#: Names 11.x reserved that nothing holds any more.
-FREE = ["core", "sdk", "contracts", "plugins", "default", "state"]
+#: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
+FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui", "skills"]
 
 # (spec factory, reason, text the error/detail must name)
 SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
@@ -241,12 +237,6 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate plugin name: 'root' is taken by a root command",
         ),
         (
-            make_shell(section="root-section"),
-            make_spec(name="root-section"),
-            "duplicate-name",
-            "duplicate plugin name: 'root-section' is taken by a config key",
-        ),
-        (
             make_shell(skills=(make_skill("shell-skill"),)),
             make_spec(name="s", skills=(make_skill("shell-skill"),)),
             "duplicate-skill",
@@ -259,7 +249,7 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate doctor id: 'shell.health'",
         ),
     ],
-    ids=["command", "section", "skill", "doctor-id"],
+    ids=["command", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
     shell: Any, spec: PluginSpec, reason: str, detail: str

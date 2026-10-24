@@ -18,10 +18,12 @@ import pytest
 from core_test_support.commands.support import age_stub, make_spec, write_config
 from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
+from untaped.core.settings import CoreSettings
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk._home import config_path
+from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
@@ -453,7 +455,9 @@ def test_columns_prints_the_table_with_the_command_line(monkeypatch: pytest.Monk
 def test_an_ascii_theme_swaps_the_glyphs(
     monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui: {theme: plain}\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui: {theme: plain}\n"
+    )
     STUBBORN.add("svc.b")
     spec = _spec(_MIGRATE, _UPDATE)
     backend = ScriptedPromptBackend(confirms=[True])
@@ -503,8 +507,20 @@ def _stale_skill() -> None:
     age_stub(Path.home() / ".claude" / "skills" / "untaped")
 
 
+@pytest.fixture
+def core_renamed_http_timeout(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """``untaped.http.timeout_seconds`` as if it had been renamed from ``untaped.http.timeout``."""
+    renamed = {"http.timeout": "http.timeout_seconds"}
+    monkeypatch.setattr(CoreSettings, "renamed_keys", renamed, raising=False)
+    key_mappings.cache_clear()
+    yield
+    key_mappings.cache_clear()
+
+
 def _old_http_key() -> None:
-    write_config(config_path(), "profiles:\n  default:\n    http:\n      timeout: 9\n")
+    write_config(
+        config_path(), "profiles:\n  default:\n    untaped:\n      http:\n        timeout: 9\n"
+    )
 
 
 #: Puts each shell row that can name a fix into its fixable state, by check id.
@@ -514,6 +530,7 @@ _SHELL_FIX_TRIGGERS: dict[str, Callable[[], None]] = {
 }
 
 
+@pytest.mark.usefixtures("core_renamed_http_timeout")
 def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
     """``doctor fix`` re-checks a shell fix row by its check id, so no other shell row shares it."""
     for trigger in _SHELL_FIX_TRIGGERS.values():
@@ -525,27 +542,6 @@ def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
     assert fixable == set(_SHELL_FIX_TRIGGERS)
     for check in fixable:
         assert [row["check"] for row in shell].count(check) == 1, check
-
-
-def test_doctor_fix_runs_config_migrate_for_an_old_key(_isolated_config: Path) -> None:
-    """End to end: the real child renames the key, and the re-check passes."""
-    _old_http_key()
-    root = bootstrap.build_root_app()
-
-    result = invoke_cli(root.meta, ["doctor", "fix", "--yes", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [
-        {
-            "fix": ["--profile", "default", "config", "migrate"],
-            "checks": ["deprecated-keys"],
-            "action": "fixed",
-            "detail": "1 renamed",
-        }
-    ]
-    assert _isolated_config.read_text(encoding="utf-8") == (
-        "profiles:\n  default:\n    http:\n      timeout_seconds: 9\n"
-    )
 
 
 def test_no_automatic_fix_no_hint() -> None:

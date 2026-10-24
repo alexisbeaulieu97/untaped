@@ -2,7 +2,7 @@
 
 For each profile (``default`` first) and each declared credential, the key
 is resolved from the config file alone (``default`` under the profile,
-renames applied; root ``http.verify_ssl: false`` read as the key's
+renames applied; root ``untaped.http.verify_ssl: false`` read as the key's
 ``verify_tls: false``, as every run reads it, and written there). Each
 source the profile reads becomes its own row:
 
@@ -345,10 +345,10 @@ def rows(moves: Sequence[CredentialMove], *, planned: bool) -> list[dict[str, st
             found.append(
                 {
                     "profile": move.profile,
-                    "from": "http.verify_ssl",
+                    "from": "untaped.http.verify_ssl",
                     "to": ".".join(move.tls),
                     "action": "planned" if planned else "copied",
-                    "detail": "root http.verify_ssl stays for an older untaped",
+                    "detail": "root untaped.http.verify_ssl stays for an older untaped",
                 }
             )
     return found

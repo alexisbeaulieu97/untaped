@@ -157,7 +157,7 @@ def test_with_filter_the_tree_marks_no_top_level_workflow(
 def test_the_tree_is_ascii_under_an_ascii_border(
     ancestry: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_UI__BORDER", "ascii")
+    monkeypatch.setenv("UNTAPED_UNTAPED__UI__BORDER", "ascii")
 
     result = _run("job-templates", "usage", "smoke-test", "--recursive", "-f", "tree")
 

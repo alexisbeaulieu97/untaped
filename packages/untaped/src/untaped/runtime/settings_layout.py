@@ -37,7 +37,7 @@ class ResolvedConfig:
     uses: dict[str, dict[str, tuple[KeyUse, ...]]]
     """``profile -> section -> uses``, for the layered profiles only."""
     tls_off: frozenset[tuple[str, ...]] = frozenset()
-    """The key ``verify_tls`` leaves a layer's root ``http.verify_ssl: false`` turned off."""
+    """The key ``verify_tls`` leaves a layer's ``untaped.http.verify_ssl: false`` turned off."""
 
 
 class ProfilesSettingsLayout:
@@ -83,7 +83,7 @@ class ProfilesSettingsLayout:
         """Resolve effective settings, provenance and old-key uses.
 
         ``sections`` overrides the constructor's section models; ``environ``
-        (a run's variables) adds ``UNTAPED_HTTP__VERIFY_SSL`` to how root
+        (a run's variables) adds ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` to how root
         ``verify_ssl`` reads on keys.
         """
         override = profile or effective_active_profile_name(raw)
@@ -156,13 +156,13 @@ def _root_tls_off(
     models: SectionModels,
     environ: Mapping[str, str],
 ) -> frozenset[tuple[str, ...]]:
-    """Read root ``http.verify_ssl: false`` as each key's ``verify_tls: false``.
+    """Read root ``untaped.http.verify_ssl: false`` as each key's ``verify_tls: false``.
 
     11.x only (``verify_ssl`` goes in 12.0): a client built for a key takes
     its TLS from the key alone. The key's TLS field is found by type; a key
     with no URL (set in the file or a variable, or by default) is left alone. A layer's own
     ``verify_tls`` wins over its ``verify_ssl``, a later layer wins over an
-    earlier one, and ``UNTAPED_HTTP__VERIFY_SSL`` in ``environ`` over both.
+    earlier one, and ``UNTAPED_UNTAPED__HTTP__VERIFY_SSL`` in ``environ`` over both.
     ``effective`` is updated in place; returns the leaves turned off.
     """
     from untaped.sdk.network.credentials import (  # noqa: PLC0415 - credentials is heavy
@@ -171,10 +171,10 @@ def _root_tls_off(
     )
 
     layers: list[Mapping[str, Any]] = list(_layers(raw, active))
-    variable = environ.get("UNTAPED_HTTP__VERIFY_SSL")
+    variable = environ.get("UNTAPED_UNTAPED__HTTP__VERIFY_SSL")
     if variable is not None:
-        layers.append({"http": {"verify_ssl": variable.strip().lower() not in _FALSE}})
-    if not any(_dig(layer, ("http", "verify_ssl")) is False for layer in layers):
+        layers.append({"untaped": {"http": {"verify_ssl": variable.strip().lower() not in _FALSE}}})
+    if not any(_dig(layer, _ROOT_VERIFY_SSL) is False for layer in layers):
         return frozenset()
     turned: set[tuple[str, ...]] = set()
     for section, model in models.items():
@@ -211,11 +211,15 @@ def _keyed(
     return any(_url(present, key, url) for url in shape.urls) and _complete(present, key)
 
 
+#: Core's ``untaped.http.verify_ssl``, which 11.x reads as every key's ``verify_tls``.
+_ROOT_VERIFY_SSL = ("untaped", "http", "verify_ssl")
+
+
 def _root_decides(layers: Sequence[Mapping[str, Any]], leaf: tuple[str, ...]) -> bool:
     """Whether root ``verify_ssl: false`` is the last word on ``leaf`` across ``layers``."""
     decided = None
     for layer in layers:
-        root = _dig(layer, ("http", "verify_ssl"))
+        root = _dig(layer, _ROOT_VERIFY_SSL)
         if _dig(layer, leaf) is not None:
             decided = "key"
         elif root is not None:

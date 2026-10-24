@@ -6,8 +6,8 @@ import pytest
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.runtime.settings import (
-    Settings,
     get_settings,
+    load_core_settings,
     load_settings_section,
     register_profile_settings,
     resolve_config_path,
@@ -33,11 +33,11 @@ def _register_demo() -> None:
 def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
-    assert s.skills.updates == "auto"
+    assert s.untaped.skills.updates == "auto"
     assert s.demo.base_url is None
     assert s.demo.token is None
-    assert s.http.verify_ssl is True
-    assert s.http.ca_bundle_path is None
+    assert s.untaped.http.verify_ssl is True
+    assert s.untaped.http.ca_bundle_path is None
 
 
 def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,11 +48,12 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         """
         profiles:
           default:
-            skills:
-              updates: auto
-            http:
-              ca_bundle_path: /etc/ssl/corp-ca.pem
-              verify_ssl: true
+            untaped:
+              skills:
+                updates: auto
+              http:
+                ca_bundle_path: /etc/ssl/corp-ca.pem
+                verify_ssl: true
             demo:
               base_url: https://aap.example.com
               token: secret
@@ -60,8 +61,8 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
-    assert s.skills.updates == "auto"
-    assert s.http.ca_bundle_path == Path("/etc/ssl/corp-ca.pem")
+    assert s.untaped.skills.updates == "auto"
+    assert s.untaped.http.ca_bundle_path == Path("/etc/ssl/corp-ca.pem")
     assert s.demo.base_url == "https://aap.example.com"
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "secret"
@@ -99,9 +100,9 @@ def test_ui_settings_default_to_global_default_theme(
 ) -> None:
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
-    assert s.ui.theme == "default"
-    assert s.ui.border is None
-    assert s.ui.collection_view is None
+    assert s.untaped.ui.theme == "default"
+    assert s.untaped.ui.border is None
+    assert s.untaped.ui.collection_view is None
 
 
 def test_ui_settings_load_from_profile_yaml(
@@ -114,23 +115,24 @@ def test_ui_settings_load_from_profile_yaml(
         """
         profiles:
           default:
-            skills:
-              updates: auto
-            ui:
-              theme: compact
-              border: square
-              collection_view: list
-              symbols:
-                warning: "!"
+            untaped:
+              skills:
+                updates: auto
+              ui:
+                theme: compact
+                border: square
+                collection_view: list
+                symbols:
+                  warning: "!"
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
-    assert s.skills.updates == "auto"
-    assert s.ui.theme == "compact"
-    assert s.ui.border == "square"
-    assert s.ui.collection_view == "list"
-    assert s.ui.symbols == {"warning": "!"}
+    assert s.untaped.skills.updates == "auto"
+    assert s.untaped.ui.theme == "compact"
+    assert s.untaped.ui.border == "square"
+    assert s.untaped.ui.collection_view == "list"
+    assert s.untaped.ui.symbols == {"warning": "!"}
 
 
 def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,7 +182,7 @@ def test_get_settings_translates_yaml_error_to_config_error(
     as ``ConfigError`` (clean ``error: …``) — not as a ``yaml.YAMLError``
     bubbling out of ``LayoutSettingsSource._load_raw_yaml``."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("skills: [unterminated\n")
+    cfg.write_text("untaped:\n  skills: [unterminated\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match=str(cfg)):
         get_settings()
@@ -222,18 +224,18 @@ def test_validate_settings_section_ignores_env_source(
     # Validation judges the dict alone: an env var must not paper over a bad
     # value on its way to disk.
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
-    monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
-    assert Settings().http.verify_ssl is True
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__VERIFY_SSL", "true")
+    assert load_core_settings().http.verify_ssl is True
     with pytest.raises(ValidationError):
-        validate_settings_section({"http": {"verify_ssl": "not-a-bool"}}, "http")
+        validate_settings_section({"untaped": {"http": {"verify_ssl": "not-a-bool"}}}, "untaped")
 
 
 def test_validate_settings_section_ignores_other_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
-    data = {"skills": {"updates": "auto"}, "demo": {"page_size": "lots"}}
-    assert validate_settings_section(data, "skills").updates == "auto"
+    data = {"demo": {"page_size": "lots"}, "untaped": {"skills": {"updates": "auto"}}}
+    assert validate_settings_section(data, "untaped").skills.updates == "auto"
     with pytest.raises(ValidationError):
         validate_settings_section(data, "demo")
 
@@ -244,7 +246,7 @@ def test_load_settings_section_isolated_from_invalid_sibling(
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    demo:\n      page_size: lots\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    assert load_settings_section("http").timeout_seconds == 30.0
+    assert load_core_settings().http.timeout_seconds == 30.0
     with pytest.raises(ConfigError, match=r"demo\.page_size"):
         load_settings_section("demo")
 
@@ -253,6 +255,8 @@ def test_load_settings_section_names_the_env_var_culprit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
-    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT_SECONDS", "abc")
-    with pytest.raises(ConfigError, match="environment variable UNTAPED_HTTP__TIMEOUT_SECONDS"):
-        load_settings_section("http")
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "abc")
+    with pytest.raises(
+        ConfigError, match="environment variable UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS"
+    ):
+        load_core_settings()

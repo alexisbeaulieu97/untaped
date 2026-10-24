@@ -69,8 +69,6 @@ CORE = "untaped"
 AGENTS = "agents"
 #: Root options that don't change what a command does: left off the shared section.
 _NOT_SHARED = frozenset({"--deprecated"})
-#: Core's own section (``profiles.<name>.shell``), shown on core's page with the root's.
-CORE_SECTION = "shell"
 _POSITIONAL = (
     inspect.Parameter.POSITIONAL_ONLY,
     inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -348,7 +346,7 @@ def _settings(result: CompositionResult, plugin: RegisteredPlugin | None) -> tup
         wanted = [
             section
             for section in sections(result, extensions=False)
-            if section.prefix in ("", CORE_SECTION)
+            if section.prefix in ("", CORE)
         ]
         strip = ""
     else:

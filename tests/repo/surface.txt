@@ -58,11 +58,6 @@ cfg github.sweep.max_age_seconds -> github.caches.sweep.max_age_seconds  [deprec
 cfg github.sweep.parallel integer(minimum=1) default=12
 cfg github.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
 cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
-cfg http.ca_bundle_path string(format=path)? default=unset
-cfg http.proxy string? default=unset
-cfg http.timeout_seconds number(exclusiveMinimum=0) default=30.0
-cfg http.verify_hostname boolean default=true  [deprecated, removed in 12.0]
-cfg http.verify_ssl boolean default=true  [deprecated, removed in 12.0; use each server's verify_tls]
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
@@ -88,34 +83,39 @@ cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
 cfg recipe.hook_timeout_seconds number(minimum=0) default=60
 cfg recipe.library_dir string(format=path) default=~/.untaped/plugins/recipe/library
 cfg recipe.preview_max_rows integer(minimum=0) default=50
-cfg skills.updates choice=auto
-cfg skills.updates choice=off
-cfg skills.updates choice=warn
-cfg skills.updates string default=auto
-cfg ui.border choice=ascii
-cfg ui.border choice=none
-cfg ui.border choice=rounded
-cfg ui.border choice=square
-cfg ui.border string? default=unset
-cfg ui.collection_view choice=list
-cfg ui.collection_view choice=table
-cfg ui.collection_view string? default=unset
-cfg ui.color_roles object default={}
-cfg ui.density choice=compact
-cfg ui.density choice=normal
-cfg ui.density string? default=unset
-cfg ui.detail_view choice=list
-cfg ui.detail_view choice=table
-cfg ui.detail_view string? default=unset
-cfg ui.format choice=json
-cfg ui.format choice=pipe
-cfg ui.format choice=raw
-cfg ui.format choice=table
-cfg ui.format choice=yaml
-cfg ui.format string? default=unset
-cfg ui.hide_empty_columns boolean? default=unset
-cfg ui.symbols object default={}
-cfg ui.theme string default=default
+cfg untaped.http.ca_bundle_path string(format=path)? default=unset
+cfg untaped.http.proxy string? default=unset
+cfg untaped.http.timeout_seconds number(exclusiveMinimum=0) default=30.0
+cfg untaped.http.verify_hostname boolean default=true  [deprecated, removed in 12.0]
+cfg untaped.http.verify_ssl boolean default=true  [deprecated, removed in 12.0; use each server's verify_tls]
+cfg untaped.skills.updates choice=auto
+cfg untaped.skills.updates choice=off
+cfg untaped.skills.updates choice=warn
+cfg untaped.skills.updates string default=auto
+cfg untaped.ui.border choice=ascii
+cfg untaped.ui.border choice=none
+cfg untaped.ui.border choice=rounded
+cfg untaped.ui.border choice=square
+cfg untaped.ui.border string? default=unset
+cfg untaped.ui.collection_view choice=list
+cfg untaped.ui.collection_view choice=table
+cfg untaped.ui.collection_view string? default=unset
+cfg untaped.ui.color_roles object default={}
+cfg untaped.ui.density choice=compact
+cfg untaped.ui.density choice=normal
+cfg untaped.ui.density string? default=unset
+cfg untaped.ui.detail_view choice=list
+cfg untaped.ui.detail_view choice=table
+cfg untaped.ui.detail_view string? default=unset
+cfg untaped.ui.format choice=json
+cfg untaped.ui.format choice=pipe
+cfg untaped.ui.format choice=raw
+cfg untaped.ui.format choice=table
+cfg untaped.ui.format choice=yaml
+cfg untaped.ui.format string? default=unset
+cfg untaped.ui.hide_empty_columns boolean? default=unset
+cfg untaped.ui.symbols object default={}
+cfg untaped.ui.theme string default=default
 cfg workspace.branch_template string default={name}  [experimental]
 cfg workspace.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600  [experimental]
 cfg workspace.extensions.repo_source.rank.repos string[] default=[]  [experimental]
@@ -5286,7 +5286,6 @@ sdk untaped.sdk.HttpSettings(verify_hostname=) default=true
 sdk untaped.sdk.HttpSettings(verify_ssl=) default=true
 sdk untaped.sdk.HttpSettings.ca_bundle_path
 sdk untaped.sdk.HttpSettings.proxy
-sdk untaped.sdk.HttpSettings.retired_keys class
 sdk untaped.sdk.HttpSettings.timeout_seconds
 sdk untaped.sdk.HttpSettings.verify_hostname
 sdk untaped.sdk.HttpSettings.verify_ssl

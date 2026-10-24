@@ -443,7 +443,7 @@ def test_a_replaced_entry_that_cannot_be_deleted_only_warns(
     assert _secret(TOKEN, KEY) == "new"
 
 
-_ROOT_OFF = "profiles:\n  default:\n    http: {verify_ssl: false}\n"
+_ROOT_OFF = "profiles:\n  default:\n    untaped:\n      http: {verify_ssl: false}\n"
 
 
 def test_root_verify_ssl_false_leaves_a_server_nobody_set_up_unset(
