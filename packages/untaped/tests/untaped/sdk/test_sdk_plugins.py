@@ -218,6 +218,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Filled",
         "Freshness",
         "FreshnessRecord",
+        "Lock",
         "NeverRefreshed",
         "RefHolder",
         "RefTarget",
@@ -230,6 +231,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "data files": (
         "Absent",
+        "DataFile",
         "DataRead",
         "Found",
         "OtherVersion",

@@ -116,10 +116,13 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
   and `untaped.sdk.testing.drive_screen` with `untaped.sdk.testing.ScreenKeys` and
   `untaped.sdk.testing.ScreenRun`. See [Screens](./screens.md).
-- Data files: `read_data_file`, `write_data_file`, `copy_data_file` and
-  what a read answers (`Found`, `Absent`, `Unreadable` and `OtherVersion`)
-  in `untaped.sdk`, and `keep_value` and `damage` in `untaped.sdk.testing`. The
-  files they write are stable from the start: users keep them. See
+- Data files: `DataFile`, `read_data_file`, `write_data_file`,
+  `copy_data_file` and what a read answers (`Found`, `Absent`, `Unreadable`
+  and `OtherVersion`) in `untaped.sdk`, and `keep_value` and `damage` in
+  `untaped.sdk.testing`. The files they write are stable from the start:
+  users keep them. See
+  [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
+- Operation locks: `Lock` in `untaped.sdk`. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
 - State rows: `StateRows`, `ProjectStateRows` and `RowExists` in
   `untaped.sdk`, `StateMap`'s `project=` (it takes the experimental

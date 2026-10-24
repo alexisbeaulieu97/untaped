@@ -302,6 +302,7 @@ if _typing.TYPE_CHECKING:
     )
     from untaped.sdk.storage.data_file import (
         Absent,
+        DataFile,
         DataRead,
         Found,
         OtherVersion,
@@ -311,14 +312,18 @@ if _typing.TYPE_CHECKING:
         write_data_file,
     )
     from untaped.sdk.storage.installed_code import installed_code
+    from untaped.sdk.storage.lock import Lock
 
 #: Names exported lazily, by the module that defines them, resolved on first access
 #: (PEP 562): the screen names, core's data file, which a command reads on first use,
-#: and the installed code's version, which a cache reads when it is served.
+#: the installed code's version, which a cache reads when it is served, and the
+#: operation lock, which a plugin takes when it runs.
 _LAZY_MODULES: dict[str, tuple[str, ...]] = {
     "untaped.sdk.storage.installed_code": ("installed_code",),
+    "untaped.sdk.storage.lock": ("Lock",),
     "untaped.sdk.storage.data_file": (
         "Absent",
+        "DataFile",
         "DataRead",
         "Found",
         "OtherVersion",
@@ -566,6 +571,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Filled",
     "Freshness",
     "FreshnessRecord",
+    "Lock",
     "NeverRefreshed",
     "RefHolder",
     "RefTarget",
@@ -577,6 +583,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "refresh_option",
     # data files
     "Absent",
+    "DataFile",
     "DataRead",
     "Found",
     "OtherVersion",

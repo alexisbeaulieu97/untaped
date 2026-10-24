@@ -232,3 +232,48 @@ def read_structured_file(path: Path, *, flag: str | None = None) -> dict[str, An
             category="invalid",
         )
     return raw
+
+
+#: The files each thread is writing (real paths), per thread like ``file_lock``'s
+#: re-entrance: a write nested in another to the same file would be saved over
+#: when the outer one saves. Keyed on the file, not its lock, which follows the
+#: spelling the caller used.
+_WRITING = threading.local()
+
+
+@contextmanager
+def locked_write(target: Path, *, timeout: float, busy: str) -> Iterator[None]:
+    """Hold the advisory ``<target>.lock`` (creating the parent directory) to write ``target``.
+
+    Waits up to ``timeout`` seconds for another process, then raises
+    :class:`ConfigError` saying ``busy``. A write to ``target`` started inside
+    another write to it in this thread raises :class:`UntapedError` and
+    writes nothing: ``file_lock`` is re-entrant, so the inner write would
+    succeed and the outer one would then save over it.
+    """
+    real = os.path.realpath(target)
+    writing: frozenset[str] = getattr(_WRITING, "paths", frozenset())
+    if real in writing:
+        raise UntapedError(
+            f"a write to {target} started inside another write to it; the inner "
+            "write is refused so the outer one cannot save over it",
+            details={"path": str(target)},
+        )
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(
+            f"could not create the directory for {target}: {exc.strerror or exc}"
+        ) from exc
+    with file_lock(
+        Path(f"{target}.lock"),
+        timeout=timeout,
+        error=ConfigError,
+        busy=busy,
+        failed=f"could not lock {target}",
+    ):
+        _WRITING.paths = writing | {real}
+        try:
+            yield
+        finally:
+            _WRITING.paths = writing

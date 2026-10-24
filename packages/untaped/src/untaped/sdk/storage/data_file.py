@@ -24,6 +24,7 @@ import functools
 import hashlib
 import json
 import os
+import typing
 from collections.abc import Collection, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -37,7 +38,7 @@ from pydantic import BaseModel, ValidationError
 from untaped.sdk.diagnostic import format_utc, parse_utc
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import experimental
-from untaped.sdk.storage._fs import atomic_write, write_temp_name
+from untaped.sdk.storage._fs import atomic_write, locked_write, write_temp_name
 
 #: The key every data file keeps its stamp under.
 STAMP: Final = "untaped"
@@ -199,11 +200,7 @@ def write_data_file(
     sees it empty. Creates missing parent folders; raises :class:`OSError`.
     """
     check_model(type(value))
-    stamp: dict[str, Any] = {"file": FILE, "by": written_by()}
-    if refreshed_at is not None:
-        stamp["refreshed_at"] = format_utc(refreshed_at)
-    body = value.model_dump(mode="json", by_alias=True)
-    text = json.dumps({STAMP: stamp, **body}, ensure_ascii=False) + "\n"
+    text = _object_text(value.model_dump(mode="json", by_alias=True), refreshed_at)
     if exclusive:
         return _create(path, text)
     atomic_write(path, text, mode=MODE)
@@ -281,6 +278,137 @@ def _write_new(path: Path, text: str) -> None:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
+
+
+#: How long a write waits for another process writing the same data file.
+_WRITE_WAIT = 10.0
+
+
+@experimental
+class DataFile[M: BaseModel]:
+    """One small stamped file of ``M`` wherever its owner decides: ``DataFile[Mark].at(path)``.
+
+    For a file another owner places (a repo store's private file, a marker
+    beside a skill, a project's file), named per call. It is the object
+    layout: the stamp under ``untaped``, the model's fields beside it.
+    :meth:`read` answers what is there; :meth:`write` writes under the file's
+    lock and keeps the keys the model doesn't know (a newer untaped's), and
+    never overwrites a newer untaped's file.
+    """
+
+    __slots__ = ("model", "path")
+
+    model: type[M]
+    path: Path
+
+    def __init__(self, path: Path, model: type[M]) -> None:
+        self.model = check_model(model)  # type: ignore[assignment]
+        self.path = Path(path)
+
+    @classmethod
+    def __class_getitem__(cls, params: object) -> object:
+        # ``DataFile[Mark]`` keeps its model for ``.at(path)``, which a plain
+        # alias hands to the class without its arguments.
+        alias = super().__class_getitem__(params)  # type: ignore[misc]
+        return _FileAlias(alias.__origin__, alias.__args__)
+
+    @classmethod
+    def at(cls, path: Path, *, model: type[M] | None = None) -> DataFile[M]:
+        """The data file at ``path``; ``DataFile[Mark].at(path)`` names its model."""
+        if model is None:
+            raise ConfigError("name the data file's model, as in DataFile[Mark].at(path)")
+        return cls(path, model)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DataFile):
+            return NotImplemented
+        return (self.model, self.path) == (other.model, other.path)
+
+    def __hash__(self) -> int:
+        return hash((self.model, self.path))
+
+    def __repr__(self) -> str:
+        return f"DataFile[{self.model.__name__}].at({str(self.path)!r})"
+
+    def read(self) -> DataRead[M]:
+        """What the file holds: found, absent, unreadable, or a newer untaped's."""
+        return read_data_file(self.path, self.model)
+
+    def write(
+        self, value: M, *, refreshed_at: datetime | None = None, exclusive: bool = False
+    ) -> bool:
+        """Write ``value``, stamped by this release, owner-only; whether it wrote.
+
+        Keys the file holds that the model doesn't know are kept, and a field
+        whose value is unchanged keeps its stored spelling. ``refreshed_at``
+        goes in the stamp, for data that can go stale. ``exclusive=True``
+        writes only when no file is there (``False`` when one is). A newer
+        untaped's file, or a write that fails, is a :class:`ConfigError`.
+        """
+        if not isinstance(value, self.model):
+            raise ConfigError(
+                f"{self!r} keeps a {self.model.__name__}, not a {type(value).__name__}"
+            )
+        busy = f"{self.path} is busy (another untaped process)"
+        with locked_write(self.path, timeout=_WRITE_WAIT, busy=busy):
+            before = self.read()
+            if isinstance(before, OtherVersion):
+                raise ConfigError(
+                    f"{self.path} was written by a newer untaped ({before.by or 'unknown'}), "
+                    "whose format this release cannot write",
+                    hint="upgrade untaped",
+                    details={"path": str(self.path)},
+                )
+            if exclusive and not isinstance(before, Absent):
+                return False
+            body = value.model_dump(mode="json", by_alias=True)
+            if isinstance(before, Found):
+                body = self._kept(before.value, body)
+            try:
+                atomic_write(self.path, _object_text(body, refreshed_at), mode=MODE)
+            except OSError as exc:
+                raise ConfigError(
+                    f"could not write {self.path}: {exc.strerror or exc}; nothing changed",
+                    details={"path": str(self.path)},
+                ) from exc
+        return True
+
+    def copy_to(self, path: Path) -> DataFile[M]:
+        """Copy this file's data to ``path``, stamped by this release, its freshness cleared.
+
+        Raises :class:`OSError` or :class:`ValueError` as :func:`copy_data_file` does.
+        """
+        copy_data_file(self.path, Path(path))
+        return DataFile(Path(path), self.model)
+
+    def _kept(self, current: M, body: dict[str, Any]) -> dict[str, Any]:
+        """``body`` laid over the stored fields, so keys this release doesn't know survive."""
+        from untaped.sdk.storage._write_back import write_back  # noqa: PLC0415 - writes only
+
+        try:
+            stored = json.loads(self.path.read_bytes())
+        except OSError, ValueError:
+            return body
+        if not isinstance(stored, dict):
+            return body
+        stored.pop(STAMP, None)
+        known = current.model_dump(mode="json", by_alias=True)
+        return write_back(self.model, stored, known, body)
+
+
+class _FileAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,name-defined,misc]
+    """``DataFile[Mark]``: the alias that hands its model to ``.at(path)`` too."""
+
+    def at(self, path: Path) -> DataFile[Any]:
+        return DataFile(path, self.__args__[0])
+
+
+def _object_text(body: Mapping[str, Any], refreshed_at: datetime | None) -> str:
+    """The object layout of ``body``, stamped by this release (and ``refreshed_at``)."""
+    stamp: dict[str, Any] = {"file": FILE, "by": written_by()}
+    if refreshed_at is not None:
+        stamp["refreshed_at"] = format_utc(refreshed_at)
+    return json.dumps({STAMP: stamp, **body}, ensure_ascii=False) + "\n"
 
 
 # --------------------------------------------------------------------------- #
