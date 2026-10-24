@@ -731,12 +731,11 @@ class Migrate(Command[CoreSettings]):
     stability = deprecated(removed_in=_REMOVED, replacement="untaped auth login")
 
     store: StoreName | None = Field(None, description=_STORE)
-    confirm: Confirm
+    dry_run: bool = Field(False, description="Check the moves and write nothing.")
     output: Output[AuthOutcome]
 
     def run(self) -> Iterator[AuthOutcome]:
-        moving = self.confirm("Move every plaintext token to a store?", needed=False)
-        yield from _migrate(_composition(), store=self.store, dry_run=not moving)
+        yield from _migrate(_composition(), store=self.store, dry_run=self.dry_run)
 
 
 class Auth(Group):
