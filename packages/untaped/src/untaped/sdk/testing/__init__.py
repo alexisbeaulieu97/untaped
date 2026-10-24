@@ -285,7 +285,10 @@ class _WallOnly(Clock):
 
 def _cadence_is_the_tests() -> bool:
     """Whether the test already set what progress time reads (a manual clock, a progress clock)."""
-    return cadence_is_set() or isinstance(_installed[0], ManualClock)
+    clock = _installed[0]
+    while isinstance(clock, _WallOnly):
+        clock = clock._below
+    return cadence_is_set() or isinstance(clock, ManualClock)
 
 
 class ProgressClock:

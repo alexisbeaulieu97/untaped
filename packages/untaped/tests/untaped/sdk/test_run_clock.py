@@ -171,7 +171,10 @@ def _resolving(clock: ManualClock, move: str) -> App:
 def test_progress_follows_the_clock_even_under_invoke_cli(move: str) -> None:
     with manual_clock(START) as clock:
         result = invoke_cli(_resolving(clock, move), [])
+        with cache_clock(START):
+            under_a_cache_clock = invoke_cli(_resolving(clock, move), [])
     assert result.exit_code == 0, result.stderr
+    assert "Resolving deps · installing · pinning (2s)" in under_a_cache_clock.stderr
     assert "Resolving deps · installing · pinning (2s)" in result.stderr
 
 
