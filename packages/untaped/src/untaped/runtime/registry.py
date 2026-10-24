@@ -1395,6 +1395,11 @@ def _compose(
     state = _CompositionState(shell)
     core = _core(declared)
     state.core = {core.name: "core", **dict.fromkeys(core.command_words(), "a root command")}
+    state.doctor_ids |= {
+        f"{core.name}.{block.name}"
+        for block in core.blocks
+        if block.block == DoctorCheck.block_kind
+    }
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, PluginSpec | type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}

@@ -322,7 +322,9 @@ def is_automatic(covered: list[dict[str, object]]) -> bool:
     return all(row.get("automatic") for row in covered)
 
 
-def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionScope]:
+def _scopes(
+    shell: ApplicationSpec, result: CompositionResult, plugins: frozenset[str] | None
+) -> list[_SectionScope]:
     scopes = [
         _SectionScope(
             plugin=shell.name,
@@ -331,11 +333,20 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
             # settings: one reads its part with load_core_part.
             settings_model=None,
             state_model=shell.state,
-            checks=tuple(_core_spec(result).doctor_checks),
+            checks=_core_checks(shell, result, plugins),
         )
     ]
     scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
     return scopes
+
+
+def _core_checks(
+    shell: ApplicationSpec, result: CompositionResult, plugins: frozenset[str] | None
+) -> tuple[DoctorCheck, ...]:
+    """Core's checks: the shell's and its class's; none when ``plugins`` leaves core out."""
+    if plugins is not None and shell.name not in plugins:
+        return ()  # setup checks only what it configured: Core's class stays unloaded
+    return (*shell.doctor_checks, *_core_spec(result).doctor_checks)
 
 
 def _core_spec(result: CompositionResult) -> PluginSpec:
@@ -392,7 +403,7 @@ def collect_doctor_rows(
     for part in CoreSettings.model_fields:
         rows.append(_core_row(shell, part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
-    scopes = _scopes(shell, result)
+    scopes = _scopes(shell, result, plugins)
     profile = fix_target()
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)

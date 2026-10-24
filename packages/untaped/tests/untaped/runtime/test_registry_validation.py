@@ -253,8 +253,14 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate-doctor-check",
             "duplicate doctor id: 'shell.health'",
         ),
+        (
+            make_shell(),
+            make_spec(name="d", checks=(make_check("untaped.token-store"),)),
+            "duplicate-doctor-check",
+            "duplicate doctor id: 'untaped.token-store'",
+        ),
     ],
-    ids=["command", "skill", "doctor-id"],
+    ids=["command", "skill", "doctor-id", "core-class-doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
     shell: Any, spec: PluginSpec, reason: str, detail: str

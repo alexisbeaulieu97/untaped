@@ -1,11 +1,12 @@
 """Core's own doctor checks: what ``untaped doctor`` says about core's config file.
 
-``Core`` holds each as a :class:`~untaped.sdk.DoctorCheck` attribute, so its
+``Core`` holds each :class:`~untaped.sdk.DoctorCheck` as an attribute, so its
 row is ``untaped.<attribute>`` in kebab case (``untaped.config-permissions``),
-run like any plugin's check. Each reads the config file itself when it runs;
-when the file doesn't load, the ``load config file`` row fails and these
-report ``not checked``. Rows doctor derives for every plugin (settings, state,
-setup, contracts, caches, skills) stay in :mod:`untaped.core.commands.doctor`.
+run like any plugin's check; a body reads its id from its block. Each reads
+the config file itself when it runs; when the file doesn't load, the ``load
+config file`` row fails and these report ``not checked``. Rows doctor derives
+for every plugin (settings, state, setup, contracts, caches, skills) stay in
+:mod:`untaped.core.commands.doctor`.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from untaped.runtime.settings import (
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, scan_keys
-from untaped.sdk.health.doctor import DoctorResult, PluginContext
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.network._token_store import pass_problem
 
 _NOT_CHECKED = "not checked: the config file doesn't load"
@@ -41,10 +42,10 @@ def _raw() -> dict[str, Any] | None:
         return None
 
 
-def config_permissions(ctx: PluginContext) -> DoctorResult:
+def _config_permissions(ctx: PluginContext) -> DoctorResult:
     """Warn when other users can read or write the config file (it may hold tokens)."""
     del ctx
-    check = "untaped.config-permissions"
+    check = CONFIG_PERMISSIONS.id
     path = resolve_config_path()
     if os.name == "nt" or not path.is_file():
         return DoctorResult(id=check, ok=True, detail="not checked")
@@ -55,14 +56,14 @@ def config_permissions(ctx: PluginContext) -> DoctorResult:
     return DoctorResult(id=check, ok=True, detail=f"mode {mode:04o}")
 
 
-def unknown_keys(ctx: PluginContext) -> DoctorResult:
+def _unknown_keys(ctx: PluginContext) -> DoctorResult:
     """Warn about keys no settings model reads, in the base and in each named profile.
 
     The top level is the base, so a section there no installed plugin reads
     (``log_level``, an uninstalled plugin's section) is flagged, not moved.
     """
     del ctx
-    check = "untaped.unknown-keys"
+    check = UNKNOWN_KEYS.id
     raw = _raw()
     if raw is None:
         return DoctorResult(id=check, ok=True, detail=_NOT_CHECKED)
@@ -97,14 +98,14 @@ def unknown_keys(ctx: PluginContext) -> DoctorResult:
     )
 
 
-def token_store(ctx: PluginContext) -> DoctorResult:
+def _token_store(ctx: PluginContext) -> DoctorResult:
     """Fail when a ``pass`` token command cannot work here (no key, no gpg).
 
     Checked only once a profile's ``token_command`` runs ``pass``, so
     installing ``pass`` alone fails nothing.
     """
     del ctx
-    check = "untaped.token-store"
+    check = TOKEN_STORE.id
     raw = _raw()
     if raw is None:
         return DoctorResult(id=check, ok=True, detail=_NOT_CHECKED)
@@ -122,6 +123,11 @@ def token_store(ctx: PluginContext) -> DoctorResult:
     if (problem := pass_problem()) is not None:
         return DoctorResult(id=check, ok=False, detail=problem)
     return DoctorResult(id=check, ok=True, detail="gpg holds a key for the password store")
+
+
+CONFIG_PERMISSIONS = DoctorCheck(title="config file permissions", run=_config_permissions)
+UNKNOWN_KEYS = DoctorCheck(title="unknown config keys", run=_unknown_keys)
+TOKEN_STORE = DoctorCheck(title="pass token store", run=_token_store)
 
 
 def _other_readers() -> str:

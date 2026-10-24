@@ -17,9 +17,8 @@ from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
 from untaped.core.commands.project import ProjectGroup
 from untaped.core.commands.skills import Skills
-from untaped.core.doctor_checks import config_permissions, token_store, unknown_keys
+from untaped.core.doctor_checks import CONFIG_PERMISSIONS, TOKEN_STORE, UNKNOWN_KEYS
 from untaped.core.settings import DECLARATION, NAME, CoreSettings
-from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.plugin import Plugin, StubSkill
 
 
@@ -36,9 +35,9 @@ class Core(Plugin):
         "switch a profile, connect AWX/AAP, GitHub or Jira, fix a failing "
         "`untaped doctor`, or install untaped's skills for an agent."
     )
-    config_permissions = DoctorCheck(title="config file permissions", run=config_permissions)
-    unknown_keys = DoctorCheck(title="unknown config keys", run=unknown_keys)
-    token_store = DoctorCheck(title="pass token store", run=token_store)
+    config_permissions = CONFIG_PERMISSIONS
+    unknown_keys = UNKNOWN_KEYS
+    token_store = TOKEN_STORE
 
 
 __all__ = ["NAME", "Core"]
