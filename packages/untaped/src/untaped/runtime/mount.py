@@ -525,34 +525,45 @@ def _refilled(
     An optional bundle nobody built is built around its core field, as the
     parser builds it; one that needs more is a usage error.
     """
-    filled: BaseModel = command
+    tree: dict[str, Any] = {}
     for path, given in flags.items():
-        parts = path.split(".")
-        # each holder down the path: the built model, or the bundle model nobody built
-        holders: list[BaseModel | type[BaseModel]] = [filled]
-        for part in parts[:-1]:
-            above = holders[-1]
-            inner = getattr(above, part) if isinstance(above, BaseModel) else None
-            if isinstance(inner, BaseModel):
-                holders.append(inner)
-            else:
-                cls = above if isinstance(above, type) else type(above)
-                holders.append(_bundle_model(cls.model_fields[part].annotation))
-        last = holders[-1]
-        cls = last if isinstance(last, type) else type(last)
-        current = getattr(last, parts[-1]) if isinstance(last, BaseModel) else None
-        value: object = _filled(mount, decl, cls.model_fields[parts[-1]], given, current)
-        for holder, part in zip(reversed(holders), reversed(parts), strict=True):
-            if isinstance(holder, BaseModel):
-                value = holder.model_copy(update={part: value})
-                continue
-            try:
-                value = holder.model_validate({part: value})
-            except ValidationError as exc:
-                # the bundle's own fields are no flags of this command
-                raise UsageError(first_validation_error(exc)) from exc
-        filled = cast("BaseModel", value)
-    return cast("Command[Any]", filled)
+        *bundles, last = path.split(".")
+        node = tree
+        for part in bundles:
+            node = node.setdefault(part, {})
+        node[last] = _Given(given)
+    return cast("Command[Any]", _refill(mount, decl, command, tree))
+
+
+@dataclass(frozen=True)
+class _Given:
+    """The flags given to one core field, a leaf of ``_refilled``'s tree."""
+
+    flags: Mapping[str, object]
+
+
+def _refill(
+    mount: Mount, decl: CommandDecl, holder: BaseModel | type[BaseModel], tree: dict[str, Any]
+) -> BaseModel:
+    """``holder`` with each core field in ``tree`` filled; a bundle is built once from them all."""
+    cls = holder if isinstance(holder, type) else type(holder)
+    values: dict[str, object] = {}
+    for part, node in tree.items():
+        info = cls.model_fields[part]
+        current = getattr(holder, part) if isinstance(holder, BaseModel) else None
+        if isinstance(node, _Given):
+            values[part] = _filled(mount, decl, info, node.flags, current)
+        elif isinstance(current, BaseModel):
+            values[part] = _refill(mount, decl, current, node)
+        else:
+            values[part] = _refill(mount, decl, _bundle_model(info.annotation), node)
+    if isinstance(holder, BaseModel):
+        return holder.model_copy(update=values)
+    try:
+        return holder.model_validate({_keys(holder, part)[0]: v for part, v in values.items()})
+    except ValidationError as exc:
+        # the bundle's own fields are no flags of this command
+        raise UsageError(first_validation_error(exc)) from exc
 
 
 def _instance(

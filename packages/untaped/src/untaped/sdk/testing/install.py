@@ -347,7 +347,9 @@ def _ran(result: CliResult, printed: Printed | None, *, read_back: bool) -> Ran:
     if printed is not None and not read_back:
         rows = printed.rows
     elif printed is None:
-        if read_back:
+        if read_back and result.exit_code != 0:
+            unread = f"nothing was printed (exit {result.exit_code})"
+        elif read_back:
             unread = "the line ran no command of a plugin installed (core's own print text)"
     elif printed.format in ("json", "pipe"):
         rows = [type(row).model_validate_json(row.model_dump_json()) for row in printed.rows]

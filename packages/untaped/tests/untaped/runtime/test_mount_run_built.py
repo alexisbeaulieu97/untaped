@@ -14,7 +14,7 @@ from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.composition import PluginEntry
 from untaped.runtime.mount import Mount, compose_plugins, run_built, watching
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import Command, Key, Output, Plugin, Positional, Record
+from untaped.sdk import Command, Confirm, Key, Output, Plugin, Positional, Record
 from untaped.sdk.errors import UsageError
 from untaped.sdk.testing import CliInvoker
 
@@ -36,6 +36,13 @@ class Strict(BaseModel):
 
     output: Output[Crate]
     floor: int = Field(description="The lowest crate.")
+
+
+class Both(BaseModel):
+    """A bundle of two core fields."""
+
+    output: Output[Crate]
+    confirm: Confirm
 
 
 class Crates(Command):
@@ -66,6 +73,15 @@ class Picky(Command):
         yield Crate(name="picky")
 
 
+class Paired(Command):
+    """List one crate, through a bundle of two core fields."""
+
+    both: Both | None = None
+
+    def run(self) -> Iterator[Crate]:
+        yield Crate(name="paired")
+
+
 class Label(Command):
     """Print one label."""
 
@@ -81,7 +97,7 @@ class Depot(Plugin):
     """Keep crates (a test's plugin)."""
 
     settings = DepotSettings
-    commands = (Crates, Shelved, Picky, Label)
+    commands = (Crates, Shelved, Picky, Paired, Label)
 
 
 @pytest.fixture
@@ -114,6 +130,17 @@ def test_run_built_builds_an_optional_bundle_around_its_core_field(mount: Mount)
     assert (printed.format, printed.rows) == ("pipe", [Crate(name="shelved")])
     with pytest.raises(UsageError, match="floor"):
         run_built(mount, _decl(mount, "picky"), Picky(), {"strict.output": {}})
+
+
+def test_run_built_builds_a_bundle_once_from_all_its_core_fields(mount: Mount) -> None:
+    with redirect_stdout(io.StringIO()):
+        printed = run_built(
+            mount,
+            _decl(mount, "paired"),
+            Paired(),
+            {"both.output": {"--format": "json"}, "both.confirm": {}},
+        )
+    assert (printed.format, printed.rows) == ("json", [Crate(name="paired")])
 
 
 def test_run_built_keeps_a_line(mount: Mount) -> None:
