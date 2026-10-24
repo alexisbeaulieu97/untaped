@@ -14,9 +14,9 @@ Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares, renamed, retired, deleted or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
-installed skills that differ from their packaged copy, and a plugin
-check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
-(:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
+installed skills an older untaped wrote, someone edited or no plugin ships,
+and a plugin check that returns ``DoctorResult(..., warn=True)``. ``doctor
+fix`` (:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import DoctorCheckRow
 from untaped.core.commands.skills import composed_skills
 from untaped.core.settings import NAME, CoreSettings
-from untaped.core.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
+from untaped.core.skills import SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict, read_state_dict
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
@@ -653,7 +653,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     ]
     if not stale:
         return _row("skills", shell.name, _PASS, title, "no outdated skills")
-    parts = [f"{_skill_label(item)}: {item.path}" for item in stale]
+    parts = [f"{item.state.value} skill: {item.path}" for item in stale]
     fix = None
     if any(item.state is SkillState.outdated for item in stale):
         fix = command_argv("skills update", profile=fix_target())
@@ -669,10 +669,6 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         )
     detail = "; ".join(parts)
     return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
-
-
-def _skill_label(item: InstalledSkill) -> str:
-    return f"{item.state.value} {item.kind.value}"
 
 
 def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:

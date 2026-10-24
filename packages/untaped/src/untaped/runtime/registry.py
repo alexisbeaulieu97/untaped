@@ -28,7 +28,7 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, TypeGuard, cast, overload
+from typing import TYPE_CHECKING, Any, TypeGuard, cast, overload
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -66,8 +66,6 @@ from untaped.sdk.marks import (
     DeprecatedBehaviour,
     Stability,
     check_stability,
-    deprecated,
-    deprecated_parameters,
     mark_errors,
 )
 from untaped.sdk.network.credentials import (
@@ -111,37 +109,13 @@ PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 
 @dataclass(frozen=True)
 class SkillAsset:
-    """A packaged agent skill shipped by a plugin.
-
-    Without ``source`` it is a stub skill: core writes it from its own
-    template and ``description``, and the stub sends the agent to
-    ``untaped agents``. With ``source`` (deprecated) it is a copy of that
-    directory. A plugin ships at most one stub.
+    """The stub skill a plugin ships: core writes it from its own template and
+    ``description``, and the stub sends the agent to ``untaped agents``. A
+    plugin ships at most one.
     """
 
     name: str
-    source: Path | None = None
     description: str = ""
-
-    # Written by hand: a dataclass's generated ``__init__`` can't carry
-    # ``@deprecated_parameters``, which is what warns about ``source``.
-    @deprecated_parameters
-    def __init__(
-        self,
-        name: str,
-        source: Annotated[
-            Path | None,
-            deprecated(
-                removed_in=12,
-                replacement="a stub skill: leave source out",
-            ),
-        ] = None,
-        description: str = "",
-    ) -> None:
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "source", source)
-        object.__setattr__(self, "description", description)
-        self.__post_init__()
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -897,11 +871,10 @@ def _check_skills(spec: PluginSpec, state: _CompositionState) -> None:
         if skill.name in state.skill_names or skill.name in seen_skills:
             raise _Quarantine("duplicate-skill", f"duplicate skill name: {skill.name!r}")
         seen_skills.add(skill.name)
-    stubs = [skill.name for skill in spec.skills if skill.source is None]
-    if len(stubs) > 1:
+    if len(spec.skills) > 1:
+        names = ", ".join(skill.name for skill in spec.skills)
         raise _Quarantine(
-            "bad-skill-asset",
-            f"plugin {spec.name!r} ships more than one stub skill (no source): {', '.join(stubs)}",
+            "bad-skill-asset", f"plugin {spec.name!r} ships more than one skill: {names}"
         )
 
 

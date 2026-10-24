@@ -5,17 +5,11 @@ exists and when to reach for it. untaped itself ships the `untaped` skill.
 `untaped skills` lists and installs the skills of every composed plugin,
 first-party or third-party.
 
-A skill comes in one of two kinds (the `kind` field of `skills list`):
-
-- A **stub** is a short `SKILL.md` that untaped writes from its own template
-  and the plugin's description. It lists no commands: it sends the agent to
-  `untaped agents`, which prints what the untaped it runs can do as Markdown
-  pages (see [Agent pages](./reference/agent-pages.md)). One stub serves every
-  untaped installed on the machine. Its `source` is `untaped:stub/1`.
-- A **copy** is a directory with `SKILL.md` and reference files, copied from
-  the plugin's package. Its `source` is that directory, so an agent whose
-  harness has no skills folder can read it in place. A plugin shipping a copy
-  is [deprecated](./plugin-skills.md#copies).
+A skill is a **stub**: a short `SKILL.md` that untaped writes from its own
+template and the plugin's description. It lists no commands: it sends the
+agent to `untaped agents`, which prints what the untaped it runs can do as
+Markdown pages (see [Agent pages](./reference/agent-pages.md)). One stub
+serves every untaped installed on the machine.
 
 ## Install skills
 
@@ -44,11 +38,11 @@ repository root, else the current directory. `--target-dir PATH` names the
 directory outright; it cannot be combined with `--target all` or
 `--project-dir`.
 
-Each skill lands in `<root>/<full-id>/` with a marker: `.untaped-stub.json`
-for a stub, `.untaped-skill.json` for a copy. A stub's marker records the
-untaped version and the plugin's distribution and version that wrote it, and
-a digest of what it wrote. The full ID is used even when you installed by
-short selector. An existing directory is replaced only with `--force`.
+Each skill lands in `<root>/<full-id>/` with a marker, `.untaped-stub.json`,
+that records the untaped version and the plugin's distribution and version
+that wrote it, and a digest of what it wrote. The full ID is used even when
+you installed by short selector. An existing directory is replaced only with
+`--force`.
 
 Agents usually pick up changed skills on their own. Restart the agent if a
 new skill does not appear in its catalog.
@@ -68,25 +62,12 @@ untaped looks at the skills in your home folder, `~/.agents/skills` and
 - A stub you edited is never rewritten by a run. `skills status` and
   `untaped doctor` show it as `edited`; `untaped skills update --force NAME`
   replaces it.
-- A copy from untaped 11.0 or earlier, for a plugin that now ships a stub,
-  is converted to the stub once (11.1.0 and later only). The old copy is kept
-  under `~/.untaped/backups/skills/<target>/<full-id>`, and untaped says so:
-
-  ```text
-  converted 3 agent skills to stubs; the old copies are in ~/.untaped/backups/skills
-  ```
-
-  Backups are never removed automatically and are safe to delete.
-- A copy a third-party plugin still ships is updated when its files differ
-  from this version's.
 
 The `untaped.skills.updates` setting picks what happens: `auto` (the default) does the
 above, `warn` prints a warning instead, and `off` does nothing; see the
 [configuration reference](./reference/config.md). After a failed or
-previewing command `auto` writes nothing: stubs and copies to convert wait
-for the next command that succeeds, and a third-party copy that is out of
-date is warned about. `untaped skills update`
-keeps a backup of a home-folder copy it converts, too.
+previewing command `auto` writes nothing: the stubs wait for the next
+command that succeeds.
 
 ```text
 warning: agent skills from an older untaped: untaped-awx, untaped-github
@@ -100,10 +81,9 @@ UNTAPED_UNTAPED__SKILLS__UPDATES=off untaped …      # one process only
 
 Skills inside a project (`.agents/skills` and `.claude/skills` at the current
 git root, or the current directory outside a repository) are never changed by
-a run, and a stub there is never warned about. A copy from an older untaped
-there is reported until someone runs `untaped skills update` in that project.
-Only directories with a marker count, so skills you wrote yourself are never
-touched. Installs made with `--target-dir` are not checked.
+a run, and a stub there is never warned about. Only directories with a
+marker count, so skills you wrote yourself are never touched. Installs made
+with `--target-dir` are not checked.
 
 To manage installs by hand:
 
@@ -115,12 +95,11 @@ untaped skills update awx --force       # also replace an edited or newer stub
 untaped skills remove awx --target claude --scope local
 ```
 
-`status` reports each install's `kind` and `state`: `current`, `outdated`
-(an older untaped wrote it, or a copy's files differ from this version's),
-`newer` (a newer untaped or plugin wrote this stub), `edited` (someone changed
-this stub), or `orphaned` (no plugin installed here ships it: either it was
-dropped, or the plugin that ships it is missing, as with `uvx untaped`
-without extras). The per-run check never reports orphaned skills;
+`status` reports each install's `state`: `current`, `outdated` (an older
+untaped wrote it), `newer` (a newer untaped or plugin wrote this stub),
+`edited` (someone changed this stub), or `orphaned` (no plugin installed
+here ships it: either it was dropped, or the plugin that ships it is
+missing, as with `uvx untaped` without extras). The per-run check never reports orphaned skills;
 `untaped doctor` and `skills status` do. Install the plugin, or run
 `untaped skills remove`.
 `update` rewrites an install where it is, keeping its target and scope; it
@@ -136,9 +115,8 @@ another project's local skills.
 A `--scope local` install can be committed so everyone who works in the
 repository gets the skills. Other agents that read `.agents/skills`, such as
 GitHub Copilot, pick them up too. Committed stubs change only when someone
-runs `untaped skills update` in the repository; committed copies from an older
-untaped are warned about until then. Run it after upgrading and commit the
-result (the diff shows copies becoming stubs). To catch drift in CI:
+runs `untaped skills update` in the repository. Run it after upgrading and
+commit the result. To catch drift in CI:
 
 ```bash
 untaped skills status --check   # exits 3 when a skill is outdated or orphaned

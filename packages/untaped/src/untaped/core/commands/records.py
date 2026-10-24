@@ -267,17 +267,10 @@ class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcom
 
 
 class Skill(Record, kind="untaped.skill"):
-    """A skill the installed plugins ship (``skills list``).
-
-    ``kind`` is ``stub`` (written from core's template) or ``copy`` (copied
-    from ``source``); a stub's ``source`` is the template's identity,
-    ``untaped:stub/1``, not a path.
-    """
+    """A stub skill the installed plugins ship (``skills list``)."""
 
     name: str
     description: str
-    source: str
-    kind: Literal["stub", "copy"]
 
 
 class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
@@ -285,7 +278,6 @@ class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
 
     table_columns: ClassVar[tuple[str, ...]] = (
         "name",
-        "kind",
         "target",
         "scope",
         "state",
@@ -296,7 +288,6 @@ class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
     target: str
     scope: str
     state: str
-    kind: Literal["stub", "copy"]
 
 
 class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):

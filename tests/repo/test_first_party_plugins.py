@@ -111,7 +111,6 @@ def test_first_party_spec_ships_a_lazy_app_and_one_stub_skill(
     (skill,) = spec.skills
     assert skill.name == f"untaped-{name}"
     assert skill.description
-    assert skill.source is None  # a stub: its plugin's facts live on its agents pages
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)

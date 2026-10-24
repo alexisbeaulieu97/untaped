@@ -16,7 +16,7 @@ SkillAsset(
 ```
 
 `name` is the skill's full ID, `untaped-<plugin>`. A plugin ships at most
-one stub.
+one skill.
 
 ## The description
 
@@ -45,12 +45,3 @@ each.
 
 Write facts, not advice: what a command does, what it changes, how it
 fails. Which steps to confirm with the user is the agent's call.
-
-## Copies
-
-A `SkillAsset` with `source` installs that directory as a copy. `source` is
-deprecated: passing it warns with an `UntapedDeprecationWarning`, until the
-major its warning names. To move a copy onto the pages, put each fact
-of its files in its home above, drop the advice, remove `source` and delete
-the folder. A user's installed copy is converted to the stub on its own
-([Keep installed skills up to date](./skills.md#keep-installed-skills-up-to-date)).

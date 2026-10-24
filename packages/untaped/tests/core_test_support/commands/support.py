@@ -7,7 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 
-import pytest
 from cyclopts import App
 from pydantic import BaseModel, HttpUrl, SecretStr
 from rich.console import Console
@@ -29,7 +28,7 @@ from untaped.sdk import (  # type: ignore[deprecated]
 )
 from untaped.sdk._cli import create_app, run_cyclopts_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.marks import Stability, UntapedDeprecationWarning, deprecated
+from untaped.sdk.marks import Stability, deprecated
 from untaped.sdk.testing import plugin_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
@@ -225,26 +224,9 @@ def written_profile(path: Path, name: str) -> dict[str, Any]:
     return active_settings_layout().profile_data(read_config_dict(path), name) or {}
 
 
-def skill_dir(tmp_path: Path, name: str) -> Path:
-    """Create a minimal on-disk skill source named ``name``."""
-    source = tmp_path / "skill-sources" / name
-    source.mkdir(parents=True, exist_ok=True)
-    source.joinpath("SKILL.md").write_text(
-        f"---\nname: {name}\ndescription: Teach agents how to use {name}.\n---\n\n# Skill\n",
-        encoding="utf-8",
-    )
-    return source
-
-
-def copy_asset(name: str, source: Path, description: str) -> SkillAsset:
-    """A copy skill: ``source`` is deprecated (removed in 12.0), so it warns."""
-    with pytest.warns(UntapedDeprecationWarning, match=r"SkillAsset\.__init__\(source=\)"):
-        return SkillAsset(name=name, source=source, description=description)
-
-
-def asset(tmp_path: Path, name: str) -> SkillAsset:
-    """Return a skill asset double backed by a real source directory."""
-    return copy_asset(name, skill_dir(tmp_path, name), f"Teach agents how to use {name}.")
+def asset(name: str) -> SkillAsset:
+    """Return a stub skill asset double named ``name``."""
+    return SkillAsset(name=name, description=f"Teach agents how to use {name}.")
 
 
 def check(
@@ -282,7 +264,6 @@ __all__ = [
     "check",
     "compose",
     "make_spec",
-    "skill_dir",
     "wiz_api_check",
     "wiz_probe",
     "write_config",

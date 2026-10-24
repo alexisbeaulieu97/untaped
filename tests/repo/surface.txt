@@ -4635,9 +4635,6 @@ record untaped.installed_plugin.tests_dir string(format=path)?
 record untaped.installed_plugin.version string
 record untaped.installed_skill
 record untaped.installed_skill.error Failure?
-record untaped.installed_skill.kind choice=copy
-record untaped.installed_skill.kind choice=stub
-record untaped.installed_skill.kind string
 record untaped.installed_skill.name string
 record untaped.installed_skill.scope string
 record untaped.installed_skill.state string
@@ -4734,11 +4731,7 @@ record untaped.setting_outcome.key string
 record untaped.setting_outcome.profile string
 record untaped.skill
 record untaped.skill.description string
-record untaped.skill.kind choice=copy
-record untaped.skill.kind choice=stub
-record untaped.skill.kind string
 record untaped.skill.name string
-record untaped.skill.source string
 record untaped.skill_outcome
 record untaped.skill_outcome.action string
 record untaped.skill_outcome.error Failure?
@@ -6128,12 +6121,10 @@ sdk untaped.sdk.SingleList.view(frame)  [experimental]
 sdk untaped.sdk.SingleList.view(width=) default=None  [experimental]
 sdk untaped.sdk.SingleList.window_rows  [experimental]
 sdk untaped.sdk.SingleList.with_error(text)  [experimental]
-sdk untaped.sdk.SkillAsset(description@3=) default=""
+sdk untaped.sdk.SkillAsset(description@2=) default=""
 sdk untaped.sdk.SkillAsset(name)
-sdk untaped.sdk.SkillAsset(source@2=) default=None  [deprecated, removed in 12.0; use a stub skill: leave source out]
 sdk untaped.sdk.SkillAsset.description
 sdk untaped.sdk.SkillAsset.name
-sdk untaped.sdk.SkillAsset.source
 sdk untaped.sdk.Source(*, plugin, kind)
 sdk untaped.sdk.Source(record=) default={}
 sdk untaped.sdk.Source.kind
