@@ -166,26 +166,32 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     )
 
 
-#: The ``PluginSpec`` field each owned block kind goes to.
-_SPEC_FIELDS = {
+#: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind
+#: no 11.x reader may see (a plugin class's state rows live in its own file,
+#: not the shared one ``PluginSpec.stores`` describes).
+_SPEC_FIELDS: dict[str, str | None] = {
     "cache": "caches",
     "dir-migration": "migrations",
     "doctor-check": "doctor_checks",
     "credential": "credentials",
     "deprecated-behaviour": "deprecations",
+    "state-rows": None,
 }
 
 
 def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
     """The plugin's owned blocks by spec field, each given its plugin and name for 11.x readers."""
     cls = mount.plugins[name]
-    blocks: dict[str, list[Any]] = {field: [] for field in _SPEC_FIELDS.values()}
+    blocks: dict[str, list[Any]] = {
+        field: [] for field in _SPEC_FIELDS.values() if field is not None
+    }
     for decl in mount.declaration.plugin(name).blocks:
         block = getattr(cls, decl.attribute)
-        # every owned block core ships has a field (tested); one of a kind core
+        # every owned block core ships has an entry (tested); one of a kind core
         # doesn't know has no 11.x reader to reach
-        if isinstance(block, OwnedBlock) and decl.block in _SPEC_FIELDS:
-            blocks[_SPEC_FIELDS[decl.block]].append(block._spelled_as(name, decl.name))
+        field = _SPEC_FIELDS.get(decl.block)
+        if isinstance(block, OwnedBlock) and field is not None:
+            blocks[field].append(block._spelled_as(name, decl.name))
     return {field: tuple(each) for field, each in blocks.items()}
 
 
