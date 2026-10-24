@@ -249,11 +249,17 @@ def _outcomes(migration: DirMigration, done: object) -> list[MigrationOutcome]:
     ):
         detail = f"apply returned {type(done).__name__}, expected MigrationOutcome rows"
         return [_failed(migration, Failure.plain(detail))]
-    # A failed or partial row a migration built itself still carries a structured error.
+    # A row without an id is the migration's own; a failed or partial row a
+    # migration built itself still carries a structured error.
     return [
-        outcome.model_copy(update={"error": Failure.plain(outcome.detail)})
-        if outcome.failed and outcome.error is None
-        else outcome
+        outcome.model_copy(
+            update={"id": outcome.id or migration.id}
+            | (
+                {"error": Failure.plain(outcome.detail)}
+                if outcome.failed and outcome.error is None
+                else {}
+            )
+        )
         for outcome in done
     ]
 
@@ -321,10 +327,12 @@ def _contexts(result: CompositionResult) -> dict[str, PluginContext]:
     except ConfigError:
         effective = None
     contexts = {
-        registered.spec.name: PluginContext(settings=_settings(registered.spec, effective))
+        registered.spec.name: PluginContext(
+            settings=_settings(registered.spec, effective), owner=registered.spec.name
+        )
         for registered in result.plugins
     }
-    return {_CORE: PluginContext(settings=None), **contexts}
+    return {_CORE: PluginContext(settings=None, owner=_CORE), **contexts}
 
 
 def _settings(spec: PluginSpec, effective: Mapping[str, Any] | None) -> Any:

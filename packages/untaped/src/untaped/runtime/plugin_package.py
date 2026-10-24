@@ -15,9 +15,13 @@ from untaped.runtime.registry import PluginSpec
 
 
 def candidate_package(target: object) -> str | None:
-    """The plugin package of a candidate ``target``, or ``None`` when unresolvable."""
+    """The plugin package of a candidate ``target``, or ``None`` when unresolvable.
+
+    A string target's module is the package (``untaped_acme:SPEC``) or a
+    module in it (a plugin class in its leaf ``untaped_acme.plugin``).
+    """
     if isinstance(target, str):
-        return target.partition(":")[0] if ":" in target else None
+        return _package_of_module(target.partition(":")[0]) if ":" in target else None
     if not isinstance(target, PluginSpec):
         return None
     try:
@@ -53,6 +57,30 @@ def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
             f"plugin {spec.name!r}: its app factory or settings are not defined in a package"
         )
     return package, _source_dir(package)
+
+
+def _package_of_module(module: str) -> str:
+    """``module`` when it is a package or can't be found, else the package holding it.
+
+    It reads the files under the top package's folder, so no plugin code runs.
+    """
+    top, *rest = module.split(".")
+    try:
+        found = find_spec(top)
+    except Exception:  # a broken finder or name: say the target as written
+        return module
+    if found is None or not found.submodule_search_locations or not rest:
+        return module
+    folders = [Path(each) for each in found.submodule_search_locations]
+    *packages, leaf = rest
+    for part in packages:
+        folders = [folder / part for folder in folders if (folder / part).is_dir()]
+        if not folders:
+            return module
+    # the last part is a package when it is a folder, else a module in the one before
+    if any((folder / leaf).is_dir() for folder in folders):
+        return module
+    return module.rpartition(".")[0]
 
 
 def _source_dir(package: str) -> Path:

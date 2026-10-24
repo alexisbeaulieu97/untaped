@@ -148,13 +148,15 @@ sys.path[:0] = {example_src!r}
 
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.contracts.registry import every_offer, owned_contracts
-from untaped.runtime.registry import discover_candidates, run_deferred_factory
+from untaped.runtime.registry import PluginCandidate, discover_candidates, run_deferred_factory
 from untaped.sdk.records import record_kinds
 from untaped.sdk.testing import plugin_candidate
-import untaped_hello, untaped_library, untaped_shelf
+import untaped_library, untaped_shelf
 
 examples = [
-    plugin_candidate(untaped_hello.SPEC),
+    PluginCandidate(
+        distribution="untaped-hello", name="hello", target="untaped_hello.plugin:Hello"
+    ),
     plugin_candidate(untaped_shelf.SPEC),
     plugin_candidate(untaped_library.SPEC, requires_dist=["untaped-shelf>=11"]),
 ]

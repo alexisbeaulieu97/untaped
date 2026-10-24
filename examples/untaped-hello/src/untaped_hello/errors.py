@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from untaped.sdk import UntapedError
+from untaped.sdk import System, UntapedError
 
 
 class HelloError(UntapedError):
-    """Base for hello plugin failures."""
+    """Base for hello plugin failures: hello has no service, so its files are to blame."""
 
-    system = "hello"
+    system = System.LOCAL
