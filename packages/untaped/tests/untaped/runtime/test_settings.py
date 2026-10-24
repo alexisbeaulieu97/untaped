@@ -272,6 +272,24 @@ def test_each_part_of_core_s_section_is_read_apart(
         load_core_part("ui")
 
 
+def test_a_part_of_core_s_section_reads_its_renamed_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.core.settings import CoreSettings
+    from untaped.sdk.health.deprecated_keys import key_mappings
+
+    renamed = {"http.timeout": "http.timeout_seconds"}
+    monkeypatch.setattr(CoreSettings, "renamed_keys", renamed, raising=False)
+    key_mappings.cache_clear()
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    untaped:\n      http:\n        timeout: 9\n")
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+    try:
+        assert load_core_part("http").timeout_seconds == 9.0
+    finally:
+        key_mappings.cache_clear()
+
+
 def test_load_settings_section_names_the_env_var_culprit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

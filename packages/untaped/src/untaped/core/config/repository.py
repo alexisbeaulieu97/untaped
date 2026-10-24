@@ -96,20 +96,24 @@ class SettingsFileRepository:
         Raises ``ConfigError`` when the leaf's section is invalid.
         """
         part = _core_part(descriptor.path)
-        held = descriptor.path[:2] if part is not None else descriptor.path[:1]
-        loaded = ".".join(held)
+        loaded = self.validated_with(descriptor)
         if loaded not in self._sections:
             self._sections[loaded] = (
-                load_settings_section(held[0], self._settings_cls)
+                load_settings_section(descriptor.path[0], self._settings_cls)
                 if part is None
                 else load_core_part(part)
             )
         cursor: Any = self._sections[loaded]
-        for segment in descriptor.path[len(held) : -1]:
+        for segment in descriptor.path[len(loaded.split(".")) : -1]:
             cursor = getattr(cursor, segment, None)
             if cursor is None:
                 return None
         return cursor
+
+    def validated_with(self, descriptor: FieldDescriptor) -> str:
+        """What is validated with the leaf: its section, or its part of core's (``untaped.ui``)."""
+        depth = 1 if _core_part(descriptor.path) is None else 2
+        return ".".join(descriptor.path[:depth])
 
     def raw_setting_value(self, descriptor: FieldDescriptor) -> Any:
         """Unvalidated effective value of one leaf (env string wins over YAML)."""

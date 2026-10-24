@@ -24,6 +24,7 @@ import yaml
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     SecretStr,
@@ -1115,13 +1116,34 @@ def validate_settings_section(
 
 #: The parts of core's section, each validated alone (:func:`load_core_part`).
 CorePart = Literal["http", "ui", "skills"]
+#: Core's section: ``untaped.core.settings.NAME``, which imports this module.
+_CORE = "untaped"
 
 
-def part_model(model: type[BaseModel], part: str) -> type[BaseModel]:
-    """``model`` with only its field ``part``: validates that part as if the others were absent."""
-    info = model.model_fields[part]
-    definition: Any = (info.annotation, info)
-    return create_model(f"{model.__name__}{part.title()}", **{part: definition})
+def only_part(model: type[BaseModel], part: str) -> Any:
+    """``model``, validating only its field ``part``: the others are dropped and default.
+
+    Sources still see ``model`` itself, so its renamed keys apply. Use it as
+    a field's type, or pass it to :func:`check_settings_field`.
+    """
+
+    def _keep(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            return {part: value[part]} if part in value else {}
+        return value
+
+    return Annotated[model, BeforeValidator(_keep)]
+
+
+@cache
+def _core_part_models(part: CorePart) -> tuple[type[BaseModel], type[_SettingsSources]]:
+    """A plain validator and an env/YAML loader of core's section, reading ``part`` alone."""
+    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
+
+    definition: Any = (only_part(CoreSettings, part), Field(default_factory=CoreSettings))
+    validator = create_model("UntapedCorePartValidator", **{NAME: definition})
+    loader = create_model("UntapedCorePart", __base__=_SettingsSources, **{NAME: definition})
+    return validator, loader
 
 
 @overload
@@ -1137,13 +1159,9 @@ def load_core_part(part: CorePart) -> BaseModel:
     leaves every HTTP client working. Raises :class:`ConfigError` as
     :func:`load_settings_section` does.
     """
-    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
-
-    alone = part_model(CoreSettings, part)
-    definition: Any = (alone, Field(default_factory=alone))
-    loader = create_model("UntapedCorePart", __base__=_SettingsSources, **{NAME: definition})
+    _, loader = _core_part_models(part)
     try:
-        return cast("BaseModel", getattr(getattr(loader(), NAME), part))
+        return cast("BaseModel", getattr(getattr(loader(), _CORE), part))
     except ValidationError as exc:
         raise ConfigError(settings_error_message(exc, loader)) from exc
 
@@ -1155,20 +1173,13 @@ def validate_core_part(
 
     A ``config set untaped.http.proxy`` is never refused for a bad ``untaped.ui`` value.
     """
-    from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
-
-    alone = part_model(CoreSettings, part)
-    definition: Any = (alone, Field(default_factory=alone))
-    validator = create_model("UntapedCorePartValidator", **{NAME: definition})
-    section = data.get(NAME)
-    payload = (
-        {NAME: {part: section[part]}} if isinstance(section, Mapping) and part in section else {}
-    )
+    validator, _ = _core_part_models(part)
+    payload = {_CORE: data[_CORE]} if _CORE in data else {}
     validated = validator.model_validate(
         payload,
         context={CONFIG_WRITE_CONTEXT: True, CONFIG_WRITTEN_KEY_CONTEXT: written_key},
     )
-    return cast("BaseModel", getattr(getattr(validated, NAME), part))
+    return cast("BaseModel", getattr(getattr(validated, _CORE), part))
 
 
 def load_settings_section(name: str, settings_cls: type[Settings] | None = None) -> Any:
@@ -1207,15 +1218,19 @@ class _EnvOverInit(BaseSettings):
         return (_RenamingEnvSource(settings_cls), init_settings)
 
 
-def check_settings_field(name: str, node: Any, *, model: type[BaseModel]) -> Any:
+def check_settings_field(
+    name: str, node: Any, *, model: type[BaseModel], part: str | None = None
+) -> Any:
     """Validate the section ``name`` (``model``) from an effective YAML ``node`` plus env.
 
-    ``node`` ``None`` means the YAML does not set the section. Diagnostic
+    ``part`` validates only that field of it (:func:`only_part`). ``node``
+    ``None`` means the YAML does not set the section. Diagnostic
     helper for ``doctor``: raises :class:`ConfigError` via
     :func:`settings_error_message` (naming the env var when an override is the
     culprit).
     """
-    definition: Any = (model, Field(default_factory=model))
+    checked = model if part is None else only_part(model, part)
+    definition: Any = (checked, Field(default_factory=model))
     checker = create_model("UntapedFieldCheck", __base__=_EnvOverInit, **{name: definition})
     try:
         return getattr(checker(**({} if node is None else {name: node})), name)

@@ -483,26 +483,32 @@ class ListSettings:
 
     A section that fails validation does not abort the listing: its leaves
     show their raw (unvalidated) values and the section's error is recorded
-    in :attr:`errors` so the caller can warn about it.
+    in :attr:`errors` so the caller can warn about it. Core's section fails
+    part by part (``untaped.ui`` apart from ``untaped.http``), its errors
+    joined under ``untaped``.
     """
 
     def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
         self.errors: dict[str, str] = {}
+        self._failed: set[str] = set()
 
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
         provenance = self._repo.provenance()
         entries: list[SettingEntry] = []
         for descriptor in self._repo.descriptors():
             section = descriptor.path[0]
+            unit = self._repo.validated_with(descriptor)
             current: Any
-            if section in self.errors:
+            if unit in self._failed:
                 current = self._repo.raw_setting_value(descriptor)
             else:
                 try:
                     current = self._repo.setting_value(descriptor)
                 except ConfigError as exc:
-                    self.errors[section] = str(exc)
+                    self._failed.add(unit)
+                    earlier = self.errors.get(section)
+                    self.errors[section] = f"{earlier}; {exc}" if earlier else str(exc)
                     current = self._repo.raw_setting_value(descriptor)
             entries.append(
                 setting_entry_for_descriptor(

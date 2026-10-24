@@ -148,3 +148,17 @@ def test_all_profiles_shows_one_row_per_profile_and_key(_isolate_settings: Path)
         ("prod", "demo.page_size", 50),
     }
     assert all(e.source.kind == "profile" for e in entries)
+
+
+def test_each_bad_part_of_core_s_section_is_reported_and_the_rest_validated(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    untaped:\n"
+        "      http: {timeout_seconds: -1}\n      ui: {border: bogus}\n"
+    )
+    listing = ListSettings(SettingsFileRepository())
+    entries = {e.key: e for e in listing()}
+    assert "timeout_seconds" in listing.errors["untaped"]
+    assert "border" in listing.errors["untaped"]
+    assert entries["untaped.skills.updates"].value == "auto"

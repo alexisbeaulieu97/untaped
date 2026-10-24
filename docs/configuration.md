@@ -186,8 +186,8 @@ Tokens after `--` belong to the command and are never read as `untaped` options.
 
 ## Settings
 
-Plugin keys are always fully qualified (`awx.server.url`, never
-`server.url`). `http.*`, `ui.*` and `skills.*` are shared root sections.
+Keys are always fully qualified (`awx.server.url`, never `server.url`),
+untaped's own too (`untaped.http.*`, `untaped.ui.*`, `untaped.skills.*`).
 
 ```bash
 untaped config list --all-profiles
@@ -254,7 +254,7 @@ writes each setting through the same code as `config set`.
 
 ## TLS and shared UI settings
 
-`http.*` and `ui.*` are profile settings shared by all plugins. HTTP
+`untaped.http.*` and `untaped.ui.*` apply to every plugin. HTTP
 clients use the operating system trust store by default. To trust a corporate
 CA (a proxy that inspects TLS, say) for every client and for git, set a CA
 bundle once:

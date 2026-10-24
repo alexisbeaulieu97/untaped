@@ -62,7 +62,6 @@ from untaped.runtime.settings import (
     active_settings_layout,
     check_settings_field,
     get_profile_settings_model,
-    part_model,
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
@@ -325,7 +324,9 @@ def _scopes(shell: ApplicationSpec, result: CompositionResult) -> list[_SectionS
         _SectionScope(
             plugin=shell.name,
             section=shell.section,
-            settings_model=None,  # core's parts get a row each (_core_row)
+            # Core's parts get a row each (_core_row), so its checks get no
+            # settings: one reads its part with load_core_part.
+            settings_model=None,
             state_model=shell.state,
             checks=tuple(shell.doctor_checks),
         )
@@ -992,7 +993,7 @@ def _core_row(
     node = (section or {}).get(part)
     try:
         checked = check_settings_field(
-            NAME, None if node is None else {part: node}, model=part_model(CoreSettings, part)
+            NAME, None if node is None else {part: node}, model=CoreSettings, part=part
         )
         value = getattr(checked, part)
         if isinstance(value, UiSettings):

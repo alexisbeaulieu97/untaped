@@ -194,7 +194,7 @@ untaped --profile staging acme hello
 ```
 
 Config keys are fully qualified (`acme.greeting`). A plugin reads and
-writes only its own section; `http.*` and `ui.*` are shared root settings, and
+writes only its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
 `untaped config set` rejects state fields.
 
 The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise

@@ -1,7 +1,7 @@
 """``cfg`` and ``state`` lines, and the settings sections they share with the config reference.
 
-The sections are the root's own (``http``, ``ui``, ``skills``), the shell's,
-and each composed plugin's settings and state models, as
+The sections are core's own (``untaped``: ``http``, ``ui``, ``skills``) and
+each composed plugin's settings and state models, as
 ``scripts/gen_config_reference.py`` documents them; both read them through
 :func:`sections` and :func:`setting_leaves`. The surface asks for each owner's
 ``extensions`` too, written as one key per owned contract and method
