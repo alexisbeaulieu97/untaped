@@ -357,7 +357,7 @@ class Output[R: BaseModel](FieldBlock):
     default columns, and ``--columns`` names its fields (checked before ``run``, so a subclass's own
     fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
-    its own default columns (a table shows them even when empty),
+    its own default columns (a one-record table shows them even when empty),
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
@@ -458,8 +458,9 @@ class Output[R: BaseModel](FieldBlock):
         # than losing what it printed.
         themed = self.format in ("table", "tree")
         columns = self._requested
-        if columns is None and self._declared and self.format == "table":
-            columns = list(self.columns)  # the command chose them: shown even when empty
+        detail = isinstance(records, BaseModel) and self.format == "table"
+        if columns is None and self._declared and detail:
+            columns = list(self.columns)  # a detail view would hide the empty ones
         emit_with(
             records,
             ui=ui_context(strict=False) if themed else None,

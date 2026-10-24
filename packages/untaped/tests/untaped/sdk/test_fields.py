@@ -238,6 +238,30 @@ def test_a_record_s_table_columns_are_the_default_without_column_marks(
     assert all(name in listed.out + listed.err for name in ("holder", "item", "action"))
 
 
+class Note(BaseModel):
+    key: str
+    value: str | None = None
+
+
+def test_declared_columns_stay_in_a_one_record_table_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output(columns=("key", "value"))._fill({}, _call(Output[Note]))
+    filled._print(Note(key="k"), kind=None)  # a detail view would hide the empty value
+    assert "value" in capsys.readouterr().out
+    filled._print([Note(key="k"), Note(key="j")], kind=None)
+    assert "value" not in capsys.readouterr().out  # hide_empty_columns still applies to rows
+
+
+def test_a_renderer_named_after_a_core_format_replaces_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output: Output[Row] = Output(format="raw", render={"raw": lambda row: print(f"<{row.name}>")})
+    assert output.formats.count("raw") == 1
+    output._fill({}, _call(Output[Row]))._print(Row(name="a"), kind=None)
+    assert capsys.readouterr().out == "<a>\n"
+
+
 def test_an_unknown_column_is_refused_when_filled(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exited:
         Output()._fill({"--columns": ["nope"]}, _call(Output[Row]))
