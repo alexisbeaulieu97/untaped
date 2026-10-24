@@ -1,4 +1,4 @@
-"""Proving a provider fills its contract: the checks behind ``assert_fills`` and ``plugin check``.
+"""Proving a provider fills its contract: the checks behind ``assert_fills`` and ``fills``.
 
 For each sample of the provider's own record type ``T``: it survives a JSON
 round trip through ``T``; it issues as the owner's model the way the SDK
@@ -7,7 +7,7 @@ record whose ``source`` names the provider and carries the sample back.
 
 The owner's schema hash the provider was checked against lives in the
 plugin package's ``fills.json`` (``{"untaped": "1", "fills": {"<owner>.<contract>":
-"<sha256>"}}``), so ``plugin check`` and doctor can say when the installed owner
+"<sha256>"}}``), so the plugin checks and doctor can say when the installed owner
 has changed since (``owner-schema-drift``).
 """
 

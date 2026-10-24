@@ -3,7 +3,7 @@
 ``contract_schema`` gives each method's parameters (one object schema) and
 return type as JSON Schema, with ``T`` put in as the owner's model, and each
 method's stability. ``schema_hash`` is what ``fills.json`` records and
-``plugin check``'s ``owner-schema-drift`` compares; it never classifies a
+the plugin checks' ``owner-schema-drift`` compares; it never classifies a
 change as breaking (``untaped.core.surface`` does that for every surface).
 """
 

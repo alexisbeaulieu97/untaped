@@ -166,7 +166,7 @@ def _with_lint(candidates: Sequence[PluginCandidate]) -> list[PluginCandidate]:
 def conformance(provider: Linter | TreeReader) -> None:
     """Fail unless ``provider``'s rule table is one the engine loads: bare, unique ids.
 
-    ``untaped plugin check`` calls it for every provider of lint's contracts;
+    untaped's plugin checks call it for every provider of lint's contracts;
     a ``TreeReader`` has no rule table, so it passes as it is.
     """
     if not isinstance(provider, Linter):

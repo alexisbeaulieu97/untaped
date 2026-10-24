@@ -562,10 +562,10 @@ class CompositionResult:
     plugins: tuple[RegisteredPlugin, ...] = ()
     quarantine: tuple[QuarantineRecord, ...] = ()
     candidates: tuple[PluginCandidate, ...] = field(default=(), compare=False)
-    #: The plugin classes composed, core's included, mounted.
-    mount: Mount | None = field(default=None, compare=False)
     #: The names no plugin may have, each with what holds it (``a config key``...).
     taken: Mapping[str, str] = field(default_factory=dict, compare=False)
+    #: The plugin classes composed, core's included, mounted.
+    mount: Mount = field(kw_only=True, compare=False)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -584,6 +584,8 @@ class _Quarantine(Exception):
         self.reason = reason
         self.detail = detail
         self.entry_point = entry_point
+        #: Whether the candidate is a plugin class, which the declaration remembers refused.
+        self.plugin_class = False
 
     def to_record(self, candidate: PluginCandidate) -> QuarantineRecord:
         distribution = candidate_distribution(candidate)
@@ -1337,7 +1339,7 @@ def compose(
         filling.append(True)
         composed.append(_compose(shell, ordered))
         return Filled(
-            value=KeptDeclaration(candidates=read, declaration=_declaration_of(composed[-1]))
+            value=KeptDeclaration(candidates=read, declaration=composed[-1].mount.declaration)
         )
 
     declarations = _declarations()
@@ -1427,6 +1429,7 @@ def _compose(
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, PluginSpec | type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
+    classes: set[int] = set()  # the plugin classes, as :func:`_refused` reads them
     contested = _replay(ordered, declared, replayed, quarantined)
     for index, candidate in enumerate(ordered):
         if index in replayed or index in quarantined:
@@ -1435,9 +1438,11 @@ def _compose(
             provided[index] = _provide(candidate, state)
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
-        if declared is not None and _is_plugin_class(provided.get(index)):
+            if failed.plugin_class:
+                classes.add(index)
+        if declared is not None and (index in classes or _is_plugin_class(provided.get(index))):
             raise _StaleDeclaration(candidate.name)
-    classes = {index for index, each in provided.items() if not isinstance(each, PluginSpec)}
+    classes |= {index for index, each in provided.items() if not isinstance(each, PluginSpec)}
     claimants = provided.keys() | replayed.keys() | contested
     for index, contest in _contested(ordered, claimants).items():
         quarantined.setdefault(index, contest.to_record(ordered[index]))
@@ -1550,16 +1555,19 @@ def _core(declared: Declaration | None) -> PluginDecl:
             return declared.plugin(NAME)
         except LookupError:
             raise _StaleDeclaration(NAME) from None
+    return _core_alone()
+
+
+@functools.cache
+def _core_alone() -> PluginDecl:
+    """Core's class composed on its own, once a process: it is the same at every composition."""
+    from untaped.core.settings import NAME  # noqa: PLC0415 - core imports the runtime
     from untaped.runtime.composition import compose as compose_classes  # noqa: PLC0415
 
     composed = compose_classes([_core_entry()])
     for refused in composed.quarantined:  # a core bug: no install can work around it
         raise RuntimeError(f"core's own class does not compose: {refused.detail}")
     return composed.plugin(NAME)
-
-
-def _declaration_of(result: CompositionResult) -> Declaration:
-    return Declaration() if result.mount is None else result.mount.declaration
 
 
 def _mounted(
@@ -1720,8 +1728,12 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             entry_point="",
         ) from None
     if _is_plugin_class(spec):
-        _check_distribution(candidate)
-        _check_free_name(candidate.name, state)
+        try:
+            _check_distribution(candidate)
+            _check_free_name(candidate.name, state)
+        except _Quarantine as failed:
+            failed.plugin_class = True
+            raise
         return spec
     if not isinstance(spec, PluginSpec):
         raise _Quarantine(

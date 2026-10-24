@@ -1,4 +1,4 @@
-"""``untaped plugin check``: conventions, conformance, a live call, fills and the schema hash."""
+"""The plugin checks: conventions, conformance, a live call, fills and the schema hash."""
 
 from __future__ import annotations
 

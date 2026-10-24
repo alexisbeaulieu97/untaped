@@ -53,7 +53,7 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
 
 
 def test_a_ready_plugin_says_where_its_code_is() -> None:
-    """``untaped.plugin`` records carry what lint's plugin subject reads."""
+    """``untaped.installed_plugin`` records carry what lint's plugin subject reads."""
     [row] = _listing([make_candidate(make_spec("acme"), "acme-dist")])
     assert row["package"] == "core_test_support.commands"
     assert row["source_dir"] == str(Path(__file__).parents[3] / "core_test_support" / "commands")
@@ -159,6 +159,24 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
         ]
     )
     assert {row["name"] for row in listed} == {"github", "jira"}
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param("ui:\n  theme: bogus\n", id="unknown-theme"),
+        pytest.param("active: nosuch\n", id="unknown-profile"),
+        pytest.param("profiles: [unclosed\n", id="unparseable"),
+    ],
+)
+def test_the_table_is_not_blocked_by_a_broken_config(_isolated_config: Path, config: str) -> None:
+    """The listing that diagnoses a broken install draws the default theme."""
+    write_config(_isolated_config, config)
+    get_settings.cache_clear()
+    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("acme"), "acme-dist")])
+    invoked = CliInvoker().invoke(root.meta, ["plugin", "list"])
+    assert invoked.exit_code == 0, invoked.output
+    assert "acme-dist" in invoked.stdout
 
 
 def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., Install]) -> None:

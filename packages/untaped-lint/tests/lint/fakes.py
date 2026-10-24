@@ -114,7 +114,7 @@ def seen(plugin: InstalledPlugin) -> Iterator[Finding]:
 
 
 class PluginReader(Rules):
-    """A third-party provider of rules over ``untaped.plugin``."""
+    """A third-party provider of rules over ``untaped.installed_plugin``."""
 
     RULES = (seen,)
     read: list[InstalledPlugin] = []  # noqa: RUF012 - shared by the rule function, reset per test

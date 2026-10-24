@@ -172,6 +172,24 @@ def test_a_refused_plugin_is_quarantined_again_without_importing_it(toys: Path) 
     assert record.reason == "bad-plugin-class" and "Silent" in record.detail
 
 
+@pytest.mark.parametrize("name", ["plugin", "config"])
+def test_a_plugin_named_after_a_root_command_stays_refused_without_importing_it(
+    toys: Path, name: str
+) -> None:
+    taken = PluginCandidate(distribution="untaped-toyplug", name=name, target="toyplug.plugin:Toy")
+    _package(toys, "toyplug")
+    first = compose_root(candidates=[taken])
+    _unload("toyplug")
+    again = compose_root(candidates=[taken])
+    assert "toyplug.plugin" not in sys.modules
+    assert again.quarantine == first.quarantine
+    [record] = again.quarantine
+    assert (record.reason, record.detail) == (
+        "duplicate-name",
+        f"duplicate plugin name: {name!r} is taken by a root command",
+    )
+
+
 def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     other = PluginCandidate(distribution="untaped-other", name="toy", target="toyother:SPEC")
@@ -230,7 +248,6 @@ def test_a_declaration_that_misses_a_plugin_class_is_composed_again(toys: Path) 
         textwrap.dedent(PLUGIN.format(package="toyplug")), encoding="utf-8"
     )
     result = compose_root(candidates=[toy])
-    assert result.mount is not None
     assert [plugin.name for plugin in result.mount.declaration.plugins] == ["untaped", "toy"]
     _unload("toyplug")
     compose_root(candidates=[toy])

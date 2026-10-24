@@ -1,6 +1,6 @@
 """Whether an ``untaped …`` command line parses against the composed root.
 
-Shared by ``plugin check``'s conventions (a docstring's ``Examples`` section;
+Shared by the plugin checks' conventions (a docstring's ``Examples`` section;
 a plugin's guides), the command's agent page, which reads ``Examples``
 here too, and the repository's docs and skill tests. Synopsis notation is read the obvious way
 (``[--flag X]`` is optional text, ``a|b`` takes ``a``, ``...`` repeats) and

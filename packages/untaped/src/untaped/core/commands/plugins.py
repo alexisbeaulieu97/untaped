@@ -31,7 +31,7 @@ from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.fields import Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.plugin_records import InstalledPlugin
-from untaped.sdk.records import Record, record_kinds, record_model
+from untaped.sdk.records import Record, record_model
 from untaped.sdk.words import not_found, run_hint
 
 if TYPE_CHECKING:
@@ -208,7 +208,7 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = kind_model(kind, result)
     if model is None:
-        known = record_kinds() if result.mount is None else result.mount.kinds
+        known = result.mount.kinds
         raise UsageError(not_found("record kind", kind, known=_near(kind, known)))
     schema = model.model_json_schema()
     return {
@@ -235,7 +235,7 @@ def kind_model(kind: str, result: CompositionResult) -> type[BaseModel] | None:
     """
     if (model := record_model(kind)) is not None:
         return model
-    if result.mount is not None and kind in result.mount.kinds:
+    if kind in result.mount.kinds:
         return result.mount.kinds[kind]
     if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
         from untaped.runtime.contracts.registry import every_offer, owned_contracts  # noqa: PLC0415

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def check(install: Install) -> None:
-    """Fail with every failing row of ``untaped plugin check`` for the plugins installed.
+    """Fail with every failing plugin check row (:func:`check_plugin`) of the plugins installed.
 
     The rows are those only a composed install can answer (registration,
     setup marks, migrations, contracts, conformance, live); all of them run
@@ -33,7 +33,7 @@ def check(install: Install) -> None:
             for row in check_plugins(result, found, candidate.name, core_only=True)
         ]
     failed = [row for row in rows if row.status in ("fail", "error")]
-    assert not failed, "plugin check failed:\n" + "\n".join(
+    assert not failed, "plugin checks failed:\n" + "\n".join(
         f"  {row.plugin} {row.check} {row.title}: {row.detail}" for row in failed
     )
 

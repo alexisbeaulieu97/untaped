@@ -178,10 +178,7 @@ class Install:
     def _mount(self) -> Mount:
         from untaped.runtime.bootstrap import compose_root  # noqa: PLC0415
 
-        mount = compose_root(candidates=self.candidates).mount
-        if mount is None:
-            raise TypeError("install() composed no plugin class")
-        return mount
+        return compose_root(candidates=self.candidates).mount
 
 
 def _terminal() -> ScriptedTerminal | None:

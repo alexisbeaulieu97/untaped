@@ -220,7 +220,7 @@ def kept_composition(*, quiet: bool = False) -> Iterator[None]:
     """Bring back the composition (and its settings registrations) the block started with.
 
     The profile, verbose and quiet overrides are left as they are
-    (``untaped plugin check`` runs under the user's ``--profile``). With
+    (a plugin's check runs under the user's ``--profile``). With
     ``quiet``, compositions inside the block don't warn about quarantined
     plugins again. Raises ``RuntimeError`` inside a contract call, as
     :func:`compose_root` does, since leaving the block re-registers the settings.
@@ -331,8 +331,7 @@ def build_root_app(
         _mount(root, management.pop(name), name=name)
     if management:
         raise RuntimeError(f"root commands SHELL_SPEC doesn't list: {sorted(management)}")
-    if result.mount is not None:  # composed by compose_root, so core's class is in it
-        _mount_core(root, result.mount)
+    _mount_core(root, result.mount)
     for plugin in result.plugins:
         _mount_plugin(root, plugin)
     root.version = _resolve_version
@@ -366,9 +365,9 @@ def _mount(app: App, sub: App, *, name: str) -> None:
 def _mount_core(root: App, mount: Mount) -> None:
     """Mount the commands on ``Core``'s class at the root, from the declaration."""
     core = mount.declaration.plugin(NAME)
-    for name in core.command_words():
-        if name in root:
-            del root[name]
+    both = set(core.command_words()) & set(SHELL_SPEC.commands)
+    if both:  # a command moved onto ``Core`` leaves SHELL_SPEC in the same change
+        raise RuntimeError(f"root commands both Core and SHELL_SPEC declare: {sorted(both)}")
     add_commands(root, mount, NAME)
     for node in core.commands:
         apply_marks(root[node.name], path=(node.name,))
