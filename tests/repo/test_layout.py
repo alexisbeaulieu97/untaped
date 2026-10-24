@@ -64,6 +64,9 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk.storage.store",
         "untaped.sdk.testing",
         "untaped.sdk.testing.contracts",
+        # composes an install (runtime.bootstrap, runtime.registry) and runs its commands
+        # through the mount (runtime.mount.run_built), as the root does
+        "untaped.sdk.testing.install",
         "untaped.sdk.testing.plugin",
         "untaped.sdk.testing.screens",
         "untaped.sdk.testing.surface",

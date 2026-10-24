@@ -7192,6 +7192,16 @@ sdk untaped.sdk.testing.CliResult.exit_code
 sdk untaped.sdk.testing.CliResult.output
 sdk untaped.sdk.testing.CliResult.stderr
 sdk untaped.sdk.testing.CliResult.stdout
+sdk untaped.sdk.testing.Home(path)
+sdk untaped.sdk.testing.Home.path
+sdk untaped.sdk.testing.Home.plugin(plugin)
+sdk untaped.sdk.testing.Install(candidates)
+sdk untaped.sdk.testing.Install.candidates
+sdk untaped.sdk.testing.Install.cli(input=) default=None
+sdk untaped.sdk.testing.Install.cli(line)
+sdk untaped.sdk.testing.Install.run(**knobs)
+sdk untaped.sdk.testing.Install.run(command)
+sdk untaped.sdk.testing.Install.run(raise_on_error=) default=false
 sdk untaped.sdk.testing.ManualClock()
 sdk untaped.sdk.testing.ManualClock(start@1=) default=None
 sdk untaped.sdk.testing.ManualClock.advance()
@@ -7237,6 +7247,18 @@ sdk untaped.sdk.testing.PromptBackend.pick_many(request: PickRequest) -> PickRes
 sdk untaped.sdk.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
 sdk untaped.sdk.testing.PromptBackend.select(message: string, choices: PromptChoice[object][], *, default: any?, search: boolean) -> any
 sdk untaped.sdk.testing.PromptBackend.text(message: string, *, default: string?) -> string
+sdk untaped.sdk.testing.Ran(_unread@7=) default=None
+sdk untaped.sdk.testing.Ran(diagnostics@6=) default=[]
+sdk untaped.sdk.testing.Ran(exit, stdout, stderr)
+sdk untaped.sdk.testing.Ran(rows@4=) default=[]
+sdk untaped.sdk.testing.Ran(text@5=) default=None
+sdk untaped.sdk.testing.Ran.diagnostics
+sdk untaped.sdk.testing.Ran.exit
+sdk untaped.sdk.testing.Ran.rows
+sdk untaped.sdk.testing.Ran.rows_as(model)
+sdk untaped.sdk.testing.Ran.stderr
+sdk untaped.sdk.testing.Ran.stdout
+sdk untaped.sdk.testing.Ran.text
 sdk untaped.sdk.testing.ScreenKeys()  [experimental]
 sdk untaped.sdk.testing.ScreenKeys(*keys)  [experimental]
 sdk untaped.sdk.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]
@@ -7326,6 +7348,10 @@ sdk untaped.sdk.testing.git.global_config(add=) default=false  [experimental]
 sdk untaped.sdk.testing.git.global_config(key, value)  [experimental]
 sdk untaped.sdk.testing.git.hostile_git_home()  [experimental]
 sdk untaped.sdk.testing.git.trace2_events(path)  [experimental]
+sdk untaped.sdk.testing.install()
+sdk untaped.sdk.testing.install(*plugins)
+sdk untaped.sdk.testing.install(names=) default=None
+sdk untaped.sdk.testing.install(settings=) default=[]
 sdk untaped.sdk.testing.invoke_cli(args@2=) default=None
 sdk untaped.sdk.testing.invoke_cli(catch_exceptions=) default=true
 sdk untaped.sdk.testing.invoke_cli(command) callback(command, *)

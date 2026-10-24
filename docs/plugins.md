@@ -375,12 +375,19 @@ Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests,
 `untaped.sdk.testing.assert_surface(SPEC, path)` to keep its commands, settings
-and contracts from losing a line by accident (experimental), and
+and contracts from losing a line by accident (experimental), and, for a
+`PluginSpec` plugin,
 `untaped.sdk.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
 with `untaped.sdk.testing.manual_clock()`).
+A plugin class (`class Hello(Plugin)`) is tested through the fixtures:
+`install(Hello, settings=HelloSettings(...))` composes it into the test's
+home, `.run(Greet())` runs a built command and `.cli("hello say ada")` a
+command line, both returning a `Ran` (exit code, output, `rows_as(Model)`),
+and `clock` is the one clock caches, progress and HTTP back-off read
+(`examples/untaped-hello/tests`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
