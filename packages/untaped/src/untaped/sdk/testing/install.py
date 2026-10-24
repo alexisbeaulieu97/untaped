@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import io
 import shlex
-from collections.abc import Iterable, Mapping, Sequence
-from contextlib import nullcontext, redirect_stdout
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import metadata
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from untaped.runtime.registry import PluginCandidate
     from untaped.sdk.diagnostic import Diagnostic
     from untaped.sdk.testing import CliResult
+    from untaped.sdk.testing.fixtures import ScriptedTerminal
 
 
 @dataclass(frozen=True)
@@ -116,24 +117,28 @@ class Install:
         def go(_args: object, **_consoles: object) -> None:
             _dispatch(mount, decl, command, flags, raises=raise_on_error)
 
-        declined = knobs.get("answer") is False
+        backend = (
+            ScriptedPromptBackend(confirms=[False]) if knobs.get("answer") is False else _terminal()
+        )
         with watching() as printed:
             result = invoke_cli(
                 go,
                 [],
                 input=piped,
                 catch_exceptions=False,
-                prompt_backend=ScriptedPromptBackend(confirms=[False]) if declined else None,
-                terminal=declined,
+                prompt_backend=backend,
+                terminal=backend is not None,
+                interactive=backend is not None and piped is None,
             )
         return _ran(result, printed[0] if printed else None, read_back=False)
 
     def cli(self, line: str | Sequence[str], *, input: str | None = None) -> Ran:
         """Run ``untaped <line>`` through the command line core mounts, as a user would.
 
-        The terminal is absent, so a command that asks first exits 2 without
-        ``--yes``. ``input`` is what is piped on stdin. The rows of ``--format
-        json`` or ``pipe`` are read back through their JSON.
+        The terminal is the ``terminal`` fixture's: absent unless the test
+        scripted it, so a command that asks first exits 2 without ``--yes``.
+        ``input`` is what is piped on stdin. The rows of ``--format json`` or
+        ``pipe`` are read back through their JSON.
         """
         from untaped.runtime.bootstrap import build_root_app  # noqa: PLC0415
         from untaped.runtime.mount import watching  # noqa: PLC0415
@@ -141,9 +146,27 @@ class Install:
 
         args = shlex.split(line) if isinstance(line, str) else list(line)
         root = build_root_app(candidates=self.candidates)
+        backend = _terminal()
         with watching() as printed:
-            result = invoke_cli(root.meta, args, input=input, catch_exceptions=False)
+            result = invoke_cli(
+                root.meta,
+                args,
+                input=input,
+                catch_exceptions=False,
+                prompt_backend=backend,
+                terminal=backend is not None,
+                interactive=backend is not None and input is None,
+            )
         return _ran(result, printed[-1] if printed else None, read_back=True)
+
+    @contextmanager
+    def running(self) -> Iterator[None]:
+        """Run the block as a command of this install runs: under its run, its plugins composed."""
+        from untaped.runtime.run import build_run  # noqa: PLC0415
+        from untaped.sdk.run import run_scope  # noqa: PLC0415
+
+        with run_scope(build_run(self._mount.declaration, self._mount.settings)):
+            yield
 
     @cached_property
     def _mount(self) -> Mount:
@@ -153,6 +176,14 @@ class Install:
         if mount is None:
             raise TypeError("install() composed no plugin class")
         return mount
+
+
+def _terminal() -> ScriptedTerminal | None:
+    """The test's ``terminal`` when it is present; ``None`` is no terminal."""
+    from untaped.sdk.testing.fixtures import current_terminal  # noqa: PLC0415
+
+    terminal = current_terminal()
+    return terminal if terminal is not None and terminal.present else None
 
 
 def install(
@@ -173,7 +204,7 @@ def install(
 
     named = dict(names or {})
     discovered = discover_candidates()
-    candidates = tuple(_candidate(cls, named.get(cls), discovered) for cls in plugins)
+    candidates = tuple(candidate_of(cls, named.get(cls), discovered) for cls in plugins)
     models = [settings] if isinstance(settings, BaseModel) else list(settings)
     given: dict[str, tuple[type[BaseModel], BaseModel | None]] = {}
     for cls, candidate in zip(plugins, candidates, strict=True):
@@ -186,12 +217,25 @@ def install(
             raise TypeError(f"{type(each).__qualname__} is the settings of no plugin installed")
         given[section] = (given[section][0], each)
     _write_sections(given)
-    return Install(candidates)
+    installed = Install(candidates)
+    _remember(installed)
+    return installed
 
 
-def _candidate(
+def _remember(installed: Install) -> None:
+    """Let the test's credentials file secrets against ``installed``'s plugins."""
+    from untaped.sdk.network._credential_store import _TEST_STORE  # noqa: PLC0415
+    from untaped.sdk.testing.fixtures import MemoryCredentials  # noqa: PLC0415
+
+    store = _TEST_STORE.get()
+    if isinstance(store, MemoryCredentials):
+        store.installs.append(installed)
+
+
+def candidate_of(
     cls: type[Plugin], name: str | None, discovered: Sequence[PluginCandidate]
 ) -> PluginCandidate:
+    """``cls`` as installed (its entry point), else named ``name`` or after its class."""
     from untaped.runtime.composition import kebab  # noqa: PLC0415
     from untaped.runtime.declaration import target_of  # noqa: PLC0415
     from untaped.runtime.registry import PluginCandidate  # noqa: PLC0415
@@ -382,7 +426,7 @@ class Home:
 
         if isinstance(plugin, str):
             return plugins_root() / plugin
-        return plugins_root() / _candidate(plugin, None, discover_candidates()).name
+        return plugins_root() / candidate_of(plugin, None, discover_candidates()).name
 
 
 __all__ = ["Home", "Install", "Ran", "install"]

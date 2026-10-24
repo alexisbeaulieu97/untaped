@@ -64,12 +64,15 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk.storage.store",
         "untaped.sdk.testing",
         "untaped.sdk.testing.contracts",
+        # the scripted terminal drives screens on a theme (runtime.theme), as
+        # untaped.sdk.testing's 11.x backend did before it moved here
+        "untaped.sdk.testing.fixtures",
+        "untaped.sdk.testing.guards",
         # composes an install (runtime.bootstrap, runtime.registry) and runs its commands
         # through the mount (runtime.mount.run_built), as the root does
         "untaped.sdk.testing.install",
         "untaped.sdk.testing.plugin",
         "untaped.sdk.testing.screens",
-        "untaped.sdk.testing.surface",
     }
 )
 

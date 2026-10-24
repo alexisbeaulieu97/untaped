@@ -386,7 +386,13 @@ A plugin class (`class Hello(Plugin)`) is tested through the fixtures:
 `install(Hello, settings=HelloSettings(...))` composes it into the test's
 home, `.run(Greet())` runs a built command and `.cli("hello say ada")` a
 command line, both returning a `Ran` (exit code, output, `rows_as(Model)`),
-and `clock` is the one clock caches, progress and HTTP back-off read
+and `clock` is the one clock caches, progress and HTTP back-off read.
+`terminal` is the terminal commands meet: absent until the test scripts it
+(`terminal.answers(yes=True)`, `terminal.types("Ada")`). `credentials` is the
+in-memory password store every test runs with
+(`credentials.set(Hello.token, key, "secret")`). `check(install(Hello))`
+fails with every failing row of `untaped plugin check`, and
+`assert_surface(Hello)` keeps `snapshots/surface.txt` beside the test
 (`examples/untaped-hello/tests`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
