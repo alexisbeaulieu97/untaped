@@ -977,3 +977,19 @@ def test_a_malformed_own_ranking_opens_on_what_the_row_shows(
 
     editing = run.model.panes["shelf"].editing
     assert isinstance(editing, ListEditor) and editing.value == ("library",)
+
+
+def test_a_bad_part_of_core_s_section_leaves_the_other_parts_validated(
+    _isolated_config: Path,
+) -> None:
+    from untaped.core.commands.setup_sections import read_listing
+
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    untaped:\n"
+        "      http: {timeout_seconds: 5}\n      ui: {border: bogus}\n"
+    )
+    listing = read_listing("default", {})
+    rows = {row.key: row for row in listing.rows["untaped"]}
+    assert "border" in listing.errors["untaped"]
+    assert not rows["untaped.http.timeout_seconds"].raw
+    assert rows["untaped.ui.border"].raw

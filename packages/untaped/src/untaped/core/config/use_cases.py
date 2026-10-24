@@ -508,7 +508,10 @@ class ListSettings:
                 except ConfigError as exc:
                     self._failed.add(unit)
                     earlier = self.errors.get(section)
-                    self.errors[section] = f"{earlier}; {exc}" if earlier else str(exc)
+                    if earlier is None:
+                        self.errors[section] = str(exc)
+                    elif str(exc) not in earlier.split("; "):
+                        self.errors[section] = f"{earlier}; {exc}"
                     current = self._repo.raw_setting_value(descriptor)
             entries.append(
                 setting_entry_for_descriptor(
@@ -520,6 +523,10 @@ class ListSettings:
                 )
             )
         return entries
+
+    def unvalidated(self, descriptor: FieldDescriptor) -> bool:
+        """Whether the last listing showed this leaf raw: what it is validated with failed."""
+        return self._repo.validated_with(descriptor) in self._failed
 
 
 class ListAllProfilesSettings:
