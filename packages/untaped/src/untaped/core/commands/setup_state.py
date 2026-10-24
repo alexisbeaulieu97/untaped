@@ -287,11 +287,15 @@ def profile_exists(profile: str) -> bool:
 
 
 def service_store(services: dict[str, PluginSpec]) -> TokenStore | None:
-    """The store a token goes to, probed once per run; ``None`` when no service takes a command.
+    """The store a secret goes to, probed once per run; ``None`` when no service stores one.
 
-    One probe per run: a dead Secret Service costs its timeout once.
+    A service stores one when its plugin declares a credential, or its 11.0
+    settings take a ``token_command``. One probe per run: a dead Secret
+    Service costs its timeout once.
     """
-    if any(takes_token_command(settings_model(spec)) for spec in services.values()):
+    if any(
+        spec.credentials or takes_token_command(settings_model(spec)) for spec in services.values()
+    ):
         return pick_store()
     return None
 

@@ -26,6 +26,7 @@ from core_test_support.commands.support import (
     WIZ_TOKEN,
     ExtProfile,
     LegacyProfile,
+    OldWizProfile,
     UnmarkedWizProfile,
     WizProfile,
     WizServer,
@@ -44,7 +45,8 @@ from untaped.sdk import (
     connection_check,
     online_check,
 )
-from untaped.sdk.marks import forget_notices
+from untaped.sdk.health.marks import TokenCommand  # type: ignore[deprecated]
+from untaped.sdk.marks import deprecated, forget_notices
 from untaped.sdk.testing import (
     CliResult,
     ScreenKeys,
@@ -140,21 +142,20 @@ def test_a_missing_key_names_config_set_with_its_url(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.parametrize("setting", ["token: t", "token_command: [x]"])
-def test_a_token_from_an_old_setting_warns_with_config_migrate(
+def test_a_token_from_an_old_setting_warns_with_auth_login(
     _isolated_config: Path, setting: str
 ) -> None:
     write_config(
         _isolated_config,
         f"profiles:\n  default:\n    wiz: {{server: {{url: https://wiz}}, {setting}}}\n",
     )
-    row = _setup()
+    row = _setup(specs=(make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,)),))
     old = f"wiz.{setting.partition(':')[0]}"
     assert row["status"] == "warn"
-    assert (
-        row["detail"]
-        == f"url=https://wiz; token from {old}; `config migrate` moves {old} to a stored login"
+    assert row["detail"] == (
+        f"url=https://wiz; token from {old}; `auth login wiz` replaces {old} with a stored login"
     )
-    assert row["fix"][-2:] == ["config", "migrate"]
+    assert row["fix"][-3:] == ["auth", "login", "wiz"]
     assert row["automatic"] is False
 
 
@@ -367,6 +368,13 @@ class HookProfile(BaseModel):
 SIGNING_KEY = Credential("hook", "signing_key", key=HookServer)
 
 
+class OldHookProfile(HookProfile):
+    """``hook`` with 11.0's settings for its credential still declared, as github's are."""
+
+    signing_key: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
+    signing_key_command: Annotated[TokenCommand, deprecated(removed_in=12)] = None
+
+
 def _hook(*checks: Any) -> PluginSpec:
     return make_spec("hook", settings=HookProfile, doctor_checks=checks, credentials=(SIGNING_KEY,))
 
@@ -384,7 +392,8 @@ def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
 
 def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
     legacy = make_spec("legacy", settings=LegacyProfile)
-    refused = _cli("auth", "set", "legacy", specs=(legacy, _wiz()))
+    wiz = make_spec("wiz", settings=UnmarkedWizProfile)
+    refused = _cli("auth", "set", "legacy", specs=(legacy, wiz))
     assert refused.exit_code != 0
     assert "unknown token section 'legacy'; known: wiz" in refused.stderr
     assert "no secret named token" not in refused.stderr
@@ -411,10 +420,11 @@ def test_a_credential_from_an_old_setting_names_it(
     _isolated_config: Path, hook: str, state: str, source: str
 ) -> None:
     write_config(_isolated_config, f"profiles:\n  default:\n    hook: {hook}\n")
-    row = _plan_rows(_hook())["hook.signing_key"]
+    spec = make_spec("hook", settings=OldHookProfile, credentials=(SIGNING_KEY,))
+    row = _plan_rows(spec)["hook.signing_key"]
     assert row["state"] == state
     assert row["detail"].startswith(f"signing_key from {source}")
-    assert "config migrate" in " ".join([row["detail"], *row["run"]])
+    assert "auth login hook signing_key" in " ".join([row["detail"], *row["run"]])
 
 
 class PinProfile(BaseModel):

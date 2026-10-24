@@ -27,18 +27,18 @@ def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> N
         "active: work\n"
         "profiles:\n"
         "  default:\n"
-        "    untaped:\n      http:\n        proxy: http://base:3128\n        verify_ssl: true\n"
+        "    untaped:\n      http:\n        proxy: http://base:3128\n        timeout_seconds: 30\n"
         "  work:\n"
-        "    untaped:\n      http:\n        verify_ssl: false\n"
+        "    untaped:\n      http:\n        timeout_seconds: 5\n"
         "    github:\n      token: t\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()
 
     settings = get_settings()
-    # ``default`` supplies the proxy (base layer); ``work`` overrides verify_ssl.
+    # ``default`` supplies the proxy (base layer); ``work`` overrides the timeout.
     assert settings.untaped.http.proxy == "http://base:3128"
-    assert settings.untaped.http.verify_ssl is False
+    assert settings.untaped.http.timeout_seconds == 5.0
     assert settings.github.token is not None
     assert settings.github.token.get_secret_value() == "t"
 

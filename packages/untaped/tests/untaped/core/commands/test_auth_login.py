@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from core_test_support.commands.support import compose, make_spec, write_config
 from untaped.core.commands.auth import build_root_auth_app
-from untaped.runtime.settings import load_settings_section
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.marks import deprecated
 from untaped.sdk.network._credential_store import CredentialRow, file_reference, index
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore
@@ -32,6 +32,12 @@ class WizProfile(BaseModel):
     server: Annotated[WizServer | None, NeedsSetup] = None
 
 
+class OldWizProfile(WizProfile):
+    """``wiz`` still declaring 11.0's ``token``, as github does until it moves."""
+
+    token: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
+
+
 class Vault(CredentialKey):
     vault_id: str
 
@@ -46,9 +52,10 @@ def _auth(
     *args: str,
     input: str | None = None,
     backend: ScriptedPromptBackend | None = None,
+    settings: type[BaseModel] = WizProfile,
 ) -> CliResult:
     result = compose(
-        make_spec("wiz", settings=WizProfile, credentials=(TOKEN,)),
+        make_spec("wiz", settings=settings, credentials=(TOKEN,)),
         make_spec("vlt", credentials=(VAULT,)),
     )
     return CliInvoker().invoke(
@@ -147,11 +154,11 @@ def test_login_names_the_old_setting_a_login_outranks(_isolated_config: Path) ->
         "profiles:\n  default:\n    wiz: {server: {url: https://wiz.example.com}, token: old}\n",
     )
 
-    result = _auth("login", "wiz", input="new\n")
+    result = _auth("login", "wiz", input="new\n", settings=OldWizProfile)
 
     assert result.exit_code == 0, result.output
     assert "this login now wins over wiz.token" in result.stderr
-    assert "untaped config migrate" in result.stderr
+    assert "untaped config unset wiz.token" in result.stderr
 
 
 def test_login_before_setup_names_the_setup_step() -> None:
@@ -441,32 +448,3 @@ def test_a_replaced_entry_that_cannot_be_deleted_only_warns(
     assert "the replaced entry pass" in result.stderr
     assert "the keychain is locked" in result.stderr
     assert _secret(TOKEN, KEY) == "new"
-
-
-_ROOT_OFF = "profiles:\n  default:\n    untaped:\n      http: {verify_ssl: false}\n"
-
-
-def test_root_verify_ssl_false_leaves_a_server_nobody_set_up_unset(
-    _isolated_config: Path,
-) -> None:
-    write_config(_isolated_config, _ROOT_OFF)
-
-    result = _auth("status", "--format", "json")
-
-    rows = {row["section"]: row for row in _json(result)}
-    assert rows["wiz"]["key"] == "not set up"
-    assert "invalid" not in result.stderr
-
-
-@pytest.mark.parametrize("variable", ["UNTAPED_WIZ__SERVER__URL", "UNTAPED_WIZ__SERVER"])
-def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
-    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, variable: str
-) -> None:
-    url = "https://wiz.example.com"
-    monkeypatch.setenv(variable, url if variable.endswith("URL") else json.dumps({"url": url}))
-    write_config(_isolated_config, _ROOT_OFF)
-    _auth("status")  # composes wiz
-
-    server = load_settings_section("wiz").server
-
-    assert (str(server.url), server.verify_tls) == (f"{url}/", False)

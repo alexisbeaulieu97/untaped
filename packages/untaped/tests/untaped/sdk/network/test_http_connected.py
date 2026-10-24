@@ -222,14 +222,6 @@ def test_a_rejected_credential_names_its_own_auth_login() -> None:
         (HttpSettings(proxy="http://proxy.example.com:3128"), True, _URL, True),
         (HttpSettings(proxy="http://proxy.example.com:3128"), False, _URL, False),
         (
-            HttpSettings(proxy="http://proxy.example.com:3128", verify_hostname=False),
-            True,
-            _URL,
-            False,
-        ),
-        # root verify_ssl already reads as the key's verify_tls; a key saying true set it
-        (HttpSettings(proxy="http://proxy.example.com:3128", verify_ssl=False), True, _URL, True),
-        (
             HttpSettings(proxy="http://proxy.example.com:3128"),
             True,
             "http://plain.example.com",
@@ -267,11 +259,11 @@ def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.Monkey
         connected_client(Marked(), section="demo", base_url=_URL, bearer="tok", http=_HTTP)
 
 
-@pytest.mark.parametrize(("verify", "verify_ssl"), [(True, True), (None, False)])
-def test_a_keys_client_takes_root_trust_without_verify_ssl(
-    monkeypatch: pytest.MonkeyPatch, verify: bool | None, verify_ssl: bool
+@pytest.mark.parametrize("verify", [True, None])
+def test_a_client_checking_tls_takes_untapeds_trust(
+    monkeypatch: pytest.MonkeyPatch, verify: bool | None
 ) -> None:
-    """A key's TLS already holds root verify_ssl; a client given no key's TLS still applies it."""
+    """A key's ``verify_tls: true``, or no key's TLS at all, is untaped's own trust."""
     seen: list[HttpSettings] = []
 
     def trust(http: HttpSettings) -> bool:
@@ -279,11 +271,11 @@ def test_a_keys_client_takes_root_trust_without_verify_ssl(
         return True
 
     monkeypatch.setattr("untaped.sdk.network.http.resolve_verify", trust)
-    root = HttpSettings(verify_ssl=False, ca_bundle_path=Path("/etc/ca.pem"))
+    root = HttpSettings(ca_bundle_path=Path("/etc/ca.pem"))
 
     connected_client(
         Marked(), section="demo", base_url=_URL, bearer="tok", http=root, verify=verify
     ).close()
 
     [used] = seen
-    assert (used.verify_ssl, used.ca_bundle_path) == (verify_ssl, Path("/etc/ca.pem"))
+    assert used.ca_bundle_path == Path("/etc/ca.pem")

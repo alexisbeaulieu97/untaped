@@ -484,15 +484,13 @@ def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str
         ("UNTAPED_AWX", '{"base_url": "https://aap.example.com"}'),
     ],
 )
-def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
+def test_a_variable_sets_the_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variable: str, value: str
 ) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    untaped:\n      http: {verify_ssl: false}\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     monkeypatch.setenv(variable, value)
     get_settings.cache_clear()
 
     server = load_settings_section("awx").server
 
-    assert (str(server.url), server.verify_tls) == ("https://aap.example.com/", False)
+    assert (str(server.url), server.verify_tls) == ("https://aap.example.com/", True)

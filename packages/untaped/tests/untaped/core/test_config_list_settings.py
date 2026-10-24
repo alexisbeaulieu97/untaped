@@ -61,11 +61,11 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "warn",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      http:\n        verify_ssl: false\n",
+            "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 5\n",
             None,
-            "untaped.http.verify_ssl",
+            "untaped.http.timeout_seconds",
             Source(kind="profile", profile="default"),
-            False,
+            5.0,
         ),
         (
             "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n",

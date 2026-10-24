@@ -7,10 +7,8 @@ about httpx-specific exceptions.
 TLS verification is centralised in :func:`resolve_verify`. By default we read
 the OS trust store via :mod:`truststore`, which transparently picks up
 corporate CAs that have been installed system-wide. Override this with
-``untaped.http.ca_bundle_path`` to pin a specific PEM file, ``untaped.http.verify_hostname: false``
-to keep chain verification but skip the hostname/SAN check (for a self-signed
-cert that modern Python rejects on hostname), or ``untaped.http.verify_ssl: false`` to
-disable verification entirely (escape hatch — leaves traffic open to MITM).
+``untaped.http.ca_bundle_path`` to pin a specific PEM file. Turning checks
+off belongs to one server's key (``<plugin>.server.verify_tls``).
 """
 
 from __future__ import annotations
@@ -148,25 +146,15 @@ def _parse_retry_after(value: str) -> float | None:
 def resolve_verify(http: HttpSettings) -> VerifyTypes:
     """Translate :class:`HttpSettings` into a value httpx accepts for ``verify``.
 
-    Resolution order:
-
-    1. ``verify_ssl`` is ``False`` → ``False`` (no verification at all).
-    2. ``verify_hostname`` and ``ca_bundle_path`` set → the absolute path of that
-       file (httpx builds a default, hostname-checking context from it).
-    3. Otherwise → an :class:`ssl.SSLContext` whose ``check_hostname`` mirrors
-       ``verify_hostname``: the OS trust store (``truststore``) when no
-       ``ca_bundle_path``, else a default context loaded from the bundle.
-
-    ``verify_hostname: false`` keeps chain verification but drops the
-    hostname/SAN check — the case where a trusted self-signed cert is still
-    rejected by modern Python. The truststore default makes corporate CAs in
-    the OS keychain "just work" without per-user configuration.
+    The absolute path of ``ca_bundle_path`` when one is set (httpx builds a
+    default, hostname-checking context from it), else an
+    :class:`ssl.SSLContext` on the OS trust store (``truststore``), which makes
+    corporate CAs in the OS keychain "just work" without per-user
+    configuration.
 
     A ``ca_bundle_path`` that does not exist raises :class:`ConfigError` naming
     the path (instead of a bare ``FileNotFoundError`` at request time).
     """
-    if not http.verify_ssl:
-        return False
     if http.ca_bundle_path is not None and not http.ca_bundle_path.expanduser().is_file():
         raise ConfigError(
             "untaped.http.ca_bundle_path points to a missing file: "
@@ -174,12 +162,11 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
             "(fix it with `untaped config set untaped.http.ca_bundle_path <path>` or unset it)"
         )
     context = _ssl_context(http.ca_bundle_path)
-    # Hostname-checked + a pinned CA → hand httpx the path and let it build
-    # the (equivalent) default, hostname-checking context itself. The bundle
-    # was still loaded above so an unreadable/invalid one fails here.
-    if http.verify_hostname and http.ca_bundle_path is not None:
+    # A pinned CA: hand httpx the path and let it build the (equivalent)
+    # default context itself. The bundle was still loaded above so an
+    # unreadable/invalid one fails here.
+    if http.ca_bundle_path is not None:
         return str(http.ca_bundle_path.expanduser())
-    context.check_hostname = http.verify_hostname
     return context
 
 
@@ -763,7 +750,7 @@ def connected_client(
     ``verify`` is the key's :data:`~untaped.sdk.network.credentials.TlsVerify`: ``True``
     keeps untaped's trust (``untaped.http.ca_bundle_path``, else the OS store),
     ``False`` checks nothing, a CA file replaces it for this server. Left
-    out, the client applies the deprecated ``untaped.http.verify_ssl`` too.
+    out, untaped's trust applies.
 
     The credential is bound to its origin (the ``BoundSecret``'s, else
     ``base_url``'s): it is added to each request to that origin, and a
@@ -816,7 +803,7 @@ def connected_client(
         _refuse_folder_transport(
             http_settings,
             base,
-            verified=_verified(override, http_settings, keyed=verify is not None),
+            verified=override is not False,
             section=section,
         )
     if http_settings.proxy:
@@ -825,32 +812,12 @@ def connected_client(
         base_url=base,
         headers=request_headers,
         auth=None if credential is None else _origin_bound(credential, origin, system=section),
-        verify=resolve_verify(_trust(http_settings, keyed=verify is not None))
-        if override is None
-        else override,
+        verify=resolve_verify(http_settings) if override is None else override,
         timeout=http_settings.timeout_seconds,
         proxy=http_settings.proxy,
         retry=retry,
         system=section,
     )
-
-
-def _verified(override: VerifyTypes | None, http: HttpSettings, *, keyed: bool) -> bool:
-    """Whether a client's TLS checks the chain and the host: its key's, else ``untaped.http``'s."""
-    if override is not None:
-        return override is not False
-    return (keyed or http.verify_ssl) and http.verify_hostname
-
-
-def _trust(http: HttpSettings, *, keyed: bool) -> HttpSettings:
-    """The settings untaped's own trust comes from; a key's client leaves ``verify_ssl``.
-
-    ``untaped.http.verify_ssl: false`` already reads as the key's ``verify_tls:
-    false`` (the settings layout), so a key that still says ``true`` set it.
-    """
-    if keyed and not http.verify_ssl:
-        return http.model_copy(update={"verify_ssl": True})
-    return http
 
 
 def _key_verify(verify: bool | Path) -> VerifyTypes | None:
@@ -895,25 +862,21 @@ def _refuse_folder_transport(
     """Refuse to send a credential under a proxy or trust setting a folder's file chose.
 
     A proxy is allowed over verified https (it can't read or change the
-    request); a CA bundle never is, nor TLS turned off.
+    request); a CA bundle never is.
     """
     from untaped.sdk.network.credentials import folder_leaves  # noqa: PLC0415
 
     leaves = folder_leaves()
     if not leaves:
         return
-    for leaf in (
-        ("untaped", "http", "ca_bundle_path"),
-        ("untaped", "http", "verify_ssl"),
-        ("untaped", "http", "verify_hostname"),
-    ):
-        if leaf in leaves:
-            raise ConfigError(
-                f"{leaves[leaf]} sets {'.'.join(leaf)}; untaped won't send a credential under a "
-                "trust setting a folder chose",
-                system=section,
-                fix_by="user",
-            )
+    bundle = ("untaped", "http", "ca_bundle_path")
+    if bundle in leaves:
+        raise ConfigError(
+            f"{leaves[bundle]} sets untaped.http.ca_bundle_path; untaped won't send a credential "
+            "under a trust setting a folder chose",
+            system=section,
+            fix_by="user",
+        )
     proxy = ("untaped", "http", "proxy")
     if proxy in leaves and http.proxy and not (verified and base.startswith("https://")):
         raise ConfigError(

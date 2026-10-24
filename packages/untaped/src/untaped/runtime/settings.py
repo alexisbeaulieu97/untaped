@@ -51,8 +51,7 @@ from untaped.sdk.health.deprecated_keys import (
     notify_use,
     rename_keys,
 )
-from untaped.sdk.health.marks import TokenCommand
-from untaped.sdk.marks import Stability, deprecated
+from untaped.sdk.marks import Stability
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
@@ -82,20 +81,6 @@ class HttpSettings(BaseModel):
     ca_bundle_path: Path | None = Field(
         default=None,
         description="PEM file of extra CA certificates to trust instead of the OS trust store.",
-    )
-    # Turning checks off belongs to one server's key (`<plugin>.server.verify_tls`).
-    verify_ssl: Annotated[
-        bool, deprecated(removed_in=12, replacement="each server's verify_tls")
-    ] = Field(
-        default=True,
-        description=(
-            "Verify TLS certificates. `false` disables all certificate checks, and reads as "
-            "`verify_tls: false` on every server key; `config migrate` writes it there."
-        ),
-    )
-    verify_hostname: Annotated[bool, deprecated(removed_in=12)] = Field(
-        default=True,
-        description="Check the certificate host name. `false` keeps chain validation.",
     )
     timeout_seconds: float = Field(
         default=30.0, gt=0, description="HTTP request timeout in seconds."
@@ -301,10 +286,7 @@ def section_model(
     age; an unknown cache name loads (doctor names it), so a cache a plugin
     drops never breaks a config. Each cache's ``renamed_from`` joins
     ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key. Each declared
-    :class:`~untaped.sdk.network.credentials.Credential` gets the 11.0 settings that
-    still supply it (:func:`legacy_credential_fields`, which marks them),
-    unless the model declares them itself.
+    owner's own declarations never point at an injected key.
     """
     caches = timed_caches(caches)
     renamed = _cache_renames(model, caches)
@@ -334,7 +316,6 @@ def section_model(
             held,
             Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
         )
-    injected.update(legacy_credential_fields(model, credentials, section=section))
     composed = cast(
         "type[BaseModel]",
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
@@ -348,39 +329,6 @@ def section_model(
 _CREDENTIAL_NAMES: weakref.WeakKeyDictionary[type[BaseModel], frozenset[str]] = (
     weakref.WeakKeyDictionary()
 )
-
-
-def legacy_credential_fields(
-    model: type[BaseModel], credentials: tuple[Credential[Any], ...], *, section: str
-) -> dict[str, Any]:
-    """The deprecated ``<name>`` and ``<name>_command`` settings each credential still reads.
-
-    In 11.x a credential's old plain-text setting and its command setting
-    are read after the stored login (``Credential.get``'s third step); each
-    carries a ``deprecated(...)`` mark. A field the plugin's model declares
-    itself (an 11.0 model kept as is) is left to it.
-    """
-    fields: dict[str, Any] = {}
-    for credential in credentials:
-        login = f"untaped auth login {section or credential.plugin}"
-        if credential.name != "token":
-            login += f" {credential.name}"
-        mark = deprecated(removed_in=12, replacement=login)
-        name, command = credential.name, f"{credential.name}_command"
-        if name not in model.model_fields:
-            fields[name] = (
-                Annotated[SecretStr | None, mark],
-                Field(default=None, description=f"The {credential.label} in plain text."),
-            )
-        if command not in model.model_fields:
-            fields[command] = (
-                Annotated[TokenCommand, mark],
-                Field(
-                    default=None,
-                    description=f"Command (argv list, no shell) printing the {credential.label}.",
-                ),
-            )
-    return fields
 
 
 def _cache_renames(
@@ -620,7 +568,6 @@ def resolve_with_overlay(
     raw: dict[str, Any],
     *,
     sections: SectionModels | None = None,
-    environ: Mapping[str, str] | None = None,
 ) -> ResolvedConfig:
     """The layout's resolution of ``raw`` with the active overlay laid over it.
 
@@ -634,7 +581,7 @@ def resolve_with_overlay(
     known = {} if profiles is None else profiles
     if overlay is not None and isinstance(known, dict) and overlay.profile not in known:
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
-    resolved = active_settings_layout().resolve(raw, sections=sections, environ=environ)
+    resolved = active_settings_layout().resolve(raw, sections=sections)
     selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
     return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
 
@@ -644,9 +591,7 @@ class LayoutSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = load_config_yaml(yaml_file)
-        resolved = resolve_with_overlay(
-            raw, sections=model_sections(settings_cls), environ=os.environ
-        )
+        resolved = resolve_with_overlay(raw, sections=model_sections(settings_cls))
         effective = resolved.effective
         for sections in resolved.uses.values():
             for section, uses in sections.items():

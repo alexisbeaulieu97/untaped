@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, SecretStr
 from rich.console import Console
 
 from core_test_support.commands.support import (
+    OldWizProfile,
     UnmarkedWizProfile,
     WizProfile,
     compose,
@@ -592,9 +593,8 @@ def test_a_map_that_declares_its_names_edits_the_profiles_own_names() -> None:
     assert written(_descriptor("marks"), cleared) is None  # no names left: unset
 
 
-@pytest.mark.parametrize("model", [UnmarkedWizProfile, WizProfile])
+@pytest.mark.parametrize("model", [UnmarkedWizProfile, OldWizProfile])
 def test_a_token_command_is_declared_a_command(model: type[BaseModel]) -> None:
-    # A marked model's command setting is the one core adds to the composed section.
     composed = settings_model(make_spec("wiz", settings=model))
     descriptors = walk_settings(composed, include_collections=True)
 

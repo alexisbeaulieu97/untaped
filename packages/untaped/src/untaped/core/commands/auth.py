@@ -10,7 +10,7 @@ never from an argument.
 
 ``auth set``, ``auth unset`` and ``auth migrate`` keep their 11.0 meaning
 (a section's ``token_command`` in the config file) and are deprecated:
-``auth login``, ``auth forget`` and ``config migrate`` replace them.
+``auth login`` and ``auth forget`` replace them.
 """
 
 from __future__ import annotations
@@ -290,10 +290,13 @@ def _name_outranked(credential: Credential[Any]) -> None:
         _diag.warning(f"${variable} is set and wins over this login until you unset it")
     legacy = legacy_setting(credential)
     if legacy is not None:
-        _diag.info(
-            f"this login now wins over {legacy[0]}; "
-            f"{run_hint('config migrate')} to drop the old setting"
+        setting = legacy[0]
+        drop = (
+            f"unset ${setting}"
+            if setting.startswith("UNTAPED_")
+            else f"{run_hint(f'config unset {setting}')} to drop the old setting"
         )
+        _diag.info(f"this login now wins over {setting}; {drop}")
     found = next((each for each in credential.env if os.environ.get(each, "").strip()), None)
     if found is not None:
         _diag.info(f"this login now wins over ${found}")

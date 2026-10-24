@@ -254,7 +254,8 @@ def _login(
     The key is read back from the profile once its settings are written, so
     the login is filed under exactly what later runs resolve; a variable
     that sets part of it over the saved settings is named. The profile's
-    old ``<name>`` and ``<name>_command`` go: the stored login answers first.
+    old ``<name>`` and ``<name>_command`` go, where its 11.0 model still
+    declares them: the stored login answers first.
     """
     section, profile, how = candidate.section, candidate.profile, secret.how
     if how == "keep":
@@ -293,8 +294,9 @@ def _login(
             credential.store(key, token=typed)
         else:
             return notes
+    declared = type(settings).model_fields
     for old in (credential.name, f"{credential.name}_command"):
-        if repo.unset_value(f"{section}.{old}", profile=profile)[0]:
+        if old in declared and repo.unset_value(f"{section}.{old}", profile=profile)[0]:
             notes.append(("info", f"unset {section}.{old} in profile {profile}"))
     return notes
 

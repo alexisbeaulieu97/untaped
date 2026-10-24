@@ -273,10 +273,7 @@ another way than when it was stored:
 untaped --profile work config set awx.server.verify_tls /path/to/aap-ca.pem
 ```
 
-`untaped.http.verify_ssl` and `untaped.http.verify_hostname` are deprecated:
-`verify_ssl: false` reads as each server's `verify_tls: false` (unless the
-server sets its own) and `config migrate` writes it there. untaped's own
-settings sit in its `untaped` section: `untaped.ui.theme` picks a built-in
+untaped's own settings sit in its `untaped` section: `untaped.ui.theme` picks a built-in
 theme and `untaped.ui.format` the default `--format`; the
 [configuration reference](./reference/config.md#untaped) lists each one,
 including the names `untaped.ui.symbols` and `untaped.ui.color_roles`
@@ -321,8 +318,8 @@ A plugin's token for a server comes from the first of these that has one:
 1. `UNTAPED_<PLUGIN>__TOKEN` (`UNTAPED_<PLUGIN>__<NAME>` for a secret not
    named `token`), an override for this process;
 2. the login stored for exactly this server;
-3. in 11.x, the deprecated `<plugin>.token` or `<plugin>.token_command`
-   setting;
+3. while a plugin's settings still declare them (github's, until it moves),
+   its deprecated `<plugin>.token` or `<plugin>.token_command` setting;
 4. the service's conventional environment variables, in the order the
    [environment table](./reference/environment.md#untaped) lists them
    (`GH_TOKEN`, `JIRA_API_TOKEN`, `CONTROLLER_OAUTH_TOKEN`, …).
@@ -362,23 +359,11 @@ harness.
 
 ### Tokens from untaped 11.0
 
-11.0 kept a token in `<plugin>.token` (plain text) or `<plugin>.token_command`
-(`auth set` wrote one reading the entry `<profile>/<plugin>`). Both still
-work in 11.x, after a stored login, and warn; `auth set|unset|migrate` keep
-their 11.0 meaning and are deprecated. `untaped config migrate` moves them,
-per profile, after a confirmation (`--yes` off a terminal; `--dry-run`
-previews):
-
-- a command `auth set` wrote becomes a login reading the same entry, which
-  stays where it is;
-- another command becomes a login running it;
-- a plain-text token goes to the password store;
-- a line it can't move stays, listed as kept: both lines when two profiles
-  file different tokens for one server (a login would answer for both), a
-  plain-text token with no password store, or a server only the environment
-  sets.
-
-An older untaped sharing the config stops reading the lines it moved.
+untaped 12.0 reads no token from `config.yml` for a plugin that declares its
+credentials: log in again with `untaped auth login <plugin>`. github still
+reads its deprecated `github.token` and `github.token_command` after a stored
+login, and `auth set|unset|migrate` keep their 11.0 meaning for plugins still
+on 11.0's settings.
 
 ## Debug logs
 

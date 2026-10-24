@@ -87,12 +87,13 @@ def test_the_digest_format_is_pinned() -> None:
     canonical = b'{"credentials":{"token":"stored"},"settings":{"base_url":"https://example.com"}}'
     assert hashlib.sha256(canonical).hexdigest()[:16] == "4611b47e81bbd8b5"
     assert digest_of(terms) == "4611b47e81bbd8b5"
-    _config(default="server: {url: https://example.com}\ntoken_command: [pass, show, toy]")
+    _config(default="server: {url: https://example.com}")
+    TOKEN.store(ToyServer(url=HttpUrl("https://example.com")), command=["pass", "show", "toy"])
     assert settings_terms("toy") == {
         "settings": {"server": {"url": "https://example.com/"}},
-        "credentials": {"token": "toy.token_command"},
+        "credentials": {"token": "stored"},
     }
-    assert settings_digest("toy") == "e854719d872c33c6"
+    assert settings_digest("toy") == "61d69ed80623a2fb"
 
 
 def test_profiles_whose_section_reads_the_same_share_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,13 +157,6 @@ def test_each_credential_source_has_its_own(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("UNTAPED_TOY__TOKEN", "first")
     seen["override variable"] = _digest(monkeypatch)
     monkeypatch.delenv("UNTAPED_TOY__TOKEN")
-    _config(default=f"{_SERVER}\ntoken: first")
-    seen["old setting"] = _digest(monkeypatch)
-    assert settings_terms("toy")["credentials"] == {"token": "toy.token"}
-    _config(default=f"{_SERVER}\ntoken_command: [pass, show, toy]")
-    seen["old command setting"] = _digest(monkeypatch)
-    assert settings_terms("toy")["credentials"] == {"token": "toy.token_command"}
-    _config(default=_SERVER)
     TOKEN.store(ToyServer(url=HttpUrl("https://a.example.com")), command=["pass", "show", "x"])
     seen["stored"] = _digest(monkeypatch)
     assert settings_terms("toy")["credentials"] == {"token": "stored"}

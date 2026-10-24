@@ -151,8 +151,8 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
     some set warns, naming what is missing, with that field's command or
     ``setup plan --only <section>`` as the fix; all set passes, or warns
     with the automatic ``auth migrate`` when a legacy token is plain text in
-    the config file, or with ``config migrate`` when a credential still
-    comes from its deprecated setting.
+    the config file, or with ``auth login`` when a credential still comes
+    from its deprecated setting.
     """
     from untaped.sdk.health.doctor import DoctorResult  # noqa: PLC0415 - doctor imports this
 
@@ -194,7 +194,7 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
         )
     old = next(
         (
-            source
+            (field, source)
             for field in marks.secrets
             if field.credential is not None
             and (source := secret_source(settings, field, section=section)) is not None
@@ -203,12 +203,14 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
         None,
     )
     if old is not None:
+        field, source = old
+        fix = set_command(field, marks, section=section)
         return DoctorResult(
             id=SETUP_CHECK,
             ok=True,
             warn=True,
-            detail=f"{detail}; `config migrate` moves {old} to a stored login",
-            fix="config migrate",
+            detail=f"{detail}; `{' '.join(fix)}` replaces {source} with a stored login",
+            fix=fix,
         )
     return DoctorResult(id=SETUP_CHECK, ok=True, detail=detail or "set up")
 

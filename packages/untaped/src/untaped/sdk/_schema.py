@@ -127,7 +127,7 @@ class FieldDescriptor:
 
     @property
     def key(self) -> str:
-        """Dotted key, e.g. ``"untaped.http.verify_ssl"``."""
+        """Dotted key, e.g. ``"untaped.http.proxy"``."""
         return ".".join(self.path)
 
     @property

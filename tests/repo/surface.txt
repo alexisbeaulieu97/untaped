@@ -29,8 +29,6 @@ cfg awx.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg awx.server.verify_tls boolean|string(format=path) default=true
 cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
-cfg awx.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login awx]
-cfg awx.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login awx]
 cfg dotfiles.kept_dir string(format=path) default=~/.untaped/plugins/dotfiles/kept  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
@@ -71,8 +69,6 @@ cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
 cfg jira.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg jira.server.verify_tls boolean|string(format=path) default=true
-cfg jira.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login jira]
-cfg jira.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login jira]
 cfg lint.extensions.linter.rank.findings string[] default=[]  [experimental]
 cfg lint.extensions.linter.rank.rules string[] default=[]  [experimental]
 cfg lint.extensions.tree_reader.rank.read string[] default=[]  [experimental]
@@ -86,8 +82,6 @@ cfg recipe.preview_max_rows integer(minimum=0) default=50
 cfg untaped.http.ca_bundle_path string(format=path)? default=unset
 cfg untaped.http.proxy string? default=unset
 cfg untaped.http.timeout_seconds number(exclusiveMinimum=0) default=30.0
-cfg untaped.http.verify_hostname boolean default=true  [deprecated, removed in 12.0]
-cfg untaped.http.verify_ssl boolean default=true  [deprecated, removed in 12.0; use each server's verify_tls]
 cfg untaped.skills.updates choice=auto
 cfg untaped.skills.updates choice=off
 cfg untaped.skills.updates choice=warn
@@ -3012,8 +3006,6 @@ cli untaped config migrate --format choice=pipe
 cli untaped config migrate --format choice=raw
 cli untaped config migrate --format choice=table
 cli untaped config migrate --format choice=yaml
-cli untaped config migrate --yes alias=-y
-cli untaped config migrate --yes switch
 cli untaped config set --columns VALUE... default=unset
 cli untaped config set --columns alias=-c
 cli untaped config set --dry-run switch
@@ -5282,13 +5274,9 @@ sdk untaped.sdk.HttpSettings()
 sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
 sdk untaped.sdk.HttpSettings(proxy=) default=None
 sdk untaped.sdk.HttpSettings(timeout_seconds=) default=30.0
-sdk untaped.sdk.HttpSettings(verify_hostname=) default=true
-sdk untaped.sdk.HttpSettings(verify_ssl=) default=true
 sdk untaped.sdk.HttpSettings.ca_bundle_path
 sdk untaped.sdk.HttpSettings.proxy
 sdk untaped.sdk.HttpSettings.timeout_seconds
-sdk untaped.sdk.HttpSettings.verify_hostname
-sdk untaped.sdk.HttpSettings.verify_ssl
 sdk untaped.sdk.HttpStatusError(body=) default=None
 sdk untaped.sdk.HttpStatusError(category=) default=None
 sdk untaped.sdk.HttpStatusError(details=) default=None

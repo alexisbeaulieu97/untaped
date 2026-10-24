@@ -169,10 +169,10 @@ def test_a_kept_secret_setting_and_one_token_url_load() -> None:
     assert _compose(_spec(None, (tokened,))).quarantine == ()
 
 
-def test_core_adds_the_old_settings_deprecated() -> None:
+def test_core_adds_no_old_settings_for_a_credential() -> None:
     composed = section_settings(_spec(Marked, (TOKEN,)))
     assert composed is not None
-    assert {"token", "token_command"} <= composed.model_fields.keys()
+    assert not {"token", "token_command"} & composed.model_fields.keys()
     kept = section_settings(_spec(Kept, (TOKEN,)))
     assert kept is not None
     assert kept.model_fields["token"].metadata == Kept.model_fields["token"].metadata
