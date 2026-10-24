@@ -353,8 +353,8 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks are the table's default columns, and
-    ``--columns`` names its fields (checked before ``run``, so a subclass's own
+    agree); its ``Column`` marks, else its ``table_columns``, are the table's
+    default columns, and ``--columns`` names its fields (checked before ``run``, so a subclass's own
     fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
     its own default columns, ``Output(render={"tree": render_tree})`` adds a
@@ -381,7 +381,7 @@ class Output[R: BaseModel](FieldBlock):
         #: The format ``--format`` chose (``table`` when unfilled).
         self.format = "table"
         #: The table's default columns this run: the declared ones, or ``R``'s
-        #: ``Column`` fields; ``.add(...)`` adds more. ``--columns`` applies on top.
+        #: (:func:`default_columns`); ``.add(...)`` adds more. ``--columns`` applies on top.
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
         self._empty: str | None = None
@@ -408,7 +408,7 @@ class Output[R: BaseModel](FieldBlock):
         filled = _copy(self)
         filled.format = str(flags.get("--format") or "table")
         filled._requested = list(requested) if isinstance(requested, list) else None
-        filled.columns = Columns(self._declared or (column_fields(model) if model else ()))
+        filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None
         if filled.format in self.render:
             if filled._requested is not None:
@@ -453,6 +453,11 @@ class Columns(list[str]):
     def add(self, *names: str) -> None:
         """Show ``names`` too, after the columns already shown."""
         self.extend(name for name in names if name not in self)
+
+
+def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
+    """A table's default columns for ``model``: its ``Column`` fields, else ``table_columns``."""
+    return column_fields(model) or tuple(getattr(model, "table_columns", None) or ())
 
 
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
