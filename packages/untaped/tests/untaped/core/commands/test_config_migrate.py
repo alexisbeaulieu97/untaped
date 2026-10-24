@@ -49,13 +49,13 @@ def _migrate(*args: str) -> CliResult:
 
 
 ROUND_TRIP = """\
+format_version: 2
 # my config
+mig:
+  git_fetch_concurrency: 8   # fetches
+  probe_concurrency: 8
+  legacy: true
 profiles:
-  default:
-    mig:
-      git_fetch_concurrency: 8   # fetches
-      probe_concurrency: 8
-      legacy: true
   work:
     mig:
       ancient_path: '/old'  # oldest spelling
@@ -153,14 +153,14 @@ def test_apply_renames_every_profile_and_keeps_comments_and_order(_isolated_conf
 @pytest.mark.parametrize(
     ("text", "dropped", "kept"),
     [
-        ("corpus_path: /a\n      cache_dir: /b\n", "mig.corpus_path", "mig.cache_dir"),
-        ("ancient_path: /a\n      corpus_path: /b\n", "mig.ancient_path", "mig.corpus_path"),
+        ("corpus_path: /a\n  cache_dir: /b\n", "mig.corpus_path", "mig.cache_dir"),
+        ("ancient_path: /a\n  corpus_path: /b\n", "mig.ancient_path", "mig.corpus_path"),
     ],
 )
 def test_a_redundant_spelling_is_dropped(
     _isolated_config: Path, text: str, dropped: str, kept: str
 ) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    mig:\n      {text}")
+    write_config(_isolated_config, f"format_version: 2\nmig:\n  {text}")
 
     result = _migrate("--format", "json")
 
@@ -174,13 +174,13 @@ def test_a_redundant_spelling_is_dropped(
         "detail": "",
     } in rows
     assert "dropped 1" in result.stderr
-    assert "mig:\n      cache_dir: /b\n" in _isolated_config.read_text()
+    assert "mig:\n  cache_dir: /b\n" in _isolated_config.read_text()
 
 
 def test_state_and_deprecated_settings_are_left_alone(_isolated_config: Path) -> None:
     state = _isolated_config.parent / "state.yml"
     state.write_text("mig:\n  corpus_path: /s\n")
-    write_config(_isolated_config, "profiles:\n  default:\n    mig:\n      legacy: true\n")
+    write_config(_isolated_config, "format_version: 2\nmig:\n  legacy: true\n")
 
     result = _migrate()
 
@@ -197,7 +197,7 @@ def test_nothing_to_do_is_an_empty_list(_isolated_config: Path) -> None:
 
 
 def test_rows_carry_the_migration_outcome_kind(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    mig:\n      corpus_path: /c\n")
+    write_config(_isolated_config, "format_version: 2\nmig:\n  corpus_path: /c\n")
 
     result = _migrate("--format", "pipe")
 
@@ -222,8 +222,8 @@ def test_a_key_that_cannot_be_placed_stays_and_other_profiles_still_migrate(
     _isolated_config: Path,
 ) -> None:
     text = (
-        "profiles:\n  default:\n    blk:\n      workers: 3\n      sweep: 5\n"
-        "  empty:\n  work:\n    blk:\n      workers: 2\n"
+        "format_version: 2\nblk:\n  workers: 3\n  sweep: 5\n"
+        "profiles:\n  empty:\n  work:\n    blk:\n      workers: 2\n"
     )
     write_config(_isolated_config, text)
     result = compose(make_spec("blk", settings=BlockedProfile))
@@ -241,7 +241,7 @@ def test_a_key_that_cannot_be_placed_stays_and_other_profiles_still_migrate(
             "detail": "",
         }
     ]
-    assert "workers: 3\n      sweep: 5\n" in _isolated_config.read_text()
+    assert "blk:\n  workers: 3\n  sweep: 5\n" in _isolated_config.read_text()
 
 
 class DeletingProfile(BaseModel):
@@ -263,14 +263,13 @@ def _migrate_deleting(*args: str) -> CliResult:
     return CliInvoker().invoke(app, ["migrate", *args])
 
 
-DELETING = """profiles:
-  default:
-    del:
-      corpus_path: ~/corpus
-      protocol: ssh
-      old_parallel: 2
-      symbols:
-        a: b
+DELETING = """format_version: 2
+del:
+  corpus_path: ~/corpus
+  protocol: ssh
+  old_parallel: 2
+  symbols:
+    a: b
 """
 
 
@@ -315,14 +314,12 @@ def test_apply_deletes_the_keys(_isolated_config: Path) -> None:
     ]
     assert "renamed 1 key, deleted 2" in result.stderr
     assert _isolated_config.read_text() == (
-        "profiles:\n  default:\n    del:\n      parallel: 2\n      symbols:\n        a: b\n"
+        "format_version: 2\ndel:\n  parallel: 2\n  symbols:\n    a: b\n"
     )
 
 
 def test_only_deletes_lead_the_summary(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    del:\n      cache_dir:\n        a: 1\n"
-    )
+    write_config(_isolated_config, "format_version: 2\ndel:\n  cache_dir:\n    a: 1\n")
 
     result = _migrate_deleting("--dry-run", "--format", "json")
 
@@ -334,9 +331,9 @@ def test_only_deletes_lead_the_summary(_isolated_config: Path) -> None:
 def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n"
-        "  default:\n    del:\n      protocol: ssh\n"
-        "  other:\n    del: {}\n"
+        "format_version: 2\n"
+        "del:\n  protocol: ssh\n"
+        "profiles:\n  other:\n    del: {}\n"
         "  work:\n    del:\n      protocol: ssh\n      parallel: 3\n",
     )
 
@@ -344,5 +341,6 @@ def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert _isolated_config.read_text() == (
-        "profiles:\n  default: {}\n  other:\n    del: {}\n  work:\n    del:\n      parallel: 3\n"
+        "format_version: 2\nprofiles:\n  other:\n    del: {}\n"
+        "  work:\n    del:\n      parallel: 3\n"
     )

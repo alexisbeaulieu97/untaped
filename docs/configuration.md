@@ -42,11 +42,14 @@ names the other installs [registered](#several-versions-on-one-machine) here.
 
 ### File format
 
-A top-level `format_version` in `config.yml` or `state.yml` names the file's
-on-disk format; a file without it is format 1, the current format, and untaped
-never adds or removes the key. A file with a newer format, or a
-`format_version` that is not a positive integer, is refused on read and on
-write (exit 4): upgrade untaped instead of letting an older release misread
+A top-level `format_version` names the file's on-disk format. `config.yml`
+is format 2 and every write to it starts the file with `format_version: 2`. A
+non-empty `config.yml` without the key, or with `format_version: 1`, was
+written by untaped 11.x and is refused (exit 4): 12.0 has no upgrade path, so
+delete it and run `untaped setup`, or keep untaped 11.1 for that home.
+`state.yml` is format 1, with or without the key. A file with a newer format,
+or a `format_version` that is not a positive integer, is refused on read and
+on write (exit 4): upgrade untaped instead of letting an older release misread
 it. `config edit` refuses to open while `config.yml` or `state.yml` has a
 newer format, but opens a config with an invalid `format_version` so you can
 fix it.
@@ -54,33 +57,32 @@ fix it.
 `config` and `profile` commands write only `config.yml`; plugin state
 writes touch only `state.yml`.
 
-`config.yml` keeps settings under `profiles.<name>`. `active` is optional;
-when it is absent, `default` is the fallback profile.
+The top level of `config.yml` is the base: one section per plugin, read by
+every run. Named profiles go under `profiles:` and each one overlays the base.
 
 ```yaml
-active: prod
+format_version: 2
+
+untaped:
+  http:
+    ca_bundle_path: ~/certs/corp-ca.pem
+  ui:
+    theme: default
+    border: rounded
+    detail_view: list
+awx:
+  server: {url: https://aap.example.com}
+github:
+  default_org: acme
+jira:
+  server: {url: https://jira.example.com}
+  default_project: OPS
+  default_board_id: 42
+workspace:
+  workspaces_dir: ~/.untaped/workspaces
+  branch_template: "{name}"
 
 profiles:
-  default:
-    untaped:
-      http:
-        ca_bundle_path: ~/certs/corp-ca.pem
-      ui:
-        theme: default
-        border: rounded
-        detail_view: list
-    awx:
-      server: {url: https://aap.example.com}
-    github:
-      default_org: acme
-    jira:
-      server: {url: https://jira.example.com}
-      default_project: OPS
-      default_board_id: 42
-    workspace:
-      workspaces_dir: ~/.untaped/workspaces
-      branch_template: "{name}"
-
   prod:
     awx:
       server: {url: https://aap.prod.example.com, verify_tls: ~/certs/aap-prod.pem}
@@ -103,17 +105,18 @@ workspace:
 
 Things that surprise people:
 
-- Only `active` and `profiles` are read at the top level of `config.yml`. A
-  section placed there by mistake (`untaped:` instead of
-  `profiles.default.untaped:`), or a state section left there, is ignored;
-  `untaped doctor` flags it in its `unknown-keys` row. Move it by hand.
+- A top-level section no installed plugin reads (a misspelt name, or a
+  plugin you uninstalled) is ignored; `untaped doctor` flags it in its
+  `unknown-keys` row. `active:` and `profiles.default` are 11.x keys and are
+  refused: a run picks its profile with `--profile` or `UNTAPED_PROFILE`, and
+  the base is the top level.
 - Each section is validated only when a command reads it. An invalid
   `awx.page_size: abc` breaks `untaped awx ...` but not `untaped github ...`;
   the error names the section and the file. `untaped doctor` and
   `untaped config list` still report every invalid section.
-- The document root, `profiles` and each profile must be mappings; anything
-  else, or an unreadable file, is a configuration error naming the file. An
-  empty entry (`prod:` with nothing under it) is an empty profile.
+- The document root, `profiles` and each named profile must be mappings;
+  anything else, or an unreadable file, is a configuration error naming the
+  file. An empty entry (`prod:` with nothing under it) is an empty profile.
 
 Both files are written atomically, owner-only (`0600`) and under a lock (see
 `UNTAPED_CONFIG_LOCK_TIMEOUT` in
@@ -123,7 +126,7 @@ order, quoting and indentation.
 
 A setting's value comes from the first of these that has it: its
 `UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_AWX__SERVER__URL`),
-the active profile, `profiles.default`, the built-in default.
+the selected profile, the base, the built-in default.
 
 ## Several versions on one machine
 
@@ -151,34 +154,37 @@ migration would rewrite: migrate once every install is upgraded.
 
 ## Profiles
 
-A profile is a named set of settings. `default` is the base layer: a selected
-profile overlays it field by field.
+A profile is a named set of settings under `profiles:`. `default` names the
+base, the top level of `config.yml`: a selected profile overlays it field by
+field.
 
 ```bash
 untaped profile create stage --copy-from default
 untaped --profile stage config set awx.server.url https://aap.stage.example.com
-untaped profile use stage
+export UNTAPED_PROFILE=stage
 untaped profile delete stage --dry-run
 ```
 
-The active profile is the first of: the global `--profile`, `UNTAPED_PROFILE`,
-the `active:` key, then `default`. The first three must name an existing
-profile; before any profile exists, only `default` may be named.
+A run reads the profile the global `--profile` names, else the one
+`UNTAPED_PROFILE` names, else only the base. Either must name a profile under
+`profiles:` or `default`. Nothing in `config.yml` picks a profile: set
+`UNTAPED_PROFILE` in your shell for a lasting choice.
 
 `--profile` is a global option and goes anywhere in the command: before the
 plugin, between command names (`untaped github --profile work whoami`) or
 after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
 Tokens after `--` belong to the command and are never read as `untaped` options.
 
-- `default` is created by the first setting write. Other profiles must exist
-  before a write targets them.
+- The base always exists and cannot be created, renamed or deleted; clear its
+  keys with `config unset`. Other profiles must exist before a write targets
+  them.
 - `profile create`, `delete` and `rename` accept `--dry-run`, which checks the
   change and writes nothing. `profile delete` asks first; pass `--yes` when
   not interactive.
 - `profile show` prints YAML with secrets redacted unless you pass
   `--show-secrets`.
 - `profile current` writes only the name to stdout and its source (`flag`,
-  `env`, `config` or `fallback`) to stderr, so it is safe in a prompt:
+  `env` or `fallback`) to stderr, so it is safe in a prompt:
 
   ```bash
   echo "[$(untaped profile current 2>/dev/null)] $ "
@@ -221,8 +227,8 @@ parsing it as YAML:
   null; `config unset` removes the key instead;
 - an invalid value is rejected before anything is written.
 
-`config set` and `config unset` write to the active profile, or the one the
-root `--profile` names, and print an `untaped.setting_outcome` record that
+`config set` and `config unset` write to the selected profile (the base
+when none is selected), and print an `untaped.setting_outcome` record that
 never echoes the value. Settings a plugin manages as state are rejected
 with a "managed by untaped …" error; use the owning plugin's commands.
 

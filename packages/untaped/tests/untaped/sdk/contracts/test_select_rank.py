@@ -39,13 +39,12 @@ from untaped.sdk.records import Record
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 RANKED = """\
-profiles:
-  default:
-    shelf:
-      extensions:
-        book_source:
-          rank:
-            books: [shop, library]
+format_version: 2
+shelf:
+  extensions:
+    book_source:
+      rank:
+        books: [shop, library]
 """
 
 
@@ -80,7 +79,7 @@ def test_an_owner_with_settings_keeps_them_and_reads_them_as_its_own_model() -> 
 
     owner = PluginSpec(name="shelf", settings=ShelfSettings, contracts=lambda: (BookSource,))
     compose(owner)
-    write_config(RANKED.replace("shelf:\n", "shelf:\n      aisle: 4\n"))
+    write_config(RANKED.replace("shelf:\n", "shelf:\n  aisle: 4\n"))
     settings = get_config_section("shelf", ShelfSettings)
     assert isinstance(settings, ShelfSettings)
     assert settings.aisle == 4
@@ -88,7 +87,7 @@ def test_an_owner_with_settings_keeps_them_and_reads_them_as_its_own_model() -> 
 
 
 def test_rankings_come_from_config_and_order_gather() -> None:
-    write_config(LIBRARY_CONFIG + RANKED.removeprefix("profiles:\n  default:\n"))
+    write_config(LIBRARY_CONFIG + RANKED.removeprefix("format_version: 2\n"))
     compose(*_all())
     answers = gather(BookSource.books)()
     assert [(answer.plugin, answer.rank) for answer in answers] == [
@@ -109,7 +108,7 @@ def test_list_rankings_gives_each_ranking_and_who_sets_it(monkeypatch: pytest.Mo
     from untaped.core.config import SettingsFileRepository
     from untaped.core.config.use_cases import ListRankings, Ranking
 
-    write_config(RANKED + "    library: {}\n")
+    write_config(RANKED + "library: {}\n")
     compose(*_all())
     monkeypatch.setenv("UNTAPED_SHELF__EXTENSIONS__BOOK_SOURCE__RANK__FIRST", '["kiosk"]')
 
@@ -133,7 +132,7 @@ def test_list_rankings_gives_each_ranking_and_who_sets_it(monkeypatch: pytest.Mo
 )
 def test_a_malformed_extensions_value_is_a_config_error(body: str, message: str) -> None:
     compose(*_all())
-    write_config(f"profiles:\n  default:\n    shelf:\n      extensions:\n        {body}\n")
+    write_config(f"format_version: 2\nshelf:\n  extensions:\n    {body}\n")
     with pytest.raises(ConfigError, match=message):
         load_settings_section("shelf")
 
@@ -141,9 +140,9 @@ def test_a_malformed_extensions_value_is_a_config_error(body: str, message: str)
 def test_a_ranking_for_a_missing_contract_method_or_plugin_changes_nothing() -> None:
     """A ranking is grammar-checked only: names that don't exist are no load error."""
     write_config(
-        "profiles:\n  default:\n    shelf:\n      extensions:\n"
-        "        gone: {rank: {x: [nobody]}}\n"
-        "        book_source: {rank: {nope: [shop], books: [gitlab, kiosk]}}\n"
+        "format_version: 2\nshelf:\n  extensions:\n"
+        "    gone: {rank: {x: [nobody]}}\n"
+        "    book_source: {rank: {nope: [shop], books: [gitlab, kiosk]}}\n"
     )
     compose(shelf_spec(), shop_spec(), kiosk_spec())
     Book.model_rebuild()
@@ -151,13 +150,16 @@ def test_a_ranking_for_a_missing_contract_method_or_plugin_changes_nothing() -> 
     assert [(answer.plugin, answer.rank) for answer in answers] == [("kiosk", 1), ("shop", None)]
 
 
-def test_a_ranking_in_the_default_profile_works_where_the_provider_isnt_configured() -> None:
+def test_a_ranking_in_the_default_profile_works_where_the_provider_isnt_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``library`` ranked first in ``default``; the ``work`` profile doesn't configure it."""
     write_config(
-        "active: work\nprofiles:\n  default:\n    shelf:\n      extensions:\n"
-        "        book_source: {rank: {books: [library, shop]}}\n"
-        "  work: {}\n"
+        "format_version: 2\nshelf:\n  extensions:\n"
+        "    book_source: {rank: {books: [library, shop]}}\n"
+        "profiles:\n  work: {}\n"
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     compose(*_all())
     from core_test_support.contracts.support import Kiosk, Shop
 
@@ -220,7 +222,7 @@ def test_an_owner_state_model_may_retire_an_extensions_key() -> None:
 
 
 def test_a_plugin_that_owns_no_contract_can_rename_its_extensions_setting_away() -> None:
-    write_config("profiles:\n  default:\n    acme:\n      extensions: {a: b}\n")
+    write_config("format_version: 2\nacme:\n  extensions: {a: b}\n")
     result = _run(
         ["config", "get", "acme.plugins"], PluginSpec(name="acme", settings=_ReservedOldKey)
     )
@@ -255,7 +257,7 @@ def test_plugin_rank_dry_run_writes_nothing() -> None:
 
 
 def test_plugin_rank_writes_to_the_root_profile() -> None:
-    write_config("profiles:\n  default: {}\n  work: {}\n")
+    write_config("format_version: 2\nprofiles:\n  work: {}\n")
     _run(["--profile", "work", "plugin", "rank", "shelf.book_source", "books", "shop"], *_all())
     result = _run(["--profile", "work", "config", "get", "shelf.extensions"], *_all())
     assert json.loads(result.stdout) == {"book_source": {"rank": {"books": ["shop"]}}}
@@ -270,7 +272,7 @@ def test_plugin_rank_keeps_a_plugin_that_doesnt_fill_the_method_with_a_warning()
 
 
 def test_plugin_rank_removing_what_isnt_there_changes_nothing() -> None:
-    write_config("profiles:\n  default: {}\n")
+    write_config("format_version: 2\n")
     result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
     assert json.loads(result.stdout)["action"] == "unchanged"
     assert "shelf.extensions.book_source.rank.books unchanged" in result.stderr
@@ -297,7 +299,7 @@ def test_plugin_rank_reports_unchanged_updated_and_deleted() -> None:
     ],
 )
 def test_plugin_rank_repairs_a_malformed_stored_value(stored: str) -> None:
-    write_config(f"profiles:\n  default:\n    shelf:\n      extensions:\n        {stored}\n")
+    write_config(f"format_version: 2\nshelf:\n  extensions:\n    {stored}\n")
     result = _run(["plugin", "rank", "shelf.book_source", "books", "shop"], *_all())
     assert result.exit_code == 0, result.stderr
     assert _extensions() == {"book_source": {"rank": {"books": ["shop"]}}}
@@ -473,9 +475,9 @@ def test_plugin_schema_of_an_unknown_kind_exits_2() -> None:
 
 def test_doctor_warns_about_rankings_it_cant_follow_and_names_the_fix() -> None:
     write_config(
-        LIBRARY_CONFIG + "    shelf:\n      extensions:\n"
-        "        gone: {rank: {x: [shop]}}\n"
-        "        book_source: {rank: {nope: [shop], to_book: [library], "
+        LIBRARY_CONFIG + "shelf:\n  extensions:\n"
+        "    gone: {rank: {x: [shop]}}\n"
+        "    book_source: {rank: {nope: [shop], to_book: [library], "
         "books: [gitlab, shop, gitea]}}\n"
     )
     compose(*_all())
@@ -503,9 +505,7 @@ def test_doctor_warns_about_rankings_it_cant_follow_and_names_the_fix() -> None:
 
 
 def test_doctor_rank_rows_carry_a_runnable_fix() -> None:
-    write_config(
-        "profiles:\n  default:\n    shelf:\n      extensions:\n        gone: {rank: {x: [shop]}}\n"
-    )
+    write_config("format_version: 2\nshelf:\n  extensions:\n    gone: {rank: {x: [shop]}}\n")
     result = _run(["doctor", "-f", "json"], *_all())
     [row] = [row for row in json.loads(result.stdout) if row["check"] == "rank"]
     assert (row["plugin"], row["status"]) == ("shelf", "warn")
@@ -516,14 +516,17 @@ def test_doctor_rank_rows_carry_a_runnable_fix() -> None:
     assert not [row for row in json.loads(result.stdout) if row["check"] == "rank"]
 
 
-def test_doctors_rank_fix_targets_the_profile_that_holds_the_ranking() -> None:
+def test_doctors_rank_fix_targets_the_profile_that_holds_the_ranking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The ranking lives in ``default`` while ``work`` is active: the fix edits ``default``."""
     write_config(
-        "active: work\nprofiles:\n  default:\n    shelf:\n      extensions:\n"
-        "        gone: {rank: {x: [shop]}}\n"
-        "        book_source: {rank: {books: [gitlab, shop]}}\n"
-        "  work: {}\n"
+        "format_version: 2\nshelf:\n  extensions:\n"
+        "    gone: {rank: {x: [shop]}}\n"
+        "    book_source: {rank: {books: [gitlab, shop]}}\n"
+        "profiles:\n  work: {}\n"
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     result = _run(["doctor", "-f", "json"], *_all())
     fixes = sorted(row["fix"] for row in json.loads(result.stdout) if row["check"] == "rank")
     assert fixes == [

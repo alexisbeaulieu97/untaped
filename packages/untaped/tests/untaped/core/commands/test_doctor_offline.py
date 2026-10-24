@@ -59,7 +59,7 @@ def _row(rows: list[dict[str, Any]], check: str, title: str | None = None) -> di
 
 
 def test_group_readable_config_file_warns(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     _isolated_config.chmod(0o644)
     row = _row(_rows(), "config", "config file permissions")
     assert row["status"] == "warn"
@@ -71,16 +71,13 @@ def test_group_readable_config_file_warns(_isolated_config: Path) -> None:
 def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    github:\n      tokn: x\n      base_url: https://g\n"
-        "    untaped:\n      http:\n        timout: 3\n      ui:\n        symbols: {success: y}\n"
-        "  work:\n    nope: 1\n",
+        "format_version: 2\ngithub:\n  tokn: x\n  base_url: https://g\n"
+        "untaped:\n  http:\n    timout: 3\n  ui:\n    symbols: {success: y}\n"
+        "profiles:\n  work:\n    nope: 1\n",
     )
     row = _row(_rows(make_spec("github", settings=GithubProfile)), "unknown-keys")
     assert row["status"] == "warn"
-    assert row["detail"] == (
-        "ignored: profiles.default.github.tokn, profiles.default.untaped.http.timout, "
-        "profiles.work.nope"
-    )
+    assert row["detail"] == ("ignored: github.tokn, untaped.http.timout, profiles.work.nope")
 
 
 def test_unknown_keys_name_the_other_registered_installs(
@@ -88,7 +85,7 @@ def test_unknown_keys_name_the_other_registered_installs(
 ) -> None:
     from untaped.sdk.testing import write_reference
 
-    write_config(_isolated_config, "profiles:\n  default:\n    acme: {parallel: 4}\n")
+    write_config(_isolated_config, "format_version: 2\nacme: {parallel: 4}\n")
     other = tmp_path / "checkout"
     (other / "untaped-11.1.0.dist-info").mkdir(parents=True)
     write_reference(
@@ -96,15 +93,14 @@ def test_unknown_keys_name_the_other_registered_installs(
     )
     row = _row(_rows(), "unknown-keys")
     assert row["detail"] == (
-        "ignored: profiles.default.acme (another untaped here may read them: "
-        f"untaped 11.1.0 at {other})"
+        f"ignored: acme (another untaped here may read them: untaped 11.1.0 at {other})"
     )
 
 
 def test_an_unknown_ui_symbol_name_fails_the_ui_row(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {zzz: y}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {zzz: y}\n",
     )
     row = _row(_rows(exit_code=1), "settings", "validate untaped.ui")
     assert row["status"] == "fail"
@@ -117,8 +113,8 @@ def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 3\n"
-        "    untaped:\n      ui:\n        symbols: {zzz: y}\n",
+        "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 3\n"
+        "untaped:\n  ui:\n    symbols: {zzz: y}\n",
     )
     listed = CliInvoker().invoke(
         build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose()), ["list"]
@@ -133,7 +129,7 @@ def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
 def test_an_unknown_ui_color_role_name_fails_the_ui_row(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        color_roles: {zzz: red}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    color_roles: {zzz: red}\n",
     )
     row = _row(_rows(exit_code=1), "settings", "validate untaped.ui")
     assert row["status"] == "fail"
@@ -143,7 +139,7 @@ def test_an_unknown_ui_color_role_name_fails_the_ui_row(_isolated_config: Path) 
 def test_a_declared_ui_symbol_name_passes_the_ui_row(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {success: y}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {success: y}\n",
     )
     assert _row(_rows(), "settings", "validate untaped.ui")["status"] == "pass"
 
@@ -151,7 +147,7 @@ def test_a_declared_ui_symbol_name_passes_the_ui_row(_isolated_config: Path) -> 
 def test_known_keys_pass(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 3\n",
+        "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 3\n",
     )
     assert _row(_rows(), "unknown-keys")["status"] == "pass"
 
@@ -248,7 +244,7 @@ def test_connection_check(
 ) -> None:
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    write_config(_isolated_config, f"profiles:\n  default:\n    api: {config}\n")
+    write_config(_isolated_config, f"format_version: 2\napi: {config}\n")
     spec = make_spec(
         "api",
         settings=ApiProfile,
@@ -271,7 +267,7 @@ def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
 ) -> None:
     config = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
-    write_config(config, "profiles:\n  default:\n    bare: {base_url: https://b, token: t}\n")
+    write_config(config, "format_version: 2\nbare: {base_url: https://b, token: t}\n")
     spec = make_spec(
         "bare",
         settings=BareProfile,

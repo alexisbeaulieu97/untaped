@@ -89,8 +89,9 @@ def _map(page: Map) -> list[str]:
     shared = page.shared
     lines = [*_head("untaped", None, page.answerer), "", *_INTRO, "", "## Shared by every command"]
     lines += [
-        f"- Settings live in `{shared.config_path}`: each plugin's under "
-        "`profiles.<name>.<plugin>`. `untaped config` reads and changes them. A command "
+        f"- Settings live in `{shared.config_path}`: each plugin's in its section at the top, "
+        "and a named profile's under `profiles.<name>`. `untaped config` reads and changes "
+        "them (keys are `<plugin>.<setting>`). A command "
         "missing a setting exits 4, and its hint names the other profiles that set it.",
         "- Tokens are kept by `untaped auth`; a command missing one exits 4 and names the fix.",
         "- Results are rows on stdout; progress and errors go to stderr, as JSON Lines under "

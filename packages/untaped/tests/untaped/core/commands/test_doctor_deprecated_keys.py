@@ -60,8 +60,9 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    old:\n      corpus_path: /c\n      legacy: true\n"
-        "  work:\n    old:\n      repo_path: /r\n      sweep:\n        sync_concurrency: 2\n",
+        "format_version: 2\nold:\n  corpus_path: /c\n  legacy: true\n"
+        "profiles:\n  work:\n    old:\n      repo_path: /r\n"
+        "      sweep:\n        sync_concurrency: 2\n",
     )
 
     rows = _rows(**{"deprecated-keys": "", "unknown-keys": ""})
@@ -80,11 +81,14 @@ def test_old_keys_in_every_profile_are_listed_with_the_migrate_fix(
     assert rows["unknown-keys"]["status"] == "pass"
 
 
-def test_the_fix_names_the_active_profile(_isolated_config: Path) -> None:
+def test_the_fix_names_the_active_profile(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     write_config(
         _isolated_config,
-        "active: work\nprofiles:\n  default: {}\n  work:\n    old:\n      corpus_path: /c\n",
+        "format_version: 2\nprofiles:\n  work:\n    old:\n      corpus_path: /c\n",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
 
     row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
 
@@ -92,7 +96,7 @@ def test_the_fix_names_the_active_profile(_isolated_config: Path) -> None:
 
 
 def test_the_table_shows_the_automatic_fix(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    old:\n      corpus_path: /c\n")
+    write_config(_isolated_config, "format_version: 2\nold:\n  corpus_path: /c\n")
 
     result = _doctor("--format", "table")
 
@@ -100,7 +104,7 @@ def test_the_table_shows_the_automatic_fix(_isolated_config: Path) -> None:
 
 
 def test_deprecated_settings_alone_have_no_fix(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    old:\n      legacy: true\n")
+    write_config(_isolated_config, "format_version: 2\nold:\n  legacy: true\n")
 
     row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
 
@@ -108,7 +112,7 @@ def test_deprecated_settings_alone_have_no_fix(_isolated_config: Path) -> None:
 
 
 def test_no_old_keys_pass(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    old:\n      cache_dir: /c\n")
+    write_config(_isolated_config, "format_version: 2\nold:\n  cache_dir: /c\n")
 
     row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
 
@@ -122,9 +126,9 @@ def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
         rows = selected_check_rows(bootstrap.SHELL_SPEC, result, "default", frozenset({"old"}))
         return {str(row["check"]) for row in rows if row["plugin"] != "old"}
 
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     assert checks() == set()
-    write_config(_isolated_config, "profiles:\n  default:\n    old:\n      corpus_path: /c\n")
+    write_config(_isolated_config, "format_version: 2\nold:\n  corpus_path: /c\n")
     assert checks() == {"deprecated-keys"}
 
 
@@ -133,7 +137,7 @@ def test_a_deleted_key_is_unknown_with_its_note_and_the_migrate_fix(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    old:\n      store_dir: /s\n      typo: 1\n",
+        "format_version: 2\nold:\n  store_dir: /s\n  typo: 1\n",
     )
 
     rows = _rows(**{"deprecated-keys": "", "unknown-keys": ""})
@@ -141,8 +145,7 @@ def test_a_deleted_key_is_unknown_with_its_note_and_the_migrate_fix(
     row = rows["unknown-keys"]
     assert row["status"] == "warn"
     assert row["detail"] == (
-        "ignored: profiles.default.old.typo; "
-        "old.store_dir (profile default): deleted in 11.0; set git.store_dir"
+        "ignored: old.typo; old.store_dir (profile default): deleted in 11.0; set git.store_dir"
     )
     assert (row["fix"], row["automatic"]) == (["--profile", "default", "config", "migrate"], True)
     assert rows["deprecated-keys"]["status"] == "pass"
@@ -152,7 +155,7 @@ def test_a_retired_or_deleted_variable_still_set_is_named(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Retired keys are no longer read, so a variable left in a shell profile is silently ignored.
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     monkeypatch.setenv("UNTAPED_OLD__REPO_PATH", "/r")
     monkeypatch.setenv("untaped_old__store_dir", "/s")
 
@@ -170,7 +173,7 @@ def test_a_retired_or_deleted_variable_still_set_is_named(
 def test_a_renamed_variable_is_left_to_the_read_warning(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     monkeypatch.setenv("UNTAPED_OLD__CORPUS_PATH", "/c")
 
     row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]

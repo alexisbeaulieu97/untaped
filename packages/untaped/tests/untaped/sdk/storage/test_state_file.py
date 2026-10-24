@@ -28,17 +28,11 @@ from untaped.runtime.settings import (
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage.state import StateCollection
 
-LEGACY = """\
+CONFIG = """\
+format_version: 2
 # my config
-profiles:
-  default:
-    demo:
-      url: https://example.com   # keep me
-
-# old state layout
 demo:
-  items:
-    - name: alpha
+  url: https://example.com   # keep me
 """
 
 
@@ -103,12 +97,12 @@ def test_unwritable_state_location_is_a_config_error(
 
 @pytest.mark.parametrize("section", ["profiles", "active", "format_version"])
 def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
-    cfg.write_text("profiles:\n  default: {}\nactive: default\n")
+    cfg.write_text("format_version: 2\n")
     with pytest.raises(ConfigError, match="reserved"):
         mutate_plugin_state(section, lambda state: state.update(x=1))
     with pytest.raises(ConfigError, match="reserved"):
         read_plugin_state(section)
-    assert yaml.safe_load(cfg.read_text()) == {"profiles": {"default": {}}, "active": "default"}
+    assert yaml.safe_load(cfg.read_text()) == {"format_version": 2}
 
 
 @pytest.mark.parametrize("section", ["profiles", "active", "format_version"])
@@ -117,43 +111,29 @@ def test_reserved_names_cannot_register_state(cfg: Path, section: str) -> None:
         register_state_settings(section, DemoState)
 
 
-# ── the pre-8.0 layout is ignored ────────────────────────────────────────────
+# ── state lives in state.yml, never in config.yml ─────────────────────────────
 
 
-def test_state_left_in_config_is_not_read(cfg: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    cfg.write_text(LEGACY)
-    assert StateCollection("demo", "items").entries() == []
-    assert read_plugin_state("demo") == {}
-    assert capsys.readouterr().err == ""
-
-
-def test_state_file_is_used_even_with_a_copy_in_config(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
+def test_state_is_read_from_the_state_file(cfg: Path) -> None:
+    cfg.write_text(CONFIG)
     (cfg.parent / "state.yml").write_text("demo:\n  items:\n    - name: fresh\n")
     assert StateCollection("demo", "items").entries() == [{"name": "fresh"}]
 
 
-def test_settings_splice_ignores_state_left_in_config(cfg: Path) -> None:
-    register_profile_settings("demo", DemoProfile)
-    register_state_settings("demo", DemoState)
-    cfg.write_text(LEGACY)
-    assert get_settings().demo.items == []  # type: ignore[attr-defined]
-
-
 def test_state_write_never_touches_config(cfg: Path) -> None:
-    cfg.write_text(LEGACY)
+    cfg.write_text(CONFIG)
     StateCollection("demo", "items").upsert({"name": "beta"})
-    assert cfg.read_text() == LEGACY
+    assert cfg.read_text() == CONFIG
     assert _state(cfg) == {"demo": {"items": [{"name": "beta"}]}}
     assert StateCollection("demo", "items").remove("beta") is True
-    assert cfg.read_text() == LEGACY
+    assert cfg.read_text() == CONFIG
     assert _state(cfg) == {}
 
 
 def test_settings_splice_reads_state_file(cfg: Path) -> None:
     register_profile_settings("demo", DemoProfile)
     register_state_settings("demo", DemoState)
-    cfg.write_text("profiles:\n  default:\n    demo:\n      url: https://x\n")
+    cfg.write_text("format_version: 2\ndemo:\n  url: https://x\n")
     (cfg.parent / "state.yml").write_text("demo:\n  items:\n    - name: s\n")
     section = get_settings().demo  # type: ignore[attr-defined]
     assert section.url == "https://x"  # type: ignore[attr-defined]
@@ -173,7 +153,7 @@ def test_broken_state_file_does_not_block_settings_only_sections(cfg: Path) -> N
     register_profile_settings("demo", DemoProfile)
     register_state_settings("demo", DemoState)
     register_profile_settings("other", DemoProfile)
-    cfg.write_text("profiles:\n  default:\n    other:\n      url: https://o\n")
+    cfg.write_text("format_version: 2\nother:\n  url: https://o\n")
     (cfg.parent / "state.yml").write_text("demo: [unclosed\n")
     assert get_config_section("other", DemoProfile).url == "https://o"
 
@@ -210,6 +190,4 @@ def test_config_set_does_not_touch_state_file(cfg: Path) -> None:
     state_file.write_text("# state\ndemo:\n  items: []\n")
     SettingsFileRepository().set_value("demo.url", "https://new")
     assert state_file.read_text() == "# state\ndemo:\n  items: []\n"
-    assert yaml.safe_load(cfg.read_text()) == {
-        "profiles": {"default": {"demo": {"url": "https://new"}}}
-    }
+    assert yaml.safe_load(cfg.read_text()) == {"format_version": 2, "demo": {"url": "https://new"}}

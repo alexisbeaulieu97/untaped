@@ -415,7 +415,7 @@ def _list(*, fmt: Any, columns: list[str] | None) -> None:
 
 
 def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
-    profile = selected_profile(read_config_dict())
+    profile = selected_profile()
     found: list[TokenSource] = []
     for credential in _declared(result):
         target = _run_target(result, credential)
@@ -768,7 +768,7 @@ def _section(result: CompositionResult, section: str) -> _TokenSection:
 
 
 def _target_profile() -> str:
-    return selected_profile(read_config_dict())
+    return selected_profile()
 
 
 def _set(
@@ -900,7 +900,7 @@ def _legacy_status(result: CompositionResult) -> list[TokenSource]:
     """11.0's ``auth status`` rows, one per profile, for plugins that declare no credential."""
     raw = read_config_dict()
     layout = active_settings_layout()
-    profiles = layout.profile_names(raw) or [DEFAULT_PROFILE]
+    profiles = layout.profile_names(raw)
     sections = [each for each in _token_sections(result).values() if not each.declared]
     found: list[TokenSource] = []
     for profile in profiles:
@@ -944,9 +944,8 @@ def _migrate(
 ) -> None:
     raw = read_config_dict()
     layout = active_settings_layout()
-    names = layout.profile_names(raw)
     # `default` first: its token would otherwise win over another profile's command.
-    ordered = sorted(names, key=lambda name: name != DEFAULT_PROFILE)
+    ordered = layout.profile_names(raw)
     sections = _token_sections(result)
     pending = [
         (profile, section, token)

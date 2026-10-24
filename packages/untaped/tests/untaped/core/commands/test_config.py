@@ -49,11 +49,11 @@ def test_set_fully_qualified_key_writes_section(
     result = CliInvoker().invoke(app, ["set", "github.token", "ghp_x"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     assert "set github.token in profile default" in result.output
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["github"]["token"] == "ghp_x"
+    assert read_config_dict(_isolated_config)["github"]["token"] == "ghp_x"
 
 
 def test_get_fully_qualified_key_reads_section(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    jira:\n      base_url: https://j\n")
+    write_config(_isolated_config, "format_version: 2\njira:\n  base_url: https://j\n")
     get_settings.cache_clear()
     app = _config_app()
     result = CliInvoker().invoke(app, ["get", "jira.base_url"])  # type: ignore[arg-type]
@@ -83,13 +83,13 @@ def test_list_all_profiles_raw_is_empty_without_profiles(_isolated_config: Path)
 
 
 def test_unset_fully_qualified_key_removes_value(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      mode: on\n")
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  mode: on\n")
     get_settings.cache_clear()
     app = _config_app()
     result = CliInvoker().invoke(app, ["unset", "github.mode"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     assert "unset github.mode" in result.output
-    assert "github" not in read_config_dict(_isolated_config)["profiles"]["default"]
+    assert "github" not in read_config_dict(_isolated_config)
 
 
 # ── core's keys ────────────────────────────────────────────────────────────
@@ -101,8 +101,8 @@ def test_core_s_key_resolves_to_core_settings(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "set untaped.http.timeout_seconds in profile default" in result.output
     data = read_config_dict(_isolated_config)
-    assert data["profiles"]["default"]["untaped"]["http"] == {"timeout_seconds": 5.0}
-    assert "http" not in data["profiles"]["default"].get("github", {})
+    assert data["untaped"]["http"] == {"timeout_seconds": 5.0}
+    assert "http" not in data.get("github", {})
 
 
 # ── state writes rejected per section schema ─────────────────────────────────
@@ -158,20 +158,20 @@ def test_set_repairing_invalid_value_succeeds(_isolated_config: Path) -> None:
     """A schema-rejected value is fixable via ``config set`` on the same key."""
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",
+        "format_version: 2\njira:\n  timeout: not-a-number\n",
     )
     get_settings.cache_clear()
     app = _config_app()
     result = CliInvoker().invoke(app, ["set", "jira.timeout", "12"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["jira"]["timeout"] == 12
+    assert read_config_dict(_isolated_config)["jira"]["timeout"] == 12
 
 
 def test_list_all_profiles_shows_each_profile(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    github:\n      base_url: https://d\n"
-        "  prod:\n    github:\n      base_url: https://p\n",
+        "format_version: 2\ngithub:\n  base_url: https://d\n"
+        "profiles:\n  prod:\n    github:\n      base_url: https://p\n",
     )
     get_settings.cache_clear()
     app = _config_app()
@@ -210,12 +210,12 @@ def _scripted_editor(
 
 
 @pytest.mark.parametrize(
-    "content", ["[invalid", "profiles: {default: {jira: {timeout: not-a-number}}}"]
+    "content", ["[invalid", "format_version: 2\njira: {timeout: not-a-number}"]
 )
 def test_config_edit_rejects_an_invalid_edit_and_keeps_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str
 ) -> None:
-    original = "# mine\nprofiles: {default: {jira: {timeout: 5}}}\n"
+    original = "# mine\nformat_version: 2\njira: {timeout: 5}\n"
     write_config(_isolated_config, original)
     _scripted_editor(tmp_path, monkeypatch, content)
     result = CliInvoker().invoke(_config_app(), ["edit"])
@@ -233,7 +233,7 @@ def test_config_edit_never_opens_a_newer_config(
     write_config(_isolated_config, original)
     marker = tmp_path / "editor-ran"
     _scripted_editor(
-        tmp_path, monkeypatch, "profiles: {}\n", code=f"pathlib.Path({str(marker)!r}).touch()"
+        tmp_path, monkeypatch, "format_version: 2\n", code=f"pathlib.Path({str(marker)!r}).touch()"
     )
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 4, result.output
@@ -245,7 +245,7 @@ def test_config_edit_never_opens_a_newer_config(
 def test_config_edit_never_opens_with_a_newer_state_file(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = "profiles: {}\n"
+    config = "format_version: 2\n"
     write_config(_isolated_config, config)
     state = _isolated_config.with_name("state.yml")
     state_text = f"format_version: {FORMAT_VERSION + 1}\n"
@@ -254,7 +254,7 @@ def test_config_edit_never_opens_with_a_newer_state_file(
     _scripted_editor(
         tmp_path,
         monkeypatch,
-        "profiles: {default: {}}\n",
+        "format_version: 2\n",
         code=f"pathlib.Path({str(marker)!r}).touch()",
     )
     result = CliInvoker().invoke(_config_app(), ["edit"])
@@ -269,7 +269,7 @@ def test_config_edit_never_opens_with_a_newer_state_file(
 def test_config_edit_repairs_an_invalid_stamp(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "format_version: true\nprofiles: {}\n")
+    write_config(_isolated_config, "format_version: true\n")
     repaired = f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n"
     _scripted_editor(tmp_path, monkeypatch, repaired)
     result = CliInvoker().invoke(_config_app(), ["edit"])
@@ -280,7 +280,7 @@ def test_config_edit_repairs_an_invalid_stamp(
 def test_config_edit_names_a_newer_draft_format(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     draft = f"format_version: {FORMAT_VERSION + 1}\nprofiles: {{}}\n"
     _scripted_editor(tmp_path, monkeypatch, draft)
     result = CliInvoker().invoke(_config_app(), ["edit"])
@@ -290,7 +290,7 @@ def test_config_edit_names_a_newer_draft_format(
         f"(format {FORMAT_VERSION})"
     ) in result.stderr
     assert "upgrade untaped" not in result.stderr
-    assert _isolated_config.read_text() == "profiles: {}\n"
+    assert _isolated_config.read_text() == "format_version: 2\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
     assert kept.read_text() == draft
 
@@ -300,12 +300,12 @@ def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
 ) -> None:
     real = tmp_path / "dotfiles" / "config.yml"
     real.parent.mkdir()
-    real.write_text("profiles: {}\n")
+    real.write_text("format_version: 2\n")
     real.chmod(0o644)
     _isolated_config.unlink(missing_ok=True)
     _isolated_config.parent.mkdir(parents=True, exist_ok=True)
     _isolated_config.symlink_to(real)
-    content = "# hand edited\nprofiles: {default: {jira: {timeout: 12}}}"
+    content = "# hand edited\nformat_version: 2\njira: {timeout: 12}"
     _scripted_editor(tmp_path, monkeypatch, content)
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 0, result.output
@@ -318,10 +318,10 @@ def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
 def test_config_edit_invalid_edit_never_writes_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     pinned = tmp_path / "pinned.yml"
     os.link(_isolated_config, pinned)  # an atomic replace would break this hard link
-    _scripted_editor(tmp_path, monkeypatch, "profiles: {default: {jira: {timeout: nope}}}")
+    _scripted_editor(tmp_path, monkeypatch, "format_version: 2\njira: {timeout: nope}")
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 1, result.output
     assert os.path.samefile(_isolated_config, pinned)
@@ -333,18 +333,18 @@ def test_config_edit_keeps_the_draft_when_saving_fails(
 ) -> None:
     real = tmp_path / "readonly" / "config.yml"
     real.parent.mkdir()
-    real.write_text("profiles: {}\n")
+    real.write_text("format_version: 2\n")
     real.parent.chmod(0o555)
     _isolated_config.parent.mkdir(parents=True, exist_ok=True)
     _isolated_config.symlink_to(real)
-    content = "profiles: {default: {jira: {timeout: 12}}}"
+    content = "format_version: 2\njira: {timeout: 12}"
     _scripted_editor(tmp_path, monkeypatch, content)
     try:
         result = CliInvoker().invoke(_config_app(), ["edit"])
     finally:
         real.parent.chmod(0o755)
     assert result.exit_code == 4, result.output  # the save failed: the environment
-    assert real.read_text() == "profiles: {}\n"
+    assert real.read_text() == "format_version: 2\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
     assert kept.read_text() == content
 
@@ -352,25 +352,25 @@ def test_config_edit_keeps_the_draft_when_saving_fails(
 def test_config_edit_keeps_the_draft_when_it_is_not_utf8(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
-    _scripted_editor(tmp_path, monkeypatch, b"profiles: {}  # \xff\n")
+    write_config(_isolated_config, "format_version: 2\n")
+    _scripted_editor(tmp_path, monkeypatch, b"format_version: 2  # \xff\n")
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 1, result.output
-    assert _isolated_config.read_text() == "profiles: {}\n"
+    assert _isolated_config.read_text() == "format_version: 2\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
-    assert kept.read_bytes() == b"profiles: {}  # \xff\n"
+    assert kept.read_bytes() == b"format_version: 2  # \xff\n"
 
 
 def test_config_edit_keeps_edits_saved_before_the_editor_failed(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
-    content = "# saved user edits\nprofiles: {}\n"
+    write_config(_isolated_config, "format_version: 2\n")
+    content = "# saved user edits\nformat_version: 2\n"
     _scripted_editor(tmp_path, monkeypatch, None, code=f"p.write_text({content!r})\nsys.exit(1)")
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 1, result.output
     assert "editor exited with status 1" in result.stderr
-    assert _isolated_config.read_text() == "profiles: {}\n"
+    assert _isolated_config.read_text() == "format_version: 2\n"
     kept = Path(result.stderr.split("your edits are in ")[1].split()[0])
     assert kept.read_text() == content
     assert kept.stat().st_mode & 0o777 == 0o600
@@ -380,7 +380,7 @@ def test_config_edit_keeps_edits_saved_before_the_editor_failed(
 def test_config_edit_drops_an_unchanged_copy_when_the_editor_fails(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     _scripted_editor(tmp_path, monkeypatch, None, code="sys.exit(1)")
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 1, result.output
@@ -392,7 +392,7 @@ def test_config_edit_drops_an_unchanged_copy_when_the_editor_fails(
 def test_config_edit_keeps_crlf_line_endings(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _isolated_config.write_bytes(b"profiles:\r\n  default: {jira: {timeout: 5}}\r\n")
+    _isolated_config.write_bytes(b"format_version: 2\r\njira: {timeout: 5}\r\n")
     _scripted_editor(
         tmp_path,
         monkeypatch,
@@ -401,13 +401,13 @@ def test_config_edit_keeps_crlf_line_endings(
     )
     result = CliInvoker().invoke(_config_app(), ["edit"])
     assert result.exit_code == 0, result.output
-    assert _isolated_config.read_bytes() == b"profiles:\r\n  default: {jira: {timeout: 12}}\r\n"
+    assert _isolated_config.read_bytes() == b"format_version: 2\r\njira: {timeout: 12}\r\n"
 
 
 def test_config_edit_without_changes_writes_nothing(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     pinned = tmp_path / "pinned.yml"
     os.link(_isolated_config, pinned)  # an atomic replace would break this hard link
     _scripted_editor(tmp_path, monkeypatch, None)
@@ -423,9 +423,9 @@ def test_config_edit_saves_under_the_config_lock(
 ) -> None:
     from filelock import FileLock
 
-    write_config(_isolated_config, "profiles: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
-    _scripted_editor(tmp_path, monkeypatch, "profiles: {default: {jira: {timeout: 12}}}")
+    _scripted_editor(tmp_path, monkeypatch, "format_version: 2\njira: {timeout: 12}")
     held = FileLock(f"{_isolated_config}.lock")
     held.acquire()
     try:
@@ -434,20 +434,19 @@ def test_config_edit_saves_under_the_config_lock(
         held.release()
     assert result.exit_code == 5, result.output  # the lock is busy: retry later
     assert "could not acquire lock" in result.stderr
-    assert _isolated_config.read_text() == "profiles: {}\n"
+    assert _isolated_config.read_text() == "format_version: 2\n"
 
 
 def test_set_preserves_comments_and_key_order(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
         "# hand edited\n"
-        "profiles:\n"
-        "  # shared base\n"
-        "  default:\n"
-        "    jira:\n"
-        "      timeout: 5  # seconds\n"
-        "    github:\n"
-        "      token: keep  # rotate monthly\n",
+        "format_version: 2\n"
+        "# shared base\n"
+        "jira:\n"
+        "  timeout: 5  # seconds\n"
+        "github:\n"
+        "  token: keep  # rotate monthly\n",
     )
     app = _config_app()
 
@@ -456,14 +455,13 @@ def test_set_preserves_comments_and_key_order(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     assert _isolated_config.read_text(encoding="utf-8") == (
         "# hand edited\n"
-        "profiles:\n"
-        "  # shared base\n"
-        "  default:\n"
-        "    jira:\n"
-        "      timeout: 5  # seconds\n"
-        "    github:\n"
-        "      token: keep  # rotate monthly\n"
-        "      base_url: https://ghe.example\n"
+        "format_version: 2\n"
+        "# shared base\n"
+        "jira:\n"
+        "  timeout: 5  # seconds\n"
+        "github:\n"
+        "  token: keep  # rotate monthly\n"
+        "  base_url: https://ghe.example\n"
     )
 
 
@@ -497,7 +495,7 @@ def test_set_dry_run_validates_without_writing(_isolated_config: Path) -> None:
 
 
 def test_unset_emits_deleted_unchanged_and_planned(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      mode: 'on'\n")
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  mode: 'on'\n")
     app = _config_app()
 
     def unset(*extra: str) -> object:
@@ -506,7 +504,7 @@ def test_unset_emits_deleted_unchanged_and_planned(_isolated_config: Path) -> No
         return _json(result)["action"]  # type: ignore[index]
 
     assert unset("--dry-run") == "planned"
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["github"] == {"mode": "on"}
+    assert read_config_dict(_isolated_config)["github"] == {"mode": "on"}
     assert unset() == "deleted"
     assert unset() == "unchanged"
     assert unset("--dry-run") == "unchanged"

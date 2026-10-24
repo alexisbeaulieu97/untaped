@@ -31,13 +31,13 @@ from untaped_github.errors import GitCorpusError
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 #: ``github.caches.sweep.max_age_seconds: 0``: every run checks every repo.
-_NO_MAX_AGE = "      caches:\n        sweep:\n          max_age_seconds: 0\n"
+_NO_MAX_AGE = "  caches:\n    sweep:\n      max_age_seconds: 0\n"
 
 
 @pytest.fixture(autouse=True)
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
@@ -178,7 +178,7 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     rewrite_to: Callable[..., None],
     store_auth: dict[str, list[str | None]],
 ) -> None:
-    _config.write_text(_config.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    _config.write_text(_config.read_text() + "  base_url: https://ghe.example/api/v3\n")
     origin = source_repo("origin", {"README.md": "hello\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
     bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])

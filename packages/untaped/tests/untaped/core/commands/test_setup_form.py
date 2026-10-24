@@ -15,7 +15,7 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.stores import install_fake_stores
-from core_test_support.commands.support import compose, make_spec, write_config
+from core_test_support.commands.support import compose, make_spec, write_config, written_profile
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands import setup_write
 from untaped.core.commands.setup_screen import SetupModel, SetupResult, setup_screen
@@ -23,7 +23,7 @@ from untaped.core.commands.setup_state import ServiceState, setup_sections, setu
 from untaped.core.commands.setup_write import Candidate
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec
-from untaped.runtime.settings import load_settings_section
+from untaped.runtime.settings import active_settings_layout, load_settings_section
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Key, Paste, Quit, Screen
 from untaped.screen.runtime import Runtime
@@ -96,7 +96,7 @@ def _build(profile: str = "default") -> Screen[SetupModel, SetupResult]:
         sections=setup_sections(),
         profile=profile,
         store=pick_store(),
-        profiles=sorted(raw.get("profiles") or ()),
+        profiles=active_settings_layout().profile_names(raw),
     )
 
 
@@ -114,8 +114,7 @@ def _form(
 
 
 def _section(path: Path, profile: str = "default") -> dict[str, Any]:
-    profiles = read_config_dict(path).get("profiles") or {}
-    node = (profiles.get(profile) or {}).get("duo", {})
+    node = written_profile(path, profile).get("duo", {})
     assert isinstance(node, dict)
     return node
 
@@ -169,8 +168,8 @@ def test_a_value_inherited_from_default_is_not_copied_into_the_profile(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    duo:\n"
-        "      server: {url: 'https://duo.example.com', org: acme}\n      port: 8443\n",
+        "format_version: 2\nduo:\n"
+        "  server: {url: 'https://duo.example.com', org: acme}\n  port: 8443\n",
     )
 
     drive_screen(_build("prod"), [*_form(), "esc", "esc"])
@@ -195,8 +194,7 @@ def _send(runtime: Runtime[SetupModel, SetupResult], host: FakeHost, keys: list[
 
 
 _SET_UP = (
-    "profiles:\n  default:\n    duo:\n"
-    "      server: {url: 'https://duo.example.com', org: acme}\n      port: 8443\n"
+    "format_version: 2\nduo:\n  server: {url: 'https://duo.example.com', org: acme}\n  port: 8443\n"
 )
 
 

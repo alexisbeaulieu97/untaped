@@ -1416,11 +1416,10 @@ def aap_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))

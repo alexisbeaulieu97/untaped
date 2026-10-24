@@ -118,7 +118,8 @@ allows it; a bare id two keys declare allows nothing, with a warning.
 A suppression is `<rule>[:<target-glob>]`, the same everywhere it is
 written:
 
-- `profiles.<name>.lint.ignore` (a list), for every run in the profile;
+- `lint.ignore` (a list) in `config.yml`, for every run (under
+  `profiles.<name>`, for every run in that profile);
 - `ignore:` in `.untaped/lint.yml`, for every run in the repository;
 - `--ignore`, for one run (repeatable).
 

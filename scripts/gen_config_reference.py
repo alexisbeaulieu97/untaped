@@ -43,7 +43,8 @@ _HEADER = """\
 # Configuration reference
 
 Every setting `untaped` reads, generated from the settings models. Profile
-settings live under `profiles.<name>.<section>` in `~/.untaped/config.yml`;
+settings live under `<section>` in `~/.untaped/config.yml` (a named profile's
+under `profiles.<name>.<section>`);
 state lives in `~/.untaped/state.yml` and is written only by the owning
 plugin's commands. See [Configuration](../configuration.md) for the file
 layout, profiles and precedence.

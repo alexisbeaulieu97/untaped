@@ -29,14 +29,17 @@ def test_read_returns_empty_when_file_absent(
 def test_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"awx": {"token": "secret", "base_url": "https://x"}})
-    assert read_config_dict() == {"awx": {"token": "secret", "base_url": "https://x"}}
+    write_config_dict({"format_version": 2, "awx": {"token": "secret", "base_url": "https://x"}})
+    assert read_config_dict() == {
+        "format_version": 2,
+        "awx": {"token": "secret", "base_url": "https://x"},
+    }
 
 
 def test_write_creates_parent_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "deeply" / "nested" / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"a": 1})
+    write_config_dict({"format_version": 2, "a": 1})
     assert cfg.exists()
     assert cfg.parent.is_dir()
 
@@ -44,7 +47,7 @@ def test_write_creates_parent_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_write_uses_secure_perms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"a": 1})
+    write_config_dict({"format_version": 2, "a": 1})
     mode = cfg.stat().st_mode & 0o777
     assert mode == 0o600
 
@@ -54,14 +57,14 @@ def test_write_goes_through_a_symlinked_config(
 ) -> None:
     real = tmp_path / "dotfiles" / "config.yml"
     real.parent.mkdir()
-    real.write_text("# mine\na: 1\n")
+    real.write_text("# mine\nformat_version: 2\na: 1\n")
     real.chmod(0o644)
     cfg = tmp_path / "config.yml"
     cfg.symlink_to(real)
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     mutate_config(lambda data: data.update({"b": 2}))
     assert cfg.is_symlink()
-    assert real.read_text() == "# mine\na: 1\nb: 2\n"
+    assert real.read_text() == "# mine\nformat_version: 2\na: 1\nb: 2\n"
     assert real.stat().st_mode & 0o777 == 0o600
 
 
@@ -102,7 +105,7 @@ def test_mutate_config_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     """Happy path: callback receives the loaded dict, mutates in place, gets persisted."""
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
 
     def _set_debug(data: dict[str, Any]) -> None:
         data["log_level"] = "DEBUG"
@@ -120,13 +123,13 @@ def test_mutate_config_clears_get_settings_cache(
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"profiles": {"default": {"untaped": {"skills": {"updates": "warn"}}}}})
+    write_config_dict({"format_version": 2, "untaped": {"skills": {"updates": "warn"}}})
 
     get_settings.cache_clear()
     assert get_settings().untaped.skills.updates == "warn"
 
     def _set_off(data: dict[str, Any]) -> None:
-        data["profiles"]["default"]["untaped"]["skills"]["updates"] = "off"
+        data["untaped"]["skills"]["updates"] = "off"
 
     mutate_config(_set_off)
     assert get_settings().untaped.skills.updates == "off"
@@ -142,7 +145,7 @@ def test_mutate_config_no_op_does_not_clear_cache(
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
 
     get_settings.cache_clear()
     cached = get_settings()
@@ -162,7 +165,9 @@ def test_mutate_config_creates_file_when_absent(
 
     mutate_config(_seed)
     assert cfg.exists()
-    assert read_config_dict() == {"log_level": "DEBUG"}
+    # A new file starts with the format stamp.
+    assert cfg.read_text().startswith("format_version: 2\n")
+    assert read_config_dict() == {"format_version": 2, "log_level": "DEBUG"}
 
 
 def test_mutate_config_skips_write_when_callback_no_ops(
@@ -177,7 +182,7 @@ def test_mutate_config_skips_write_when_callback_no_ops(
     """
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
     before_mtime = cfg.stat().st_mtime_ns
 
     mutate_config(lambda data: None)
@@ -208,7 +213,7 @@ def test_mutate_config_exception_keeps_file_unchanged(
     """
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
     snapshot = cfg.read_text()
 
     def _bad(data: dict[str, Any]) -> None:
@@ -230,7 +235,7 @@ def test_mutate_config_lock_blocks_concurrent_mutation(
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
 
     held = FileLock(str(cfg) + ".lock")
     held.acquire()
@@ -249,7 +254,7 @@ def test_mutate_config_releases_lock_on_exception(
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"format_version": 2, "log_level": "INFO"})
 
     with pytest.raises(RuntimeError):
         mutate_config(lambda data: (_ for _ in ()).throw(RuntimeError("fail")))
@@ -333,7 +338,7 @@ def test_write_creates_the_file_owner_only_from_the_start(
     old_umask = os.umask(0o022)
     monkeypatch.setattr(os, "replace", spy_replace)
     try:
-        write_config_dict({"token": "secret"}, cfg)
+        write_config_dict({"format_version": 2, "token": "secret"}, cfg)
     finally:
         os.umask(old_umask)
     assert modes == [0o600]
@@ -343,11 +348,11 @@ def test_write_creates_the_file_owner_only_from_the_start(
 
 def test_failed_write_leaves_no_temp_file_and_keeps_the_original(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yml"
-    write_config_dict({"log_level": "INFO"}, cfg)
+    write_config_dict({"format_version": 2, "log_level": "INFO"}, cfg)
     before = cfg.read_text()
 
     with pytest.raises(Exception, match="cannot represent"):
-        write_config_dict({"bad": object()}, cfg)
+        write_config_dict({"format_version": 2, "bad": object()}, cfg)
 
     assert cfg.read_text() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yml"]
@@ -357,8 +362,8 @@ def test_write_ignores_a_stale_fixed_name_temp_file(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yml"
     stale = tmp_path / "config.yml.tmp"
     stale.write_text("stale")
-    write_config_dict({"log_level": "INFO"}, cfg)
-    assert read_config_dict(cfg) == {"log_level": "INFO"}
+    write_config_dict({"format_version": 2, "log_level": "INFO"}, cfg)
+    assert read_config_dict(cfg) == {"format_version": 2, "log_level": "INFO"}
 
 
 def test_nested_config_write_is_refused(tmp_path: Path) -> None:
@@ -385,7 +390,7 @@ def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
         mutate_plugin_state("demo", lambda section: section.update(b=2), path=state)
 
     mutate_config(_outer, path=config)
-    assert read_config_dict(config) == {"a": 1}
+    assert read_config_dict(config) == {"format_version": 2, "a": 1}
     assert read_plugin_state("demo", path=state) == {"b": 2}
 
 
@@ -407,4 +412,4 @@ def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(
     )
     later.start()
     later.join()
-    assert read_config_dict(cfg) == {"a": 1, "b": 2}
+    assert read_config_dict(cfg) == {"format_version": 2, "a": 1, "b": 2}

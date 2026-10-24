@@ -117,11 +117,11 @@ def _step(rows: list[dict[str, Any]], step: str) -> dict[str, Any]:
     return next(row for row in rows if row["step"] == step)
 
 
-def _configure(path: Path, wiz: str, profile: str = "default") -> None:
-    """Write ``wiz``'s settings to ``profile``; a ``token_command`` becomes a stored login."""
+def _configure(path: Path, wiz: str) -> None:
+    """Write ``wiz``'s settings to the base; a ``token_command`` becomes a stored login."""
     data = yaml.safe_load(wiz)
     command = data.pop("token_command", None)
-    write_config(path, f"profiles:\n  {profile}:\n    wiz: {json.dumps(data)}\nactive: {profile}\n")
+    write_config(path, f"format_version: 2\nwiz: {json.dumps(data)}\n")
     if command:
         WIZ_TOKEN.store(WizServer(url=HttpUrl(data["server"]["url"])), command=command)
 
@@ -240,7 +240,7 @@ def test_a_token_outside_the_config_is_done(
 def test_a_token_command_in_the_config_is_done_and_deprecated(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
+        "format_version: 2\nwiz: {server: {url: https://wiz}, token_command: [x]}\n",
     )
     token = _step(_plan(specs=(_old_wiz(),)), "wiz.token")
     assert (token["state"], token["run"]) == ("done", [])
@@ -424,8 +424,8 @@ def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz: {token: s3cret}\n"
-        "  work:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
+        "format_version: 2\nwiz: {token: s3cret}\n"
+        "profiles:\n  work:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
     )
     token = _step(_plan(profile="work", specs=(_old_wiz(),)), "wiz.token")
     assert (token["state"], token["by"]) == ("failed", "user")
@@ -437,9 +437,7 @@ def test_a_plaintext_token_without_token_command_is_exported_instead(
     _isolated_config: Path,
 ) -> None:
     legacy = make_spec("legacy", settings=LegacyProfile)
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    legacy: {base_url: https://l, token: t}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nlegacy: {base_url: https://l, token: t}\n")
     token = _step(_plan(specs=(legacy,)), "legacy.token")
     assert (token["state"], token["by"]) == ("failed", "user")
     assert "export $UNTAPED_LEGACY__TOKEN" in token["detail"]
@@ -543,15 +541,15 @@ def test_every_run_parses(
     for stores in ((), ("pass",)):
         install_fake_stores(tmp_path, monkeypatch, *stores)
         for config in (
-            "profiles: {}\n",
-            "profiles:\n  default:\n    wiz: {base_url: https://w, token: t}\n"
-            "    legacy: {base_url: https://l, token: t}\n",
+            "format_version: 2\n",
+            "format_version: 2\nwiz: {base_url: https://w, token: t}\n"
+            "legacy: {base_url: https://l, token: t}\n",
         ):
             write_config(_isolated_config, config)
             runs += [row["run"] for row in _plan(specs=specs) if row["run"]]
             runs += [row["run"] for row in _plan(profile="work", specs=specs) if row["run"]]
     FAIL.append(True)
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://w}\n")
+    write_config(_isolated_config, "format_version: 2\nwiz: {base_url: https://w}\n")
     monkeypatch.setenv("WIZ_TOKEN", "t")
     runs += [row["run"] for row in _plan("--online", specs=specs) if row["run"]]
     commands = {tuple(run[2:] if run[0] == "--profile" else run) for run in runs}

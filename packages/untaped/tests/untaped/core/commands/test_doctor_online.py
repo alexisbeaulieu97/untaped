@@ -64,7 +64,7 @@ def _row(result: CliResult, check: str) -> dict[str, Any]:
 
 def _configured(path: Path, **values: str) -> None:
     body = "".join(f"      {key}: {value}\n" for key, value in values.items())
-    write_config(path, f"profiles:\n  default:\n    svc:\n{body}")
+    write_config(path, f"format_version: 2\nsvc:\n{body}")
 
 
 def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
@@ -285,7 +285,7 @@ def test_online_probes_do_not_retry_and_use_a_short_timeout(_isolated_config: Pa
 
 
 def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      base_url: [1]\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  base_url: [1]\n")
     result = _doctor((_probe_check(_raise(AssertionError("must not probe"))),), "--online")
     assert _row(result, "svc.api")["detail"] == "skipped: settings are invalid"
 

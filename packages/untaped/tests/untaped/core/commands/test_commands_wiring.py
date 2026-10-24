@@ -51,9 +51,7 @@ def test_default_root_help_lists_only_management() -> None:
 
 
 def test_management_commands_dispatch_through_root(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    github:\n      base_url: https://g\n"
-    )
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     get_settings.cache_clear()
     root = _root(make_spec("github", settings=GithubProfile))
     for argv in (
@@ -71,7 +69,10 @@ def test_management_commands_dispatch_through_root(_isolated_config: Path) -> No
 
 
 def test_root_options_work_around_management_commands(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  work:\n    github:\n      base_url: https://w\n")
+    write_config(
+        _isolated_config,
+        "format_version: 2\nprofiles:\n  work:\n    github:\n      base_url: https://w\n",
+    )
     get_settings.cache_clear()
     root = _root(make_spec("github", settings=GithubProfile))
     for argv in (
@@ -88,9 +89,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     """Invalid Jira settings block neither listing, repair, nor other rows."""
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n"
-        "    github:\n      base_url: https://g\n"
-        "    jira:\n      timeout: not-a-number\n",
+        "format_version: 2\ngithub:\n  base_url: https://g\njira:\n  timeout: not-a-number\n",
     )
     get_settings.cache_clear()
     root = _root(
@@ -158,9 +157,8 @@ def test_state_write_rejected_through_root(_isolated_config: Path) -> None:
 def test_profile_round_trip_through_root() -> None:
     root = _root(make_spec("ghost", settings=ExtProfile))
     assert CliInvoker().invoke(root.meta, ["profile", "create", "work"]).exit_code == 0  # type: ignore[union-attr]
-    use = CliInvoker().invoke(root.meta, ["profile", "use", "work"])  # type: ignore[union-attr]
-    assert use.exit_code == 0, use.output
-    current = CliInvoker().invoke(root.meta, ["profile", "current"])  # type: ignore[union-attr]
+    argv = ["--profile", "work", "profile", "current"]
+    current = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert current.stdout.strip() == "work"
 
 
@@ -172,38 +170,38 @@ def test_profile_round_trip_through_root() -> None:
     ],
 )
 def test_config_set_writes_into_the_root_profile(_isolated_config: Path, argv: list[str]) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  prod: {}\nactive: default\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  prod: {}\n")
     root = _root(make_spec("github", settings=GithubProfile))
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 0, result.output
     assert "in profile prod" in result.output
-    profiles = read_config_dict(_isolated_config)["profiles"]
-    assert profiles["prod"] == {"github": {"base_url": "https://p"}}
-    assert profiles["default"] == {}
+    data = read_config_dict(_isolated_config)
+    assert data["profiles"]["prod"] == {"github": {"base_url": "https://p"}}
+    assert "github" not in data
 
 
 def test_config_unset_removes_from_the_root_profile(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    github: {mode: 'on'}\n  prod:\n    github: {mode: 'on'}\n",
+        "format_version: 2\ngithub: {mode: 'on'}\nprofiles:\n  prod:\n    github: {mode: 'on'}\n",
     )
     root = _root(make_spec("github", settings=GithubProfile))
     argv = ["--profile", "prod", "config", "unset", "github.mode"]
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 0, result.output
-    profiles = read_config_dict(_isolated_config)["profiles"]
-    assert profiles["prod"] == {}
-    assert profiles["default"] == {"github": {"mode": "on"}}
+    data = read_config_dict(_isolated_config)
+    assert data["profiles"]["prod"] == {}
+    assert data["github"] == {"mode": "on"}
 
 
 @pytest.mark.parametrize("verb", [["set", "github.base_url", "x"], ["unset", "github.base_url"]])
 def test_target_profile_option_is_gone(_isolated_config: Path, verb: list[str]) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  prod: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  prod: {}\n")
     root = _root(make_spec("github", settings=GithubProfile))
     argv = ["config", *verb, "--target-profile", "prod"]
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 2
-    assert read_config_dict(_isolated_config)["profiles"] == {"default": {}, "prod": {}}
+    assert read_config_dict(_isolated_config)["profiles"] == {"prod": {}}
 
 
 def test_ctrl_c_at_a_config_prompt_exits_130() -> None:

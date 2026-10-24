@@ -37,6 +37,7 @@ from core_test_support.commands.support import (
     make_spec,
     wiz_api_check,
     write_config,
+    written_profile,
 )
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands.setup_connection import token_choices as _token_choices
@@ -53,7 +54,7 @@ from untaped.core.commands.setup_state import (
 )
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec
-from untaped.runtime.settings import active_overlay, get_settings
+from untaped.runtime.settings import active_overlay, active_settings_layout, get_settings
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
@@ -102,7 +103,7 @@ def _build(
         sections=setup_sections(only),
         profile=profile,
         store=pick_store(),
-        profiles=sorted(raw.get("profiles") or ()),
+        profiles=active_settings_layout().profile_names(raw),
     )
 
 
@@ -133,7 +134,7 @@ def _flat(text: str) -> str:
 
 
 def _wiz_section(path: Path, profile: str = "default") -> dict[str, Any]:
-    section = read_config_dict(path)["profiles"][profile]["wiz"]
+    section = written_profile(path, profile)["wiz"]
     assert isinstance(section, dict)
     return section
 
@@ -187,14 +188,14 @@ def test_check_passes_then_writes_a_typed_token_for_a_model_without_a_command(
 ) -> None:
     run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok"), "esc", "esc"])
 
-    section = read_config_dict(_isolated_config)["profiles"]["default"]["legacy"]
+    section = read_config_dict(_isolated_config)["legacy"]
     assert section == {"base_url": "https://legacy", "token": "tok"}
     assert _result(run).touched == ("legacy",)
 
 
 def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Path) -> None:
     program = _token_program(tmp_path)
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
+    write_config(_isolated_config, "format_version: 2\n")
 
     # No store is installed: the tabs are Command and Env, so the command is the first.
     run = drive_screen(
@@ -210,9 +211,7 @@ def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Pa
 def test_check_passes_then_writes_the_env_choice(_isolated_config: Path) -> None:
     run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1), "esc", "esc"])
 
-    assert read_config_dict(_isolated_config)["profiles"]["default"]["envy"] == {
-        "server": {"url": "https://envy/"}
-    }
+    assert read_config_dict(_isolated_config)["envy"] == {"server": {"url": "https://envy/"}}
     assert ("info", "export $ENVY_TOKEN in your shell for untaped envy to use it") in (
         _result(run).notes
     )
@@ -228,8 +227,8 @@ def _seed(stores: FakeStores, tmp_path: Path, entries: dict[str, str]) -> None:
 
 
 _UNMARKED_STORED = (
-    "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
-    "      token_command: [pass, show, untaped/default/wiz]\n"
+    "format_version: 2\nwiz:\n  base_url: https://wiz\n"
+    "  token_command: [pass, show, untaped/default/wiz]\n"
 )
 
 
@@ -257,9 +256,9 @@ def test_an_unreachable_replaced_store_only_warns(
     stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
-        "      token_command:\n"
-        "        [secret-tool, lookup, service, untaped, account, default/wiz]\n",
+        "format_version: 2\nwiz:\n  base_url: https://wiz\n"
+        "  token_command:\n"
+        "    [secret-tool, lookup, service, untaped, account, default/wiz]\n",
     )
     stores.state.write_text('{"default/wiz": "old"}')
     monkeypatch.setenv("STUB_MODE", "no-service")  # secret-tool goes away: pass takes over
@@ -281,7 +280,7 @@ def test_a_stray_token_line_is_not_offered_to_move(_isolated_config: Path) -> No
     # wiz's settings declare no `token`, so the line is not read (doctor names it).
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n      token: old\n",
+        "format_version: 2\nwiz:\n  server: {url: https://wiz}\n  token: old\n",
     )
 
     run = drive_screen(_build())
@@ -295,8 +294,8 @@ def test_a_stray_token_command_keeps_its_entry(
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
-        "      token_command: [pass, show, untaped/default/wiz]\n",
+        "format_version: 2\nwiz:\n  server: {url: https://wiz}\n"
+        "  token_command: [pass, show, untaped/default/wiz]\n",
     )
     _seed(stores, tmp_path, {"untaped/default/wiz": "tok"})
 
@@ -311,9 +310,7 @@ def test_check_passes_then_keeps_the_current_token(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("WIZ_TOKEN", "kept")
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://old}\n")
 
     run = drive_screen(_build(), [*_keys("https://new"), "esc", "esc"])
 
@@ -423,7 +420,7 @@ def test_a_plugin_without_an_online_check_saves_directly(_isolated_config: Path)
 
 
 def _wiz_section_for(path: Path, section: str) -> dict[str, Any]:
-    node = read_config_dict(path)["profiles"]["default"][section]
+    node = read_config_dict(path)[section]
     assert isinstance(node, dict)
     return node
 
@@ -464,9 +461,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://old}\n")
     config = _isolated_config.read_bytes()
     seen: list[tuple[str | None, str | None]] = []
 
@@ -514,9 +509,7 @@ def test_a_failed_check_leaves_the_files_and_the_cache_alone(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://old}\n")
     config = _isolated_config.read_bytes()
     FAIL.append(True)
     screen = _build()  # building tests the store once; nothing after that touches it
@@ -669,7 +662,7 @@ def test_esc_in_the_form_goes_back_to_the_list_first() -> None:
 
 
 def test_new_profile_is_created_once(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
+    write_config(_isolated_config, "format_version: 2\n")
     screen = _build(_legacy(), _envy(), profile="prod")  # listed by name: envy, then legacy
 
     run = drive_screen(
@@ -689,7 +682,7 @@ def test_new_profile_is_created_once(_isolated_config: Path) -> None:
     assert result.touched == ("envy", "legacy")
     assert [text for _, text in result.notes].count("created profile: prod") == 1
     config = read_config_dict(_isolated_config)
-    assert config["active"] == "default"
+    assert "active" not in config
     assert set(config["profiles"]["prod"]) == {"legacy", "envy"}
 
 
@@ -698,7 +691,7 @@ def test_preflight_failure_writes_nothing(
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
+    write_config(_isolated_config, "format_version: 2\n")
     config = _isolated_config.read_bytes()
 
     run = drive_screen(_build(profile="prod"), _keys("https://wiz", token="tok"))
@@ -714,8 +707,8 @@ def test_preflight_failure_writes_nothing(
 def test_changing_the_profile_reloads_the_forms(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      server: {url: https://default.example}\n"
-        "  prod:\n    wiz:\n      server: {url: https://prod.example}\n",
+        "format_version: 2\nwiz:\n  server: {url: https://default.example}\n"
+        "profiles:\n  prod:\n    wiz:\n      server: {url: https://prod.example}\n",
     )
 
     run = drive_screen(_build(), ["enter", "esc", "shift-tab", "ctrl-u", Paste("prod"), "enter"])
@@ -735,7 +728,7 @@ def test_an_empty_profile_name_is_refused_in_place() -> None:
 
 
 def test_the_profile_field_completes_existing_profiles(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  production: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  production: {}\n")
 
     run = drive_screen(_build(), ["shift-tab", "ctrl-u", "p"])
 
@@ -744,7 +737,7 @@ def test_the_profile_field_completes_existing_profiles(_isolated_config: Path) -
 
 def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Path) -> None:
     profiles = "".join(f"  p{n}: {{}}\n" for n in range(8))
-    write_config(_isolated_config, f"profiles:\n  default: {{}}\n{profiles}")
+    write_config(_isolated_config, f"format_version: 2\nprofiles:\n{profiles}")
 
     run = drive_screen(_build(), ["shift-tab", "ctrl-u", "p"], size=(200, 24))  # header on one line
 
@@ -768,8 +761,8 @@ def test_a_status_per_state(_isolated_config: Path, monkeypatch: pytest.MonkeyPa
     ]
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    ready: {server: {url: https://r}}\n"
-        "    bare: {server: {url: https://b}}\n    broken: {server: {url: [1, 2]}}\n",
+        "format_version: 2\nready: {server: {url: https://r}}\n"
+        "bare: {server: {url: https://b}}\nbroken: {server: {url: [1, 2]}}\n",
     )
 
     frame = drive_screen(_build(*specs)).frame
@@ -808,7 +801,7 @@ def test_inherited_token_note_shows_in_the_tab(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      token: shared\n  prod: {}\nactive: default\n",
+        "format_version: 2\nwiz:\n  token: shared\nprofiles:\n  prod: {}\n",
     )
 
     unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
@@ -890,8 +883,7 @@ def test_token_never_in_a_frame(
         spec = make_spec("wiz", settings=UnmarkedWizProfile)
         write_config(
             _isolated_config,
-            "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
-            f"      token: {SECRET}\n",
+            f"format_version: 2\nwiz:\n  base_url: https://wiz\n  token: {SECRET}\n",
         )
         keys = _keys()
     else:
@@ -1022,8 +1014,8 @@ def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None
 
 
 _TWO_PROFILES = (
-    "profiles:\n  default:\n    wiz:\n      server: {url: https://default.example}\n"
-    "  prod:\n    wiz:\n      server: {url: https://prod.example}\n"
+    "format_version: 2\nwiz:\n  server: {url: https://default.example}\n"
+    "profiles:\n  prod:\n    wiz:\n      server: {url: https://prod.example}\n"
 )
 
 
@@ -1072,9 +1064,9 @@ def test_saving_after_leaving_the_profile_field_writes_the_typed_profile(
     )
 
     assert _result(run).profile == "prod"
-    config = read_config_dict(_isolated_config)["profiles"]
-    assert config["prod"]["legacy"]["base_url"] == "https://legacy"
-    assert "legacy" not in config["default"]
+    config = read_config_dict(_isolated_config)
+    assert config["profiles"]["prod"]["legacy"]["base_url"] == "https://legacy"
+    assert "legacy" not in config
 
 
 def test_leaving_an_unchanged_or_empty_profile_field_does_not_load() -> None:
@@ -1082,7 +1074,8 @@ def test_leaving_an_unchanged_or_empty_profile_field_does_not_load() -> None:
     assert (same.commands_run, same.model.focus) == ((), "list")
     stay = drive_screen(_build(), ["shift-tab", "shift-tab"])
     assert (stay.commands_run, stay.model.focus) == ((), "profile")
-    empty = drive_screen(_build(), ["shift-tab", "ctrl-u", "tab"])
+    # esc closes the completions (the base, ``default``, is always offered) so tab leaves.
+    empty = drive_screen(_build(), ["shift-tab", "ctrl-u", "esc", "tab"])
     assert empty.commands_run == () and empty.model.focus == "profile"
     assert "Enter a profile name." in empty.frame
 

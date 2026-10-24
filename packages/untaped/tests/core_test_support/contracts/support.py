@@ -148,13 +148,12 @@ def write_config(text: str) -> None:
 
 
 LIBRARY_CONFIG = """\
-profiles:
-  default:
-    library:
-      catalog: https://library.example
-      volumes:
-        - {id: 1, name: Dune}
-        - {id: 2, name: Emma}
+format_version: 2
+library:
+  catalog: https://library.example
+  volumes:
+    - {id: 1, name: Dune}
+    - {id: 2, name: Emma}
 """
 
 

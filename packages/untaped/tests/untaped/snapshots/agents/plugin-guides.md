@@ -12,7 +12,7 @@ Details of a topic (a command or a guide): `untaped agents acme NAME`
 ## Guides
 - `lifecycle`: Read before adding or dropping widgets: how a widget's life runs.
 
-## Settings (`profiles.<name>.acme`)
+## Settings (`acme`)
 - `widgets_dir` (path, default `~/.acme/widgets`): Where widgets live.
 - `colour` (text, default `blue`): The colour of a new widget.
 

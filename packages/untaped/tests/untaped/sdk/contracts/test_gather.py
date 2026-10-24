@@ -386,6 +386,7 @@ def test_the_cache_is_per_provider_settings() -> None:
     compose(shelf_spec(), library_spec())
     write_config(
         LIBRARY_CONFIG
+        + "profiles:\n"
         + "  work:\n    library: {catalog: https://w.example, volumes: []}\n"
         + "  same:\n    library: {catalog: https://w.example, volumes: []}\n"
     )
@@ -551,7 +552,7 @@ def test_self_http_is_the_profiles_client_bounded_by_the_deadline() -> None:
 
     provider = Online()
     compose(shelf_spec(), library_spec(provider))
-    write_config(LIBRARY_CONFIG + "    untaped:\n      http:\n        timeout_seconds: 40\n")
+    write_config(LIBRARY_CONFIG + "untaped:\n  http:\n    timeout_seconds: 40\n")
     with respx.mock() as mock:
         mock.get("https://library.example/books").mock(side_effect=record)
         [answer] = gather(BookSource.books, refresh=True, deadline=5)()

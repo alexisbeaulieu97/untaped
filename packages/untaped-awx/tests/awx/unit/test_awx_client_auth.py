@@ -58,9 +58,7 @@ def test_token_falls_back_to_the_controller_collection_variables(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: str
 ) -> None:
     config = tmp_path / "config.yml"
-    config.write_text(
-        "profiles:\n  default:\n    awx:\n      server: {url: https://aap.example.com}\n"
-    )
+    config.write_text("format_version: 2\nawx:\n  server: {url: https://aap.example.com}\n")
     monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
     for name, value in env.items():
         monkeypatch.setenv(name, value)

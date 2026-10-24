@@ -104,7 +104,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
     tool without each one remembering to thread it."""
     cfg = tmp_path / "config.yml"
     cfg.write_text(
-        "profiles:\n  default:\n    untaped:\n      http:\n        proxy: http://corp-proxy:3128\n",
+        "format_version: 2\nuntaped:\n  http:\n    proxy: http://corp-proxy:3128\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -205,10 +205,10 @@ def _write_config(text: str) -> None:
 
 
 @_BY_NAME
-def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
+def test_a_missing_setting_names_the_profiles_that_set_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """An agent can switch profile from the error alone instead of asking for the value."""
     _write_config(
-        "active: home\n"
+        "format_version: 2\n"
         "profiles:\n"
         "  home: {}\n"
         "  work:\n"
@@ -216,6 +216,7 @@ def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
         "  lab:\n"
         "    demo: {base_url: '  '}\n"
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "home")
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")
 
@@ -231,9 +232,8 @@ def test_a_missing_setting_names_the_profiles_that_set_it() -> None:
 @_BY_NAME
 def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
     _write_config(
-        "profiles:\n"
-        "  default: {}\n"
-        "  a:\n"
+        "format_version: 2\n"
+        "profiles:\n  a:\n"
         "    demo: {token_command: [pass, show, demo]}\n"
         "  b:\n"
         "    demo: {token: sekret}\n"
@@ -247,7 +247,7 @@ def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
 
 @_BY_NAME
 def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> None:
-    _write_config("profiles:\n  default: {}\n  work: {}\n")
+    _write_config("format_version: 2\nprofiles:\n  work: {}\n")
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")
 
@@ -257,17 +257,18 @@ def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> Non
 
 
 @_BY_NAME
-def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
+def test_a_profile_inheriting_the_setting_from_default_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The active profile blanks a key ``default`` sets; ``work`` still inherits it."""
     _write_config(
-        "active: home\n"
-        "profiles:\n"
-        "  default:\n"
-        "    demo: {base_url: https://example.com}\n"
-        "  home:\n"
+        "format_version: 2\n"
+        "demo: {base_url: https://example.com}\n"
+        "profiles:\n  home:\n"
         "    demo: {base_url: null}\n"
         "  my work: {}\n"
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "home")
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")
 
@@ -276,7 +277,7 @@ def test_a_profile_inheriting_the_setting_from_default_counts() -> None:
 
 @_BY_NAME
 def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
-    _write_config("profiles:\n  default: {}\n  my work:\n    demo: {base_url: https://x}\n")
+    _write_config("format_version: 2\nprofiles:\n  my work:\n    demo: {base_url: https://x}\n")
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")
 
@@ -299,7 +300,7 @@ def test_an_environment_override_names_no_profile(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
 ) -> None:
     """An override applies to every profile, so switching profile would not help."""
-    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {base_url: https://x}\n")
     monkeypatch.setenv(name, value)
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")
@@ -312,7 +313,7 @@ def test_an_environment_override_names_no_profile(
 def test_an_environment_blob_without_the_key_still_names_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_config("profiles:\n  default: {}\n  work:\n    demo: {base_url: https://x}\n")
+    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {base_url: https://x}\n")
     monkeypatch.setenv("UNTAPED_DEMO", '{"token": "t"}')
     with pytest.raises(ConfigError) as caught:
         connected_client(NoUrlSettings(), section="demo")

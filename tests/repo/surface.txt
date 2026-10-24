@@ -3866,7 +3866,6 @@ cli untaped profile show --format choice=yaml
 cli untaped profile show --raw switch
 cli untaped profile show --show-secrets switch
 cli untaped profile show [NAME]@1 default=unset
-cli untaped profile use NAME
 cli untaped project  [experimental]
 cli untaped project init  [experimental]
 cli untaped project init --columns VALUE... default=unset  [experimental]

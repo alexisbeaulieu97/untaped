@@ -26,7 +26,7 @@ def test_it_reads_the_profile_and_the_repo_file_found_walking_up(
     tmp_path: Path, _isolated_config: Path
 ) -> None:
     _isolated_config.write_text(
-        "profiles:\n  default:\n    lint:\n      ignore: [acme.tall]\n", encoding="utf-8"
+        "format_version: 2\nlint:\n  ignore: [acme.tall]\n", encoding="utf-8"
     )
     root = _repo(tmp_path)
     with compose_with("lint"):

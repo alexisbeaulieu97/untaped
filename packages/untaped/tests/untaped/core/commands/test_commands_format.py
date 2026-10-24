@@ -21,7 +21,7 @@ from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
-_CONFIG = "profiles:\n  default:\n    github:\n      base_url: https://g\n"
+_CONFIG = "format_version: 2\ngithub:\n  base_url: https://g\n"
 
 
 def _invoke(argv: list[str]) -> CliResult:
@@ -37,7 +37,7 @@ def _base_url_row(stdout: str) -> dict[str, object]:
 
 
 def test_ui_format_setting_changes_the_table_default(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: json\n")
+    write_config(_isolated_config, _CONFIG + "untaped:\n  ui:\n    format: json\n")
     result = _invoke(["config", "list"])
     assert result.exit_code == 0, result.output
     assert _base_url_row(result.stdout)["value"] == "https://g"
@@ -46,7 +46,7 @@ def test_ui_format_setting_changes_the_table_default(_isolated_config: Path) -> 
 def test_untaped_format_wins_over_the_setting(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: json\n")
+    write_config(_isolated_config, _CONFIG + "untaped:\n  ui:\n    format: json\n")
     monkeypatch.setenv("UNTAPED_FORMAT", "yaml")
     result = _invoke(["config", "list"])
     assert result.exit_code == 0, result.output
@@ -60,7 +60,7 @@ def test_untaped_format_wins_over_the_setting(
 def test_explicit_format_wins(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
-    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: yaml\n")
+    write_config(_isolated_config, _CONFIG + "untaped:\n  ui:\n    format: yaml\n")
     monkeypatch.setenv("UNTAPED_FORMAT", "yaml")
     result = _invoke(["config", "list", flag, "json"])
     assert result.exit_code == 0, result.output
@@ -119,9 +119,7 @@ def _lazy_spec() -> PluginSpec:
 
 
 def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: json\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    format: json\n")
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_lazy_spec()),))
     result = CliInvoker().invoke(root.meta, ["lazy", "list"])
     assert result.exit_code == 0, result.output
@@ -129,9 +127,7 @@ def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> No
 
 
 def test_an_invalid_ui_section_falls_back_so_it_can_be_repaired(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: xml\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    format: xml\n")
     result = _invoke(["config", "set", "untaped.ui.format", "json"])
     assert result.exit_code == 0, result.output
     assert "key" in result.stdout
@@ -166,9 +162,7 @@ def _warning_spec() -> PluginSpec:
 
 
 def test_ui_format_setting_makes_stderr_json_once_settings_load(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: json\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    format: json\n")
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_warning_spec()),))
 
     result = CliInvoker().invoke(root.meta, ["warns", "list"])

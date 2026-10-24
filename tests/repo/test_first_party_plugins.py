@@ -139,7 +139,7 @@ def test_profile_scoped_plugin_setting_resolves(
     _isolated_config: Path, specs: dict[str, PluginSpec]
 ) -> None:
     _isolated_config.write_text(
-        "profiles:\n  default:\n    jira:\n      server: {url: https://jira.example.com}\n",
+        "format_version: 2\njira:\n  server: {url: https://jira.example.com}\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()

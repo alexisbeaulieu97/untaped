@@ -623,7 +623,7 @@ def test_profiles_with_their_own_index_refresh_their_own(
     cfg = _use_config(tmp_path, monkeypatch, _PROD)
     config = yaml.safe_load(cfg.read_text())
     other = {"ansible": {"index_path": str(tmp_path / "other.sqlite3")}}
-    config["profiles"]["other"] = other
+    config["profiles"] = {"other": other}
     cfg.write_text(yaml.safe_dump(config))
 
     default = _impact()

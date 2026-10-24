@@ -77,7 +77,7 @@ def _in_thread[T](fn: Callable[[], T], *, copy: bool = True) -> T:
 def test_overlay_values_are_visible_to_load_settings_section(_isolated_config: Path) -> None:
     _config(
         _isolated_config,
-        "profiles:\n  default:\n    ovl:\n      base_url: https://old\n      token: file-token\n",
+        "format_version: 2\novl:\n  base_url: https://old\n  token: file-token\n",
     )
 
     candidate = {"base_url": "https://new", "token": SecretStr("typed")}
@@ -93,7 +93,7 @@ def test_overlay_values_are_visible_to_load_settings_section(_isolated_config: P
 def test_overlay_for_another_profile_is_ignored(_isolated_config: Path) -> None:
     _config(
         _isolated_config,
-        "profiles:\n  default:\n    ovl:\n      base_url: https://old\n  prod: {}\n",
+        "format_version: 2\novl:\n  base_url: https://old\nprofiles:\n  prod: {}\n",
     )
 
     with settings_overlay("prod", "ovl", {"base_url": "https://new"}):
@@ -105,7 +105,7 @@ def test_overlay_for_another_profile_is_ignored(_isolated_config: Path) -> None:
 def test_overlay_none_unsets_a_key(_isolated_config: Path) -> None:
     _config(
         _isolated_config,
-        "profiles:\n  default:\n    ovl:\n      base_url: https://old\n      token: file-token\n",
+        "format_version: 2\novl:\n  base_url: https://old\n  token: file-token\n",
     )
 
     with settings_overlay("default", "ovl", {"token": None}):
@@ -118,7 +118,7 @@ def test_overlay_none_unsets_a_key(_isolated_config: Path) -> None:
 def test_overlay_reaches_a_profile_that_is_not_written_yet(_isolated_config: Path) -> None:
     _config(
         _isolated_config,
-        "profiles:\n  default:\n    ovl:\n      base_url: https://old\n",
+        "format_version: 2\novl:\n  base_url: https://old\n",
     )
 
     typed = {"token": SecretStr("t")}
@@ -132,7 +132,7 @@ def test_overlay_reaches_a_profile_that_is_not_written_yet(_isolated_config: Pat
         load_settings_section("ovl")
 
 
-@pytest.mark.parametrize("profiles", ["", "profiles: {}\n"])
+@pytest.mark.parametrize("profiles", ["", "format_version: 2\nprofiles: {}\n"])
 def test_overlay_reaches_a_new_profile_in_a_config_without_profiles(
     _isolated_config: Path, profiles: str
 ) -> None:
@@ -146,7 +146,7 @@ def test_overlay_reaches_a_new_profile_in_a_config_without_profiles(
 
 
 def test_overlay_never_changes_get_settings_on_the_main_thread(_isolated_config: Path) -> None:
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
     before = get_settings()
     assert before.ovl.base_url == "https://old"  # type: ignore[attr-defined]
 
@@ -163,7 +163,7 @@ def test_overlay_never_changes_get_settings_on_the_main_thread(_isolated_config:
 
 
 def test_the_cache_is_never_filled_with_candidate_values(_isolated_config: Path) -> None:
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
     get_settings.cache_clear()
 
     with settings_overlay("default", "ovl", {"base_url": "https://candidate"}):
@@ -174,7 +174,7 @@ def test_the_cache_is_never_filled_with_candidate_values(_isolated_config: Path)
 
 
 def test_get_settings_cache_still_works_without_an_overlay(_isolated_config: Path) -> None:
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
 
     assert get_settings() is get_settings()
     assert get_settings.cache_info().hits >= 1
@@ -188,7 +188,7 @@ def test_overlay_does_not_write_config_or_keychain(
     from core_test_support.commands.stores import install_fake_stores
 
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
     config_bytes = _isolated_config.read_bytes()
 
     with settings_overlay(
@@ -207,7 +207,7 @@ def test_overlay_does_not_write_config_or_keychain(
 def test_overlay_is_visible_in_a_copied_context_thread_and_not_a_fresh_one(
     _isolated_config: Path,
 ) -> None:
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
 
     with settings_overlay("default", "ovl", {"base_url": "https://new"}):
         copied = _in_thread(lambda: load_settings_section("ovl").base_url)
@@ -241,9 +241,9 @@ def test_apply_overlay_copies_and_unwraps_secrets() -> None:
 def test_resolve_with_overlay_is_plain_resolution_without_an_overlay(
     _isolated_config: Path,
 ) -> None:
-    _config(_isolated_config, "profiles:\n  default:\n    ovl:\n      base_url: https://old\n")
+    _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
 
-    resolved = resolve_with_overlay({"profiles": {"default": {"ovl": {"base_url": "u"}}}})
+    resolved = resolve_with_overlay({"format_version": 2, "ovl": {"base_url": "u"}})
 
     assert resolved.effective == {"ovl": {"base_url": "u"}}
 
@@ -253,7 +253,7 @@ def test_plaintext_warning_is_suppressed_under_an_overlay(
 ) -> None:
     _config(
         _isolated_config,
-        "profiles:\n  default:\n    ovl:\n      token: file-token\n",
+        "format_version: 2\novl:\n  token: file-token\n",
     )
     clear_token_cache()
     section = load_settings_section("ovl")

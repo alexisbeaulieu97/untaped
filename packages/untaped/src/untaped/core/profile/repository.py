@@ -3,7 +3,8 @@
 This is the only profile module that knows about the on-disk layout — the
 use cases stay portable. It builds on the SDK's config primitives
 (``read_config_dict`` / ``mutate_config``); the profile-shaped editing
-lives here.
+lives here. The base (``config.yml``'s top level) reads as the profile
+``default``.
 """
 
 from __future__ import annotations
@@ -29,45 +30,22 @@ class ProfileFileRepository:
     """Concrete adapter over ``~/.untaped/config.yml``."""
 
     def names(self) -> list[str]:
-        return list(_profiles(read_config_dict()).keys())
+        """``default`` (the base), then the named profiles."""
+        return active_settings_layout().profile_names(read_config_dict())
 
     def active_name(self) -> str | None:
-        """Return the effective active profile, honouring ``UNTAPED_PROFILE``.
-
-        The env override mirrors what every other consumer of "active
-        profile" sees (``config list``, the profiles settings layout,
-        etc.), so the ``profile list`` ✓ marker stays consistent with
-        reality during a per-call override.
-        """
-        return effective_active_profile_name(read_config_dict())
-
-    def persisted_active_name(self) -> str | None:
-        """Return ``active:`` from disk, ignoring per-call overrides.
-
-        Mutating use cases (delete, rename) compare against this so a
-        transient ``--profile`` option never rewrites the user's persisted
-        active pointer behind their back.
-        """
-        name = read_config_dict().get("active")
-        return name if isinstance(name, str) and name else None
+        """Return the picked profile: ``--profile``, else ``UNTAPED_PROFILE``."""
+        return effective_active_profile_name()
 
     def classify_active(self) -> tuple[str | None, ProfileSource]:
-        """Return the effective active profile name + the layer that supplied it.
-
-        Delegates to the domain resolver, which is the single source of
-        truth for the env/active/fallback precedence.
-        """
-        return classify_active_profile(read_config_dict())
+        """Return the picked profile name + what picked it."""
+        return classify_active_profile()
 
     def read(self, name: str) -> dict[str, Any] | None:
-        profiles = _profiles(read_config_dict())
-        profile = profiles.get(name)
-        if profile is None and name in profiles:
-            return {}  # an empty ``name:`` entry (YAML null) is an empty profile
-        return profile if isinstance(profile, dict) else None
+        return active_settings_layout().profile_data(read_config_dict(), name)
 
     def resolved(self, name: str) -> dict[str, Any]:
-        """Return ``default`` ⤥ ``name`` as a merged dict (empty if neither set).
+        """Return the base ⤥ ``name`` as a merged dict (empty if neither sets anything).
 
         Renamed keys show under their current names.
         """
@@ -100,8 +78,7 @@ class ProfileFileRepository:
     def rename(self, old: str, new: str) -> None:
         """Rename ``profiles.<old>`` to ``profiles.<new>`` in one transaction.
 
-        Also updates ``active:`` if it pointed at ``old``. Raises
-        ``KeyError`` if ``old`` is missing or ``ValueError`` if ``new``
+        Raises ``KeyError`` if ``old`` is missing or ``ValueError`` if ``new``
         already exists, both *before* any mutation is written.
         """
 
@@ -112,13 +89,5 @@ class ProfileFileRepository:
             if new in profiles:
                 raise ValueError(f"profile {new!r} already exists")
             profiles[new] = profiles.pop(old)
-            if config.get("active") == old:
-                config["active"] = new
-
-        mutate_config(_apply)
-
-    def set_active(self, name: str) -> None:
-        def _apply(config: dict[str, Any]) -> None:
-            config["active"] = name
 
         mutate_config(_apply)

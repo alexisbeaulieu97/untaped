@@ -734,7 +734,7 @@ def test_launch_inventory_miss_names_the_default_organization(
     seeded_job_template_with_credentials: Any, aap_config: Path
 ) -> None:
     config = aap_config.read_text()
-    default = "api_prefix: /api/v2/\n              default_organization: Default"
+    default = "api_prefix: /api/v2/\n          default_organization: Default"
     aap_config.write_text(config.replace("api_prefix: /api/v2/", default))
     get_settings.cache_clear()
     result = CliInvoker().invoke(

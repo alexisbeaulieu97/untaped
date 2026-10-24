@@ -259,7 +259,8 @@ def test_core_answers_as_untaped() -> None:
     assert code == 0
     assert out.startswith("# untaped\n")
     assert "- `config set`: " in out
-    assert "## Settings (`profiles.<name>`)" in out
+    assert "## Settings (`untaped`)" in out
+    assert "- `http.timeout_seconds` (number" in out
     code, out, _ = _run("untaped", "config", "set")
     assert code == 0
     assert "`untaped config set " in out

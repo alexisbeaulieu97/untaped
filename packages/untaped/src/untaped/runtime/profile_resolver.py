@@ -1,25 +1,19 @@
-"""Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
+"""Pure helpers that split ``config.yml`` (format 2) and layer a profile over the base.
 
 Profiles are a core feature, not a plugin: this resolver and
 :class:`untaped.runtime.settings_layout.ProfilesSettingsLayout` are core's home for
 profile resolution.
 
-The resolver is layer-agnostic: callers hand it the parsed
-``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
-``UNTAPED_PROFILE`` or the root ``--profile`` flag is used). It returns:
+The file's own keys are :data:`FILE_KEYS` (``format_version`` and
+``profiles``); every other top-level key is a section of the **base**, which
+every run reads. A run picks at most one named profile (the root
+``--profile`` flag, else ``UNTAPED_PROFILE``), layered over the base.
+:func:`resolve_profiles` returns:
 
-- ``effective``: a deep-merged dict of values (active beats default per leaf).
+- ``effective``: a deep-merged dict of values (the pick beats the base per leaf).
 - ``provenance``: a flat ``leaf_path -> profile_name`` map naming the profile
-  that supplied each leaf in ``effective``. Missing entries mean the leaf
-  came from the schema default (i.e. neither profile set it).
-
-``profiles.default`` is optional. When present, it serves as a shared
-overrides layer beneath the active profile; when absent, the active profile
-is layered alone (and the Pydantic schema's defaults sit beneath both via
-the Settings class).
-
-Top-level keys outside ``profiles`` are ignored here — they are the
-caller's responsibility.
+  that supplied each leaf in ``effective`` (``default`` for the base).
+  Missing entries mean the leaf came from the schema default.
 """
 
 from __future__ import annotations
@@ -33,9 +27,14 @@ from typing import Any, Literal
 from untaped.sdk.errors import ConfigError
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
+#: The base's name: what ``--profile default`` picks and what provenance calls it.
 DEFAULT_PROFILE = "default"
 
-ProfileSource = Literal["flag", "env", "config", "fallback"]
+ProfileSource = Literal["flag", "env", "fallback"]
+
+
+#: ``config.yml``'s own top-level keys (format 2); every other key is a base section.
+FILE_KEYS = frozenset({"format_version", "profiles"})
 
 _profile_override: ContextVar[str | None] = ContextVar("untaped_profile_override", default=None)
 
@@ -69,16 +68,11 @@ def profile_override() -> str | None:
     return _profile_override.get()
 
 
-def classify_active_profile(
-    data: dict[str, Any],
-) -> tuple[str | None, ProfileSource]:
-    """Return the active profile name **and** which layer supplied it.
+def classify_active_profile() -> tuple[str | None, ProfileSource]:
+    """Return the picked profile name **and** what picked it.
 
-    Same precedence as :func:`effective_active_profile_name` (env var >
-    ``data['active']`` > unset), but also tells the caller whether the
-    answer came from the env var, the persisted ``active:`` key, or
-    neither (fallback). Powers the ``profile current`` command
-    and any other code path that needs to classify the layer.
+    ``--profile`` beats ``UNTAPED_PROFILE``; with neither, the run reads the
+    base alone (``None``, ``fallback``). Powers ``profile current``.
     """
     override = _profile_override.get()
     if override:
@@ -86,39 +80,74 @@ def classify_active_profile(
     env_override = os.environ.get(ACTIVE_PROFILE_ENV)
     if env_override:
         return env_override, "env"
-    raw = data.get("active")
-    if isinstance(raw, str) and raw:
-        return raw, "config"
     return None, "fallback"
 
 
-def effective_active_profile_name(data: dict[str, Any]) -> str | None:
-    """Return the active profile honouring ``UNTAPED_PROFILE``.
-
-    Precedence: env var > ``data['active']`` > ``None``. Callers fall back
-    to ``"default"`` themselves when they need a guaranteed name. Thin
-    wrapper over :func:`classify_active_profile`.
-    """
-    name, _ = classify_active_profile(data)
+def effective_active_profile_name() -> str | None:
+    """Return the picked profile (``--profile``, else ``UNTAPED_PROFILE``), or ``None``."""
+    name, _ = classify_active_profile()
     return name
 
 
-def selected_profile(data: dict[str, Any] | None = None) -> str:
-    """The profile this invocation acts on: ``--profile``, ``UNTAPED_PROFILE``, ``active``.
+def selected_profile() -> str:
+    """The profile this invocation acts on: the pick, else ``default`` (the base)."""
+    return effective_active_profile_name() or DEFAULT_PROFILE
 
-    Falls back to ``default``. ``data`` is the parsed config; without it the
-    config file is read, and an unreadable one counts as empty.
+
+def base_sections(config_data: dict[str, Any]) -> dict[str, Any]:
+    """The base: every top-level key of ``config.yml`` that is not one of :data:`FILE_KEYS`."""
+    return {key: value for key, value in config_data.items() if key not in FILE_KEYS}
+
+
+def named_profiles(config_data: dict[str, Any]) -> dict[str, Any]:
+    """The ``profiles`` mapping, checked; ``{}`` when absent.
+
+    Raises ``ConfigError`` when ``profiles`` (or one profile) is not a
+    mapping, or when it names ``default`` (the base is the top level). An
+    empty ``name:`` entry (YAML ``null``) is an empty profile.
     """
-    if data is None:
-        # Lazy: ``untaped.runtime.config_file`` imports ``untaped.runtime.settings``,
-        # which imports us.
-        from untaped.runtime.config_file import read_config_dict  # noqa: PLC0415
+    profiles = config_data.get("profiles")
+    if profiles is None:
+        return {}
+    if not isinstance(profiles, dict):
+        raise ConfigError(
+            f"config key 'profiles' must be a mapping of profile names, "
+            f"got {type(profiles).__name__}"
+        )
+    if DEFAULT_PROFILE in profiles:
+        raise ConfigError(
+            "profiles.default is not read: the base is config.yml's top level",
+            hint="move its sections to the top of the file",
+        )
+    for name, data in profiles.items():
+        if data is not None and not isinstance(data, dict):
+            raise ConfigError(f"profile {name!r} must be a mapping, got {type(data).__name__}")
+    return profiles
 
-        try:
-            data = read_config_dict()
-        except ConfigError:
-            data = {}
-    return effective_active_profile_name(data) or DEFAULT_PROFILE
+
+def profile_path(name: str) -> tuple[str, ...]:
+    """Where profile ``name``'s sections sit in ``config.yml``: the top level for the base."""
+    return () if name == DEFAULT_PROFILE else ("profiles", name)
+
+
+def profile_entries(
+    config_data: dict[str, Any],
+) -> Iterator[tuple[str, dict[str, Any], tuple[str, ...]]]:
+    """``(name, mapping, path)`` for the base, then each named profile by name.
+
+    ``mapping`` is the dict in ``config_data`` itself, so a caller may change
+    it in place: ``config_data`` for the base (its :data:`FILE_KEYS` included,
+    so walk sections, not keys), ``profiles.<name>`` otherwise. ``path`` is
+    where the mapping sits in the file. A malformed profile is skipped.
+    """
+    yield DEFAULT_PROFILE, config_data, ()
+    profiles = config_data.get("profiles")
+    if not isinstance(profiles, dict):
+        return
+    for name in sorted(profiles, key=str):
+        data = profiles[name]
+        if isinstance(data, dict):
+            yield str(name), data, profile_path(str(name))
 
 
 def resolve_profiles(
@@ -128,69 +157,23 @@ def resolve_profiles(
 ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
     """Return ``(effective, provenance)`` from the parsed config dict.
 
-    Raises ``ConfigError`` when ``profiles`` (or one profile) is not a
-    mapping — an empty ``name:`` entry (YAML ``null``) counts as an empty
-    profile — or when an explicit override names an undefined profile.
+    The base is layered first, then ``active_override`` when it names a
+    profile (``default`` is the base alone). Raises ``ConfigError`` as
+    :func:`named_profiles` does, or when the override names an undefined
+    profile.
     """
-    profiles = _profiles_mapping(config_data)
-    active_name = _select_active(config_data, active_override, profiles)
-
+    profiles = named_profiles(config_data)
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
-
-    if DEFAULT_PROFILE in profiles:
-        _layer(profiles[DEFAULT_PROFILE] or {}, DEFAULT_PROFILE, effective, provenance, ())
-    if active_name is not None and active_name != DEFAULT_PROFILE:
-        _layer(profiles[active_name] or {}, active_name, effective, provenance, ())
-
-    return effective, provenance
-
-
-def _profiles_mapping(config_data: dict[str, Any]) -> dict[str, Any]:
-    profiles = config_data.get("profiles")
-    if profiles is None:
-        return {}
-    if not isinstance(profiles, dict):
-        raise ConfigError(
-            f"config key 'profiles' must be a mapping of profile names, "
-            f"got {type(profiles).__name__}"
-        )
-    for name, data in profiles.items():
-        if data is not None and not isinstance(data, dict):
-            raise ConfigError(f"profile {name!r} must be a mapping, got {type(data).__name__}")
-    return profiles
-
-
-def _select_active(
-    config_data: dict[str, Any],
-    active_override: str | None,
-    profiles: dict[str, Any],
-) -> str | None:
-    """Pick the profile whose values overlay the optional ``default`` layer.
-
-    Returns ``None`` when nothing names an active profile and ``default``
-    is also missing — there's no layer to apply, so the caller resolves
-    to ``({}, {})`` and lets the schema defaults take over.
-
-    Raises ``ConfigError`` when an explicit override (env var, root
-    ``--profile`` flag, or the persisted ``active:`` key) names a
-    profile that isn't defined.
-    """
-    explicit = active_override if active_override else config_data.get("active")
-    if explicit:
-        if not isinstance(explicit, str):
-            raise ConfigError(f"config key 'active' must be a profile name, got {explicit!r}")
-        # With no profiles at all only the conceptual ``default`` resolves
-        # (to schema defaults); any other name is a typo worth surfacing.
-        if not profiles and explicit == DEFAULT_PROFILE:
-            return None
-        if explicit not in profiles:
+    _layer(base_sections(config_data), DEFAULT_PROFILE, effective, provenance, ())
+    if active_override and active_override != DEFAULT_PROFILE:
+        if active_override not in profiles:
             raise ConfigError(
-                f"active profile {explicit!r} is not defined in `profiles`. "
+                f"active profile {active_override!r} is not defined in `profiles`. "
                 f"Known profiles: {', '.join(sorted(profiles)) or '(none)'}"
             )
-        return explicit
-    return DEFAULT_PROFILE if DEFAULT_PROFILE in profiles else None
+        _layer(profiles[active_override] or {}, active_override, effective, provenance, ())
+    return effective, provenance
 
 
 def _layer(

@@ -38,9 +38,11 @@ from untaped.core.commands.records import DoctorCheckRow
 from untaped.core.commands.skills import composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
-from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.config_file import read_config_dict, read_state_dict
 from untaped.runtime.profile_resolver import (
+    base_sections,
     classify_active_profile,
+    profile_entries,
     profile_override,
     profile_scope,
     selected_profile,
@@ -57,7 +59,6 @@ from untaped.runtime.registry import (
     state_model,
 )
 from untaped.runtime.settings import (
-    RESERVED_STATE_SECTIONS,
     HttpSettings,
     active_settings_layout,
     check_settings_field,
@@ -378,12 +379,12 @@ def collect_doctor_rows(
             effective = active_settings_layout().effective(raw)
         except ConfigError as exc:
             settings_error = str(exc)
-        rows.append(_profile_row(shell, raw, settings_error))
+        rows.append(_profile_row(shell, settings_error))
     for part in CoreSettings.model_fields:
         rows.append(_core_row(shell, part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
-    profile = selected_profile(raw or {})
+    profile = selected_profile()
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
@@ -557,11 +558,10 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
         for old in (*key_mappings(section_model).migratable, *key_mappings(section_model).deleted)
     }
     prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
-    unknown = [str(key) for key in raw if key not in RESERVED_STATE_SECTIONS]
-    profiles = raw.get("profiles")
-    for name, data in profiles.items() if isinstance(profiles, dict) else ():
-        if isinstance(data, dict):
-            _collect_unknown(data, ("profiles", str(name)), (), leaves, prefixes, unknown)
+    unknown: list[str] = []
+    for _, data, location in profile_entries(dict(raw)):
+        sections = base_sections(data) if not location else data
+        _collect_unknown(sections, location, (), leaves, prefixes, unknown)
     deleted = [
         f"{item.section}.{item.old} (profile {item.profile}): {item.message}"
         for item in scan_keys(raw, profile_section_models())
@@ -572,7 +572,7 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
         return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
     fix = None
     if deleted:
-        fix = command_argv("config migrate", profile=selected_profile(dict(raw)))
+        fix = command_argv("config migrate", profile=selected_profile())
     return _row(
         "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
     )
@@ -615,7 +615,7 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
             parts.append(f"{variable.name} (environment): {variable.note}")
     fix = None
     if any(item.kind != "deprecated" for item in found):
-        fix = command_argv("config migrate", profile=selected_profile(dict(raw)))
+        fix = command_argv("config migrate", profile=selected_profile())
     return _row("deprecated-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=True)
 
 
@@ -956,20 +956,18 @@ def _state_file_row(
     title = "load state file"
     try:
         path = resolve_state_path()
-        raw = read_config_dict(path)
+        raw = read_state_dict(path)
     except ConfigError as exc:
         return None, _row("config", shell.name, _FAIL, title, str(exc))
     return (raw, path), _row("config", shell.name, _PASS, title, str(path))
 
 
-def _profile_row(
-    shell: ApplicationSpec, raw: dict[str, Any], settings_error: str | None
-) -> dict[str, object]:
-    """The selected profile (flag/env/``active:``) must exist."""
+def _profile_row(shell: ApplicationSpec, settings_error: str | None) -> dict[str, object]:
+    """The selected profile (flag or env) must exist."""
     title = "resolve active profile"
     if settings_error is not None:
         return _row("profile", shell.name, _FAIL, title, settings_error)
-    name, source = classify_active_profile(raw)
+    name, source = classify_active_profile()
     return _row("profile", shell.name, _PASS, title, f"{name or 'default'} (via {source})")
 
 

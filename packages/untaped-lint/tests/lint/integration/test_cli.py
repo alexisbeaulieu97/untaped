@@ -117,7 +117,7 @@ def test_a_provider_that_is_not_ready_says_so_when_it_is_the_only_one() -> None:
 
 def test_the_profile_ignore_flags_and_select_add_up(_isolated_config: Path) -> None:
     _isolated_config.write_text(
-        "profiles:\n  default:\n    lint:\n      ignore: [acme.tall, nope]\n", encoding="utf-8"
+        "format_version: 2\nlint:\n  ignore: [acme.tall, nope]\n", encoding="utf-8"
     )
     widgets = pipe(Widget(name="legacy-a"), Widget(name="b"))
     with compose_with("lint", provides={"acme": [Acme()], "gizmo": [Gizmo()]}):

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from untaped.core.config import SettingsFileRepository
+from untaped.runtime.profile_resolver import base_sections
 from untaped.runtime.settings import (
     Settings,
     register_profile_settings,
@@ -37,6 +38,12 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     register_profile_settings("demo", DemoPluginSettings)
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
+
+
+def _by_profile(cfg: Path) -> dict[str, Any]:
+    """The file's profiles by name, the base as ``default``."""
+    data = yaml.safe_load(cfg.read_text())
+    return {"default": base_sections(data), **(data.get("profiles") or {})}
 
 
 def _write(cfg: Path, text: str | None) -> None:
@@ -86,6 +93,7 @@ def _write(cfg: Path, text: str | None) -> None:
         ),
         # Writing the default scope creates it and leaves other profiles intact.
         (
+            "format_version: 2\n"
             "profiles:\n  prod:\n    untaped:\n      skills:\n        updates: warn\n",
             "untaped.skills.updates",
             "auto",
@@ -97,15 +105,7 @@ def _write(cfg: Path, text: str | None) -> None:
             },
         ),
         (
-            "profiles:\n  default: {}\n  prod: {}\nactive: prod\n",
-            "untaped.skills.updates",
-            "auto",
-            None,
-            "prod",
-            {"default": {}, "prod": {"untaped": {"skills": {"updates": "auto"}}}},
-        ),
-        (
-            "profiles:\n  default: {}\n  work: {}\n",
+            "format_version: 2\nprofiles:\n  work: {}\n",
             "untaped.http.proxy",
             "http://p:8080",
             "work",
@@ -120,7 +120,6 @@ def _write(cfg: Path, text: str | None) -> None:
         "ui",
         "ui-literal",
         "creates-default",
-        "active-profile",
         "named-profile",
     ],
 )
@@ -135,21 +134,20 @@ def test_set_writes_into_the_target_profile(
 ) -> None:
     _write(_isolate_settings, initial)
     assert SettingsFileRepository().set_value(key, value, profile=profile) == written_to
-    assert yaml.safe_load(_isolate_settings.read_text())["profiles"] == expected
+    assert _by_profile(_isolate_settings) == expected
 
 
 def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    untaped:\n      skills:\n        updates: auto\n"
-        "    demo:\n      base_url: https://prod\n"
+        "format_version: 2\n"
+        "untaped:\n  skills:\n    updates: auto\n"
+        "demo:\n  base_url: https://prod\n"
         "workspace:\n  active:\n    - name: ws1\n"
         '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n'
     )
     SettingsFileRepository().set_value("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
-    default = data["profiles"]["default"]
+    default = data
     assert default["untaped"]["skills"] == {"updates": "auto"}
     assert default["demo"] == {"base_url": "https://prod", "token": "tok"}
     # Unknown top-level keys are untouched by a profile write.
@@ -163,9 +161,9 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         (None, "bogus.key", "x", None, "unknown setting"),
         (None, "plugins.tool.spec", "untaped", None, "unknown setting"),
         (None, "untaped.skills.updates", "auto", "prod", "profile not found.*prod"),
-        ("profiles:\n  default: {}\n", "untaped.skills.updates", "auto", "ghost", "ghost"),
+        ("format_version: 2\n", "untaped.skills.updates", "auto", "ghost", "ghost"),
         (
-            "profiles:\n  default:\n    untaped:\n      ui:\n        theme: classic\n",
+            "format_version: 2\nuntaped:\n  ui:\n    theme: classic\n",
             "untaped.ui.collection_view",
             "nope",
             None,
@@ -174,7 +172,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         # Validation merges from the *target* profile's perspective, so an
         # invalid value can't land in a non-active profile unnoticed.
         (
-            "profiles:\n  default:\n    demo:\n      page_size: 50\n  stage: {}\nactive: default\n",
+            "format_version: 2\ndemo:\n  page_size: 50\nprofiles:\n  stage: {}\n",
             "demo.page_size",
             "abc",
             "stage",
@@ -227,8 +225,8 @@ def test_set_validation_isolated_from_env_overlay(
     ("initial", "key", "profile", "removed", "expected"),
     [
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "    demo:\n      base_url: https://x\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n"
+            "demo:\n  base_url: https://x\n",
             "untaped.skills.updates",
             None,
             True,
@@ -236,23 +234,22 @@ def test_set_validation_isolated_from_env_overlay(
         ),
         # An emptied parent mapping is cleaned up; siblings are kept.
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "    demo:\n      token: x\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\ndemo:\n  token: x\n",
             "demo.token",
             None,
             True,
             {"default": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
         (
-            "profiles:\n  default:\n    demo:\n      token: x\n      base_url: https://y\n",
+            "format_version: 2\ndemo:\n  token: x\n  base_url: https://y\n",
             "demo.token",
             None,
             True,
             {"default": {"demo": {"base_url": "https://y"}}},
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "      ui:\n        theme: classic\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n"
+            "  ui:\n    theme: classic\n",
             "untaped.ui.theme",
             None,
             True,
@@ -260,21 +257,21 @@ def test_set_validation_isolated_from_env_overlay(
         ),
         # The schema default fills the gap, so the merged dict stays valid.
         (
-            "profiles:\n  default:\n    demo:\n      page_size: 50\n",
+            "format_version: 2\ndemo:\n  page_size: 50\n",
             "demo.page_size",
             None,
             True,
             {"default": {}},
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n"
-            "  prod:\n    untaped:\n      skills:\n        updates: auto\nactive: prod\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: warn\n"
+            "profiles:\n  prod:\n    untaped:\n      skills:\n        updates: auto\n",
             "untaped.skills.updates",
             "default",
             True,
             {"default": {}, "prod": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
-        ("profiles:\n  default: {}\n", "untaped.skills.updates", None, False, {"default": {}}),
+        ("format_version: 2\n", "untaped.skills.updates", None, False, {"default": {}}),
     ],
     ids=[
         "core",
@@ -299,11 +296,11 @@ def test_unset_removes_the_key(
         removed,
         profile or "default",
     )
-    assert yaml.safe_load(_isolate_settings.read_text())["profiles"] == expected
+    assert _by_profile(_isolate_settings) == expected
 
 
 def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
-    original = "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
+    original = "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n"
     _isolate_settings.write_text(original)
     with pytest.raises(ConfigError, match="profile not found") as excinfo:
         SettingsFileRepository().unset_value("untaped.skills.updates", profile="ghost")
@@ -315,17 +312,18 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
 @pytest.mark.parametrize(
     ("initial", "profile"),
     [
-        ("profiles:\n  default:\n    mandatory: x\n", "default"),
-        ("profiles:\n  default: {}\n  stage:\n    mandatory: x\nactive: stage\n", "stage"),
+        ("format_version: 2\nmandatory: x\n", "default"),
+        ("format_version: 2\nprofiles:\n  stage:\n    mandatory: x\n", "stage"),
     ],
 )
 def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
-    _isolate_settings: Path, initial: str, profile: str
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch, initial: str, profile: str
 ) -> None:
     """Regression (#136): unsetting a required-without-default setting fails
     here, naming the key and the profile, instead of breaking the next
     ``get_settings`` with an opaque pydantic error; the file is untouched."""
     _isolate_settings.write_text(initial)
+    monkeypatch.setenv("UNTAPED_PROFILE", profile)
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
     with pytest.raises(ConfigError) as exc_info:
         repo.unset_value("mandatory")

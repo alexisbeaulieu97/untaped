@@ -14,7 +14,7 @@ from untaped_recipe.settings import RecipeSettings
 def test_the_retired_library_root_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"recipe": {"library_root": "/l"}}}}))
+    config.write_text(yaml.safe_dump({"format_version": 2, "recipe": {"library_root": "/l"}}))
 
     settings = get_config_section("recipe", RecipeSettings)
 

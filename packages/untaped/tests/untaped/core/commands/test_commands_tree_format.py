@@ -118,7 +118,7 @@ def test_other_formats_ignore_the_tree() -> None:
 @pytest.mark.parametrize(
     ("setting", "env", "expected"),
     [
-        ("    untaped:\n      ui:\n        format: yaml\n", None, "- name: alpha\n"),
+        ("untaped:\n  ui:\n    format: yaml\n", None, "- name: alpha\n"),
         ("", "json", '[{"name": "alpha"}]\n'),
     ],
     ids=["untaped.ui.format", "UNTAPED_FORMAT"],
@@ -130,7 +130,7 @@ def test_the_users_default_format_applies_to_a_tree_command(
     env: str | None,
     expected: str,
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n" + (setting or "    {}\n"))
+    write_config(_isolated_config, "format_version: 2\n" + setting)
     if env:
         monkeypatch.setenv("UNTAPED_FORMAT", env)
 

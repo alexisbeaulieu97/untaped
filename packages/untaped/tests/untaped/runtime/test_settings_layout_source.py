@@ -42,14 +42,13 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            untaped:
-              skills:
-                updates: auto
-            demo:
-              base_url: https://aap.local
-              token: secret-value
+        format_version: 2
+        untaped:
+          skills:
+            updates: auto
+        demo:
+          base_url: https://aap.local
+          token: secret-value
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -90,10 +89,9 @@ def test_state_and_profile_fields_share_one_section(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            demo:
-              cache_dir: /from/config
+        format_version: 2
+        demo:
+          cache_dir: /from/config
         """
     )
     (tmp_path / "state.yml").write_text("demo:\n  entries:\n    - prod\n")

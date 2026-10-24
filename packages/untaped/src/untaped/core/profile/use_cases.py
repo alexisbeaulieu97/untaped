@@ -12,18 +12,20 @@ import copy
 from dataclasses import dataclass
 
 from untaped.core.profile.models import Profile, ProfileDeletePreview
-from untaped.core.profile.ports import ActiveProfileWriter, ProfileReader, ProfileWriter
+from untaped.core.profile.ports import ProfileReader, ProfileWriter
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, ProfileSource
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.words import not_found, q
+
+_BASE_RESERVED = "`default` names the base, config.yml's top level; pick another name"
 
 
 class CreateProfile:
     """Create ``profiles.<name>``.
 
-    ``copy_from`` seeds the new profile from another existing one (handy
-    for cloning ``default`` into a new environment). The copy is a deep
-    copy — later edits to the source must not affect the new profile.
+    ``copy_from`` seeds the new profile from another existing one, or from
+    the base (``default``). The copy is a deep copy — later edits to the
+    source must not affect the new profile.
     """
 
     def __init__(self, repo: ProfileWriter) -> None:
@@ -32,6 +34,8 @@ class CreateProfile:
     def __call__(self, name: str, *, copy_from: str | None = None, dry_run: bool = False) -> None:
         if not name:
             raise ConfigError("profile name cannot be empty", category="invalid")
+        if name == DEFAULT_PROFILE:
+            raise ConfigError(_BASE_RESERVED, category="invalid")
         if self._repo.read(name) is not None:
             raise ConfigError(f"profile {name!r} already exists", category="conflict")
         if copy_from is not None:
@@ -50,27 +54,22 @@ class CreateProfile:
 
 
 class DeleteProfile:
-    """Remove ``profiles.<name>``.
-
-    Refuses to delete the active profile (would orphan the ``active:``
-    pointer). ``default`` is not special-cased — when it's not the
-    active profile, deleting it just clears any shared overrides and
-    values fall through to schema defaults.
-    """
+    """Remove ``profiles.<name>``; the base (``default``) is not a profile to delete."""
 
     def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
     def preview(self, name: str) -> ProfileDeletePreview:
+        if name == DEFAULT_PROFILE:
+            raise ConfigError(
+                "cannot delete `default`: it is the base, config.yml's top level",
+                category="invalid",
+                hint="remove its keys with `untaped config unset`",
+            )
         data = self._repo.read(name)
         if data is None:
             raise ConfigError(
                 not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
-            )
-        if self._repo.persisted_active_name() == name:
-            raise ConfigError(
-                f"cannot delete the active profile {name!r}; switch to another profile first",
-                category="invalid",
             )
         return ProfileDeletePreview(name=name, top_level_keys=tuple(sorted(data)))
 
@@ -80,7 +79,7 @@ class DeleteProfile:
 
 
 class ListProfiles:
-    """Return one :class:`Profile` per stored profile."""
+    """Return one :class:`Profile` for the base (``default``), then one per named profile."""
 
     def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
@@ -97,9 +96,10 @@ class ListProfiles:
 class ShowProfile:
     """Return the named profile.
 
-    By default the data is the **effective view**: ``default`` merged with
+    By default the data is the **effective view**: the base merged with
     the named profile (named wins per leaf). ``raw=True`` returns only
-    what's literally written under ``profiles.<name>``.
+    what's literally written under ``profiles.<name>`` (the base's own
+    sections for ``default``).
     """
 
     def __init__(self, repo: ProfileReader) -> None:
@@ -110,13 +110,8 @@ class ShowProfile:
         name: str,
         *,
         raw: bool = False,
-        allow_conceptual_default: bool = False,
     ) -> Profile:
         raw_data = self._repo.read(name)
-        if raw_data is None and name == DEFAULT_PROFILE and allow_conceptual_default:
-            data = {} if raw else self._repo.resolved(name)
-            active = self._repo.active_name() or DEFAULT_PROFILE
-            return Profile(name=name, data=data, is_active=(name == active))
         if raw_data is None:
             raise ConfigError(
                 not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
@@ -129,9 +124,7 @@ class ShowProfile:
 class RenameProfile:
     """Rename ``profiles.<old>`` to ``profiles.<new>``.
 
-    ``default`` cannot be renamed nor used as the rename target. If the
-    profile being renamed is the active one, ``active:`` is updated in
-    the same operation so the pointer stays valid.
+    ``default`` (the base) cannot be renamed nor used as the rename target.
     """
 
     def __init__(self, repo: ProfileWriter) -> None:
@@ -143,7 +136,7 @@ class RenameProfile:
         if old_name == DEFAULT_PROFILE:
             raise ConfigError("cannot rename the `default` profile", category="invalid")
         if new_name == DEFAULT_PROFILE:
-            raise ConfigError("cannot rename to `default` (reserved name)", category="invalid")
+            raise ConfigError(_BASE_RESERVED, category="invalid")
         if self._repo.read(old_name) is None:
             raise ConfigError(
                 not_found("profile", old_name, known=sorted(self._repo.names())),
@@ -162,12 +155,11 @@ class CurrentProfileResult:
 
 
 class CurrentProfile:
-    """Resolve the effective active profile, classifying its source.
+    """Resolve the picked profile, classifying its source.
 
     Powers ``profile current`` — a one-line answer to "which profile am I
-    using right now?". When env or config explicitly names a profile, the
-    use case validates that the profile actually exists (the root
-    ``--profile`` flag included), so the documented
+    using right now?". When the flag or the variable names a profile, the
+    use case validates that the profile actually exists, so the documented
     pipe usage ``--profile $(… profile current)`` can't silently print a
     typo'd name that other commands then reject.
     """
@@ -177,7 +169,7 @@ class CurrentProfile:
 
     def __call__(self) -> CurrentProfileResult:
         name, source = self._repo.classify_active()
-        if source in ("flag", "env", "config"):
+        if source in ("flag", "env"):
             assert name is not None  # invariant of classify_active
             if name not in self._repo.names():
                 known = ", ".join(sorted(self._repo.names())) or "(none)"
@@ -185,26 +177,8 @@ class CurrentProfile:
                     f"active profile {name!r} (from {source}) is not defined; known: {known}"
                 )
             return CurrentProfileResult(name=name, source=source)
-        # Fallback: nothing explicitly names a profile. Report the
-        # conceptual `default` placeholder regardless of whether a
-        # `default` profile exists on disk — schema defaults are in
-        # effect either way, and that case is not a user typo to
-        # protect against.
+        # Nothing picks: the run reads the base alone.
         return CurrentProfileResult(name=DEFAULT_PROFILE, source="fallback")
-
-
-class UseProfile:
-    """Validate the named profile exists, then persist ``active: <name>``."""
-
-    def __init__(self, repo: ActiveProfileWriter) -> None:
-        self._repo = repo
-
-    def __call__(self, name: str) -> None:
-        if self._repo.read(name) is None:
-            raise ConfigError(
-                not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
-            )
-        self._repo.set_active(name)
 
 
 __all__ = [
@@ -215,5 +189,4 @@ __all__ = [
     "ListProfiles",
     "RenameProfile",
     "ShowProfile",
-    "UseProfile",
 ]

@@ -38,7 +38,7 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _write_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
 

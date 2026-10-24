@@ -125,10 +125,10 @@ def test_set_stores_on_stdin_and_writes_the_preset(
     entry: str,
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: old\n")
     result = _auth("set", "svc", "--stdin", "--format", "json", input=f"  {SENTINEL}\n")
     assert result.exit_code == 0, result.output
-    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token_command": command}
+    assert _config(_isolated_config)["svc"] == {"token_command": command}
     assert stores.entries() == {entry: SENTINEL}
     assert json.loads(result.stdout)["action"] == "stored"
     assert "svc.token_command set in profile default" in result.stderr
@@ -157,7 +157,7 @@ def test_set_prefers_the_first_usable_store(
     monkeypatch.setenv("STUB_MODE", "no-service")
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 0, result.output
-    command = _config(_isolated_config)["profiles"]["default"]["svc"]["token_command"]
+    command = _config(_isolated_config)["svc"]["token_command"]
     assert command[0] == "pass", "a Secret Service probe that errors falls through to pass"
 
 
@@ -230,12 +230,12 @@ def test_a_failed_store_changes_nothing(
     mode: str,
     message: str,
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: old\n")
     monkeypatch.setenv("STUB_MODE", mode)
     result = _auth("set", "svc", "--stdin", input=SENTINEL)
     assert result.exit_code != 0
     assert message in result.stderr
-    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token": "old"}
+    assert _config(_isolated_config)["svc"] == {"token": "old"}
     _no_leak(result, stores)
 
 
@@ -541,20 +541,20 @@ def test_a_working_secret_service_leaves_no_preflight_entry(
 def test_a_pass_that_cannot_decrypt_is_reported_once_with_the_fix(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: old\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: old\n")
     monkeypatch.setenv("STUB_MODE", "gpg-decrypt")
     result = _auth("set", "svc", "--stdin", input=SENTINEL)
     assert result.exit_code != 0
     assert result.stderr.count("decryption failed") == 1, "gpg's repeated stderr is summarised"
     assert "pinentry" in result.stderr and "GPG_TTY" in result.stderr
-    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {"token": "old"}
+    assert _config(_isolated_config)["svc"] == {"token": "old"}
     _no_leak(result, stores)
 
 
 def test_set_in_a_named_profile_names_the_entry_after_it(
     _isolated_config: Path, stores: FakeStores
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 0
     root = bootstrap.build_root_app(
@@ -568,12 +568,13 @@ def test_set_in_a_named_profile_names_the_entry_after_it(
 
 
 def test_set_refuses_when_default_holds_a_plaintext_token(
-    _isolated_config: Path, stores: FakeStores
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    svc:\n      token: shared\n  work: {}\nactive: work\n",
+        "format_version: 2\nsvc:\n  token: shared\nprofiles:\n  work: {}\n",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 4
     assert "svc.token is set in profile default" in result.stderr
@@ -600,9 +601,10 @@ def test_set_rejects_a_section_without_token_command(
 
 
 def test_set_rejects_a_profile_name_that_cannot_name_an_entry(
-    _isolated_config: Path, stores: FakeStores
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  'my work': {}\nactive: my work\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  'my work': {}\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "my work")
     result = _auth("set", "svc", "--stdin", input="tok")
     assert result.exit_code == 1
     assert "profile 'my work' cannot name a store entry" in result.stderr
@@ -630,7 +632,7 @@ def test_unset_deletes_the_entry_and_the_command(
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "deleted"
     assert stores.entries() == {}
-    assert _config(_isolated_config)["profiles"]["default"] == {}
+    assert _config(_isolated_config) == {"format_version": 2}
 
 
 @pytest.mark.parametrize(
@@ -650,15 +652,13 @@ def test_unset_cleans_up_when_the_entry_is_already_gone(
     command: str,
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, store, macos=macos)
-    write_config(
-        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
-    )
+    write_config(_isolated_config, f"format_version: 2\nsvc:\n  token_command: {command}\n")
     result = _auth("unset", "svc", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "gone"
     assert "the svc token was already gone from" in result.stderr
     assert "deleted" not in result.stderr
-    assert _config(_isolated_config)["profiles"]["default"] == {}
+    assert _config(_isolated_config) == {"format_version": 2}
 
 
 def test_unset_keeps_everything_when_the_store_is_unreachable(
@@ -672,7 +672,7 @@ def test_unset_keeps_everything_when_the_store_is_unreachable(
     assert result.exit_code == 4
     assert "'secret-tool' exited with status 1" in result.stderr
     assert stores.entries() == {"default/svc": "tok"}
-    assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
+    assert "token_command" in _config(_isolated_config)["svc"]
 
 
 def test_unset_when_the_store_tool_is_gone_keeps_the_command(
@@ -680,13 +680,11 @@ def test_unset_when_the_store_tool_is_gone_keeps_the_command(
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch)
     command = "[secret-tool, lookup, service, untaped, account, default/svc]"
-    write_config(
-        _isolated_config, f"profiles:\n  default:\n    svc:\n      token_command: {command}\n"
-    )
+    write_config(_isolated_config, f"format_version: 2\nsvc:\n  token_command: {command}\n")
     result = _auth("unset", "svc", "--yes")
     assert result.exit_code == 4
     assert "'secret-tool' not found on PATH" in result.stderr
-    assert "token_command" in _config(_isolated_config)["profiles"]["default"]["svc"]
+    assert "token_command" in _config(_isolated_config)["svc"]
 
 
 def test_a_hung_secret_service_probe_is_not_usable(
@@ -720,13 +718,13 @@ def test_unset_without_yes_or_terminal_refuses(_isolated_config: Path, stores: F
 
 
 def test_unset_leaves_an_inherited_command_alone(
-    _isolated_config: Path, stores: FakeStores
+    _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
     config = _config(_isolated_config)
-    config["profiles"]["work"] = {}
-    config["active"] = "work"
+    config["profiles"] = {"work": {}}
     write_config(_isolated_config, json.dumps(config))
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     result = _auth("unset", "svc", "--yes", "--format", "json")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "unchanged"
@@ -747,15 +745,11 @@ def test_unset_with_nothing_set_is_a_no_op(_isolated_config: Path, stores: FakeS
 
 
 def test_unset_leaves_a_foreign_command_alone(_isolated_config: Path, stores: FakeStores) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    svc:\n      token_command: [op, read, x]\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token_command: [op, read, x]\n")
     result = _auth("unset", "svc", "--yes")
     assert result.exit_code == 1
     assert "was not written by untaped" in result.stderr
-    assert _config(_isolated_config)["profiles"]["default"]["svc"] == {
-        "token_command": ["op", "read", "x"]
-    }
+    assert _config(_isolated_config)["svc"] == {"token_command": ["op", "read", "x"]}
 
 
 # --- auth status --------------------------------------------------------------
@@ -766,11 +760,10 @@ def test_status_names_every_source_without_running_commands(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n"
-        "  default:\n"
-        "    svc:\n      token_command: [pass, show, untaped/default/svc]\n"
-        "    other:\n      token: plain-secret\n"
-        "  work:\n"
+        "format_version: 2\n"
+        "svc:\n  token_command: [pass, show, untaped/default/svc]\n"
+        "other:\n  token: plain-secret\n"
+        "profiles:\n  work:\n"
         "    svc:\n      token_command: [op, read, x]\n",
     )
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
@@ -796,7 +789,7 @@ def test_status_names_every_source_without_running_commands(
 def test_status_reports_env_sources(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
     install_fake_stores(tmp_path, monkeypatch)
     monkeypatch.setenv("UNTAPED_SVC__TOKEN", "x")
     monkeypatch.setenv("SVC_TOKEN", "y")
@@ -813,10 +806,9 @@ def test_status_reports_env_sources(
 
 
 _PLAINTEXT = (
-    "profiles:\n"
-    "  default:\n"
-    "    svc:\n      base_url: https://svc\n      token: d-svc\n"
-    "  work:\n"
+    "format_version: 2\n"
+    "svc:\n  base_url: https://svc\n  token: d-svc\n"
+    "profiles:\n  work:\n"
     "    svc:\n      token: w-svc\n"
     "    other:\n      token: w-other\n"
 )
@@ -844,7 +836,7 @@ def test_migrate_moves_every_plaintext_token(_isolated_config: Path, stores: Fak
     }
     text = _isolated_config.read_text()
     assert "d-svc" not in text and "w-svc" not in text and "w-other" not in text
-    assert _config(_isolated_config)["profiles"]["default"]["svc"]["base_url"] == "https://svc"
+    assert _config(_isolated_config)["svc"]["base_url"] == "https://svc"
     assert "moved 3 tokens to pass" in result.stderr
     again = _auth("migrate", "--format", "json")
     assert again.exit_code == 0
@@ -867,7 +859,7 @@ def test_migrate_keeps_a_token_that_fails_and_exits_non_zero(
 def test_migrate_exits_with_the_failure_category_and_names_it_per_row(
     _isolated_config: Path, stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: d-svc\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: d-svc\n")
     monkeypatch.setenv("STUB_MODE", "hang")
     monkeypatch.setattr(auth, "_TIMEOUT_SECONDS", 0.5)
     result = _auth("migrate", "--format", "json")
@@ -911,8 +903,8 @@ def test_migrate_names_no_gpg_fix_for_a_failure_that_is_not_gpg(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    svc:\n      token: d-svc\n"
-        "  my work:\n    svc:\n      token: w-svc\n",
+        "format_version: 2\nsvc:\n  token: d-svc\n"
+        "profiles:\n  my work:\n    svc:\n      token: w-svc\n",
     )
     result = _auth("migrate", "--format", "json")
     assert result.exit_code == 1, "a profile name no entry can hold is invalid input"
@@ -940,7 +932,7 @@ def test_loading_a_plaintext_token_warns_once(
     from untaped.runtime.settings import register_profile_settings
 
     register_profile_settings("svc", SvcProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: tok-7f3a\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: tok-7f3a\n")
     get_config_section("svc", SvcProfile)
     get_config_section("svc", SvcProfile)
     err = capsys.readouterr().err
@@ -956,7 +948,7 @@ def test_the_plaintext_token_warning_carries_its_hint(
 
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     register_profile_settings("svc", SvcProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: tok-7f3a\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: tok-7f3a\n")
     get_config_section("svc", SvcProfile)
     [line] = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
     assert line == {
@@ -994,7 +986,7 @@ def test_only_an_env_token_silences_the_warning(
     from untaped.runtime.settings import register_profile_settings
 
     register_profile_settings("svc", SvcProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    svc:\n      token: file\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  token: file\n")
     monkeypatch.setenv(name, value)
     get_config_section("svc", SvcProfile)
     assert ("plain-text" in capsys.readouterr().err) is warns

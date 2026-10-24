@@ -77,7 +77,7 @@ def configure(**github: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     url = github.pop("base_url", None)
     section = {**github, **({"server": {"url": url}} if url else {})}
-    path.write_text(yaml.safe_dump({"profiles": {"default": {"github": section}}}))
+    path.write_text(yaml.safe_dump({"format_version": 2, "github": section}))
     get_settings.cache_clear()
 
 

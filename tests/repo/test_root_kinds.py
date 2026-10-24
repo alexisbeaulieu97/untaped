@@ -36,7 +36,7 @@ def test_root_pipe_records_carry_an_untaped_kind(
 ) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text("profiles:\n  default: {}\n  stage: {}\n", encoding="utf-8")
+    config.write_text("format_version: 2\nprofiles:\n  stage: {}\n", encoding="utf-8")
     root = build_root_app(candidates=first_party_candidates)
     result = invoke_cli(root, [*args, "--format", "pipe"])
 

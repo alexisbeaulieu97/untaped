@@ -332,7 +332,7 @@ class _Acme(BaseModel):
 def acme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[App]:
     config = tmp_path / "config.yml"
     config.write_text(
-        "profiles:\n  default:\n    acme:\n      old_mode: true\n      old_wait: 9\n",
+        "format_version: 2\nacme:\n  old_mode: true\n  old_wait: 9\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
@@ -401,9 +401,7 @@ def test_a_cache_rename_s_record_is_its_surface_line(
         removed_in=5,
     )
     config = tmp_path / "config.yml"
-    config.write_text(
-        "profiles:\n  default:\n    hello:\n      motd_seconds: 9\n", encoding="utf-8"
-    )
+    config.write_text("format_version: 2\nhello:\n  motd_seconds: 9\n", encoding="utf-8")
     monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     get_settings.cache_clear()

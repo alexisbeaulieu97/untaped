@@ -155,7 +155,7 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
 
 
 def test_provider_settings_register_before_config_resolution(_isolated_config: Path) -> None:
-    _write_config(_isolated_config, "profiles:\n  default:\n    ext:\n      token: SECRET\n")
+    _write_config(_isolated_config, "format_version: 2\next:\n  token: SECRET\n")
     with pytest.raises(ConfigError):
         app_context().section("ext", _ExtProfile)
 
@@ -172,7 +172,9 @@ def test_provider_settings_register_before_config_resolution(_isolated_config: P
 
 
 def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None:
-    _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
+    _write_config(
+        _isolated_config, "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
+    )
     calls: list[str] = []
     root = bootstrap.build_root_app(candidates=[_ext_candidate(calls)])
     for argv in (
@@ -200,7 +202,9 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
 def test_root_options_apply_between_nested_command_names(
     _isolated_config: Path, argv: list[str]
 ) -> None:
-    _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
+    _write_config(
+        _isolated_config, "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
+    )
 
     def body() -> None:
         echo(f"{app_context().section('ext', _ExtProfile).token} quiet={is_quiet()}")
@@ -220,7 +224,9 @@ def test_root_options_apply_between_nested_command_names(
 
 
 def test_profile_value_may_equal_a_command_name(_isolated_config: Path) -> None:
-    _write_config(_isolated_config, "profiles:\n  ext:\n    ext:\n      token: EXT\n")
+    _write_config(
+        _isolated_config, "format_version: 2\nprofiles:\n  ext:\n    ext:\n      token: EXT\n"
+    )
     root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
     for argv in (
         ["--profile", "ext", "ext", "who"],
@@ -254,7 +260,9 @@ def test_root_options_after_end_of_options_reach_the_command(
 
 
 def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
-    _write_config(_isolated_config, "profiles:\n  work:\n    ext:\n      token: WT\n")
+    _write_config(
+        _isolated_config, "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
+    )
     env_before = os.environ.get("UNTAPED_PROFILE")
     calls: list[str] = []
     root = bootstrap.build_root_app(candidates=[_ext_candidate(calls)])

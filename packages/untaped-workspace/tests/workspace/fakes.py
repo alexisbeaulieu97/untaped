@@ -104,8 +104,8 @@ def rank(*plugins: str) -> None:
     path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "profiles:\n  default:\n    workspace:\n      extensions:\n        repo_source:\n"
-        f"          rank:\n            repos: [{', '.join(plugins)}]\n",
+        "format_version: 2\nworkspace:\n  extensions:\n    repo_source:\n"
+        f"      rank:\n        repos: [{', '.join(plugins)}]\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()

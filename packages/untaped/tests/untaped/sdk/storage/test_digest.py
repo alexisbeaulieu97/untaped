@@ -58,11 +58,15 @@ def _register(model: type[BaseModel] = ToySettings) -> None:
 
 
 def _config(**profiles: str) -> None:
-    """Write ``config.yml`` with each profile's ``toy`` section (YAML, indented under it)."""
-    text = "profiles:\n"
+    """Write ``config.yml`` with each profile's ``toy`` section (``default`` is the base)."""
+    text = "format_version: 2\n"
     for name, body in profiles.items():
-        text += f"  {name}:\n    toy:\n"
-        text += "".join(f"      {line}\n" for line in body.splitlines()) or "      {}\n"
+        at = "" if name == "default" else "    "
+        if at and "profiles:" not in text:
+            text += "profiles:\n"
+        text += f"  {name}:\n" if at else ""
+        text += f"{at}toy:\n"
+        text += "".join(f"{at}  {line}\n" for line in body.splitlines()) or f"{at}  {{}}\n"
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

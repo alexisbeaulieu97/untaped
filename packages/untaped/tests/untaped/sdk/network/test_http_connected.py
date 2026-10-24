@@ -97,15 +97,18 @@ def test_a_bound_token_is_sent_only_to_its_origin() -> None:
         c.get("https://elsewhere.example.com/me")
 
 
-def test_a_missing_url_names_the_unset_marked_fields(_isolated_config: Path) -> None:
+def test_a_missing_url_names_the_unset_marked_fields(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _write(
         _isolated_config,
-        "active: home\n"
+        "format_version: 2\n"
         "profiles:\n"
         "  home: {}\n"
         "  work:\n"
         "    demo: {server: {url: https://work.example.com}}\n",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "home")
     with pytest.raises(ConfigError) as caught:
         connected_client(Marked(), section="demo", base_url=None, http=_HTTP)
 

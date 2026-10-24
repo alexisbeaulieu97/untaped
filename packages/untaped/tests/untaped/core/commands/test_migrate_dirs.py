@@ -246,8 +246,8 @@ def test_plugin_check_fails_a_preview_returning_the_wrong_type() -> None:
 def test_a_deleted_keys_values_are_still_found_in_every_profile(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
+        "format_version: 2\nalpha:\n  cache_dir: ~/one\n"
         "profiles:\n  work:\n    alpha:\n      cache_dir: ~/two\n"
-        "  default:\n    alpha:\n      cache_dir: ~/one\n"
         "  home:\n    alpha:\n      cache_dir: ~/one\n",
     )
 
@@ -407,7 +407,7 @@ def test_dir_bytes_counts_files_and_tolerates_what_is_missing(tmp_path: Path) ->
 def test_old_dirs_skips_values_that_are_not_paths(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    alpha:\n      cache_dir: 3\n  work:\n    alpha:\n"
+        "format_version: 2\nalpha:\n  cache_dir: 3\nprofiles:\n  work:\n    alpha:\n"
         "      cache_dir: ' '\n",
     )
 
@@ -624,7 +624,7 @@ def test_setting_guard_keeps_a_place_any_profile_still_names(_isolated_config: P
     old.mkdir(parents=True)
     write_config(
         _isolated_config,
-        f"profiles:\n  default: {{}}\n  work:\n    alpha:\n      data_dir: {old / 'sub'}\n",
+        f"format_version: 2\nprofiles:\n  work:\n    alpha:\n      data_dir: {old / 'sub'}\n",
     )
     guard = setting_guard("alpha", "other_dir", "data_dir")
 

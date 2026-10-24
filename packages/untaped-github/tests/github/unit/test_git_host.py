@@ -29,7 +29,7 @@ def configure(github: dict[str, object], *, http: dict[str, object] | None = Non
     profile: dict[str, object] = {"github": github}
     if http is not None:
         profile["untaped"] = {"http": http}
-    path.write_text(yaml.safe_dump({"profiles": {"default": profile}}), encoding="utf-8")
+    path.write_text(yaml.safe_dump({"format_version": 2, **profile}), encoding="utf-8")
 
 
 class OtherForge(GitHost):

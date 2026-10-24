@@ -15,12 +15,11 @@ from untaped.sdk.testing import assert_fills, invoke_root
 from untaped_lint.testing import assert_clean
 
 _CONFIG = """\
-profiles:
-  default:
-    library:
-      volumes:
-        - {shelf_mark: A1, name: Dune, pages: 412}
-        - {shelf_mark: B2, name: Emma, pages: 474}
+format_version: 2
+library:
+  volumes:
+    - {shelf_mark: A1, name: Dune, pages: 412}
+    - {shelf_mark: B2, name: Emma, pages: 474}
 """
 
 
@@ -79,6 +78,7 @@ def test_the_answer_is_cached_per_provider_settings(monkeypatch: pytest.MonkeyPa
     path = home().expanduser() / "config.yml"
     path.write_text(
         _CONFIG
+        + "profiles:\n"
         + "  same:\n"
         + "    library:\n"
         + "      volumes:\n"

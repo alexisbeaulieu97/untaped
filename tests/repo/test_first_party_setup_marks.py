@@ -64,7 +64,7 @@ def test_github_with_only_gh_token_is_set_up(
     for name in ("GITHUB_TOKEN", "UNTAPED_PROFILE"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("GH_TOKEN", "ghp_ambient")
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     setup = {
         row["plugin"]: row
         for row in _cli(first_party_candidates, "doctor")

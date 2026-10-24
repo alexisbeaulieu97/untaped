@@ -36,7 +36,7 @@ from untaped.sdk.testing import current_memory_store
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
-_OLD = "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n"
+_OLD = "format_version: 2\nwiz:\n  server: {url: https://old}\n"
 
 #: What each probe saw: ``{"url", "source", "plain", "overlay"}``.
 SEEN: list[dict[str, Any]] = []
@@ -108,7 +108,7 @@ def test_only_online_checks_run(_isolated_config: Path) -> None:
 def test_probe_sees_candidate_url_and_token(_isolated_config: Path, stored: bool) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      server: {url: https://new}\n      token: file\n",
+        "format_version: 2\nwiz:\n  server: {url: https://new}\n  token: file\n",
     )
     if stored:
         WIZ_TOKEN.store(WizServer(url=HttpUrl("https://new")), token="stored")
@@ -130,7 +130,7 @@ def test_probe_sees_candidate_url_and_token(_isolated_config: Path, stored: bool
 def test_candidate_command_source_removes_the_token(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz:\n      server: {url: https://old}\n      token: file\n",
+        "format_version: 2\nwiz:\n  server: {url: https://old}\n  token: file\n",
     )
 
     rows = _rows(
@@ -146,7 +146,7 @@ def test_a_new_profile_is_checked_over_default_before_it_exists(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("WIZ_TOKEN", "shared")
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {}\n")
+    write_config(_isolated_config, "format_version: 2\nwiz: {}\n")
 
     rows = _rows({"server.url": "https://prod"}, profile="prod")
 
@@ -158,7 +158,7 @@ def test_a_new_profile_is_checked_over_default_before_it_exists(
 def test_a_plaintext_candidate_token_does_not_report_plaintext(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
 
     rows = _rows({"server.url": "https://new", "token": SecretStr("typed")})
 
@@ -167,7 +167,7 @@ def test_a_plaintext_candidate_token_does_not_report_plaintext(
 
 
 def test_invalid_candidate_values_fail_the_validate_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
 
     rows = _rows({"server.url": "not a url"})
 
@@ -196,7 +196,7 @@ def test_the_files_are_untouched(
 
 
 def test_a_failed_probe_row_carries_detail_and_fix(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n")
+    write_config(_isolated_config, "format_version: 2\n")
     FAIL.append(True)
 
     rows = _rows(

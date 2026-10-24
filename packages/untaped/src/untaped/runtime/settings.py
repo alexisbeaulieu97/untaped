@@ -39,7 +39,11 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
+from untaped.runtime.profile_resolver import (
+    DEFAULT_PROFILE,
+    FILE_KEYS,
+    effective_active_profile_name,
+)
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import config_path, home
@@ -66,13 +70,17 @@ def plugins_root() -> Path:
     return home().expanduser() / "plugins"
 
 
-#: On-disk format of ``config.yml`` and ``state.yml``. A file without
-#: ``format_version`` is format 1. Bump only in a major release, when an older
-#: reader ignoring a new core key would change behaviour (see CONTRIBUTING.md).
-#: A renamed key (``renamed_keys``) does not bump it: a bump would make an
-#: older release refuse the whole file, and ``untaped config migrate`` renames
-#: keys only when the user runs it.
-FORMAT_VERSION = 1
+#: On-disk format of ``config.yml``: format 2 holds the base at the top level
+#: and named profiles under ``profiles:``. A non-empty file must carry
+#: ``format_version: 2``; an unstamped one is 11.x's format 1, refused. Bump
+#: only in a major release, when an older reader ignoring a new core key would
+#: change behaviour (see CONTRIBUTING.md). A renamed key (``renamed_keys``)
+#: does not bump it: a bump would make an older release refuse the whole file,
+#: and ``untaped config migrate`` renames keys only when the user runs it.
+FORMAT_VERSION = 2
+#: On-disk format of the top-level ``state.yml``, unstamped until it leaves
+#: the top of the home.
+STATE_FORMAT_VERSION = 1
 
 
 class HttpSettings(BaseModel):
@@ -200,7 +208,7 @@ ContractName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(_[a-z0
 PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 #: A plugin's name in settings, checked against the grammar only: a ranking
-#: in ``profiles.default`` must not break a profile without that plugin.
+#: in the base must not break a profile without that plugin.
 PluginName = Annotated[str, StringConstraints(pattern=PLUGIN_NAME_PATTERN.pattern)]
 
 
@@ -437,7 +445,7 @@ def active_settings_layout() -> ProfilesSettingsLayout:
 def register_profile_settings(
     section: str, model: type[BaseModel], stability: Stability | None = None
 ) -> None:
-    """Register a plugin's profile-scoped section (lives under ``profiles.<name>``).
+    """Register a plugin's profile-scoped section (in the base and each ``profiles.<name>``).
 
     ``stability`` is the owning plugin's mark; its settings inherit it
     unless a field carries a mark of its own.
@@ -573,16 +581,21 @@ def resolve_with_overlay(
 
     The overlay's profile may not exist in ``raw`` yet (``setup`` checks a new
     profile before creating it); it then resolves as the empty profile it will
-    be, over ``default``.
+    be, over the base.
     """
     overlay = _overlay.get()
     profiles = raw.get("profiles")
     # A malformed ``profiles`` (not a mapping) is left for resolution to report.
     known = {} if profiles is None else profiles
-    if overlay is not None and isinstance(known, dict) and overlay.profile not in known:
+    if (
+        overlay is not None
+        and overlay.profile != DEFAULT_PROFILE
+        and isinstance(known, dict)
+        and overlay.profile not in known
+    ):
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
     resolved = active_settings_layout().resolve(raw, sections=sections)
-    selected = effective_active_profile_name(raw) or DEFAULT_PROFILE
+    selected = effective_active_profile_name() or DEFAULT_PROFILE
     return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
 
 
@@ -790,11 +803,29 @@ class _RenamingEnvSource(EnvSettingsSource):
 
 
 def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
-    """Parse the config file into a dict (``{}`` when absent or empty).
+    """Parse ``config.yml`` into a dict (``{}`` when absent or empty).
 
-    Unreadable files, YAML syntax errors, and a non-mapping document root
-    all raise :class:`ConfigError` naming the path.
+    Unreadable files, YAML syntax errors, a non-mapping document root and a
+    file that is not format 2 (:func:`check_config_format`) all raise
+    :class:`ConfigError` naming the path.
     """
+    raw = _read_yaml(yaml_file)
+    check_config_format(raw, yaml_file)
+    return raw
+
+
+def load_state_yaml(yaml_file: Path) -> dict[str, Any]:
+    """Parse the top-level ``state.yml`` into a dict (``{}`` when absent or empty).
+
+    Raises as :func:`load_config_yaml` does, except that the file may be
+    unstamped (:data:`STATE_FORMAT_VERSION`).
+    """
+    raw = _read_yaml(yaml_file)
+    _check_stamp(raw, yaml_file, newest=STATE_FORMAT_VERSION)
+    return raw
+
+
+def _read_yaml(yaml_file: Path) -> dict[str, Any]:
     if not yaml_file.is_file():
         return {}
     try:
@@ -810,14 +841,14 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
 def check_config_text(text: str, path: Path) -> None:
     """Raise :class:`ConfigError` when ``text`` is not a readable config document.
 
-    Applies the same root and ``format_version`` checks as :func:`load_config_yaml`
+    Applies the same root and format checks as :func:`load_config_yaml`
     to text already read from ``path``.
     """
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise ConfigError(f"could not parse {path}: {exc}") from exc
-    _checked_root(raw, path)
+    check_config_format(_checked_root(raw, path), path)
 
 
 def _checked_root(raw: Any, path: Path) -> dict[str, Any]:
@@ -828,7 +859,6 @@ def _checked_root(raw: Any, path: Path) -> dict[str, Any]:
             f"invalid config in {path}: the document root must be a mapping, "
             f"got {type(raw).__name__}"
         )
-    _check_format(raw, path)
     return raw
 
 
@@ -837,7 +867,7 @@ class FormatVersionError(ConfigError):
 
 
 class NewerFormatError(FormatVersionError):
-    """A file stamped with a ``format_version`` newer than :data:`FORMAT_VERSION`."""
+    """A file stamped with a ``format_version`` newer than this release reads."""
 
     def __init__(self, message: str, *, version: int, path: Path) -> None:
         super().__init__(message)
@@ -845,7 +875,45 @@ class NewerFormatError(FormatVersionError):
         self.path = path
 
 
-def _check_format(raw: dict[str, Any], path: Path) -> None:
+class OlderFormatError(FormatVersionError):
+    """A ``config.yml`` an untaped 11.x wrote (format 1): 12.0 has no upgrade path."""
+
+
+def check_config_format(raw: dict[str, Any], path: Path) -> None:
+    """Refuse a ``config.yml`` this release must not read: not format 2, or holding 11.x keys.
+
+    11.x's keys are ``active:`` and ``profiles.default``. An empty file is a
+    fresh home. Raises :class:`FormatVersionError` (exit 4), so nothing is
+    written beside a file this release must not read.
+    """
+    if not raw:
+        return
+    stamp = raw.get("format_version")
+    if "format_version" not in raw or (type(stamp) is int and stamp == 1):
+        raise OlderFormatError(
+            f"{path} was written by untaped 11.x (format 1); this release reads format "
+            f"{FORMAT_VERSION} and has no upgrade path",
+            hint=(
+                f"delete it and run `untaped setup`, or keep untaped 11.1 for this home; "
+                f"a file written for 12.0 starts with `format_version: {FORMAT_VERSION}`"
+            ),
+        )
+    _check_stamp(raw, path, newest=FORMAT_VERSION)
+    if "active" in raw:
+        raise FormatVersionError(
+            f"`active:` in {path} is not read: a run picks its profile with --profile "
+            "or UNTAPED_PROFILE, else reads the base",
+            hint="delete the `active:` line",
+        )
+    profiles = raw.get("profiles")
+    if isinstance(profiles, dict) and DEFAULT_PROFILE in profiles:
+        raise FormatVersionError(
+            f"profiles.default in {path} is not read: the base is config.yml's top level",
+            hint="move its sections to the top of the file",
+        )
+
+
+def _check_stamp(raw: dict[str, Any], path: Path, *, newest: int) -> None:
     if "format_version" not in raw:
         return
     value = raw["format_version"]
@@ -853,10 +921,10 @@ def _check_format(raw: dict[str, Any], path: Path) -> None:
         raise FormatVersionError(  # invalid stamps get the same write-path protection
             f"invalid format_version in {path}: expected a positive integer, got {value!r}"
         )
-    if value > FORMAT_VERSION:
+    if value > newest:
         raise NewerFormatError(
             f"{path} was written by a newer untaped (format {value}; "
-            f"this release reads format {FORMAT_VERSION}); upgrade untaped",
+            f"this release reads format {newest}); upgrade untaped",
             version=value,
             path=path,
         )
@@ -881,7 +949,7 @@ def splice_registered_state(
     if not targets:
         return
     state_path = resolve_state_path()
-    state_raw = load_config_yaml(state_path)
+    state_raw = load_state_yaml(state_path)
     for section, model in targets:
         state = state_raw.get(section)
         if not isinstance(state, dict):
@@ -899,10 +967,9 @@ def splice_registered_state(
             effective[section] = state_data
 
 
-#: Top-level keys of ``config.yml`` and ``state.yml`` that core owns (the
-#: profile layout and the on-disk format stamp), never usable as plugin
-#: state names.
-RESERVED_STATE_SECTIONS = frozenset({"active", "profiles", "format_version"})
+#: Top-level keys of ``state.yml`` that core owns (11.x's profile layout and
+#: the on-disk format stamp), never usable as plugin state names.
+RESERVED_STATE_SECTIONS = frozenset({"active", *FILE_KEYS})
 
 #: ``state.yml`` sections core keeps its own rows in (:func:`untaped.sdk.storage.state.core_rows`).
 CORE_STATE_SECTIONS = frozenset({"credentials"})

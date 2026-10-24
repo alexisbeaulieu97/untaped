@@ -57,22 +57,25 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def _write(path: Path, profiles: dict[str, object], active: str | None = None) -> None:
-    data: dict[str, object] = {"profiles": profiles}
-    if active:
-        data["active"] = active
-    path.write_text(yaml.safe_dump(data))
+def _write(path: Path, profiles: dict[str, object]) -> None:
+    """Write ``profiles`` (``default`` is the base) as a format 2 config file."""
+    named = {name: data for name, data in profiles.items() if name != "default"}
+    base = profiles.get("default")
+    data: dict[str, object] = {"format_version": 2, **(base if isinstance(base, dict) else {})}
+    if named:
+        data["profiles"] = named
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
 def test_old_key_in_default_and_new_key_in_active_layer_as_one_key(
-    config: Path, capsys: pytest.CaptureFixture[str]
+    config: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_profile_settings("demo", DemoSettings)
     _write(
         config,
         {"default": {"demo": {"corpus_path": "/old"}}, "prod": {"demo": {"cache_dir": "/new"}}},
-        active="prod",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
 
     assert get_config_section("demo", DemoSettings).cache_dir == "/new"
     assert f"{RENAMED}\n{MIGRATE_HINT}" in capsys.readouterr().err
