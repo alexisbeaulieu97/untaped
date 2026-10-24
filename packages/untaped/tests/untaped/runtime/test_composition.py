@@ -594,7 +594,9 @@ def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
 
 
 def test_refresh_refuses_a_version_only_cache_even_on_the_plugin_class() -> None:
-    held = Cache(label="composed", max_age=None, model=HelloSettings, version=lambda: "1")
+    held = Cache(
+        label="composed", max_age=None, model=HelloSettings, version=lambda: "1", split="none"
+    )
 
     class Again(Command):
         """Again."""
@@ -604,10 +606,14 @@ def test_refresh_refuses_a_version_only_cache_even_on_the_plugin_class() -> None
         def run(self) -> None:
             return None
 
-    demo = _plugin_with(Again)
-    demo.composed = held  # type: ignore[attr-defined]
-    held.__set_name__(demo, "composed")
-    [problem] = _problems(demo)
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = HelloSettings
+        commands = (Again,)
+        composed = held
+
+    [problem] = _problems(Demo)
     assert (problem.rule, "version-only" in problem.detail) == ("refresh-cache", True)
 
 

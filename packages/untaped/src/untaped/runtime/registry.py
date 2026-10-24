@@ -44,6 +44,7 @@ from untaped.runtime.settings import (
     legacy_credential_fields,
     reserved_section_keys,
     section_model,
+    timed_caches,
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._block import OwnedBlock
@@ -566,7 +567,7 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
-    caches = timed_caches(spec)
+    caches = timed_caches(spec.caches)
     if owner or caches or spec.credentials:
         return section_model(
             spec.settings or _NoSettings,
@@ -576,14 +577,6 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
             credentials=spec.credentials,
         )
     return spec.settings
-
-
-def timed_caches(spec: PluginSpec) -> tuple[Cache[Any], ...]:
-    """The plugin's caches with a max age, each a ``caches.<name>.max_age_seconds`` setting.
-
-    A version-only cache (``max_age=None``) has none.
-    """
-    return tuple(cache for cache in spec.caches if not cache.version_only)
 
 
 def settings_model(spec: PluginSpec) -> type[BaseModel]:
@@ -1015,7 +1008,7 @@ def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
-        | ({"caches"} if timed_caches(spec) else set())
+        | ({"caches"} if timed_caches(spec.caches) else set())
         | set(
             legacy_credential_fields(
                 spec.settings or _NoSettings, spec.credentials, section=spec.name

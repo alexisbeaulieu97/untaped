@@ -4711,6 +4711,7 @@ sdk untaped.sdk.Cache.spelled
 sdk untaped.sdk.Cache.split
 sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
+sdk untaped.sdk.Cache.version_only
 sdk untaped.sdk.Cache.where
 sdk untaped.sdk.Cancel()  [experimental]
 sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
