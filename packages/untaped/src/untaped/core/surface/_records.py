@@ -55,35 +55,46 @@ def record_lines(
 
     With ``owner``, only that plugin's kinds and the models they reach.
     """
-    kinds: dict[str, _Reached] = {} if owner is not None else _diagnostics()
+    kinds = _diagnostics()
     if result.mount is not None:
         _declared(result.mount, marks, kinds)
-    if owner is not None:
-        kinds = {kind: each for kind, each in kinds.items() if each.owner == owner}
-    lines: list[Line] = []
-    for kind, each in sorted(kinds.items()):
-        lines.extend(_lines(f"record {kind}", each, _mark(kind, each)))
-    roots = {each.model for each in kinds.values()}
-    nested: dict[tuple[str, str], _Reached] = {}
+    by_model: dict[type[BaseModel], list[_Reached]] = {}
     for each in kinds.values():
+        by_model.setdefault(each.model, []).append(each)
+    # What reaches a kind reaches every model its fields reach, kinds included.
+    direct = {kind: (set(each.marks), each.written) for kind, each in kinds.items()}
+    nested: dict[tuple[str, str], _Reached] = {}
+    for kind, each in kinds.items():
+        reaching, written = direct[kind]
         for model in _closure({each.model: set()})[1:]:
-            if model in roots:
-                continue
-            found = nested.setdefault(
-                (_owner_of(model, result, each.owner), model.__name__),
-                _Reached(_owner_of(model, result, each.owner), model),
-            )
-            if found.model is not model:
-                raise SurfaceError(
-                    f"{found.owner}: two record models are named {model.__name__} "
-                    f"({found.model.__module__} and {model.__module__}); rename one"
-                )
-            found.marks |= each.marks
-            found.written |= each.written
-    for (model_owner, name), each in sorted(nested.items()):
-        subject = f"{model_owner}.{name}"
-        lines.extend(_lines(f"record {subject}", each, _mark(subject, each)))
-    return lines
+            for found in by_model.get(model) or [_nested(model, each, result, nested)]:
+                found.marks |= reaching
+                found.written |= written
+    subjects = {kind: each for kind, each in kinds.items()}
+    subjects.update({f"{at}.{name}": each for (at, name), each in nested.items()})
+    return [
+        line
+        for subject, each in sorted(subjects.items())
+        if owner is None or each.owner == owner
+        for line in _lines(f"record {subject}", each, _mark(subject, each))
+    ]
+
+
+def _nested(
+    model: type[BaseModel],
+    reaching: _Reached,
+    result: CompositionResult,
+    nested: dict[tuple[str, str], _Reached],
+) -> _Reached:
+    """The entry of ``model``, a model a kind reaches that is no kind itself."""
+    at = _owner_of(model, result, reaching.owner)
+    found = nested.setdefault((at, model.__name__), _Reached(at, model))
+    if found.model is not model:
+        raise SurfaceError(
+            f"{at}: two record models are named {model.__name__} "
+            f"({found.model.__module__} and {model.__module__}); rename one"
+        )
+    return found
 
 
 def _diagnostics() -> dict[str, _Reached]:
@@ -109,9 +120,11 @@ def _declared(
             found.written |= written
 
     for declared in mount.declaration.kinds:
-        kinds.setdefault(declared.kind, _Reached(declared.plugin, known[declared.kind]))
+        if declared.kind in known:
+            kinds.setdefault(declared.kind, _Reached(declared.plugin, known[declared.kind]))
     for plugin in mount.declaration.plugins:
-        for command, mark in _commands(plugin.commands, marks.get(plugin.name)):
+        runs = () if plugin.runs is None else (plugin.runs,)
+        for command, mark in _commands((*plugin.commands, *runs), marks.get(plugin.name)):
             for kind in (command.output, *command.writes):
                 if kind is not None:
                     reach(kind, mark, written=False)
@@ -131,7 +144,12 @@ def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[st
     from untaped.sdk.diagnostic import WireModel  # noqa: PLC0415
     from untaped.sdk.records import Record  # noqa: PLC0415
 
-    accepted = (resolve_target(target) for target in command.stdin)
+    accepted = []
+    for target in command.stdin:
+        try:
+            accepted.append(resolve_target(target))
+        except Exception:
+            continue
     bases = tuple(
         m for m in accepted if isinstance(m, type) and m not in (BaseModel, WireModel, Record)
     )

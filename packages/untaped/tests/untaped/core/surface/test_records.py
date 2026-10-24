@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Annotated, Literal
 
-from pydantic import BaseModel
+import pytest
+from pydantic import BaseModel, Field
 
-from untaped.core.surface import removed
+from untaped.core.surface import SurfaceError, removed
 from untaped.core.surface._lines import Line
 from untaped.core.surface._records import record_lines
 from untaped.runtime.bootstrap import compose_root, kept_composition
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import Command, Key, Output, Plugin, Record, Stdin, experimental
+from untaped.sdk import Command, Failure, File, Key, Output, Plugin, Record, Stdin, experimental
 
 
 class Place(BaseModel):
@@ -102,10 +103,77 @@ class Shop(Plugin):
     commands = (Shelves, Books, Take, Count, Bet)
 
 
-def _lines(target: type[Plugin] = Shop) -> list[Line]:
+class Stand(BaseModel):
+    """What a stable command reads, holding a kind only an experimental command prints."""
+
+    name: Annotated[str, Key]
+    beta: Beta | None = None
+    error: Failure | None = None
+
+
+class Stock(Command):
+    """Stock the stands piped in, and print them."""
+
+    stdin: Stdin[Stand]
+    output: Output[Stand]
+
+    def run(self) -> Iterator[Stand]:
+        yield from self.stdin.rows()
+
+
+class Restock(Command):
+    """Restock from a file."""
+
+    plan: File[Shelf] = Field(description="The shelf to restock.")
+
+    def run(self) -> str:
+        return self.plan.load().name
+
+
+@experimental
+class Draft(BaseModel):
+    """A model still settling."""
+
+    name: Annotated[str, Key]
+
+
+class Drafts(Command):
+    """List drafts."""
+
+    output: Output[Draft]
+
+    def run(self) -> Iterator[Draft]:
+        yield Draft(name="a")
+
+
+class Main(Command):
+    """Read the items piped in and print them back."""
+
+    stability = experimental
+    stdin: Stdin[Item]
+    output: Output[Item]
+
+    def run(self) -> Iterator[Item]:
+        yield from self.stdin.rows()
+
+
+def _lines(target: type[Plugin] = Shop, *, owner: str | None = None) -> list[Line]:
     candidate = PluginCandidate(distribution="untaped-shop", name="shop", target=target)
     with kept_composition(quiet=True):
-        return record_lines(compose_root(candidates=[candidate]), {})
+        result = compose_root(candidates=[candidate])
+        assert not result.quarantine
+        return record_lines(result, {}, owner=owner)
+
+
+def _plugin(*commands: type[Command], runs: type[Command] | None = None) -> type[Plugin]:
+    class Built(Plugin):
+        """Sell books."""
+
+        settings = BaseModel
+
+    Built.commands = commands
+    Built.runs = runs
+    return Built
 
 
 def _texts(target: type[Plugin] = Shop) -> set[str]:
@@ -192,10 +260,45 @@ def test_core_s_diagnostic_kinds_have_lines_with_their_level() -> None:
     } <= texts
 
 
-def test_an_owner_keeps_only_its_kinds() -> None:
-    candidate = PluginCandidate(distribution="untaped-shop", name="shop", target=Shop)
-    with kept_composition(quiet=True):
-        lines = record_lines(compose_root(candidates=[candidate]), {}, owner="shop")
-    texts = {line.text for line in lines}
-    assert "record shop.shelf" in texts
+def test_an_owner_keeps_only_its_kinds_and_never_relists_core_s() -> None:
+    texts = {line.text for line in _lines(_plugin(Stock, Bet), owner="shop")}
+    assert {"record shop.stand", "record shop.beta"} <= texts
     assert not any(text.startswith("record untaped.") for text in texts)
+
+
+def test_a_kind_nested_in_a_read_kind_is_read_and_stable_too() -> None:
+    marks = {line.text: line.mark for line in _lines(_plugin(Stock, Bet))}
+    assert marks["record shop.beta(name)"] is None
+    assert marks["record shop.beta.name string"] is None
+    assert "record untaped.Failure" not in marks
+
+
+def test_a_file_a_command_reads_is_written() -> None:
+    assert "record shop.shelf(name)" in _texts(_plugin(Restock))
+
+
+def test_the_plugin_s_own_command_reaches_its_kinds() -> None:
+    marks = {line.text: line.mark for line in _lines(_plugin(runs=Main))}
+    assert marks["record shop.item(name)"] == "experimental"
+
+
+def test_a_stable_command_reaching_an_experimental_model_is_refused() -> None:
+    with pytest.raises(SurfaceError, match="@experimental"):
+        _lines(_plugin(Drafts))
+
+
+def test_a_model_core_cannot_import_is_skipped() -> None:
+    class Local(BaseModel):
+        """Defined where no import reaches."""
+
+        name: str
+
+    class Read(Command):
+        """Read local rows."""
+
+        stdin: Stdin[Local]
+
+        def run(self) -> str:
+            return ""
+
+    assert "record shop.shelf" in _texts(_plugin(Read, Shelves))
