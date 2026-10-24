@@ -75,7 +75,7 @@ class Lock(OwnedBlock):
             yield
 
 
-#: The operation locks this thread holds, outermost first: (plugin, label).
+#: The operation locks this thread holds, outermost first: (plugin, label, path).
 _HELD = threading.local()
 
 
@@ -86,16 +86,19 @@ def operation_lock(plugin: str, label: str, path: Path, timeout: float) -> Itera
     The one implementation behind :class:`Lock` and ``Dir.locked``: held
     across processes (``<label> is busy (another untaped process)``),
     re-entrant in a thread, and in one order: a plugin's own lock before a
-    provider's, so taking a plugin's lock inside the lock of a plugin it
-    requires fails, naming both.
+    provider's (a plugin whose distribution it requires directly), so taking
+    a plugin's lock inside the lock of a plugin it requires fails, naming
+    both. Taking again a lock the thread holds never waits, so it is never
+    out of order.
     """
-    held: list[tuple[str, str]] = getattr(_HELD, "stack", [])
-    for other, other_label in held:
-        if other != plugin and _provides(other, plugin):
-            raise UntapedError(
-                f"{label} is taken inside {other_label}: {plugin} requires {other}, and a "
-                "plugin's own lock comes before its provider's"
-            )
+    held: list[tuple[str, str, Path]] = _HELD.__dict__.setdefault("stack", [])
+    if not any(other_path == path for _, _, other_path in held):
+        for other, other_label, _ in held:
+            if other != plugin and _provides(other, plugin):
+                raise UntapedError(
+                    f"{label} is taken inside {other_label}: {plugin} requires {other}, and a "
+                    "plugin's own lock comes before its provider's"
+                )
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -107,11 +110,16 @@ def operation_lock(plugin: str, label: str, path: Path, timeout: float) -> Itera
         busy=f"{label} is busy (another untaped process)",
         failed=f"could not lock {label}",
     ):
-        _HELD.stack = [*held, (plugin, label)]
+        entry = (plugin, label, path)
+        held.append(entry)
         try:
             yield
         finally:
-            _HELD.stack = held
+            # remove this entry, not the last one: locks may be let go out of order
+            for index in range(len(held) - 1, -1, -1):
+                if held[index] is entry:
+                    del held[index]
+                    break
 
 
 def _provides(provider: str, plugin: str) -> bool:

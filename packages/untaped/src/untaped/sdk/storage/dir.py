@@ -2,14 +2,15 @@
 
 A plugin class names the place; core decides where it is and keeps it. By
 default it is the folder ``plugins/<plugin>/<attribute>/`` under the home;
-``at=`` names a path setting instead (the user's folder). ``layout=N``
-numbers it as a store numbers its layouts (N is the oldest layout this code
-still opens), so two installs at different layouts never open each other's
-data, and ``file=`` makes it one file per layout (``index.v4.sqlite3``)
-instead of a folder. ``open()`` gives the path, ``prune()`` removes the other
-layouts nothing holds, and ``locked(name)`` holds the operation lock of one
-thing in the place (``locked()`` the whole place), waiting the declared
-``wait=``.
+``at=`` names a path setting instead (the user's folder, an absolute path).
+``file=`` makes the place hold one file of that name. ``layout=N`` numbers
+what it holds as a store numbers its layouts (N is the oldest layout this code
+still opens), inside the place: ``<place>/<attribute>.v4/``, or
+``<place>/index.v4.sqlite3`` with ``file="index.sqlite3"``, so two installs at
+different layouts never open each other's data and nothing numbered lands
+beside the user's folder. ``open()`` gives the path, and ``locked(name)``
+holds the operation lock of one thing in the place (``locked()`` the place's
+own lock), waiting the declared ``wait=``.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ RESERVED = frozenset({"cached", "state", "untaped"})
 
 @experimental
 class Dir(OwnedBlock):
-    """A folder (or one file per layout) of the plugin's own; see the module."""
+    """A folder of the plugin's own, or one file in it, numbered or not; see the module."""
 
     block_kind = "dir"
 
@@ -81,6 +82,17 @@ class Dir(OwnedBlock):
             return f"a Dir cannot be named {name!r}: core keeps plugins/<plugin>/{name} itself"
         return None
 
+    def problems(self) -> tuple[str, ...]:
+        if self.layout is None:
+            return ()
+        from untaped.sdk.storage.store import valid_store_name  # noqa: PLC0415 - numbered only
+
+        return tuple(
+            f"a numbered Dir is named [a-z][a-z0-9_]*, not {name!r}"
+            for name in (self.derived_name(binding.attribute) for binding in self.bindings)
+            if not valid_store_name(name)
+        )
+
     @property
     def _label(self) -> str:
         """How a message names the place in a run: ``workspace.checkouts``."""
@@ -89,8 +101,8 @@ class Dir(OwnedBlock):
     # -- where it is ---------------------------------------------------------
 
     @property
-    def base(self) -> Path:
-        """The folder the place is in: the ``at=`` setting's path, or the plugin's folder's."""
+    def place(self) -> Path:
+        """The folder: the ``at=`` setting's path, or ``plugins/<plugin>/<name>`` under the home."""
         from untaped.sdk.run import (  # noqa: PLC0415 - the run imports the SDK
             current_run,
             settings_of,
@@ -101,28 +113,29 @@ class Dir(OwnedBlock):
         value: object = settings_of(SettingKey.model_of(self.at))
         for part in SettingKey.path_of(self.at):
             value = getattr(value, part)
-        if not isinstance(value, str | Path) or not str(value):
+        folder = Path(value).expanduser() if isinstance(value, str | Path) and value else None
+        if folder is None or not folder.is_absolute() or not folder.name:
             raise ConfigError(
-                f"{self._label}: the setting {self.at!r} holds {value!r}, not a path",
+                f"{self._label}: the setting {self.at!r} holds {value!r}, not an absolute "
+                "path to a folder",
             )
-        return Path(value).expanduser()
+        return folder
 
+    @property
     def path(self) -> Path:
-        """This code's place: the folder, the file, or this layout's of either. No side effect."""
+        """This code's path: the folder, its file, or this layout's of either. No side effect."""
         if self.layout is None:
-            return self.base if self.file is None else self.base / self.file
+            return self.place if self.file is None else self.place / self.file
         return self._store().path()
 
     def open(self) -> Path:
-        """The place, made ready: its folder created; a numbered one held for the process.
+        """The path, made ready: its folder created; a numbered one held for the process.
 
         A numbered place is opened as a store opens its layout: its in-use
-        lock is held for the rest of the process, so no other install
-        prunes it while this one reads it.
+        lock is held for the rest of the process, so no other install moves
+        it while this one reads it.
         """
-        if self.layout is not None:
-            return self._store().open()
-        path = self.path()
+        path = self._store().open() if self.layout is not None else self.path
         folder = path if self.file is None else path.parent
         try:
             folder.mkdir(parents=True, exist_ok=True)
@@ -133,16 +146,11 @@ class Dir(OwnedBlock):
             ) from exc
         return path
 
-    def prune(self) -> None:
-        """Remove the other layouts nothing holds; call it after a complete fill. Never raises."""
-        if self.layout is not None:
-            self._store().prune()
-
     def _store(self) -> Store:
-        """The store machinery behind a numbered place, one per plugin, name and base."""
+        """The store machinery behind a numbered place, one per plugin, name and folder."""
         from untaped.sdk.storage.store import Store  # noqa: PLC0415 - numbered places only
 
-        base = self.base if self.file is None else self.base / self.file
+        base = self.place / (self.file or self.name)
         held = (self.plugin, self.name, base)
         store = self._stores.get(held)
         if store is None:
@@ -154,11 +162,12 @@ class Dir(OwnedBlock):
 
     @contextmanager
     def locked(self, name: str | None = None) -> Iterator[None]:
-        """Hold the lock of ``name`` in the place (the whole place without one).
+        """Hold the lock of ``name`` in the place (the place's own lock without one).
 
         Waits up to the declared ``wait=`` for another process, then fails
         with ``<plugin>.<dir> '<name>' is busy (another untaped process)``.
-        Taking it again in one thread only counts.
+        Taking it again in one thread only counts. The place's own lock and
+        its things' locks are separate: a plugin uses one or the other.
         """
         if self.wait is None:
             raise ConfigError(
@@ -170,7 +179,7 @@ class Dir(OwnedBlock):
 
     @contextmanager
     def try_locked(self, name: str | None = None) -> Iterator[bool]:
-        """Hold the lock of ``name`` (or the whole place) if no other process does."""
+        """Hold the lock of ``name`` (or the place's own) if no other process does."""
         with ExitStack() as stack:
             try:
                 stack.enter_context(self._held(name, 0))
@@ -183,7 +192,7 @@ class Dir(OwnedBlock):
             yield held
 
     def lock_path(self, name: str | None = None) -> Path:
-        """The lock file of ``name`` (or the whole place): in the plugin's folder, not the place."""
+        """The lock file of ``name`` (or the place's own): under the home, never in the place."""
         from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
         folder = current_run().home / "plugins" / self.plugin
@@ -192,10 +201,10 @@ class Dir(OwnedBlock):
         digest = hashlib.sha256(name.encode()).hexdigest()[:32]
         return folder / f"{self.name}.locks" / f"{digest}.lock"
 
-    def _held(self, name: str | None, timeout: float) -> ExitStack:
+    @contextmanager
+    def _held(self, name: str | None, timeout: float) -> Iterator[None]:
         if name is not None and (not isinstance(name, str) or not name):
             raise TypeError(f"{self._label}: locked() takes a thing's name, not {name!r}")
         label = self._label + ("" if name is None else f" {name!r}")
-        stack = ExitStack()
-        stack.enter_context(operation_lock(self.plugin, label, self.lock_path(name), timeout))
-        return stack
+        with operation_lock(self.plugin, label, self.lock_path(name), timeout):
+            yield
