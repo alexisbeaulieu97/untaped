@@ -40,7 +40,7 @@ from untaped.runtime.declaration import (
 )
 from untaped.runtime.registry import PluginSpec, SkillAsset, resolve_target
 from untaped.runtime.run import build_run
-from untaped.sdk._block import FieldBlock, Invocation
+from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
 from untaped.sdk._stdin import read_stdin_text
@@ -150,6 +150,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     plugin = mount.declaration.plugin(name)
     has_commands = bool(plugin.commands) or plugin.runs is not None
     skills = (SkillAsset(name=f"untaped-{name}", description=plugin.skill),) if plugin.skill else ()
+    blocks = _spelled_blocks(mount, name)
     return PluginSpec(
         name=name,
         app_factory=partial(build_app, mount, name) if has_commands else None,
@@ -157,7 +158,35 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),
         skills=skills,
+        caches=blocks["caches"],
+        migrations=blocks["migrations"],
+        doctor_checks=blocks["doctor_checks"],
+        credentials=blocks["credentials"],
+        deprecations=partial(tuple, blocks["deprecations"]),
     )
+
+
+#: The ``PluginSpec`` field each owned block kind goes to.
+_SPEC_FIELDS = {
+    "cache": "caches",
+    "dir-migration": "migrations",
+    "doctor-check": "doctor_checks",
+    "credential": "credentials",
+    "deprecated-behaviour": "deprecations",
+}
+
+
+def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
+    """The plugin's owned blocks by spec field, each given its plugin and name for 11.x readers."""
+    cls = mount.plugins[name]
+    blocks: dict[str, list[Any]] = {field: [] for field in _SPEC_FIELDS.values()}
+    for decl in mount.declaration.plugin(name).blocks:
+        block = getattr(cls, decl.attribute)
+        # every owned block core ships has a field (tested); one of a kind core
+        # doesn't know has no 11.x reader to reach
+        if isinstance(block, OwnedBlock) and decl.block in _SPEC_FIELDS:
+            blocks[_SPEC_FIELDS[decl.block]].append(block._spelled_as(name, decl.name))
+    return {field: tuple(each) for field, each in blocks.items()}
 
 
 # --- the command line ----------------------------------------------------------

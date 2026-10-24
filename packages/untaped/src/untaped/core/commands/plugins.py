@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 
 from cyclopts import App, Parameter
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from untaped.core.commands._render import emit_isolated
 from untaped.core.commands.notes import print_notes
@@ -49,7 +49,6 @@ from untaped.sdk._cli import (
     report_errors,
     writes,
 )
-from untaped.sdk.diagnostic import WireModel
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.marks import deprecated
 from untaped.sdk.plugin_records import InstalledPlugin
@@ -269,7 +268,8 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = kind_model(kind, result)
     if model is None:
-        raise UsageError(not_found("record kind", kind, known=_near(kind, record_kinds())))
+        known = record_kinds() if result.mount is None else result.mount.kinds
+        raise UsageError(not_found("record kind", kind, known=_near(kind, known)))
     schema = model.model_json_schema()
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -287,13 +287,16 @@ def _near(kind: str, kinds: Iterable[str]) -> list[str]:
     return same or [f"{each}.*" for each in dict.fromkeys(k.partition(".")[0] for k in kinds)]
 
 
-def kind_model(kind: str, result: CompositionResult) -> type[WireModel] | None:
+def kind_model(kind: str, result: CompositionResult) -> type[BaseModel] | None:
     """The model declaring ``kind``, importing lazily what declares kinds (contracts, commands).
 
-    ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here.
+    ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here; a
+    12.0 plugin's kinds are its declaration's.
     """
     if (model := record_model(kind)) is not None:
         return model
+    if result.mount is not None and kind in result.mount.kinds:
+        return result.mount.kinds[kind]
     if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
         from untaped.runtime.contracts.registry import every_offer, owned_contracts  # noqa: PLC0415
 

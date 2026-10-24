@@ -80,6 +80,7 @@ from untaped.sdk.storage.state import (
 from untaped.sdk.storage.store import Store
 
 if TYPE_CHECKING:
+    from untaped.runtime.mount import Mount
     from untaped.sdk.contracts import Contract
     from untaped.sdk.plugin import Plugin
     from untaped.sdk.storage.holds import ItemStore
@@ -714,6 +715,8 @@ class CompositionResult:
     plugins: tuple[RegisteredPlugin, ...] = ()
     quarantine: tuple[QuarantineRecord, ...] = ()
     candidates: tuple[PluginCandidate, ...] = field(default=(), compare=False)
+    #: The 12.0 plugin classes composed, mounted (``None`` when there is none).
+    mount: Mount | None = field(default=None, compare=False)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -1483,7 +1486,7 @@ def compose(
     for index, contest in _contested(ordered, provided).items():
         quarantined[index] = contest.to_record(ordered[index])
         del provided[index]
-    claims = _mounted(ordered, provided, state, quarantined)
+    claims, mount = _mounted(ordered, provided, state, quarantined)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
@@ -1509,6 +1512,7 @@ def compose(
         plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
         candidates=tuple(ordered),
+        mount=mount,
     )
 
 
@@ -1517,8 +1521,8 @@ def _mounted(
     provided: dict[int, PluginSpec | type[Plugin]],
     state: _CompositionState,
     quarantined: dict[int, QuarantineRecord],
-) -> dict[int, PluginSpec]:
-    """Every claim as a spec: the plugin classes composed in one walk and mounted.
+) -> tuple[dict[int, PluginSpec], Mount | None]:
+    """Every claim as a spec, and the mount: the plugin classes composed in one walk.
 
     A plugin class composition refuses is quarantined with every problem it
     names; one it composes reaches the rest of composition as the spec the
@@ -1527,7 +1531,7 @@ def _mounted(
     claims = {index: spec for index, spec in provided.items() if isinstance(spec, PluginSpec)}
     classes = {index: cls for index, cls in provided.items() if not isinstance(cls, PluginSpec)}
     if not classes:
-        return claims
+        return claims, None
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
@@ -1553,7 +1557,7 @@ def _mounted(
                 continue
             mounted[index] = spec
         if len(mounted) == len(classes):
-            return dict(sorted({**claims, **mounted}.items()))
+            return dict(sorted({**claims, **mounted}.items())), mount
         # A class quarantined here must not shape the others' declaration
         # (a kind it owned, a command another one derives): compose without it.
         classes = {index: cls for index, cls in classes.items() if index in mounted}
