@@ -193,20 +193,25 @@ def compose(*specs: PluginSpec) -> CompositionResult:
     return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
-def config_root(*specs: PluginSpec) -> Callable[..., None]:
-    """The composed root with ``specs``, run as ``untaped config <args>``."""
+def root_group(word: str, *specs: PluginSpec) -> Callable[..., None]:
+    """The composed root with ``specs``, run as ``untaped <word> <args>``."""
     root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs]).meta
 
     def run(args: list[str], *, console: Console, error_console: Console) -> None:
         run_cyclopts_app(
             root,
-            ["config", *args],
+            [word, *args],
             console=console,
             error_console=error_console,
             result_action="print_non_int_sys_exit",
         )
 
     return run
+
+
+def config_root(*specs: PluginSpec) -> Callable[..., None]:
+    """The composed root with ``specs``, run as ``untaped config <args>``."""
+    return root_group("config", *specs)
 
 
 def write_config(path: Path, text: str) -> None:

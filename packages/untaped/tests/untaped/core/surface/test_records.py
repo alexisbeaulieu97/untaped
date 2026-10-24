@@ -322,3 +322,15 @@ class Boxes(Command):
 
 def test_a_kind_core_cannot_import_is_skipped() -> None:
     assert "record shop.shelf" in _texts(_plugin(Boxes, Shelves))
+
+
+def test_a_model_two_deprecations_reach_names_no_replacement() -> None:
+    from untaped.core.surface._contracts import _model_mark
+    from untaped.core.surface._lines import DeprecatedMark
+
+    login, forget = (
+        DeprecatedMark(12, "untaped auth login"),
+        DeprecatedMark(12, "untaped auth forget"),
+    )
+    assert _model_mark({login, forget}, stable_export=False) == DeprecatedMark(12)
+    assert _model_mark({login, DeprecatedMark(11, "x")}, stable_export=False) == login
