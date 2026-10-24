@@ -704,16 +704,22 @@ class Refresh(FieldBlock):
 
     def __init__(self, *caches: object) -> None:
         self.caches = caches
-        #: ``True`` after ``--refresh``, ``False`` after ``--cached``, ``None`` otherwise:
-        #: what a cache's ``serve(refresh=...)`` takes.
-        self.directive: bool | None = None
+        self._directive: bool | None = None
+
+    @property
+    def directive(self) -> bool | None:
+        """``True`` after ``--refresh``, ``False`` after ``--cached``, ``None`` otherwise.
+
+        What a cache's ``serve(refresh=...)`` takes.
+        """
+        return self._directive
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Refresh:
         """A copy for one invocation, from ``--refresh`` / ``--cached``."""
         del call
         directive = flags.get("--refresh")
         filled = _copy(self)
-        filled.directive = directive if isinstance(directive, bool) else None
+        filled._directive = directive if isinstance(directive, bool) else None
         return filled
 
 
@@ -740,13 +746,16 @@ class Parallel(FieldBlock):
         self.cap = cap
         self._requested: int | None = None
         self._value: int | None = None
+        #: Only a per-invocation copy keeps its value: an unfilled field is the
+        #: class default every build shares, so it reads its setting afresh.
+        self._filled = False
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Parallel:
         """A copy for one invocation, from ``-j/--parallel``; below 1 is a usage error."""
         del call
         requested = _count(flags, "--parallel")
         filled = _copy(self)
-        filled._requested, filled._value = requested, None
+        filled._requested, filled._value, filled._filled = requested, None, True
         return filled
 
     @property
@@ -755,30 +764,40 @@ class Parallel(FieldBlock):
 
         A value above ``cap`` is clamped with a warning, once.
         """
-        if self._value is None:
-            self._value = self._clamped(self._requested or self._default())
-        return self._value
-
-    def _default(self) -> int:
-        if isinstance(self.default, int):
-            return self.default
-        from untaped.sdk.run import settings_of  # noqa: PLC0415 - only a setting default pays
-
-        value: object = settings_of(SettingKey.model_of(self.default))
-        for part in SettingKey.path_of(self.default):
-            value = getattr(value, part)
-        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-            raise ConfigError(
-                f"{self.default!r} is {value!r}, not a number of at least 1", category="invalid"
-            )
+        if self._value is not None:
+            return self._value
+        if self._requested is not None:
+            value = self._clamped(self._requested, f"--parallel {self._requested}")
+        else:
+            value = self._from_default()
+        if self._filled:
+            self._value = value
         return value
 
-    def _clamped(self, value: int) -> int:
+    def _from_default(self) -> int:
+        if isinstance(self.default, int):
+            return self._clamped(self.default, f"the default {self.default}")
+        from untaped.sdk.run import current_run, settings_of  # noqa: PLC0415 - a setting pays
+
+        model = SettingKey.model_of(self.default)
+        value: object = settings_of(model)
+        for part in SettingKey.path_of(self.default):
+            value = getattr(value, part)
+        setting = f"{current_run().composition.owner_of_settings(model)}.{self.default}"
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ConfigError(
+                f"setting {setting} is {value!r}; it must be a number of at least 1",
+                category="invalid",
+            )
+        return self._clamped(value, f"{setting} {value}")
+
+    def _clamped(self, value: int, source: str) -> int:
+        """``value`` within the cap; ``source`` says where it came from in the warning."""
         if self.cap is None or value <= self.cap:
             return value
         from untaped.sdk.run import current_run  # noqa: PLC0415 - only a clamp pays
 
-        current_run().diag.warning(f"--parallel {value} clamped to {self.cap} (this command's cap)")
+        current_run().diag.warning(f"{source} clamped to {self.cap} (this command's cap)")
         return self.cap
 
 
@@ -790,15 +809,19 @@ class Limit(FieldBlock):
 
     def __init__(self, *, default: int | None = None) -> None:
         self.default = default
-        #: At most this many results; ``None`` is no limit.
-        self.value = default
+        self._value = default
+
+    @property
+    def value(self) -> int | None:
+        """At most this many results; ``None`` is no limit."""
+        return self._value
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Limit:
         """A copy for one invocation, from ``--limit``; below 1 is a usage error."""
         del call
         requested = _count(flags, "--limit")
         filled = _copy(self)
-        filled.value = self.default if requested is None else requested
+        filled._value = self.default if requested is None else requested
         return filled
 
 

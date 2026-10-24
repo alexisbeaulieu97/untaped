@@ -5177,6 +5177,7 @@ sdk untaped.sdk.Limit(default=) default=None
 sdk untaped.sdk.Limit.field_kind class
 sdk untaped.sdk.Limit.options class
 sdk untaped.sdk.Limit.panel class
+sdk untaped.sdk.Limit.value
 sdk untaped.sdk.LimitOption
 sdk untaped.sdk.Lines()
 sdk untaped.sdk.Lines.field_kind class
@@ -5604,6 +5605,7 @@ sdk untaped.sdk.RefTarget.plugin  [experimental]
 sdk untaped.sdk.RefTarget.store  [experimental]
 sdk untaped.sdk.Refresh()
 sdk untaped.sdk.Refresh(*caches)
+sdk untaped.sdk.Refresh.directive
 sdk untaped.sdk.Refresh.field_kind class
 sdk untaped.sdk.Refresh.options class
 sdk untaped.sdk.Refresh.panel class
