@@ -53,7 +53,7 @@ def test_get_config_section_resolves_config_and_env(
 ) -> None:
     register_profile_settings("demo", DemoSettings)
     _isolated_config.write_text(
-        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
+        "format_version: 2\ndemo:\n  endpoint: https://configured.example\n"
     )
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
 
@@ -68,7 +68,7 @@ def test_state_sections_are_spliced_from_the_state_file(_isolated_config: Path) 
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
     _isolated_config.write_text(
-        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
+        "format_version: 2\ndemo:\n  endpoint: https://configured.example\n"
     )
     (_isolated_config.parent / "state.yml").write_text("demo:\n  entries:\n    - alpha\n")
 
@@ -124,9 +124,9 @@ def test_get_config_section_ignores_invalid_sibling_sections(_isolated_config: P
     register_profile_settings("paged", PagedSettings)
     register_state_settings("paged_state", BrokenState)
     _isolated_config.write_text(
-        "profiles:\n  default:\n"
-        "    paged:\n      page_size: notanint\n"
-        "    demo:\n      endpoint: https://configured.example\n"
+        "format_version: 2\n"
+        "paged:\n  page_size: notanint\n"
+        "demo:\n  endpoint: https://configured.example\n"
         "paged_state:\n  entries: notalist\n"
     )
 

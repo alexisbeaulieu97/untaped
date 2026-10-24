@@ -1,8 +1,8 @@
 """``http`` resolves per-profile under the profiles layout.
 
-``http`` (like ``ui`` and ``log_level``) is an ordinary per-profile setting now:
-``profiles.default`` is the shared base layer and the active profile overrides
-it leaf-by-leaf. A bare top-level ``http:`` block is no longer special.
+``http`` (like ``ui``) is an ordinary per-profile setting: the base
+(``config.yml``'s top level) is the shared layer and the picked profile
+overrides it leaf-by-leaf.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from pydantic import BaseModel, SecretStr
 
@@ -21,18 +22,19 @@ class _GithubSettings(BaseModel):
     token: SecretStr | None = None
 
 
-def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> None:
+def test_active_profile_http_overrides_default_base(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     register_profile_settings("github", _GithubSettings)
     _isolated_config.write_text(
-        "active: work\n"
-        "profiles:\n"
-        "  default:\n"
-        "    untaped:\n      http:\n        proxy: http://base:3128\n        timeout_seconds: 30\n"
-        "  work:\n"
+        "format_version: 2\n"
+        "untaped:\n  http:\n    proxy: http://base:3128\n    timeout_seconds: 30\n"
+        "profiles:\n  work:\n"
         "    untaped:\n      http:\n        timeout_seconds: 5\n"
         "    github:\n      token: t\n",
         encoding="utf-8",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     get_settings.cache_clear()
 
     settings = get_settings()
@@ -59,9 +61,9 @@ def test_connected_client_http_default_ignores_invalid_sibling_section(
     register_profile_settings("github", _GithubSettings)
     register_profile_settings("paged", _PagedSettings)
     _isolated_config.write_text(
-        "profiles:\n  default:\n"
-        "    untaped:\n      http:\n        timeout_seconds: 7\n"
-        "    paged:\n      page_size: notanint\n",
+        "format_version: 2\n"
+        "untaped:\n  http:\n    timeout_seconds: 7\n"
+        "paged:\n  page_size: notanint\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()

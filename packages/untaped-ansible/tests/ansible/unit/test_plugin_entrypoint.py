@@ -21,7 +21,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_composition:
     return cfg
 
 
-_ANSIBLE_PROFILE = "profiles:\n  default:\n    ansible:\n      {}\n"
+_ANSIBLE_PROFILE = "format_version: 2\nansible:\n  {}\n"
 
 
 def _root() -> App:

@@ -133,7 +133,7 @@ def test_github_settings_reads_the_active_github_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     settings = github_settings()

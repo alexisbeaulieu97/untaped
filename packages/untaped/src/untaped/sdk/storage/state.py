@@ -31,9 +31,9 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.runtime.config_file import (
     mutate_plugin_state,
-    read_config_dict,
     read_plugin_state,
-    write_config_dict,
+    read_state_dict,
+    write_state_dict,
 )
 from untaped.runtime.settings import CORE_STATE_SECTIONS, RESERVED_SECTIONS, resolve_state_path
 from untaped.sdk._block import OwnedBlock
@@ -908,7 +908,7 @@ class _PluginFile:
 
             state[STAMP] = {"file": FILE, "by": written_by()}
             try:
-                write_config_dict(state, self._path)
+                write_state_dict(state, self._path)
             except OSError as exc:
                 raise ConfigError(
                     f"could not write {self._path}: {exc.strerror or exc}; nothing changed"
@@ -920,7 +920,7 @@ class _PluginFile:
             check_stamp,
         )
 
-        state = read_config_dict(self._path)
+        state = read_state_dict(self._path)
         stamp = state.get(STAMP)
         if stamp is None:
             return state

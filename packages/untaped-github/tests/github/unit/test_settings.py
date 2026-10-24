@@ -49,7 +49,7 @@ def test_sweep_settings_reject_out_of_range_values(sweep: dict[str, int]) -> Non
 def _write(data: dict[str, object]) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"github": data}}}))
+    config.write_text(yaml.safe_dump({"format_version": 2, "github": data}))
 
 
 def test_a_retired_key_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:

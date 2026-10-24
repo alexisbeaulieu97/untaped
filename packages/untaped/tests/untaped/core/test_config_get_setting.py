@@ -36,7 +36,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         # Profile-scoped fields are only effective under ``profiles.<name>``;
         # the resolved source names the profile that supplied the value.
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: warn\n",
             "untaped.skills.updates",
             "warn",
             "auto",
@@ -44,8 +44,8 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "default",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "  stage:\n    untaped:\n      skills:\n        updates: warn\nactive: stage\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n"
+            "profiles:\n  stage:\n    untaped:\n      skills:\n        updates: warn\n",
             "untaped.skills.updates",
             "warn",
             "auto",
@@ -53,7 +53,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "stage",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      ui:\n        theme: classic\n",
+            "format_version: 2\nuntaped:\n  ui:\n    theme: classic\n",
             "untaped.ui.theme",
             "classic",
             "default",
@@ -62,8 +62,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ),
         ("", "untaped.ui.theme", "default", "default", "default", None),
         (
-            "profiles:\n  default:\n    untaped:\n"
-            "      ui:\n        color_roles:\n          error: red\n",
+            "format_version: 2\nuntaped:\n  ui:\n    color_roles:\n      error: red\n",
             "untaped.ui.color_roles",
             {"error": "red"},
             {},
@@ -71,7 +70,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "default",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 5\n",
+            "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 5\n",
             "untaped.http.timeout_seconds",
             5.0,
             30.0,
@@ -92,6 +91,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 )
 def test_get_returns_effective_value_default_source_and_profile(
     _isolate_settings: Path,
+    monkeypatch: pytest.MonkeyPatch,
     config: str,
     key: str,
     value: object,
@@ -100,6 +100,8 @@ def test_get_returns_effective_value_default_source_and_profile(
     profile: str | None,
 ) -> None:
     _isolate_settings.write_text(config)
+    if profile not in (None, "default"):
+        monkeypatch.setenv("UNTAPED_PROFILE", profile)
 
     entry = GetSetting(SettingsFileRepository())(key)
 
@@ -112,9 +114,7 @@ def test_get_honours_environment_override(
     _isolate_settings: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _isolate_settings.write_text(
-        "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n"
-    )
+    _isolate_settings.write_text("format_version: 2\nuntaped:\n  skills:\n    updates: warn\n")
     monkeypatch.setenv("UNTAPED_UNTAPED__SKILLS__UPDATES", "off")
     get_settings.cache_clear()
 
@@ -138,7 +138,7 @@ def test_get_honours_environment_override(
 def test_get_secrets_follow_the_reveal_gate(
     _isolate_settings: Path, key: str, reveal: bool, value: str, default: str | None
 ) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
+    _isolate_settings.write_text("format_version: 2\ndemo:\n  token: secret-token\n")
 
     entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=reveal)
 
@@ -152,16 +152,19 @@ def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> Non
 
 
 _SYMBOLS = (
-    "profiles:\n  default:\n    untaped:\n      ui: {theme: plain, symbols: {error: X, bogus: y}}\n"
-    "  work:\n    untaped:\n      ui: {symbols: {success: S}}\nactive: work\n"
+    "format_version: 2\nuntaped:\n  ui: {theme: plain, symbols: {error: X, bogus: y}}\n"
+    "profiles:\n  work:\n    untaped:\n      ui: {symbols: {success: S}}\n"
 )
 
 
-def test_list_names_gives_each_declared_name_its_value_and_source(_isolate_settings: Path) -> None:
+def test_list_names_gives_each_declared_name_its_value_and_source(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from untaped.core.config.use_cases import ListNames
     from untaped.runtime.theme import BUILTIN_THEMES, SYMBOL_NAMES
 
     _isolate_settings.write_text(_SYMBOLS)
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
 
     names = {item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.symbols")}
 
@@ -179,6 +182,7 @@ def test_list_names_says_which_names_a_variable_sets(
     from untaped.core.config.use_cases import ListNames
 
     _isolate_settings.write_text(_SYMBOLS)
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     monkeypatch.setenv("UNTAPED_UNTAPED__UI__SYMBOLS", '{"info": "i"}')
 
     names = {item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.symbols")}
@@ -196,14 +200,16 @@ def test_list_names_refuses_a_key_that_declares_none() -> None:
 
 def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
     _isolate_settings: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from untaped.core.config.use_cases import ListNames
     from untaped.runtime.theme import BUILTIN_THEMES
 
     _isolate_settings.write_text(
-        "profiles:\n  default:\n    untaped:\n      ui: {symbols: {error: X}}\n"
-        "  work:\n    untaped:\n      ui: {symbols: {success: S, error: E}}\nactive: work\n"
+        "format_version: 2\nuntaped:\n  ui: {symbols: {error: X}}\n"
+        "profiles:\n  work:\n    untaped:\n      ui: {symbols: {success: S, error: E}}\n"
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
 
     names = {
         item.name: item
@@ -228,6 +234,7 @@ def test_list_names_finds_a_variable_at_any_depth(
     from untaped.core.config.use_cases import ListNames
 
     _isolate_settings.write_text(_SYMBOLS)
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     monkeypatch.setenv(variable, value)
 
     names = {
@@ -243,7 +250,7 @@ def test_list_names_finds_a_variable_at_any_depth(
 def test_list_names_leaves_a_name_its_defaults_lack_unset(_isolate_settings: Path) -> None:
     from untaped.core.config.use_cases import ListNames
 
-    _isolate_settings.write_text("profiles:\n  default: {}\n")
+    _isolate_settings.write_text("format_version: 2\n")
 
     names = {
         item.name: item for item in ListNames(SettingsFileRepository())("untaped.ui.color_roles")

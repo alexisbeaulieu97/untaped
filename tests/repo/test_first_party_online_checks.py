@@ -18,14 +18,13 @@ from untaped.sdk.testing import CliInvoker
 pytestmark = pytest.mark.usefixtures("_isolated_config", "fresh_composition")
 
 _CONFIG = """\
-profiles:
-  default:
-    awx:
-      base_url: https://aap.example.com
-    github:
-      token: ghp_test
-    jira:
-      base_url: https://jira.example.com
+format_version: 2
+awx:
+  base_url: https://aap.example.com
+github:
+  token: ghp_test
+jira:
+  base_url: https://jira.example.com
 """
 
 

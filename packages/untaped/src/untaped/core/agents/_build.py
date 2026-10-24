@@ -234,7 +234,7 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
             commands=tuple(commands),
             points=(),
             extends=(),
-            settings_prefix="profiles.<name>",
+            settings_prefix=CORE,
             settings=_settings(result, None),
         )
     plugin = _plugin(result, name)
@@ -249,7 +249,7 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
         commands=() if app is None else tuple(_commands(app, ())),
         points=points.get(name, ()),
         extends=tuple(Extends(point, line) for _, point, line in fills.get(name, ())),
-        settings_prefix=f"profiles.<name>.{name}",
+        settings_prefix=name,
         settings=_settings(result, plugin),
         guides=tuple(
             GuideLine(guide.name, guide.description, guide.name in shadowing)
@@ -346,7 +346,7 @@ def _settings(result: CompositionResult, plugin: RegisteredPlugin | None) -> tup
         wanted = [
             section for section in sections(result, extensions=False) if section.prefix == CORE
         ]
-        strip = ""
+        strip = f"{CORE}."
     else:
         wanted = [
             section

@@ -53,8 +53,8 @@ def test_a_max_age_of_zero_asks_the_providers_every_time(
         path = home().expanduser() / "config.yml"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            "profiles:\n  default:\n    workspace:\n      caches:\n"
-            "        repo_source_repos: {max_age_seconds: 0}\n",
+            "format_version: 2\nworkspace:\n  caches:\n"
+            "    repo_source_repos: {max_age_seconds: 0}\n",
             encoding="utf-8",
         )
     get_settings.cache_clear()

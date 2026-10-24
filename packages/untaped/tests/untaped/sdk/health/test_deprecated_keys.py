@@ -276,7 +276,7 @@ def test_migration_deletes_each_key_with_its_value() -> None:
 
 
 def test_scan_reports_deleted_keys_with_their_note() -> None:
-    raw = {"profiles": {"default": {"sec": {"older_path": "/o"}}}}
+    raw = {"format_version": 2, "sec": {"older_path": "/o"}}
 
     (found,) = scan_keys(raw, {"sec": Deleting})
 

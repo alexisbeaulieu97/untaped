@@ -41,7 +41,7 @@ def _invoke(args: list[str], *, input: str | None = None) -> CliResult:
 
 
 def _default_profile(path: Path) -> dict[str, Any]:
-    profile = read_config_dict(path)["profiles"]["default"]
+    profile = read_config_dict(path)
     assert isinstance(profile, dict)
     return profile
 
@@ -114,7 +114,7 @@ def test_invalid_value_is_rejected_without_writing(
 
 # ── validation blast radius ──────────────────────────────────────────────────
 
-_BROKEN_JIRA = "profiles:\n  default:\n    jira:\n      timeout: lots\n"
+_BROKEN_JIRA = "format_version: 2\njira:\n  timeout: lots\n"
 
 
 @pytest.mark.parametrize(
@@ -149,7 +149,7 @@ def test_a_bad_part_of_core_s_section_does_not_block_another(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: -1\n",
+        "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: -1\n",
     )
     result = _invoke(argv)
     assert result.exit_code == 0, result.output
@@ -164,7 +164,7 @@ def test_get_key_of_invalid_section_names_the_problem(_isolated_config: Path) ->
 
 @pytest.mark.parametrize("flags", [[], ["--all-profiles"]])
 def test_list_ignores_the_format_version_stamp(_isolated_config: Path, flags: list[str]) -> None:
-    body = "profiles:\n  default:\n    jira:\n      base_url: https://j\n"
+    body = "format_version: 2\njira:\n  base_url: https://j\n"
     write_config(_isolated_config, body)
     unstamped = _invoke(["list", *flags, "--format", "json"])
     write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\n{body}")
@@ -188,17 +188,27 @@ def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: P
     assert '"lots"' in result.stdout
 
 
-def test_null_profile_is_treated_as_empty(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: null\n")
+def test_null_profile_is_treated_as_empty(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: null\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     assert _invoke(["get", "untaped.http.timeout_seconds"]).exit_code == 0
     result = _invoke(["set", "untaped.http.timeout_seconds", "5"])
     assert result.exit_code == 0, result.output
-    assert _default_profile(_isolated_config) == {"untaped": {"http": {"timeout_seconds": 5.0}}}
+    assert read_config_dict(_isolated_config)["profiles"] == {
+        "work": {"untaped": {"http": {"timeout_seconds": 5.0}}}
+    }
 
 
 @pytest.mark.parametrize(
     "text",
-    ["- a\n- b\n", "just a string\n", "profiles: [a]\n", "profiles:\n  default: 3\n"],
+    [
+        "- a\n- b\n",
+        "just a string\n",
+        "profiles: [a]\n",
+        "format_version: 2\nprofiles:\n  work: 3\n",
+    ],
 )
 def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, text: str) -> None:
     write_config(_isolated_config, text)
@@ -221,7 +231,7 @@ def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, tex
         ),
         ("", "github.token", {"value": None, "default": None}),
         (
-            "profiles:\n  default:\n    github:\n      token: t0k\n",
+            "format_version: 2\ngithub:\n  token: t0k\n",
             "github.token",
             {"value": "***"},
         ),
@@ -238,7 +248,9 @@ def test_get_json_emits_native_values(
     assert {field: emitted[field] for field in row} == row
 
 
-_PROXY_WITH_PASSWORD = "profiles:\n  default:\n    untaped:\n      http:\n        proxy: http://bob:hunter2@proxy:8080\n"
+_PROXY_WITH_PASSWORD = (
+    "format_version: 2\nuntaped:\n  http:\n    proxy: http://bob:hunter2@proxy:8080\n"
+)
 
 
 def test_proxy_password_is_masked_unless_revealed(_isolated_config: Path) -> None:
@@ -279,7 +291,7 @@ def test_raw_prints_native_values_and_tables_show_glyphs(_isolated_config: Path)
 def test_tables_show_setting_values_verbatim(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 1.2345\n",
+        "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 1.2345\n",
     )
     assert "1.2345" in _invoke(["get", "untaped.http.timeout_seconds", "--format", "table"]).stdout
     assert "1.2345" in _invoke(["list", "--format", "table"]).stdout
@@ -288,7 +300,7 @@ def test_tables_show_setting_values_verbatim(_isolated_config: Path) -> None:
 def test_raw_prints_a_mapping_as_json_that_set_accepts(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {success: Y}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {success: Y}\n",
     )
     assert _invoke(["get", "untaped.ui.symbols"]).stdout == '{"success": "Y"}\n'
     listed = json.loads(_invoke(["get", "untaped.ui.symbols", "--format", "json"]).stdout)
@@ -296,7 +308,7 @@ def test_raw_prints_a_mapping_as_json_that_set_accepts(_isolated_config: Path) -
 
 
 def test_secret_stays_masked_in_every_format(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  token: t0k\n")
     for fmt in ("table", "raw", "json"):
         result = _invoke(["get", "github.token", "--format", fmt])
         assert "***" in result.stdout
@@ -314,7 +326,7 @@ def test_null_clears_optional_typed_setting(_isolated_config: Path, key: str, cu
     stored: dict[str, Any] = {leaf: current}
     for parent in reversed(parents):
         stored = {parent: stored}
-    write_config(_isolated_config, yaml.safe_dump({"profiles": {"default": stored}}))
+    write_config(_isolated_config, yaml.safe_dump({"format_version": 2, **stored}))
     result = _invoke(["set", key, "null"])
     assert result.exit_code == 0, result.output
     held = _default_profile(_isolated_config)
@@ -372,7 +384,7 @@ def test_prompt_selects_from_a_fields_declared_choices(_isolated_config: Path) -
 def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {success: Y}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {success: Y}\n",
     )
 
     raw = _invoke(["get", "untaped.ui.symbols"])
@@ -396,7 +408,7 @@ def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
 def test_unset_removes_the_whole_mapping(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {success: Y, error: N}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {success: Y, error: N}\n",
     )
     result = _invoke(["unset", "untaped.ui.symbols"])
     assert result.exit_code == 0, result.output
@@ -409,7 +421,7 @@ def test_a_stray_ui_symbol_name_does_not_block_writing_another_ui_key(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {zzz: q}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {zzz: q}\n",
     )
     result = _invoke(["set", "untaped.ui.format", "json"])
     assert result.exit_code == 0, result.output
@@ -422,7 +434,7 @@ def test_a_stray_ui_symbol_name_does_not_block_writing_another_ui_key(
 def test_writing_ui_symbols_still_rejects_a_stray_name(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {zzz: q}\n",
+        "format_version: 2\nuntaped:\n  ui:\n    symbols: {zzz: q}\n",
     )
     result = _invoke(["set", "untaped.ui.symbols", '{"zzz":"q"}'])
     assert result.exit_code != 0

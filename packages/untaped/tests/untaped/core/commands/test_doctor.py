@@ -41,7 +41,7 @@ from untaped.runtime.registry import (
     QuarantineRecord,
     named_plugin_dir,
 )
-from untaped.runtime.settings import FORMAT_VERSION, get_settings
+from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.data_file import write_lines
 from untaped.sdk.storage.state import StateRows
@@ -77,9 +77,7 @@ def _quarantine() -> QuarantineRecord:
 
 
 def test_all_pass_exits_zero(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    github:\n      base_url: https://g\n"
-    )
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     get_settings.cache_clear()
     app = _doctor_app(
         make_spec("github", settings=GithubProfile),
@@ -97,8 +95,8 @@ def test_a_pass_preset_that_cannot_decrypt_is_a_failed_row(
     monkeypatch.setenv("STUB_MODE", "no-secret-key")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    github:\n      base_url: https://g\n"
-        "      token_command: [pass, show, untaped/default/github]\n",
+        "format_version: 2\ngithub:\n  base_url: https://g\n"
+        "  token_command: [pass, show, untaped/default/github]\n",
     )
     get_settings.cache_clear()
     result = CliInvoker().invoke(
@@ -118,8 +116,8 @@ def test_a_working_pass_and_a_missing_pass_are_reported(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    github:\n      base_url: https://g\n"
-        "      token_command: [pass, show, hand/written]\n",
+        "format_version: 2\ngithub:\n  base_url: https://g\n"
+        "  token_command: [pass, show, hand/written]\n",
     )
     get_settings.cache_clear()
     app = _doctor_app(make_spec("github", settings=GithubProfile))
@@ -286,9 +284,7 @@ def test_a_detail_that_is_not_a_string_fails_its_row_under_json(_isolated_config
 def test_invalid_plugin_settings_fail_their_rows_only(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n"
-        "    github:\n      base_url: https://g\n"
-        "    jira:\n      timeout: not-a-number\n",
+        "format_version: 2\ngithub:\n  base_url: https://g\njira:\n  timeout: not-a-number\n",
     )
     get_settings.cache_clear()
     app = _doctor_app(
@@ -413,8 +409,11 @@ def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
     )
 
 
-def test_undefined_active_profile_fails_section_rows(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: ghost\n")
+def test_undefined_active_profile_fails_section_rows(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: 2\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
     get_settings.cache_clear()
     app = _doctor_app(make_spec("ext", settings=ExtProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
@@ -465,21 +464,19 @@ def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None
 
 
 def test_removed_log_level_is_reported_as_an_unknown_key(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    log_level: DEBUG\n")
+    write_config(_isolated_config, "format_version: 2\nlog_level: DEBUG\n")
     code, rows = _rows(_doctor_app())
     assert code == 0
     (row,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert row["status"] == "warn"
-    assert "profiles.default.log_level" in row["detail"]
+    assert "log_level" in row["detail"]
 
 
-def test_top_level_keys_other_than_active_and_profiles_are_unknown(
-    _isolated_config: Path,
-) -> None:
-    """A top-level ``log_level`` or pre-8.0 state section is flagged, not read."""
+def test_top_level_keys_no_plugin_reads_are_unknown(_isolated_config: Path) -> None:
+    """A top-level ``log_level`` or a section no installed plugin reads is flagged, not read."""
     write_config(
         _isolated_config,
-        "active: default\nprofiles:\n  default: {}\nlog_level: DEBUG\nworkspace:\n  x: 1\n",
+        "format_version: 2\nlog_level: DEBUG\nworkspace:\n  x: 1\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 0
@@ -489,16 +486,14 @@ def test_top_level_keys_other_than_active_and_profiles_are_unknown(
 
 
 def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        theme: bogus\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    theme: bogus\n")
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert "unknown UI theme" in _failed(rows)["validate untaped.ui"]
 
 
 def test_a_section_that_is_not_a_mapping_fails_each_core_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    untaped: 5\n")
+    write_config(_isolated_config, "format_version: 2\nuntaped: 5\n")
     code, rows = _rows(_doctor_app())
     assert code == 1
     failed = _failed(rows)
@@ -538,9 +533,8 @@ def test_a_newer_format_fails_the_config_rows(_isolated_config: Path) -> None:
 
 
 def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path) -> None:
-    stamp = f"format_version: {FORMAT_VERSION}\n"
-    write_config(_isolated_config, f"{stamp}profiles:\n  default: {{}}\n")
-    (_isolated_config.parent / "state.yml").write_text(stamp)
+    write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n")
+    (_isolated_config.parent / "state.yml").write_text(f"format_version: {STATE_FORMAT_VERSION}\n")
     code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
     assert code == 0, _failed(rows)
     (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
@@ -549,8 +543,10 @@ def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path
 
 def test_active_profile_missing_without_profiles_fails_profile_row(
     _isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    write_config(_isolated_config, "active: prod\n")
+    write_config(_isolated_config, "")
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert "'prod'" in _failed(rows)["resolve active profile"]
@@ -624,27 +620,11 @@ def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
     assert failed["validate state"] == "state file could not be read"
 
 
-def test_state_left_in_config_is_ignored(
-    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The pre-8.0 layout (state at the top level of config.yml) is not read."""
-    write_config(_isolated_config, "github:\n  cursor: [not, a, string]\n")
-    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
-    assert code == 0
-    assert not [row for row in rows if row["check"] == "legacy-state"]
-    (state,) = [row for row in rows if row["title"] == "validate state"]
-    assert state["detail"] == "no state"
-    (unknown,) = [row for row in rows if row["check"] == "unknown-keys"]
-    assert unknown["status"] == "warn"
-    assert "github" in unknown["detail"]
-    assert "warning: plugin state" not in capsys.readouterr().err
-
-
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:
     missing = tmp_path / "nope.pem"
     write_config(
         _isolated_config,
-        f"profiles:\n  default:\n    untaped:\n      http:\n        ca_bundle_path: {missing}\n",
+        f"format_version: 2\nuntaped:\n  http:\n    ca_bundle_path: {missing}\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
@@ -656,7 +636,7 @@ def test_invalid_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path
     bundle.write_text("not a certificate")
     write_config(
         _isolated_config,
-        f"profiles:\n  default:\n    untaped:\n      http:\n        ca_bundle_path: {bundle}\n",
+        f"format_version: 2\nuntaped:\n  http:\n    ca_bundle_path: {bundle}\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
@@ -664,9 +644,7 @@ def test_invalid_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path
 
 
 def test_quiet_keeps_the_checklist_but_mutes_its_footer(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    github:\n      base_url: https://g\n"
-    )
+    write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(make_spec("github", settings=GithubProfile)),)
     )

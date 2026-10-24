@@ -149,7 +149,7 @@ def test_source_get_writes_an_unset_ref_scan_default_as_null(
 ) -> None:
     cfg = tmp_path / "config.yml"
     profile = {"ansible": {"index_path": str(tmp_path / "index.sqlite3")}}
-    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
+    cfg.write_text(yaml.safe_dump({"format_version": 2, **profile}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}]}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -185,7 +185,7 @@ def test_an_unknown_column_is_a_usage_error(
 ) -> None:
     cfg = tmp_path / "config.yml"
     profile = {"ansible": {"index_path": str(tmp_path / "index.sqlite3")}}
-    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
+    cfg.write_text(yaml.safe_dump({"format_version": 2, **profile}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -201,7 +201,7 @@ def test_an_unknown_column_on_an_outcome_only_warns_after_the_change(
 ) -> None:
     cfg = tmp_path / "config.yml"
     profile = {"ansible": {"index_path": str(tmp_path / "index.sqlite3")}}
-    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
+    cfg.write_text(yaml.safe_dump({"format_version": 2, **profile}))
     state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))

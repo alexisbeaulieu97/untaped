@@ -26,7 +26,7 @@ def _register_jira_settings(fresh_composition: None) -> None:
 @pytest.fixture(autouse=True)
 def jira_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(f"profiles:\n  default:\n    jira:\n      server: {{url: {BASE}}}\n")
+    cfg.write_text(f"format_version: 2\njira:\n  server: {{url: {BASE}}}\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     # Not in the file: a plaintext token there warns on every run.
     monkeypatch.setenv("UNTAPED_JIRA__TOKEN", "jira_pat")

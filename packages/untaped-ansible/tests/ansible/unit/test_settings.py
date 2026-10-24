@@ -73,7 +73,7 @@ def test_a_retired_key_is_not_read(
 ) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": data}}}))
+    config.write_text(yaml.safe_dump({"format_version": 2, "ansible": data}))
 
     settings = get_config_section("ansible", AnsibleSettings)
 
@@ -118,11 +118,11 @@ def test_config_migrate_moves_or_deletes_the_old_stale_setting(
 ) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"ansible": {old: 3600}}}}))
+    config.write_text(yaml.safe_dump({"format_version": 2, "ansible": {old: 3600}}))
 
     result = CliInvoker().invoke(build_root_app().meta, ["config", "migrate", "-f", "json"])
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
     assert (row["from"], row["action"]) == (f"ansible.{old}", action)
-    assert read_config_dict(config)["profiles"]["default"].get("ansible", {}) == kept
+    assert read_config_dict(config).get("ansible", {}) == kept

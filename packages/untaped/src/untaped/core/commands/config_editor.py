@@ -11,8 +11,9 @@ from untaped.runtime.config_file import read_config_text, replace_config_text
 from untaped.runtime.settings import (
     FORMAT_VERSION,
     NewerFormatError,
+    OlderFormatError,
     check_config_text,
-    load_config_yaml,
+    load_state_yaml,
     resolve_config_path,
     resolve_state_path,
     validate_config_file,
@@ -22,6 +23,9 @@ from untaped.sdk._cli import report_errors
 from untaped.sdk.errors import ConfigError, attribution
 from untaped.sdk.prompt.editor import run_editor
 from untaped.sdk.storage._fs import atomic_write
+
+#: A fresh home's draft: a non-empty config file is read only when stamped.
+_FRESH = f"format_version: {FORMAT_VERSION}\n"
 
 
 def run_config_editor() -> None:
@@ -39,17 +43,17 @@ def run_config_editor() -> None:
         original = read_config_text(path)
         if original is not None:
             _refuse_a_newer_format(lambda: check_config_text(original, path))
-        _refuse_a_newer_format(lambda: load_config_yaml(resolve_state_path()))
+        _refuse_a_newer_format(lambda: load_state_yaml(resolve_state_path()))
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
         edited_by_user = False
         try:
-            atomic_write(draft, original or "", mode=0o600)
+            atomic_write(draft, original or _FRESH, mode=0o600)
             run_editor(draft)
             edited_by_user = True
             with draft.open(encoding="utf-8", newline="") as handle:
                 edited = handle.read()
-            if edited == (original or ""):
+            if edited == (original or _FRESH):
                 shutil.rmtree(workdir, ignore_errors=True)
                 Diagnostics().info(f"no changes; config unchanged ({path})")
                 return
@@ -63,12 +67,21 @@ def run_config_editor() -> None:
                     f"(format {FORMAT_VERSION})",
                     category="invalid",
                 ) from exc
+            except OlderFormatError as exc:
+                raise ConfigError(
+                    f"the edit is not format {FORMAT_VERSION}",
+                    category="invalid",
+                    hint=(
+                        f"start it with `format_version: {FORMAT_VERSION}`, the base's sections "
+                        "at the top and named profiles under `profiles:`"
+                    ),
+                ) from exc
             except ConfigError as exc:
                 # The edit is the invalid input here, not the setup.
                 raise ConfigError(str(exc), category="invalid") from exc
             replace_config_text(edited, expected=original, path=path)
         except (ConfigError, OSError, UnicodeDecodeError) as exc:
-            if not edited_by_user and not _saved_changes(draft, original or ""):
+            if not edited_by_user and not _saved_changes(draft, original or _FRESH):
                 shutil.rmtree(workdir, ignore_errors=True)
                 if isinstance(exc, ConfigError):
                     raise
@@ -90,7 +103,10 @@ def run_config_editor() -> None:
 
 
 def _refuse_a_newer_format(check: Callable[[], object]) -> None:
-    """Never edit beside a file a newer untaped wrote; leave any other error to repair."""
+    """Never edit beside a file a newer untaped wrote; leave any other error to repair.
+
+    An 11.x ``config.yml`` opens too, so it can be rewritten by hand as format 2.
+    """
     try:
         check()
     except NewerFormatError:

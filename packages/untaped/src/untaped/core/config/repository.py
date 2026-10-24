@@ -22,7 +22,12 @@ from untaped.runtime.config_file import (
     set_at_path,
     unset_at_path,
 )
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
+from untaped.runtime.profile_resolver import (
+    DEFAULT_PROFILE,
+    effective_active_profile_name,
+    profile_entries,
+    profile_path,
+)
 from untaped.runtime.settings import (
     CorePart,
     Settings,
@@ -338,8 +343,7 @@ class SettingsFileRepository:
         (or the profile) is not set.
         """
         descriptor = self.descriptor(key)
-        raw = self.yaml_dict()
-        name = profile or effective_active_profile_name(raw) or DEFAULT_PROFILE
+        name = profile or effective_active_profile_name() or DEFAULT_PROFILE
         return self._own(self.profile_data(name) or {}, descriptor)
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
@@ -430,14 +434,14 @@ class SettingsFileRepository:
                         }
                     )
                     if move.action == "renamed":
-                        base = ("profiles", name, section)
+                        base = (*profile_path(name), section)
                         renames.append(
                             ((*base, *move.old.split(".")), (*base, *move.to.split(".")))
                         )
                 if had_keys and not section_data:
                     emptied.append((section, section_data))
             # By identity: a profile's YAML key need not be the string ``name``.
-            for profile in data["profiles"].values() if emptied else ():
+            for _, profile, _ in profile_entries(data) if emptied else ():
                 for section, section_data in emptied:
                     if isinstance(profile, dict) and profile.get(section) is section_data:
                         del profile[section]

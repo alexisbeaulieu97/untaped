@@ -43,9 +43,7 @@ def _installed(name: str) -> Path:
 
 @pytest.fixture
 def _warn(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      skills: {updates: warn}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: warn}\n")
 
 
 def _install_then_change(tmp_path: Path) -> object:
@@ -100,18 +98,14 @@ def test_skills_and_doctor_commands_do_not_warn(tmp_path: Path, args: tuple[str,
 
 
 def test_off_silences_the_warning(_isolated_config: Path, tmp_path: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      skills: {updates: 'off'}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: 'off'}\n")
     root = _install_then_change(tmp_path)
     assert "warning" not in _run(root, "demo", "--help")[1]
     assert _installed("untaped-demo").read_text() != "new instructions\n"
 
 
 def test_auto_updates_outdated_skills_in_place(_isolated_config: Path, tmp_path: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      skills: {updates: auto}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
     root = _install_then_change(tmp_path)
     code, output = _run(root, "demo", "--help")
     assert code == 0
@@ -132,9 +126,7 @@ def test_unshipped_skill_is_left_to_doctor(
 ) -> None:
     # Another environment (``uvx untaped`` without plugins) may lack the plugin
     # that ships it, so the per-run check cannot tell it is gone for good.
-    write_config(
-        _isolated_config, f"profiles:\n  default:\n    untaped: {{skills: {{updates: {mode}}}}}\n"
-    )
+    write_config(_isolated_config, f"format_version: 2\nuntaped: {{skills: {{updates: {mode}}}}}\n")
     old_root, _ = _root(tmp_path, "untaped-gone")
     assert _run(old_root, "skills", "install", "gone")[0] == 0
     root, _ = _root(tmp_path, "untaped-demo")
@@ -155,9 +147,7 @@ def test_unshipped_skill_is_left_to_doctor(
 def test_auto_only_warns_after_a_failed_or_dry_run_command(
     _isolated_config: Path, tmp_path: Path, args: tuple[str, ...], code: int
 ) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      skills: {updates: auto}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
     root = _install_then_change(tmp_path)
     result_code, output = _run(root, *args)
     assert result_code == code, output
@@ -204,9 +194,7 @@ def _root_with_commands(tmp_path: Path) -> object:
 def test_auto_treats_only_preview_flags_before_double_dash_as_previews(
     _isolated_config: Path, tmp_path: Path, args: tuple[str, ...], updated: bool
 ) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      skills: {updates: auto}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
     root = _root_with_commands(tmp_path)
     code, output = _run(root, *args)
     assert code == 0, output

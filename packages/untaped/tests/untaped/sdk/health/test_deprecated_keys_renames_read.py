@@ -57,22 +57,25 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def _write(path: Path, profiles: dict[str, object], active: str | None = None) -> None:
-    data: dict[str, object] = {"profiles": profiles}
-    if active:
-        data["active"] = active
-    path.write_text(yaml.safe_dump(data))
+def _write(path: Path, profiles: dict[str, object]) -> None:
+    """Write ``profiles`` (``default`` is the base) as a format 2 config file."""
+    named = {name: data for name, data in profiles.items() if name != "default"}
+    base = profiles.get("default")
+    data: dict[str, object] = {"format_version": 2, **(base if isinstance(base, dict) else {})}
+    if named:
+        data["profiles"] = named
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
 def test_old_key_in_default_and_new_key_in_active_layer_as_one_key(
-    config: Path, capsys: pytest.CaptureFixture[str]
+    config: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_profile_settings("demo", DemoSettings)
     _write(
         config,
         {"default": {"demo": {"corpus_path": "/old"}}, "prod": {"demo": {"cache_dir": "/new"}}},
-        active="prod",
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
 
     assert get_config_section("demo", DemoSettings).cache_dir == "/new"
     assert f"{RENAMED}\n{MIGRATE_HINT}" in capsys.readouterr().err
@@ -90,6 +93,27 @@ def test_old_key_is_read_with_a_warning_once_per_process(
     assert get_settings().demo.cache_dir == "/old"  # type: ignore[attr-defined]
 
     assert capsys.readouterr().err.count(RENAMED) == 1
+
+
+def test_an_empty_profiles_key_still_reads_the_base_s_old_keys(
+    config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    register_profile_settings("demo", DemoSettings)
+    config.write_text("format_version: 2\ndemo:\n  corpus_path: /old\nprofiles:\n")
+
+    assert get_config_section("demo", DemoSettings).cache_dir == "/old"
+    assert RENAMED in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["[]", "''", "false", "0"])
+def test_a_malformed_profiles_key_is_refused_with_renames_declared(
+    config: Path, value: str
+) -> None:
+    register_profile_settings("demo", DemoSettings)
+    config.write_text(f"format_version: 2\ndemo:\n  corpus_path: /old\nprofiles: {value}\n")
+
+    with pytest.raises(ConfigError, match="'profiles' must be a mapping"):
+        validate_config_file(config)
 
 
 def test_both_spellings_in_one_profile_the_new_key_wins(

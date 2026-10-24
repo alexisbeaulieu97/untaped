@@ -9,7 +9,7 @@ Details of a command: `untaped agents acme COMMAND`
 - `widgets drop`: Drop widgets for good. (destructive)
 - `beta` [experimental]: Try the next thing.
 
-## Settings (`profiles.<name>.acme`)
+## Settings (`acme`)
 - `widgets_dir` (path, default `~/.acme/widgets`): Where widgets live.
 - `colour` (text, default `blue`): The colour of a new widget.
 

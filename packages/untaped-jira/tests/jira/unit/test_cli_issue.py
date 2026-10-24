@@ -14,8 +14,8 @@ from untaped_jira.cli import app
 
 BASE = "https://jira.example.com"
 _THEMELESS_CONFIG = (
-    "profiles:\n  default:\n    untaped:\n      ui:\n        theme: missing\n"
-    f"    jira:\n      base_url: {BASE}\n      token: jira_pat\n"
+    "format_version: 2\nuntaped:\n  ui:\n    theme: missing\n"
+    f"jira:\n  base_url: {BASE}\n  token: jira_pat\n"
 )
 
 
@@ -149,7 +149,7 @@ def test_issue_search_and_assigned_send_rendered_jql(
     jira_config: Path, assigned_jql: str | None, args: list[str], jql: str
 ) -> None:
     if assigned_jql is not None:
-        jira_config.write_text(jira_config.read_text() + f"      assigned_jql: {assigned_jql}\n")
+        jira_config.write_text(jira_config.read_text() + f"  assigned_jql: {assigned_jql}\n")
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/rest/api/2/search").mock(return_value=_search("ABC-1"))
         result = CliInvoker().invoke(app, ["issues", *args, "--format", "raw", "--columns", "key"])

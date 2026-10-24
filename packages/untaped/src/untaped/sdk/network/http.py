@@ -1031,8 +1031,8 @@ def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str |
     try:
         data = read_config_dict()
     except ConfigError:
-        return classify_active_profile({})[0], []
-    profile = selected_profile(data)
+        return classify_active_profile()[0], []
+    profile = selected_profile()
     if not needs:
         return profile, []
     layout = active_settings_layout()

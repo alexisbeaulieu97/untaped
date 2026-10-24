@@ -54,7 +54,7 @@ def _commit_file(repo: Path, rel: str, content: str, message: str = "change") ->
 def default_org() -> str:
     """Set ``github.default_org: acme`` in the test config, whose ``github`` section is last."""
     cfg = home().expanduser() / "config.yml"
-    cfg.write_text(cfg.read_text() + "      default_org: acme\n")
+    cfg.write_text(cfg.read_text() + "  default_org: acme\n")
     get_settings.cache_clear()
     return "acme"
 

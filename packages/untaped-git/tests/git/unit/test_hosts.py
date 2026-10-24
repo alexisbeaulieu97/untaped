@@ -71,8 +71,8 @@ def rank(method: str, *plugins: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     listed = ", ".join(plugins)
     path.write_text(
-        "profiles:\n  default:\n    git:\n      extensions:\n        git_host:\n"
-        f"          rank:\n            {method}: [{listed}]\n",
+        "format_version: 2\ngit:\n  extensions:\n    git_host:\n"
+        f"      rank:\n        {method}: [{listed}]\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()

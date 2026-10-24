@@ -25,10 +25,10 @@ from core_test_support.commands.support import (
     make_spec,
     wiz_api_check,
     write_config,
+    written_profile,
 )
 from untaped.core.commands.setup_screen import SetupResult
 from untaped.runtime import bootstrap
-from untaped.runtime.config_file import read_config_dict
 from untaped.screen.core import Cancel, Paste
 from untaped.sdk.testing import (
     CliResult,
@@ -86,7 +86,7 @@ def stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeStores:
 
 
 def _wiz(path: Path, profile: str = "default") -> dict[str, Any]:
-    section = read_config_dict(path)["profiles"][profile]["wiz"]
+    section = written_profile(path, profile)["wiz"]
     assert isinstance(section, dict)
     return section
 
@@ -149,7 +149,7 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
 
 
 def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\nactive: default\n")
+    write_config(_isolated_config, "format_version: 2\n")
     backend = _scripted(
         "enter", "enter", "ctrl-u", Paste("https://wiz"), "tab", "right", "enter", "esc", "esc"
     )
@@ -276,9 +276,7 @@ def test_only_rejects_a_name_that_is_not_a_section(_isolated_config: Path) -> No
 
 
 def test_notes_print_in_order_before_the_rows(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://wiz}\n")
     done = SetupResult(
         "default",
         ("wiz",),
@@ -295,8 +293,7 @@ def test_notes_print_in_order_before_the_rows(_isolated_config: Path) -> None:
 def test_a_profile_other_than_the_active_one_says_how_to_use_it(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default: {}\n  prod:\n    wiz:\n      base_url: https://wiz.prod\n"
-        "active: default\n",
+        "format_version: 2\nprofiles:\n  prod:\n    wiz:\n      base_url: https://wiz.prod\n",
     )
 
     result = _setup(ScriptedPromptBackend(screens=[SetupResult("prod", ("wiz",), ())]))
@@ -304,7 +301,7 @@ def test_a_profile_other_than_the_active_one_says_how_to_use_it(_isolated_config
     assert result.exit_code == 0, result.output
     assert "profile prod is ready" in result.stderr
     assert "untaped --profile prod" in result.stderr
-    assert "untaped profile use prod" in result.stderr
+    assert "export UNTAPED_PROFILE=prod" in result.stderr
 
 
 def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) -> None:
@@ -316,9 +313,7 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
 
 
 def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://wiz}\n")
     envy = make_spec("envy", settings=EnvProfile)
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(envy))

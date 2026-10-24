@@ -149,7 +149,7 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     """Broken Jira values still list every plugin."""
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",
+        "format_version: 2\njira:\n  timeout: not-a-number\n",
     )
     get_settings.cache_clear()
     listed = _listing(

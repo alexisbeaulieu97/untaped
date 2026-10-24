@@ -44,6 +44,7 @@ from untaped.core.commands.setup_state import service_store, setup_sections, set
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
+from untaped.runtime.settings import active_settings_layout
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._batch import finish
@@ -224,7 +225,7 @@ def _run(
         sections=sections,
         profile=active,
         store=service_store(services),
-        profiles=sorted(raw.get("profiles") or ()),
+        profiles=active_settings_layout().profile_names(raw),
     )
     outcome = ui.run(screen)
     print_notes(outcome.notes)
@@ -252,7 +253,7 @@ def _ready(profile: str, active: str) -> str:
         return f"profile {profile} is ready"
     return (
         f"profile {profile} is ready; use it with `untaped --profile {profile} …` "
-        f"or make it the default with `untaped profile use {profile}`"
+        f"or `export UNTAPED_PROFILE={profile}`"
     )
 
 

@@ -46,16 +46,15 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     # now, so they live under ``profiles.default``.
     cfg.write_text(
         """
-        profiles:
-          default:
-            untaped:
-              skills:
-                updates: auto
-              http:
-                ca_bundle_path: /etc/ssl/corp-ca.pem
-            demo:
-              base_url: https://aap.example.com
-              token: secret
+        format_version: 2
+        untaped:
+          skills:
+            updates: auto
+          http:
+            ca_bundle_path: /etc/ssl/corp-ca.pem
+        demo:
+          base_url: https://aap.example.com
+          token: secret
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -72,10 +71,11 @@ def test_env_var_overrides_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, profile: str
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        f"active: {profile}\nprofiles:\n  {profile}:\n    demo:\n      token: from-yaml\n"
-    )
+    demo = "demo:\n  token: from-yaml\n"
+    named = f"profiles:\n  {profile}:\n" + "".join(f"    {line}\n" for line in demo.splitlines())
+    cfg.write_text("format_version: 2\n" + (demo if profile == "default" else named))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+    monkeypatch.setenv("UNTAPED_PROFILE", profile)
     baseline = get_settings()
     assert baseline.demo.token is not None
     assert baseline.demo.token.get_secret_value() == "from-yaml"
@@ -112,17 +112,16 @@ def test_ui_settings_load_from_profile_yaml(
     # ``profiles.default``.
     cfg.write_text(
         """
-        profiles:
-          default:
-            untaped:
-              skills:
-                updates: auto
-              ui:
-                theme: compact
-                border: square
-                collection_view: list
-                symbols:
-                  warning: "!"
+        format_version: 2
+        untaped:
+          skills:
+            updates: auto
+          ui:
+            theme: compact
+            border: square
+            collection_view: list
+            symbols:
+              warning: "!"
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -138,13 +137,12 @@ def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.Monkey
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            demo:
-              base_url: https://awx.example.com
-              api_prefix: /api/v2/
-              default_organization: Default
-              page_size: 100
+        format_version: 2
+        demo:
+          base_url: https://awx.example.com
+          api_prefix: /api/v2/
+          default_organization: Default
+          page_size: 100
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -198,10 +196,9 @@ def test_get_settings_translates_validation_error_to_config_error(
     # be effective and therefore actually validated against the schema.
     cfg.write_text(
         """
-        profiles:
-          default:
-            demo:
-              page_size: not-an-int
+        format_version: 2
+        demo:
+          page_size: not-an-int
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -245,7 +242,7 @@ def test_load_settings_section_isolated_from_invalid_sibling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      page_size: lots\n")
+    cfg.write_text("format_version: 2\ndemo:\n  page_size: lots\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     assert load_core_part("http").timeout_seconds == 30.0
     with pytest.raises(ConfigError, match=r"demo\.page_size"):
@@ -261,8 +258,8 @@ def test_each_part_of_core_s_section_is_read_apart(
     cfg = tmp_path / "config.yml"
     border = "" if variable else "        border: bogus\n"
     cfg.write_text(
-        "profiles:\n  default:\n    untaped:\n"
-        f"      http:\n        timeout_seconds: 9\n      ui:\n{border}        theme: plain\n"
+        "format_version: 2\nuntaped:\n"
+        f"  http:\n    timeout_seconds: 9\n  ui:\n{border}        theme: plain\n"
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     if variable:
@@ -283,7 +280,7 @@ def test_a_part_of_core_s_section_reads_its_renamed_keys(
     monkeypatch.setattr(CoreSettings, "renamed_keys", renamed, raising=False)
     key_mappings.cache_clear()
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    untaped:\n      http:\n        timeout: 9\n")
+    cfg.write_text("format_version: 2\nuntaped:\n  http:\n    timeout: 9\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     try:
         assert load_core_part("http").timeout_seconds == 9.0

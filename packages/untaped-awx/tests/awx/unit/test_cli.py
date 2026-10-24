@@ -21,14 +21,13 @@ def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
 def _write_config(tmp_path: Path, *, api_prefix: str | None = None) -> Path:
     cfg = tmp_path / "config.yml"
     body = """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
         """
     if api_prefix is not None:
-        body += f"      api_prefix: {api_prefix}\n"
+        body += f"  api_prefix: {api_prefix}\n"
     cfg.write_text(body)
     return cfg
 
@@ -73,15 +72,14 @@ def test_ping_ignores_invalid_sibling_section(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
-            github:
-              sweep:
-                max_age_seconds: not-a-number
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
+        github:
+          sweep:
+            max_age_seconds: not-a-number
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -112,12 +110,11 @@ def test_ping_table_renders_detail_view(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -148,12 +145,11 @@ def test_ping_json_emits_bare_object(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -266,12 +262,11 @@ def test_ping_rejects_command_local_profile_flag(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: default-token
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: default-token
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -301,13 +296,12 @@ def test_list_applies_default_organization_only_to_scoped_kinds(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
-              default_organization: Default
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
+          default_organization: Default
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -342,12 +336,11 @@ def test_list_filter_passes_through_to_awx(tmp_path: Path, monkeypatch: pytest.M
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
@@ -389,12 +382,11 @@ def test_list_filter_rejects_malformed_entry(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              token: secret
-              api_prefix: /api/v2/
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          token: secret
+          api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))

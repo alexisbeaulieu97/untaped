@@ -32,7 +32,7 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_app_context_exposes_registered_section(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
     _isolated_config.write_text(
-        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
+        "format_version: 2\ndemo:\n  endpoint: https://configured.example\n"
     )
 
     ctx = app_context()
@@ -59,17 +59,13 @@ def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path)
     """``ctx.ui()`` builds from the context's frozen settings snapshot, so a
     settings-cache invalidation after the context exists must not change the
     theme it renders with."""
-    _isolated_config.write_text(
-        "profiles:\n  default:\n    untaped:\n      ui:\n        theme: classic\n"
-    )
+    _isolated_config.write_text("format_version: 2\nuntaped:\n  ui:\n    theme: classic\n")
     get_settings.cache_clear()
     ctx = app_context()
     snapshot_theme = ctx.ui().theme
 
     # Change the theme and drop the cache after the context was built.
-    _isolated_config.write_text(
-        "profiles:\n  default:\n    untaped:\n      ui:\n        theme: default\n"
-    )
+    _isolated_config.write_text("format_version: 2\nuntaped:\n  ui:\n    theme: default\n")
     get_settings.cache_clear()
 
     # A fresh, re-reading context observes the change...
@@ -82,9 +78,7 @@ def test_ui_degrades_unknown_theme_per_strict_flag(_isolated_config: Path) -> No
     """``ctx.ui()`` shares one degrade policy with ``ui_context``: an unknown
     theme name falls back to the default preset when ``strict=False`` and raises
     when ``strict=True``."""
-    _isolated_config.write_text(
-        "profiles:\n  default:\n    untaped:\n      ui:\n        theme: nonexistent\n"
-    )
+    _isolated_config.write_text("format_version: 2\nuntaped:\n  ui:\n    theme: nonexistent\n")
     get_settings.cache_clear()
     ctx = app_context()
 
@@ -98,9 +92,9 @@ class OtherSettings(BaseModel):
 
 
 _BROKEN_OTHER = (
-    "profiles:\n  default:\n"
-    "    other:\n      page_size: notanint\n"
-    "    demo:\n      endpoint: https://configured.example\n"
+    "format_version: 2\n"
+    "other:\n  page_size: notanint\n"
+    "demo:\n  endpoint: https://configured.example\n"
 )
 
 
@@ -143,11 +137,11 @@ def test_full_settings_snapshot_still_validates_every_section(_isolated_config: 
 
 def test_section_is_resolved_once_per_context(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
-    _isolated_config.write_text("profiles:\n  default:\n    demo:\n      endpoint: https://a\n")
+    _isolated_config.write_text("format_version: 2\ndemo:\n  endpoint: https://a\n")
     ctx = app_context()
     assert ctx.section("demo", DemoSettings).endpoint == "https://a"
 
-    _isolated_config.write_text("profiles:\n  default:\n    demo:\n      endpoint: https://b\n")
+    _isolated_config.write_text("format_version: 2\ndemo:\n  endpoint: https://b\n")
     get_settings.cache_clear()
 
     assert ctx.section("demo", DemoSettings).endpoint == "https://a"
@@ -157,7 +151,8 @@ def test_section_is_resolved_once_per_context(_isolated_config: Path) -> None:
 def test_profile_names_the_selected_profile(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _isolated_config.write_text("active: work\nprofiles:\n  default: {}\n  work: {}\n")
+    _isolated_config.write_text("format_version: 2\nprofiles:\n  work: {}\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     assert app_context().profile == "work"
 
     monkeypatch.setenv("UNTAPED_PROFILE", "default")

@@ -187,15 +187,14 @@ def test_job_templates_list_raw_ignores_unknown_global_ui_theme(
 ) -> None:
     aap_config.write_text(
         """
-        profiles:
-          default:
-            untaped:
-              ui:
-                theme: missing
-            awx:
-              base_url: https://aap.example.com
-              token: secret
-              api_prefix: /api/v2/
+        format_version: 2
+        untaped:
+          ui:
+            theme: missing
+        awx:
+          base_url: https://aap.example.com
+          token: secret
+          api_prefix: /api/v2/
         """
     )
     get_settings.cache_clear()
@@ -328,7 +327,7 @@ def test_not_found_names_the_default_organization_scope(catalog: Any, aap_config
     aap_config.write_text(
         config.replace(
             "api_prefix: /api/v2/",
-            "api_prefix: /api/v2/\n              default_organization: Other",
+            "api_prefix: /api/v2/\n          default_organization: Other",
         )
     )
     get_settings.cache_clear()

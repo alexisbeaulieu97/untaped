@@ -127,7 +127,7 @@ def test_an_unused_plugin_passes_as_not_set_up() -> None:
 
 
 def test_half_set_warns_naming_what_is_missing_with_its_fix(_isolated_config: Path) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     row = _setup()
     assert row["status"] == "warn"
     assert row["detail"] == "1 of 2 set; missing wiz.token"
@@ -147,7 +147,7 @@ def test_a_token_from_an_old_setting_warns_with_auth_login(
 ) -> None:
     write_config(
         _isolated_config,
-        f"profiles:\n  default:\n    wiz: {{server: {{url: https://wiz}}, {setting}}}\n",
+        f"format_version: 2\nwiz: {{server: {{url: https://wiz}}, {setting}}}\n",
     )
     row = _setup(specs=(make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,)),))
     old = f"wiz.{setting.partition(':')[0]}"
@@ -162,15 +162,11 @@ def test_a_token_from_an_old_setting_warns_with_auth_login(
 @pytest.mark.parametrize(
     ("config", "env", "profile"),
     [
-        pytest.param(f"  default:\n    {_SERVER}\n", {}, None, id="profile"),
+        pytest.param(f"{_SERVER}\n", {}, None, id="profile"),
+        pytest.param(f"{_SERVER}\nprofiles:\n  work: {{}}\n", {}, "work", id="default-profile"),
+        pytest.param("", {"UNTAPED_WIZ__SERVER__URL": "https://wiz"}, None, id="leaf-variable"),
         pytest.param(
-            f"  default:\n    {_SERVER}\n  work: {{}}\n", {}, "work", id="default-profile"
-        ),
-        pytest.param(
-            "  default: {}\n", {"UNTAPED_WIZ__SERVER__URL": "https://wiz"}, None, id="leaf-variable"
-        ),
-        pytest.param(
-            "  default: {}\n",
+            "",
             {"UNTAPED_WIZ": '{"server": {"url": "https://wiz"}}'},
             None,
             id="json-object-variable",
@@ -184,7 +180,7 @@ def test_a_value_counts_wherever_settings_resolve_it(
     env: dict[str, str],
     profile: str | None,
 ) -> None:
-    write_config(_isolated_config, f"profiles:\n{config}")
+    write_config(_isolated_config, f"format_version: 2\n{config}")
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     _login()
@@ -203,13 +199,13 @@ class NamedProfile(BaseModel):
 
 def test_a_blank_string_is_not_set(_isolated_config: Path) -> None:
     named = make_spec("named", settings=NamedProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    named: {name: '  '}\n")
+    write_config(_isolated_config, "format_version: 2\nnamed: {name: '  '}\n")
     assert _setup(specs=(named,), plugin="named")["detail"] == "not set up"
 
 
 def test_an_empty_list_is_set(_isolated_config: Path) -> None:
     crew = make_spec("crew", settings=CrewProfile)
-    write_config(_isolated_config, "profiles:\n  default:\n    crew: {teams: []}\n")
+    write_config(_isolated_config, "format_version: 2\ncrew: {teams: []}\n")
     row = _setup(specs=(crew,), plugin="crew")
     assert (row["status"], row["detail"]) == ("pass", "[]")
 
@@ -219,14 +215,14 @@ def test_an_ambient_variable_alone_does_not_set_up_a_plugin_with_other_marks(
 ) -> None:
     monkeypatch.setenv("WIZ_TOKEN", "ambient")
     assert _setup()["detail"] == "not set up"
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     row = _setup()
     assert (row["status"], row["detail"]) == ("pass", "url=https://wiz; token from $WIZ_TOKEN")
 
 
 def test_a_token_command_counts_without_running(_isolated_config: Path, tmp_path: Path) -> None:
     ran = tmp_path / "ran"
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     WIZ_TOKEN.store(
         WizServer(url=HttpUrl("https://wiz")), command=["sh", "-c", f"touch {ran}; exit 1"]
     )
@@ -235,7 +231,7 @@ def test_a_token_command_counts_without_running(_isolated_config: Path, tmp_path
 
 
 def test_every_marked_field_set_runs_the_online_check(_isolated_config: Path) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     _login()
     rows = _doctor("--online")
     assert rows["wiz.api:wiz"]["status"] == "pass"
@@ -243,7 +239,7 @@ def test_every_marked_field_set_runs_the_online_check(_isolated_config: Path) ->
 
 
 def test_the_online_check_waits_for_every_marked_field(_isolated_config: Path) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     rows = _doctor("--online")
     assert rows["wiz.api:wiz"]["detail"] == "skipped: not set up"
     assert PROBES == []
@@ -251,7 +247,7 @@ def test_the_online_check_waits_for_every_marked_field(_isolated_config: Path) -
 
 def test_a_rejected_token_names_auth_login(_isolated_config: Path) -> None:
     FAIL.append(True)
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     _login()
     row = _doctor("--online", exit_code=1)["wiz.api:wiz"]
     assert row["status"] == "fail"
@@ -268,7 +264,7 @@ def _legacy() -> PluginSpec:
 
 
 def test_an_unmarked_plugin_keeps_its_rows_and_warns_once(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {base_url: https://wiz}\n")
+    write_config(_isolated_config, "format_version: 2\nwiz: {base_url: https://wiz}\n")
     result = _cli("doctor", "--format", "json", specs=(_legacy(),))
     rows = {row["check"]: row for row in json.loads(result.stdout)}
     assert "setup" not in rows
@@ -334,7 +330,7 @@ def test_any_other_failure_names_the_first_marked_setting(
 ) -> None:
     check = online_check("wiz.api", section="wiz", probe=_raising(error))
     spec = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
-    write_config(_isolated_config, f"profiles:\n  default:\n    {_SERVER}\n")
+    write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     _login()
     row = _doctor("--online", specs=(spec,), exit_code=1)["wiz.api:wiz"]
     assert (row["detail"], row["fix"][-len(fix) :]) == (detail, fix)
@@ -382,9 +378,7 @@ def _hook(*checks: Any) -> PluginSpec:
 def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
     _isolated_config: Path,
 ) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    hook: {server: {url: https://hook}}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nhook: {server: {url: https://hook}}\n")
     row = _setup(specs=(_hook(),), plugin="hook")
     assert row["detail"] == "1 of 2 set; missing hook.signing_key"
     assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]
@@ -419,7 +413,7 @@ def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
 def test_a_credential_from_an_old_setting_names_it(
     _isolated_config: Path, hook: str, state: str, source: str
 ) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    hook: {hook}\n")
+    write_config(_isolated_config, f"format_version: 2\nhook: {hook}\n")
     spec = make_spec("hook", settings=OldHookProfile, credentials=(SIGNING_KEY,))
     row = _plan_rows(spec)["hook.signing_key"]
     assert row["state"] == state
@@ -440,7 +434,7 @@ def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() ->
 
 def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:
     """``setup plan`` says ``set``, not the ``***`` a masked value prints as."""
-    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
     row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
     assert (row["state"], row["detail"]) == ("done", "set")
 
@@ -448,7 +442,7 @@ def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:
 def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> None:
     check = online_check("pin.api", section="pin", probe=_raising(HttpTransportError("down")))
     spec = make_spec("pin", settings=PinProfile, doctor_checks=(check,))
-    write_config(_isolated_config, "profiles:\n  default:\n    pin: {pin: '1234'}\n")
+    write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
     row = _doctor("--online", specs=(spec,), exit_code=1)["pin.api:pin"]
     assert row["detail"] == "down (pin.pin is set)"
     assert "1234" not in json.dumps(row)
@@ -465,7 +459,7 @@ def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> No
 def test_an_unmarked_plugin_keeps_its_screen_status(
     _isolated_config: Path, wiz: str, status: str
 ) -> None:
-    write_config(_isolated_config, f"profiles:\n  default:\n    wiz: {wiz}\n")
+    write_config(_isolated_config, f"format_version: 2\nwiz: {wiz}\n")
     backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_legacy()),))
     setup = invoke_cli(
@@ -481,9 +475,7 @@ def test_a_rejected_credential_not_named_token_names_its_own_auth_login(
 ) -> None:
     rejected = HttpError("HTTP 401", status_code=401, url="https://hook/me", system="hook")
     check = online_check("hook.api", section="hook", probe=_raising(rejected))
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    hook: {server: {url: https://hook}}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nhook: {server: {url: https://hook}}\n")
     monkeypatch.setenv("UNTAPED_HOOK__SIGNING_KEY", "k")
     row = _doctor("--online", specs=(_hook(check),), exit_code=1)["hook.api:hook"]
     assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]

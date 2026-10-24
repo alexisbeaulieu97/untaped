@@ -26,27 +26,29 @@ class TestDefaultLayout:
     def test_profile_shaped_config_resolves_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The profiles layout resolves profiles.default."""
+        """The profiles layout resolves the base, config.yml's top level."""
+        cfg = tmp_path / "config.yml"
+        cfg.write_text("format_version: 2\nuntaped:\n  skills:\n    updates: auto\n")
+        monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+        get_settings.cache_clear()
+
+        assert get_settings().untaped.skills.updates == "auto"
+
+    def test_a_named_profile_is_read_only_when_picked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         cfg = tmp_path / "config.yml"
         cfg.write_text(
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "active: default\n"
+            "format_version: 2\nprofiles:\n  work:\n    untaped:\n      skills:\n"
+            "        updates: warn\n"
         )
         monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
         get_settings.cache_clear()
+        assert get_settings().untaped.skills.updates == "auto"  # the default
 
-        assert get_settings().untaped.skills.updates == "auto"
-
-    def test_top_level_keys_outside_profiles_fall_to_defaults(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Profiles-first: a bare top-level key (no profile) is not effective."""
-        cfg = tmp_path / "config.yml"
-        cfg.write_text("untaped:\n  skills:\n    updates: auto\n")
-        monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+        monkeypatch.setenv("UNTAPED_PROFILE", "work")
         get_settings.cache_clear()
-
-        assert get_settings().untaped.skills.updates == "auto"
+        assert get_settings().untaped.skills.updates == "warn"
 
     def test_active_layout_is_a_singleton(self) -> None:
         """There is one layout instance; repeated calls return the same object."""

@@ -18,9 +18,7 @@ import pytest
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "plugin_check"
 SCRIPT = Path(__file__).with_name("examples_run.py")
-CONFIG = (
-    "profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n"
-)
+CONFIG = "format_version: 2\nlibrary:\n  volumes:\n    - {shelf_mark: A1, name: Dune}\n"
 _DRIFT = "owner-schema-drift: "
 
 

@@ -23,6 +23,7 @@ from core_test_support.commands.support import (
     compose,
     make_spec,
     write_config,
+    written_profile,
 )
 from core_test_support.contracts import support as shelf
 from core_test_support.screen.support import FakeHost
@@ -33,6 +34,7 @@ from untaped.core.config.repository import SettingsFileRepository
 from untaped.core.config.use_cases import NamedValue, RankProviders, SetSetting
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.settings import active_settings_layout
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
@@ -84,7 +86,7 @@ def _build(
         sections=setup_sections(only),
         profile=profile,
         store=None,
-        profiles=sorted(raw.get("profiles") or ()),
+        profiles=active_settings_layout().profile_names(raw),
     )
 
 
@@ -100,13 +102,10 @@ def _rows(model: SetupModel, section: str = "knobs") -> list[tuple[str, str, str
 
 
 def _knobs_data(path: Path, profile: str = "work") -> object:
-    return read_config_dict(path)["profiles"][profile].get("knobs")
+    return written_profile(path, profile).get("knobs")
 
 
-_WORK = (
-    "profiles:\n  default:\n    knobs: {label: shared}\n  work:\n    knobs: {size: 50}\n"
-    "active: work\n"
-)
+_WORK = "format_version: 2\nknobs: {label: shared}\nprofiles:\n  work:\n    knobs: {size: 50}\n"
 
 
 # --- rows -------------------------------------------------------------------------
@@ -237,7 +236,7 @@ def test_esc_closes_a_field_without_writing(_isolated_config: Path) -> None:
 def test_unset_asks_then_falls_back_to_what_the_profile_inherits(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    knobs: {size: 80}\n  work:\n    knobs: {size: 50}\n",
+        "format_version: 2\nknobs: {size: 80}\nprofiles:\n  work:\n    knobs: {size: 50}\n",
     )
     keys = _to("knobs", profile="work")
 
@@ -258,7 +257,7 @@ def test_delete_does_nothing_on_a_row_the_profile_does_not_set() -> None:
 
 
 def test_a_list_is_edited_in_its_editor_and_written_whole(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a, b, c]}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {tags: [a, b, c]}\n")
     to_tags = [*_to("knobs"), "down", "down", "down", "enter"]
 
     # Remove ``b``, move ``a`` below ``c``, add ``d``, then enter on ``done``.
@@ -277,7 +276,7 @@ def test_a_list_is_edited_in_its_editor_and_written_whole(_isolated_config: Path
 
 
 def test_a_list_editor_keeps_delete_and_esc_while_an_item_is_open(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [ab]}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {tags: [ab]}\n")
     keys = [*_to("knobs"), "down", "down", "down", "enter", "enter", "backspace", "esc"]
 
     run = drive_screen(_build(), keys)
@@ -288,7 +287,7 @@ def test_a_list_editor_keeps_delete_and_esc_while_an_item_is_open(_isolated_conf
 
 
 def test_ctrl_s_keeps_the_open_item_and_writes_the_list(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {tags: [a]}\n")
     keys = [*_to("knobs"), "down", "down", "down", "enter", "down", "enter", "b", "ctrl-s"]
 
     drive_screen(_build(), keys)
@@ -297,7 +296,7 @@ def test_ctrl_s_keeps_the_open_item_and_writes_the_list(_isolated_config: Path) 
 
 
 def test_done_closes_an_unchanged_list_and_says_so(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {tags: [a]}\n")
     keys = [*_to("knobs"), "down", "down", "down", "enter", "down", "down"]
 
     run = drive_screen(_build(), keys)
@@ -322,7 +321,7 @@ def test_an_open_list_editor_fits_its_pane_with_its_help(
     _isolated_config: Path, width: int, height: int, error: str
 ) -> None:
     tags = ", ".join(f"t{index}" for index in range(20))
-    write_config(_isolated_config, f"profiles:\n  default:\n    knobs: {{tags: [{tags}]}}\n")
+    write_config(_isolated_config, f"format_version: 2\nknobs: {{tags: [{tags}]}}\n")
     run = drive_screen(_build(), [*_to("knobs"), "down", "down", "down", "enter"])
     pane = run.model.panes["knobs"].with_error(error)
 
@@ -338,7 +337,7 @@ def test_an_open_list_editor_fits_its_pane_with_its_help(
 def test_an_empty_list_overrides_an_inherited_one(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    knobs: {tags: [a]}\n  work: {}\n",
+        "format_version: 2\nknobs: {tags: [a]}\nprofiles:\n  work: {}\n",
     )
     keys = [*_to("knobs", profile="work"), "down", "down", "down", "enter", "delete", "ctrl-s"]
 
@@ -348,7 +347,7 @@ def test_an_empty_list_overrides_an_inherited_one(_isolated_config: Path) -> Non
 
 
 def test_a_renamed_key_in_use_is_written_under_its_new_name(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {old_size: 70}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {old_size: 70}\n")
 
     shown = drive_screen(_build(), _to("knobs"), size=(140, 30))
     run = drive_screen(_build(), [*_to("knobs"), "enter", "ctrl-u", "7", "1", "enter"])
@@ -360,7 +359,7 @@ def test_a_renamed_key_in_use_is_written_under_its_new_name(_isolated_config: Pa
 
 
 def test_a_deprecated_setting_is_read_only_but_unsets(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {legacy: true}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {legacy: true}\n")
     keys = [*_to("knobs"), *(["down"] * 5)]
 
     shown = drive_screen(_build(), [*keys, "enter"], size=(140, 30))
@@ -375,7 +374,7 @@ def test_a_deprecated_setting_is_read_only_but_unsets(_isolated_config: Path) ->
 
 
 def test_an_invalid_section_is_repaired_from_its_rows(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {size: lots}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {size: lots}\n")
 
     shown = drive_screen(_build(), _to("knobs"), size=(140, 30))
     run = drive_screen(_build(), [*_to("knobs"), "enter", "ctrl-u", "6", "0", "enter"])
@@ -415,7 +414,7 @@ def test_a_value_changed_while_its_field_was_open_is_not_overwritten(
 def test_a_list_changed_while_its_editor_was_open_is_not_overwritten(
     _isolated_config: Path,
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {tags: [a]}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {tags: [a]}\n")
     host = FakeHost()
     runtime = Runtime(_build(), host, theme=BUILTIN_THEMES["default"], size=(140, 30))
     runtime.start()
@@ -440,7 +439,7 @@ def test_a_list_changed_while_its_editor_was_open_is_not_overwritten(
 def test_a_new_profile_shows_defaults_and_is_created_by_its_first_write(
     _isolated_config: Path,
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {size: 80}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {size: 80}\n")
 
     shown = drive_screen(_build(profile="fresh"), _to("knobs", profile="fresh"), size=(140, 30))
     run = drive_screen(
@@ -474,7 +473,7 @@ def test_a_field_written_back_untouched_writes_nothing(
 ) -> None:
     if variable is not None:
         monkeypatch.setenv("UNTAPED_KNOBS__SIZE", variable)
-    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
     before = _isolated_config.read_text(encoding="utf-8")
     keys = [*_to("knobs", profile="work"), *(["down"] * down), "enter", "enter", "esc", "esc"]
 
@@ -486,7 +485,7 @@ def test_a_field_written_back_untouched_writes_nothing(
 
 
 def test_an_empty_secret_field_keeps_the_stored_secret(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {secret: s3cr3t}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {secret: s3cr3t}\n")
     before = _isolated_config.read_text(encoding="utf-8")
 
     keys = [*_to("knobs"), "end", "enter", "enter"]
@@ -501,12 +500,12 @@ def test_an_empty_secret_field_keeps_the_stored_secret(_isolated_config: Path) -
 def test_a_write_that_fails_or_unsets_leaves_a_new_profile_uncreated(
     _isolated_config: Path, typed: str
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    knobs: {size: 80}\n")
+    write_config(_isolated_config, "format_version: 2\nknobs: {size: 80}\n")
     keys = [*_to("knobs", profile="fresh"), "enter", "ctrl-u", *typed, "enter"]
 
     run = drive_screen(_build(profile="fresh"), keys)
 
-    assert "fresh" not in read_config_dict(_isolated_config)["profiles"]
+    assert "fresh" not in read_config_dict(_isolated_config).get("profiles", {})
     assert run.model.written == () and run.model.notes == ()
 
 
@@ -670,8 +669,8 @@ def test_a_secret_field_starts_empty_and_writes_what_is_typed() -> None:
 # --- maps that declare their names ------------------------------------------------
 
 _SYMBOLS = (
-    "profiles:\n  default:\n    untaped:\n      ui: {symbols: {error: X}}\n"
-    "  work:\n    untaped:\n      ui: {symbols: {success: S}}\nactive: work\n"
+    "format_version: 2\nuntaped:\n  ui: {symbols: {error: X}}\n"
+    "profiles:\n  work:\n    untaped:\n      ui: {symbols: {success: S}}\n"
 )
 
 
@@ -690,7 +689,7 @@ def _to_symbols(profile: str = "work") -> list[ScreenKey]:
 
 
 def _ui_data(path: Path, profile: str = "work") -> object:
-    return read_config_dict(path)["profiles"][profile].get("untaped", {}).get("ui")
+    return written_profile(path, profile).get("untaped", {}).get("ui")
 
 
 def test_a_map_row_counts_its_overrides(_isolated_config: Path) -> None:
@@ -777,8 +776,7 @@ def test_a_map_changed_while_its_editor_was_open_is_not_overwritten(
 # --- rankings ---------------------------------------------------------------------
 
 _RANKED = (
-    "profiles:\n  default:\n"
-    "    shelf: {extensions: {book_source: {rank: {books: [shop, library]}}}}\n"
+    "format_version: 2\nshelf: {extensions: {book_source: {rank: {books: [shop, library]}}}}\n"
 )
 
 
@@ -801,7 +799,7 @@ def _to_shelf() -> list[ScreenKey]:
 
 
 def _ranks(path: Path) -> object:
-    return read_config_dict(path)["profiles"]["default"].get("shelf")
+    return read_config_dict(path).get("shelf")
 
 
 def test_each_ranking_is_a_row_then_one_adds_a_ranking(_isolated_config: Path) -> None:
@@ -985,8 +983,7 @@ def test_a_bad_part_of_core_s_section_leaves_the_other_parts_validated(
     from untaped.core.commands.setup_sections import read_listing
 
     _isolated_config.write_text(
-        "profiles:\n  default:\n    untaped:\n"
-        "      http: {timeout_seconds: 5}\n      ui: {border: bogus}\n"
+        "format_version: 2\nuntaped:\n  http: {timeout_seconds: 5}\n  ui: {border: bogus}\n"
     )
     listing = read_listing("default", {})
     rows = {row.key: row for row in listing.rows["untaped"]}

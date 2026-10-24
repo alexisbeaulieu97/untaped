@@ -44,7 +44,7 @@ class Vault(CredentialKey):
 
 TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
 VAULT = Credential("vlt", "password", key=Vault)
-SERVER = "profiles:\n  default:\n    wiz: {server: {url: https://wiz.example.com}}\n"
+SERVER = "format_version: 2\nwiz: {server: {url: https://wiz.example.com}}\n"
 KEY = WizServer(url=HttpUrl("https://wiz.example.com"))
 
 
@@ -151,7 +151,7 @@ def test_login_refuses_a_bad_token_command(command: str, message: str) -> None:
 def test_login_names_the_old_setting_a_login_outranks(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    wiz: {server: {url: https://wiz.example.com}, token: old}\n",
+        "format_version: 2\nwiz: {server: {url: https://wiz.example.com}, token: old}\n",
     )
 
     result = _auth("login", "wiz", input="new\n", settings=OldWizProfile)

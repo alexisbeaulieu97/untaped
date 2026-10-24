@@ -46,29 +46,29 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ("", None, "demo.directory", Source(kind="default"), "~/.demo"),
         # Profile-scoped values are attributed to the supplying profile.
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: warn\n",
             None,
             "untaped.skills.updates",
             Source(kind="profile", profile="default"),
             "warn",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
-            "  prod:\n    untaped:\n      skills:\n        updates: warn\nactive: prod\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n"
+            "profiles:\n  prod:\n    untaped:\n      skills:\n        updates: warn\n",
             None,
             "untaped.skills.updates",
             Source(kind="profile", profile="prod"),
             "warn",
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 5\n",
+            "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 5\n",
             None,
             "untaped.http.timeout_seconds",
             Source(kind="profile", profile="default"),
             5.0,
         ),
         (
-            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n",
+            "format_version: 2\nuntaped:\n  skills:\n    updates: auto\n",
             "off",
             "untaped.skills.updates",
             Source(kind="env", variable="UNTAPED_UNTAPED__SKILLS__UPDATES"),
@@ -98,6 +98,8 @@ def test_list_attributes_each_value_to_its_source(
     _isolate_settings.write_text(config)
     if env is not None:
         monkeypatch.setenv("UNTAPED_UNTAPED__SKILLS__UPDATES", env)
+    if source.profile not in (None, "default"):
+        monkeypatch.setenv("UNTAPED_PROFILE", source.profile)
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     assert entries[key].source == source
     assert entries[key].value == value
@@ -105,7 +107,7 @@ def test_list_attributes_each_value_to_its_source(
 
 @pytest.mark.parametrize("reveal", [False, True])
 def test_list_secrets_follow_the_reveal_gate(_isolate_settings: Path, reveal: bool) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: super-secret\n")
+    _isolate_settings.write_text("format_version: 2\ndemo:\n  token: super-secret\n")
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())(reveal_secrets=reveal)}
     assert entries["demo.token"].value == ("super-secret" if reveal else "***")
     default_token = entries["demo.default_token"]
@@ -131,14 +133,17 @@ def test_env_var_naming(key: str, env_var: str) -> None:
     assert repo.env_var_for(repo.descriptor(key)) == env_var
 
 
-def test_all_profiles_shows_one_row_per_profile_and_key(_isolate_settings: Path) -> None:
+def test_all_profiles_shows_one_row_per_profile_and_key(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _isolate_settings.write_text(
-        "profiles:\n"
-        "  default:\n    untaped:\n      skills:\n        updates: warn\n"
-        "  prod:\n    untaped:\n      skills:\n        updates: auto\n"
+        "format_version: 2\n"
+        "untaped:\n  skills:\n    updates: warn\n"
+        "profiles:\n  prod:\n    untaped:\n      skills:\n        updates: auto\n"
         "    demo:\n      page_size: 50\n"
-        "active: prod\n"
+        ""
     )
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
 
     entries = ListAllProfilesSettings(SettingsFileRepository())()
     rows = {(e.profile, e.key, e.value) for e in entries}
@@ -154,8 +159,7 @@ def test_each_bad_part_of_core_s_section_is_reported_and_the_rest_validated(
     _isolate_settings: Path,
 ) -> None:
     _isolate_settings.write_text(
-        "profiles:\n  default:\n    untaped:\n"
-        "      http: {timeout_seconds: -1}\n      ui: {border: bogus}\n"
+        "format_version: 2\nuntaped:\n  http: {timeout_seconds: -1}\n  ui: {border: bogus}\n"
     )
     listing = ListSettings(SettingsFileRepository())
     entries = {e.key: e for e in listing()}

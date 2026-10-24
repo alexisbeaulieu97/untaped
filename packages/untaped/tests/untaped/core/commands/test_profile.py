@@ -1,7 +1,7 @@
 """Tests for the root ``untaped profile …`` command group.
 
-The profile surface is plugin-agnostic (it operates on the shared
-``profiles`` layout and names the unified executable in its guidance.
+The profile surface is plugin-agnostic: it operates on ``config.yml``'s
+base (``default``, the top level) and its ``profiles:``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, 
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
-_MANAGEMENT_VERBS = ("list", "show", "use", "current", "create", "delete", "rename")
+_MANAGEMENT_VERBS = ("list", "show", "current", "create", "delete", "rename")
 
 
 class _GithubSettings(BaseModel):
@@ -31,71 +31,87 @@ class _GithubSettings(BaseModel):
 def app(_isolated_config: Path):
     register_profile_settings("github", _GithubSettings)
     get_settings.cache_clear()
-    return build_root_profile_app(command="untaped")
+    return build_root_profile_app()
 
 
 def _seed(cfg: Path) -> None:
     cfg.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  prod:\n    github:\n      token: ghp_secret\n"
-        "  stage:\n    log_level: DEBUG\n"
-        "active: prod\n",
+        "format_version: 2\n"
+        "log_level: INFO\n"
+        "profiles:\n  prod:\n    github:\n      token: ghp_secret\n"
+        "  stage:\n    log_level: DEBUG\n",
         encoding="utf-8",
     )
 
 
 def test_root_profile_exposes_all_verbs() -> None:
-    app = build_root_profile_app(command="untaped")
+    app = build_root_profile_app()
     for verb in _MANAGEMENT_VERBS:
         assert verb in app
+    assert "use" not in app  # a run picks with --profile or UNTAPED_PROFILE
 
 
-def test_empty_hint_names_unified_executable() -> None:
-    app = build_root_profile_app(command="untaped")
-    result = CliInvoker().invoke(app, ["list"])
+def test_a_fresh_home_lists_the_base() -> None:
+    result = CliInvoker().invoke(build_root_profile_app(), ["list", "--format", "json"])
     assert result.exit_code == 0, result.output
-    assert "`untaped profile create <name>`" in result.output
-
-
-def test_list_marks_active_profile(_isolated_config: Path) -> None:
-    _isolated_config.write_text(
-        "profiles:\n  default: {}\n  work: {}\nactive: work\n", encoding="utf-8"
-    )
-    app = build_root_profile_app(command="untaped")
-    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])
-    assert result.exit_code == 0, result.output
-    assert sorted(result.stdout.splitlines()) == ["default", "work"]
+    assert json.loads(result.stdout) == [{"name": "default", "active": True, "keys": 0}]
 
 
 def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
     _isolated_config.write_text(
-        f"format_version: {FORMAT_VERSION}\nprofiles:\n  default: {{}}\n  work: {{}}\n",
-        encoding="utf-8",
+        f"format_version: {FORMAT_VERSION}\nprofiles:\n  work: {{}}\n", encoding="utf-8"
     )
-    app = build_root_profile_app(command="untaped")
-    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    app = build_root_profile_app()
+    result = CliInvoker().invoke(
+        app, ["list", "--format", "raw", "--columns", "name", "--columns", "keys"]
+    )
     assert result.exit_code == 0, result.output
-    assert sorted(result.stdout.splitlines()) == ["default", "work"]
+    assert result.stdout.splitlines() == ["default\t0", "work\t0"]
 
 
-def test_create_use_and_current_round_trip(_isolated_config: Path) -> None:
-    app = build_root_profile_app(command="untaped")
+def test_create_and_current_round_trip(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = build_root_profile_app()
     assert CliInvoker().invoke(app, ["create", "work"]).exit_code == 0
-    use_result = CliInvoker().invoke(app, ["use", "work"])
-    assert use_result.exit_code == 0, use_result.output
-    assert "active profile: work" in use_result.output
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")
     current = CliInvoker().invoke(app, ["current"])
     assert current.exit_code == 0, current.output
     assert current.stdout.strip() == "work"
+    assert "(source: env)" in current.stderr
 
 
-def test_delete_active_profile_is_refused(app, _isolated_config: Path) -> None:
+def test_current_names_the_base_when_nothing_picks() -> None:
+    current = CliInvoker().invoke(build_root_profile_app(), ["current"])
+    assert current.exit_code == 0, current.output
+    assert current.stdout.strip() == "default"
+    assert "(source: fallback)" in current.stderr
+
+
+@pytest.mark.parametrize(
+    "args", [["create", "default"], ["delete", "default", "--yes"], ["rename", "stage", "default"]]
+)
+def test_the_base_is_not_a_profile_to_create_delete_or_rename_to(
+    app, _isolated_config: Path, args: list[str]
+) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["delete", "prod", "--yes"])
-    assert result.exit_code != 0
-    assert "active" in result.stderr.lower()
-    assert "prod" in read_config_dict(_isolated_config)["profiles"]
+    result = CliInvoker().invoke(app, args)
+    assert result.exit_code == 1
+    assert "base" in result.stderr
+    assert read_config_dict(_isolated_config)["log_level"] == "INFO"
+
+
+def test_show_default_is_the_base(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    result = CliInvoker().invoke(app, ["show", "default", "--raw", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["data"] == {"log_level": "INFO"}
+
+
+def test_create_copies_the_base(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    assert CliInvoker().invoke(app, ["create", "qa", "--copy-from", "default"]).exit_code == 0
+    assert read_config_dict(_isolated_config)["profiles"]["qa"] == {"log_level": "INFO"}
 
 
 def test_delete_accepts_dash_y_alias(app, _isolated_config: Path) -> None:
@@ -146,7 +162,7 @@ def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
 
 def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app(command="untaped")
+    app = build_root_profile_app()
     with profile_scope("stage"):
         result = CliInvoker().invoke(app, ["current"])
     assert result.exit_code == 0, result.output
@@ -156,25 +172,31 @@ def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
 
 def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_config: Path) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app(command="untaped")
+    app = build_root_profile_app()
     with profile_scope("typo"):
         result = CliInvoker().invoke(app, ["current"])
     assert result.exit_code == 4  # the active profile is not defined: config
     assert "'typo' (from flag) is not defined" in result.stderr
 
 
-def test_list_json_marks_active_with_booleans(_isolated_config: Path) -> None:
+def test_list_json_marks_active_with_booleans(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app(command="untaped")
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    app = build_root_profile_app()
     result = CliInvoker().invoke(app, ["list", "--format", "json"])
     assert result.exit_code == 0, result.output
     active = {row["name"]: row["active"] for row in json.loads(result.stdout)}
     assert active == {"default": False, "prod": True, "stage": False}
 
 
-def test_list_marks_active_with_a_check_in_tables_only(_isolated_config: Path) -> None:
+def test_list_marks_active_with_a_check_in_tables_only(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app(command="untaped")
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    app = build_root_profile_app()
     raw = CliInvoker().invoke(
         app, ["list", "--format", "raw", "--columns", "name", "--columns", "active"]
     )
@@ -202,7 +224,7 @@ def test_create_emits_outcome_and_dry_run_writes_nothing(app, _isolated_config: 
         "copied_from": "stage",
         "action": "planned",
     }
-    assert "qa" not in read_config_dict(_isolated_config)["profiles"]
+    assert "qa" not in read_config_dict(_isolated_config).get("profiles", {})
     assert _outcome(app, ["create", "qa"])["action"] == "created"
     assert "qa" in read_config_dict(_isolated_config)["profiles"]
 
@@ -236,14 +258,14 @@ def test_delete_dry_run_previews_without_confirming_or_deleting(
     assert "stage" in read_config_dict(_isolated_config)["profiles"]
 
 
-def test_delete_dry_run_still_refuses_the_active_profile(app, _isolated_config: Path) -> None:
+def test_delete_dry_run_still_refuses_the_base(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["delete", "prod", "--dry-run"])
+    result = CliInvoker().invoke(app, ["delete", "default", "--dry-run"])
     assert result.exit_code == 1
-    assert "active" in result.stderr
+    assert "it is the base" in result.stderr
 
 
 def test_delete_emits_a_deleted_outcome(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
     assert _outcome(app, ["delete", "stage", "--yes"])["action"] == "deleted"
-    assert "stage" not in read_config_dict(_isolated_config)["profiles"]
+    assert "stage" not in read_config_dict(_isolated_config).get("profiles", {})

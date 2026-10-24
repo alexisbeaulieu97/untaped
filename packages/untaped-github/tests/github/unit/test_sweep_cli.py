@@ -24,7 +24,7 @@ SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 @pytest.fixture(autouse=True)
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
 
@@ -84,7 +84,7 @@ def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
     store_auth: dict[str, list[str | None]],
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(cfg.read_text() + "      base_url: https://ghe.example/api/v3\n")
+    cfg.write_text(cfg.read_text() + "  base_url: https://ghe.example/api/v3\n")
     origin = source_repo("origin", {"README.md": "needle\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
     bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])

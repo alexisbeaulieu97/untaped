@@ -90,7 +90,7 @@ def test_usage_errors_exit_2_before_any_request(args: list[str], message: str) -
     ],
 )
 def test_invalid_keys_exit_2_even_without_jira_config(jira_config: Path, args: list[str]) -> None:
-    jira_config.write_text("profiles:\n  default: {}\n")
+    jira_config.write_text("format_version: 2\n")
     result = CliInvoker().invoke(app, args)
 
     assert result.exit_code == 2, result.output
@@ -152,7 +152,7 @@ def _mock_writes(mock: respx.MockRouter) -> respx.Route:
 
 @pytest.fixture
 def confirm_always(jira_config: Path) -> None:
-    jira_config.write_text(jira_config.read_text() + "      confirm: always\n")
+    jira_config.write_text(jira_config.read_text() + "  confirm: always\n")
 
 
 @pytest.mark.usefixtures("confirm_always")

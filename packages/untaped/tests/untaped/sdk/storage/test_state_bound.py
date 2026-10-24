@@ -169,7 +169,7 @@ def test_a_failed_write_is_a_config_error(tmp_path: Path, monkeypatch: pytest.Mo
     def refuse(_data: object, path: Path) -> None:
         raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(state, "write_config_dict", refuse)
+    monkeypatch.setattr(state, "write_state_dict", refuse)
     with pytest.raises(ConfigError, match=r"could not write .*Permission denied; nothing changed"):
         Demo.items.add(Item(name="ada"))
 

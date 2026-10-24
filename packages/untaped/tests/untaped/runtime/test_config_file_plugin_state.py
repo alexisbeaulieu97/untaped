@@ -11,6 +11,7 @@ from untaped.runtime.config_file import (
     mutate_plugin_state,
     read_config_dict,
     read_plugin_state,
+    read_state_dict,
 )
 from untaped.sdk.errors import UntapedError
 
@@ -33,7 +34,7 @@ def test_mutate_plugin_state_preserves_foreign_section(tmp_path: Path) -> None:
         state["sources"] = []
 
     mutate_plugin_state("ansible", _set, path=cfg)
-    data = read_config_dict(cfg)
+    data = read_state_dict(cfg)
     assert data["github"] == {"token": "secret"}
     assert data["ansible"] == {"sources": []}
 

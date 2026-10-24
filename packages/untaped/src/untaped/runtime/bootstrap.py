@@ -304,7 +304,7 @@ def build_root_app(
     management = {
         "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
-        "profile": build_root_profile_app(command=NAME),
+        "profile": build_root_profile_app(),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
         "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,

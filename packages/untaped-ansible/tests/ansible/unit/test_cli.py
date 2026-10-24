@@ -85,7 +85,7 @@ def _use_config(
     if ui is not None:
         profile["untaped"] = {"ui": ui}
     cfg = tmp_path / "config.yml"
-    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}, sort_keys=False))
+    cfg.write_text(yaml.safe_dump({"format_version": 2, **profile}, sort_keys=False))
     if state is not None:
         (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}, sort_keys=False))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))

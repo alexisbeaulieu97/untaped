@@ -12,8 +12,9 @@ from pydantic import BaseModel, HttpUrl, SecretStr
 
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
+from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import CompositionResult, PluginSpec, SkillAsset
-from untaped.runtime.settings import get_settings
+from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.sdk import (  # type: ignore[deprecated]
     Credential,
     CredentialKey,
@@ -194,6 +195,11 @@ def write_config(path: Path, text: str) -> None:
     """Write ``text`` to the isolated config file and drop settings caches."""
     path.write_text(text, encoding="utf-8")
     get_settings.cache_clear()
+
+
+def written_profile(path: Path, name: str) -> dict[str, Any]:
+    """Profile ``name``'s raw values in the config file at ``path`` (the base for ``default``)."""
+    return active_settings_layout().profile_data(read_config_dict(path), name) or {}
 
 
 def skill_dir(tmp_path: Path, name: str) -> Path:

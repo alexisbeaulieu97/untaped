@@ -355,7 +355,7 @@ def test_ui_context_raises_on_unknown_theme_when_strict(
     from untaped.runtime.settings import get_settings
 
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    untaped:\n      ui:\n        theme: nonexistent\n")
+    cfg.write_text("format_version: 2\nuntaped:\n  ui:\n    theme: nonexistent\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
     try:

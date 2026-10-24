@@ -35,7 +35,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE
+from untaped.runtime.profile_resolver import profile_entries
 from untaped.sdk._schema import unwrap_optional, walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
@@ -543,20 +543,15 @@ def profile_sections(
 ) -> Iterator[tuple[str, str, type[BaseModel], dict[str, Any]]]:
     """``(profile, section, model, section data)`` for every section set in every profile.
 
-    Profiles come ``default`` first, then by name. The section data is the
-    mapping in ``raw`` itself, so a caller may change it in place.
+    The base (``default``) comes first, then the named profiles by name. The
+    section data is the mapping in ``raw`` itself, so a caller may change it
+    in place.
     """
-    profiles = raw.get("profiles")
-    if not isinstance(profiles, dict):
-        return
-    for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
-        data = profiles[name]
-        if not isinstance(data, dict):
-            continue
+    for name, data, _ in profile_entries(dict(raw)):
         for section, model in sections.items():
             section_data = data.get(section)
             if isinstance(section_data, dict):
-                yield str(name), section, model, section_data
+                yield name, section, model, section_data
 
 
 def retired_values(section: str, key: str) -> tuple[object, ...]:
@@ -572,13 +567,9 @@ def retired_values(section: str, key: str) -> tuple[object, ...]:
         read_config_dict,
     )
 
-    profiles = read_config_dict().get("profiles")
-    if not isinstance(profiles, Mapping):
-        return ()
     found: list[object] = []
-    for name in sorted(profiles, key=lambda name: (name != DEFAULT_PROFILE, str(name))):
-        data = profiles[name]
-        section_data = data.get(section) if isinstance(data, Mapping) else None
+    for _, data, _ in profile_entries(read_config_dict()):
+        section_data = data.get(section)
         if not isinstance(section_data, Mapping):
             continue
         value = _lookup(section_data, key)

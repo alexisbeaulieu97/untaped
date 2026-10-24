@@ -82,7 +82,7 @@ def _marker(path: Path) -> dict[str, object]:
 
 
 def _mode(config: Path, mode: str) -> None:
-    write_config(config, f"profiles:\n  default:\n    untaped: {{skills: {{updates: '{mode}'}}}}\n")
+    write_config(config, f"format_version: 2\nuntaped: {{skills: {{updates: '{mode}'}}}}\n")
 
 
 def _install_copy(tmp_path: Path, *, target: str = "codex", where: list[str] | None = None) -> Path:

@@ -79,8 +79,11 @@ def _write(text: str) -> Path:
 
 
 def _hello(body: str, profile: str = "default") -> str:
-    lines = "".join(f"      {line}\n" for line in body.splitlines())
-    return f"profiles:\n  {profile}:\n    hello:\n{lines}"
+    """A config with ``body`` as ``profile``'s ``hello`` section (``default`` is the base)."""
+    at = "" if profile == "default" else "    "
+    lines = "".join(f"{at}  {line}\n" for line in body.splitlines())
+    named = f"profiles:\n  {profile}:\n" if at else ""
+    return f"format_version: 2\n{named}{at}hello:\n{lines}"
 
 
 def _warnings(result: CliResult) -> list[str]:
@@ -171,7 +174,7 @@ def test_a_typo_under_a_cache_loads_and_doctor_names_it() -> None:
     rows = json.loads(_run("doctor", "--format", "json").stdout)
     (row,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert row["status"] == "warn"
-    assert "profiles.default.hello.caches.motd.max_age" in row["detail"]
+    assert "hello.caches.motd.max_age" in row["detail"]
 
 
 def test_the_refresh_option_names_a_setting_config_get_accepts() -> None:
@@ -186,7 +189,7 @@ def test_an_unknown_cache_loads_and_doctor_names_it() -> None:
     rows = json.loads(_run("doctor", "--format", "json").stdout)
     (row,) = [row for row in rows if row["check"] == "unknown-keys"]
     assert row["status"] == "warn"
-    assert "profiles.default.hello.caches.typo" in row["detail"]
+    assert "hello.caches.typo" in row["detail"]
 
 
 def test_the_generated_setting_follows_the_naming_conventions() -> None:
@@ -235,7 +238,7 @@ def test_config_migrate_moves_the_old_key_into_caches() -> None:
     result = _run("config", "migrate", "--format", "json", spec=RENAMED)
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["to"] == SETTING
-    assert read_config_dict(path)["profiles"]["default"]["hello"] == {
+    assert read_config_dict(path)["hello"] == {
         "greeting": "hey",
         "caches": {"motd": {"max_age_seconds": 9}},
     }
@@ -281,7 +284,7 @@ def test_a_dotted_old_key_moves_beside_a_surviving_sibling() -> None:
     got = _run("config", "get", "hello.caches.sweep.max_age_seconds", spec=spec)
     assert got.stdout.strip() == "30"
     assert _run("config", "migrate", spec=spec).exit_code == 0
-    assert read_config_dict(path)["profiles"]["default"]["hello"] == {
+    assert read_config_dict(path)["hello"] == {
         "sweep": {"parallel": 2},
         "caches": {"sweep": {"max_age_seconds": 30}},
     }
@@ -317,9 +320,7 @@ def test_an_owner_retires_its_key_while_the_cache_renames_the_next_one() -> None
     assert rows["hello.stale_after_seconds"]["to"] == "hello.caches.index.max_age_seconds"
     assert rows["hello.stale_after"]["action"] == "deleted"
     assert "use hello.caches.index.max_age_seconds" in rows["hello.stale_after"]["detail"]
-    assert read_config_dict(path)["profiles"]["default"]["hello"] == {
-        "caches": {"index": {"max_age_seconds": 120}}
-    }
+    assert read_config_dict(path)["hello"] == {"caches": {"index": {"max_age_seconds": 120}}}
 
 
 def _section(spec: PluginSpec) -> Sequence[str]:

@@ -400,7 +400,7 @@ def test_nothing_to_fix_with_a_failing_check_exits_1_and_points_at_doctor(
 def test_the_doctor_hint_keeps_the_chosen_profile(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _isolated_config.write_text("profiles:\n  default: {}\n  work: {}\n")
+    _isolated_config.write_text("format_version: 2\nprofiles:\n  work: {}\n")
     spec = _spec(("svc.bad", None, {"fail": True}))
     result = _cli(spec, "--yes", "--profile", "work", monkeypatch=monkeypatch)
     assert result.exit_code == 1
@@ -455,9 +455,7 @@ def test_columns_prints_the_table_with_the_command_line(monkeypatch: pytest.Monk
 def test_an_ascii_theme_swaps_the_glyphs(
     monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
 ) -> None:
-    write_config(
-        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui: {theme: plain}\n"
-    )
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui: {theme: plain}\n")
     STUBBORN.add("svc.b")
     spec = _spec(_MIGRATE, _UPDATE)
     backend = ScriptedPromptBackend(confirms=[True])
@@ -495,7 +493,7 @@ def test_the_hint_names_the_fixes_that_need_you() -> None:
 
 
 def test_the_hint_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default: {}\n  work: {}\n")
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
     stderr = _doctor(_spec(_MIGRATE), "--profile", "work").stderr
     assert "hint: run `untaped --profile work doctor fix`" in stderr
 
@@ -518,9 +516,7 @@ def core_renamed_http_timeout(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]
 
 
 def _old_http_key() -> None:
-    write_config(
-        config_path(), "profiles:\n  default:\n    untaped:\n      http:\n        timeout: 9\n"
-    )
+    write_config(config_path(), "format_version: 2\nuntaped:\n  http:\n    timeout: 9\n")
 
 
 #: Puts each shell row that can name a fix into its fixable state, by check id.

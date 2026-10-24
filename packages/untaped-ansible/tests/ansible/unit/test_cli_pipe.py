@@ -37,7 +37,7 @@ def test_pipe_output_tags_envelope_with_kind(
     cfg = tmp_path / "config.yml"
     profile = {"ansible": {"index_path": str(tmp_path / "index.sqlite3")}}
     state = {"aliases": {"common": "acme/common"}, "sources": [{"name": "prod", "repos": ["a/b"]}]}
-    cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
+    cfg.write_text(yaml.safe_dump({"format_version": 2, **profile}))
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 

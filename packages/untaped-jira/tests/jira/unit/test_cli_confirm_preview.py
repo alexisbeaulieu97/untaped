@@ -47,7 +47,7 @@ TRANSITIONS = {
 
 
 def _set_confirm(config: Path, policy: str) -> None:
-    config.write_text(config.read_text() + f"      confirm: {policy}\n")
+    config.write_text(config.read_text() + f"  confirm: {policy}\n")
 
 
 def _issue_response(request: httpx.Request) -> httpx.Response:

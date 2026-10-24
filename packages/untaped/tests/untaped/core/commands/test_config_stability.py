@@ -137,7 +137,7 @@ def test_a_deprecated_setting_set_in_a_file_is_listed_with_its_replacement(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    trial:\n      old_flag: true\n      gone: true\n",
+        "format_version: 2\ntrial:\n  old_flag: true\n  gone: true\n",
     )
 
     tables = _tables()
@@ -206,7 +206,7 @@ def test_config_get_carries_the_stability() -> None:
 def test_an_experimental_setting_read_through_an_old_spelling_is_listed_as_deprecated(
     _isolated_config: Path,
 ) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    moved:\n      old_wait: 9\n")
+    write_config(_isolated_config, "format_version: 2\nmoved:\n  old_wait: 9\n")
 
     tables = _tables()
 
@@ -218,8 +218,7 @@ def test_an_experimental_setting_read_through_an_old_spelling_is_listed_as_depre
 def test_all_profiles_splits_the_same_way(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    trial:\n      steady: 3\n      probe: 4\n"
-        "      old_flag: true\n",
+        "format_version: 2\ntrial:\n  steady: 3\n  probe: 4\n  old_flag: true\n",
     )
 
     tables = _tables("--all-profiles")
@@ -230,7 +229,7 @@ def test_all_profiles_splits_the_same_way(_isolated_config: Path) -> None:
 
 
 def test_columns_apply_to_every_table(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    trial:\n      old_flag: true\n")
+    write_config(_isolated_config, "format_version: 2\ntrial:\n  old_flag: true\n")
 
     tables = _tables("--columns", "key,value")
 
@@ -335,8 +334,7 @@ def test_doctor_lists_every_key_set_in_a_deprecated_plugins_section(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    sunset:\n      host: h2\n      port: 81\n"
-        "    beta:\n      size: 3\n",
+        "format_version: 2\nsunset:\n  host: h2\n  port: 81\nbeta:\n  size: 3\n",
     )
 
     detail = _doctor_detail()
@@ -352,8 +350,8 @@ def test_doctor_reports_a_deprecated_plugins_keys_not_their_contents(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    sunset:\n      headers:\n        X-A: '1'\n        X-B: '2'\n"
-        "      tls:\n        verify: false\n      typo_key: 1\n",
+        "format_version: 2\nsunset:\n  headers:\n    X-A: '1'\n    X-B: '2'\n"
+        "  tls:\n    verify: false\n  typo_key: 1\n",
     )
 
     detail = _doctor_detail()
@@ -365,7 +363,7 @@ def test_doctor_reports_a_deprecated_plugins_keys_not_their_contents(
 
 
 def test_reading_a_deprecated_plugins_settings_warns_nothing(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    sunset:\n      host: h2\n")
+    write_config(_isolated_config, "format_version: 2\nsunset:\n  host: h2\n")
 
     result = _config("get", "sunset.host")
 

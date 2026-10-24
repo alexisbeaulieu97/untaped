@@ -322,11 +322,11 @@ def test_two_profiles_on_one_controller_and_token_share_its_snapshot(
     """The profile is not part of the snapshot's identity: the controller and token are."""
     aap_config.write_text(
         """
+        format_version: 2
+        awx:
+          server: {url: https://aap.example.com}
+          api_prefix: /api/v2/
         profiles:
-          default:
-            awx:
-              server: {url: https://aap.example.com}
-              api_prefix: /api/v2/
           other:
             awx:
               server: {url: https://aap.example.com}

@@ -1,13 +1,13 @@
 """Root ``untaped profile …`` command group.
 
 The root owns profile commands for the unified application. Profile data is
-stored in the home's shared ``config.yml`` layout and the command hint
-names the unified executable.
+stored in the home's shared ``config.yml``: the base (``default``) at its top
+level, named profiles under ``profiles:``. A run picks one with ``--profile``
+or ``UNTAPED_PROFILE``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
@@ -21,7 +21,6 @@ from untaped.core.profile.use_cases import (
     ListProfiles,
     RenameProfile,
     ShowProfile,
-    UseProfile,
 )
 from untaped.runtime.settings import get_profile_settings_model, resolve_config_path
 from untaped.runtime.sink import Diagnostics
@@ -49,16 +48,14 @@ _diag = Diagnostics()
 ShowFormat = Literal["yaml", "json"]
 
 
-def build_root_profile_app(*, command: str = "untaped") -> App:
+def build_root_profile_app() -> App:
     """Return the root ``profile`` command group."""
     app = create_app(
         name="profile",
         help="Manage configuration profiles in the home's ``config.yml``.",
     )
-    empty_hint = f"No profiles configured. Create one with `{command} profile create <name>`."
-    app.command(name="list")(_make_list_command(empty_hint))
+    app.command(name="list")(_list_command)
     app.command(name="show")(_show_command)
-    app.command(name="use")(_use_command)
     app.command(name="current")(_current_command)
     app.command(name="create")(_create_command)
     app.command(name="delete")(_delete_command)
@@ -66,19 +63,16 @@ def build_root_profile_app(*, command: str = "untaped") -> App:
     return app
 
 
-def _make_list_command(empty_hint: str) -> Callable[..., None]:
-    def list_command(
-        *,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """List every profile, marking which one is active."""
-        with report_errors():
-            profiles = ListProfiles(ProfileFileRepository())()
-            rows = [ProfileRow(name=p.name, active=p.is_active, keys=p.key_count) for p in profiles]
-            emit(rows, fmt=fmt, columns=columns, empty=empty_hint)
-
-    return list_command
+def _list_command(
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """List the base (``default``) and every profile, marking which one is active."""
+    with report_errors():
+        profiles = ListProfiles(ProfileFileRepository())()
+        rows = [ProfileRow(name=p.name, active=p.is_active, keys=p.key_count) for p in profiles]
+        emit(rows, fmt=fmt, columns=columns)
 
 
 def _show_command(
@@ -93,7 +87,7 @@ def _show_command(
         Parameter(
             name="--raw",
             negative="",
-            help="Show only the keys this profile sets (no `default` merge).",
+            help="Show only the keys this profile sets (no merge with the base).",
         ),
     ] = False,
     show_secrets: Annotated[
@@ -120,23 +114,13 @@ def _show_command(
     """
     with report_errors():
         repo = ProfileFileRepository()
-        if name is None:
-            current = CurrentProfile(repo)()
-            target = current.name
-            allow_conceptual_default = current.source == "fallback"
-        else:
-            target = name
-            allow_conceptual_default = False
-        target_profile = ShowProfile(repo)(
-            target,
-            raw=raw,
-            allow_conceptual_default=allow_conceptual_default,
-        )
+        target = CurrentProfile(repo)().name if name is None else name
+        target_profile = ShowProfile(repo)(target, raw=raw)
         header = f"# profile: {target_profile.name}"
         if target_profile.is_active:
             header += " (active)"
         if not raw:
-            header += " — effective view (default ⤥ named)"
+            header += " — effective view (base ⤥ named)"
         _diag.info(header)
         data = (
             target_profile.data
@@ -157,24 +141,13 @@ def _show_command(
             emit_document(data, fmt="yaml")
 
 
-def _use_command(
-    name: Annotated[str, Parameter(help="Profile to activate.")],
-    /,
-) -> None:
-    """Persist ``active: <name>`` in the config file."""
-    with report_errors():
-        UseProfile(ProfileFileRepository())(name)
-        config_path = resolve_config_path()
-        _diag.success(f"active profile: {name} (config: {config_path})")
-
-
 def _current_command() -> None:
-    """Print the effective active profile name to stdout (pipe-friendly).
+    """Print the picked profile's name to stdout (pipe-friendly).
 
-    Honours ``UNTAPED_PROFILE`` and the root ``--profile`` option (any
-    token position), falling back to ``default`` when none is set. The
-    source of the answer (``flag`` / ``env`` / ``config`` / ``fallback``) goes to
-    stderr so stdout stays a single bare profile name suitable for piping.
+    Honours the root ``--profile`` option (any token position) and
+    ``UNTAPED_PROFILE``, falling back to ``default`` (the base) when neither
+    is set. The source of the answer (``flag`` / ``env`` / ``fallback``) goes
+    to stderr so stdout stays a single bare profile name suitable for piping.
     """
     with report_errors():
         result = CurrentProfile(ProfileFileRepository())()
@@ -217,7 +190,7 @@ def _delete_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Delete a profile. Refuses to delete the active profile."""
+    """Delete a profile (the base, ``default``, is not one)."""
     with report_errors():
         repo = ProfileFileRepository()
         delete_profile = DeleteProfile(repo)
@@ -247,7 +220,7 @@ def _rename_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Rename a profile, updating ``active:`` if it pointed at the old name."""
+    """Rename a profile."""
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name, dry_run=dry_run)
         if not dry_run:

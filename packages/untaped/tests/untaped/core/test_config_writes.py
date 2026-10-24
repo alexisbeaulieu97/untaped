@@ -43,7 +43,7 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_set_writes_the_profile_and_returns_its_line(_config: Path) -> None:
-    _config.write_text("profiles:\n  default: {}\n  work: {}\n", encoding="utf-8")
+    _config.write_text("format_version: 2\nprofiles:\n  work: {}\n", encoding="utf-8")
     change = SetSetting(SettingsFileRepository())("demo.page_size", "10", profile="work")
     assert read_config_dict(_config)["profiles"]["work"] == {"demo": {"page_size": 10}}
     assert (change.outcome.key, change.outcome.profile, change.outcome.action) == (
@@ -89,18 +89,18 @@ def test_rank_refuses_an_owner_that_owns_no_contract() -> None:
 
 def test_unset_works_on_the_named_profile(_config: Path) -> None:
     _config.write_text(
-        "profiles:\n  default:\n    demo: {page_size: 1}\n  work:\n    demo: {page_size: 2}\n",
+        "format_version: 2\ndemo: {page_size: 1}\nprofiles:\n  work:\n    demo: {page_size: 2}\n",
         encoding="utf-8",
     )
     change = UnsetSetting(SettingsFileRepository())("demo.page_size", profile="work")
     assert change.outcome.profile == "work"
-    profiles = read_config_dict(_config)["profiles"]
-    assert profiles["default"] == {"demo": {"page_size": 1}}
-    assert not profiles["work"].get("demo")
+    written = read_config_dict(_config)
+    assert written["demo"] == {"page_size": 1}
+    assert not written["profiles"]["work"].get("demo")
 
 
 def test_set_refuses_a_value_changed_since_it_was_read(_config: Path) -> None:
-    _config.write_text("profiles:\n  default:\n    demo: {page_size: 5}\n", encoding="utf-8")
+    _config.write_text("format_version: 2\ndemo: {page_size: 5}\n", encoding="utf-8")
     use_case = SetSetting(SettingsFileRepository())
     expected = use_case.current("demo.page_size", profile="default")
     assert expected == 5
@@ -110,13 +110,13 @@ def test_set_refuses_a_value_changed_since_it_was_read(_config: Path) -> None:
         use_case("demo.page_size", "7", profile="default", expected=expected)
 
     assert exc.value.category == "conflict"
-    assert read_config_dict(_config)["profiles"]["default"]["demo"] == {"page_size": 6}
+    assert read_config_dict(_config)["demo"] == {"page_size": 6}
     use_case("demo.page_size", "8", profile="default", expected=6)  # read again: it writes
-    assert read_config_dict(_config)["profiles"]["default"]["demo"] == {"page_size": 8}
+    assert read_config_dict(_config)["demo"] == {"page_size": 8}
 
 
 def test_current_is_none_for_a_profile_that_does_not_exist(_config: Path) -> None:
-    _config.write_text("profiles:\n  default: {}\n", encoding="utf-8")
+    _config.write_text("format_version: 2\n", encoding="utf-8")
     assert SetSetting(SettingsFileRepository()).current("demo.page_size", profile="new") is None
 
 
@@ -130,8 +130,9 @@ def test_set_settings_writes_keys_only_valid_together_in_one_change(_config: Pat
         profile="default",
     )
 
-    assert read_config_dict(_config)["profiles"]["default"] == {
-        "pair": {"server": {"url": "https://a", "org": "acme"}}
+    assert read_config_dict(_config) == {
+        "format_version": 2,
+        "pair": {"server": {"url": "https://a", "org": "acme"}},
     }
     assert [(c.outcome.key, c.outcome.action) for c in changes] == [
         ("pair.server.url", "updated"),
@@ -153,7 +154,7 @@ def test_set_settings_refuses_every_key_when_one_changed_since_it_was_read(
     _config: Path,
 ) -> None:
     _config.write_text(
-        "profiles:\n  default:\n    pair:\n      server: {url: 'https://a', org: other}\n",
+        "format_version: 2\npair:\n  server: {url: 'https://a', org: other}\n",
         encoding="utf-8",
     )
     before = _config.read_text(encoding="utf-8")
@@ -166,8 +167,8 @@ def test_set_settings_refuses_every_key_when_one_changed_since_it_was_read(
 
 
 def test_set_settings_unsets_a_key_the_profile_set(_config: Path) -> None:
-    _config.write_text("profiles:\n  default:\n    pair: {retries: 5}\n", encoding="utf-8")
+    _config.write_text("format_version: 2\npair: {retries: 5}\n", encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({"pair.retries": None})
     assert change.outcome.action == "deleted"
     assert change.notes == (("success", "unset pair.retries in profile default"),)
-    assert not read_config_dict(_config)["profiles"]["default"].get("pair")
+    assert not read_config_dict(_config).get("pair")

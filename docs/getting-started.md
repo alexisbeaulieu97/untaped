@@ -143,8 +143,8 @@ its default and its environment variable.
 
 ## Use profiles for more than one environment
 
-A profile is a named set of settings. `default` is the base; other profiles
-override it field by field.
+A profile is a named set of settings. `default` is the base, the top level of
+`config.yml`; other profiles override it field by field.
 
 ```bash
 untaped profile create prod --copy-from default
@@ -153,12 +153,12 @@ untaped --profile prod auth login awx
 
 untaped profile list
 untaped --profile prod awx ping
-untaped profile use prod
+export UNTAPED_PROFILE=prod
 untaped profile current
 ```
 
 `--profile NAME` selects a profile for one command, anywhere in the command;
-`profile use` changes the default for every later command. See
+`UNTAPED_PROFILE` selects one for every command in that shell. See
 [Profiles](./configuration.md#profiles).
 
 ## First command in each plugin

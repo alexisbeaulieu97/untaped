@@ -18,6 +18,7 @@ from untaped.runtime.config_file import (
     mutate_config,
     mutate_plugin_state,
     read_config_dict,
+    read_state_dict,
     set_at_path,
     unset_at_path,
     write_config_dict,
@@ -25,17 +26,17 @@ from untaped.runtime.config_file import (
 from untaped.sdk import yaml_mapping_indent
 
 COMMENTED = """# untaped config -- hand edited
-active: work   # the profile I use most
+format_version: 2   # 12.0's layout
+
+# shared base layer
+untaped:
+  http:
+    verify_ssl: yes     # YAML 1.1 boolean, keep as written
+    timeout: 30
+github:
+  base_url: 'https://api.github.com'
 
 profiles:
-  # shared base layer
-  default:
-    untaped:
-      http:
-        verify_ssl: yes     # YAML 1.1 boolean, keep as written
-        timeout: 30
-    github:
-      base_url: 'https://api.github.com'
   work:
     github:
       token: old-token  # rotate monthly
@@ -79,18 +80,22 @@ def test_new_keys_are_appended_without_reordering(cfg: Path) -> None:
     mutate_config(lambda data: set_at_path(data, ("profiles", "work", "log_level"), "DEBUG"))
 
     text = cfg.read_text(encoding="utf-8")
-    assert text.startswith("# untaped config -- hand edited\nactive: work   # the profile")
+    assert text.startswith("# untaped config -- hand edited\nformat_version: 2   # 12.0's")
     assert "      token: old-token  # rotate monthly\n" in text
     assert "    log_level: DEBUG\n" in text
     assert read_config_dict(cfg)["profiles"]["work"]["log_level"] == "DEBUG"
     # Keys keep their original (unsorted) order.
-    assert list(read_config_dict(cfg)) == ["active", "profiles", "workspace"]
+    assert list(read_config_dict(cfg)) == [
+        "format_version",
+        "untaped",
+        "github",
+        "profiles",
+        "workspace",
+    ]
 
 
 def test_unset_keeps_surrounding_comments(cfg: Path) -> None:
-    mutate_config(
-        lambda data: unset_at_path(data, ("profiles", "default", "untaped", "http", "timeout"))
-    )
+    mutate_config(lambda data: unset_at_path(data, ("untaped", "http", "timeout")))
 
     text = cfg.read_text(encoding="utf-8")
     assert "timeout" not in text
@@ -102,7 +107,7 @@ def test_unset_keeps_surrounding_comments(cfg: Path) -> None:
 def test_untouched_yaml_1_1_scalars_keep_their_meaning(cfg: Path) -> None:
     mutate_config(lambda data: set_at_path(data, ("profiles", "work", "log_level"), "DEBUG"))
 
-    assert read_config_dict(cfg)["profiles"]["default"]["untaped"]["http"]["verify_ssl"] is True
+    assert read_config_dict(cfg)["untaped"]["http"]["verify_ssl"] is True
 
 
 @pytest.mark.parametrize(
@@ -113,7 +118,7 @@ def test_written_strings_read_back_as_strings(cfg: Path, value: str) -> None:
 
     assert read_config_dict(cfg)["profiles"]["work"]["github"]["token"] == value
     text = cfg.read_text(encoding="utf-8")
-    assert yaml.safe_load(text)["active"] == "work"
+    assert yaml.safe_load(text)["format_version"] == 2
     assert "# rotate monthly" in text  # round-tripped, not re-dumped
 
 
@@ -135,7 +140,7 @@ def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
     text = state_file.read_text(encoding="utf-8")
     assert "    - name: alpha   # first\n" in text
     assert text.startswith("# managed by untaped\n")
-    assert [row["name"] for row in read_config_dict(state_file)["workspace"]["active"]] == [
+    assert [row["name"] for row in read_state_dict(state_file)["workspace"]["active"]] == [
         "alpha",
         "beta",
     ]
@@ -143,13 +148,11 @@ def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
 
 
 def test_profile_writes_preserve_comments(cfg: Path) -> None:
-    repo = ProfileFileRepository()
-    repo.set_active("default")
-    repo.write("staging", {})
+    ProfileFileRepository().write("staging", {})
 
     text = cfg.read_text(encoding="utf-8")
-    assert text.startswith("# untaped config -- hand edited\nactive: default")
-    assert "# the profile I use most" in text
+    assert text.startswith("# untaped config -- hand edited\nformat_version: 2   # 12.0's")
+    assert "# shared base layer" in text
     assert "      token: old-token  # rotate monthly\n" in text
     assert read_config_dict(cfg)["profiles"]["staging"] == {}
 
@@ -157,35 +160,36 @@ def test_profile_writes_preserve_comments(cfg: Path) -> None:
 def test_profile_rename_keeps_the_profile_in_place_with_its_comments(cfg: Path) -> None:
     ProfileFileRepository().rename("work", "prod")
 
-    expected = _replace_line(COMMENTED, "active: work ", "active: prod ")
-    expected = _replace_line(expected, "  work:\n", "  prod:\n")
+    expected = _replace_line(COMMENTED, "  work:\n", "  prod:\n")
     assert cfg.read_text(encoding="utf-8") == expected
 
 
 def test_fresh_file_and_full_replacement_still_write(tmp_path: Path) -> None:
     path = tmp_path / "fresh.yml"
-    write_config_dict({"b": {"y": 1, "x": [1, 2]}, "a": "no"}, path)
+    write_config_dict({"format_version": 2, "b": {"y": 1, "x": [1, 2]}, "a": "no"}, path)
 
-    assert read_config_dict(path) == {"b": {"y": 1, "x": [1, 2]}, "a": "no"}
+    assert read_config_dict(path) == {"format_version": 2, "b": {"y": 1, "x": [1, 2]}, "a": "no"}
 
 
 def test_unparseable_original_falls_back_to_a_plain_dump(tmp_path: Path) -> None:
     path = tmp_path / "dupes.yml"
     # PyYAML accepts duplicate keys (last wins); ruamel.yaml rejects them.
-    path.write_text("a: 1\na: 2  # dup\n", encoding="utf-8")
+    path.write_text("format_version: 2\na: 1\na: 2  # dup\n", encoding="utf-8")
 
     mutate_config(lambda data: data.__setitem__("b", "no"), path)
 
-    assert read_config_dict(path) == {"a": 2, "b": "no"}
+    assert read_config_dict(path) == {"format_version": 2, "a": 2, "b": "no"}
 
 
 def test_keys_parsed_differently_are_rewritten_consistently(tmp_path: Path) -> None:
     path = tmp_path / "keys.yml"
-    path.write_text("# c\nflags:\n  on: 1  # yaml 1.1 bool key\n", encoding="utf-8")
+    path.write_text(
+        "# c\nformat_version: 2\nflags:\n  on: 1  # yaml 1.1 bool key\n", encoding="utf-8"
+    )
 
     mutate_config(lambda data: data["flags"].__setitem__("x", 2), path)
 
-    assert read_config_dict(path) == {"flags": {True: 1, "x": 2}}
+    assert read_config_dict(path) == {"format_version": 2, "flags": {True: 1, "x": 2}}
 
 
 @pytest.mark.parametrize(
@@ -217,8 +221,8 @@ def _rename(old: tuple[str, ...], new: tuple[str, ...]) -> None:
 
 def test_a_rename_hint_keeps_the_key_in_place_with_its_comment(cfg: Path) -> None:
     _rename(
-        ("profiles", "default", "untaped", "http", "verify_ssl"),
-        ("profiles", "default", "untaped", "http", "tls"),
+        ("untaped", "http", "verify_ssl"),
+        ("untaped", "http", "tls"),
     )
 
     assert cfg.read_text(encoding="utf-8") == _replace_line(
@@ -229,10 +233,8 @@ def test_a_rename_hint_keeps_the_key_in_place_with_its_comment(cfg: Path) -> Non
 
 
 def test_a_rename_to_another_mapping_is_removed_and_added(cfg: Path) -> None:
-    _rename(
-        ("profiles", "default", "untaped", "http", "timeout"), ("profiles", "default", "timeout")
-    )
+    _rename(("untaped", "http", "timeout"), ("timeout",))
 
     text = cfg.read_text(encoding="utf-8")
-    assert "        timeout: 30\n" not in text
-    assert read_config_dict(cfg)["profiles"]["default"]["timeout"] == 30
+    assert "    timeout: 30\n" not in text
+    assert read_config_dict(cfg)["timeout"] == 30

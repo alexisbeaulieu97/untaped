@@ -16,9 +16,7 @@ def test_the_timeout_alias_is_gone() -> None:
 def test_the_retired_http_timeout_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
     config = config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        yaml.safe_dump({"profiles": {"default": {"untaped": {"http": {"timeout": 9}}}}})
-    )
+    config.write_text(yaml.safe_dump({"format_version": 2, "untaped": {"http": {"timeout": 9}}}))
 
     assert load_core_part("http").timeout_seconds == HttpSettings().timeout_seconds
     assert "untaped.http.timeout" not in capsys.readouterr().err

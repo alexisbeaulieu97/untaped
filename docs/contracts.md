@@ -151,13 +151,11 @@ declare `extensions`, nor `caches`, kept for cache settings; one that
 does is quarantined (`bad-settings-keys`).
 
 ```yaml
-profiles:
-  default:
-    workspace:
-      extensions:
-        repo_source:
-          rank:
-            repos: [github, gitlab]
+workspace:
+  extensions:
+    repo_source:
+      rank:
+        repos: [github, gitlab]
 ```
 
 `untaped plugin rank workspace.repo_source repos github gitlab` writes that
@@ -166,7 +164,7 @@ contract or method the owner doesn't have, and a bridge method, which is
 never ranked. The environment overrides it like any setting:
 `UNTAPED_WORKSPACE__EXTENSIONS__REPO_SOURCE__RANK__REPOS='["github","gitlab"]'`.
 Loading config checks only the names' spelling, so a ranking in
-`profiles.default` never breaks a profile where a ranked plugin isn't
+the base never breaks a profile where a ranked plugin isn't
 installed or configured.
 
 `untaped plugin contracts` lists every contract method with its

@@ -21,7 +21,7 @@ can be written, and the places add up:
 
 | Where | For |
 |---|---|
-| `profiles.<name>.lint.ignore` (a list) | every run in that profile |
+| `lint.ignore` (a list) in `config.yml` | every run (in `profiles.<name>`, every run in that profile) |
 | `ignore:` in `.untaped/lint.yml` | every run in that repository |
 | `--ignore` (repeatable) | one run |
 

@@ -30,7 +30,7 @@ def test_api_prefix_must_start_with_a_slash() -> None:
 def test_the_retired_test_timeout_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(yaml.safe_dump({"profiles": {"default": {"awx": {"test_timeout": 90.0}}}}))
+    config.write_text(yaml.safe_dump({"format_version": 2, "awx": {"test_timeout": 90.0}}))
 
     settings = get_config_section("awx", AwxSettings)
 

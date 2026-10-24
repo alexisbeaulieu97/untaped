@@ -88,7 +88,7 @@ def store_root(
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     profile = {"github": {"token": _TOKEN}, "git": {"store_dir": str(root)}}
-    config.write_text(yaml.safe_dump({"profiles": {"default": profile}}), encoding="utf-8")
+    config.write_text(yaml.safe_dump({"format_version": 2, **profile}), encoding="utf-8")
     get_settings.cache_clear()
     bootstrap.compose_root(candidates=[plugin_candidate(s) for s in (GIT, GITHUB, ANSIBLE)])
     yield root
@@ -317,7 +317,7 @@ def _save_sources(*names: str, repo: str = "acme/site") -> None:
     """Save sources ``names`` (each selecting ``repo``) and point the index at the tests' file."""
     config = home().expanduser() / "config.yml"
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
-    data["profiles"]["default"]["ansible"] = {"index_path": str(config.parent / "index.sqlite3")}
+    data["ansible"] = {"index_path": str(config.parent / "index.sqlite3")}
     config.write_text(yaml.safe_dump(data), encoding="utf-8")
     sources = [{"name": name, "repos": [repo]} for name in names]
     state = {"ansible": {"sources": sources}}

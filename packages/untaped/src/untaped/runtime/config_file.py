@@ -23,10 +23,12 @@ from typing import Any
 from pydantic import SecretStr
 
 from untaped.runtime.settings import (
+    FORMAT_VERSION,
     FormatVersionError,
     check_state_section_name,
     get_settings,
     load_config_yaml,
+    load_state_yaml,
     resolve_config_path,
     resolve_state_path,
 )
@@ -48,6 +50,14 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     return load_config_yaml(path or resolve_config_path())
 
 
+def read_state_dict(path: Path | None = None) -> dict[str, Any]:
+    """Load a state file (default: the top-level ``state.yml``) as a plain dict.
+
+    Raises as :func:`read_config_dict` does, but a state file may be unstamped.
+    """
+    return load_state_yaml(path or resolve_state_path())
+
+
 def write_config_dict(
     data: dict[str, Any], path: Path | None = None, *, renames: Iterable[KeyRename] = ()
 ) -> None:
@@ -57,6 +67,8 @@ def write_config_dict(
     comments, key order and formatting of everything else are preserved.
     ``renames`` names keys that moved (``(old_path, new_path)``); a key renamed
     within its mapping keeps its position and comment.
+    A ``data`` without ``format_version`` is written with
+    :data:`~untaped.runtime.settings.FORMAT_VERSION` first.
     Creates parent directories if needed. The write goes through
     :func:`~untaped.sdk.storage._fs.atomic_write` with permissions ``0o600`` (so secrets
     are never world-readable, even briefly): it is durable, writes through a
@@ -64,13 +76,25 @@ def write_config_dict(
     and no temp file behind.
     """
     target = path or resolve_config_path()
-    atomic_write(target, _render(data, target, tuple(renames)), mode=0o600)
+    if "format_version" not in data:
+        data = {"format_version": FORMAT_VERSION, **data}
+    atomic_write(target, _render(data, target, load_config_yaml, tuple(renames)), mode=0o600)
 
 
-def _render(data: dict[str, Any], target: Path, renames: tuple[KeyRename, ...] = ()) -> str:
+def write_state_dict(data: dict[str, Any], path: Path) -> None:
+    """Atomically write a state file, as :func:`write_config_dict` writes ``config.yml``."""
+    atomic_write(path, _render(data, path, load_state_yaml), mode=0o600)
+
+
+def _render(
+    data: dict[str, Any],
+    target: Path,
+    load: Callable[[Path], dict[str, Any]],
+    renames: tuple[KeyRename, ...] = (),
+) -> str:
     try:
         original = target.read_text(encoding="utf-8")
-        before = load_config_yaml(target)
+        before = load(target)
     except FormatVersionError:
         raise
     except OSError, UnicodeDecodeError, ConfigError:
@@ -189,7 +213,7 @@ def read_plugin_state(
     core's own sections instead.
     """
     check_state_section_name(section, core=core)
-    raw = read_config_dict(path or resolve_state_path()).get(section)
+    raw = read_state_dict(path).get(section)
     return copy.deepcopy(raw) if isinstance(raw, dict) else {}
 
 
@@ -215,7 +239,7 @@ def mutate_plugin_state(
     check_state_section_name(section, core=core)
     state_path = path or resolve_state_path()
     with _locked(state_path):
-        state = read_config_dict(state_path)
+        state = read_state_dict(state_path)
         existing = state.get(section)
         if existing is not None and not isinstance(existing, dict):
             raise ConfigError(
@@ -231,7 +255,7 @@ def mutate_plugin_state(
         else:
             state.pop(section, None)
         try:
-            write_config_dict(state, state_path)
+            write_state_dict(state, state_path)
         except OSError as exc:
             raise ConfigError(
                 f"could not write {state_path}: {exc.strerror or exc}; nothing changed"
