@@ -354,6 +354,19 @@ the model's shape. `copy_data_file(source, target)` copies one with its
 freshness cleared. A model may not name a field `untaped`: that key is the
 stamp's.
 
+A 12.0 plugin names the file and its model once: `DataFile[Mark].at(path)`
+reads with `read()` (no unstamped files) and writes with `write(value,
+refreshed_at=, exclusive=)` under the file's lock (a 10 s wait; the lock
+lives under the home's `locks/`, never beside the file). A write keeps the
+keys a newer untaped added and never writes over a newer untaped's file or
+one it cannot read; `copy_to(path)` copies a file that reads, the same way.
+An operation that must not run twice at once declares a lock on the plugin
+class, `sync = Lock(wait=timedelta(minutes=10))`: `with
+DotfilesPlugin.sync.locked():` waits that long for another process
+(`dotfiles.sync is busy (another untaped process)` after it),
+`try_locked()` yields whether it got it, and taking it again in one thread
+only counts.
+
 ## Status rows and tests
 
 For a command that reports a cache's state, subclass `FreshnessRecord` and
