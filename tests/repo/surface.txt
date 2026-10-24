@@ -4711,6 +4711,7 @@ sdk untaped.sdk.Cache.spelled
 sdk untaped.sdk.Cache.split
 sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
+sdk untaped.sdk.Cache.version_only
 sdk untaped.sdk.Cache.where
 sdk untaped.sdk.Cancel()  [experimental]
 sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
@@ -4746,7 +4747,7 @@ sdk untaped.sdk.CmdError(error)  [experimental]
 sdk untaped.sdk.CmdError.error  [experimental]
 sdk untaped.sdk.Column
 sdk untaped.sdk.ColumnsOption
-sdk untaped.sdk.Command()
+sdk untaped.sdk.Command implement=
 sdk untaped.sdk.Command.aliases class
 sdk untaped.sdk.Command.ctx
 sdk untaped.sdk.Command.run()
@@ -5363,9 +5364,10 @@ sdk untaped.sdk.MigrationOptions(measure=) default=true
 sdk untaped.sdk.MigrationOptions.dissociate
 sdk untaped.sdk.MigrationOptions.dry_run
 sdk untaped.sdk.MigrationOptions.measure
-sdk untaped.sdk.MigrationOutcome(*, action, id)
+sdk untaped.sdk.MigrationOutcome(*, action)
 sdk untaped.sdk.MigrationOutcome(detail=) default=""
 sdk untaped.sdk.MigrationOutcome(error=) default=None
+sdk untaped.sdk.MigrationOutcome(id=) default=""
 sdk untaped.sdk.MigrationOutcome.__init_subclass__(kind=) default=None
 sdk untaped.sdk.MigrationOutcome.action
 sdk untaped.sdk.MigrationOutcome.detail
@@ -5652,7 +5654,7 @@ sdk untaped.sdk.PipeEnvelope(kind, record, lineno)
 sdk untaped.sdk.PipeEnvelope.kind
 sdk untaped.sdk.PipeEnvelope.lineno
 sdk untaped.sdk.PipeEnvelope.record
-sdk untaped.sdk.Plugin()
+sdk untaped.sdk.Plugin implement=
 sdk untaped.sdk.Plugin.commands class
 sdk untaped.sdk.Plugin.fills class
 sdk untaped.sdk.Plugin.offers class
@@ -5660,8 +5662,11 @@ sdk untaped.sdk.Plugin.runs class
 sdk untaped.sdk.Plugin.settings
 sdk untaped.sdk.Plugin.skill class
 sdk untaped.sdk.Plugin.stability class
+sdk untaped.sdk.PluginContext(owner@2=) default=None
 sdk untaped.sdk.PluginContext(settings)
 sdk untaped.sdk.PluginContext.diag
+sdk untaped.sdk.PluginContext.owner
+sdk untaped.sdk.PluginContext.plugin
 sdk untaped.sdk.PluginContext.settings
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
 sdk untaped.sdk.PluginSpec(caches@12=) default=[]

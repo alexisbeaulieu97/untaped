@@ -20,6 +20,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 IMPLEMENTERS: Mapping[str, str] = {
+    "untaped.sdk.Command": "every command subclasses it, and core calls its run()",
+    "untaped.sdk.Plugin": "every plugin subclasses it, and core reads its attributes",
     "untaped.sdk.contracts.Contract": "every provider subclasses it, and the SDK calls its ready()",
     "untaped.sdk.testing.PromptBackend": (
         "tests pass their own backend to invoke_cli(prompt_backend=) and "

@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import copy
 import functools
+import hashlib
+import logging
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
@@ -26,7 +28,7 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeGuard, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeGuard, cast, overload
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -36,6 +38,13 @@ from packaging.version import InvalidVersion
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, create_model, model_validator
 from pydantic.fields import FieldInfo
 
+from untaped.runtime.declaration import (
+    Declaration,
+    KeptDeclaration,
+    PluginDecl,
+    Problem,
+    Quarantined,
+)
 from untaped.runtime.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -44,6 +53,7 @@ from untaped.runtime.settings import (
     legacy_credential_fields,
     reserved_section_keys,
     section_model,
+    timed_caches,
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._block import OwnedBlock
@@ -68,7 +78,8 @@ from untaped.sdk.network.credentials import (
     key_fields,
 )
 from untaped.sdk.records import KindError, OutcomeRecord
-from untaped.sdk.storage.cache import Cache
+from untaped.sdk.run import PluginHandle
+from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.state import (
     ProjectStateRows,
     StateCollection,
@@ -83,10 +94,13 @@ if TYPE_CHECKING:
     from untaped.runtime.mount import Mount
     from untaped.sdk.contracts import Contract
     from untaped.sdk.plugin import Plugin
+    from untaped.sdk.progress import ProgressHandle
     from untaped.sdk.storage.holds import ItemStore
 
 #: What a plugin lists on ``PluginSpec.stores`` for the data it keeps in ``state.yml``.
 type StateDeclaration = StateRows[Any] | ProjectStateRows[Any] | StateMap | StateCollection
+
+_LOG = logging.getLogger("untaped.registry")
 
 #: Distribution whose version ``Requires-Dist: untaped`` is checked against.
 _CORE_DISTRIBUTION = "untaped"
@@ -251,9 +265,21 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check or migration body."""
+    """Frozen per-invocation snapshot handed to a doctor-check or migration body.
+
+    ``owner`` names the plugin the body runs for, which core sets; the body
+    reaches its folder as ``ctx.plugin.dir``, as a command does.
+    """
 
     settings: BaseModel | None
+    owner: str | None = None
+
+    @property
+    def plugin(self) -> PluginHandle:
+        """The plugin the body runs for: its folder and the files it names."""
+        if self.owner is None:
+            raise LookupError("this context runs for no plugin: core sets owner= when it builds it")
+        return PluginHandle(name=self.owner, home=plugins_root().parent)
 
     @property
     def diag(self) -> Diagnostics:
@@ -298,11 +324,15 @@ class MigrationRow(BaseModel):
 
 
 class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
-    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…"""
+    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…
+
+    ``id`` is the migration's; a plugin class's migration leaves it out and
+    core stamps it.
+    """
 
     table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "detail")
 
-    id: str
+    id: str = ""
     detail: str = ""
 
 
@@ -437,7 +467,8 @@ class PluginSpec:
     surface, and its warnings name this plugin's distribution.
 
     ``caches`` are the :class:`~untaped.sdk.storage.cache.Cache` objects the plugin
-    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
+    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``,
+    except a version-only one (``max_age=None``), which has none.
     ``stores`` is what the plugin keeps on disk outside its settings: the
     :class:`~untaped.sdk.storage.store.Store` objects, each file in a layout of its own
     (``doctor`` lists them), and the :class:`~untaped.sdk.storage.holds.ItemStore`
@@ -530,6 +561,47 @@ class PluginSpec:
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 
+class DeclaredBlocks[B](Sequence[B]):
+    """A 12.0 plugin's blocks of one kind, for its spec: counted from its declaration, loaded late.
+
+    A start reads the declaration, not the plugin class, which imports every
+    command; the class is imported the first time a block is read (``doctor``,
+    ``setup``). Its caches' settings come from the declaration too
+    (``timed``), so composing the settings section never imports it. This
+    goes with the 11.x seam (:func:`untaped.runtime.mount.plugin_spec`).
+    """
+
+    def __init__(
+        self,
+        ids: tuple[str, ...],
+        load: Callable[[], tuple[B, ...]],
+        *,
+        timed: tuple[Cache[Any], ...] = (),
+    ) -> None:
+        #: Each block's id (``<plugin>.<name>``), in the class's order.
+        self.ids = ids
+        self._load = load
+        #: The caches with a max age, as their settings read them (caches only).
+        self.timed = timed
+
+    def __len__(self) -> int:
+        return len(self.ids)
+
+    def __iter__(self) -> Iterator[B]:
+        # none declared: nothing to import the class for
+        return iter(self._load() if self.ids else ())
+
+    @overload
+    def __getitem__(self, index: int) -> B: ...
+    @overload
+    def __getitem__(self, index: slice) -> tuple[B, ...]: ...
+    def __getitem__(self, index: int | slice) -> B | tuple[B, ...]:
+        return self._load()[index]
+
+    def __repr__(self) -> str:
+        return f"DeclaredBlocks({', '.join(self.ids)})"
+
+
 def _check_listings(spec: PluginSpec) -> None:
     """``contracts``, ``deprecations`` and each ``provides`` entry are functions."""
     for listing in ("contracts", "deprecations"):
@@ -566,15 +638,23 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
-    if owner or spec.caches or spec.credentials:
+    caches = _timed_caches(spec)
+    if owner or caches or spec.credentials:
         return section_model(
             spec.settings or _NoSettings,
             extensions=owner,
-            caches=spec.caches,
+            caches=caches,
             section=spec.name,
-            credentials=spec.credentials,
+            credentials=tuple(spec.credentials),
         )
     return spec.settings
+
+
+def _timed_caches(spec: PluginSpec) -> tuple[Cache[Any], ...]:
+    """The plugin's caches with a setting; a 12.0 plugin's from its declaration, unimported."""
+    if isinstance(spec.caches, DeclaredBlocks):
+        return spec.caches.timed
+    return timed_caches(spec.caches)
 
 
 def settings_model(spec: PluginSpec) -> type[BaseModel]:
@@ -1006,7 +1086,7 @@ def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
-        | ({"caches"} if spec.caches else set())
+        | ({"caches"} if _timed_caches(spec) else set())
         | set(
             legacy_credential_fields(
                 spec.settings or _NoSettings, spec.credentials, section=spec.name
@@ -1438,11 +1518,16 @@ def _commit(
     registered = RegisteredPlugin(spec=spec, plugin_ref=ref, skills=tuple(spec.skills), app=app)
     for skill in registered.skills:
         state.skill_names.add(skill.name)
-    for check in spec.doctor_checks:
-        state.doctor_ids.add(check.id)
-    for migration in spec.migrations:
-        state.migration_ids.add(migration.id)
+    state.doctor_ids.update(_ids(spec.doctor_checks))
+    state.migration_ids.update(_ids(spec.migrations))
     return registered
+
+
+def _ids(blocks: Sequence[DoctorCheck] | Sequence[DirMigration]) -> tuple[str, ...]:
+    """Each block's id; a 12.0 plugin's from its declaration, so its class stays unimported."""
+    if isinstance(blocks, DeclaredBlocks):
+        return blocks.ids
+    return tuple(block.id for block in blocks)
 
 
 def resolve_target(target: object) -> object:
@@ -1473,27 +1558,141 @@ def compose(
     runs at first dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
     An eager factory runs only after the contest, so a claimant whose factory
     would fail still counts as a claimant.
+
+    The 12.0 plugin classes' part is kept in core's declaration cache
+    (:data:`untaped.core.plugin.DECLARATION`), keyed by the candidates:
+    while this install's code is unchanged, a later composition of the same
+    candidates reads it and imports no plugin class (each is imported the
+    first time its code runs). A candidate given as an object, not an entry
+    point's target, composes without it.
     """
-    state = _CompositionState(shell)
     ordered = sorted(candidates, key=_candidate_order)
+    if not all(isinstance(candidate.target, str) for candidate in ordered):
+        return _compose(shell, ordered)
+    key, read = _declaration_key(ordered), _candidates_read(ordered)
+    composed: list[CompositionResult] = []
+    filling: list[bool] = []
+
+    def fill(_key: str, _progress: ProgressHandle) -> Filled[KeptDeclaration]:
+        filling.append(True)
+        composed.append(_compose(shell, ordered))
+        return Filled(
+            value=KeptDeclaration(candidates=read, declaration=_declaration_of(composed[-1]))
+        )
+
+    declarations = _declarations()
+    try:
+        served = declarations.serve({key: "composed plugins"}, refresh=None, fill=fill)
+        if not composed:
+            try:
+                kept = served.value[key]
+                if kept.candidates != read:
+                    raise _StaleDeclaration("the candidates changed")
+                return _compose(shell, ordered, kept.declaration)
+            except Exception:
+                # a candidate it doesn't account for, or a part of it that no longer loads
+                # (a dependency gone): compose afresh and keep that instead
+                _LOG.debug("the kept declaration does not compose", exc_info=True)
+                declarations.serve({key: "composed plugins"}, refresh=True, fill=fill)
+    except Exception:
+        if composed:
+            return composed[-1]
+        if filling:
+            raise  # composing itself failed: no cache stands in for that
+        # the cache failed (its version, its folder): compose without it, as before it existed
+        _LOG.debug("composing without the declaration cache", exc_info=True)
+        return _compose(shell, ordered)
+    return composed[-1]
+
+
+def _declarations() -> Cache[KeptDeclaration]:
+    """Core's declaration cache, named ``untaped.declaration`` (``plugins/untaped/cached/``).
+
+    Composition runs before any run exists, and core composes as a plugin of
+    itself only from 12.0 delivery step 4, so the cache is read spelled.
+    """
+    from untaped.core.plugin import DECLARATION, NAME  # noqa: PLC0415 - core imports the runtime
+
+    return DECLARATION._spelled_as(NAME, "declaration")
+
+
+def _declaration_key(ordered: Sequence[PluginCandidate]) -> str:
+    """The cache key of ``ordered`` in this environment: each name, distribution and target.
+
+    The environment (``sys.prefix``) is part of it, so two virtualenvs sharing
+    one home keep a declaration each instead of replacing each other's.
+    """
+    listed = [sys.prefix] + [
+        f"{candidate.name} {candidate.distribution} {candidate.target}" for candidate in ordered
+    ]
+    return _digest(listed)
+
+
+def _candidates_read(ordered: Sequence[PluginCandidate]) -> str:
+    """A digest of every candidate field composition reads, the key's and the metadata gates'."""
+    return _digest(
+        [
+            repr(
+                (
+                    candidate.name,
+                    candidate.distribution,
+                    candidate.target,
+                    candidate.distribution_version,
+                    candidate.entry_point_group,
+                    candidate.requires_dist,
+                )
+            )
+            for candidate in ordered
+        ]
+    )
+
+
+def _digest(lines: list[str]) -> str:
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
+
+
+class _StaleDeclaration(Exception):
+    """The cached declaration does not account for a candidate: compose without it."""
+
+
+def _compose(
+    shell: ApplicationSpec,
+    ordered: Sequence[PluginCandidate],
+    declared: Declaration | None = None,
+) -> CompositionResult:
+    """:func:`compose` over ``ordered``; with ``declared``, its plugin classes come from it."""
+    state = _CompositionState(shell)
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, PluginSpec | type[Plugin]] = {}
+    replayed: dict[int, PluginDecl] = {}
+    contested = _replay(ordered, declared, replayed, quarantined)
     for index, candidate in enumerate(ordered):
+        if index in replayed or index in quarantined:
+            continue
         try:
             provided[index] = _provide(candidate, state)
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
-    for index, contest in _contested(ordered, provided).items():
-        quarantined[index] = contest.to_record(ordered[index])
-        del provided[index]
-    claims, mount = _mounted(ordered, provided, state, quarantined)
+        if declared is not None and _is_plugin_class(provided.get(index)):
+            raise _StaleDeclaration(candidate.name)
+    classes = {index for index, each in provided.items() if not isinstance(each, PluginSpec)}
+    claimants = provided.keys() | replayed.keys() | contested
+    for index, contest in _contested(ordered, claimants).items():
+        quarantined.setdefault(index, contest.to_record(ordered[index]))
+        provided.pop(index, None)
+        replayed.pop(index, None)
+    if declared is None:
+        claims, mount = _mounted(ordered, provided, state, quarantined)
+    else:
+        claims, mount = _replayed(ordered, provided, replayed, declared)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
         try:
+            if index not in replayed:  # a replayed plugin passed these when it was composed
+                _check_doctor_checks(spec, state)
+                _check_migrations(spec, state)
             _check_skills(spec, state)
-            _check_doctor_checks(spec, state)
-            _check_migrations(spec, state)
             factory = spec.app_factory
             staged = (
                 None if factory is None or spec.help is not None else _check_factory(spec, factory)
@@ -1508,12 +1707,74 @@ def compose(
             requires_dist=candidate.requires_dist,
         )
         plugins.append(_commit(spec, ref, state, staged))
+    if declared is None and classes:
+        if mount is None:  # every class was refused before composing (a contested name)
+            from untaped.runtime.mount import Mount  # noqa: PLC0415 - 12.0 plugins only
+
+            mount = Mount.of(Declaration())
+        mount = mount.kept(_refused(ordered, classes, quarantined, mount))
     return CompositionResult(
         plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
         candidates=tuple(ordered),
         mount=mount,
     )
+
+
+def _replay(
+    ordered: Sequence[PluginCandidate],
+    declared: Declaration | None,
+    replayed: dict[int, PluginDecl],
+    quarantined: dict[int, QuarantineRecord],
+) -> set[int]:
+    """Each candidate ``declared`` composed or refused, unimported; the ones it found contested.
+
+    A contested one is still a claimant, so the plugin sharing its name is quarantined again.
+    """
+    if declared is None:
+        return set()
+    known: dict[tuple[str, str], PluginDecl | Quarantined] = {
+        (each.name, each.target): each for each in declared.quarantined
+    }
+    known.update({(each.name, each.target): each for each in declared.plugins})
+    contested: set[int] = set()
+    for index, candidate in enumerate(ordered):
+        found = known.get((candidate.name, candidate_entry_point(candidate)))
+        if isinstance(found, PluginDecl):
+            replayed[index] = found
+        elif found is not None:
+            quarantined[index] = _Quarantine(found.reason, found.detail).to_record(candidate)
+            if found.reason == "duplicate-name":
+                contested.add(index)
+    return contested
+
+
+def _refused(
+    ordered: Sequence[PluginCandidate],
+    classes: set[int],
+    quarantined: Mapping[int, QuarantineRecord],
+    mount: Mount,
+) -> tuple[Quarantined, ...]:
+    """Each plugin class quarantined, as the declaration remembers it."""
+    refused: list[Quarantined] = []
+    for index in sorted(classes & quarantined.keys()):
+        record, candidate = quarantined[index], ordered[index]
+        problems = mount.problems.get(candidate.name) or (
+            Problem(rule=record.reason, where=candidate.name, detail=record.detail),
+        )
+        refused.append(
+            Quarantined(
+                name=candidate.name,
+                target=candidate_entry_point(candidate),
+                problems=problems,
+                reason=record.reason,
+            )
+        )
+    return tuple(refused)
+
+
+def _declaration_of(result: CompositionResult) -> Declaration:
+    return Declaration() if result.mount is None else result.mount.declaration
 
 
 def _mounted(
@@ -1535,6 +1796,7 @@ def _mounted(
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
+    problems: dict[str, tuple[Problem, ...]] = {}
     while True:
         mount = compose_plugins(
             [
@@ -1543,13 +1805,13 @@ def _mounted(
             ]
         )
         refused = {each.name: each for each in mount.declaration.quarantined}
+        problems.update({name: each.problems for name, each in refused.items()})
         mounted: dict[int, PluginSpec] = {}
         for index in classes:
             candidate = ordered[index]
             try:
                 if candidate.name in refused:
-                    problems = refused[candidate.name].problems
-                    raise _Quarantine("bad-plugin-class", "; ".join(map(str, problems)))
+                    raise _Quarantine("bad-plugin-class", refused[candidate.name].detail)
                 spec = plugin_spec(mount, candidate.name)
                 _check_declaration(spec, state)
             except _Quarantine as failed:
@@ -1557,10 +1819,29 @@ def _mounted(
                 continue
             mounted[index] = spec
         if len(mounted) == len(classes):
+            mount.problems.update(problems)
             return dict(sorted({**claims, **mounted}.items())), mount
         # A class quarantined here must not shape the others' declaration
         # (a kind it owned, a command another one derives): compose without it.
         classes = {index: cls for index, cls in classes.items() if index in mounted}
+
+
+def _replayed(
+    ordered: Sequence[PluginCandidate],
+    provided: dict[int, PluginSpec | type[Plugin]],
+    replayed: Mapping[int, PluginDecl],
+    declared: Declaration,
+) -> tuple[dict[int, PluginSpec], Mount | None]:
+    """Every claim as a spec, the plugin classes' read from ``declared``, none imported."""
+    claims = {index: spec for index, spec in provided.items() if isinstance(spec, PluginSpec)}
+    if not declared.plugins and not replayed:
+        return claims, None
+    from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
+
+    mount = Mount.of(declared)
+    for index, plugin in replayed.items():
+        claims[index] = plugin_spec(mount, plugin.name)
+    return dict(sorted(claims.items())), mount
 
 
 def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
@@ -1580,9 +1861,7 @@ def _entry_target(candidate: PluginCandidate, cls: type[Plugin]) -> str:
     return candidate.target if isinstance(candidate.target, str) else target_of(cls)
 
 
-def _contested(
-    ordered: Sequence[PluginCandidate], claims: Mapping[int, object]
-) -> dict[int, _Quarantine]:
+def _contested(ordered: Sequence[PluginCandidate], claims: Iterable[int]) -> dict[int, _Quarantine]:
     """A quarantine per claimant of a plugin name two or more claims share.
 
     The name is also the config section and CLI group, so one contest

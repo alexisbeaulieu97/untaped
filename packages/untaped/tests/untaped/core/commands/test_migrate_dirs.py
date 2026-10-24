@@ -709,3 +709,32 @@ def test_a_failed_row_a_migration_builds_itself_carries_an_error() -> None:
     assert result.exit_code == 1
     (outcome,) = json.loads(result.stdout)
     assert (outcome["detail"], outcome["error"]["category"]) == ("disk full", "failed")
+
+
+def test_a_migration_reaches_its_folder_on_ctx_and_core_stamps_its_outcomes() -> None:
+    """``ctx.plugin.dir`` is the plugin's folder; an outcome without ``id`` gets the migration's."""
+    seen: list[Path] = []
+
+    def preview(ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
+        seen.append(ctx.plugin.dir)
+        return [MigrationRow(action="move", source=str(_old("alpha")), destination=str(seen[0]))]
+
+    def apply(ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
+        seen.append(ctx.plugin.dir)
+        return [MigrationOutcome(action="moved")]
+
+    migration = DirMigration(id="alpha.data", title="old data", preview=preview, apply=apply)
+    _old("alpha").mkdir(parents=True)
+
+    result = _run("--yes", "--format", "json", specs=[_spec("alpha", migration)])
+
+    assert result.exit_code == 0, result.stderr
+    assert [(row["id"], row["action"]) for row in json.loads(result.stdout)] == [
+        ("alpha.data", "moved")
+    ]
+    assert set(seen) == {plugin_dir(_spec("alpha"))}
+
+
+def test_a_context_built_without_a_plugin_says_so() -> None:
+    with pytest.raises(LookupError, match="runs for no plugin"):
+        PluginContext(settings=None).plugin  # noqa: B018 - the property raises

@@ -1,17 +1,18 @@
-"""The records ``untaped hello`` writes, each declaring its kind on the model.
+"""The records ``untaped hello`` writes.
 
-The app imports this module, so ``untaped plugin schema hello.salutation``
-finds the kind before any command runs. Everything else names the model:
-``kind_of(Salutation)``, ``accepts=(Salutation,)``.
+A record's kind comes from the command that prints it: ``Say`` prints
+:class:`Salutation`, so its kind is ``hello.salutation``.
 """
 
 from __future__ import annotations
 
-from untaped.sdk import Record
+from typing import Annotated
+
+from untaped.sdk import Column, Key, Record
 
 
-class Salutation(Record, kind="hello.salutation"):
+class Salutation(Record):
     """One greeting ``untaped hello say`` made: whom it greets and what it says."""
 
-    name: str
-    text: str
+    name: Annotated[str, Key, Column]
+    text: Annotated[str, Column]

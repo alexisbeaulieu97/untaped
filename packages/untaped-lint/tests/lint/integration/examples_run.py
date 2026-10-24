@@ -12,17 +12,27 @@ from __future__ import annotations
 import json
 import sys
 import tomllib
-from importlib import import_module, metadata
+from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 EXAMPLES = Path(__file__).resolve().parents[5] / "examples"
 NAMES = ("hello", "shelf", "library")
 
 
+def _project(name: str) -> dict[str, Any]:
+    path = EXAMPLES / f"untaped-{name}" / "pyproject.toml"
+    return tomllib.loads(path.read_text(encoding="utf-8"))["project"]
+
+
+def _target(name: str) -> str:
+    """The example's entry point, read from its pyproject.toml."""
+    return str(_project(name)["entry-points"]["untaped.plugins"][name])
+
+
 def _requires(name: str) -> tuple[str, ...]:
     """The example's ``Requires-Dist``, read from its pyproject.toml."""
-    path = EXAMPLES / f"untaped-{name}" / "pyproject.toml"
-    project = tomllib.loads(path.read_text(encoding="utf-8"))["project"]
+    project = _project(name)
     extras = project.get("optional-dependencies", {})
     return (
         *project["dependencies"],
@@ -35,12 +45,17 @@ def main() -> None:
         sys.path.insert(0, str(EXAMPLES / f"untaped-{name}" / "src"))
     from untaped.runtime.bootstrap import build_root_app
     from untaped.sdk import installed_plugins
-    from untaped.sdk.testing import CliInvoker, PluginCandidate, compose_with, plugin_candidate
+    from untaped.sdk.testing import CliInvoker, PluginCandidate, compose_with
     from untaped_lint.application.subjects import plugin_subject
     from untaped_lint.testing import run
 
     candidates = [
-        plugin_candidate(import_module(f"untaped_{name}").SPEC, requires_dist=_requires(name))
+        PluginCandidate(
+            distribution=f"untaped-{name}",
+            name=name,
+            target=_target(name),
+            requires_dist=_requires(name),
+        )
         for name in NAMES
     ]
     candidates.append(

@@ -8,9 +8,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-from untaped_hello.records import Salutation
-
-from untaped.sdk import Progress, StaleData, kind_of
+from untaped.sdk import Progress, StaleData
 from untaped.sdk.testing import cache_clock, invoke_root
 from untaped_lint.testing import assert_clean
 
@@ -20,12 +18,18 @@ def test_hello_passes_lint() -> None:
 
 
 def test_hello_loads_lazily() -> None:
-    """A fresh interpreter: rendering the root help never imports the CLI."""
+    """A fresh interpreter after the first start: rendering the root help never imports the CLI.
+
+    The first start composes the plugin class, which imports its commands,
+    and core keeps what it composed; every start after that reads it.
+    """
     code = (
         "import sys; from untaped.sdk.testing import invoke_root; "
         "r = invoke_root(['--help']); "
         "print(r.exit_code, 'hello' in r.stdout, 'untaped_hello.cli' in sys.modules)"
     )
+    first = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert first.stdout.split()[:2] == ["0", "True"]
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.split() == ["0", "True", "False"]
 
@@ -51,7 +55,7 @@ def test_hello_greets_with_a_configured_greeting() -> None:
 def test_hello_say_pipes_its_greetings_back_in_by_their_model() -> None:
     piped = invoke_root(["hello", "say", "ada", "grace", "--format", "pipe"])
     assert piped.exit_code == 0, piped.stderr
-    assert {json.loads(line)["kind"] for line in piped.stdout.splitlines()} == {kind_of(Salutation)}
+    assert {json.loads(line)["kind"] for line in piped.stdout.splitlines()} == {"hello.salutation"}
 
     again = invoke_root(["hello", "say", "--stdin", "--format", "json"], input=piped.stdout)
     assert again.exit_code == 0, again.stderr
@@ -64,7 +68,7 @@ def test_hello_say_refuses_records_of_another_kind() -> None:
     result = invoke_root(["hello", "say", "--stdin"], input=plugins)
 
     assert result.exit_code == 2
-    assert f"expected '{kind_of(Salutation)}'" in result.stderr
+    assert "expected 'hello.salutation'" in result.stderr
 
 
 def test_hello_moves_its_old_greetings_with_migrate_dirs() -> None:

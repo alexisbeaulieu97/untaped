@@ -17,12 +17,14 @@ reads (:func:`plugin_spec`), so ``config``, ``plugin list``, ``skills`` and
 
 from __future__ import annotations
 
+import functools
 import inspect
 import types
 import typing
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from functools import cached_property, partial
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeGuard, cast, get_args, get_origin
 
@@ -31,14 +33,17 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import (
+    BlockDecl,
     CommandDecl,
     Declaration,
     GroupDecl,
     OptionDecl,
+    Problem,
+    Quarantined,
     StabilityDecl,
     target_of,
 )
-from untaped.runtime.registry import PluginSpec, SkillAsset, resolve_target
+from untaped.runtime.registry import DeclaredBlocks, PluginSpec, SkillAsset, resolve_target
 from untaped.runtime.run import build_run
 from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import _format_default as format_default
@@ -59,6 +64,7 @@ from untaped.sdk.marks import (
 from untaped.sdk.plugin import Command, Plugin, field_block
 from untaped.sdk.plugin import Group as CommandGroup
 from untaped.sdk.run import run_scope
+from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,19 +74,67 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Mount:
-    """One composition of plugin classes: the declaration and the classes it was read from."""
+    """One composition of plugin classes: the declaration, and each class imported when needed.
+
+    A start reads the declaration (from core's declaration cache, or composed
+    just now) and imports no plugin class: dispatch imports the one whose
+    command runs, ``doctor`` and ``setup`` the ones whose blocks they read.
+    """
 
     declaration: Declaration
-    #: The composed plugin classes, by plugin name.
+    #: The composed plugin classes, by plugin name, each imported on first read.
     plugins: Mapping[str, type[Plugin]]
+    #: Each composed plugin's settings model, from its own (leaf) module.
+    settings: Mapping[str, type[BaseModel]]
+    #: Every problem composition found in each plugin it refused, by plugin name.
+    problems: dict[str, tuple[Problem, ...]] = field(default_factory=dict, compare=False)
+    _found: dict[str, Mapping[tuple[str, ...], type[Command[Any]]]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
-    @cached_property
-    def commands(self) -> Mapping[tuple[str, ...], type[Command[Any]]]:
-        """Every command class, by its words: the declaration walked beside the classes.
+    @classmethod
+    def of(
+        cls, declaration: Declaration, classes: Mapping[str, type[Plugin]] | None = None
+    ) -> Mount:
+        """The mount of ``declaration``, with ``classes`` already imported (by plugin name)."""
+        classes = classes or {}
+        plugins = _Loaded(
+            [plugin.name for plugin in declaration.plugins],
+            partial(_plugin_class, declaration),
+            dict(classes),
+        )
+        settings = _Loaded(
+            [plugin.name for plugin in declaration.plugins],
+            partial(_settings_model, declaration, plugins),
+            {name: each.settings for name, each in classes.items()},
+        )
+        return cls(declaration=declaration, plugins=plugins, settings=settings)
+
+    def kept(self, refused: tuple[Quarantined, ...]) -> Mount:
+        """This mount without the plugins 11.x composition quarantined, which it records."""
+        names = {each.name for each in refused}
+        declaration = self.declaration.model_copy(
+            update={
+                "plugins": tuple(p for p in self.declaration.plugins if p.name not in names),
+                "kinds": tuple(k for k in self.declaration.kinds if k.plugin not in names),
+                "quarantined": refused,
+            }
+        )
+        return replace(self, declaration=declaration)
+
+    def command(self, decl: CommandDecl) -> type[Command[Any]]:
+        """The class ``decl`` was read from, importing its plugin's class.
 
         A generated command (``derive``) shares its target with every other one
         of its name, so the words, never the target, say which class runs.
         """
+        name = decl.path[0]
+        if name not in self._found:
+            self._found[name] = self._commands(name)
+        return self._found[name][decl.path]
+
+    def _commands(self, name: str) -> Mapping[tuple[str, ...], type[Command[Any]]]:
+        """Plugin ``name``'s commands by their words: its declaration walked beside its class."""
         found: dict[tuple[str, ...], type[Command[Any]]] = {}
 
         def walk(decls: Sequence[CommandDecl | GroupDecl], nodes: Sequence[object]) -> None:
@@ -91,16 +145,11 @@ class Mount:
                 elif isinstance(decl, CommandDecl) and _is_command(node):
                     found[decl.path] = node
 
-        for plugin in self.declaration.plugins:
-            cls = self.plugins[plugin.name]
-            walk(plugin.commands, cls.commands)
-            if plugin.runs is not None and _is_command(cls.runs):
-                found[plugin.runs.path] = cls.runs
+        plugin, cls = self.declaration.plugin(name), self.plugins[name]
+        walk(plugin.commands, cls.commands)
+        if plugin.runs is not None and _is_command(cls.runs):
+            found[plugin.runs.path] = cls.runs
         return found
-
-    def command(self, decl: CommandDecl) -> type[Command[Any]]:
-        """The class ``decl`` was read from."""
-        return self.commands[decl.path]
 
     @cached_property
     def kinds(self) -> Mapping[str, type[BaseModel]]:
@@ -121,6 +170,52 @@ class Mount:
         return next((k.kind for k in self.declaration.kinds if k.target == target), None)
 
 
+class _Loaded[V](Mapping[str, V]):
+    """A value per plugin name, computed by ``load`` on first read and kept."""
+
+    def __init__(self, names: Sequence[str], load: Callable[[str], V], known: dict[str, V]) -> None:
+        self._names = tuple(names)
+        self._load = load
+        self._known = known
+
+    def __getitem__(self, name: str) -> V:
+        if name not in self._known:
+            if name not in self._names:
+                raise KeyError(name)
+            self._known[name] = self._load(name)
+        return self._known[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._names)
+
+    def __len__(self) -> int:
+        return len(self._names)
+
+
+def _plugin_class(declaration: Declaration, name: str) -> type[Plugin]:
+    """Plugin ``name``'s class, imported from its entry point's target."""
+    target = declaration.plugin(name).target
+    cls = resolve_target(target)
+    if not (isinstance(cls, type) and issubclass(cls, Plugin)):
+        raise TypeError(f"{target} is no longer a plugin class; run `untaped doctor`")
+    return cast("type[Plugin]", cls)
+
+
+def _settings_model(
+    declaration: Declaration, plugins: Mapping[str, type[Plugin]], name: str
+) -> type[BaseModel]:
+    """Plugin ``name``'s settings model: its own module only, else through the plugin class.
+
+    A model the class reaches but no module names (one defined in a function)
+    is read from the class, which imports it.
+    """
+    try:
+        model = resolve_target(declaration.plugin(name).settings)
+    except Exception:
+        model = None
+    return model if _is_model(model) else plugins[name].settings
+
+
 def _is_group(obj: object) -> TypeGuard[type[CommandGroup]]:
     return isinstance(obj, type) and issubclass(obj, CommandGroup)
 
@@ -137,32 +232,64 @@ def compose_plugins(entries: Sequence[PluginEntry]) -> Mount:
     """Compose the plugin classes of ``entries`` (each a :class:`Plugin` subclass) in one walk."""
     declaration = compose(entries)
     by_name = {entry.name: cast("type[Plugin]", entry.plugin) for entry in entries}
-    plugins = {plugin.name: by_name[plugin.name] for plugin in declaration.plugins}
-    return Mount(declaration=declaration, plugins=plugins)
+    return Mount.of(
+        declaration, {plugin.name: by_name[plugin.name] for plugin in declaration.plugins}
+    )
 
 
 def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     """The composed plugin ``name`` as the :class:`PluginSpec` the rest of composition reads.
 
-    Its help is the plugin's summary, so its commands are mounted lazily: the
-    Cyclopts app is built from the declaration the first time it is dispatched.
+    It is built from the declaration alone, so composing never imports the
+    plugin class: its help is the plugin's summary (its commands are mounted
+    from the declaration the first time one is dispatched), its settings
+    model comes from its own module, and its owned blocks are counted from the
+    declaration and read from the class the first time a reader asks for them
+    (:class:`~untaped.runtime.registry.DeclaredBlocks`).
     """
     plugin = mount.declaration.plugin(name)
     has_commands = bool(plugin.commands) or plugin.runs is not None
     skills = (SkillAsset(name=f"untaped-{name}", description=plugin.skill),) if plugin.skill else ()
-    blocks = _spelled_blocks(mount, name)
-    return PluginSpec(
+    loaded = functools.cache(partial(_spelled_blocks, mount, name))
+    factory = partial(build_app, mount, name)
+    # the factory builds the plugin's app, so it stands for the plugin's module
+    # where its package is looked for (untaped.runtime.plugin_package)
+    factory.__module__ = plugin.target.partition(":")[0]
+    spec = PluginSpec(
         name=name,
-        app_factory=partial(build_app, mount, name) if has_commands else None,
-        settings=mount.plugins[name].settings,
+        app_factory=factory if has_commands else None,
+        settings=mount.settings[name],
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),
         skills=skills,
-        caches=blocks["caches"],
-        migrations=blocks["migrations"],
-        doctor_checks=blocks["doctor_checks"],
-        credentials=blocks["credentials"],
-        deprecations=partial(tuple, blocks["deprecations"]),
+        deprecations=lambda: loaded()["deprecations"],
+    )
+    for field_name in ("caches", "migrations", "doctor_checks", "credentials"):
+        kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
+        declared = [block for block in plugin.blocks if block.block in kinds]
+        blocks = DeclaredBlocks(
+            tuple(f"{name}.{block.name}" for block in declared),
+            partial(lambda field: loaded()[field], field_name),
+            timed=_timed_caches(name, declared) if field_name == "caches" else (),
+        )
+        # the spec's own checks read every block, so the lazy ones go in after them
+        object.__setattr__(spec, field_name, blocks)
+    return spec
+
+
+def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:
+    """Each declared cache with a max age, as its setting reads it: label, max age, old keys."""
+    return tuple(
+        Cache(
+            plugin,
+            block.name,
+            label=block.cache.label,
+            max_age=timedelta(seconds=block.cache.max_age_seconds),
+            renamed_from=block.cache.renamed_from,
+            removed_in=block.cache.removed_in,
+        )
+        for block in declared
+        if block.cache is not None and block.cache.max_age_seconds is not None
     )
 
 
@@ -323,7 +450,7 @@ def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl,
     """Build the command from the tokens given, run it under the run, print what it returns."""
     with report_errors():
         cls = mount.command(decl)
-        with run_scope(build_run(mount.declaration, mount.plugins)):
+        with run_scope(build_run(mount.declaration, mount.settings)):
             command = _instance(mount, decl, cls, given)
             _print(mount, decl, command, command.run())
 

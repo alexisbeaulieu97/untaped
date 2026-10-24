@@ -17,6 +17,19 @@ startup the root composes the plugins in this order:
 4. **Commit.** The survivors are mounted under their names, lazily or not
    as [the plugin app](./plugins.md#settings-and-the-plugin-app) describes.
 
+An entry point that names a 12.0 plugin class is composed once: core keeps
+the composed declaration under `~/.untaped/plugins/untaped/cached/declaration/`,
+one file per environment and set of installed plugins, so a later start reads
+it instead of importing the class (which imports every command). A plugin's
+class is imported when one of its commands runs or one of its blocks is read;
+a plugin with a credential is still imported at every start. The declaration
+follows untaped and every installed plugin distribution, by version and by
+the files it installed (an editable install's source files too): installing,
+upgrading or editing one composes again on the next start. A change to
+another library that plugins import does not, so after one that changes what
+a plugin declares, delete the folder; nothing else is lost. A home that can't
+be written composes at every start.
+
 Every violation quarantines that plugin and composition continues: a
 warning names it, `untaped plugin list` lists it as quarantined, and
 `untaped doctor` shows the reason. The root owns configuration, profiles,

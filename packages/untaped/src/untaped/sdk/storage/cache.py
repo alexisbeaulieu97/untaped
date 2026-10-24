@@ -33,6 +33,13 @@ names that code's version (:func:`code_version` hashes a module and the
 distributions it relies on): each key's file keeps the version it was
 filled at, and a key filled at another one is *outdated*, due and stale the
 way a key past its max age is.
+
+A cache declared with ``max_age=None`` is *version-only*: its value depends on
+the code that fills it and on nothing upstream, so it is refreshed only when
+that code's version changes. It takes ``model=``, ``version=`` and
+``split="none"``. It has no max-age setting, never serves another
+version's value, drops the key's other versions once it fills this one, and
+says nothing on stderr: a home it cannot write leaves the value in memory.
 """
 
 from __future__ import annotations
@@ -287,8 +294,10 @@ class NeverRefreshed(UntapedError):
     category = ErrorCategory.NOT_FOUND
 
     def __init__(self, cache: Cache[Any], key: str, label: str) -> None:
+        # a version-only cache has no --cached: its owner asked to read without filling
+        hint = "" if cache.version_only else "; drop --cached to refresh it"
         super().__init__(
-            f"no cached {cache.label} for {label}; drop --cached to refresh it",
+            f"no cached {cache.label} for {label}{hint}",
             system=cache.plugin,
             details={"cache": cache.qualified, "key": key},
         )
@@ -381,7 +390,10 @@ class Cache[M = None](OwnedBlock):
     the data for a human (``source data``). ``max_age`` is the declared
     default, in whole seconds (``0``: check every time); list the cache on
     ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
-    overrides it. ``renamed_from`` names old keys of the plugin's section
+    overrides it. ``max_age=None`` declares a version-only cache instead: a
+    value that depends only on the code computing it, with ``model=``,
+    ``version=`` and ``split="none"``, filled once per version, with no
+    setting (see the module docstring). ``renamed_from`` names old keys of the plugin's section
     (dotted, relative to it) that are still read as that setting, with a
     warning, until the plugin's major ``removed_in`` (undated without it).
     ``version`` returns the version of the code that fills the
@@ -410,7 +422,8 @@ class Cache[M = None](OwnedBlock):
     block_kind = "cache"
 
     label: str
-    default_max_age: timedelta
+    #: ``None`` for a version-only cache, which has no max age.
+    default_max_age: timedelta | None
     renamed_from: tuple[str, ...]
     removed_in: int | None
     version: Callable[[], str] | None
@@ -425,7 +438,7 @@ class Cache[M = None](OwnedBlock):
         name: str | None = None,
         *,
         label: str,
-        max_age: timedelta,
+        max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
@@ -440,7 +453,7 @@ class Cache[M = None](OwnedBlock):
         name: str | None = None,
         *,
         label: str,
-        max_age: timedelta,
+        max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
@@ -455,7 +468,7 @@ class Cache[M = None](OwnedBlock):
         name: str | None = None,
         *,
         label: str,
-        max_age: timedelta,
+        max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
@@ -472,7 +485,16 @@ class Cache[M = None](OwnedBlock):
             if (problem := self.name_problem(name)) is not None:
                 raise ConfigError(problem)
         where = self.where
-        if max_age < timedelta(0) or max_age % timedelta(seconds=1):
+        if max_age is None:
+            _check_version_only(
+                where,
+                model=model,
+                version=version,
+                renamed_from=renamed_from,
+                store=store,
+                split=split,
+            )
+        elif max_age < timedelta(0) or max_age % timedelta(seconds=1):
             raise ConfigError(f"cache {where}: max_age must be whole seconds, not negative")
         self.label = label
         self.default_max_age = max_age
@@ -545,13 +567,28 @@ class Cache[M = None](OwnedBlock):
 
     @property
     def setting(self) -> str:
-        """The setting that tunes the max age: ``<plugin>.caches.<name>.max_age_seconds``."""
+        """The setting that tunes the max age: ``<plugin>.caches.<name>.max_age_seconds``.
+
+        A version-only cache has none and raises :class:`ConfigError`.
+        """
+        self._declared_max_age()
         return f"{self.plugin}.caches.{self.name}.max_age_seconds"
+
+    @property
+    def version_only(self) -> bool:
+        """Whether the cache was declared with ``max_age=None``: refreshed by its version alone."""
+        return self.default_max_age is None
 
     @property
     def default_max_age_text(self) -> str:
         """The declared max age for a human: ``24 h``."""
-        return duration_text(self.default_max_age.total_seconds())
+        return duration_text(self._declared_max_age().total_seconds())
+
+    def _declared_max_age(self) -> timedelta:
+        """The declared max age; a version-only cache has none and raises :class:`ConfigError`."""
+        if self.default_max_age is None:
+            raise ConfigError(f"cache {self.where} is version-only: it has no max age")
+        return self.default_max_age
 
     def max_age(self) -> timedelta:
         """The max age in force now: the setting, read at call time, else the declared default.
@@ -559,12 +596,14 @@ class Cache[M = None](OwnedBlock):
         The default holds when the plugin's composed section has no such
         cache (the plugin is used uncomposed, or does not list the cache on
         ``PluginSpec.caches``). An invalid setting raises the settings
-        :class:`ConfigError`.
+        :class:`ConfigError`; a version-only cache, which has none, raises
+        one too.
         """
+        default = self._declared_max_age()
         model = registered_profile_model(self.plugin)
         declared = None if model is None else model.model_fields.get("caches")
         if declared is None or self.name not in getattr(declared.annotation, "model_fields", {}):
-            return self.default_max_age
+            return default
         held = getattr(load_settings_section(self.plugin).caches, self.name)
         return timedelta(seconds=held.max_age_seconds)
 
@@ -640,9 +679,11 @@ class Cache[M = None](OwnedBlock):
         refresh is a phase of the caller's.
 
         A failed refresh with data cached serves that data with a warning; with
-        none, the error is raised. ``--cached`` on a key never filled raises
-        :class:`NeverRefreshed`. A Ctrl-C during a fill is remembered like a
-        failed attempt and said as one ``error:`` line before it propagates.
+        none, the error is raised. A version-only cache (``max_age=None``)
+        serves only this version's value and raises a failed fill.
+        ``--cached`` on a key never filled raises :class:`NeverRefreshed`. A
+        Ctrl-C during a fill is remembered like a failed attempt and said as
+        one ``error:`` line before it propagates.
         """
         typing = self._typing()
         if typing is None and read is None:
@@ -651,6 +692,16 @@ class Cache[M = None](OwnedBlock):
             raise ConfigError(
                 f"cache {self.qualified}: a cache with model= answers its kept values; "
                 "serve() takes no read="
+            )
+        if self.version_only:
+            assert typing is not None  # a version-only cache is declared with model=
+            return self._serve_version(
+                keys,
+                refresh=refresh,
+                fill=fill,
+                typing=typing,
+                partition=partition,
+                progress=progress,
             )
         return self._serve_with(
             keys,
@@ -826,6 +877,89 @@ class Cache[M = None](OwnedBlock):
             self._sweep_siblings(paths, key)
         return saved, kept_it
 
+    def _serve_version(
+        self,
+        keys: Mapping[str, str],
+        *,
+        refresh: bool | None,
+        fill: Callable[[str, ProgressHandle], Filled[Any]],
+        typing: ValueTyping,
+        partition: str | None,
+        progress: ProgressHandle,
+    ) -> Served[Any, Any]:
+        """:meth:`serve` for a version-only cache: this version's value, else a fill, quietly.
+
+        No task, lock or stale line: two processes filling at once compute the
+        same value and each writes it whole. ``--cached`` on a key this
+        version never filled raises :class:`NeverRefreshed`; a fill that
+        raises propagates, since no other version's value may stand in.
+        """
+        folder, version = self._folder(), self._version_now()
+        values: dict[str, Any] = {}
+        freshness: dict[str, Freshness] = {}
+        filled: dict[str, Filled[Any]] = {}
+        for key, label in keys.items():
+            paths = self._paths(key, partition, folder=folder)
+            kept = None if refresh else self._own_version(paths, key, typing, version)
+            if kept is None:
+                if refresh is False:
+                    raise NeverRefreshed(self, key, label)
+                result = filled[key] = fill(key, progress)
+                kept = self._keep_version(paths, key, result, typing, version)
+            values[key], freshness[key] = kept.value, kept.freshness
+        return Served(
+            value=MappingProxyType(values),
+            freshness=MappingProxyType(freshness),
+            filled=MappingProxyType(filled),
+        )
+
+    @staticmethod
+    def _own_version(
+        paths: _KeyPaths, key: str, typing: ValueTyping, version: str | None
+    ) -> _Kept | None:
+        """``version``'s value of ``key``; ``None`` when it was never kept or no longer reads."""
+        from untaped.sdk.storage.data_file import read_lines  # noqa: PLC0415 - first use
+
+        kept = _read_kept(
+            read_lines(paths.file(versioned(typing, version))), key, version, typing, check=True
+        )
+        if kept is None or kept.freshness.refreshed_at is None or kept.freshness.partial:
+            return None
+        return kept
+
+    def _keep_version(
+        self,
+        paths: _KeyPaths,
+        key: str,
+        result: Filled[Any],
+        typing: ValueTyping,
+        version: str | None,
+    ) -> _Kept:
+        """Keep a version-only fill, then drop the key's other versions; the value either way.
+
+        A partial fill, a value that won't serialise or a file that can't be
+        written is served from memory, and the next run fills again. Another
+        partition's value of the key stays: it is that partition's.
+        """
+        own = paths.file(versioned(typing, version))
+        saved = Freshness(
+            refreshed_at=_utcnow(),
+            error=result.partial,
+            partial=result.partial is not None,
+            version=version,
+        )
+        value = self._filled_value(result, typing)
+        if (
+            result.partial is None
+            and value is not None
+            and self._write(own, key, saved, typing, value)
+        ):
+            for entry, stem, _ in self._key_files(paths.dir, key, _VERSIONED):
+                if stem == paths.stem and entry != own:
+                    with contextlib.suppress(OSError):
+                        entry.unlink(missing_ok=True)
+        return _Kept(saved, value=result.value)
+
     def _say_interrupted(self, freshness: Freshness) -> None:
         """Say the Ctrl-C a fill stopped on: nothing else prints it, the CLI exits 130 bare."""
         assert freshness.error is not None
@@ -947,7 +1081,14 @@ class Cache[M = None](OwnedBlock):
             raise ConfigError(
                 f"cache {self.qualified}: cached() takes read= exactly when the cache has no model="
             )
-        kept = self._load(self._paths(key, partition), key, self._version_now(), typing)
+        paths = self._paths(key, partition)
+        if self.version_only:
+            assert typing is not None  # a version-only cache is declared with model=
+            own = self._own_version(paths, key, typing, self._version_now())
+            if own is None:
+                return None
+            return Served(value=own.value, freshness=MappingProxyType({key: own.freshness}))
+        kept = self._load(paths, key, self._version_now(), typing)
         state = kept.freshness
         if state.refreshed_at is None:
             return None
@@ -964,8 +1105,12 @@ class Cache[M = None](OwnedBlock):
         Reads each file's first line only: a value that no longer reads is
         found by :meth:`serve`, which refills it.
         """
-        paths = self._paths(key, partition)
-        return self._load(paths, key, self._version_now(), self._typing(), check=False).freshness
+        paths, typing, version = self._paths(key, partition), self._typing(), self._version_now()
+        if self.version_only:
+            assert typing is not None  # a version-only cache is declared with model=
+            own = self._own_version(paths, key, typing, version)
+            return Freshness() if own is None else own.freshness
+        return self._load(paths, key, version, typing, check=False).freshness
 
     def seed(self, key: str, *, refreshed_at: datetime) -> bool:
         """Record ``key`` as refreshed at ``refreshed_at`` if the cache knows nothing of it.
@@ -1039,10 +1184,12 @@ class Cache[M = None](OwnedBlock):
         Under ``split="settings"``, the root's folder named by the plugin's
         settings digest (:mod:`untaped.sdk.storage._digest`).
         """
+        root = self._root(None if self.store is None else self.store.layout)
+        if self.split == "none":
+            return root
         from untaped.sdk.storage._digest import settings_digest  # noqa: PLC0415 - no cycle
 
-        root = self._root(None if self.store is None else self.store.layout)
-        return root if self.split == "none" else root / settings_digest(self.plugin)
+        return root / settings_digest(self.plugin)
 
     def _paths(
         self, key: str, partition: str | None = None, *, folder: Path | None = None
@@ -1256,7 +1403,7 @@ class Cache[M = None](OwnedBlock):
 
     def _horizon(self) -> timedelta:
         """How long a key's files in another partition or folder stay: 30 days or 10 max ages."""
-        return max(_PARTITION_HORIZON, 10 * self.default_max_age)
+        return max(_PARTITION_HORIZON, 10 * self._declared_max_age())
 
     @staticmethod
     def _key_files(
@@ -1546,6 +1693,31 @@ def value_typing(hint: Any, *, model: type[BaseModel] | None = None) -> ValueTyp
     return ValueTyping(adapter, type_hash(adapter.json_schema()), model)
 
 
+def _check_version_only(
+    where: str,
+    *,
+    model: object,
+    version: Callable[[], str] | None,
+    renamed_from: Sequence[str],
+    store: Store | None,
+    split: str,
+) -> None:
+    """Refuse a version-only declaration without its model and version, or with a setting."""
+    if model is None or version is None:
+        raise ConfigError(
+            f"cache {where}: max_age=None keeps a value refreshed by its version alone, "
+            "so it takes model= and version="
+        )
+    if renamed_from:
+        raise ConfigError(f"cache {where}: a version-only cache has no setting to rename")
+    if store is not None:
+        raise ConfigError(f"cache {where}: a version-only cache follows no store")
+    if split != "none":
+        raise ConfigError(
+            f'cache {where}: a version-only cache depends on no setting, so it is split="none"'
+        )
+
+
 def versioned(typing: ValueTyping, version: str | None) -> str:
     """The hash naming one version's file of a value: its type's shape and ``version``."""
     return _digest(f"{typing.shape}:{version or ''}")
@@ -1773,6 +1945,10 @@ def refresh_option(cache: Cache[Any]) -> Parameter:
     Declare it as ``refresh: Annotated[bool | None, refresh_option(CACHE)] = None``
     and pass the value to :meth:`Cache.serve`.
     """
+    if cache.version_only:
+        raise ConfigError(
+            f"cache {cache.where} is version-only: --refresh and --cached are about a max age"
+        )
     return Parameter(
         name="--refresh",
         negative="--cached",

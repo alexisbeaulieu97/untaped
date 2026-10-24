@@ -29,6 +29,7 @@ from pydantic_core import PydanticUndefined, to_jsonable_python
 from untaped.runtime.declaration import (
     AliasDecl,
     BlockDecl,
+    CacheDecl,
     CommandDecl,
     Declaration,
     GroupDecl,
@@ -65,6 +66,7 @@ from untaped.sdk.plugin import (
     generic_argument,
     settings_model,
 )
+from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -151,6 +153,16 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
             return declaration
         # A quarantined plugin owns no kind: the plugins reaching its classes do.
         owners = {package: index for package, index in owners.items() if index not in refused}
+
+
+def _cache_setting(cache: Cache[Any]) -> CacheDecl:
+    max_age = cache.default_max_age
+    return CacheDecl(
+        label=cache.label,
+        max_age_seconds=None if max_age is None else int(max_age.total_seconds()),
+        renamed_from=cache.renamed_from,
+        removed_in=cache.removed_in,
+    )
 
 
 def _compose(
@@ -417,7 +429,11 @@ class _PluginWalk:
                 self.problem("block-shape", where, problem)
             blocks.append(
                 BlockDecl(
-                    block=value.block_kind, attribute=attribute, name=name, module=value.module
+                    block=value.block_kind,
+                    attribute=attribute,
+                    name=name,
+                    module=value.module,
+                    cache=_cache_setting(value) if isinstance(value, Cache) else None,
                 )
             )
         return tuple(blocks)
@@ -859,6 +875,13 @@ class _CommandWalk:
                 "Refresh names the caches its flags are about: Refresh(CACHE)",
             )
         for cache in default.caches:
+            if isinstance(cache, Cache) and cache.version_only:
+                self.problem(
+                    "refresh-cache",
+                    where,
+                    f"{cache!r} is version-only: it has no max age for --refresh to override",
+                )
+                continue
             if id(cache) in self.plugin.held or self._cached_method(cache):
                 continue
             self.problem(
