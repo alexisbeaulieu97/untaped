@@ -319,6 +319,6 @@ def test_create_and_rename_refuse_a_name_profile_cannot_pick(
     created = CliInvoker().invoke(app, ["create", name])
     renamed = CliInvoker().invoke(app, ["rename", "stage", name])
     for result in (created, renamed):
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output  # a usage error, as in a pick
         assert f"invalid profile name {name!r}" in result.stderr
     assert set(read_config_dict(_isolated_config)["profiles"]) == {"prod", "stage"}

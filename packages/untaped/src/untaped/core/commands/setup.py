@@ -248,8 +248,11 @@ def _run(
 
 
 def _ready(profile: str) -> str:
-    """The closing line: the profile is ready, and how to use it when the run does not read it."""
-    if profile in (picked_names() or (DEFAULT_PROFILE,)):
+    """The closing line: the profile is ready, and how to use it when the run does not read it.
+
+    Every run reads the base, beneath any picked profile.
+    """
+    if profile == DEFAULT_PROFILE or profile in picked_names():
         return f"profile {profile} is ready"
     return (
         f"profile {profile} is ready; use it with `untaped --profile {profile} …` "

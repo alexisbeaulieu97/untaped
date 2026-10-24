@@ -598,13 +598,7 @@ def missing_setting_error(
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
-    where = (
-        ""
-        if not profile
-        else f" in profiles {q(profile)}"
-        if "," in profile
-        else f" in profile {q(profile)}"
-    )
+    where = _in_profiles(profile)
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     details = {"profiles": list(set_in)} if set_in else None
     commands = [
@@ -969,13 +963,7 @@ def _not_set_up(config: BaseModel, *, section: str) -> ConfigError:
     else:
         profile, set_in = _profiles_for(section, [])
         what = "base_url= has no value"
-    where = (
-        ""
-        if not profile
-        else f" in profiles {q(profile)}"
-        if "," in profile
-        else f" in profile {q(profile)}"
-    )
+    where = _in_profiles(profile)
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     return ConfigError(
         f"{section} is not set up{where}: {what}",
@@ -1027,6 +1015,13 @@ def _read_by_name(
         )
     token = values.get(bearer_token_field, "") if bearer_token_field is not None else ""
     return values[base_url_field], token
+
+
+def _in_profiles(profile: str | None) -> str:
+    """`` in profile 'a'`` or `` in profiles 'a,b'`` for a missing-setting message, else ``""``."""
+    if not profile:
+        return ""
+    return f" in {'profiles' if ',' in profile else 'profile'} {q(profile)}"
 
 
 def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str | None, list[str]]:

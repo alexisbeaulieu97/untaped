@@ -160,6 +160,16 @@ def write_target() -> str:
     return flag[0] if flag else DEFAULT_PROFILE
 
 
+def fix_target() -> str:
+    """The one profile a fix line writes to so this run reads it: the last pick, else the base.
+
+    A fix line names it with ``--profile``, which wins over ``UNTAPED_PROFILE``'s
+    names, so the line works typed in the same shell.
+    """
+    names = picked_names()
+    return names[-1] if names else DEFAULT_PROFILE
+
+
 def base_sections(config_data: dict[str, Any]) -> dict[str, Any]:
     """The base: every top-level key of ``config.yml`` that is not one of :data:`FILE_KEYS`."""
     return {key: value for key, value in config_data.items() if key not in FILE_KEYS}
@@ -229,13 +239,23 @@ def resolve_profiles(
     ``details.known``) when a pick names an undefined profile.
     """
     profiles = named_profiles(config_data)
+    check_defined(picks, profiles)
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
     _layer(base_sections(config_data), DEFAULT_PROFILE, effective, provenance, ())
     for name in picks:
-        if name == DEFAULT_PROFILE:
-            continue
-        if name not in profiles:
+        if name != DEFAULT_PROFILE:
+            _layer(profiles[name] or {}, name, effective, provenance, ())
+    return effective, provenance
+
+
+def check_defined(picks: Sequence[str], profiles: dict[str, Any]) -> None:
+    """Raise a usage ``ConfigError`` (exit 2, ``details.known``) for a pick not in ``profiles``.
+
+    ``profiles`` is :func:`named_profiles`' mapping; ``default`` is always defined.
+    """
+    for name in picks:
+        if name != DEFAULT_PROFILE and name not in profiles:
             known = sorted(profiles)
             raise ConfigError(
                 f"profile {name!r} is not defined in `profiles`. "
@@ -243,8 +263,6 @@ def resolve_profiles(
                 category="usage",
                 details={"known": [DEFAULT_PROFILE, *known]},
             )
-        _layer(profiles[name] or {}, name, effective, provenance, ())
-    return effective, provenance
 
 
 def _layer(

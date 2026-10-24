@@ -40,8 +40,11 @@ from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import InstalledSkill, SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict, read_state_dict
 from untaped.runtime.profile_resolver import (
+    DEFAULT_PROFILE,
     base_sections,
     current_pick,
+    fix_target,
+    picked_names,
     profile_entries,
     profile_override,
     profile_scope,
@@ -222,37 +225,35 @@ def report_check_rows(
     ``table`` prints the checklist; with ``--columns`` it prints the table,
     whose ``fix`` is the command line to type.
     """
-    profile = selected_profile()
     if fmt == "table" and columns is None:
-        emit_check_list(rows, run_line=lambda argv: run_line(argv, profile))
+        emit_check_list(rows, run_line=run_line)
         _diag.info("")
     elif fmt == "table":
         # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        emit_isolated([_table_row(row, profile) for row in rows], fmt=fmt, columns=columns)
+        emit_isolated([_table_row(row) for row in rows], fmt=fmt, columns=columns)
     else:
         records = [DoctorCheckRow.model_validate(row) for row in rows]
         emit_isolated(records, fmt=fmt, columns=columns)
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
     _diag.info(summary(op, counts))
-    fix_hint = _fix_hint(rows, profile)
+    fix_hint = _fix_hint(rows)
     if fix_hint:
         _diag.hint(fix_hint)
     if counts[_FAIL]:
         raise SystemExit(ExitCode.FAILURE)
 
 
-def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
+def _fix_hint(rows: list[dict[str, object]]) -> str | None:
     """``run `untaped doctor fix` …`` (a hint's body) when an automatic fix exists, else ``None``.
 
-    Fixes are counted as ``doctor fix`` groups them; the command keeps the
-    rows' profile.
+    Fixes are counted as ``doctor fix`` groups them; the command reads the
+    run's whole pick, as doctor did.
     """
     fixes = {argv: is_automatic(covered) for argv, covered in group_fixes(rows).items()}
     automatic = [argv for argv, auto in fixes.items() if auto]
     if not automatic:
         return None
-    target = split_profile(automatic[0])[0] or profile
-    command = run_line(command_argv("doctor fix", profile=target), profile)
+    command = run_line(command_argv("doctor fix", profile=selected_profile()))
     text = (
         f"{run_hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
     )
@@ -262,19 +263,20 @@ def _fix_hint(rows: list[dict[str, object]], profile: str) -> str | None:
     return text
 
 
-def _table_row(row: dict[str, object], profile: str) -> dict[str, object]:
+def _table_row(row: dict[str, object]) -> dict[str, object]:
     fix = row.get("fix")
-    return {**row, "fix": run_line(fix, profile) if isinstance(fix, list) and fix else ""}
+    return {**row, "fix": run_line(fix) if isinstance(fix, list) and fix else ""}
 
 
-def run_line(argv: list[str], profile: str) -> str:
+def run_line(argv: list[str]) -> str:
     """A fix or step argv as the ``untaped …`` line a person types.
 
-    ``--profile <profile>`` goes without saying when no ``--profile`` flag
-    chose it: the same line then acts on that profile anyway.
+    ``--profile default`` goes without saying when the run picks no profile
+    and no ``--profile`` was given: the bare line then reads and writes the
+    base too.
     """
     named, rest = split_profile(argv)
-    if named == profile and not profile_override():
+    if named == DEFAULT_PROFILE and not profile_override() and not picked_names():
         argv = rest
     return command_line(shlex.join(argv))
 
@@ -384,7 +386,7 @@ def collect_doctor_rows(
         rows.append(_core_row(shell, part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     scopes = _scopes(shell, result)
-    profile = selected_profile()
+    profile = fix_target()
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
@@ -571,7 +573,7 @@ def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[st
         return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
     fix = None
     if deleted:
-        fix = command_argv("config migrate", profile=selected_profile())
+        fix = command_argv("config migrate", profile=fix_target())
     return _row(
         "unknown-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=bool(deleted)
     )
@@ -614,7 +616,7 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
             parts.append(f"{variable.name} (environment): {variable.note}")
     fix = None
     if any(item.kind != "deprecated" for item in found):
-        fix = command_argv("config migrate", profile=selected_profile())
+        fix = command_argv("config migrate", profile=fix_target())
     return _row("deprecated-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=True)
 
 
@@ -656,7 +658,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     parts = [f"{_skill_label(item)}: {item.path}" for item in stale]
     fix = None
     if any(item.state is SkillState.outdated for item in stale):
-        fix = command_argv("skills update", profile=selected_profile())
+        fix = command_argv("skills update", profile=fix_target())
     if any(item.state is SkillState.edited for item in stale):
         parts.append(
             "edited stubs are never rewritten by a run: keep them, or replace one with"
@@ -798,9 +800,9 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
     Never automatic: registering is a deliberate step, and migrate-dirs asks.
     """
     if "unregistered" in reasons:
-        return command_argv("setup register", profile=selected_profile())
+        return command_argv("setup register", profile=fix_target())
     if reasons & {"refused", "busy"}:
-        return command_argv("setup migrate-dirs", profile=selected_profile())
+        return command_argv("setup migrate-dirs", profile=fix_target())
     return None
 
 
@@ -832,7 +834,7 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
         if _other_layouts(result, references):
             warn = True
             parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
-            fix = command_argv("setup register", profile=selected_profile())
+            fix = command_argv("setup register", profile=fix_target())
         else:
             parts.insert(0, "this install: not registered")
     detail = "; ".join(parts) or "no install is registered"
@@ -935,7 +937,7 @@ def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
         return _row("migrate-dirs", shell.name, _WARN, title, "; ".join(failed))
     if not any(item.changes for item in planned):
         return _row("migrate-dirs", shell.name, _PASS, title, "nothing to migrate")
-    fix = command_argv(MIGRATE_COMMAND, profile=selected_profile())
+    fix = command_argv(MIGRATE_COMMAND, profile=fix_target())
     return _row("migrate-dirs", shell.name, _WARN, title, summary_text(planned), fix)
 
 

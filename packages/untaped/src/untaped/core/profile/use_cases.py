@@ -26,7 +26,7 @@ def _check_name(name: str) -> None:
     if not PROFILE_NAME.fullmatch(name):
         raise ConfigError(
             f"invalid profile name {name!r}",
-            category="invalid",
+            category="usage",
             hint="a name is letters, digits, `_`, `.` and `-`, and does not start with `.` or `-`",
         )
 

@@ -901,8 +901,8 @@ def check_config_format(raw: dict[str, Any], path: Path) -> None:
     _check_stamp(raw, path, newest=FORMAT_VERSION)
     if "active" in raw:
         raise FormatVersionError(
-            f"`active:` in {path} is not read: a run picks its profile with --profile "
-            "or UNTAPED_PROFILE, else reads the base",
+            f"`active:` in {path} is not read: a run picks its profiles with "
+            "--profile or UNTAPED_PROFILE, else reads the base alone",
             hint="delete the `active:` line",
         )
     profiles = raw.get("profiles")

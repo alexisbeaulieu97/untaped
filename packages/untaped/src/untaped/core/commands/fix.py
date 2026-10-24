@@ -95,7 +95,7 @@ def run_fixes(
     fixes = _select(rows)
     if not fixes:
         _diag.info("nothing to fix")
-        _emit([], fmt=fmt, columns=columns, profile=profile)
+        _emit([], fmt=fmt, columns=columns)
         _exit_unhealthy(rows, profile)
         return
     refusals = {fix: _refusal(fix, builtin_for) for fix in fixes}
@@ -104,8 +104,8 @@ def run_fixes(
 
     def preview(_planned: Sequence[dict[str, object]]) -> None:
         emit_fix_plan(
-            [(_line(fix, profile), list(fix.checks)) for fix in runnable],
-            [(_line(fix, profile), list(fix.checks)) for fix in manual],
+            [(_line(fix), list(fix.checks)) for fix in runnable],
+            [(_line(fix), list(fix.checks)) for fix in manual],
         )
 
     outcome = batch_apply(
@@ -113,7 +113,7 @@ def run_fixes(
         _run_one_fix,
         verb="run",
         noun="fix",
-        label=lambda fix: _line(fix, profile),
+        label=lambda fix: _line(fix),
         describe=lambda fix: {"fix": list(fix.argv)},
         ui=ui,
         destructive=True,
@@ -128,7 +128,7 @@ def run_fixes(
     outcomes = [
         _outcome(fix, refusals[fix], runs.get(fix), after, dry_run=dry_run) for fix in fixes
     ]
-    _emit(outcomes, fmt=fmt, columns=columns, profile=profile)
+    _emit(outcomes, fmt=fmt, columns=columns)
     counts = {action: sum(row.action == action for row in outcomes) for action in _ACTIONS}
     _diag.info(summary("doctor fix", counts))
     if dry_run:
@@ -166,8 +166,8 @@ def _refusal(fix: _Fix, builtin_for: Callable[[str], str | None]) -> UntapedErro
     return None
 
 
-def _line(fix: _Fix, profile: str) -> str:
-    return run_line(list(fix.argv), profile)
+def _line(fix: _Fix) -> str:
+    return run_line(list(fix.argv))
 
 
 def _run_one_fix(fix: _Fix) -> ChildRun:
@@ -319,17 +319,15 @@ def _error_detail(info: Failure) -> str:
     return f"{info.message}; {info.hint}" if info.hint else info.message
 
 
-def _emit(
-    rows: list[FixOutcome], *, fmt: OutputFormat, columns: list[str] | None, profile: str
-) -> None:
+def _emit(rows: list[FixOutcome], *, fmt: OutputFormat, columns: list[str] | None) -> None:
     count_row_failures(rows)  # a failed fix's ``error`` sets the exit code
     if fmt == "table" and columns is None:
         if rows:
-            emit_fix_list(rows, run_line=lambda argv: run_line(argv, profile))
+            emit_fix_list(rows, run_line=run_line)
         return
     if fmt == "table":
         # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix, profile)} for row in rows]
+        shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix)} for row in rows]
         emit_isolated(shown, fmt=fmt, columns=columns)
     else:
         emit_isolated(rows, fmt=fmt, columns=columns)
@@ -338,7 +336,7 @@ def _emit(
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
     """Exit 1, pointing at ``doctor`` for ``profile``, when a check still fails."""
     if any(row["status"] == "fail" for row in rows):
-        _diag.hint(run_hint(run_line(command_argv("doctor", profile=profile), profile)))
+        _diag.hint(run_hint(run_line(command_argv("doctor", profile=profile))))
         raise SystemExit(ExitCode.FAILURE)
 
 

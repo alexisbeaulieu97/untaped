@@ -334,5 +334,31 @@ def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> Non
     )
     with profile_scope("default"):
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
-    # Without the flag the same line would act on the configured active profile.
+    # Without the flag the same line would read the profiles UNTAPED_PROFILE picks.
     assert "→ untaped --profile default auth set svc\n" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("env", "flag"), [("a,b", None), (None, ("a", "b")), ("a", ("b",)), ("b", None)]
+)
+def test_a_fix_writes_to_the_top_of_a_picked_stack(
+    _isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env: str | None,
+    flag: tuple[str, ...] | None,
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n  b: {}\n")
+    if env:
+        monkeypatch.setenv("UNTAPED_PROFILE", env)
+    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
+    with profile_scope(flag or ()):
+        listed = CliInvoker().invoke(app, ["--format", "table", "--online"])
+        row = _row(CliInvoker().invoke(app, ["--format", "json", "--online"]), "svc.api")
+
+    # One profile, so a write lands where this run reads it; kept on the line,
+    # since the bare line would write to the base.
+    assert row["fix"] == ["--profile", "b", "auth", "set", "svc"]
+    assert "→ untaped --profile b auth set svc\n" in listed.stdout

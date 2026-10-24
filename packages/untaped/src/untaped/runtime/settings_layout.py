@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     base_sections,
+    check_defined,
     named_profiles,
     picked_names,
     profile_entries,
@@ -116,9 +117,10 @@ class ProfilesSettingsLayout:
         new profile.
         """
         name = requested or write_target()
+        known = named_profiles(raw)
+        check_defined(picked_names(), known)  # a run whose pick is undefined writes nothing
         if name == DEFAULT_PROFILE:
             return raw, name
-        known = named_profiles(raw)
         if name not in known:
             raise ConfigError(
                 f"{not_found('profile', name, known=sorted(known))}\n"
