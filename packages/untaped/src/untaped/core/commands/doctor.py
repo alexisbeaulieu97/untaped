@@ -1,8 +1,8 @@
-"""Root ``untaped doctor`` command group.
+"""Root ``untaped doctor`` command group: ``Doctor`` on core's plugin class.
 
-Its default command runs the shell plus every composed plugin's health
-checks OFFLINE — config-file reads plus in-process model
-validation only, never network I/O. ``--online`` adds the checks
+``untaped doctor`` (``Doctor.runs``, :class:`Check`) runs the shell plus
+every composed plugin's health checks OFFLINE — config-file reads plus
+in-process model validation only, never network I/O. ``--online`` adds the checks
 plugins contribute with ``DoctorCheck(online=True)``, which contact the
 configured services. A check's ``DoctorResult.fix`` becomes the row's
 ``fix``: a complete argv (``--profile`` first) to run after ``untaped``;
@@ -16,7 +16,8 @@ profile keys no settings model declares, renamed, retired, deleted or deprecated
 in any profile (fixed by ``config migrate``, except deprecated settings),
 installed skills an older untaped wrote, someone edited or no plugin ships,
 and a plugin check that returns ``DoctorResult(..., warn=True)``. ``doctor
-fix`` (:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
+fix`` (:class:`Fix`, driving :mod:`untaped.core.commands.fix`) runs every
+automatic fix the checks name.
 """
 
 from __future__ import annotations
@@ -25,16 +26,15 @@ import os
 import re
 import shlex
 import stat
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 
-from cyclopts import App, Parameter
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
+from untaped.core.commands import records
 from untaped.core.commands._render import emit_check_list, emit_isolated
-from untaped.core.commands.records import DoctorCheckRow
 from untaped.core.commands.skills import composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import SkillState, local_project_root, outdated_skills
@@ -76,17 +76,9 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
-from untaped.sdk._cli import (
-    ColumnsOption,
-    DryRunOption,
-    FormatOption,
-    YesOption,
-    create_app,
-    report_errors,
-    writes,
-)
 from untaped.sdk._schema import walk_settings
-from untaped.sdk.errors import ConfigError, ExitCode, UntapedError, first_validation_error
+from untaped.sdk.errors import ConfigError, ExitCode, Failed, UntapedError, first_validation_error
+from untaped.sdk.fields import Confirm, Output
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.sdk.health.deprecated_keys import key_mappings, scan_keys
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -95,6 +87,7 @@ from untaped.sdk.health.migrations import MigrationOptions
 from untaped.sdk.marks import owner, removal_text
 from untaped.sdk.network._token_store import pass_problem
 from untaped.sdk.network.http import resolve_verify
+from untaped.sdk.plugin import Command, Group
 from untaped.sdk.storage.state import ProjectStateRows, StateRows
 from untaped.sdk.words import (
     command_argv,
@@ -135,86 +128,84 @@ class _SectionScope:
     """The section's typed rows, each read by its own rules."""
 
 
-OnlineOption = Annotated[
-    bool,
-    Parameter(
-        name="--online",
-        negative="",
-        help="Also contact each configured service (tokens, URLs, TLS).",
-    ),
-]
+_ONLINE = "Also contact each configured service (tokens, URLs, TLS)."
 
 
-def build_root_doctor_app(
-    *,
-    shell: ApplicationSpec,
-    result: CompositionResult,
-    builtin_for: Callable[[str], str | None],
-) -> App:
-    """Return the root ``doctor`` command and its ``fix`` subcommand for one composition.
+class Check(Command[CoreSettings]):
+    """Run every health check and report one row per check.
 
-    ``builtin_for`` resolves a root command name, as dispatch would.
+    Examples:
+        $ untaped doctor
+        $ untaped doctor --online --format json
     """
-    app = create_app(
-        name="doctor",
-        help="Check the health of the shell and every composed plugin.",
-    )
 
-    @app.default
-    def run_command(
-        *, online: OnlineOption = False, fmt: FormatOption = "table", columns: ColumnsOption = None
-    ) -> None:
-        """Run every health check and report one row per check."""
-        with report_errors():
-            _run(shell, result, online=online, fmt=fmt, columns=columns)
+    online: bool = Field(False, description=_ONLINE)
+    output: Output[records.DoctorCheck]
 
-    @app.command(name="fix")
-    @writes(destructive=True)
-    def fix_command(
-        *,
-        online: OnlineOption = False,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Run every automatic fix doctor found, after one confirmation.
+    def run(self) -> Iterator[records.DoctorCheck]:
+        # Lazy: bootstrap is the CLI's root and imports this module.
+        from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
 
-        No automatic fix asks for or prints a token, so `--yes` passes none:
-        `auth migrate` moves tokens inside its own process. A keychain may
-        show an unlock prompt on the user's screen; a locked `pass` store
-        exits 5 with a hint naming the unlock command. A `skipped` row's
-        `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
-        value to ask for, and a fix that asks for or reveals a token
-        (`auth login`, `auth set`, `config set ….token --prompt`) is the user's to run.
-        """
-        from untaped.core.commands.fix import run_fixes  # noqa: PLC0415 - fix imports doctor
-
-        with report_errors():
-            run_fixes(
-                shell,
-                result,
-                online=online,
-                yes=yes,
-                dry_run=dry_run,
-                fmt=fmt,
-                columns=columns,
-                builtin_for=builtin_for,
-            )
-
-    return app
+        rows = collect_doctor_rows(SHELL_SPEC, composition(), online=self.online)
+        if _shows_itself(self.output):
+            _show_check_rows(rows, columns=self.output.requested)
+        else:
+            yield from (records.DoctorCheck.model_validate(row) for row in rows)
+        if _check_footer(rows, op="doctor"):
+            raise Failed("a doctor check failed")
 
 
-def _run(
-    shell: ApplicationSpec,
-    result: CompositionResult,
-    *,
-    online: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    rows = collect_doctor_rows(shell, result, online=online)
-    report_check_rows(rows, op="doctor", fmt=fmt, columns=columns)
+class Fix(Command[CoreSettings]):
+    """Run every automatic fix doctor found, after one confirmation.
+
+    No automatic fix asks for or prints a token, so `--yes` passes none:
+    `auth migrate` moves tokens inside its own process. A keychain may
+    show an unlock prompt on the user's screen; a locked `pass` store
+    exits 5 with a hint naming the unlock command. A `skipped` row's
+    `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
+    value to ask for, and a fix that asks for or reveals a token
+    (`auth login`, `auth set`, `config set ….token --prompt`) is the user's to run.
+
+    Examples:
+        $ untaped doctor fix --dry-run
+        $ untaped doctor fix --yes
+    """
+
+    online: bool = Field(False, description=_ONLINE)
+    confirm: Confirm
+    output: Output[records.FixOutcome]
+
+    def run(self) -> Iterator[records.FixOutcome]:
+        # Lazy: bootstrap is the CLI's root and imports this module; fix imports doctor.
+        from untaped.core.commands.fix import run_fixes  # noqa: PLC0415
+        from untaped.runtime.bootstrap import SHELL_SPEC, composition, root_command  # noqa: PLC0415
+
+        return run_fixes(
+            SHELL_SPEC,
+            composition(),
+            online=self.online,
+            confirm=self.confirm,
+            shows_itself=_shows_itself(self.output),
+            columns=self.output.requested,
+            builtin_for=root_command,
+        )
+
+
+class Doctor(Group):
+    """Check the health of the shell and every composed plugin."""
+
+    runs = Check
+    commands = (Fix,)
+
+
+def _shows_itself(output: Output[Any]) -> bool:
+    """Whether the command prints its own human view: a ``table`` not listing its columns.
+
+    Rows print only after ``run`` ends, and the human view puts the summary
+    and hint after them, so doctor draws its table itself (with
+    ``--columns``, a table whose ``fix`` is the line to type).
+    """
+    return output.format == "table" and output.requested != ["?"]
 
 
 def report_check_rows(
@@ -225,22 +216,33 @@ def report_check_rows(
     ``table`` prints the checklist; with ``--columns`` it prints the table,
     whose ``fix`` is the command line to type.
     """
-    if fmt == "table" and columns is None:
+    if fmt == "table":
+        _show_check_rows(rows, columns=columns)
+    else:
+        checks = [records.DoctorCheck.model_validate(row) for row in rows]
+        emit_isolated(checks, fmt=fmt, columns=columns)
+    if _check_footer(rows, op=op):
+        raise SystemExit(ExitCode.FAILURE)
+
+
+def _show_check_rows(rows: list[dict[str, object]], *, columns: list[str] | None) -> None:
+    """Doctor rows as a person reads them: the checklist, or with ``columns`` a table."""
+    if columns is None:
         emit_check_list(rows, run_line=run_line)
         _diag.info("")
-    elif fmt == "table":
-        # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        emit_isolated([_table_row(row) for row in rows], fmt=fmt, columns=columns)
     else:
-        records = [DoctorCheckRow.model_validate(row) for row in rows]
-        emit_isolated(records, fmt=fmt, columns=columns)
+        # A table shows ``fix`` as the line to type, so it is a view, not the record.
+        emit_isolated([_table_row(row) for row in rows], fmt="table", columns=columns)
+
+
+def _check_footer(rows: list[dict[str, object]], *, op: str) -> bool:
+    """Print the ``op`` summary and the ``doctor fix`` hint; return whether a check failed."""
     counts = {status: sum(row["status"] == status for row in rows) for status in _STATUSES}
     _diag.info(summary(op, counts))
     fix_hint = _fix_hint(rows)
     if fix_hint:
         _diag.hint(fix_hint)
-    if counts[_FAIL]:
-        raise SystemExit(ExitCode.FAILURE)
+    return bool(counts[_FAIL])
 
 
 def _fix_hint(rows: list[dict[str, object]]) -> str | None:
@@ -1235,7 +1237,7 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
 
 
 __all__ = [
-    "build_root_doctor_app",
+    "Doctor",
     "collect_doctor_rows",
     "online_probe_rows",
     "report_check_rows",

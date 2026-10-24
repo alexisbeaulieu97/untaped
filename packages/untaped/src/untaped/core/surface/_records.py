@@ -162,6 +162,8 @@ def _commands(
     for node in nodes:
         mark = _decl_mark(node.stability) or inherited
         if node.node == "group":
+            if node.runs is not None:
+                yield node.runs, _decl_mark(node.runs.stability) or mark
             yield from _commands(node.commands, mark)
         else:
             yield node, mark

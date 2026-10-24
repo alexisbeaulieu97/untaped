@@ -488,6 +488,15 @@ class _PluginWalk:
                 self.problem(
                     "missing-docstring", node.__qualname__, "a group's docstring is its help line"
                 )
+            runs = None
+            if node.runs is not None and _is_command(node.runs):
+                runs = self._command(node.runs, group_path)
+            elif node.runs is not None:
+                self.problem(
+                    "reserved-name",
+                    f"{node.__qualname__}.runs",
+                    f"holds {node.runs!r}, not a Command class",
+                )
             return GroupDecl(
                 name=group_path[-1],
                 path=group_path,
@@ -498,6 +507,7 @@ class _PluginWalk:
                 commands=self._nodes(
                     node.commands, group_path, where=f"{node.__qualname__}.commands"
                 ),
+                runs=runs,
             )
         if _is_command(node):
             return self._command(node, (*path, kebab(node.__name__)))

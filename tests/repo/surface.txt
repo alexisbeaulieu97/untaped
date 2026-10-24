@@ -3043,11 +3043,11 @@ cli untaped doctor --format choice=pipe
 cli untaped doctor --format choice=raw
 cli untaped doctor --format choice=table
 cli untaped doctor --format choice=yaml
-cli untaped doctor --online switch
+cli untaped doctor --online switch default=unset
 cli untaped doctor fix
 cli untaped doctor fix --columns VALUE... default=unset
 cli untaped doctor fix --columns alias=-c
-cli untaped doctor fix --dry-run switch
+cli untaped doctor fix --dry-run switch default=unset
 cli untaped doctor fix --format VALUE default=table
 cli untaped doctor fix --format alias=-f
 cli untaped doctor fix --format choice=json
@@ -3055,9 +3055,9 @@ cli untaped doctor fix --format choice=pipe
 cli untaped doctor fix --format choice=raw
 cli untaped doctor fix --format choice=table
 cli untaped doctor fix --format choice=yaml
-cli untaped doctor fix --online switch
+cli untaped doctor fix --online switch default=unset
 cli untaped doctor fix --yes alias=-y
-cli untaped doctor fix --yes switch
+cli untaped doctor fix --yes switch default=unset
 cli untaped dotfiles  [experimental]
 cli untaped dotfiles apply  [experimental]
 cli untaped dotfiles apply --columns VALUE... default=unset  [experimental]
@@ -4591,6 +4591,18 @@ record untaped.deprecation.level choice=warning
 record untaped.deprecation.message string
 record untaped.deprecation.removed_in integer?
 record untaped.deprecation.replacement string?
+record untaped.doctor_check
+record untaped.doctor_check.automatic boolean
+record untaped.doctor_check.check string
+record untaped.doctor_check.detail string
+record untaped.doctor_check.fix string[]?
+record untaped.doctor_check.plugin string
+record untaped.doctor_check.status choice=error
+record untaped.doctor_check.status choice=fail
+record untaped.doctor_check.status choice=pass
+record untaped.doctor_check.status choice=warn
+record untaped.doctor_check.status string
+record untaped.doctor_check.title string
 record untaped.failure
 record untaped.failure.category choice=auth
 record untaped.failure.category choice=config
@@ -4613,6 +4625,12 @@ record untaped.failure.level choice=error
 record untaped.failure.message string
 record untaped.failure.retryable boolean
 record untaped.failure.system string
+record untaped.fix_outcome
+record untaped.fix_outcome.action string
+record untaped.fix_outcome.checks string[]
+record untaped.fix_outcome.detail string
+record untaped.fix_outcome.error Failure?
+record untaped.fix_outcome.fix string[]
 record untaped.hold_outcome  [experimental]
 record untaped.hold_outcome.action string  [experimental]
 record untaped.hold_outcome.detail string  [experimental]
@@ -5324,6 +5342,7 @@ sdk untaped.sdk.GitResult.stdout
 sdk untaped.sdk.GitResult.text
 sdk untaped.sdk.Group implement=
 sdk untaped.sdk.Group.commands class
+sdk untaped.sdk.Group.runs class
 sdk untaped.sdk.Group.stability class
 sdk untaped.sdk.Help()  [experimental]
 sdk untaped.sdk.HolderState choice=missing

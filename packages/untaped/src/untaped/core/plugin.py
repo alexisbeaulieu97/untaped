@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from untaped.core.commands.auth import Auth
 from untaped.core.commands.config import Config
+from untaped.core.commands.doctor import Doctor
 from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
 from untaped.core.commands.project import ProjectGroup
@@ -24,7 +25,7 @@ class Core(Plugin):
     """untaped's own commands: config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
     settings = CoreSettings
-    commands = (Config, ProfileGroup, Auth, ProjectGroup, Skills, PluginGroup)
+    commands = (Config, ProfileGroup, Auth, ProjectGroup, Doctor, Skills, PluginGroup)
     declaration = DECLARATION
     skill = StubSkill(
         "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "

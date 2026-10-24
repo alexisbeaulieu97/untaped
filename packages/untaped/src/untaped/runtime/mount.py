@@ -143,6 +143,8 @@ class Mount:
             # A composed plugin had no problem, so every node has its declaration.
             for decl, node in zip(decls, nodes, strict=True):
                 if isinstance(decl, GroupDecl) and _is_group(node):
+                    if decl.runs is not None and _is_command(node.runs):
+                        found[decl.runs.path] = node.runs
                     walk(decl.commands, node.commands)
                 elif isinstance(decl, CommandDecl) and _is_command(node):
                     found[decl.path] = node
@@ -357,6 +359,8 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
             if mark is not None:
                 mark_app(sub, mark, source="own")
             _add(sub, mount, node.commands)
+            if node.runs is not None:
+                sub.default(_command(mount, node.runs))
             app.command(sub)
             continue
         app.command(_command(mount, node), name=node.name, help=node.doc)

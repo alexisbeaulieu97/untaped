@@ -9,7 +9,7 @@ block the listing itself.
 
 :func:`emit_check_list` is the human view of doctor rows (``doctor`` and
 ``setup``): a checklist grouped by plugin, one status glyph per row and
-each fix under its row, with the same isolation. :func:`emit_fix_plan` and
+each fix under its row, with the same isolation. :func:`fix_plan` and
 :func:`emit_fix_list` are ``doctor fix``'s plan and result in the same style.
 """
 
@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 
 from untaped.runtime.render import output_width, status_role_style
-from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._cli import emit_with
 from untaped.sdk._ui import UiContext, ui_context
@@ -146,12 +145,12 @@ def _glyph_style(ui: UiContext, status: str) -> str:
     return (status_role_style(ui.theme, role) if role else None) or ""
 
 
-def emit_fix_plan(
+def fix_plan(
     runnable: Sequence[tuple[str, list[str]]], manual: Sequence[tuple[str, list[str]]]
-) -> None:
-    """Print ``doctor fix``'s plan to stderr: each ``(command line, checks)`` to run, then the rest.
+) -> str:
+    """``doctor fix``'s plan: each ``(command line, checks)`` to run, then the rest.
 
-    Not muted by ``--quiet``: it precedes a question.
+    Its confirmation prints it on stderr before the question.
     """
     arrow = _glyphs(ui_context(strict=False))["fix"]
     width = max((len(command) for command, _checks in (*runnable, *manual)), default=0)
@@ -160,7 +159,7 @@ def emit_fix_plan(
         if fixes:
             lines.append(f"{heading} ({len(fixes)}):")
             lines += [f"  {arrow} {cmd.ljust(width)}  {', '.join(checks)}" for cmd, checks in fixes]
-    Diagnostics().info("\n".join(lines), unmuted=True)
+    return "\n".join(lines)
 
 
 def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]], str]) -> None:
@@ -201,4 +200,4 @@ def _glyph_line(ui: UiContext, glyphs: dict[str, str], status: str) -> Text:
     return line
 
 
-__all__ = ["emit_check_list", "emit_fix_list", "emit_fix_plan", "emit_isolated"]
+__all__ = ["emit_check_list", "emit_fix_list", "emit_isolated", "fix_plan"]

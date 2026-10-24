@@ -111,7 +111,7 @@ class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outco
     detail: str = Field(description="For a deleted key, the value it held and why it went.")
 
 
-class DoctorCheckRow(CheckRecord, kind="untaped.doctor_check"):
+class DoctorCheck(CheckRecord, kind="untaped.doctor_check"):
     """One ``doctor`` check; ``fix`` is the command that fixes it, as arguments."""
 
     table_columns: ClassVar[tuple[str, ...]] = (

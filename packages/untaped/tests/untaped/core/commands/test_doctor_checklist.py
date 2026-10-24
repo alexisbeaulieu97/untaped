@@ -13,10 +13,9 @@ from pathlib import Path
 import pytest
 from rich.cells import cell_len
 
-from core_test_support.commands.support import check, compose, make_spec, write_config
+from core_test_support.commands.support import check, make_spec, root_group, write_config
 from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
-from untaped.core.commands.doctor import build_root_doctor_app, report_check_rows
-from untaped.runtime import bootstrap
+from untaped.core.commands.doctor import report_check_rows
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -56,9 +55,7 @@ def _specs() -> tuple[PluginSpec, ...]:
 
 
 def _doctor(*args: str) -> CliResult:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*_specs())
-    )
+    app = root_group("doctor", *_specs())
     return CliInvoker().invoke(app, list(args))
 
 
@@ -106,9 +103,7 @@ def test_the_footer_counts_every_status_and_a_failure_exits_1() -> None:
 
 
 def test_a_healthy_run_prints_its_footer_too() -> None:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose()
-    )
+    app = root_group("doctor")
     result = CliInvoker().invoke(app, [])
     assert result.exit_code == 0, result.output
     assert result.stderr.splitlines()[-1].endswith(" pass")
@@ -191,9 +186,7 @@ def test_a_long_detail_wraps_inside_its_group(
             check("alpha.long", warn=True, detail="a detail " * 12, title="alpha long"),
         ),
     )
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     lines = CliInvoker().invoke(app, []).stdout.splitlines()
     groups = [line for line in lines if line and not line.startswith(" ")]
     assert groups == ["untaped", "alpha"]

@@ -18,13 +18,11 @@ from core_test_support.commands.support import (
     FAIL,
     UnmarkedWizProfile,
     WizProfile,
-    compose,
     make_spec,
+    root_group,
     wiz_api_check,
     write_config,
 )
-from untaped.core.commands.doctor import build_root_doctor_app
-from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import connection_check
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -34,9 +32,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _doctor(*specs: PluginSpec, args: tuple[str, ...] = ("--format", "json")) -> CliResult:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
-    )
+    app = root_group("doctor", *specs)
     return CliInvoker().invoke(app, list(args))
 
 

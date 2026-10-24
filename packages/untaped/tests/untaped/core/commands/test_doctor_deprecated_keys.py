@@ -9,8 +9,8 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import compose, make_spec, write_config
-from untaped.core.commands.doctor import build_root_doctor_app, selected_check_rows
+from core_test_support.commands.support import compose, make_spec, root_group, write_config
+from untaped.core.commands.doctor import selected_check_rows
 from untaped.runtime import bootstrap
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.marks import deprecated
@@ -41,10 +41,9 @@ class OldProfile(BaseModel):
 
 
 def _doctor(*args: str) -> Any:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC,
-        builtin_for=lambda _name: None,
-        result=compose(make_spec("old", settings=OldProfile)),
+    app = root_group(
+        "doctor",
+        make_spec("old", settings=OldProfile),
     )
     return CliInvoker().invoke(app, list(args))  # type: ignore[arg-type]
 

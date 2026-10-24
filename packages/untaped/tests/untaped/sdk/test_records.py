@@ -537,7 +537,7 @@ def _samples() -> dict[str, WireModel]:
         AuthOutcome,
         ConfigMigrationOutcome,
         CredentialOutcome,
-        DoctorCheckRow,
+        DoctorCheck,
         FixOutcome,
         InstalledSkill,
         MigrationPreviewRow,
@@ -688,7 +688,7 @@ def _samples() -> dict[str, WireModel]:
         ConfigMigrationOutcome.model_validate(
             {"profile": "default", "from": "a.b", "to": "a.c", "action": "renamed", "detail": ""}
         ),
-        DoctorCheckRow(
+        DoctorCheck(
             check="config",
             plugin="untaped",
             status="warn",

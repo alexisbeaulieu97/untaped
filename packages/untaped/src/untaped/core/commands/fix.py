@@ -2,16 +2,18 @@
 
 Doctor's warned and failed rows are grouped by their exact ``fix`` argv, in
 row order, so one fix covers every row naming it. An automatic fix runs
-after one confirmation (``--yes`` skips it, ``--dry-run`` only plans); a
-manual one is ``skipped`` with what it needs; a fix that runs ``doctor`` or
-names no root command is refused as ``failed`` before anything runs. Each
+after one confirmation (``Fix.confirm``: ``--yes`` skips it, ``--dry-run``
+only plans); a manual one is ``skipped`` with what it needs; a fix that runs
+``doctor`` or names no root command is refused as ``failed`` before anything
+runs. Each
 fix runs as its own ``python -m untaped <argv> --format json`` with stdin
 closed, so a fix that would prompt fails instead of hanging, and is never
 killed on a timer (a keychain unlock prompt is a legitimate wait). Doctor's
 rows are then collected again: a fix whose rows all pass is ``fixed``, one
 that left a row warning or failing is ``partial``. One
 ``untaped.fix_outcome`` row per fix; the exit code is that of the most
-severe failure, and ``1`` when a check still fails afterwards.
+severe failure, and ``1`` when a check still fails afterwards. The
+:class:`~untaped.core.commands.doctor.Fix` command drives it.
 """
 
 from __future__ import annotations
@@ -21,14 +23,14 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import IO, Any
 
 from pydantic import ValidationError
 
-from untaped.core.commands._render import emit_fix_list, emit_fix_plan, emit_isolated
+from untaped.core.commands._render import emit_fix_list, emit_isolated, fix_plan
 from untaped.core.commands.doctor import (
     collect_doctor_rows,
     group_fixes,
@@ -40,13 +42,16 @@ from untaped.core.commands.records import FixOutcome
 from untaped.runtime.output_policy import DIAGNOSTICS_ENV, is_verbose
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
-from untaped.runtime.sink import Diagnostics, count_row_failures, current_sink
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk._batch import batch_apply, finish
-from untaped.sdk._ui import ui_context
+from untaped.runtime.sink import (
+    Diagnostics,
+    count_failed_actions,
+    count_row_failures,
+    current_sink,
+)
 from untaped.sdk.diagnostic import Failure
-from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError
-from untaped.sdk.words import command_argv, not_found, run_hint, split_profile, summary
+from untaped.sdk.errors import ErrorCategory, Failed, UntapedError
+from untaped.sdk.fields import Confirm
+from untaped.sdk.words import command_argv, not_found, plural, run_hint, split_profile, summary
 
 _diag = Diagnostics()
 
@@ -82,59 +87,63 @@ def run_fixes(
     result: CompositionResult,
     *,
     online: bool,
-    yes: bool,
-    dry_run: bool,
-    fmt: OutputFormat,
+    confirm: Confirm,
+    shows_itself: bool,
     columns: list[str] | None,
     builtin_for: Callable[[str], str | None],
-) -> None:
-    """``doctor fix``: collect, select, confirm, run, re-check, report."""
-    ui = ui_context(strict=False)
+) -> Iterator[FixOutcome]:
+    """``doctor fix``: collect, select, confirm, run, re-check, report.
+
+    With ``shows_itself`` (a ``table``) the outcomes are printed here, the
+    summary and hint after them; otherwise they are yielded for the command's
+    ``Output`` to print. A check still failing afterwards raises
+    :class:`~untaped.sdk.errors.Failed` once the rows are out.
+    """
     profile = selected_profile()
     rows = collect_doctor_rows(shell, result, online=online)
     fixes = _select(rows)
     if not fixes:
         _diag.info("nothing to fix")
-        _emit([], fmt=fmt, columns=columns)
         _exit_unhealthy(rows, profile)
         return
     refusals = {fix: _refusal(fix, builtin_for) for fix in fixes}
     runnable = [fix for fix in fixes if fix.automatic and refusals[fix] is None]
     manual = [fix for fix in fixes if not fix.automatic and refusals[fix] is None]
-
-    def preview(_planned: Sequence[dict[str, object]]) -> None:
-        emit_fix_plan(
-            [(_line(fix), list(fix.checks)) for fix in runnable],
-            [(_line(fix), list(fix.checks)) for fix in manual],
-        )
-
-    outcome = batch_apply(
-        runnable,
-        _run_one_fix,
-        verb="run",
-        noun="fix",
-        label=lambda fix: _line(fix),
-        describe=lambda fix: {"fix": list(fix.argv)},
-        ui=ui,
-        destructive=True,
-        assume_yes=yes,
-        preview_only=dry_run,
-        preview=preview,
-    )
-    if outcome.cancelled:
-        finish(outcome)
-    runs: dict[_Fix, ChildRun | UntapedError] = {**dict(outcome.results), **dict(outcome.failures)}
-    after = collect_doctor_rows(shell, result, online=online) if outcome.results else rows
+    to_run = [(_line(fix), list(fix.checks)) for fix in runnable]
+    needs_you = [(_line(fix), list(fix.checks)) for fix in manual]
+    question = f"Run {plural(len(runnable), 'automatic fix', 'automatic fixes')}?"
+    # the planned rows are what --dry-run prints, so only a question shows the plan first
+    preview = None if confirm.dry_run else lambda: [fix_plan(to_run, needs_you)]
+    go = bool(runnable) and confirm(question, preview=preview)
+    runs = _run_all(runnable) if go else {}
+    ran = any(isinstance(run, ChildRun) for run in runs.values())
+    after = collect_doctor_rows(shell, result, online=online) if ran else rows
+    dry_run = confirm.dry_run
     outcomes = [
         _outcome(fix, refusals[fix], runs.get(fix), after, dry_run=dry_run) for fix in fixes
     ]
-    _emit(outcomes, fmt=fmt, columns=columns)
+    if shows_itself:
+        _show(outcomes, columns=columns)
+    else:
+        yield from outcomes
     counts = {action: sum(row.action == action for row in outcomes) for action in _ACTIONS}
     _diag.info(summary("doctor fix", counts))
-    if dry_run:
-        return
-    finish(counts["failed"] > 0 or counts["partial"] > 0)
-    _exit_unhealthy(after, profile)
+    if not dry_run:
+        _exit_unhealthy(after, profile)
+
+
+def _run_all(runnable: Sequence[_Fix]) -> dict[_Fix, ChildRun | UntapedError]:
+    """Run each fix in turn under one progress line; a fix that cannot start is an error line."""
+    runs: dict[_Fix, ChildRun | UntapedError] = {}
+    with _diag.progress(f"Run {plural(len(runnable), 'fix', 'fixes')}") as progress:
+        for index, fix in enumerate(runnable, 1):
+            progress.update(_line(fix), done=index, total=len(runnable))
+            try:
+                runs[fix] = _run_one_fix(fix)
+            except UntapedError as exc:
+                _diag.failure(exc, item=_line(fix))
+                runs[fix] = exc
+    return runs
 
 
 def _select(rows: list[dict[str, object]]) -> list[_Fix]:
@@ -319,25 +328,24 @@ def _error_detail(info: Failure) -> str:
     return f"{info.message}; {info.hint}" if info.hint else info.message
 
 
-def _emit(rows: list[FixOutcome], *, fmt: OutputFormat, columns: list[str] | None) -> None:
+def _show(rows: list[FixOutcome], *, columns: list[str] | None) -> None:
+    """The outcomes as a person reads them, counted for the exit code as printed rows are."""
     count_row_failures(rows)  # a failed fix's ``error`` sets the exit code
-    if fmt == "table" and columns is None:
+    count_failed_actions(rows)  # and so does a ``failed`` or ``partial`` action
+    if columns is None:
         if rows:
             emit_fix_list(rows, run_line=run_line)
         return
-    if fmt == "table":
-        # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix)} for row in rows]
-        emit_isolated(shown, fmt=fmt, columns=columns)
-    else:
-        emit_isolated(rows, fmt=fmt, columns=columns)
+    # A table shows ``fix`` as the line to type, so it is a view, not the record.
+    shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix)} for row in rows]
+    emit_isolated(shown, fmt="table", columns=columns)
 
 
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
-    """Exit 1, pointing at ``doctor`` for ``profile``, when a check still fails."""
+    """Fail the run, pointing at ``doctor`` for ``profile``, when a check still fails."""
     if any(row["status"] == "fail" for row in rows):
         _diag.hint(run_hint(run_line(command_argv("doctor", profile=profile))))
-        raise SystemExit(ExitCode.FAILURE)
+        raise Failed("a doctor check still fails")
 
 
 __all__ = ["ChildRun", "run_fixes"]
