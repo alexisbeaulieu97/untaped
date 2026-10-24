@@ -40,7 +40,7 @@ from untaped.runtime.declaration import (
 )
 from untaped.runtime.registry import PluginSpec, SkillAsset, resolve_target
 from untaped.runtime.run import build_run
-from untaped.sdk._block import FieldBlock, Invocation
+from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
 from untaped.sdk._stdin import read_stdin_text
@@ -150,6 +150,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     plugin = mount.declaration.plugin(name)
     has_commands = bool(plugin.commands) or plugin.runs is not None
     skills = (SkillAsset(name=f"untaped-{name}", description=plugin.skill),) if plugin.skill else ()
+    blocks = _spelled_blocks(mount, name)
     return PluginSpec(
         name=name,
         app_factory=partial(build_app, mount, name) if has_commands else None,
@@ -157,7 +158,23 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),
         skills=skills,
+        caches=tuple(blocks["cache"]),
+        migrations=tuple(blocks["dir-migration"]),
+        doctor_checks=tuple(blocks["doctor-check"]),
+        credentials=tuple(blocks["credential"]),
+        deprecations=partial(tuple, blocks["deprecated-behaviour"]),
     )
+
+
+def _spelled_blocks(mount: Mount, name: str) -> defaultdict[str, list[Any]]:
+    """The plugin's blocks by kind, each given its plugin and name for core's 11.x readers."""
+    cls = mount.plugins[name]
+    blocks: defaultdict[str, list[Any]] = defaultdict(list)
+    for decl in mount.declaration.plugin(name).blocks:
+        block = getattr(cls, decl.attribute)
+        if isinstance(block, OwnedBlock):
+            blocks[decl.block].append(block._spelled_as(name, decl.name))
+    return blocks
 
 
 # --- the command line ----------------------------------------------------------

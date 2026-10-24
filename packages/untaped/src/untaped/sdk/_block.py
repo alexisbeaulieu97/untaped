@@ -10,6 +10,7 @@ root importing the group (layout-12.0.md decision 2).
 
 from __future__ import annotations
 
+import copy
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -128,6 +129,16 @@ class OwnedBlock(Block):
             )
         self._plugin = plugin
         self._name = name
+
+    def _spelled_as(self, plugin: str, name: str) -> Self:
+        """A copy given ``plugin`` and ``name``, for a reader that runs outside any run.
+
+        The 11.x seam hands a plugin class's blocks to core's 11.x readers
+        (``config``, ``doctor``, ``setup``) this way; it goes with that seam.
+        """
+        named = copy.copy(self)
+        named._plugin, named._name = plugin, name
+        return named
 
     @property
     def spelled(self) -> bool:
