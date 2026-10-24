@@ -1,7 +1,7 @@
 """The upstream budget: every call capped and unretried until one succeeds, then none.
 
 ``HttpClient`` and ``run_git`` read it; ``quick_probe`` (``doctor --online``)
-keeps every call capped. ``_sleep`` is patched so retries run instantly.
+keeps every call capped. The back-off waits on the test's clock, so retries run instantly.
 """
 
 from __future__ import annotations
@@ -20,13 +20,12 @@ from untaped.sdk.errors import HttpStatusError, HttpTransportError
 from untaped.sdk.git import GitCommandError, run_git
 from untaped.sdk.network.http import HttpClient, RetryPolicy
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, fail_fast, full_retries, quick_probe
+from untaped.sdk.testing import ManualClock
 
 
 @pytest.fixture
-def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    recorded: list[float] = []
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", recorded.append)
-    return recorded
+def no_sleep(clock: ManualClock) -> list[float]:
+    return clock.slept
 
 
 def _timeouts(route: respx.Route) -> list[float | None]:

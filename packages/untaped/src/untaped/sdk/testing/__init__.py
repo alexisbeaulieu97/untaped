@@ -272,19 +272,22 @@ def manual_clock(start: datetime | None = None) -> Iterator[ManualClock]:
 
 
 class _WallOnly(Clock):
-    """A clock that answers wall time itself and the rest from the clock below it."""
+    """A clock that answers wall time itself and monotonic time from the clock below it.
 
-    def __init__(self, below: Clock, wall: Callable[[], datetime]) -> None:
+    A block's wait moves the wall clock and never waits: a test never sleeps.
+    """
+
+    def __init__(self, below: Clock, wall: CacheClock) -> None:
         self._below, self._wall = below, wall
 
     def now(self) -> datetime:
-        return self._wall()
+        return self._wall.now
 
     def monotonic(self) -> float:
         return self._below.monotonic()
 
     def sleep(self, seconds: float) -> None:
-        self._below.sleep(seconds)
+        self._wall.advance(timedelta(seconds=seconds))
 
 
 def _cadence_is_the_tests() -> bool:

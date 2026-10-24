@@ -106,10 +106,10 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(
         httpx.Response(403, json={"message": "API rate limit exceeded for user ID 1."}),
     ],
 )
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_rate_limit_is_retryable_and_exits_five(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response
 ) -> None:
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     result = _whoami(tmp_path, monkeypatch, [], response=response)
 

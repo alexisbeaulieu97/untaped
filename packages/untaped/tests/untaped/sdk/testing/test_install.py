@@ -224,8 +224,7 @@ def test_the_clock_ages_the_caches(install: Installer, clock: ManualClock) -> No
     assert shop.run(Prices()).text == "1"
     clock.advance(hours=2)
     assert shop.run(Prices()).text == "2"
-    clock.advance(1)
-    assert shop.run(Prices(), refresh=True).text == "3"
+    assert shop.run(Prices(), refresh=True).text == "3"  # a stopped clock still refreshes
 
 
 def test_settings_of_no_installed_plugin_are_refused(install: Installer) -> None:

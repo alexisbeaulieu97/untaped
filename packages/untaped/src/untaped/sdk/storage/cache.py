@@ -783,7 +783,8 @@ class Cache[M = None](OwnedBlock):
                 refreshed_at = current.freshness.refreshed_at
                 # another version's typed value is a fallback, never an answer: fill this one's
                 fallback = typing is not None and current.freshness.outdated
-                if refreshed_at is not None and refreshed_at >= started and not fallback:
+                # after this run started: a stopped clock (a test's) never counts an earlier run
+                if refreshed_at is not None and refreshed_at > started and not fallback:
                     return current  # refreshed while this run waited: serve it, under --refresh too
                 due = current.freshness.due(None, max_age=max_age, now=_utcnow())
                 if refresh is None and not due:

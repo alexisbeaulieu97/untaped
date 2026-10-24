@@ -493,15 +493,12 @@ def test_only_an_auto_refill_runs_under_the_fail_fast_budget(clock: CacheClock) 
     assert seen == [False, True, False]
 
 
-def test_a_first_fill_retries_a_transient_failure(
-    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("clock")
+def test_a_first_fill_retries_a_transient_failure() -> None:
     import httpx
     import respx
 
     from untaped.sdk.network.http import HttpClient, RetryPolicy
-
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _seconds: None)
 
     def fetch(_key: str, _task: ProgressHandle) -> Filled:
         with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
@@ -1033,6 +1030,7 @@ def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
     def load(self: Cache, paths: Any, key: str, version: str | None, typing: Any) -> Any:
         loads.append(1)
         if len(loads) == 2:  # the reload under the lock: the other install just filled it
+            clock.advance(timedelta(seconds=1))
             fresh = Freshness(refreshed_at=clock.now, version="1")
             self._write(paths.file(), key, fresh, None, None)
         return real_load(self, paths, key, version, typing)
@@ -1174,7 +1172,7 @@ def test_never_refreshed_is_an_sdk_error() -> None:
 
 
 def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
-    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
+    clock: CacheClock,
 ) -> None:
     """An automatic refresh, the first probe down: the fill completes, holed, with its retry time.
 
@@ -1187,7 +1185,6 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
     from untaped.sdk._concurrency import bounded_map
     from untaped.sdk.network.http import HttpClient, RetryPolicy
 
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _seconds: None)
     _refreshed(clock, "a", ago=timedelta(hours=2))
     reset = START + timedelta(minutes=30)
 
