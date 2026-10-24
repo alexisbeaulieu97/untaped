@@ -349,23 +349,55 @@ class DataFile[M: BaseModel]:
             raise ConfigError(
                 f"{self!r} keeps a {self.model.__name__}, not a {type(value).__name__}"
             )
+        body = value.model_dump(mode="json", by_alias=True)
+        return self._write(body, refreshed_at=refreshed_at, exclusive=exclusive)
+
+    def copy_to(self, path: Path) -> DataFile[M]:
+        """Copy this file's data to ``path``, stamped by this release, its freshness cleared.
+
+        The source must read as this model's data file; the copy keeps every
+        key it holds and is written as :meth:`write` writes. A source that
+        doesn't read, or a target a newer untaped wrote, is a :class:`ConfigError`.
+        """
+        found = self.read()
+        if not isinstance(found, Found):
+            reason = found.reason if isinstance(found, Unreadable) else _NOT_FOUND[type(found)]
+            raise ConfigError(
+                f"cannot copy {self.path}: it {reason}", details={"path": str(self.path)}
+            )
+        stored = self._stored()
+        target = DataFile(Path(path), self.model)
+        body = found.value.model_dump(mode="json", by_alias=True)
+        target._write({**(stored or {}), **body}, refreshed_at=None, exclusive=False, merge=False)
+        return target
+
+    def _write(
+        self,
+        body: dict[str, Any],
+        *,
+        refreshed_at: datetime | None,
+        exclusive: bool,
+        merge: bool = True,
+    ) -> bool:
+        """Write ``body`` over what the file holds (``merge``: keeping what it doesn't know)."""
+        from untaped.sdk.storage._write_back import write_back  # noqa: PLC0415 - writes only
+
         busy = f"{self.path} is busy (another untaped process)"
-        with locked_write(self.path, timeout=_WRITE_WAIT, busy=busy):
-            before = self.read()
-            if isinstance(before, OtherVersion):
-                raise ConfigError(
-                    f"{self.path} was written by a newer untaped ({before.by or 'unknown'}), "
-                    "whose format this release cannot write",
-                    hint="upgrade untaped",
-                    details={"path": str(self.path)},
-                )
-            if exclusive and not isinstance(before, Absent):
+        with locked_write(self.path, timeout=_WRITE_WAIT, busy=busy, lock=_lock_path(self.path)):
+            stored = self._stored()
+            if exclusive and stored is not None:
                 return False
-            body = value.model_dump(mode="json", by_alias=True)
-            if isinstance(before, Found):
-                body = self._kept(before.value, body)
+            if stored and merge:
+                try:
+                    known = self.model.model_validate(stored).model_dump(mode="json", by_alias=True)
+                except ValidationError:  # damaged fields: keep only what the model doesn't know
+                    known = {}
+                body = write_back(self.model, stored, known, body)
+            text = _object_text(body, refreshed_at)
             try:
-                atomic_write(self.path, _object_text(body, refreshed_at), mode=MODE)
+                if exclusive:
+                    return _create(self.path, text)  # whole, and only if still absent
+                atomic_write(self.path, text, mode=MODE)
             except OSError as exc:
                 raise ConfigError(
                     f"could not write {self.path}: {exc.strerror or exc}; nothing changed",
@@ -373,27 +405,56 @@ class DataFile[M: BaseModel]:
                 ) from exc
         return True
 
-    def copy_to(self, path: Path) -> DataFile[M]:
-        """Copy this file's data to ``path``, stamped by this release, its freshness cleared.
+    def _stored(self) -> dict[str, Any] | None:
+        """The fields the file holds (``None``: no file; ``{}``: nothing to keep).
 
-        Raises :class:`OSError` or :class:`ValueError` as :func:`copy_data_file` does.
+        A file this release cannot read is never written over: a newer
+        untaped's, or one that cannot be opened, is a :class:`ConfigError`.
         """
-        copy_data_file(self.path, Path(path))
-        return DataFile(Path(path), self.model)
-
-    def _kept(self, current: M, body: dict[str, Any]) -> dict[str, Any]:
-        """``body`` laid over the stored fields, so keys this release doesn't know survive."""
-        from untaped.sdk.storage._write_back import write_back  # noqa: PLC0415 - writes only
-
         try:
-            stored = json.loads(self.path.read_bytes())
-        except OSError, ValueError:
-            return body
-        if not isinstance(stored, dict):
-            return body
-        stored.pop(STAMP, None)
-        known = current.model_dump(mode="json", by_alias=True)
-        return write_back(self.model, stored, known, body)
+            text = self.path.read_bytes()
+        except FileNotFoundError, NotADirectoryError:
+            return None
+        except OSError as exc:
+            raise ConfigError(
+                f"cannot read {self.path} ({exc.strerror or exc}), so it is not written over",
+                details={"path": str(self.path)},
+            ) from exc
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        stamp = data.pop(STAMP, None)
+        checked = check_stamp(stamp) if isinstance(stamp, dict) else None
+        if isinstance(checked, OtherVersion):
+            raise ConfigError(
+                f"{self.path} was written by a newer untaped ({checked.by or 'unknown'}), "
+                "whose format this release cannot write",
+                hint="upgrade untaped",
+                details={"path": str(self.path)},
+            )
+        return data
+
+
+#: How a read that found nothing to copy says so.
+_NOT_FOUND = {Absent: "does not exist", OtherVersion: "was written by a newer untaped"}
+
+
+def _lock_path(path: Path) -> Path:
+    """Where a data file's write lock lives: the user's temp folder, keyed by its real path.
+
+    Never beside the file, whose folder another owner keeps (a skill folder, a
+    project, a backup) and which may be read-only.
+    """
+    import getpass  # noqa: PLC0415 - writes only
+    import tempfile  # noqa: PLC0415 - as above
+
+    key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
+    folder = Path(tempfile.gettempdir()) / f"untaped-{getpass.getuser()}" / "locks"
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return folder / f"{key}.lock"
 
 
 class _FileAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,name-defined,misc]

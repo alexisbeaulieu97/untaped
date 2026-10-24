@@ -242,8 +242,12 @@ _WRITING = threading.local()
 
 
 @contextmanager
-def locked_write(target: Path, *, timeout: float, busy: str) -> Iterator[None]:
+def locked_write(
+    target: Path, *, timeout: float, busy: str, lock: Path | None = None
+) -> Iterator[None]:
     """Hold the advisory ``<target>.lock`` (creating the parent directory) to write ``target``.
+
+    ``lock`` puts the lock file elsewhere, for a file whose folder is another's.
 
     Waits up to ``timeout`` seconds for another process, then raises
     :class:`ConfigError` saying ``busy``. A write to ``target`` started inside
@@ -266,7 +270,7 @@ def locked_write(target: Path, *, timeout: float, busy: str) -> Iterator[None]:
             f"could not create the directory for {target}: {exc.strerror or exc}"
         ) from exc
     with file_lock(
-        Path(f"{target}.lock"),
+        Path(f"{target}.lock") if lock is None else lock,
         timeout=timeout,
         error=ConfigError,
         busy=busy,

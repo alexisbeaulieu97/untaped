@@ -22,7 +22,7 @@ from untaped.sdk.storage._fs import file_lock
 
 @experimental
 class Lock(OwnedBlock):
-    """An operation lock: ``with self.plugin_class.sync.locked(): ...``.
+    """An operation lock: ``with DotfilesPlugin.sync.locked(): ...``.
 
     ``wait`` is how long :meth:`locked` waits for another process holding it
     before it fails with ``<plugin>.<name> is busy (another untaped

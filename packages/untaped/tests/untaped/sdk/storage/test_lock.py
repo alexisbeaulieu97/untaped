@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
 from untaped.sdk import ErrorCategory, Lock, Plugin, UntapedError
-from untaped.sdk.run import Run, run_scope
+from untaped.sdk.run import NoRunError, Run, run_scope
 
 
 class Settings(BaseModel):
@@ -76,3 +76,30 @@ def test_the_wait_is_a_timedelta_of_zero_or_more(wait: object) -> None:
 
 def test_it_reads_as_written() -> None:
     assert repr(Demo.sync) == f"Lock('Lock created in {__name__}', wait=datetime.timedelta(0))"
+
+
+def test_another_thread_holding_it_makes_it_busy() -> None:
+    import contextvars
+    import threading
+
+    taken, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with Demo.sync.locked():
+            taken.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=contextvars.copy_context().run, args=(hold,))
+    worker.start()
+    taken.wait(5)
+    try:
+        with Demo.sync.try_locked() as held:
+            assert not held
+    finally:
+        release.set()
+        worker.join(5)
+
+
+def test_outside_a_run_it_says_so() -> None:
+    with run_scope(None), pytest.raises(NoRunError), Demo.sync.locked():  # type: ignore[arg-type]
+        pytest.fail("held outside a run")
