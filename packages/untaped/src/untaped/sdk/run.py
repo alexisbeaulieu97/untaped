@@ -121,35 +121,41 @@ class Run:
     diag: Diag
     #: The terminal handle, built on first use (prompts and screens need one).
     terminal: Callable[[], UiContext]
-    #: What every block reads time from: by default the clock outside a run (:func:`run_clock`).
-    clock: Clock = field(default_factory=lambda: _outside[0])
+    #: What every block reads time from (:func:`run_clock`).
+    clock: Clock = field(default_factory=Clock)
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)
 
-#: The clock code outside a run reads, and the one a new run starts with; a test installs its own.
-_outside: list[Clock] = [Clock()]
+#: Code outside a run reads a plain clock.
+_PLAIN = Clock()
+#: The clock a test installed (:func:`installed_clock`), read before any run's.
+_installed: list[Clock | None] = [None]
 
 
 def run_clock() -> Clock:
-    """The current run's clock, else the clock outside a run.
+    """The clock blocks read time from: cache ages, progress cadence, HTTP back-off.
 
-    Cache ages, progress cadence and HTTP back-off read time here, so a
-    test's clock (:func:`installed_clock`) moves all three. A thread a block
-    starts doesn't see the run: the block reads the clock before starting it.
+    A test's clock (:func:`installed_clock`) wins, in every thread and over
+    every run, so it moves all three wherever the test installs it.
+    Otherwise it is the current run's (a worker started with a copied
+    context, as ``bounded_map`` starts them, sees the run), else a plain one.
     """
+    installed = _installed[0]
+    if installed is not None:
+        return installed
     run = _RUN.get()
-    return run.clock if run is not None else _outside[0]
+    return run.clock if run is not None else _PLAIN
 
 
 @contextmanager
 def installed_clock(clock: Clock) -> Iterator[Clock]:
-    """Use ``clock`` outside a run, and for each run built inside the block (a test's)."""
-    previous, _outside[0] = _outside[0], clock
+    """Make ``clock`` what every block reads for the block inside (a test's), then restore."""
+    previous, _installed[0] = _installed[0], clock
     try:
         yield clock
     finally:
-        _outside[0] = previous
+        _installed[0] = previous
 
 
 @contextmanager

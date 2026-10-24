@@ -380,7 +380,7 @@ and contracts from losing a line by accident (experimental), and
 in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
-with `untaped.sdk.testing.progress_clock()`).
+with `untaped.sdk.testing.manual_clock()`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

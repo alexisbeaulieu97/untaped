@@ -224,7 +224,7 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
     if seconds is None:
         yield
         return
-    ends = time.monotonic() + seconds
+    ends = run_clock().monotonic() + seconds
     held = _DEADLINE.get()
     token = _DEADLINE.set(ends if held is None else min(held, ends))
     try:
@@ -235,7 +235,7 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
 
 def _time_left() -> float | None:
     ends = _DEADLINE.get()
-    return None if ends is None else ends - time.monotonic()
+    return None if ends is None else ends - run_clock().monotonic()
 
 
 def _fits(delay: float) -> bool:

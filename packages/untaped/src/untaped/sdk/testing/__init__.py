@@ -10,20 +10,17 @@ plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
 public surface (``untaped.sdk.testing.surface``).
 
-Blocks read time from the run's clock (``untaped.sdk.run.run_clock``):
-cache ages, progress cadence and HTTP back-off. Under :func:`manual_clock`
-that clock is a :class:`ManualClock`, which moves only on ``advance(...)``
-(``advance(hours=1)`` is "a rerun an hour later") and on a block's sleep,
-which never waits.
+Blocks read time from one clock (``untaped.sdk.run.run_clock``): cache
+ages, progress cadence and HTTP back-off. Under :func:`manual_clock` it is a
+:class:`ManualClock`, which moves only on ``advance(...)`` (``advance(hours=1)``
+is "a rerun an hour later") and on a block's sleep, which never waits.
 
-The 11.x clocks each move one half and leave the other to the clock below:
-:func:`invoke_cli` freezes progress time for the invocation unless the test
-installed its own, so ``CliResult.diagnostics`` carries no
-``untaped.progress`` line however slow the run (``--verbose`` still prints
-every update); a test that wants the cadence runs under
-:func:`progress_clock` and calls ``advance(seconds)`` from inside the
-command. Under :func:`cache_clock` caches read the test's wall time, which
-moves only on ``advance(timedelta)``.
+:func:`cache_clock` and :func:`progress_clock` are the older clocks, each
+for one kind of time; the other kind stays real (or the manual clock's,
+inside one). :func:`invoke_cli` freezes progress time for the invocation
+unless the test installed a clock for it, so ``CliResult.diagnostics``
+carries no ``untaped.progress`` line however slow the run (``--verbose``
+still prints every update).
 
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
@@ -45,6 +42,7 @@ from __future__ import annotations
 import copy
 import io
 import sys
+import threading
 import warnings
 from collections import deque
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
@@ -73,7 +71,7 @@ from untaped.sdk.prompt.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
-from untaped.sdk.run import Clock, installed_clock, run_clock
+from untaped.sdk.run import Clock, _installed, installed_clock, run_clock
 from untaped.sdk.storage._refs import PROJECT, RefHolder, write_reference
 from untaped.sdk.storage.cache import Cache, versioned
 from untaped.sdk.storage.holds import (
@@ -207,22 +205,18 @@ def current_memory_store() -> MemoryStore:
 
 
 class ManualClock(Clock):
-    """A run's clock that moves only when the test moves it.
+    """A clock that moves only when the test moves it.
 
     Wall and monotonic time move together: :meth:`advance` and a block's
-    :meth:`sleep` (an HTTP back-off, say) move both and never wait, and
-    :meth:`advance` then runs one progress tick, so a due line prints now.
-    ``start`` is the wall time it begins at (now, to the second, by default;
-    naive is UTC).
+    :meth:`sleep` (an HTTP back-off, say) move both, never wait, and then run
+    one progress tick, so a due line prints now. ``start`` is the wall time
+    it begins at (now, to the second, by default; naive is UTC).
     """
 
     def __init__(self, start: datetime | None = None) -> None:
-        if start is None:
-            start = datetime.now(UTC).replace(microsecond=0)
-        elif start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
-        self._wall = start
+        self._wall = _utc(start)
         self._monotonic = 0.0
+        self._lock = threading.Lock()  # parallel workers back off at once
         #: Each wait a block asked for, in seconds, in order.
         self.slept: list[float] = []
 
@@ -233,18 +227,29 @@ class ManualClock(Clock):
         return self._monotonic
 
     def sleep(self, seconds: float) -> None:
-        self.slept.append(seconds)
+        with self._lock:
+            self.slept.append(seconds)
         self._move(seconds)
 
     def advance(self, by: timedelta | float = 0, /, **parts: float) -> None:
         """Move the clock on by ``by`` (seconds or a timedelta) plus ``parts`` (``hours=1``)."""
         step = by if isinstance(by, timedelta) else timedelta(seconds=by)
         self._move((step + timedelta(**parts)).total_seconds())
-        tick()
 
     def _move(self, seconds: float) -> None:
-        self._wall += timedelta(seconds=seconds)
-        self._monotonic += seconds
+        if seconds < 0:
+            raise ValueError(f"a clock never goes back; got {seconds} seconds")
+        with self._lock:
+            self._wall += timedelta(seconds=seconds)
+            self._monotonic += seconds
+        tick()
+
+
+def _utc(start: datetime | None) -> datetime:
+    """``start`` in UTC (naive is UTC, as everywhere in untaped); ``None`` is now, to the second."""
+    if start is None:
+        return datetime.now(UTC).replace(microsecond=0)
+    return start.replace(tzinfo=UTC) if start.tzinfo is None else start.astimezone(UTC)
 
 
 @contextmanager
@@ -278,8 +283,8 @@ class _OneHalf(Clock):
 
 
 def _monotonic_is_manual() -> bool:
-    """Whether the clock installed now is a test's for monotonic time (progress)."""
-    clock = run_clock()
+    """Whether the test installed a clock that answers monotonic time (progress) itself."""
+    clock = _installed[0]
     return isinstance(clock, ManualClock) or (
         isinstance(clock, _OneHalf) and clock._monotonic is not None
     )
@@ -336,11 +341,7 @@ def cache_clock(start: datetime | None = None) -> Iterator[CacheClock]:
 
     Only wall time is the test's; monotonic time stays the clock's installed before.
     """
-    if start is None:
-        start = datetime.now(UTC).replace(microsecond=0)
-    elif start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)  # naive is UTC, as everywhere in untaped
-    clock = CacheClock(start)
+    clock = CacheClock(_utc(start))
     with installed_clock(_OneHalf(run_clock(), wall=clock)):
         yield clock
 
