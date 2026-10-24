@@ -762,7 +762,7 @@ class Parallel(FieldBlock):
     def value(self) -> int:
         """How many operations run at once: ``-j``, else the default or its setting, capped.
 
-        A value above ``cap`` is clamped with a warning, once.
+        A value above ``cap`` is clamped with a warning, once per invocation.
         """
         if self._value is not None:
             return self._value
