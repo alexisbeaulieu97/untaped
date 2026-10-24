@@ -17,23 +17,8 @@ from __future__ import annotations
 import importlib as _importlib
 import typing as _typing
 
-from untaped.core.skills import (  # type: ignore[deprecated]
-    checkout_root,
-    nearest_pyproject,
-    project_root,
-)
-from untaped.runtime.registry import (
-    DirMigration,
-    DoctorCheck,
-    DoctorResult,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
-    PluginSpec,
-    SkillAsset,
-    plugin_dir,
-)
+from untaped.core.skills import project_root  # type: ignore[deprecated]
+from untaped.runtime.registry import PluginSpec, SkillAsset, plugin_dir
 from untaped.runtime.settings import HttpSettings, get_config_section
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, TreeOutputFormat
@@ -148,14 +133,21 @@ from untaped.sdk.git import (
 )
 from untaped.sdk.health.deprecated_keys import Renamed, Retired, retired_values
 from untaped.sdk.health.doctor import (
+    DoctorCheck,
+    DoctorResult,
     ExecutableCheck,
     OnlineCheck,
+    PluginContext,
     connection_check,
     executable_check,
     online_check,
 )
 from untaped.sdk.health.marks import NeedsSetup, Suggest
 from untaped.sdk.health.migrations import (
+    DirMigration,
+    MigrationOptions,
+    MigrationOutcome,
+    MigrationRow,
     delete_migration,
     dir_bytes,
     move_migration,
@@ -204,9 +196,11 @@ from untaped.sdk.plugin_records import InstalledPlugin, installed_plugins
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.projects import (
     Project,
+    checkout_root,
     committed_path,
     current_project,
     known_projects,
+    nearest_pyproject,
     project_at,
 )
 from untaped.sdk.prompt.editor import run_editor

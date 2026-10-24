@@ -6,7 +6,7 @@ Read from the project's own declaration only, the standard tables
 The nearest file decides: one that names no untaped means no requirement,
 however many files sit above it. A malformed file or requirement is no
 requirement, so it never fails a page. The walk stops at the farther of the
-checkout root and the project root (:func:`~untaped.core.skills.nearest_pyproject`).
+checkout root and the project root (:func:`~untaped.sdk.projects.nearest_pyproject`).
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
-from untaped.core.skills import nearest_pyproject
 from untaped.runtime.registry import UNEVALUABLE, parse_requirement, requirement_admits
+from untaped.sdk.projects import nearest_pyproject
 
 _UNTAPED = "untaped"
 

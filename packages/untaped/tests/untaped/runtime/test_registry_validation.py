@@ -23,13 +23,13 @@ from core_test_support.runtime.plugin_harness import (
 )
 from untaped.runtime.registry import (
     ApplicationSpec,
-    DoctorCheck,
     PluginCandidate,
     PluginSpec,
     SkillAsset,
     compose,
 )
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health.doctor import DoctorCheck
 
 
 class TokenProfile(BaseModel):

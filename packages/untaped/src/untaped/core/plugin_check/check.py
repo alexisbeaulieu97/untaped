@@ -40,20 +40,14 @@ from pydantic import BaseModel, ValidationError
 from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.plugin_package import package_of
-from untaped.runtime.registry import (
-    CompositionResult,
-    MigrationOptions,
-    MigrationRow,
-    PluginCandidate,
-    PluginContext,
-    PluginSpec,
-    owns_contracts,
-)
+from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.runtime.settings import get_settings
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk.errors import ExitCode, UsageError, first_validation_error
+from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
+from untaped.sdk.health.migrations import MigrationOptions, MigrationRow
 from untaped.sdk.words import not_found, plural, summary
 
 if TYPE_CHECKING:

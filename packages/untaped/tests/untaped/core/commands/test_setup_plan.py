@@ -31,12 +31,7 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    DoctorCheck,
-    DoctorResult,
-    PluginContext,
-    PluginSpec,
-)
+from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     Credential,
     CredentialKey,
@@ -44,6 +39,7 @@ from untaped.sdk import (
     Suggest,
     online_check,
 )
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import (
     CliResult,
     ScreenKeys,

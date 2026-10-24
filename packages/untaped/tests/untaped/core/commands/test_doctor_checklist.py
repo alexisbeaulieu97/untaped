@@ -18,12 +18,8 @@ from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import build_root_doctor_app, report_check_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_scope
-from untaped.runtime.registry import (
-    DoctorCheck,
-    DoctorResult,
-    PluginContext,
-    PluginSpec,
-)
+from untaped.runtime.registry import PluginSpec
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

@@ -28,7 +28,7 @@ from importlib import metadata as importlib_metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeGuard, cast, overload
+from typing import TYPE_CHECKING, Annotated, Any, TypeGuard, cast, overload
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -46,21 +46,21 @@ from untaped.runtime.declaration import (
     Quarantined,
 )
 from untaped.runtime.settings import (
-    DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
     RESERVED_SECTION_KEYS,
     RESERVED_SECTIONS,
     legacy_credential_fields,
+    plugins_root,
     reserved_section_keys,
     section_model,
     timed_caches,
 )
-from untaped.runtime.sink import Diagnostics
-from untaped.sdk._block import OwnedBlock
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
+from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
+from untaped.sdk.health.migrations import DirMigration
 from untaped.sdk.marks import (
     Deprecated,
     DeprecatedBehaviour,
@@ -77,8 +77,7 @@ from untaped.sdk.network.credentials import (
     key_errors,
     key_fields,
 )
-from untaped.sdk.records import KindError, OutcomeRecord
-from untaped.sdk.run import PluginHandle
+from untaped.sdk.records import KindError
 from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.state import (
     ProjectStateRows,
@@ -183,204 +182,6 @@ class SkillAsset:
             raise ConfigError("skill asset name must not be empty")
         if not self.description.strip():
             raise ConfigError(f"skill asset {self.name!r} must have a description")
-
-
-def _spelled(id: str | None) -> tuple[str, str] | tuple[()]:
-    """The plugin and name an 11.x id spells, or nothing for a block a plugin class names.
-
-    A shell check's id has no dot: its plugin part is the whole id and its name is empty.
-    """
-    if id is None:
-        return ()
-    plugin, _, name = id.partition(".")
-    return plugin, name
-
-
-class DoctorCheck(OwnedBlock):
-    """A health check contributed by the shell or a plugin.
-
-    A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
-    is the check ``<plugin>.store``; the 11.x spelling passes its ``id``. An
-    ``online`` check contacts a remote service, so only ``untaped doctor
-    --online`` runs it; every other check stays offline.
-    """
-
-    block_kind = "doctor-check"
-    name_style = "kebab"
-
-    title: str
-    run: Callable[[PluginContext], DoctorResult]
-    online: bool
-
-    def __init__(
-        self,
-        id: str | None = None,
-        *,
-        title: str,
-        run: Callable[[PluginContext], DoctorResult],
-        online: bool = False,
-    ) -> None:
-        super().__init__(*_spelled(id))
-        self._id = id
-        self.title = title
-        self.run = run
-        self.online = online
-
-    @property
-    def id(self) -> str:
-        """``<plugin>.<name>``, or the id it was given."""
-        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
-
-    def __repr__(self) -> str:
-        return f"DoctorCheck({self.where!r}, title={self.title!r})"
-
-
-@dataclass(frozen=True)
-class DoctorResult:
-    """Outcome of one doctor-check body.
-
-    ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
-    ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
-    say) but not a failure, so doctor still exits 0. ``fix`` is the
-    ``untaped`` command (without the program name) that repairs a failed or
-    warned row, as a string (split like a shell would) or an argv list; a
-    value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
-    the row's ``fix`` argv and shows it under the row.
-
-    ``automatic=True`` says the fix is safe to run unattended: it needs no
-    ``<NAME>`` value, no terminal input and no confirmation, it is a
-    declared write (``@writes``) that takes ``--format``, and it carries any
-    ``--yes`` it needs itself. It also asks for and prints no secret, so an
-    agent may run it. Doctor fails the row when an automatic fix is missing
-    or has a placeholder.
-    """
-
-    id: str
-    ok: bool
-    detail: str
-    warn: bool = False
-    fix: str | list[str] | None = None
-    automatic: bool = False
-
-
-@dataclass(frozen=True)
-class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check or migration body.
-
-    ``owner`` names the plugin the body runs for, which core sets; the body
-    reaches its folder as ``ctx.plugin.dir``, as a command does.
-    """
-
-    settings: BaseModel | None
-    owner: str | None = None
-
-    @property
-    def plugin(self) -> PluginHandle:
-        """The plugin the body runs for: its folder and the files it names."""
-        if self.owner is None:
-            raise LookupError("this context runs for no plugin: core sets owner= when it builds it")
-        return PluginHandle(name=self.owner, home=plugins_root().parent)
-
-    @property
-    def diag(self) -> Diagnostics:
-        """The stderr handle, as on ``AppContext``: resolved at each call."""
-        return Diagnostics()
-
-
-class MigrationOptions(BaseModel):
-    """``untaped setup migrate-dirs``'s flags, passed to every migration.
-
-    ``dissociate`` names one plugin's step (repacking clones that borrow
-    objects from a directory, so it can go); every migration receives it.
-    ``measure`` is false when only whether anything is left matters (doctor):
-    a preview then leaves ``bytes`` at 0 instead of walking each directory.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    dry_run: bool = False
-    dissociate: bool = False
-    measure: bool = True
-
-
-class MigrationRow(BaseModel):
-    """One line of ``setup migrate-dirs``' preview: what a migration would do to one directory.
-
-    ``action`` is ``move`` (``source`` → ``destination``), ``delete``,
-    ``keep`` (left in place, ``detail`` says why) or ``then`` (what happens
-    afterwards, such as a one-time download). ``source`` and ``destination``
-    are absolute paths: core refuses to apply two migrations when one would
-    delete what the other moves or keeps. ``bytes`` is the size of
-    ``source`` (0 when not measured).
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    action: Literal["move", "delete", "keep", "then"]
-    source: str = ""
-    destination: str = ""
-    detail: str = ""
-    bytes: int = 0
-
-
-class MigrationOutcome(OutcomeRecord, kind="untaped.migration"):
-    """What one migration did when applied: ``moved``, ``deleted``, ``unchanged``, ``failed``…
-
-    ``id`` is the migration's; a plugin class's migration leaves it out and
-    core stamps it.
-    """
-
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "detail")
-
-    id: str = ""
-    detail: str = ""
-
-
-class DirMigration(OwnedBlock):
-    """A plugin's own directory moves for ``untaped setup migrate-dirs``.
-
-    A plugin class holding it names it (``greetings = DirMigration(...)`` is
-    ``<plugin>.greetings``); the 11.x spelling passes ``id``, which is
-    ``<plugin>.<noun>``, unique across plugins. First consumer of a plugin
-    class's migration: the 12 to 13 transition. ``preview``
-    returns what would change and only reads; ``apply`` does it and returns
-    its outcomes (usually one; core reports each).
-    ``apply`` is idempotent: run again after a crash or a second time, it
-    finishes what is left and changes nothing else. A migration is
-    self-contained: it owns its old directory and everything pointing
-    there. Core runs every plugin's migrations in registry order (by plugin
-    name); one that relies on another plugin's having run first says so in
-    its docstring.
-    """
-
-    block_kind = "dir-migration"
-    name_style = "kebab"
-
-    title: str
-    preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]]
-    apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]]
-
-    def __init__(
-        self,
-        id: str | None = None,
-        *,
-        title: str,
-        preview: Callable[[PluginContext, MigrationOptions], Sequence[MigrationRow]],
-        apply: Callable[[PluginContext, MigrationOptions], Sequence[MigrationOutcome]],
-    ) -> None:
-        super().__init__(*_spelled(id))
-        self._id = id
-        self.title = title
-        self.preview = preview
-        self.apply = apply
-
-    @property
-    def id(self) -> str:
-        """``<plugin>.<name>``, or the id it was given."""
-        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
-
-    def __repr__(self) -> str:
-        return f"DirMigration({self.where!r}, title={self.title!r})"
 
 
 def _check_model(model: object, field: str, label: str) -> None:
@@ -674,11 +475,6 @@ def plugin_dir(spec: PluginSpec) -> Path:
 def named_plugin_dir(name: str) -> Path:
     """:func:`plugin_dir` by the plugin's name, for core code that holds a name, not a spec."""
     return plugins_root() / name
-
-
-def plugins_root() -> Path:
-    """``~/.untaped/plugins/``: every plugin's folder, installed here or not."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins"
 
 
 @dataclass(frozen=True)

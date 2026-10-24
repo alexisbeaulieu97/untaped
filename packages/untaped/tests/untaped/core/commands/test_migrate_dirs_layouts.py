@@ -16,13 +16,9 @@ import pytest
 
 from core_test_support.commands.support import make_spec
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    MigrationOptions,
-    PluginContext,
-    PluginSpec,
-    named_plugin_dir,
-)
-from untaped.sdk.health.migrations import other_layouts_migration, setting_guard
+from untaped.runtime.registry import PluginSpec, named_plugin_dir
+from untaped.sdk.health.doctor import PluginContext
+from untaped.sdk.health.migrations import MigrationOptions, other_layouts_migration, setting_guard
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store, layout_path

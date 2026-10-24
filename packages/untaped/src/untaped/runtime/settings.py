@@ -61,6 +61,12 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
 STATE_PATH_ENV = "UNTAPED_STATE"
 
+
+def plugins_root() -> Path:
+    """``~/.untaped/plugins/``: every plugin's folder, installed here or not."""
+    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins"
+
+
 #: On-disk format of ``config.yml`` and ``state.yml``. A file without
 #: ``format_version`` is format 1. Bump only in a major release, when an older
 #: reader ignoring a new core key would change behaviour (see CONTRIBUTING.md).

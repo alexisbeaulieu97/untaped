@@ -1,7 +1,10 @@
-"""Reusable doctor-check factories for plugins.
+"""Doctor checks: the :class:`DoctorCheck` block, the row it returns, and the checks plugins reuse.
 
-Each factory returns a :class:`DoctorCheck` a plugin lists in its
-``SPEC.doctor_checks``. :func:`executable_check` and :func:`connection_check`
+A plugin class holds a :class:`DoctorCheck`, :class:`OnlineCheck` or
+:class:`ExecutableCheck`; each body gets a :class:`PluginContext` and
+returns a :class:`DoctorResult`, one row of ``untaped doctor``. The 11.x
+factories return a check a plugin lists in its ``SPEC.doctor_checks``
+until its move: :func:`executable_check` and :func:`connection_check`
 read the validated settings snapshot and the local machine only: no network
 I/O and no ``token_command`` runs. :func:`online_check` is the one online
 check: ``doctor --online`` runs it to contact the configured service.
@@ -11,11 +14,13 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.registry import DoctorCheck, DoctorResult, PluginContext
-from untaped.runtime.settings import resolve_config_path
+from untaped.runtime.settings import plugins_root, resolve_config_path
+from untaped.sdk._block import OwnedBlock, spelled_id
 from untaped.sdk.errors import HttpError, HttpTransportError, UntapedError
 from untaped.sdk.health._setup_status import (
     set_command,
@@ -33,6 +38,103 @@ from untaped.sdk.network.auth import (
     token_alternatives,
     token_instead,
 )
+from untaped.sdk.run import PluginHandle
+
+if TYPE_CHECKING:
+    from untaped.runtime.sink import Diagnostics
+
+
+class DoctorCheck(OwnedBlock):
+    """A health check contributed by the shell or a plugin.
+
+    A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
+    is the check ``<plugin>.store``; the 11.x spelling passes its ``id``. An
+    ``online`` check contacts a remote service, so only ``untaped doctor
+    --online`` runs it; every other check stays offline.
+    """
+
+    block_kind = "doctor-check"
+    name_style = "kebab"
+
+    title: str
+    run: Callable[[PluginContext], DoctorResult]
+    online: bool
+
+    def __init__(
+        self,
+        id: str | None = None,
+        *,
+        title: str,
+        run: Callable[[PluginContext], DoctorResult],
+        online: bool = False,
+    ) -> None:
+        super().__init__(*spelled_id(id))
+        self._id = id
+        self.title = title
+        self.run = run
+        self.online = online
+
+    @property
+    def id(self) -> str:
+        """``<plugin>.<name>``, or the id it was given."""
+        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
+
+    def __repr__(self) -> str:
+        return f"DoctorCheck({self.where!r}, title={self.title!r})"
+
+
+@dataclass(frozen=True)
+class DoctorResult:
+    """Outcome of one doctor-check body.
+
+    ``ok=False`` is a failed row (doctor exits 1). ``ok=True`` with
+    ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
+    say) but not a failure, so doctor still exits 0. ``fix`` is the
+    ``untaped`` command (without the program name) that repairs a failed or
+    warned row, as a string (split like a shell would) or an argv list; a
+    value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
+    the row's ``fix`` argv and shows it under the row.
+
+    ``automatic=True`` says the fix is safe to run unattended: it needs no
+    ``<NAME>`` value, no terminal input and no confirmation, it is a
+    declared write (``@writes``) that takes ``--format``, and it carries any
+    ``--yes`` it needs itself. It also asks for and prints no secret, so an
+    agent may run it. Doctor fails the row when an automatic fix is missing
+    or has a placeholder.
+    """
+
+    id: str
+    ok: bool
+    detail: str
+    warn: bool = False
+    fix: str | list[str] | None = None
+    automatic: bool = False
+
+
+@dataclass(frozen=True)
+class PluginContext:
+    """Frozen per-invocation snapshot handed to a doctor-check or migration body.
+
+    ``owner`` names the plugin the body runs for, which core sets; the body
+    reaches its folder as ``ctx.plugin.dir``, as a command does.
+    """
+
+    settings: BaseModel | None
+    owner: str | None = None
+
+    @property
+    def plugin(self) -> PluginHandle:
+        """The plugin the body runs for: its folder and the files it names."""
+        if self.owner is None:
+            raise LookupError("this context runs for no plugin: core sets owner= when it builds it")
+        return PluginHandle(name=self.owner, home=plugins_root().parent)
+
+    @property
+    def diag(self) -> Diagnostics:
+        """The stderr handle, as on ``AppContext``: resolved at each call."""
+        from untaped.runtime.sink import Diagnostics  # noqa: PLC0415 - the sink imports the SDK
+
+        return Diagnostics()
 
 
 def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:

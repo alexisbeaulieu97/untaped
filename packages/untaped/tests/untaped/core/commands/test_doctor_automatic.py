@@ -25,13 +25,9 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    DoctorCheck,
-    DoctorResult,
-    PluginContext,
-    PluginSpec,
-)
+from untaped.runtime.registry import PluginSpec
 from untaped.sdk import connection_check
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

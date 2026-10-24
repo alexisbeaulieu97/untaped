@@ -47,10 +47,6 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.registry import (
     ApplicationSpec,
     CompositionResult,
-    DoctorCheck,
-    DoctorResult,
-    MigrationOptions,
-    PluginContext,
     PluginSpec,
     QuarantineRecord,
     owns_contracts,
@@ -89,7 +85,9 @@ from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import ConfigError, ExitCode, UntapedError, first_validation_error
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.sdk.health.deprecated_keys import key_mappings, scan_keys
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.health.marks import section_marks
+from untaped.sdk.health.migrations import MigrationOptions
 from untaped.sdk.marks import owner, removal_text
 from untaped.sdk.network._token_store import pass_problem
 from untaped.sdk.network.http import resolve_verify

@@ -19,14 +19,7 @@ from core_test_support.commands.support import make_spec, write_config
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.core.plugin_check.check import check_plugins
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
-    PluginSpec,
-)
+from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     delete_migration,
     move_migration,
@@ -34,6 +27,13 @@ from untaped.sdk import (
     plugin_dir,
     retired_values,
     setting_guard,
+)
+from untaped.sdk.health.doctor import PluginContext
+from untaped.sdk.health.migrations import (
+    DirMigration,
+    MigrationOptions,
+    MigrationOutcome,
+    MigrationRow,
 )
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 

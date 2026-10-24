@@ -28,10 +28,20 @@ from untaped_lint.infrastructure.files import SourceFile, import_targets
 RULE = "import-boundary"
 _SDK = "untaped.sdk"
 #: The modules of ``untaped`` a plugin may import: those the surface promises
-#: (core's ``SDK_MODULES``; lint's tests hold the two equal). The SDK's other
-#: groups join as they list names.
+#: (core's ``SDK_MODULES``; lint's tests hold the two equal): the root and its groups.
 SDK_MODULES = frozenset(
-    {"untaped.sdk", "untaped.sdk.contracts", "untaped.sdk.testing", "untaped.sdk.testing.git"}
+    {
+        "untaped.sdk",
+        "untaped.sdk.contracts",
+        "untaped.sdk.git",
+        "untaped.sdk.health",
+        "untaped.sdk.network",
+        "untaped.sdk.projects",
+        "untaped.sdk.prompt",
+        "untaped.sdk.storage",
+        "untaped.sdk.testing",
+        "untaped.sdk.testing.git",
+    }
 )
 
 
