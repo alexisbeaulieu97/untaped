@@ -54,7 +54,7 @@ def test_root_profile_exposes_all_verbs() -> None:
 def test_a_fresh_home_lists_the_base() -> None:
     result = CliInvoker().invoke(build_root_profile_app(), ["list", "--format", "json"])
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [{"name": "default", "active": True, "keys": 0}]
+    assert json.loads(result.stdout) == [{"name": "default", "selected": True, "keys": 0}]
 
 
 def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
@@ -175,11 +175,47 @@ def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_conf
     app = build_root_profile_app()
     with profile_scope("typo"):
         result = CliInvoker().invoke(app, ["current"])
-    assert result.exit_code == 4  # the active profile is not defined: config
+    assert result.exit_code == 2  # a pick naming no profile is a usage error
     assert "'typo' (from flag) is not defined" in result.stderr
 
 
-def test_list_json_marks_active_with_booleans(
+def test_current_lists_a_stacked_pick_with_each_source(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(_isolated_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    app = build_root_profile_app()
+    with profile_scope("stage"):
+        plain = CliInvoker().invoke(app, ["current"])
+        structured = CliInvoker().invoke(app, ["current", "--format", "json"])
+    assert plain.stdout == "prod,stage\n"
+    assert "(source: env, flag)" in plain.stderr
+    assert json.loads(structured.stdout) == {
+        "name": "prod,stage",
+        "profiles": [{"name": "prod", "source": "env"}, {"name": "stage", "source": "flag"}],
+    }
+    assert structured.stderr == ""
+
+
+def test_show_without_a_name_shows_the_stacked_pick(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(_isolated_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    app = build_root_profile_app()
+    with profile_scope("stage"):
+        shown = CliInvoker().invoke(app, ["show", "--format", "json"])
+        raw = CliInvoker().invoke(app, ["show", "--raw"])
+    assert shown.exit_code == 0, shown.output
+    assert (json.loads(shown.stdout)["name"], json.loads(shown.stdout)["selected"]) == (
+        "prod,stage",
+        True,
+    )
+    assert raw.exit_code == 2
+    assert "--raw shows one profile" in raw.stderr
+
+
+def test_list_json_marks_the_selected_with_booleans(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(_isolated_config)
@@ -187,18 +223,22 @@ def test_list_json_marks_active_with_booleans(
     app = build_root_profile_app()
     result = CliInvoker().invoke(app, ["list", "--format", "json"])
     assert result.exit_code == 0, result.output
-    active = {row["name"]: row["active"] for row in json.loads(result.stdout)}
-    assert active == {"default": False, "prod": True, "stage": False}
+    selected = {row["name"]: row["selected"] for row in json.loads(result.stdout)}
+    assert selected == {"default": False, "prod": True, "stage": False}
+    with profile_scope("stage"):
+        stacked = CliInvoker().invoke(app, ["list", "--format", "json"])
+    selected = {row["name"]: row["selected"] for row in json.loads(stacked.stdout)}
+    assert selected == {"default": False, "prod": True, "stage": True}
 
 
-def test_list_marks_active_with_a_check_in_tables_only(
+def test_list_marks_the_selected_with_a_check_in_tables_only(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
     app = build_root_profile_app()
     raw = CliInvoker().invoke(
-        app, ["list", "--format", "raw", "--columns", "name", "--columns", "active"]
+        app, ["list", "--format", "raw", "--columns", "name", "--columns", "selected"]
     )
     assert raw.stdout.splitlines() == ["default\tFalse", "prod\tTrue", "stage\tFalse"]
     table = CliInvoker().invoke(app, ["list"])
@@ -269,3 +309,16 @@ def test_delete_emits_a_deleted_outcome(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
     assert _outcome(app, ["delete", "stage", "--yes"])["action"] == "deleted"
     assert "stage" not in read_config_dict(_isolated_config).get("profiles", {})
+
+
+@pytest.mark.parametrize("name", ["", "my work", "a,b", ".hidden"])
+def test_create_and_rename_refuse_a_name_profile_cannot_pick(
+    app, _isolated_config: Path, name: str
+) -> None:
+    _seed(_isolated_config)
+    created = CliInvoker().invoke(app, ["create", name])
+    renamed = CliInvoker().invoke(app, ["rename", "stage", name])
+    for result in (created, renamed):
+        assert result.exit_code == 1, result.output
+        assert f"invalid profile name {name!r}" in result.stderr
+    assert set(read_config_dict(_isolated_config)["profiles"]) == {"prod", "stage"}

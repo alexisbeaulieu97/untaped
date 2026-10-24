@@ -38,6 +38,7 @@ from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     resolve_profiles,
     selected_profile,
+    write_target,
 )
 from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import active_settings_layout, load_settings_section
@@ -768,7 +769,7 @@ def _section(result: CompositionResult, section: str) -> _TokenSection:
 
 
 def _target_profile() -> str:
-    return selected_profile()
+    return write_target()
 
 
 def _set(
@@ -855,7 +856,7 @@ def _unset(
     ui = ui_context(strict=False)
     row = AuthOutcome(section=section, profile=profile, store=None, action="unchanged")
     if not argv:
-        _, provenance = resolve_profiles(raw, active_override=profile)
+        _, provenance = resolve_profiles(raw, picks=(profile,))
         holder = provenance.get((section, "token_command"))
         if holder is not None and holder != profile:
             _diag.info(
@@ -904,7 +905,7 @@ def _legacy_status(result: CompositionResult) -> list[TokenSource]:
     sections = [each for each in _token_sections(result).values() if not each.declared]
     found: list[TokenSource] = []
     for profile in profiles:
-        effective, provenance = resolve_profiles(raw, active_override=profile)
+        effective, provenance = resolve_profiles(raw, picks=(profile,))
         for spec in sections:
             node = effective.get(spec.section)
             source, key = _source(spec, node if isinstance(node, dict) else {})

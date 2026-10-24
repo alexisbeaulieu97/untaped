@@ -2,8 +2,8 @@
 
 The root owns profile commands for the unified application. Profile data is
 stored in the home's shared ``config.yml``: the base (``default``) at its top
-level, named profiles under ``profiles:``. A run picks one with ``--profile``
-or ``UNTAPED_PROFILE``.
+level, named profiles under ``profiles:``. A run stacks the profiles
+``UNTAPED_PROFILE`` and then ``--profile`` name over the base.
 """
 
 from __future__ import annotations
@@ -12,7 +12,13 @@ from typing import Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from untaped.core.profile.models import ProfileDeletePreview, ProfileOutcome, ProfileRow
+from untaped.core.profile.models import (
+    PickedProfile,
+    ProfileDeletePreview,
+    ProfileOutcome,
+    ProfilePick,
+    ProfileRow,
+)
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.core.profile.use_cases import (
     CreateProfile,
@@ -30,7 +36,6 @@ from untaped.sdk._cli import (
     FormatOption,
     YesOption,
     create_app,
-    echo,
     emit,
     emit_document,
     report_errors,
@@ -68,10 +73,10 @@ def _list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """List the base (``default``) and every profile, marking which one is active."""
+    """List the base (``default``) and every profile, marking the ones the run reads."""
     with report_errors():
         profiles = ListProfiles(ProfileFileRepository())()
-        rows = [ProfileRow(name=p.name, active=p.is_active, keys=p.key_count) for p in profiles]
+        rows = [ProfileRow(name=p.name, selected=p.selected, keys=p.key_count) for p in profiles]
         emit(rows, fmt=fmt, columns=columns)
 
 
@@ -113,12 +118,10 @@ def _show_command(
     is passed, mirroring ``config list``.
     """
     with report_errors():
-        repo = ProfileFileRepository()
-        target = CurrentProfile(repo)().name if name is None else name
-        target_profile = ShowProfile(repo)(target, raw=raw)
+        target_profile = ShowProfile(ProfileFileRepository())(name, raw=raw)
         header = f"# profile: {target_profile.name}"
-        if target_profile.is_active:
-            header += " (active)"
+        if target_profile.selected:
+            header += " (selected)"
         if not raw:
             header += " — effective view (base ⤥ named)"
         _diag.info(header)
@@ -132,7 +135,7 @@ def _show_command(
         if fmt == "json":
             envelope = {
                 "name": target_profile.name,
-                "active": target_profile.is_active,
+                "selected": target_profile.selected,
                 "raw": raw,
                 "data": data,
             }
@@ -141,18 +144,26 @@ def _show_command(
             emit_document(data, fmt="yaml")
 
 
-def _current_command() -> None:
-    """Print the picked profile's name to stdout (pipe-friendly).
+def _current_command(*, fmt: FormatOption = "raw", columns: ColumnsOption = None) -> None:
+    """Print the picked profiles, comma-joined, to stdout (pipe-friendly).
 
-    Honours the root ``--profile`` option (any token position) and
-    ``UNTAPED_PROFILE``, falling back to ``default`` (the base) when neither
-    is set. The source of the answer (``flag`` / ``env`` / ``fallback``) goes
-    to stderr so stdout stays a single bare profile name suitable for piping.
+    The pick is ``UNTAPED_PROFILE``'s profiles, then the root ``--profile``
+    option's; ``default`` (the base alone) when neither names one. In the
+    raw and table forms, what picked them (``flag`` / ``env`` /
+    ``fallback``) goes to stderr, so stdout stays one value suitable for a
+    shell prompt or ``--profile``. Structured output lists each profile with
+    its source.
     """
     with report_errors():
-        result = CurrentProfile(ProfileFileRepository())()
-        echo(result.name)
-        _diag.info(f"(source: {result.source})")
+        picks = CurrentProfile(ProfileFileRepository())()
+        record = ProfilePick(
+            name=",".join(pick.name for pick in picks) or "default",
+            profiles=[PickedProfile(name=pick.name, source=pick.source) for pick in picks],
+        )
+        emit(record, fmt=fmt, columns=columns or (["name"] if fmt in ("raw", "table") else None))
+        if fmt in ("raw", "table"):
+            sources = ", ".join(dict.fromkeys(pick.source for pick in picks)) or "fallback"
+            _diag.info(f"(source: {sources})")
 
 
 @writes

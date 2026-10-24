@@ -108,7 +108,7 @@ Things that surprise people:
 - A top-level section no installed plugin reads (a misspelt name, or a
   plugin you uninstalled) is ignored; `untaped doctor` flags it in its
   `unknown-keys` row. `active:` and `profiles.default` are 11.x keys and are
-  refused: a run picks its profile with `--profile` or `UNTAPED_PROFILE`, and
+  refused: a run picks its profiles with `--profile` or `UNTAPED_PROFILE`, and
   the base is the top level.
 - Each section is validated only when a command reads it. An invalid
   `awx.page_size: abc` breaks `untaped awx ...` but not `untaped github ...`;
@@ -126,7 +126,7 @@ order, quoting and indentation.
 
 A setting's value comes from the first of these that has it: its
 `UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_AWX__SERVER__URL`),
-the selected profile, the base, the built-in default.
+the picked profiles (the last first), the base, the built-in default.
 
 ## Several versions on one machine
 
@@ -155,36 +155,42 @@ migration would rewrite: migrate once every install is upgraded.
 ## Profiles
 
 A profile is a named set of settings under `profiles:`. `default` names the
-base, the top level of `config.yml`: a selected profile overlays it field by
-field.
+base, the top level of `config.yml`. A run layers the profiles it picks over
+the base, in order, field by field: a later profile wins, mappings merge and
+lists replace.
 
 ```bash
 untaped profile create stage --copy-from default
 untaped --profile stage config set awx.server.url https://aap.stage.example.com
 export UNTAPED_PROFILE=stage
-untaped profile delete stage --dry-run
+untaped --profile stage,lab-proxy awx jobs list
 ```
 
-A run reads the profile the global `--profile` names, else the one
-`UNTAPED_PROFILE` names, else only the base. Either must name a profile under
-`profiles:` or `default`. Nothing in `config.yml` picks a profile: set
-`UNTAPED_PROFILE` in your shell for a lasting choice.
+A run picks the profiles `UNTAPED_PROFILE` names, then the ones the global
+`--profile` names, each a comma list (`--profile` may also repeat). With
+neither, it reads only the base. `--profile default` reads the base alone and
+sets `UNTAPED_PROFILE` aside; `default` in a longer list, a name that is not
+letters, digits, `_`, `.` and `-`, or a profile not under `profiles:` exits 2.
+Nothing in `config.yml` picks a profile: set `UNTAPED_PROFILE` in your shell
+for a lasting choice.
 
-`--profile` is a global option and goes anywhere in the command: before the
-plugin, between command names (`untaped github --profile work whoami`) or
-after the command. So do `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated`.
-Tokens after `--` belong to the command and are never read as `untaped` options.
+`--profile`, `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated` are global
+and go anywhere before `--` (`untaped github --profile work whoami`).
 
 - The base always exists and cannot be created, renamed or deleted; clear its
   keys with `config unset`. Other profiles must exist before a write targets
-  them.
+  them, and `profile create` and `rename` take only names `--profile` can
+  pick.
 - `profile create`, `delete` and `rename` accept `--dry-run`, which checks the
   change and writes nothing. `profile delete` asks first; pass `--yes` when
   not interactive.
-- `profile show` prints YAML with secrets redacted unless you pass
-  `--show-secrets`.
-- `profile current` writes only the name to stdout and its source (`flag`,
-  `env` or `fallback`) to stderr, so it is safe in a prompt:
+- `profile list` marks the profiles the run reads (`selected`): the picked
+  ones, or the base when nothing is picked.
+- `profile show` prints YAML, secrets redacted unless `--show-secrets`; with
+  no name it shows what the run reads.
+- `profile current` writes only the pick, comma-joined (or `default`), to
+  stdout and where it came from (`flag`, `env` or `fallback`) to stderr, so
+  it is safe in a prompt; `--format json` lists each profile with its source:
 
   ```bash
   echo "[$(untaped profile current 2>/dev/null)] $ "
@@ -227,13 +233,16 @@ parsing it as YAML:
   null; `config unset` removes the key instead;
 - an invalid value is rejected before anything is written.
 
-`config set` and `config unset` write to the selected profile (the base
-when none is selected), and print an `untaped.setting_outcome` record that
-never echoes the value. Settings a plugin manages as state are rejected
-with a "managed by untaped …" error; use the owning plugin's commands.
+`config set` and `config unset` write to the one profile `--profile` names,
+else to the base; `UNTAPED_PROFILE` picks what runs read, never where they
+write, and `--profile a,b` is refused (exit 2). When a profile the run picks
+still hides a value written to the base, one line says so. Each prints an
+`untaped.setting_outcome` record that never echoes the value. Settings a
+plugin manages as state are refused; use the owning plugin's commands.
 
 `config get` prints only the value (nothing when unset). Structured output
-adds its source, profile and default, with secrets masked as `"***"` unless
+adds its source (`profile:<name>`, `base`, `env`, `default` or `unset`),
+profile and default, with secrets masked as `"***"` unless
 you pass `--show-secrets`.
 
 Because a command validates only the section it reads, you can repair a

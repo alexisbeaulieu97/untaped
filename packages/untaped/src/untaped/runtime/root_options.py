@@ -20,10 +20,17 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.runtime.output_policy import enable_quiet as _enable_quiet
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
-from untaped.runtime.profile_resolver import profile_scope
+from untaped.runtime.profile_resolver import (
+    check_pick,
+    parse_pick,
+    profile_override,
+    profile_scope,
+)
+from untaped.runtime.sink import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import note_requested_format, raise_usage
+from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
     Deprecated,
@@ -44,8 +51,8 @@ from untaped.sdk.marks import (
 _FLAG_PRESENT = ""
 
 _PROFILE_HELP = (
-    "Override the active profile for this invocation only "
-    "(scoped to the invocation; does not mutate UNTAPED_PROFILE)."
+    "Profiles to layer over the base for this invocation, comma-separated or repeated; "
+    "stacked after UNTAPED_PROFILE's (`default` reads the base alone)."
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
 _QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
@@ -69,7 +76,14 @@ class _RootOption:
 
 
 def _apply_profile(value: str) -> AbstractContextManager[None]:
-    scope = profile_scope(value)
+    """Stack ``value``'s comma list on any earlier ``--profile`` of this run."""
+    try:
+        names = (*profile_override(), *parse_pick(value, origin="--profile"))
+        check_pick(names, origin="--profile")
+    except ConfigError as exc:
+        Diagnostics().failure(exc)
+        raise SystemExit(exc.exit_code) from None
+    scope = profile_scope(names)
     scope.__enter__()
     return scope
 

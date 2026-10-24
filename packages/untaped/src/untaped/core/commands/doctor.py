@@ -41,7 +41,7 @@ from untaped.core.skills import InstalledSkill, SkillState, local_project_root, 
 from untaped.runtime.config_file import read_config_dict, read_state_dict
 from untaped.runtime.profile_resolver import (
     base_sections,
-    classify_active_profile,
+    current_pick,
     profile_entries,
     profile_override,
     profile_scope,
@@ -274,7 +274,7 @@ def run_line(argv: list[str], profile: str) -> str:
     chose it: the same line then acts on that profile anyway.
     """
     named, rest = split_profile(argv)
-    if named == profile and profile_override() is None:
+    if named == profile and not profile_override():
         argv = rest
     return command_line(shlex.join(argv))
 
@@ -962,12 +962,13 @@ def _state_file_row(
 
 
 def _profile_row(shell: ApplicationSpec, settings_error: str | None) -> dict[str, object]:
-    """The selected profile (flag or env) must exist."""
-    title = "resolve active profile"
+    """Each picked profile (flag or env) must exist."""
+    title = "resolve picked profiles"
     if settings_error is not None:
         return _row("profile", shell.name, _FAIL, title, settings_error)
-    name, source = classify_active_profile()
-    return _row("profile", shell.name, _PASS, title, f"{name or 'default'} (via {source})")
+    picks = current_pick()
+    detail = ", ".join(f"{pick.name} (via {pick.source})" for pick in picks)
+    return _row("profile", shell.name, _PASS, title, detail or "default (via fallback)")
 
 
 def _core_row(

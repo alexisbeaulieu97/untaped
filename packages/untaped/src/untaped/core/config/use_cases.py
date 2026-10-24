@@ -99,8 +99,25 @@ class SetSetting:
         line = f"set {key} in profile {target}{_removed_note(removed)}"
         return SettingChange(
             SettingOutcome(key=key, profile=target, action="updated"),
-            (("success", f"{line} (config: {resolve_config_path()})"),),
+            (
+                ("success", f"{line} (config: {resolve_config_path()})"),
+                *_still_read(self._repo, key, target),
+            ),
         )
+
+
+def _still_read(repo: SettingsWriter, key: str, target: str) -> tuple[Note, ...]:
+    """A line when a write to the base is hidden by a profile this run picks.
+
+    A named target is the one ``--profile`` names, the top of the pick, so
+    nothing layered over it can hide it.
+    """
+    if target != DEFAULT_PROFILE:
+        return ()
+    holder = repo.provenance().get(repo.descriptor(key).path)
+    if holder is None or holder == DEFAULT_PROFILE:
+        return ()
+    return (("info", f"this run still reads {key} from profile {holder}, picked over the base"),)
 
 
 class UnsetSetting:
@@ -122,7 +139,10 @@ class UnsetSetting:
         if not removed:
             notes = (("info", f"{key} was not set {where}"),)
         elif not dry_run:
-            notes = (("success", f"unset {key} {where}{_removed_note(spellings)}"),)
+            notes = (
+                ("success", f"unset {key} {where}{_removed_note(spellings)}"),
+                *_still_read(self._repo, key, target),
+            )
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), notes)
 

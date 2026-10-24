@@ -12,11 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from untaped.runtime.config_file import mutate_config, read_config_dict
-from untaped.runtime.profile_resolver import (
-    ProfileSource,
-    classify_active_profile,
-    effective_active_profile_name,
-)
+from untaped.runtime.profile_resolver import Picked, current_pick
 from untaped.runtime.settings import active_settings_layout
 
 
@@ -33,21 +29,17 @@ class ProfileFileRepository:
         """``default`` (the base), then the named profiles."""
         return active_settings_layout().profile_names(read_config_dict())
 
-    def active_name(self) -> str | None:
-        """Return the picked profile: ``--profile``, else ``UNTAPED_PROFILE``."""
-        return effective_active_profile_name()
-
-    def classify_active(self) -> tuple[str | None, ProfileSource]:
-        """Return the picked profile name + what picked it."""
-        return classify_active_profile()
+    def pick(self) -> tuple[Picked, ...]:
+        """The run's pick: ``UNTAPED_PROFILE``'s profiles, then ``--profile``'s."""
+        return current_pick()
 
     def read(self, name: str) -> dict[str, Any] | None:
         return active_settings_layout().profile_data(read_config_dict(), name)
 
-    def resolved(self, name: str) -> dict[str, Any]:
-        """Return the base ⤥ ``name`` as a merged dict (empty if neither sets anything).
+    def resolved(self, name: str | None) -> dict[str, Any]:
+        """Return the base ⤥ ``name`` (``None``: the run's pick) as a merged dict.
 
-        Renamed keys show under their current names.
+        Empty if nothing sets anything. Renamed keys show under their current names.
         """
         return active_settings_layout().effective(read_config_dict(), profile=name)
 

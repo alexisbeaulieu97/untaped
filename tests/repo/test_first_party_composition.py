@@ -53,7 +53,7 @@ def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
 
     result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
 
-    assert result.exit_code == 4  # the active profile is not defined: config
+    assert result.exit_code == 2  # the picked profile is not defined: usage
     assert "Unknown command" not in result.stderr
     assert "'nope'" in result.stderr
 

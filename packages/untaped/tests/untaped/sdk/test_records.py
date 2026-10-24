@@ -553,7 +553,12 @@ def _samples() -> dict[str, WireModel]:
         TokenSource,
     )
     from untaped.core.config.models import SettingOutcome, SettingRow
-    from untaped.core.profile.models import ProfileOutcome, ProfileRow
+    from untaped.core.profile.models import (
+        PickedProfile,
+        ProfileOutcome,
+        ProfilePick,
+        ProfileRow,
+    )
     from untaped.sdk.health.migrations import MigrationOutcome
     from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.storage.holds import HoldOutcome
@@ -631,7 +636,14 @@ def _samples() -> dict[str, WireModel]:
         ),
         SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),
-        ProfileRow(name="default", active=True, keys=3),
+        ProfileRow(name="default", selected=True, keys=3),
+        ProfilePick(
+            name="prod,lab",
+            profiles=[
+                PickedProfile(name="prod", source="env"),
+                PickedProfile(name="lab", source="flag"),
+            ],
+        ),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
         ContractMethod(
             contract="workspace.repo_source",

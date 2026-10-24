@@ -577,7 +577,7 @@ def _holders() -> Callable[[tuple[str, ...]], _Holder]:
         raw = read_config_dict()
     except ConfigError:
         raw = {}
-    provenance = active_settings_layout().resolve(raw, profile=selected_profile()).provenance
+    provenance = active_settings_layout().resolve(raw).provenance
 
     environ = {name.upper(): value for name, value in os.environ.items()}
 

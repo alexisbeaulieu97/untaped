@@ -6,11 +6,12 @@ profile resolution.
 
 The file's own keys are :data:`FILE_KEYS` (``format_version`` and
 ``profiles``); every other top-level key is a section of the **base**, which
-every run reads. A run picks at most one named profile (the root
-``--profile`` flag, else ``UNTAPED_PROFILE``), layered over the base.
+every run reads. A run picks named profiles (``UNTAPED_PROFILE``'s comma
+list, then the root ``--profile`` option's), layered over the base in order.
 :func:`resolve_profiles` returns:
 
-- ``effective``: a deep-merged dict of values (the pick beats the base per leaf).
+- ``effective``: a deep-merged dict of values (a later pick beats an earlier
+  one, and every pick beats the base, per leaf).
 - ``provenance``: a flat ``leaf_path -> profile_name`` map naming the profile
   that supplied each leaf in ``effective`` (``default`` for the base).
   Missing entries mean the leaf came from the schema default.
@@ -19,42 +20,88 @@ every run reads. A run picks at most one named profile (the root
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+import re
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, Literal
 
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UsageError
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 #: The base's name: what ``--profile default`` picks and what provenance calls it.
 DEFAULT_PROFILE = "default"
 
-ProfileSource = Literal["flag", "env", "fallback"]
+#: What picked a profile: the root ``--profile`` option or ``UNTAPED_PROFILE``.
+PickSource = Literal["flag", "env"]
+
+#: A profile name: letters, digits and ``_`` first, then also ``.`` and ``-``.
+PROFILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+
+
+@dataclass(frozen=True, slots=True)
+class Picked:
+    """One profile of the run's pick and what picked it."""
+
+    name: str
+    source: PickSource
 
 
 #: ``config.yml``'s own top-level keys (format 2); every other key is a base section.
 FILE_KEYS = frozenset({"format_version", "profiles"})
 
-_profile_override: ContextVar[str | None] = ContextVar("untaped_profile_override", default=None)
+_profile_override: ContextVar[tuple[str, ...]] = ContextVar("untaped_profile_override", default=())
 
 
-def set_profile_override(name: str | None) -> None:
-    """Set (or clear, with ``None``) the invocation-scoped ``--profile`` override."""
-    _profile_override.set(name)
+def parse_pick(text: str, *, origin: str) -> tuple[str, ...]:
+    """The profile names a comma list names, in order; ``origin`` names it in errors.
+
+    Raises :class:`ConfigError` (a usage error, exit 2) for an empty or
+    malformed name, and for ``default`` (the base alone) inside a longer list.
+    """
+    names = tuple(part.strip() for part in text.split(","))
+    for name in names:
+        if not PROFILE_NAME.fullmatch(name):
+            raise ConfigError(
+                f"invalid profile name {name!r} in {origin}",
+                category="usage",
+                hint=(
+                    "a name is letters, digits, `_`, `.` and `-`, and does not start with `.` "
+                    "or `-`; separate names with commas"
+                ),
+            )
+    check_pick(names, origin=origin)
+    return names
+
+
+def check_pick(names: Sequence[str], *, origin: str) -> None:
+    """Refuse ``default`` (the base alone) stacked with other profiles."""
+    if DEFAULT_PROFILE in names and len(names) > 1:
+        raise ConfigError(
+            f"{origin} stacks `default` with other profiles; `default` means the base alone",
+            category="usage",
+            hint="leave `default` out: the base is always read beneath the picked profiles",
+        )
+
+
+def set_profile_override(names: Sequence[str]) -> None:
+    """Set (or clear, with ``()``) the invocation-scoped ``--profile`` pick."""
+    _profile_override.set(tuple(names))
 
 
 @contextmanager
-def profile_scope(name: str) -> Iterator[None]:
-    """Select ``name`` as this invocation's profile inside the block.
+def profile_scope(names: str | Sequence[str]) -> Iterator[None]:
+    """Make ``names`` this invocation's ``--profile`` pick inside the block.
 
-    The root ``--profile`` option and ``setup`` both use it. The settings
-    cache is dropped on entry and exit so reads follow the selection.
+    A string is one profile. The root ``--profile`` option and ``setup`` both
+    use it. The settings cache is dropped on entry and exit so reads follow
+    the selection.
     """
     # Lazy: ``untaped.runtime.settings`` imports this module.
     from untaped.runtime.settings import get_settings  # noqa: PLC0415
 
-    token = _profile_override.set(name)
+    token = _profile_override.set((names,) if isinstance(names, str) else tuple(names))
     get_settings.cache_clear()
     try:
         yield
@@ -63,35 +110,54 @@ def profile_scope(name: str) -> Iterator[None]:
         get_settings.cache_clear()
 
 
-def profile_override() -> str | None:
-    """Return the active ``--profile`` override, if any."""
+def profile_override() -> tuple[str, ...]:
+    """The root ``--profile`` option's names, in order (``()`` without the option)."""
     return _profile_override.get()
 
 
-def classify_active_profile() -> tuple[str | None, ProfileSource]:
-    """Return the picked profile name **and** what picked it.
+def current_pick() -> tuple[Picked, ...]:
+    """The profiles this run layers over the base, in order (later wins).
 
-    ``--profile`` beats ``UNTAPED_PROFILE``; with neither, the run reads the
-    base alone (``None``, ``fallback``). Powers ``profile current``.
+    ``UNTAPED_PROFILE``'s names, then ``--profile``'s; a name picked twice
+    keeps its last place. ``--profile default`` sets the variable aside and
+    reads the base alone; ``UNTAPED_PROFILE=default`` adds nothing.
     """
-    override = _profile_override.get()
-    if override:
-        return override, "flag"
-    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
-    if env_override:
-        return env_override, "env"
-    return None, "fallback"
+    flag = _profile_override.get()
+    if flag == (DEFAULT_PROFILE,):
+        return ()
+    text = os.environ.get(ACTIVE_PROFILE_ENV)
+    env = parse_pick(text, origin=ACTIVE_PROFILE_ENV) if text else ()
+    if env == (DEFAULT_PROFILE,):
+        env = ()
+    picks = [Picked(name, "env") for name in env] + [Picked(name, "flag") for name in flag]
+    last = {pick.name: index for index, pick in enumerate(picks)}
+    return tuple(pick for index, pick in enumerate(picks) if last[pick.name] == index)
 
 
-def effective_active_profile_name() -> str | None:
-    """Return the picked profile (``--profile``, else ``UNTAPED_PROFILE``), or ``None``."""
-    name, _ = classify_active_profile()
-    return name
+def picked_names() -> tuple[str, ...]:
+    """The names of :func:`current_pick`."""
+    return tuple(pick.name for pick in current_pick())
 
 
 def selected_profile() -> str:
-    """The profile this invocation acts on: the pick, else ``default`` (the base)."""
-    return effective_active_profile_name() or DEFAULT_PROFILE
+    """The run's pick as one ``--profile`` value: the names comma-joined, else ``default``."""
+    return ",".join(picked_names()) or DEFAULT_PROFILE
+
+
+def write_target() -> str:
+    """The profile a write lands in: the one ``--profile`` names, else the base.
+
+    ``UNTAPED_PROFILE`` picks what runs read, never where they write.
+    Raises :class:`UsageError` when ``--profile`` names more than one.
+    """
+    flag = _profile_override.get()
+    if len(flag) > 1:
+        raise UsageError(
+            f"--profile {','.join(flag)} names {len(flag)} profiles; a write needs one",
+            hint="name the profile to write with `--profile NAME`",
+            details={"profiles": list(flag)},
+        )
+    return flag[0] if flag else DEFAULT_PROFILE
 
 
 def base_sections(config_data: dict[str, Any]) -> dict[str, Any]:
@@ -153,26 +219,31 @@ def profile_entries(
 def resolve_profiles(
     config_data: dict[str, Any],
     *,
-    active_override: str | None = None,
+    picks: Sequence[str] = (),
 ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
     """Return ``(effective, provenance)`` from the parsed config dict.
 
-    The base is layered first, then ``active_override`` when it names a
-    profile (``default`` is the base alone). Raises ``ConfigError`` as
-    :func:`named_profiles` does, or when the override names an undefined
-    profile.
+    The base is layered first, then each of ``picks`` in order (``default``
+    is the base, already layered). Raises ``ConfigError`` as
+    :func:`named_profiles` does, and a usage ``ConfigError`` (exit 2, with
+    ``details.known``) when a pick names an undefined profile.
     """
     profiles = named_profiles(config_data)
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
     _layer(base_sections(config_data), DEFAULT_PROFILE, effective, provenance, ())
-    if active_override and active_override != DEFAULT_PROFILE:
-        if active_override not in profiles:
+    for name in picks:
+        if name == DEFAULT_PROFILE:
+            continue
+        if name not in profiles:
+            known = sorted(profiles)
             raise ConfigError(
-                f"active profile {active_override!r} is not defined in `profiles`. "
-                f"Known profiles: {', '.join(sorted(profiles)) or '(none)'}"
+                f"profile {name!r} is not defined in `profiles`. "
+                f"Known profiles: {', '.join(known) or '(none)'}",
+                category="usage",
+                details={"known": [DEFAULT_PROFILE, *known]},
             )
-        _layer(profiles[active_override] or {}, active_override, effective, provenance, ())
+        _layer(profiles[name] or {}, name, effective, provenance, ())
     return effective, provenance
 
 

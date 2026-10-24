@@ -121,7 +121,7 @@ def test_rows_say_where_each_value_comes_from(
 
     assert _rows(run.model) == [
         ("size", "50", "profile:work"),
-        ("label", "shared", "profile:default"),
+        ("label", "shared", "base"),
         ("mode", "slow", "UNTAPED_KNOBS__MODE"),
         ("tags", "[]", "default"),
         ("probe", "2", "default"),
@@ -210,7 +210,7 @@ def test_a_choice_is_picked_then_written(_isolated_config: Path) -> None:
     run = drive_screen(_build(), [*_to("knobs"), "down", "down", "enter", "down", " ", "enter"])
 
     assert _knobs_data(_isolated_config, "default") == {"mode": "slow"}
-    assert _rows(run.model)[2] == ("mode", "slow", "profile:default")
+    assert _rows(run.model)[2] == ("mode", "slow", "base")
 
 
 def test_an_empty_field_unsets_the_key(_isolated_config: Path) -> None:
@@ -246,7 +246,7 @@ def test_unset_asks_then_falls_back_to_what_the_profile_inherits(_isolated_confi
 
     assert "Unset size in profile work? y unsets it" in asked.frame
     assert _rows(kept.model)[0] == ("size", "50", "profile:work")
-    assert _rows(run.model)[0] == ("size", "80", "profile:default")
+    assert _rows(run.model)[0] == ("size", "80", "base")
     assert _knobs_data(_isolated_config) is None
 
 
@@ -352,7 +352,7 @@ def test_a_renamed_key_in_use_is_written_under_its_new_name(_isolated_config: Pa
     shown = drive_screen(_build(), _to("knobs"), size=(140, 30))
     run = drive_screen(_build(), [*_to("knobs"), "enter", "ctrl-u", "7", "1", "enter"])
 
-    assert _rows(shown.model)[0] == ("size", "70", "profile:default")
+    assert _rows(shown.model)[0] == ("size", "70", "base")
     assert "from knobs.old_size" in shown.frame
     assert _knobs_data(_isolated_config, "default") == {"size": 71}
     assert any("removed knobs.old_size" in text for _, text in run.model.notes)
@@ -448,7 +448,7 @@ def test_a_new_profile_shows_defaults_and_is_created_by_its_first_write(
     )
 
     assert "new profile: its first write creates it" in shown.frame
-    assert _rows(shown.model)[0] == ("size", "80", "profile:default")
+    assert _rows(shown.model)[0] == ("size", "80", "base")
     assert _knobs_data(_isolated_config, "fresh") == {"size": 9}
     assert ("success", "created profile: fresh") in run.model.notes
     assert "new profile" not in run.frame
@@ -581,7 +581,7 @@ def test_a_list_opens_its_items_an_argv_a_command_line_and_a_map_its_json() -> N
 
 
 def test_a_map_that_declares_its_names_edits_the_profiles_own_names() -> None:
-    names = (NamedValue("a", "1", "default"), NamedValue("b", "2", "profile:default"))
+    names = (NamedValue("a", "1", "default"), NamedValue("b", "2", "base"))
     marks = editor(_descriptor("marks"), names, label="marks", own={"b": "3"}, own_source="p:x")
     assert isinstance(marks, MapEditor)
     cleared = replace(marks, own=())
@@ -723,7 +723,7 @@ def test_an_override_cleared_shows_what_it_inherits_and_the_last_one_unsets(
     cleared = drive_screen(_ui(), [*to_error, "delete"], size=(140, 40))
     drive_screen(_ui(), [*to_error, "delete", "home", "delete", "ctrl-s"])
 
-    assert "profile:default" in cleared.frame  # ``error`` is the default profile's X again
+    assert "base" in cleared.frame  # ``error`` is the default profile's X again
     assert _ui_data(_isolated_config) is None  # unset, so the profile inherits the whole map
 
 
@@ -808,7 +808,7 @@ def test_each_ranking_is_a_row_then_one_adds_a_ranking(_isolated_config: Path) -
     run = drive_screen(_shelf(), _to_shelf(), size=(120, 30))
 
     assert _rows(run.model, "shelf")[:2] == [
-        ("extensions.book_source.rank.books", "shop, library", "profile:default"),
+        ("extensions.book_source.rank.books", "shop, library", "base"),
         ("extensions", "+ add a ranking", ""),
     ]
 
