@@ -31,6 +31,7 @@ from untaped.runtime.settings import get_settings, reset_config_registry
 from untaped.sdk._app_context import app_context
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.projects import untaped_home
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 
@@ -1048,3 +1049,17 @@ def test_a_plugin_apps_own_group_is_ignored_at_the_root() -> None:
 
     assert rows["Plugins"] == ["mine"]
     assert "Mine" not in rows
+
+
+def test_an_11x_command_runs_under_the_invocation_s_run() -> None:
+    from untaped.sdk.run import current_run
+
+    def _body() -> None:
+        echo(str(current_run().home))
+
+    root = bootstrap.build_root_app(
+        candidates=[plugin_candidate(_spec("ext", _who_app("ext", _body)))]
+    )
+    result = CliInvoker().invoke(root.meta, ["ext", "who"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == str(untaped_home())

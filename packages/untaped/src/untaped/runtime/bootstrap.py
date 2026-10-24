@@ -81,6 +81,7 @@ from untaped.sdk.marks import (
     panel_for,
 )
 from untaped.sdk.network.credentials import bind_credentials
+from untaped.sdk.run import Run, run_scope
 from untaped.sdk.storage.cache import current_call
 
 
@@ -300,6 +301,7 @@ def build_root_app(
     _install_root_callback(
         root,
         _root_options(),
+        run=lambda: _invocation_run(result.mount),
         after_command=lambda tokens, ran, failed: _check_skills_after(
             root, tokens, ran, skills, failed=failed
         ),
@@ -502,10 +504,18 @@ def _repairs(root: App, tokens: list[str]) -> bool:
     return app is not root and repairs_at(app) is True
 
 
+def _invocation_run(mount: Mount) -> Run:
+    """The run of one root invocation, which every command it dispatches runs under."""
+    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+
+    return build_run(mount.declaration, mount.settings)
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
     *,
+    run: Callable[[], Run],
     after_command: Callable[[list[str], Sequence[Dispatched], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
@@ -550,8 +560,9 @@ def _install_root_callback(
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # One diagnostics scope covers the command and the checks after it,
-        # so their warnings follow the command's --format.
-        with diagnostics_scope(), dispatching() as ran:
+        # so their warnings follow the command's --format. One run covers every
+        # command, an 11.x one included; a declared command's own nests inside.
+        with diagnostics_scope(), dispatching() as ran, run_scope(run()):
             return _dispatch_root(ran, *tokens)
 
     signature = _root_callback_signature(root_options)
