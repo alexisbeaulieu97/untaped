@@ -219,6 +219,25 @@ def test_a_filled_output_is_a_copy_and_falls_back_to_the_column_marks() -> None:
     assert (default.format, list(default.columns)) == ("table", [])
 
 
+class Hold(Record):
+    """A record naming its table's columns in ``table_columns``."""
+
+    table_columns = ("item", "action")
+    holder: str = ""
+    item: str = ""
+    action: str = ""
+
+
+def test_a_record_s_table_columns_are_the_default_without_column_marks(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({"--columns": ["?"]}, _call(Output[Hold]))
+    assert list(filled.columns) == ["item", "action"]
+    filled._print([], kind=None)  # no row to read the columns from: the record names them
+    listed = capsys.readouterr()
+    assert all(name in listed.out + listed.err for name in ("holder", "item", "action"))
+
+
 def test_an_unknown_column_is_refused_when_filled(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exited:
         Output()._fill({"--columns": ["nope"]}, _call(Output[Row]))

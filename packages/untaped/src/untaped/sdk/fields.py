@@ -385,6 +385,7 @@ class Output[R: BaseModel](FieldBlock):
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
         self._empty: str | None = None
+        self._model: type[BaseModel] | None = None
 
     @property
     def formats(self) -> tuple[str, ...]:
@@ -410,6 +411,7 @@ class Output[R: BaseModel](FieldBlock):
         filled._requested = list(requested) if isinstance(requested, list) else None
         filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None
+        filled._model = model
         if filled.format in self.render:
             if filled._requested is not None:
                 raise UsageError(f"--columns does not apply to --format {filled.format}")
@@ -421,6 +423,8 @@ class Output[R: BaseModel](FieldBlock):
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            _model_fields,
+            _print_available_columns,
             count_failed_actions,
             count_row_failures,
             emit_with,
@@ -432,6 +436,10 @@ class Output[R: BaseModel](FieldBlock):
         if renderer is not None:
             count_row_failures([records] if isinstance(records, BaseModel) else records)
             renderer(records)
+            return
+        if self._requested == ["?"] and records == [] and self._model is not None:
+            # no row to read the columns from: ``R`` names them
+            _print_available_columns(_model_fields(self._model), defaults=list(self.columns))
             return
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
