@@ -186,8 +186,8 @@ and go anywhere before `--` (`untaped github --profile work whoami`).
   not interactive.
 - `profile list` marks the profiles the run reads (`selected`): the picked
   ones, or the base when nothing is picked.
-- `profile show` prints YAML, secrets redacted unless `--show-secrets`; with
-  no name it shows what the run reads.
+- `profile show` prints YAML (its settings under `data`), secrets `***`
+  unless `--show-secrets`; with no name it shows what the run reads.
 - `profile current` writes only the pick, comma-joined (or `default`), to
   stdout and where it came from (`flag`, `env` or `fallback`) to stderr, so
   it is safe in a prompt; `--format json` lists each profile with its source:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 
-from untaped.core.profile.models import Profile, ProfileDeletePreview
+from untaped.core.profile.models import ProfileDeletePreview, StoredProfile
 from untaped.core.profile.ports import ProfileReader, ProfileWriter
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, PROFILE_NAME, Picked
 from untaped.sdk.errors import ConfigError, UsageError
@@ -87,17 +87,17 @@ class DeleteProfile:
 
 
 class ListProfiles:
-    """Return one :class:`Profile` for the base (``default``), then one per named profile."""
+    """Return one :class:`StoredProfile` for the base (``default``), then one per named profile."""
 
     def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
 
-    def __call__(self) -> list[Profile]:
+    def __call__(self) -> list[StoredProfile]:
         selected = _selected(self._repo)
-        out: list[Profile] = []
+        out: list[StoredProfile] = []
         for name in self._repo.names():
             data = self._repo.read(name) or {}
-            out.append(Profile(name=name, data=data, selected=name in selected))
+            out.append(StoredProfile(name=name, data=data, selected=name in selected))
         return out
 
 
@@ -124,7 +124,7 @@ class ShowProfile:
         name: str | None = None,
         *,
         raw: bool = False,
-    ) -> Profile:
+    ) -> StoredProfile:
         if name is None:
             picked = [pick.name for pick in CurrentProfile(self._repo)()]
             if len(picked) > 1:
@@ -133,7 +133,9 @@ class ShowProfile:
                         f"--raw shows one profile; the run picks {', '.join(picked)}",
                         hint="name the profile: `profile show NAME --raw`",
                     )
-                return Profile(name=",".join(picked), data=self._repo.resolved(None), selected=True)
+                return StoredProfile(
+                    name=",".join(picked), data=self._repo.resolved(None), selected=True
+                )
             name = picked[0] if picked else DEFAULT_PROFILE
         raw_data = self._repo.read(name)
         if raw_data is None:
@@ -141,7 +143,7 @@ class ShowProfile:
                 not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
             )
         data = raw_data if raw else self._repo.resolved(name)
-        return Profile(name=name, data=data, selected=name in _selected(self._repo))
+        return StoredProfile(name=name, data=data, selected=name in _selected(self._repo))
 
 
 class RenameProfile:

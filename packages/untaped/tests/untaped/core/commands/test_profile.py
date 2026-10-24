@@ -10,15 +10,21 @@ import json
 from pathlib import Path
 
 import pytest
+from cyclopts import App
 from pydantic import BaseModel, SecretStr
 
-from untaped.core.commands.profile import build_root_profile_app
+from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.settings import FORMAT_VERSION, get_settings, register_profile_settings
 from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+
+def _root() -> App:
+    return bootstrap.build_root_app(candidates=[]).meta
+
 
 _MANAGEMENT_VERBS = ("list", "show", "current", "create", "delete", "rename")
 
@@ -31,7 +37,7 @@ class _GithubSettings(BaseModel):
 def app(_isolated_config: Path):
     register_profile_settings("github", _GithubSettings)
     get_settings.cache_clear()
-    return build_root_profile_app()
+    return _root()
 
 
 def _seed(cfg: Path) -> None:
@@ -45,14 +51,14 @@ def _seed(cfg: Path) -> None:
 
 
 def test_root_profile_exposes_all_verbs() -> None:
-    app = build_root_profile_app()
+    app = _root()["profile"]
     for verb in _MANAGEMENT_VERBS:
         assert verb in app
     assert "use" not in app  # a run picks with --profile or UNTAPED_PROFILE
 
 
 def test_a_fresh_home_lists_the_base() -> None:
-    result = CliInvoker().invoke(build_root_profile_app(), ["list", "--format", "json"])
+    result = CliInvoker().invoke(_root(), ["profile", "list", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [{"name": "default", "selected": True, "keys": 0}]
 
@@ -61,9 +67,9 @@ def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
     _isolated_config.write_text(
         f"format_version: {FORMAT_VERSION}\nprofiles:\n  work: {{}}\n", encoding="utf-8"
     )
-    app = build_root_profile_app()
+    app = _root()
     result = CliInvoker().invoke(
-        app, ["list", "--format", "raw", "--columns", "name", "--columns", "keys"]
+        app, ["profile", "list", "--format", "raw", "--columns", "name", "--columns", "keys"]
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["default\t0", "work\t0"]
@@ -72,17 +78,17 @@ def test_list_ignores_the_format_version_stamp(_isolated_config: Path) -> None:
 def test_create_and_current_round_trip(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    app = build_root_profile_app()
-    assert CliInvoker().invoke(app, ["create", "work"]).exit_code == 0
+    app = _root()
+    assert CliInvoker().invoke(app, ["profile", "create", "work"]).exit_code == 0
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
-    current = CliInvoker().invoke(app, ["current"])
+    current = CliInvoker().invoke(app, ["profile", "current"])
     assert current.exit_code == 0, current.output
     assert current.stdout.strip() == "work"
     assert "(source: env)" in current.stderr
 
 
 def test_current_names_the_base_when_nothing_picks() -> None:
-    current = CliInvoker().invoke(build_root_profile_app(), ["current"])
+    current = CliInvoker().invoke(_root(), ["profile", "current"])
     assert current.exit_code == 0, current.output
     assert current.stdout.strip() == "default"
     assert "(source: fallback)" in current.stderr
@@ -95,7 +101,7 @@ def test_the_base_is_not_a_profile_to_create_delete_or_rename_to(
     app, _isolated_config: Path, args: list[str]
 ) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, args)
+    result = CliInvoker().invoke(app, ["profile", *args])
     assert result.exit_code == 1
     assert "base" in result.stderr
     assert read_config_dict(_isolated_config)["log_level"] == "INFO"
@@ -103,20 +109,23 @@ def test_the_base_is_not_a_profile_to_create_delete_or_rename_to(
 
 def test_show_default_is_the_base(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["show", "default", "--raw", "--format", "json"])
+    result = CliInvoker().invoke(app, ["profile", "show", "default", "--raw", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["data"] == {"log_level": "INFO"}
 
 
 def test_create_copies_the_base(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    assert CliInvoker().invoke(app, ["create", "qa", "--copy-from", "default"]).exit_code == 0
+    assert (
+        CliInvoker().invoke(app, ["profile", "create", "qa", "--copy-from", "default"]).exit_code
+        == 0
+    )
     assert read_config_dict(_isolated_config)["profiles"]["qa"] == {"log_level": "INFO"}
 
 
 def test_delete_accepts_dash_y_alias(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["delete", "stage", "-y"])
+    result = CliInvoker().invoke(app, ["profile", "delete", "stage", "-y"])
     assert result.exit_code == 0, result.output
     assert "deleted profile: stage" in result.stderr
 
@@ -126,7 +135,7 @@ def test_delete_without_confirmation_does_not_mutate_noninteractive_input(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setattr("sys.stdin", TtyStringIO())
-    result = invoke_cli(app, ["delete", "stage"])
+    result = invoke_cli(app, ["profile", "delete", "stage"])
     assert result.exit_code == 2
     assert "requires --yes" in f"{result.stderr}{result.exception or ''}"
     assert "stage" in read_config_dict(_isolated_config)["profiles"]
@@ -136,7 +145,7 @@ def test_delete_decline_is_cancelled_with_exit_one(app, _isolated_config: Path) 
     _seed(_isolated_config)
     backend = ScriptedPromptBackend(confirms=[False])
     # stdin is a pipe, so the prompt goes to the controlling terminal.
-    result = invoke_cli(app, ["delete", "stage"], terminal=True, prompt_backend=backend)
+    result = invoke_cli(app, ["profile", "delete", "stage"], terminal=True, prompt_backend=backend)
     assert result.exit_code == 1
     assert backend.calls == [("confirm", "Delete profile 'stage'?")]
     assert result.stderr.endswith("\ncancelled; no changes made\n")
@@ -145,7 +154,7 @@ def test_delete_decline_is_cancelled_with_exit_one(app, _isolated_config: Path) 
 
 def test_rename_updates_profiles(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["rename", "stage", "staging"])
+    result = CliInvoker().invoke(app, ["profile", "rename", "stage", "staging"])
     assert result.exit_code == 0, result.output
     profiles = read_config_dict(_isolated_config)["profiles"]
     assert "staging" in profiles
@@ -154,7 +163,7 @@ def test_rename_updates_profiles(app, _isolated_config: Path) -> None:
 
 def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["show", "prod"])
+    result = CliInvoker().invoke(app, ["profile", "show", "prod"])
     assert result.exit_code == 0, result.output
     assert "ghp_secret" not in result.stdout
     assert "***" in result.stdout
@@ -162,9 +171,9 @@ def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
 
 def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app()
+    app = _root()
     with profile_scope("stage"):
-        result = CliInvoker().invoke(app, ["current"])
+        result = CliInvoker().invoke(app, ["profile", "current"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "stage"
     assert "(source: flag)" in result.stderr
@@ -172,9 +181,9 @@ def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
 
 def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_config: Path) -> None:
     _seed(_isolated_config)
-    app = build_root_profile_app()
+    app = _root()
     with profile_scope("typo"):
-        result = CliInvoker().invoke(app, ["current"])
+        result = CliInvoker().invoke(app, ["profile", "current"])
     assert result.exit_code == 2  # a pick naming no profile is a usage error
     assert "'typo' (from flag) is not defined" in result.stderr
 
@@ -184,10 +193,10 @@ def test_current_lists_a_stacked_pick_with_each_source(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    app = build_root_profile_app()
+    app = _root()
     with profile_scope("stage"):
-        plain = CliInvoker().invoke(app, ["current"])
-        structured = CliInvoker().invoke(app, ["current", "--format", "json"])
+        plain = CliInvoker().invoke(app, ["profile", "current"])
+        structured = CliInvoker().invoke(app, ["profile", "current", "--format", "json"])
     assert plain.stdout == "prod,stage\n"
     assert "(source: env, flag)" in plain.stderr
     assert json.loads(structured.stdout) == {
@@ -202,10 +211,10 @@ def test_show_without_a_name_shows_the_stacked_pick(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    app = build_root_profile_app()
+    app = _root()
     with profile_scope("stage"):
-        shown = CliInvoker().invoke(app, ["show", "--format", "json"])
-        raw = CliInvoker().invoke(app, ["show", "--raw"])
+        shown = CliInvoker().invoke(app, ["profile", "show", "--format", "json"])
+        raw = CliInvoker().invoke(app, ["profile", "show", "--raw"])
     assert shown.exit_code == 0, shown.output
     assert (json.loads(shown.stdout)["name"], json.loads(shown.stdout)["selected"]) == (
         "prod,stage",
@@ -220,13 +229,13 @@ def test_list_json_marks_the_selected_with_booleans(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    app = build_root_profile_app()
-    result = CliInvoker().invoke(app, ["list", "--format", "json"])
+    app = _root()
+    result = CliInvoker().invoke(app, ["profile", "list", "--format", "json"])
     assert result.exit_code == 0, result.output
     selected = {row["name"]: row["selected"] for row in json.loads(result.stdout)}
     assert selected == {"default": False, "prod": True, "stage": False}
     with profile_scope("stage"):
-        stacked = CliInvoker().invoke(app, ["list", "--format", "json"])
+        stacked = CliInvoker().invoke(app, ["profile", "list", "--format", "json"])
     selected = {row["name"]: row["selected"] for row in json.loads(stacked.stdout)}
     assert selected == {"default": False, "prod": True, "stage": True}
 
@@ -236,12 +245,12 @@ def test_list_marks_the_selected_with_a_check_in_tables_only(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    app = build_root_profile_app()
+    app = _root()
     raw = CliInvoker().invoke(
-        app, ["list", "--format", "raw", "--columns", "name", "--columns", "selected"]
+        app, ["profile", "list", "--format", "raw", "--columns", "name", "--columns", "selected"]
     )
     assert raw.stdout.splitlines() == ["default\tFalse", "prod\tTrue", "stage\tFalse"]
-    table = CliInvoker().invoke(app, ["list"])
+    table = CliInvoker().invoke(app, ["profile", "list"])
     marked = {line.split("│")[1].strip() for line in table.stdout.splitlines() if "✓" in line}
     assert marked == {"prod"}
 
@@ -250,7 +259,7 @@ def test_list_marks_the_selected_with_a_check_in_tables_only(
 
 
 def _outcome(app, args: list[str]) -> dict[str, object]:
-    result = CliInvoker().invoke(app, [*args, "--format", "json"])
+    result = CliInvoker().invoke(app, ["profile", *args, "--format", "json"])
     assert result.exit_code == 0, result.output
     return json.loads(result.stdout)
 
@@ -268,7 +277,7 @@ def test_create_emits_outcome_and_dry_run_writes_nothing(app, _isolated_config: 
     assert _outcome(app, ["create", "qa"])["action"] == "created"
     assert "qa" in read_config_dict(_isolated_config)["profiles"]
 
-    again = CliInvoker().invoke(app, ["create", "qa", "--dry-run"])
+    again = CliInvoker().invoke(app, ["profile", "create", "qa", "--dry-run"])
     assert again.exit_code == 1
     assert "already exists" in again.stderr
 
@@ -291,7 +300,7 @@ def test_delete_dry_run_previews_without_confirming_or_deleting(
 ) -> None:
     _seed(_isolated_config)
     monkeypatch.setattr("sys.stdin", TtyStringIO())
-    result = invoke_cli(app, ["delete", "stage", "--dry-run", "--format", "json"])
+    result = invoke_cli(app, ["profile", "delete", "stage", "--dry-run", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "planned"
     assert "top-level keys: log_level" in result.stderr
@@ -300,7 +309,7 @@ def test_delete_dry_run_previews_without_confirming_or_deleting(
 
 def test_delete_dry_run_still_refuses_the_base(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    result = CliInvoker().invoke(app, ["delete", "default", "--dry-run"])
+    result = CliInvoker().invoke(app, ["profile", "delete", "default", "--dry-run"])
     assert result.exit_code == 1
     assert "it is the base" in result.stderr
 
@@ -316,11 +325,14 @@ def test_create_and_rename_refuse_a_name_profile_cannot_pick(
     app, _isolated_config: Path, name: str
 ) -> None:
     _seed(_isolated_config)
-    created = CliInvoker().invoke(app, ["create", name])
-    renamed = CliInvoker().invoke(app, ["rename", "stage", name])
+    created = CliInvoker().invoke(app, ["profile", "create", name])
+    renamed = CliInvoker().invoke(app, ["profile", "rename", "stage", name])
     for result in (created, renamed):
         assert result.exit_code == 2, result.output  # a usage error, as in a pick
-        assert f"invalid profile name {name!r}" in result.stderr
+        # an empty argument is refused before the name rule reads it
+        assert ("requires an argument" if not name else f"invalid profile name {name!r}") in (
+            result.stderr
+        )
     assert set(read_config_dict(_isolated_config)["profiles"]) == {"prod", "stage"}
 
 
@@ -346,7 +358,7 @@ def test_a_change_that_leaves_the_pick_undefined_writes_nothing(
     before = _isolated_config.read_text(encoding="utf-8")
     monkeypatch.setenv("UNTAPED_PROFILE", pick)
 
-    result = CliInvoker().invoke(app, args)
+    result = CliInvoker().invoke(app, ["profile", *args])
 
     assert result.exit_code == 2, result.output
     assert message in result.stderr

@@ -16,7 +16,9 @@ command runs and needs at least one row, so use it on a read command or add
 | `auth list` | `untaped.stored_credential` (`id`, `plugin`, `name`, `key`, `backend`, `where`: the store entry or the command's program alone) |
 | `auth status` | `untaped.token_source` (for a declared credential, one row for this run: `key`, `step` `variable`, `stored`, `setting` or `env`, `source`, `id`, or `refusal`; for a plugin on 11.0's settings, one per profile) |
 | `auth set`, `auth unset`, `auth migrate` (deprecated) | `untaped.auth_outcome` (never the secret; `field` names it, `token` or another; `action` `gone` when `unset` found the entry already deleted; a secret `migrate` could not move is `failed`, with `error`) |
-| `profile list` | `untaped.profile` |
+| `profile list` | `untaped.profile` (`name`, `selected`, `keys`) |
+| `profile show` | `untaped.profile_view` (`name`, `selected`, `raw`, `data`: the settings, secrets `***` unless `--show-secrets`; `yaml` by default) |
+| `profile current` | `untaped.profile_pick` (`name`: the pick comma-joined, else `default`; `profiles`, each `name` and `source` `flag` or `env`; `raw` by default) |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `project list` | `untaped.recorded_project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
 | `project init` | `untaped.project_outcome` (`name`, `path`, `id`, `action` `created`, `unchanged`, `recorded`, `repaired` or `new id`, `detail`; experimental) |

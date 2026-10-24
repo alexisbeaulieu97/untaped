@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterator
 from typing import Annotated, ClassVar
 
+import pytest
 from pydantic import BaseModel, Field
 
 from untaped.runtime.bootstrap import build_root_app, compose_root
@@ -177,6 +178,15 @@ class Broke(Command):
         yield Shape(name="bad", error=Failure(message="no", category="failed", system="x"))
 
 
+class Pin(Command):
+    """Show one shape as a document."""
+
+    output: Output[Shape] = Output(format="yaml")
+
+    def run(self) -> Shape:
+        return Shape(name="pin")
+
+
 class ShapesSettings(BaseModel):
     pass
 
@@ -185,7 +195,21 @@ class Shapes(Plugin):
     """Shapes, every way."""
 
     settings = ShapesSettings
-    commands = (Tag, Left, Right, AGroup, BGroup, Count, Note, Touch, Measure, Squares, Pick, Broke)
+    commands = (
+        Tag,
+        Left,
+        Right,
+        AGroup,
+        BGroup,
+        Count,
+        Note,
+        Touch,
+        Measure,
+        Squares,
+        Pick,
+        Broke,
+        Pin,
+    )
 
 
 class TakenSettings(BaseModel):
@@ -321,3 +345,22 @@ def test_a_plugin_class_s_name_is_checked_like_a_spec_s() -> None:
         "bad-metadata",
         "duplicate-name",
     ]
+
+
+def test_an_output_s_own_default_format_prints_without_the_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_FORMAT", "json")  # follows only a table default
+
+    shown = _run("shapes", "pin")
+    asked = _run("shapes", "pin", "--format", "json")
+    listed = _run("shapes", "touch", "a")
+
+    assert (shown.exit_code, shown.stdout.splitlines()[0]) == (0, "name: pin"), shown.stderr
+    assert json.loads(asked.stdout)["name"] == "pin"
+    assert [row["name"] for row in json.loads(listed.stdout)] == ["a"]
+
+
+def test_an_output_refuses_a_default_it_does_not_offer() -> None:
+    with pytest.raises(ValueError, match="Output\\(format='tree'\\) is not one of"):
+        Output(format="tree")
