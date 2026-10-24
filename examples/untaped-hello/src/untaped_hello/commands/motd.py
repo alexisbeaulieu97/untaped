@@ -1,70 +1,22 @@
-"""The ``untaped hello`` commands."""
+"""``untaped hello motd``: the message of the day, served through a cache."""
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
 from functools import partial
 from pathlib import Path
-from typing import Literal
-
-from pydantic import Field
 
 from untaped.sdk import (
     Command,
     Filled,
-    Message,
-    Output,
-    Positional,
     ProgressHandle,
     Refresh,
-    Stdin,
     atomic_write,
     plural,
     shown_path,
 )
 from untaped_hello.errors import HelloError
-from untaped_hello.records import Salutation
 from untaped_hello.settings import MOTD, HelloSettings
-
-
-class DefaultGreeting(Message, kind="hello.default_greeting"):
-    """A plugin's own stderr kind: the greeting is the default; name the setting that changes it."""
-
-    level: Literal["hint"] = "hint"
-    setting: str
-
-
-class Greet(Command[HelloSettings]):
-    """Print the configured greeting (``hello.greeting``)."""
-
-    def run(self) -> str:
-        if "greeting" not in self.settings.model_fields_set:
-            self.ctx.diag.emit(
-                DefaultGreeting(
-                    message="this is the default greeting",
-                    hint="set your own with `untaped config set hello.greeting TEXT`",
-                    setting="hello.greeting",
-                )
-            )
-        return self.settings.greeting
-
-
-class Say(Command[HelloSettings]):
-    """Greet each name with ``hello.greeting``, one ``hello.salutation`` record each.
-
-    ``--stdin`` reads names, one per line, or the records ``say --format
-    pipe`` printed; a record of any other kind exits 2 instead of being
-    misread.
-    """
-
-    names: Positional[list[str]] = Field(default_factory=list, description="Whom to greet.")
-    stdin: Stdin[Salutation]
-    output: Output[Salutation]
-
-    def run(self) -> Iterator[Salutation]:
-        for name in self.stdin.identifiers(self.names):
-            yield Salutation(name=name, text=f"{self.settings.greeting}, {name}")
 
 
 class Motd(Command[HelloSettings]):
