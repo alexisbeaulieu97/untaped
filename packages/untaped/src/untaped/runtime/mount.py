@@ -168,7 +168,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
 
 #: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind
 #: no 11.x reader may see (a plugin class's state rows live in its own file,
-#: not the shared one ``PluginSpec.stores`` describes) or needs (a lock).
+#: not the shared one ``PluginSpec.stores`` describes) or needs (a lock, a place).
 _SPEC_FIELDS: dict[str, str | None] = {
     "cache": "caches",
     "dir-migration": "migrations",
@@ -177,6 +177,7 @@ _SPEC_FIELDS: dict[str, str | None] = {
     "deprecated-behaviour": "deprecations",
     "state-rows": None,
     "lock": None,
+    "dir": None,
 }
 
 

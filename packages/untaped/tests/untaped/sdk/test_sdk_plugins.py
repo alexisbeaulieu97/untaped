@@ -215,6 +215,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     ),
     "caches and stores": (
         "Cache",
+        "Dir",
         "Filled",
         "Freshness",
         "FreshnessRecord",
