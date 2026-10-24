@@ -121,8 +121,8 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
     return sorted(set(lines))
 
 
-def plugin_lines(spec: PluginSpec) -> list[Line]:
-    """The surface of one plugin, composed alone with the shell.
+def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
+    """The surface of one plugin (an 11.x spec, or any candidate), composed alone with the shell.
 
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
     their payload models, its record kinds once it is a 12.0 plugin class, and
@@ -136,20 +136,23 @@ def plugin_lines(spec: PluginSpec) -> list[Line]:
         composition,
         kept_composition,
     )
+    from untaped.runtime.registry import PluginCandidate  # noqa: PLC0415
     from untaped.sdk.testing import plugin_candidate  # noqa: PLC0415
 
-    candidate = plugin_candidate(spec)
+    candidate = plugin if isinstance(plugin, PluginCandidate) else plugin_candidate(plugin)
+    name = candidate.name
     with kept_composition(quiet=True):
         root = build_root_app(candidates=[candidate])
         result = composition()
         check_quarantine(result)
         marks = _plugin_marks(result, root)
+        spec = next(each.spec for each in result.plugins if each.spec.name == name)
         modules = _plugin_modules(spec, candidate.target, root)
-        lines = subtree_lines(root, spec.name, marks.get(spec.name))
+        lines = subtree_lines(root, name, marks.get(name))
         lines.extend(settings_lines(result, root=False, tree=root))
         lines.extend(_owned(result, modules, marks, core=False))
-        lines.extend(_behaviour_lines(result, root, owner=spec.name))
-        lines.extend(record_lines(result, marks, owner=spec.name))
+        lines.extend(_behaviour_lines(result, root, owner=name))
+        lines.extend(record_lines(result, marks, owner=name))
     return sorted(set(lines))
 
 

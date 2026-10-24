@@ -38,5 +38,7 @@ The tests use `untaped.sdk.testing` and `untaped_lint.testing`: `tests/conftest.
 enables the hermetic plugin, `assert_clean("hello")` fails where `untaped lint`
 would, and the `install` fixture composes `Hello` into the test's home:
 `install(Hello).run(Greet())` runs a command, `.cli("hello say ada")` a
-command line, and the `clock` fixture ages the cache. The building guide
+command line, and the `clock` fixture ages the cache. `check(install(Hello))`
+runs `untaped plugin check`'s rows and `assert_surface(Hello)` keeps
+`tests/snapshots/surface.txt`. The building guide
 is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).

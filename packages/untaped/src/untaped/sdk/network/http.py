@@ -145,11 +145,6 @@ def _parse_retry_after(value: str) -> float | None:
     return max(0.0, (when - run_clock().now()).total_seconds())
 
 
-def _sleep(seconds: float) -> None:
-    """Wait ``seconds`` before a retry, on the run's clock (a test's clock moves at once)."""
-    run_clock().sleep(seconds)
-
-
 def resolve_verify(http: HttpSettings) -> VerifyTypes:
     """Translate :class:`HttpSettings` into a value httpx accepts for ``verify``.
 
@@ -531,7 +526,7 @@ def _log_exchange(request: httpx.Request, outcome: str, started: float) -> None:
 
 def _sleep_before_retry(delay: float, attempt: int, policy: RetryPolicy) -> None:
     _LOG.debug("retrying in %.1fs (attempt %d of %d)", delay, attempt + 1, policy.max_attempts)
-    _sleep(delay)
+    run_clock().sleep(delay)  # a test's clock moves at once
 
 
 _BODY_LIMIT = 2048

@@ -8,7 +8,7 @@ answer, for a linter to judge.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
-public surface (``untaped.sdk.testing.surface``).
+public surface and :func:`check` runs its plugin check (``untaped.sdk.testing.guards``).
 
 Blocks read time from one clock (``untaped.sdk.run.run_clock``): cache
 ages, progress cadence and HTTP back-off. Under :func:`manual_clock` it is a
@@ -45,13 +45,12 @@ import io
 import sys
 import threading
 import warnings
-from collections import deque
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TextIO, cast
+from typing import TYPE_CHECKING, Any, TextIO
 
 from cyclopts import App
 from rich.console import Console
@@ -65,14 +64,12 @@ from untaped.runtime.sink import (
     recording,
     tick,
 )
-from untaped.screen.core import Cancel, Quit, Screen
 from untaped.sdk._cli import run_cyclopts_app
-from untaped.sdk.errors import ConfigError, PromptInterruptedError
+from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import apply_marks, deprecated, experimental
 from untaped.sdk.projects import Project, holder_of, init
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
-    PromptChoice,
     reset_prompt_backend_override,
     reset_terminal_override,
     set_prompt_backend_override,
@@ -95,14 +92,13 @@ from untaped.sdk.storage.holds import (
 from untaped.sdk.storage.holds import release_ask as _release_ask
 from untaped.sdk.storage.state import StateRows
 from untaped.sdk.testing.contracts import assert_fills, compose_with
+from untaped.sdk.testing.fixtures import MemoryCredentials, ScriptedTerminal
 from untaped.sdk.testing.schema import assert_schema_pinned
 from untaped.sdk.testing.screens import ScreenKeys, ScreenRun, drive_screen
-from untaped.sdk.testing.surface import assert_surface
 
 if TYPE_CHECKING:
     from untaped.runtime.registry import PluginSpec
-    from untaped.runtime.theme import ThemeSpec
-    from untaped.screen.picker import PickRequest, PickResult
+    from untaped.screen.picker import PickResult
     from untaped.sdk.diagnostic import Diagnostic
 
 __all__ = [
@@ -112,6 +108,7 @@ __all__ = [
     "Home",
     "Install",
     "ManualClock",
+    "MemoryCredentials",
     "MemoryStore",
     "PluginCandidate",
     "PluginCheckRow",
@@ -121,12 +118,14 @@ __all__ = [
     "ScreenKeys",
     "ScreenRun",
     "ScriptedPromptBackend",
+    "ScriptedTerminal",
     "TtyStringIO",
     "assert_destructive_contract",
     "assert_fills",
     "assert_schema_pinned",
     "assert_surface",
     "cache_clock",
+    "check",
     "check_conventions",
     "check_plugin",
     "compose_with",
@@ -151,42 +150,12 @@ __all__ = [
 ]
 
 
-class MemoryStore:
+class MemoryStore(MemoryCredentials):
     """A password store in memory, for tests: what ``auth login`` saves, by entry.
 
-    ``entries`` maps each entry to its secret and ``labels`` to how a real
-    store would list it, so a test can check both.
+    The 11.x name of :class:`MemoryCredentials`, kept until each plugin's
+    tests move onto the ``credentials`` fixture.
     """
-
-    name = "memory"
-
-    def __init__(self) -> None:
-        self.entries: dict[str, str] = {}
-        self.labels: dict[str, str | None] = {}
-
-    def preflight(self) -> None:
-        """A memory store always works."""
-
-    def save(self, entry: str, token: str, *, label: str | None = None) -> None:
-        self.entries[entry] = token
-        self.labels[entry] = label
-
-    def read(self, entry: str) -> str:
-        if entry not in self.entries:
-            raise ConfigError(f"the in-memory store has no entry {entry}")
-        return self.entries[entry]
-
-    def delete(self, entry: str) -> None:
-        if entry not in self.entries:
-            raise ConfigError(f"the in-memory store has no entry {entry}")
-        del self.entries[entry]
-        self.labels.pop(entry, None)
-
-    def gone(self, entry: str) -> bool:
-        return entry not in self.entries
-
-    def describe(self, entry: str) -> str:
-        return f"memory ({entry})"
 
 
 @contextmanager
@@ -272,19 +241,22 @@ def manual_clock(start: datetime | None = None) -> Iterator[ManualClock]:
 
 
 class _WallOnly(Clock):
-    """A clock that answers wall time itself and the rest from the clock below it."""
+    """A clock that answers wall time itself and monotonic time from the clock below it.
 
-    def __init__(self, below: Clock, wall: Callable[[], datetime]) -> None:
+    A block's wait moves the wall clock and never waits: a test never sleeps.
+    """
+
+    def __init__(self, below: Clock, wall: CacheClock) -> None:
         self._below, self._wall = below, wall
 
     def now(self) -> datetime:
-        return self._wall()
+        return self._wall.now
 
     def monotonic(self) -> float:
         return self._below.monotonic()
 
     def sleep(self, seconds: float) -> None:
-        self._below.sleep(seconds)
+        self._wall.advance(timedelta(seconds=seconds))
 
 
 def _cadence_is_the_tests() -> bool:
@@ -801,27 +773,19 @@ class TtyStringIO(io.StringIO):
         return True
 
 
-class ScriptedPromptBackend:
+class ScriptedPromptBackend(ScriptedTerminal):
     """A :class:`~untaped.sdk.prompt.prompts.PromptBackend` answering from fixed queues.
 
-    Each prompt method pops its next scripted answer and records
+    The 11.x spelling of :class:`ScriptedTerminal`, scripted all at once:
+    each prompt method pops its next scripted answer and records
     ``(method, message)`` in ``calls``; an exhausted queue raises
     :class:`ConfigError` so a test fails cleanly instead of hanging. With
     ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
-    simulating Ctrl-C.
-
-    ``screens`` answers :meth:`UiContext.run`: each entry is the screen's
-    result (returned as ``Quit(entry)``), a :class:`Quit` (its result is
-    returned, like the screen's own), a :class:`Cancel` (or the class itself), an exception
-    instance or class (raised), or :class:`ScreenKeys` (replayed through
-    :func:`drive_screen` with commands run synchronously, so a command-level
-    test can run a real screen). ``ran`` keeps the screens it was asked to
-    run. The backend never touches a terminal, so ``UiContext.run`` and
-    ``UiContext.pick_many`` do not require one: a command test needs no
-    ``terminal=True`` and no TTY stdin.
+    simulating Ctrl-C. ``screens`` answers :meth:`UiContext.run` as
+    :meth:`ScriptedTerminal.screens` takes them. The backend never touches a
+    terminal, so ``UiContext.run`` and ``UiContext.pick_many`` do not require
+    one: a command test needs no ``terminal=True`` and no TTY stdin.
     """
-
-    needs_terminal = False
 
     def __init__(
         self,
@@ -835,76 +799,22 @@ class ScriptedPromptBackend:
         screens: Sequence[object] = (),
         interrupt: bool = False,
     ) -> None:
+        super().__init__()
+        self.present = True
+        self._secrets_typed = False  # a secret prompt reads only ``secrets``
         self._interrupt = interrupt
-        self._confirms = deque(confirms)
-        self._texts = deque(texts)
-        self._secrets = deque(secrets)
-        self._selections = deque(selections)
-        self._multiselects = deque(multiselects)
-        self._picks = deque(picks)
-        self._screens = deque(screens)
-        self.ran: list[Screen[Any, Any]] = []
-        self.calls: list[tuple[str, str]] = []
+        self._confirms.extend(confirms)
+        self._texts.extend(texts)
+        self._secrets.extend(secrets)
+        self._selections.extend(selections)
+        self._multiselects.extend(multiselects)
+        self._picks.extend(picks)
+        self._screens.extend(screens)
 
-    def _next(self, queue: deque[Any], method: str, message: str) -> Any:
-        self.calls.append((method, message))
-        if self._interrupt:
-            raise PromptInterruptedError("prompt cancelled")
-        if not queue:
-            raise ConfigError(f"no scripted {method} answer for prompt {message!r}")
-        return queue.popleft()
-
-    def confirm(self, message: str, *, default: bool) -> bool:
-        return bool(self._next(self._confirms, "confirm", message))
-
-    def text(self, message: str, *, default: str | None) -> str:
-        return str(self._next(self._texts, "text", message))
-
-    def secret(self, message: str, *, confirmation: bool) -> str:
-        return str(self._next(self._secrets, "secret", message))
-
-    def select(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[Any]],
-        *,
-        default: Any | None,
-        search: bool,
-    ) -> Any:
-        return self._next(self._selections, "select", message)
-
-    def multiselect(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[Any]],
-        *,
-        defaults: Sequence[Any],
-    ) -> list[Any]:
-        return list(self._next(self._multiselects, "multiselect", message))
-
-    def pick_many(self, request: PickRequest) -> PickResult | None:
-        return cast("PickResult | None", self._next(self._picks, "pick_many", request.heading))
-
-    def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Quit[R] | Cancel:
-        self.ran.append(screen)
-        entry = self._next(self._screens, "run_screen", screen.title)
-        if isinstance(entry, BaseException) or (
-            isinstance(entry, type) and issubclass(entry, BaseException)
-        ):
-            raise entry
-        if entry is Cancel:
-            return Cancel()
-        if isinstance(entry, Quit | Cancel):
-            return cast("Quit[R] | Cancel", entry)
-        if isinstance(entry, ScreenKeys):
-            run = drive_screen(screen, entry, theme=theme, commands="sync")
-            if run.outcome is None:
-                raise ConfigError(
-                    f"the scripted keys did not end screen {screen.title!r}; "
-                    "finish them with a key that quits"
-                )
-            return run.outcome
-        return cast("Quit[R]", Quit(entry))
+    @property
+    def calls(self) -> list[tuple[str, str]]:
+        """Every prompt asked, as ``(method, message)``: :attr:`ScriptedTerminal.asked`."""
+        return self.asked
 
 
 def _call_command(
@@ -952,5 +862,6 @@ def _exit_code(exc: SystemExit) -> int:
     return 1
 
 
-# Last: install reads this module's runners when it runs a command.
+# Last: these read this module's runners.
+from untaped.sdk.testing.guards import assert_surface, check  # noqa: E402
 from untaped.sdk.testing.install import Home, Install, Ran, install  # noqa: E402

@@ -1,0 +1,25 @@
+# untaped surface 1
+cfg hello.caches.motd.max_age_seconds integer(minimum=0) default=3600
+cfg hello.greeting string default="hello from untaped-hello"
+cfg hello.motd_path string(format=path)? default=unset
+cli untaped hello
+cli untaped hello greet
+cli untaped hello motd
+cli untaped hello motd --refresh negative=--cached
+cli untaped hello motd --refresh switch default=unset
+cli untaped hello say
+cli untaped hello say --columns VALUE... default=unset
+cli untaped hello say --columns alias=-c
+cli untaped hello say --format VALUE default=table
+cli untaped hello say --format alias=-f
+cli untaped hello say --format choice=json
+cli untaped hello say --format choice=pipe
+cli untaped hello say --format choice=raw
+cli untaped hello say --format choice=table
+cli untaped hello say --format choice=yaml
+cli untaped hello say --stdin switch default=unset
+cli untaped hello say [NAMES...]@1 default=unset
+record hello.salutation
+record hello.salutation(name, text)
+record hello.salutation.name string
+record hello.salutation.text string

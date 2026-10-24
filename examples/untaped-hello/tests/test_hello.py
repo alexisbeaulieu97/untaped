@@ -19,7 +19,7 @@ from untaped_hello.records import Salutation
 from untaped_hello.settings import HelloSettings
 
 from untaped.sdk import Progress, StaleData
-from untaped.sdk.testing import Home, Install, ManualClock
+from untaped.sdk.testing import Home, Install, ManualClock, assert_surface, check
 from untaped_lint.testing import assert_clean
 
 Installer = Callable[..., Install]
@@ -27,6 +27,14 @@ Installer = Callable[..., Install]
 
 def test_hello_passes_lint() -> None:
     assert_clean("hello")
+
+
+def test_hello_passes_its_plugin_check(install: Installer) -> None:
+    check(install(Hello))
+
+
+def test_hello_keeps_its_surface() -> None:
+    assert_surface(Hello)  # snapshots/surface.txt beside this file
 
 
 def test_hello_loads_lazily() -> None:

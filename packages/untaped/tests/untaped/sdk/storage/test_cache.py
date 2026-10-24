@@ -493,15 +493,12 @@ def test_only_an_auto_refill_runs_under_the_fail_fast_budget(clock: CacheClock) 
     assert seen == [False, True, False]
 
 
-def test_a_first_fill_retries_a_transient_failure(
-    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("clock")
+def test_a_first_fill_retries_a_transient_failure() -> None:
     import httpx
     import respx
 
     from untaped.sdk.network.http import HttpClient, RetryPolicy
-
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _seconds: None)
 
     def fetch(_key: str, _task: ProgressHandle) -> Filled:
         with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
@@ -623,8 +620,11 @@ def test_an_own_task_shows_the_wait_as_its_text_then_clears_it(clock: CacheClock
 def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> None:
     """Under --refresh too: the data was refreshed after this run started."""
 
+    fills: list[int] = []
+
     def other_process_fills() -> None:
-        fresh = Freshness(refreshed_at=START + timedelta(seconds=1))
+        fills.append(1)  # each of its fills at a later time
+        fresh = Freshness(refreshed_at=START + timedelta(seconds=len(fills)))
         TOY._write(TOY._paths("a").file(), "a", fresh, None, None)
         UP.held["a"] = ["a9"]
 
@@ -1174,7 +1174,7 @@ def test_never_refreshed_is_an_sdk_error() -> None:
 
 
 def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
-    clock: CacheClock, monkeypatch: pytest.MonkeyPatch
+    clock: CacheClock,
 ) -> None:
     """An automatic refresh, the first probe down: the fill completes, holed, with its retry time.
 
@@ -1187,7 +1187,6 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
     from untaped.sdk._concurrency import bounded_map
     from untaped.sdk.network.http import HttpClient, RetryPolicy
 
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _seconds: None)
     _refreshed(clock, "a", ago=timedelta(hours=2))
     reset = START + timedelta(minutes=30)
 

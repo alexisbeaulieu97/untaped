@@ -2,8 +2,8 @@
 
 Transport failures are retried by phase (pre-send connect failures for any
 method, post-send read/write errors only for idempotent methods); 429/503 are
-retried for idempotent methods, honouring a capped ``Retry-After``. ``_sleep``
-is patched so these run instantly.
+retried for idempotent methods, honouring a capped ``Retry-After``. The back-off
+waits on the test's clock, so these run instantly.
 """
 
 from __future__ import annotations
@@ -18,14 +18,13 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.sdk.errors import HttpStatusError, HttpTransportError
 from untaped.sdk.network.http import HttpClient, RetryPolicy, connected_client, paginate_offset
+from untaped.sdk.testing import ManualClock
 
 
 @pytest.fixture
-def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Capture the backoff delays without actually sleeping."""
-    recorded: list[float] = []
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", recorded.append)
-    return recorded
+def no_sleep(clock: ManualClock) -> list[float]:
+    """The backoff delays, waited on the test's clock."""
+    return clock.slept
 
 
 class _DemoSettings(BaseModel):
@@ -278,7 +277,7 @@ def test_a_client_without_a_section_attributes_failures_to_http() -> None:
 
 
 def test_a_deadline_caps_each_attempt_and_refuses_one_past_it(
-    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+    clock: ManualClock, no_sleep: list[float]
 ) -> None:
     from untaped.sdk.network.http import request_deadline
 
@@ -288,27 +287,23 @@ def test_a_deadline_caps_each_attempt_and_refuses_one_past_it(
         seen.append(request.extensions["timeout"]["read"])
         return httpx.Response(503)
 
-    clock = [100.0]
-    monkeypatch.setattr("untaped.sdk.network.http.time.monotonic", lambda: clock[0])
     with respx.mock(base_url="https://example.com") as mock:
         mock.get("/x").mock(side_effect=record)
         with HttpClient(base_url="https://example.com", timeout=30.0) as client:
             with request_deadline(5.0), pytest.raises(HttpStatusError):
                 client.get("/x", retry=RetryPolicy(max_attempts=2))
-            assert seen == [5.0, 5.0]
+            [waited] = no_sleep  # the back-off came out of the deadline
+            assert seen == [5.0, 5.0 - waited]
             with request_deadline(60.0):
-                clock[0] += 61
+                clock.advance(61)
                 with pytest.raises(HttpTransportError, match="deadline exceeded") as err:
                     client.get("/x")
     assert err.value.retryable
 
 
-def test_a_retry_that_would_wait_past_the_deadline_is_not_made(
-    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
-) -> None:
+def test_a_retry_that_would_wait_past_the_deadline_is_not_made(no_sleep: list[float]) -> None:
     from untaped.sdk.network.http import request_deadline
 
-    monkeypatch.setattr("untaped.sdk.network.http.time.monotonic", lambda: 100.0)
     busy = httpx.Response(503, headers={"Retry-After": "60"})
     with respx.mock(base_url="https://example.com") as mock:
         route = mock.get("/x").mock(return_value=busy)
@@ -324,11 +319,10 @@ def test_a_retry_that_would_wait_past_the_deadline_is_not_made(
 
 
 def test_a_transport_retry_that_would_wait_past_the_deadline_is_not_made(
-    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]
+    no_sleep: list[float],
 ) -> None:
     from untaped.sdk.network.http import request_deadline
 
-    monkeypatch.setattr("untaped.sdk.network.http.time.monotonic", lambda: 100.0)
     policy = RetryPolicy(max_attempts=3, backoff_base=10.0)
     with respx.mock(base_url="https://example.com") as mock:
         route = mock.get("/x").mock(side_effect=httpx.ConnectError("refused"))
@@ -342,10 +336,10 @@ def test_a_transport_retry_that_would_wait_past_the_deadline_is_not_made(
     assert no_sleep == []
 
 
-def test_a_nested_deadline_never_extends_the_outer_one(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.usefixtures("clock")
+def test_a_nested_deadline_never_extends_the_outer_one() -> None:
     from untaped.sdk.network.http import _time_left, request_deadline
 
-    monkeypatch.setattr("untaped.sdk.network.http.time.monotonic", lambda: 0.0)
     assert _time_left() is None
     with request_deadline(5.0):
         with request_deadline(50.0):

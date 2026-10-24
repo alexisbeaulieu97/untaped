@@ -96,9 +96,9 @@ def test_search_issues_walks_start_at_pages_until_total() -> None:
     assert json.loads(route.calls[1].request.content)["startAt"] == 1
 
 
-def test_search_retries_a_429_although_it_is_a_post(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
+def test_search_retries_a_429_although_it_is_a_post() -> None:
     """JQL search opts its idempotent POST into retry; mutating POSTs never retry."""
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     with respx.mock(base_url=BASE) as mock:
         search = mock.post("/rest/api/2/search").mock(
             side_effect=[httpx.Response(429), _search_page(0, 1, "ABC-1")]
@@ -125,11 +125,11 @@ def test_search_retries_a_429_although_it_is_a_post(monkeypatch: pytest.MonkeyPa
     ],
 )
 @pytest.mark.parametrize("answer", [429, 503])
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_patch_puts_are_sent_once(
-    monkeypatch: pytest.MonkeyPatch, path: str, send: Callable[[JiraClient], object], answer: int
+    path: str, send: Callable[[JiraClient], object], answer: int
 ) -> None:
     """A patch's PUT can carry an ``update`` add, so a retry could apply it twice."""
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     with respx.mock(base_url=BASE) as mock:
         put = mock.put(path).mock(return_value=httpx.Response(answer))
         with JiraClient(_settings()) as client, pytest.raises(JiraError):
@@ -138,11 +138,9 @@ def test_patch_puts_are_sent_once(
     assert put.call_count == 1
 
 
-def test_patch_put_is_not_resent_after_a_dropped_connection(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
+def test_patch_put_is_not_resent_after_a_dropped_connection() -> None:
     """Jira may have applied a PUT whose answer never arrived; only a failed connect is retried."""
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     with respx.mock(base_url=BASE) as mock:
         dropped = mock.put("/rest/api/2/issue/ABC-1").mock(side_effect=httpx.ReadTimeout)
         unreached = mock.put("/rest/api/2/issue/ABC-1/assignee").mock(

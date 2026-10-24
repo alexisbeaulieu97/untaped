@@ -4,15 +4,17 @@ Enable it with ``pytest_plugins = ["untaped.sdk.testing.plugin"]`` in a suite's
 top-level ``conftest.py``. Every test then runs with its own ``HOME`` and
 ``UNTAPED_CONFIG``, no ``UNTAPED_*``/``GIT_CONFIG_*`` variables, no ambient
 tokens (the variables every declared ``Credential`` reads among them), an
-in-memory password store (:class:`untaped.sdk.testing.MemoryStore`), no
+in-memory password store (:class:`untaped.sdk.testing.MemoryCredentials`), no
 controlling terminal, plain non-colour output, and a fresh settings
 registry. It is not auto-loaded, so installing untaped never changes
 another project's tests.
 
 Its fixtures: ``home`` (the hermetic home, :class:`~untaped.sdk.testing.Home`),
 ``install`` (:func:`untaped.sdk.testing.install`, composing plugin classes into
-it) and ``clock`` (a :class:`~untaped.sdk.testing.ManualClock` every block
-reads time from).
+it), ``clock`` (a :class:`~untaped.sdk.testing.ManualClock` every block
+reads time from), ``terminal`` (the :class:`~untaped.sdk.testing.ScriptedTerminal`
+``install`` runs commands with, absent until scripted) and ``credentials``
+(the :class:`~untaped.sdk.testing.MemoryCredentials` every test runs with).
 """
 
 from __future__ import annotations
@@ -35,6 +37,9 @@ from untaped.sdk.testing import (
     Home,
     Install,
     ManualClock,
+    MemoryCredentials,
+    ScriptedTerminal,
+    current_memory_store,
     manual_clock,
     memory_store,
     no_terminal,
@@ -42,6 +47,7 @@ from untaped.sdk.testing import (
 from untaped.sdk.testing import (
     install as _install,
 )
+from untaped.sdk.testing.fixtures import scripted_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
@@ -87,7 +93,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
         terminal_token = set_terminal_override(no_terminal)
         try:
-            with memory_store():
+            with memory_store():  # a MemoryCredentials, under its 11.x name
                 yield
         finally:
             reset_terminal_override(terminal_token)
@@ -130,3 +136,18 @@ def clock() -> Iterator[ManualClock]:
     """The one clock blocks read: ``clock.advance(hours=7)`` ages caches and skips back-offs."""
     with manual_clock() as manual:
         yield manual
+
+
+@pytest.fixture
+def terminal() -> Iterator[ScriptedTerminal]:
+    """The terminal ``install`` runs commands with: ``terminal.answers(yes=True)``; absent first."""
+    with scripted_terminal() as scripted:
+        yield scripted
+
+
+@pytest.fixture
+def credentials() -> MemoryCredentials:
+    """The password store this test runs with: ``credentials.set(Shop.token, key, "s3cret")``."""
+    store = current_memory_store()
+    assert isinstance(store, MemoryCredentials)
+    return store

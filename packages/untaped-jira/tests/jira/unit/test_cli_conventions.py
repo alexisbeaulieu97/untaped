@@ -337,10 +337,10 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.Mon
     ("status", "category", "exit_code"),
     [(403, "permission", 4), (503, "unavailable", 5), (400, "invalid", 1)],
 )
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_http_failures_keep_their_category(
     monkeypatch: pytest.MonkeyPatch, status: int, category: str, exit_code: int
 ) -> None:
-    monkeypatch.setattr("untaped.sdk.network.http._sleep", lambda _delay: None)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     with respx.mock(base_url=BASE) as mock:
         mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(status))
