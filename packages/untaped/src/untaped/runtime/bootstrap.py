@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from importlib import metadata
 from itertools import chain
@@ -81,6 +81,7 @@ from untaped.sdk.marks import (
     panel_for,
 )
 from untaped.sdk.network.credentials import bind_credentials
+from untaped.sdk.run import Run, run_scope
 from untaped.sdk.storage.cache import current_call
 
 
@@ -300,6 +301,7 @@ def build_root_app(
     _install_root_callback(
         root,
         _root_options(),
+        run=lambda: _invocation_run(result.mount),
         after_command=lambda tokens, ran, failed: _check_skills_after(
             root, tokens, ran, skills, failed=failed
         ),
@@ -502,10 +504,18 @@ def _repairs(root: App, tokens: list[str]) -> bool:
     return app is not root and repairs_at(app) is True
 
 
+def _invocation_run(mount: Mount) -> Run:
+    """The run of one root invocation, which every command it dispatches runs under."""
+    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+
+    return build_run(mount.declaration, mount.settings)
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
     *,
+    run: Callable[[], Run],
     after_command: Callable[[list[str], Sequence[Dispatched], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
@@ -530,9 +540,14 @@ def _install_root_callback(
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
-                result = _dispatch_with_root_options(
-                    app, command_tokens, root_options, applied_tokens
-                )
+                with ExitStack() as stack:
+                    if command_tokens and not command_tokens[0].startswith("-"):
+                        # A command runs under the run; root --help and --version need none,
+                        # so a home that doesn't resolve still lets them print.
+                        stack.enter_context(run_scope(run()))
+                    result = _dispatch_with_root_options(
+                        app, command_tokens, root_options, applied_tokens
+                    )
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
@@ -550,7 +565,8 @@ def _install_root_callback(
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # One diagnostics scope covers the command and the checks after it,
-        # so their warnings follow the command's --format.
+        # so their warnings follow the command's --format. One run covers the
+        # command, an 11.x one included; a declared command's own nests inside.
         with diagnostics_scope(), dispatching() as ran:
             return _dispatch_root(ran, *tokens)
 
