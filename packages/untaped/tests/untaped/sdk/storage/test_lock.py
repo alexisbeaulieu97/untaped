@@ -1,4 +1,4 @@
-"""Lock: an operation lock a plugin class declares, held across processes, re-entrant in a thread."""
+"""Lock: an operation lock on a plugin class, held across processes, re-entrant in a thread."""
 
 from __future__ import annotations
 
