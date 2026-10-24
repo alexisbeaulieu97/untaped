@@ -1027,30 +1027,47 @@ def count_row_failures(rows: Iterable[object]) -> None:
     ``failure``) except one marked
     :data:`~untaped.sdk.diagnostic.NOT_COUNTED` (a remembered failure); a
     mapping row counts its ``error`` mapping by its ``exit_code`` or
-    ``category``. An :class:`~untaped.sdk.records.OutcomeRecord` whose
-    ``action`` says it failed (``failed``, ``partial``, ``conflict``) counts
-    ``1`` with no error too, unless a field marked not counted holds a value
-    (the failure is remembered from an earlier run).
+    ``category``. A row marked failed with no error is not counted.
     """
     scope = _scope()
     if scope is None:
         return
     for row in rows:
         if isinstance(row, BaseModel):
-            remembered = False
             for name, info in type(row).model_fields.items():
                 if NOT_COUNTED in info.metadata:
-                    remembered = remembered or getattr(row, name, None) is not None
                     continue
                 value = getattr(row, name, None)
                 if isinstance(value, Failure):
                     scope.note(value.exit_code)
-            if isinstance(row, OutcomeRecord) and row.failed and not remembered:
-                scope.note(ExitCode.FAILURE)
         elif isinstance(row, Mapping):
             code = _row_error_code(row.get("error"))
             if code is not None:
                 scope.note(code)
+
+
+def count_failed_actions(rows: Iterable[object]) -> None:
+    """Count each outcome row whose ``action`` says it failed, error or not: the 12.0 rule.
+
+    ``failed``, ``partial`` and ``conflict`` count ``1`` (a row's error
+    counts on its own, through :func:`count_row_failures`), unless a field
+    marked :data:`~untaped.sdk.diagnostic.NOT_COUNTED` holds a
+    :class:`~untaped.sdk.diagnostic.Failure`: the failure is remembered from
+    an earlier run. A 12.0 command's printed rows go through it; an 11.x
+    command still decides with ``finish``.
+    """
+    scope = _scope()
+    if scope is None:
+        return
+    for row in rows:
+        if not isinstance(row, OutcomeRecord) or not row.failed:
+            continue
+        remembered = any(
+            NOT_COUNTED in info.metadata and isinstance(getattr(row, name, None), Failure)
+            for name, info in type(row).model_fields.items()
+        )
+        if not remembered:
+            scope.note(ExitCode.FAILURE)
 
 
 def _row_error_code(error: object) -> int | None:

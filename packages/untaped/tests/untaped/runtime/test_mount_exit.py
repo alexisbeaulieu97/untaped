@@ -22,6 +22,7 @@ from untaped.sdk import (
     Output,
     Plugin,
     Positional,
+    UntapedError,
 )
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -47,8 +48,8 @@ class Walk(Command):
     """Take the steps named, then end as asked."""
 
     output: Output[Step]
-    steps: Positional[list[str]] = Field(description="name=action, one per step.")
-    end: str = Field("", description="Raise failed or matched after the rows.")
+    steps: Positional[list[str]] = Field(default_factory=list, description="name=action, each.")
+    end: str = Field("", description="Raise failed, matched or broken after the rows.")
     rejected: bool = Field(False, description="Put a rejected token on the first row.")
 
     def run(self) -> Iterator[Step]:
@@ -60,6 +61,8 @@ class Walk(Command):
             raise Failed()
         if self.end == "matched":
             raise Matched()
+        if self.end == "broken":
+            raise UntapedError("the service went away", category="unavailable")
 
 
 class Recall(Command):
@@ -85,9 +88,9 @@ class Exits(Plugin):
 EXITS = PluginCandidate(distribution="untaped-exits", name="exits", target=Exits)
 
 
-def _run(*argv: str) -> CliResult:
+def _run(*argv: str, fmt: str = "json") -> CliResult:
     root = build_root_app(candidates=[EXITS])
-    return CliInvoker().invoke(root.meta, ["exits", *argv, "--format", "json"])
+    return CliInvoker().invoke(root.meta, ["exits", *argv, "--format", fmt])
 
 
 def _names(result: CliResult) -> list[str]:
@@ -127,3 +130,21 @@ def test_a_counted_failure_beats_matched_and_failed() -> None:
 def test_a_remembered_failure_is_not_counted() -> None:
     result = _run("recall")
     assert (result.exit_code, _names(result)) == (0, ["old"])
+
+
+def test_failed_after_no_rows_prints_an_empty_list() -> None:
+    result = _run("walk", "--end", "failed")
+    assert (result.exit_code, json.loads(result.stdout), result.stderr) == (1, [], "")
+
+
+def test_failed_in_a_table_prints_the_rows_and_no_error_line() -> None:
+    result = _run("walk", "a", "--end", "failed", fmt="table")
+    assert result.exit_code == 1
+    assert "a" in result.stdout
+    assert "error" not in result.stderr
+
+
+def test_rows_before_another_error_are_printed_then_the_error() -> None:
+    result = _run("walk", "a", "--end", "broken")
+    assert (result.exit_code, _names(result)) == (5, ["a"])
+    assert "the service went away" in result.stderr

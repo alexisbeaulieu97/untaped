@@ -350,7 +350,9 @@ class Matched(UntapedError):
     """Raised when a check matched: exit ``3``.
 
     For ``--check`` drift, ``--fail-on-match`` and ``--strict``. Nothing more
-    is printed, and a failure the run counted wins over it.
+    is printed, and a failure the run counted wins over it. Let it reach
+    core: a handler that catches every ``UntapedError`` (to turn it into a
+    row) takes it for a failure, exit ``1``.
     """
 
     def __init__(self, message: str = "the check matched") -> None:

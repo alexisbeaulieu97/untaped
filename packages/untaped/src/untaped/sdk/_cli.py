@@ -28,8 +28,13 @@ from untaped.runtime.sink import (
     exit_on_counted_failure,
     failure_exit_code,
 )
+
+# re-exported: untaped.sdk.fields imports no runtime
 from untaped.runtime.sink import (
-    count_row_failures as count_row_failures,  # re-exported: untaped.sdk.fields imports no runtime
+    count_failed_actions as count_failed_actions,
+)
+from untaped.runtime.sink import (
+    count_row_failures as count_row_failures,
 )
 from untaped.runtime.theme import (
     OutputFormat as OutputFormat,

@@ -45,7 +45,7 @@ from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
-from untaped.sdk.errors import UntapedError, UsageError, first_validation_error
+from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
 from untaped.sdk.fields import Output
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
@@ -479,8 +479,8 @@ def _print(mount: Mount, decl: CommandDecl, command: Command[Any], result: objec
     rows: list[BaseModel] = []
     try:
         rows.extend(cast("Iterable[BaseModel]", result))
-    except UntapedError:  # ``raise Failed()`` after the rows: they are printed first
-        if rows:
+    except UntapedError as exc:  # ``raise Failed()`` after the rows: they are printed first
+        if rows or isinstance(exc, Failed | Matched):  # ``[]`` in JSON: the run finished
             _print_rows(mount, decl, command, rows)
         raise
     _print_rows(mount, decl, command, rows)

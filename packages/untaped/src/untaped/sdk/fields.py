@@ -420,8 +420,13 @@ class Output[R: BaseModel](FieldBlock):
 
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
-        from untaped.sdk._cli import count_row_failures, emit  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            count_failed_actions,
+            count_row_failures,
+            emit,
+        )
 
+        count_failed_actions([records] if isinstance(records, BaseModel) else records)
         renderer = self.render.get(self.format)
         if renderer is not None:
             count_row_failures([records] if isinstance(records, BaseModel) else records)
@@ -802,13 +807,14 @@ class Parallel(FieldBlock):
     ) -> Iterator[tuple[ItemT, ResultT]]:
         """Run ``fn`` on every item, :attr:`value` at a time, yielding ``(item, result)``.
 
-        In completion order, so a row streams as soon as its item is done
+        In completion order, so a slow first item never holds back the rest
         (``ordered=True`` keeps the input order). An exception from ``fn`` is
         raised here: catch it in ``fn`` to turn it into a failed row.
         ``on_abort`` runs when the work stops early (Ctrl-C, an exception,
-        the loop left) for the calls in flight, such as killing their jobs;
-        ``while_running`` does foreground work on this thread while the
-        workers run, such as draining a queue they feed.
+        the iterator closed) for the calls in flight, such as killing their
+        jobs; ``while_running`` does foreground work on this thread while the
+        workers run, such as draining a queue they feed, and must return on
+        its own: the pairs come after it.
         """
         from untaped.sdk._concurrency import bounded_iter  # noqa: PLC0415 - threads pay
 

@@ -9,6 +9,7 @@ this is the standalone primitive for callers that manage their own loop.
 from __future__ import annotations
 
 import contextvars
+import logging
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -47,8 +48,7 @@ def bounded_map[ItemT, ResultT](
             for item in items:
                 on_each(item, fn(item))
         except BaseException:
-            if on_abort is not None:
-                on_abort()
+            _abort(on_abort)
             raise
         return
     with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(items)))) as executor:
@@ -83,11 +83,15 @@ def bounded_iter[ItemT, ResultT](
     rest, or in input order with ``ordered=True``. Serial (one item, or
     ``concurrency == 1``) without ``while_running``; otherwise each call runs
     in a worker thread with a copy of the caller's context. An exception from
-    ``fn`` is raised from the generator. When the caller stops early, is
-    interrupted (Ctrl-C) or ``fn`` raises, queued work is cancelled and
-    ``on_abort`` runs before waiting for the calls in flight, so it can stop
-    them. ``while_running`` runs on the caller's thread once every item is
-    submitted and before the first pair is yielded.
+    ``fn`` is raised from the generator. When the caller is interrupted
+    (Ctrl-C), ``fn`` raises or the generator is closed (leaving a ``for``
+    over it closes it once nothing else holds it; ``contextlib.closing``
+    makes that explicit), queued work is cancelled and ``on_abort`` runs
+    before waiting for the calls in flight, so it can stop them; the original
+    exception wins over one ``on_abort`` raises. ``while_running`` runs on
+    the caller's thread once every item is submitted, and the first pair (or
+    a worker's exception) comes after it returns, so it must return on its
+    own.
     """
     if concurrency < 1:
         raise ValueError("concurrency must be positive")
@@ -113,8 +117,17 @@ def bounded_iter[ItemT, ResultT](
             yield work[index[future]], future.result()
     except BaseException:  # GeneratorExit too: the caller stopped
         executor.shutdown(wait=False, cancel_futures=True)
-        if on_abort is not None:
-            on_abort()
+        _abort(on_abort)
         raise
     finally:
         executor.shutdown(wait=True)
+
+
+def _abort(on_abort: Callable[[], None] | None) -> None:
+    """Run ``on_abort`` while an exception unwinds; one it raises is logged, not raised."""
+    if on_abort is None:
+        return
+    try:
+        on_abort()
+    except Exception:
+        logging.getLogger("untaped.parallel").debug("on_abort failed", exc_info=True)
