@@ -575,6 +575,11 @@ def _report_pruned(aside: _Aside) -> None:
     current_sink().emit(line, unmuted=True)
 
 
+def valid_store_name(name: str) -> bool:
+    """Whether ``name`` can name a store: one settings segment, ``[a-z][a-z0-9_]*``."""
+    return _NAME.fullmatch(name) is not None
+
+
 def layout_path(base: Path, layout: int) -> Path:
     """``<stem>.v<layout><suffix>`` beside ``base``: the suffix is ``base``'s last extension."""
     return base.with_name(f"{_stem(base)}.v{layout}{base.suffix}")

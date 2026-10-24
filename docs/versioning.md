@@ -122,7 +122,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `untaped.sdk.testing`. The files they write are stable from the start:
   users keep them. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
-- Operation locks: `Lock` in `untaped.sdk`. See
+- Operation locks and places: `Lock` and `Dir` in `untaped.sdk`. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
 - State rows: `StateRows`, `ProjectStateRows` and `RowExists` in
   `untaped.sdk`, `StateMap`'s `project=` (it takes the experimental

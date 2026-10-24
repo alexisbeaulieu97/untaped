@@ -311,14 +311,16 @@ if _typing.TYPE_CHECKING:
         read_data_file,
         write_data_file,
     )
+    from untaped.sdk.storage.dir import Dir
     from untaped.sdk.storage.installed_code import installed_code
     from untaped.sdk.storage.lock import Lock
 
 #: Names exported lazily, by the module that defines them, resolved on first access
 #: (PEP 562): the screen names, core's data file, which a command reads on first use,
 #: the installed code's version, which a cache reads when it is served, and the
-#: operation lock, which a plugin takes when it runs.
+#: operation lock and the plugin's places, which a plugin takes when it runs.
 _LAZY_MODULES: dict[str, tuple[str, ...]] = {
+    "untaped.sdk.storage.dir": ("Dir",),
     "untaped.sdk.storage.installed_code": ("installed_code",),
     "untaped.sdk.storage.lock": ("Lock",),
     "untaped.sdk.storage.data_file": (
@@ -568,6 +570,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "project_at",
     # caches and stores
     "Cache",
+    "Dir",
     "Filled",
     "Freshness",
     "FreshnessRecord",

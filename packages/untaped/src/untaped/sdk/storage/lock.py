@@ -9,6 +9,8 @@ declared time, ``try_locked()`` tries once.
 
 from __future__ import annotations
 
+import re
+import threading
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import timedelta
@@ -69,17 +71,67 @@ class Lock(OwnedBlock):
 
     @contextmanager
     def _held(self, timeout: float) -> Iterator[None]:
-        path = self.path
-        label = f"{self.plugin}.{self.name}"
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise UntapedError(f"could not lock {label}: {exc.strerror or exc}") from exc
-        with file_lock(
-            path,
-            timeout=timeout,
-            error=UntapedError,
-            busy=f"{label} is busy (another untaped process)",
-            failed=f"could not lock {label}",
-        ):
+        with operation_lock(self.plugin, f"{self.plugin}.{self.name}", self.path, timeout):
             yield
+
+
+#: The operation locks this thread holds, outermost first: (plugin, label, path).
+_HELD = threading.local()
+
+
+@contextmanager
+def operation_lock(plugin: str, label: str, path: Path, timeout: float) -> Iterator[None]:
+    """Hold the operation lock file ``path`` of ``plugin``, waiting up to ``timeout`` seconds.
+
+    The one implementation behind :class:`Lock` and ``Dir.locked``: held
+    across processes (``<label> is busy (another untaped process)``),
+    re-entrant in a thread, and in one order: a plugin's own lock before a
+    provider's (a plugin whose distribution it requires directly), so taking
+    a plugin's lock inside the lock of a plugin it requires fails, naming
+    both. Taking again a lock the thread holds never waits, so it is never
+    out of order.
+    """
+    held: list[tuple[str, str, Path]] = _HELD.__dict__.setdefault("stack", [])
+    if not any(other_path == path for _, _, other_path in held):
+        for other, other_label, _ in held:
+            if other != plugin and _provides(other, plugin):
+                raise UntapedError(
+                    f"{label} is taken inside {other_label}: {plugin} requires {other}, and a "
+                    "plugin's own lock comes before its provider's"
+                )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise UntapedError(f"could not lock {label}: {exc.strerror or exc}") from exc
+    with file_lock(
+        path,
+        timeout=timeout,
+        error=UntapedError,
+        busy=f"{label} is busy (another untaped process)",
+        failed=f"could not lock {label}",
+    ):
+        entry = (plugin, label, path)
+        held.append(entry)
+        try:
+            yield
+        finally:
+            # remove this entry, not the last one: locks may be let go out of order
+            for index in range(len(held) - 1, -1, -1):
+                if held[index] is entry:
+                    del held[index]
+                    break
+
+
+def _provides(provider: str, plugin: str) -> bool:
+    """Whether ``plugin`` requires ``provider``'s distribution, as this install's rows say."""
+    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+
+    rows = {row.name: row for row in current_run().composition.installed()}
+    if provider not in rows or plugin not in rows:
+        return False
+    wanted = _canonical(rows[provider].distribution)
+    return any(_canonical(each) == wanted for each in rows[plugin].requires)
+
+
+def _canonical(distribution: str) -> str:
+    return re.sub(r"[-_.]+", "-", distribution).lower()
