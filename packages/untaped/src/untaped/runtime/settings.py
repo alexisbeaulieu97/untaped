@@ -427,10 +427,12 @@ def _caches_model(model: type[BaseModel], caches: tuple[Cache[Any], ...]) -> typ
     """The ``caches`` key's model: one :class:`CacheSettings` field per cache."""
     fields: dict[str, Any] = {}
     for declared in caches:
+        max_age = declared.default_max_age
+        assert max_age is not None  # only the caches with a max age have a setting
         seconds: Any = (
             int,
             Field(
-                default=int(declared.default_max_age.total_seconds()),
+                default=int(max_age.total_seconds()),
                 ge=0,
                 description=(
                     f"Seconds {declared.label} is served before untaped checks upstream; "
