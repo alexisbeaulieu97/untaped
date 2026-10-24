@@ -1475,7 +1475,9 @@ def _compose(
         )
         plugins.append(_commit(spec, ref, state, staged))
     if declared is None:
-        mount = mount.kept(_refused(ordered, classes, quarantined, mount))
+        # Only a class the mount composed leaves it; one refused before it never got there.
+        dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}
+        mount = mount.kept(_refused(ordered, classes, quarantined, mount), dropped=dropped)
     return CompositionResult(
         plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),

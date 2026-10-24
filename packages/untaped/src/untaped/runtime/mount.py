@@ -112,9 +112,9 @@ class Mount:
         )
         return cls(declaration=declaration, plugins=plugins, settings=settings)
 
-    def kept(self, refused: tuple[Quarantined, ...]) -> Mount:
-        """This mount without the plugins 11.x composition quarantined, which it records."""
-        names = {each.name for each in refused}
+    def kept(self, refused: tuple[Quarantined, ...], *, dropped: Iterable[str] = ()) -> Mount:
+        """This mount recording ``refused``, without the ``dropped`` plugins it composed."""
+        names = set(dropped)
         declaration = self.declaration.model_copy(
             update={
                 "plugins": tuple(p for p in self.declaration.plugins if p.name not in names),

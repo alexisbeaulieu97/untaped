@@ -190,6 +190,30 @@ def test_a_plugin_named_after_a_root_command_stays_refused_without_importing_it(
     )
 
 
+def test_a_plugin_named_after_core_leaves_core_mounted(toys: Path) -> None:
+    _package(toys, "toyplug")
+    named = PluginCandidate(
+        distribution="untaped-toyplug", name="untaped", target="toyplug.plugin:Toy"
+    )
+    result = compose_root(candidates=[named])
+    assert [record.reason for record in result.quarantine] == ["duplicate-name"]
+    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["untaped"]
+    root = build_root_app(candidates=[named])
+    assert CliInvoker().invoke(root.meta, ["plugin", "list"]).exit_code == 0
+
+
+def test_a_class_refused_before_the_mount_leaves_the_one_holding_its_name(toys: Path) -> None:
+    good = _package(toys, "toyplug")
+    _package(toys, "toyplug2")
+    blank = PluginCandidate(distribution=" ", name="toy", target="toyplug2.plugin:Toy")
+    first = compose_root(candidates=[good, blank])
+    assert [plugin.spec.name for plugin in first.plugins] == ["toy"]
+    _unload("toyplug")
+    again = compose_root(candidates=[good, blank])
+    assert "toyplug.plugin" not in sys.modules  # the kept declaration still has it
+    assert [plugin.spec.name for plugin in again.plugins] == ["toy"]
+
+
 def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     other = PluginCandidate(distribution="untaped-other", name="toy", target="toyother:SPEC")
