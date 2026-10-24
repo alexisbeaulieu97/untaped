@@ -15,30 +15,23 @@ reports them instead. A project's own skills are never written by a run.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
 
-from cyclopts import App, Parameter
+from pydantic import Field
 
 from untaped.core import skill_stubs
-from untaped.core.commands.records import InstalledSkillRow, SkillOutcome, SkillRow
+from untaped.core.commands import records
+from untaped.core.commands.records import SkillOutcome
+from untaped.core.settings import CoreSettings
 from untaped.core.skills import (
-    AllSkillsOption,
     InstalledSkill,
     PackagedSkill,
-    SkillForceOption,
     SkillInstallScope,
     SkillInstallTarget,
     SkillKind,
-    SkillNamesArgument,
-    SkillProjectDirOption,
-    SkillScopeOption,
     SkillState,
-    SkillStdinOption,
-    SkillTargetDirOption,
-    SkillTargetOption,
     find_installed_skills,
     install_skills,
     local_project_root,
@@ -48,72 +41,32 @@ from untaped.core.skills import (
     skill_rows,
     update_installed_skill,
 )
-from untaped.runtime.registry import ApplicationSpec, CompositionResult
+from untaped.runtime.registry import CompositionResult, SkillAsset
 from untaped.runtime.settings import SkillsSettings, load_core_part
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk._batch import batch_apply, finish
-from untaped.sdk._cli import (
-    ColumnsOption,
-    DryRunOption,
-    FormatOption,
-    YesOption,
-    create_app,
-    emit,
-    existing_directory,
-    raise_usage,
-    report_errors,
-    writes,
-)
 from untaped.sdk._stdin import read_identifiers
-from untaped.sdk._ui import ui_context
 from untaped.sdk.diagnostic import Failure
-from untaped.sdk.errors import ConfigError, UntapedError, UsageError
+from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
+from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import not_found, plural, run_hint, shown_path
 
 _diag = Diagnostics()
 
 
-CheckOption = Annotated[
-    bool,
-    Parameter(
-        name="--check",
-        negative="",
-        help="Exit 3 when an installed skill is outdated or shipped by no installed plugin.",
-    ),
-]
-RemoveTargetOption = Annotated[
-    SkillInstallTarget,
-    Parameter(name="--target", help="Agent target to remove from."),
-]
-RemoveScopeOption = Annotated[
-    SkillInstallScope | None,
-    Parameter(name="--scope", help="Remove only from this scope (default: both)."),
-]
-UpdateForceOption = Annotated[
-    bool,
-    Parameter(
-        name="--force",
-        negative="",
-        help="Also rewrite stubs someone edited or a newer untaped wrote.",
-    ),
-]
-FoundProjectDirOption = Annotated[
-    Path | None,
-    Parameter(
-        name="--project-dir",
-        help="Project whose local skills to include (default: the current git root).",
-        validator=existing_directory,
-    ),
-]
+def composed_skills(result: CompositionResult) -> dict[str, PackagedSkill]:
+    """Return core's skill plus every composed plugin's, keyed by name.
 
-
-def composed_skills(shell: ApplicationSpec, result: CompositionResult) -> dict[str, PackagedSkill]:
-    """Return the shell's skills plus every composed plugin's, keyed by name."""
-    skills_map = {
-        asset.name: PackagedSkill(asset, plugin=shell.name, distribution=skill_stubs.CORE)
-        for asset in shell.skills
-    }
+    Core's stub is named ``untaped``, after core itself; a plugin's is
+    ``untaped-<plugin>``.
+    """
+    skills_map: dict[str, PackagedSkill] = {}
+    core = result.mount.declaration.plugin(skill_stubs.CORE)
+    if core.skill:
+        asset = SkillAsset(name=skill_stubs.CORE, description=core.skill)
+        skills_map[asset.name] = PackagedSkill(
+            asset, plugin=skill_stubs.CORE, distribution=skill_stubs.CORE
+        )
     for registered in result.plugins:
         ref = registered.plugin_ref
         for asset in registered.skills:
@@ -126,141 +79,179 @@ def composed_skills(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     return skills_map
 
 
-def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``skills`` command group for one composition."""
-    skills_map = composed_skills(shell, result)
-    app = create_app(
-        name="skills",
-        help=f"List, install, update, and remove agent skills shipped by {shell.name}.",
+def _skills() -> dict[str, PackagedSkill]:
+    # Lazy: bootstrap is the CLI's root and imports this module.
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415
+
+    return composed_skills(composition())
+
+
+_NAMES = "Skill names (the untaped- prefix is optional)."
+_STDIN = "Read skill names from stdin."
+_PROJECT = "Project whose local skills to include (default: the current git root)."
+
+
+class List(Command[CoreSettings]):
+    """List the agent skills shipped by every composed plugin.
+
+    Examples:
+        $ untaped skills list
+    """
+
+    output: Output[records.Skill]
+
+    def run(self) -> Iterator[records.Skill]:
+        for row in skill_rows(_skills()):
+            yield records.Skill.model_validate(row)
+
+
+class Install(Command[CoreSettings]):
+    """Install composed skills into an agent skill directory.
+
+    Examples:
+        $ untaped skills install --all --target claude
+        $ untaped skills install awx --scope local
+    """
+
+    skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
+    stdin: bool = Field(False, description=_STDIN)
+    all: bool = Field(False, description="Install every registered skill.")
+    target: SkillInstallTarget = Field(
+        SkillInstallTarget.codex, description="Agent target to install for."
+    )
+    force: bool = Field(False, description="Replace existing target skill dirs.")
+    scope: SkillInstallScope = Field(SkillInstallScope.global_, description="Install scope.")
+    project_dir: Path | None = Field(None, description="Project directory for local installs.")
+    target_dir: Path | None = Field(
+        None, description="Override the selected target's skills directory."
     )
 
-    @app.command(name="list")
-    def list_command(
-        *,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """List the agent skills shipped by every composed plugin."""
-        _list(skills_map, fmt=fmt, columns=columns)
-
-    @app.command(name="install")
-    def install_command(
-        skill_names: SkillNamesArgument = None,
-        /,
-        *,
-        stdin: SkillStdinOption = False,
-        all_skills: AllSkillsOption = False,
-        target: SkillTargetOption = SkillInstallTarget.codex,
-        force: SkillForceOption = False,
-        scope: SkillScopeOption = SkillInstallScope.global_,
-        project_dir: SkillProjectDirOption = None,
-        target_dir: SkillTargetDirOption = None,
-    ) -> None:
-        """Install composed skills into an agent skill directory."""
-        if not skill_names and not stdin and not all_skills:
-            raise_usage("provide skill names, --stdin, or --all")
+    def run(self) -> None:
+        if not self.skill_names and not self.stdin and not self.all:
+            raise UsageError("provide skill names, --stdin, or --all")
+        _existing(self.project_dir)
         _install(
-            skills_map,
-            list(skill_names or []),
-            stdin=stdin,
-            all_skills=all_skills,
-            target=target,
-            force=force,
-            scope=scope,
-            project_dir=project_dir,
-            target_dir=target_dir,
+            _skills(),
+            list(self.skill_names),
+            stdin=self.stdin,
+            all_skills=self.all,
+            target=self.target,
+            force=self.force,
+            scope=self.scope,
+            project_dir=self.project_dir,
+            target_dir=self.target_dir,
         )
 
-    @app.command(name="status")
-    def status_command(
-        skill_names: SkillNamesArgument = None,
-        /,
-        *,
-        stdin: SkillStdinOption = False,
-        project_dir: FoundProjectDirOption = None,
-        check: CheckOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Show installed skills and whether each matches this version."""
-        with report_errors():
-            found = _select_installed(
-                skills_map, list(skill_names or []), stdin=stdin, project_dir=project_dir
-            )
-            emit(
-                [_installed_row(item) for item in found],
-                fmt=fmt,
-                columns=columns,
-                empty="No installed skills found.",
-            )
-        finish(False, predicate_hit=check and any(_stale(item) for item in found))
 
-    @app.command(name="update")
-    @writes
-    def update_command(
-        skill_names: SkillNamesArgument = None,
-        /,
-        *,
-        stdin: SkillStdinOption = False,
-        project_dir: FoundProjectDirOption = None,
-        force: UpdateForceOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Update installed skills that an older untaped wrote (default: all).
+class Status(Command[CoreSettings]):
+    """Show installed skills and whether each matches this version.
 
-        A stub a newer untaped wrote, or one someone edited, is left alone
-        unless ``--force`` is given.
-        """
-        _update(
-            skills_map,
-            list(skill_names or []),
-            stdin=stdin,
-            project_dir=project_dir,
-            force=force,
-            dry_run=dry_run,
-            fmt=fmt,
-            columns=columns,
+    Examples:
+        $ untaped skills status
+        $ untaped skills status --check
+    """
+
+    skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
+    stdin: bool = Field(False, description=_STDIN)
+    project_dir: Path | None = Field(None, description=_PROJECT)
+    check: bool = Field(
+        False,
+        description="Exit 3 when an installed skill is outdated or shipped by no installed plugin.",
+    )
+    output: Output[records.InstalledSkill]
+
+    def run(self) -> Iterator[records.InstalledSkill]:
+        _existing(self.project_dir)
+        self.output.empty("No installed skills found.")
+        found = _select_installed(
+            _skills(), list(self.skill_names), stdin=self.stdin, project_dir=self.project_dir
+        )
+        yield from (_installed_row(item) for item in found)
+        if self.check and any(_stale(item) for item in found):
+            raise Matched("an installed skill is outdated or shipped by no installed plugin")
+
+
+class Update(Command[CoreSettings]):
+    """Update installed skills that an older untaped wrote (default: all).
+
+    A stub a newer untaped wrote, or one someone edited, is left alone unless
+    --force is given.
+
+    Examples:
+        $ untaped skills update --dry-run
+        $ untaped skills update untaped-awx --force
+    """
+
+    skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
+    stdin: bool = Field(False, description=_STDIN)
+    project_dir: Path | None = Field(None, description=_PROJECT)
+    force: bool = Field(
+        False, description="Also rewrite stubs someone edited or a newer untaped wrote."
+    )
+    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    output: Output[SkillOutcome]
+
+    def run(self) -> Iterator[SkillOutcome]:
+        _existing(self.project_dir)
+        self.output.empty("No outdated skills found.")
+        yield from _update(
+            _skills(),
+            list(self.skill_names),
+            stdin=self.stdin,
+            project_dir=self.project_dir,
+            force=self.force,
+            dry_run=self.dry_run,
         )
 
-    @app.command(name="remove")
-    @writes(destructive=True)
-    def remove_command(
-        skill_names: SkillNamesArgument = None,
-        /,
-        *,
-        stdin: SkillStdinOption = False,
-        all_skills: Annotated[
-            bool,
-            Parameter(name="--all", negative="", help="Remove every installed untaped skill."),
-        ] = False,
-        target: RemoveTargetOption = SkillInstallTarget.all,
-        scope: RemoveScopeOption = None,
-        project_dir: FoundProjectDirOption = None,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Remove installed skills; only directories untaped installed are touched."""
-        if not skill_names and not stdin and not all_skills:
-            raise_usage("provide skill names, --stdin, or --all")
-        _remove(
-            skills_map,
-            list(skill_names or []),
-            stdin=stdin,
-            all_skills=all_skills,
-            target=target,
-            scope=scope,
-            project_dir=project_dir,
-            yes=yes,
-            dry_run=dry_run,
-            fmt=fmt,
-            columns=columns,
+
+class Remove(Command[CoreSettings]):
+    """Remove installed skills; only directories untaped installed are touched.
+
+    Examples:
+        $ untaped skills remove untaped-awx --dry-run
+        $ untaped skills remove --all --target claude --yes
+    """
+
+    skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
+    stdin: bool = Field(False, description=_STDIN)
+    all: bool = Field(False, description="Remove every installed untaped skill.")
+    target: SkillInstallTarget = Field(
+        SkillInstallTarget.all, description="Agent target to remove from."
+    )
+    scope: SkillInstallScope | None = Field(
+        None, description="Remove only from this scope (default: both)."
+    )
+    project_dir: Path | None = Field(None, description=_PROJECT)
+    confirm: Confirm
+    output: Output[SkillOutcome]
+
+    def run(self) -> Iterator[SkillOutcome]:
+        if not self.skill_names and not self.stdin and not self.all:
+            raise UsageError("provide skill names, --stdin, or --all")
+        _existing(self.project_dir)
+        self.output.empty("No installed skills found.")
+        yield from _remove(
+            _skills(),
+            list(self.skill_names),
+            stdin=self.stdin,
+            all_skills=self.all,
+            target=self.target,
+            scope=self.scope,
+            project_dir=self.project_dir,
+            confirm=self.confirm,
         )
 
-    return app
+
+class Skills(Group):
+    """List, install, update, and remove agent skills shipped by untaped."""
+
+    commands = (List, Install, Status, Update, Remove)
+
+
+def _existing(path: Path | None) -> None:
+    """Refuse a --project-dir that is not a directory, as the option's check did."""
+    if path is not None and not path.is_dir():
+        raise UsageError(f"--project-dir: not a directory: {shown_path(path)}")
 
 
 def check_installed_skills(
@@ -399,8 +390,8 @@ def _stale(item: InstalledSkill) -> bool:
     return item.state in (SkillState.outdated, SkillState.orphaned)
 
 
-def _installed_row(item: InstalledSkill) -> InstalledSkillRow:
-    return InstalledSkillRow(
+def _installed_row(item: InstalledSkill) -> records.InstalledSkill:
+    return records.InstalledSkill(
         name=item.name,
         target=item.target,
         scope=item.scope.value,
@@ -451,56 +442,49 @@ def _update(
     project_dir: Path | None,
     force: bool,
     dry_run: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    with report_errors():
-        found = _select_installed(skills, skill_names, stdin=stdin, project_dir=project_dir)
-        named = bool(skill_names) or stdin
-        rows: list[SkillOutcome] = []
-        failed = False
-        converted = 0
-        for item in found:
-            if item.state in (SkillState.newer, SkillState.edited) and not force:
-                why = (
-                    f"written by a newer {item.written_by}"
-                    if item.state is SkillState.newer
-                    else "edited since it was installed; --force replaces it"
+) -> Iterator[SkillOutcome]:
+    found = _select_installed(skills, skill_names, stdin=stdin, project_dir=project_dir)
+    named = bool(skill_names) or stdin
+    rows: list[SkillOutcome] = []
+    converted = 0
+    for item in found:
+        if item.state in (SkillState.newer, SkillState.edited) and not force:
+            why = (
+                f"written by a newer {item.written_by}"
+                if item.state is SkillState.newer
+                else "edited since it was installed; --force replaces it"
+            )
+            _diag.info(f"left {item.name}: {why}")
+            rows.append(_outcome(item, "skipped"))
+            continue
+        if item.state is SkillState.current:
+            if named:
+                rows.append(_outcome(item, "unchanged"))
+            continue
+        if item.state is SkillState.orphaned:
+            if named:
+                error = _diag.failure(
+                    Failure.plain("no plugin installed here ships this skill"), item=item.name
                 )
-                _diag.info(f"left {item.name}: {why}")
-                rows.append(_outcome(item, "skipped"))
-                continue
-            if item.state is SkillState.current:
-                if named:
-                    rows.append(_outcome(item, "unchanged"))
-                continue
-            if item.state is SkillState.orphaned:
-                if named:
-                    error = _diag.failure(
-                        Failure.plain("no plugin installed here ships this skill"), item=item.name
-                    )
-                    rows.append(_outcome(item, "failed", error=error))
-                    failed = True
-                continue
-            if dry_run:
-                rows.append(_outcome(item, "planned"))
-                continue
-            backup = _backup_root(skills, item)
-            try:
-                update_installed_skill(skills, item, backup_root=backup)
-            except UntapedError as exc:
-                rows.append(_outcome(item, "failed", error=_diag.failure(exc, item=item.name)))
-                failed = True
-                continue
-            rows.append(_outcome(item, "updated"))
-            converted += backup is not None
-        emit(rows, fmt=fmt, columns=columns, empty="No outdated skills found.")
-        updated = sum(1 for row in rows if row.action == "updated")
-        if updated:
-            _diag.success(f"updated {plural(updated, 'skill')}")
-        if converted:
-            _diag.info(_converted_line(converted), unmuted=True)
-    finish(failed)
+                rows.append(_outcome(item, "failed", error=error))
+            continue
+        if dry_run:
+            rows.append(_outcome(item, "planned"))
+            continue
+        backup = _backup_root(skills, item)
+        try:
+            update_installed_skill(skills, item, backup_root=backup)
+        except UntapedError as exc:
+            rows.append(_outcome(item, "failed", error=_diag.failure(exc, item=item.name)))
+            continue
+        rows.append(_outcome(item, "updated"))
+        converted += backup is not None
+    yield from rows
+    updated = sum(1 for row in rows if row.action == "updated")
+    if updated:
+        _diag.success(f"updated {plural(updated, 'skill')}")
+    if converted:
+        _diag.info(_converted_line(converted), unmuted=True)
 
 
 def _remove(
@@ -512,43 +496,33 @@ def _remove(
     target: SkillInstallTarget,
     scope: SkillInstallScope | None,
     project_dir: Path | None,
-    yes: bool,
-    dry_run: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    with report_errors():
-        found = _select_installed(
-            skills, skill_names, stdin=stdin, project_dir=project_dir, all_skills=all_skills
-        )
-        chosen = [
-            item
-            for item in found
-            if target in (SkillInstallTarget.all, item.target) and scope in (None, item.scope)
-        ]
-        outcome = batch_apply(
-            chosen,
-            remove_installed_skill,
-            verb="remove",
-            noun="skill",
-            label=lambda item: str(item.path),
-            describe=lambda item: _outcome(item, "planned").model_dump(mode="json"),
-            ui=ui_context(strict=False),
-            destructive=True,
-            assume_yes=yes,
-            preview_only=dry_run,
-        )
-        if outcome.cancelled:
-            finish(outcome)
-        rows = (
-            [_outcome(item, "planned") for item in chosen]
-            if dry_run
-            else [_outcome(item, "deleted") for item, _ in outcome.results]
-        )
-        emit(rows, fmt=fmt, columns=columns, empty="No installed skills found.")
-        if outcome.results:
-            _diag.success(f"removed {plural(len(outcome.results), 'skill')}")
-    finish(outcome)
+    confirm: Confirm,
+) -> Iterator[SkillOutcome]:
+    found = _select_installed(
+        skills, skill_names, stdin=stdin, project_dir=project_dir, all_skills=all_skills
+    )
+    chosen = [
+        item
+        for item in found
+        if target in (SkillInstallTarget.all, item.target) and scope in (None, item.scope)
+    ]
+    if not chosen:
+        return
+    question = f"Remove {plural(len(chosen), 'skill')}?"
+    if not confirm(question, preview=lambda: [str(item.path) for item in chosen]):
+        yield from (_outcome(item, "planned") for item in chosen)
+        return
+    removed = 0
+    for item in chosen:
+        try:
+            remove_installed_skill(item)
+        except UntapedError as exc:
+            yield _outcome(item, "failed", error=_diag.failure(exc, item=item.name))
+            continue
+        removed += 1
+        yield _outcome(item, "deleted")
+    if removed:
+        _diag.success(f"removed {plural(removed, 'skill')}")
 
 
 def _outcome(item: InstalledSkill, action: str, *, error: Failure | None = None) -> SkillOutcome:
@@ -572,16 +546,6 @@ def _resolve_short(selector: str, skills: Mapping[str, object]) -> str:
     return selector
 
 
-def _list(
-    skills: dict[str, PackagedSkill],
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    with report_errors():
-        emit([SkillRow.model_validate(row) for row in skill_rows(skills)], fmt=fmt, columns=columns)
-
-
 def _install(
     skills: dict[str, PackagedSkill],
     skill_names: list[str],
@@ -594,27 +558,26 @@ def _install(
     project_dir: Path | None,
     target_dir: Path | None,
 ) -> None:
-    with report_errors():
-        if int(bool(skill_names)) + int(stdin) + int(all_skills) > 1:
-            raise UsageError("provide skill names, --stdin, or --all; not more than one")
-        if all_skills:
-            selected = sorted(skills)
-        else:
-            selected = [
-                _resolve_short(name, skills) for name in read_identifiers(skill_names, stdin=stdin)
-            ]
-        install_skills(
-            skills,
-            selected,
-            stdin=False,
-            all_skills=False,
-            target=target,
-            force=force,
-            scope=scope,
-            project_dir=project_dir,
-            target_dir=target_dir,
-            on_installed=lambda result: _diag.success(f"installed skill: {result.name}"),
-        )
+    if int(bool(skill_names)) + int(stdin) + int(all_skills) > 1:
+        raise UsageError("provide skill names, --stdin, or --all; not more than one")
+    if all_skills:
+        selected = sorted(skills)
+    else:
+        selected = [
+            _resolve_short(name, skills) for name in read_identifiers(skill_names, stdin=stdin)
+        ]
+    install_skills(
+        skills,
+        selected,
+        stdin=False,
+        all_skills=False,
+        target=target,
+        force=force,
+        scope=scope,
+        project_dir=project_dir,
+        target_dir=target_dir,
+        on_installed=lambda result: _diag.success(f"installed skill: {result.name}"),
+    )
 
 
-__all__ = ["build_root_skills_app", "check_installed_skills", "composed_skills"]
+__all__ = ["Skills", "check_installed_skills", "composed_skills"]

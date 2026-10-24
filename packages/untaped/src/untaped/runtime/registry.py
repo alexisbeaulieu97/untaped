@@ -187,7 +187,6 @@ class ApplicationSpec:
     section: str
     settings: type[BaseModel]
     state: type[BaseModel] | None = None
-    skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
     commands: tuple[str, ...] = ()
@@ -200,7 +199,6 @@ class ApplicationSpec:
         _check_model(self.settings, "settings", "shell")
         _check_model(self.state, "state", "shell")
         key_mappings(self.settings)  # a broken shell declaration is a core bug
-        object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
         object.__setattr__(self, "commands", tuple(self.commands))
 
@@ -817,7 +815,8 @@ class _CompositionState:
 
     def __init__(self, shell: ApplicationSpec) -> None:
         self.shell = shell
-        self.skill_names: set[str] = {skill.name for skill in shell.skills}
+        # Core's own stub skill is named after it.
+        self.skill_names: set[str] = {shell.name}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
         self.migration_ids: set[str] = set()
         #: The names no plugin may have, each with what holds it.

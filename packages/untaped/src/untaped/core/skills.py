@@ -11,15 +11,13 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Protocol
+from typing import Protocol
 from uuid import uuid4
 
-from cyclopts import Parameter
 from packaging.version import InvalidVersion, Version
 
 from untaped.core import skill_stubs
 from untaped.core.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
-from untaped.sdk._cli import existing_directory
 from untaped.sdk._home import home
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.errors import ConfigError, UsageError
@@ -128,53 +126,6 @@ class SkillInstallResult:
     scope: SkillInstallScope
     root: Path
     destination: Path
-
-
-SkillNamesArgument = Annotated[
-    list[str] | None,
-    Parameter(negative="", help="Skill names (the untaped- prefix is optional)."),
-]
-SkillStdinOption = Annotated[
-    bool,
-    Parameter(name="--stdin", negative="", help="Read skill names from stdin."),
-]
-AllSkillsOption = Annotated[
-    bool,
-    Parameter(name="--all", negative="", help="Install every registered skill."),
-]
-SkillTargetOption = Annotated[
-    SkillInstallTarget,
-    Parameter(
-        name="--target",
-        help="Agent target to install for.",
-    ),
-]
-SkillForceOption = Annotated[
-    bool,
-    Parameter(name="--force", negative="", help="Replace existing target skill dirs."),
-]
-SkillScopeOption = Annotated[
-    SkillInstallScope,
-    Parameter(
-        name="--scope",
-        help="Install scope.",
-    ),
-]
-SkillProjectDirOption = Annotated[
-    Path | None,
-    Parameter(
-        name="--project-dir",
-        help="Project directory for local installs.",
-        validator=existing_directory,
-    ),
-]
-SkillTargetDirOption = Annotated[
-    Path | None,
-    Parameter(
-        name="--target-dir",
-        help="Override the selected target's skills directory.",
-    ),
-]
 
 
 def skill_rows(skills: Mapping[str, PackagedSkill]) -> list[dict[str, object]]:

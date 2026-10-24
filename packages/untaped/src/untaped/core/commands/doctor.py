@@ -648,9 +648,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
     title = "installed skills up to date"
     stale = [
         item
-        for item in outdated_skills(
-            composed_skills(shell, result), project_dir=local_project_root(None)
-        )
+        for item in outdated_skills(composed_skills(result), project_dir=local_project_root(None))
         if item.state is not SkillState.newer
     ]
     if not stale:

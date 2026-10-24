@@ -77,6 +77,7 @@ def _failing_factory() -> Any:
 TAKEN = {
     "untaped": "core",
     "plugin": "a root command",
+    "skills": "a root command",
     "profiles": "a config key",
     "active": "a config key",
     "credentials": "a config key",
@@ -86,7 +87,7 @@ TAKEN = {
 }
 
 #: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
-FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui", "skills"]
+FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui"]
 
 # (spec factory, reason, text the error/detail must name)
 SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
@@ -237,10 +238,10 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate plugin name: 'root' is taken by a root command",
         ),
         (
-            make_shell(skills=(make_skill("shell-skill"),)),
-            make_spec(name="s", skills=(make_skill("shell-skill"),)),
+            make_shell(),
+            make_spec(name="s", skills=(make_skill("untaped"),)),
             "duplicate-skill",
-            "duplicate skill name: 'shell-skill'",
+            "duplicate skill name: 'untaped'",
         ),
         (
             make_shell(checks=(make_check("shell.health"),)),

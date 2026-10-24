@@ -25,7 +25,6 @@ from untaped.core.commands import (
     build_root_agents_app,
     build_root_doctor_app,
     build_root_setup_app,
-    build_root_skills_app,
 )
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
@@ -42,7 +41,6 @@ from untaped.runtime.registry import (
     PluginSpec,
     QuarantineRecord,
     RegisteredPlugin,
-    SkillAsset,
     compose,
     discover_candidates,
     run_deferred_factory,
@@ -109,21 +107,9 @@ SHELL_SPEC = ApplicationSpec(
     app_factory=_shell_app,
     section=NAME,
     settings=CoreSettings,
-    skills=(
-        SkillAsset(
-            name=NAME,
-            description=(
-                "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
-                "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
-                "skills). Use when the user asks to install or set up untaped, configure or "
-                "switch a profile, connect AWX/AAP, GitHub or Jira, fix a failing "
-                "`untaped doctor`, or install untaped's skills for an agent."
-            ),
-        ),
-    ),
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "skills", "doctor", "setup"),
+    commands=("agents", "doctor", "setup"),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -300,7 +286,6 @@ def build_root_app(
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
         "agents": build_root_agents_app(result=result, root=lambda: root),
-        "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
         "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,
             result=result,
@@ -317,7 +302,7 @@ def build_root_app(
         _mount_plugin(root, plugin)
     root.version = _resolve_version
     root.config = (apply_default_format,)
-    skills = composed_skills(SHELL_SPEC, result)
+    skills = composed_skills(result)
     _install_root_callback(
         root,
         _root_options(),
