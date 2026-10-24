@@ -464,8 +464,9 @@ class _TokenSection:
 def _token_sections(result: CompositionResult) -> dict[str, _TokenSection]:
     """Every composed section whose settings take ``token`` and ``token_command``.
 
-    A plugin that declares a ``token`` credential still reads those
-    settings in 11.x, deprecated, so ``auth set`` keeps writing them.
+    A plugin that declares a ``token`` credential and still declares those
+    settings itself (github's, until it moves) reads them, deprecated, so
+    ``auth set`` keeps writing them.
     """
     found: dict[str, _TokenSection] = {}
     for registered in result.plugins:
@@ -737,7 +738,7 @@ def build_root_auth_app(*, result: CompositionResult) -> App:
             _unset(result, section, yes=yes, dry_run=dry_run, fmt=fmt, columns=columns)
 
     @app.command(name="migrate")
-    @deprecated(removed_in=12, replacement="untaped config migrate")
+    @deprecated(removed_in=12, replacement="untaped auth login")
     @writes
     def migrate_command(
         *,

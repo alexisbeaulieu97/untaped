@@ -206,7 +206,9 @@ def service_state(
     section = spec.name
     marks = service_marks(spec)
     form = form_fields(spec)
-    plaintext = plaintext_token(own, section)
+    # Only settings the model declares are read; a stray old line is doctor's to name.
+    declared = settings_model(spec).model_fields
+    plaintext = plaintext_token(own, section) if "token" in declared else None
     required = len(marks.required)
     own_node = own.get(section)
     own_data = own_node if isinstance(own_node, dict) else {}
@@ -225,7 +227,7 @@ def service_state(
             plaintext=plaintext,
             invalid=str(exc),
         )
-    command = own_data.get("token_command")
+    command = own_data.get("token_command") if "token_command" in declared else None
     own_command = [str(part) for part in command] if isinstance(command, list) else None
     token = marks.token
     missing = tuple(each.key for each in unset_fields(settings, marks, section=section))
@@ -247,8 +249,10 @@ def service_state(
         required=required,
         plaintext=plaintext,
         own_command=own_command or None,
-        inherited_token=inherited_from_default(section, profile, "token", raw),
-        inherited_command=inherited_from_default(section, profile, "token_command", raw),
+        inherited_token="token" in declared
+        and inherited_from_default(section, profile, "token", raw),
+        inherited_command="token_command" in declared
+        and inherited_from_default(section, profile, "token_command", raw),
         shown=shown,
         sources={key: source for key, source in found.items() if key not in missing},
         token_only=token is not None and missing == (token.key,),

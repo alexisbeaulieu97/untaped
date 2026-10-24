@@ -306,9 +306,9 @@ def file_reference(
 ) -> str:
     """File a row reading the 11.0 entry ``entry`` that ``store`` already holds; where it is.
 
-    ``config migrate`` files one per preset ``token_command``: the entry stays
-    where it is (an older untaped still reads it), so forgetting the row
-    leaves it.
+    11.1's ``config migrate`` filed one per preset ``token_command``: the
+    entry stays where it is (an older untaped still reads it), so forgetting
+    the row leaves it.
     """
     ident = credential.id(key)
     index().put(_row(credential, key, ident, backend=store.name, entry=entry, migrated=True))

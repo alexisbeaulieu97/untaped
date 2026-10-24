@@ -8,6 +8,7 @@ its jobs. Config and token stores are the isolated config and the fake
 
 from __future__ import annotations
 
+import json
 import re
 import stat
 import sys
@@ -214,6 +215,78 @@ def test_check_passes_then_writes_the_env_choice(_isolated_config: Path) -> None
     assert ("info", "export $ENVY_TOKEN in your shell for untaped envy to use it") in (
         _result(run).notes
     )
+
+
+def _seed(stores: FakeStores, tmp_path: Path, entries: dict[str, str]) -> None:
+    """Entries already in the fake store (and, for ``pass``, their ``.gpg`` files)."""
+    stores.state.write_text(json.dumps(entries), encoding="utf-8")
+    for key in entries:
+        gpg = tmp_path / "password-store" / f"{key}.gpg"
+        gpg.parent.mkdir(parents=True, exist_ok=True)
+        gpg.write_text("encrypted", encoding="utf-8")
+
+
+_UNMARKED_STORED = (
+    "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
+    "      token_command: [pass, show, untaped/default/wiz]\n"
+)
+
+
+def test_an_11_0_section_using_the_env_var_drops_its_stored_token(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    write_config(_isolated_config, _UNMARKED_STORED)
+    _seed(stores, tmp_path, {"untaped/default/wiz": "tok"})
+
+    # keep, store, command, env: the env tab is the fourth.
+    run = drive_screen(
+        _build(make_spec("wiz", settings=UnmarkedWizProfile)), [*_keys(right=3), "esc", "esc"]
+    )
+
+    assert _wiz_section(_isolated_config) == {"base_url": "https://wiz"}
+    assert stores.entries() == {}
+    notes = [text for _, text in _result(run).notes]
+    assert "deleted the replaced wiz token from pass (untaped/default/wiz)" in notes
+
+
+def test_an_unreachable_replaced_store_only_warns(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    wiz:\n      base_url: https://wiz\n"
+        "      token_command:\n"
+        "        [secret-tool, lookup, service, untaped, account, default/wiz]\n",
+    )
+    stores.state.write_text('{"default/wiz": "old"}')
+    monkeypatch.setenv("STUB_MODE", "no-service")  # secret-tool goes away: pass takes over
+
+    run = drive_screen(
+        _build(make_spec("wiz", settings=UnmarkedWizProfile)),
+        [*_keys(right=1, token="new"), "esc", "esc"],
+    )
+
+    notes = _result(run).notes
+    assert any(
+        kind == "warning" and "could not delete the replaced wiz token from secret-tool" in text
+        for kind, text in notes
+    )
+    assert stores.entries() == {"default/wiz": "old", "untaped/default/wiz": "new"}
+
+
+def test_a_stray_token_line_is_not_offered_to_move(_isolated_config: Path) -> None:
+    # wiz's settings declare no `token`, so the line is not read (doctor names it).
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    wiz:\n      server: {url: https://wiz}\n      token: old\n",
+    )
+
+    run = drive_screen(_build())
+
+    state = run.model.states["wiz"]
+    assert (state.plaintext, state.own_command) == (None, None)
 
 
 def test_check_passes_then_keeps_the_current_token(
