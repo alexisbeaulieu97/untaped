@@ -26,6 +26,7 @@ from core_test_support.commands.support import (
 from untaped.core.commands.config import build_root_config_app
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.settings import FORMAT_VERSION
 from untaped.runtime.theme import THEME_CHOICES
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
@@ -194,11 +195,52 @@ def test_null_profile_is_treated_as_empty(
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: null\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
     assert _invoke(["get", "untaped.http.timeout_seconds"]).exit_code == 0
-    result = _invoke(["set", "untaped.http.timeout_seconds", "5"])
+    with profile_scope("work"):  # a write lands in the one profile --profile names
+        result = _invoke(["set", "untaped.http.timeout_seconds", "5"])
     assert result.exit_code == 0, result.output
     assert read_config_dict(_isolated_config)["profiles"] == {
         "work": {"untaped": {"http": {"timeout_seconds": 5.0}}}
     }
+
+
+def test_writes_land_in_the_base_unless_one_profile_is_named(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "work")  # picks what runs read, never where they write
+    write_config(
+        _isolated_config,
+        "format_version: 2\nprofiles:\n"
+        "  work: {untaped: {http: {timeout_seconds: 9}}}\n  lab: {}\n",
+    )
+    written = _invoke(["set", "untaped.http.timeout_seconds", "5"])
+    assert written.exit_code == 0, written.output
+    assert (
+        "this run still reads untaped.http.timeout_seconds from profile work, picked over the base"
+    ) in written.stderr
+    with profile_scope(("work", "lab")):
+        refused = _invoke(["set", "untaped.http.timeout_seconds", "6", "--format", "json"])
+
+    assert read_config_dict(_isolated_config)["untaped"] == {"http": {"timeout_seconds": 5.0}}
+    assert refused.exit_code == 2
+    assert "--profile work,lab names 2 profiles; a write needs one" in refused.stderr
+    assert read_config_dict(_isolated_config)["profiles"]["lab"] == {}
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["set", "untaped.http.timeout_seconds", "5"], ["unset", "untaped.http.timeout_seconds"]],
+)
+def test_an_undefined_pick_fails_before_a_write(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, command: list[str]
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nuntaped: {http: {timeout_seconds: 9}}\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "nope")
+
+    result = _invoke(command)
+
+    assert result.exit_code == 2
+    assert "profile 'nope' is not defined" in result.stderr
+    assert read_config_dict(_isolated_config)["untaped"] == {"http": {"timeout_seconds": 9}}
 
 
 @pytest.mark.parametrize(
@@ -397,7 +439,7 @@ def test_get_and_list_render_mapping_settings(_isolated_config: Path) -> None:
     rows = json.loads(_invoke(["list", "--format", "json"]).stdout)
     symbols = next(row for row in rows if row["key"] == "untaped.ui.symbols")
     assert symbols["value"] == {"success": "Y"}
-    assert symbols["source"] == "profile:default"
+    assert symbols["source"] == "base"
 
     everywhere = json.loads(_invoke(["list", "--all-profiles", "--format", "json"]).stdout)
     assert {"key": "untaped.ui.symbols", "value": {"success": "Y"}} in [

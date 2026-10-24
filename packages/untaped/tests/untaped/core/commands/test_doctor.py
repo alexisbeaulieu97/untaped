@@ -458,7 +458,7 @@ def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None
     code, rows = _rows(_doctor_app())
     assert code == 0
     titles = [row["title"] for row in rows if row["plugin"] == "untaped"]
-    for title in ("validate untaped.http", "validate untaped.ui", "resolve active profile"):
+    for title in ("validate untaped.http", "validate untaped.ui", "resolve picked profiles"):
         assert title in titles
     assert "validate log_level" not in titles
 
@@ -549,7 +549,7 @@ def test_active_profile_missing_without_profiles_fails_profile_row(
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
     code, rows = _rows(_doctor_app())
     assert code == 1
-    assert "'prod'" in _failed(rows)["resolve active profile"]
+    assert "'prod'" in _failed(rows)["resolve picked profiles"]
 
 
 def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:

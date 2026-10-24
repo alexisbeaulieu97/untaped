@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
+from untaped.runtime.profile_resolver import PickSource
 from untaped.sdk.records import OutcomeRecord, Record, TableGlyph
 
 
@@ -20,7 +21,8 @@ class Profile:
 
     name: str
     data: dict[str, Any]
-    is_active: bool
+    selected: bool
+    """Whether the run reads it: in the pick, or the base when nothing is picked."""
 
     @property
     def key_count(self) -> int:
@@ -40,8 +42,24 @@ class ProfileRow(Record, kind="untaped.profile"):
     """One row of ``profile list``."""
 
     name: str
-    active: Annotated[bool, TableGlyph(true="✓", false="")]
+    selected: Annotated[bool, TableGlyph(true="✓", false="")]
     keys: int = Field(description="Number of leaf keys the profile sets.")
+
+
+class PickedProfile(BaseModel):
+    """One profile of the run's pick."""
+
+    name: str
+    source: PickSource = Field(description="What picked it: `flag` (--profile) or `env`.")
+
+
+class ProfilePick(Record, kind="untaped.profile_pick"):
+    """``profile current``: the profiles the run layers over the base, in order."""
+
+    name: str = Field(
+        description="The pick as one `--profile` value: the names comma-joined, else `default`."
+    )
+    profiles: list[PickedProfile]
 
 
 class ProfileOutcome(OutcomeRecord, kind="untaped.profile_outcome"):

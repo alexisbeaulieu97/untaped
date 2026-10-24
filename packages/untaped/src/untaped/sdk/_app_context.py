@@ -79,7 +79,7 @@ class AppContext:
 
     @property
     def profile(self) -> str:
-        """The profile this invocation acts on (``--profile``, ``UNTAPED_PROFILE``, ``active``)."""
+        """The run's pick as one ``--profile`` value: the names comma-joined, else ``default``."""
         from untaped.runtime.profile_resolver import selected_profile  # noqa: PLC0415
 
         return selected_profile()

@@ -40,7 +40,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "untaped.skills.updates",
             "warn",
             "auto",
-            "profile:default",
+            "base",
             "default",
         ),
         (
@@ -57,7 +57,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "untaped.ui.theme",
             "classic",
             "default",
-            "profile:default",
+            "base",
             "default",
         ),
         ("", "untaped.ui.theme", "default", "default", "default", None),
@@ -66,7 +66,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "untaped.ui.color_roles",
             {"error": "red"},
             {},
-            "profile:default",
+            "base",
             "default",
         ),
         (
@@ -74,7 +74,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             "untaped.http.timeout_seconds",
             5.0,
             30.0,
-            "profile:default",
+            "base",
             "default",
         ),
         ("", "untaped.http.timeout_seconds", 30.0, 30.0, "default", None),
@@ -170,10 +170,10 @@ def test_list_names_gives_each_declared_name_its_value_and_source(
 
     assert list(names)[: len(SYMBOL_NAMES)] == list(SYMBOL_NAMES)
     assert (names["success"].value, names["success"].source) == ("S", "profile:work")
-    assert (names["error"].value, names["error"].source) == ("X", "profile:default")
+    assert (names["error"].value, names["error"].source) == ("X", "base")
     plain = BUILTIN_THEMES["plain"].symbols["warning"]  # the theme the profiles chose
     assert (names["warning"].value, names["warning"].source) == (plain, "theme")
-    assert (names["bogus"].source, names["bogus"].declared) == ("profile:default", False)
+    assert (names["bogus"].source, names["bogus"].declared) == ("base", False)
 
 
 def test_list_names_says_which_names_a_variable_sets(
@@ -216,7 +216,7 @@ def test_list_names_under_a_profile_shows_what_its_own_names_inherit(
         for item in ListNames(SettingsFileRepository())("untaped.ui.symbols", under="work")
     }
 
-    assert (names["error"].value, names["error"].source) == ("X", "profile:default")
+    assert (names["error"].value, names["error"].source) == ("X", "base")
     theme = BUILTIN_THEMES["default"].symbols["success"]
     assert (names["success"].value, names["success"].source) == (theme, "theme")
 
@@ -244,7 +244,7 @@ def test_list_names_finds_a_variable_at_any_depth(
 
     assert (names["success"].value, names["success"].source) == ("W", variable)
     assert names["success"].variable == variable  # it wins over the profile's own ``S``
-    assert names["error"].source == "profile:default"
+    assert names["error"].source == "base"
 
 
 def test_list_names_leaves_a_name_its_defaults_lack_unset(_isolate_settings: Path) -> None:

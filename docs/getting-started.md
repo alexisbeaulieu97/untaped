@@ -157,8 +157,10 @@ export UNTAPED_PROFILE=prod
 untaped profile current
 ```
 
-`--profile NAME` selects a profile for one command, anywhere in the command;
-`UNTAPED_PROFILE` selects one for every command in that shell. See
+`--profile NAME` picks a profile for one command, anywhere in the command;
+`UNTAPED_PROFILE` picks for every command in that shell, and both take a comma
+list that stacks in order. Writes go to the base unless `--profile` names one
+profile. See
 [Profiles](./configuration.md#profiles).
 
 ## First command in each plugin

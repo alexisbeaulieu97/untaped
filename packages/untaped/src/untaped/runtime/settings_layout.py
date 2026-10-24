@@ -1,13 +1,13 @@
 """The SDK's settings layout: map the raw config file to effective values.
 
-`ProfilesSettingsLayout` layers the picked profile (``profiles.<name>``)
+`ProfilesSettingsLayout` layers the picked profiles (``profiles.<name>``)
 over the base (``config.yml``'s top level) and is the SDK's only layout:
 every plugin resolves through it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,10 +16,12 @@ from pydantic import BaseModel
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     base_sections,
-    effective_active_profile_name,
+    check_defined,
     named_profiles,
+    picked_names,
     profile_entries,
     resolve_profiles,
+    write_target,
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import KeyUse, rename_keys
@@ -39,7 +41,7 @@ class ResolvedConfig:
 
 
 class ProfilesSettingsLayout:
-    """Layer the picked ``profiles.<name>`` over the base, ``config.yml``'s top level.
+    """Layer the picked ``profiles.<name>`` over the base, ``config.yml``'s top level, in order.
 
     Profiles are a core feature, not a plugin, so this layout (and the
     resolver it delegates to) lives in core.
@@ -54,7 +56,7 @@ class ProfilesSettingsLayout:
         self._sections = sections
 
     def effective(self, raw: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
-        """Return the effective settings values for the active (or given) profile."""
+        """Return the effective settings values for the run's pick (or the given profile)."""
         return self.resolve(raw, profile=profile).effective
 
     def inherited(self, raw: dict[str, Any], profile: str) -> dict[str, Any]:
@@ -76,12 +78,13 @@ class ProfilesSettingsLayout:
     ) -> ResolvedConfig:
         """Resolve effective settings, provenance and old-key uses.
 
-        ``sections`` overrides the constructor's section models.
+        ``profile`` layers that one profile over the base instead of the
+        run's pick. ``sections`` overrides the constructor's section models.
         """
-        override = profile or effective_active_profile_name()
+        picks = (profile,) if profile else picked_names()
         models = sections if sections is not None else self._sections_now()
-        renamed, uses = _rename_profiles(raw, models, override)
-        effective, provenance = resolve_profiles(renamed, active_override=override)
+        renamed, uses = _rename_profiles(raw, models, picks)
+        effective, provenance = resolve_profiles(renamed, picks=picks)
         return ResolvedConfig(effective, provenance, uses)
 
     def _sections_now(self) -> SectionModels:
@@ -113,10 +116,11 @@ class ProfilesSettingsLayout:
         keeps ``untaped --profile typo config set`` from silently creating a
         new profile.
         """
-        name = requested or effective_active_profile_name() or DEFAULT_PROFILE
+        name = requested or write_target()
+        known = named_profiles(raw)
+        check_defined(picked_names(), known)  # a run whose pick is undefined writes nothing
         if name == DEFAULT_PROFILE:
             return raw, name
-        known = named_profiles(raw)
         if name not in known:
             raise ConfigError(
                 f"{not_found('profile', name, known=sorted(known))}\n"
@@ -130,13 +134,13 @@ class ProfilesSettingsLayout:
 
 
 def _rename_profiles(
-    raw: dict[str, Any], models: SectionModels, active: str | None
+    raw: dict[str, Any], models: SectionModels, picks: Sequence[str]
 ) -> tuple[dict[str, Any], dict[str, dict[str, tuple[KeyUse, ...]]]]:
     """Copy of ``raw`` with the layered profiles' sections at current key names."""
     profiles = raw.get("profiles")
     if not models or not (profiles is None or isinstance(profiles, dict)):
         return raw, {}  # ``resolve_profiles`` reports a malformed ``profiles``
-    layered = {DEFAULT_PROFILE, active or DEFAULT_PROFILE}
+    layered = {DEFAULT_PROFILE, *picks}
     renamed = {**raw, "profiles": dict(profiles or {})}
     uses: dict[str, dict[str, tuple[KeyUse, ...]]] = {}
     for name, data, path in profile_entries(raw):

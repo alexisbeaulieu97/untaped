@@ -82,6 +82,7 @@ class SetSetting:
         written then.
         """
         removed: list[str] = []
+        holder = _holder(self._repo, key)
 
         def update(target: str, current: Any) -> str:
             if expected is not _UNRESOLVED and current != expected:
@@ -99,8 +100,31 @@ class SetSetting:
         line = f"set {key} in profile {target}{_removed_note(removed)}"
         return SettingChange(
             SettingOutcome(key=key, profile=target, action="updated"),
-            (("success", f"{line} (config: {resolve_config_path()})"),),
+            (
+                ("success", f"{line} (config: {resolve_config_path()})"),
+                *_still_read(key, target, holder),
+            ),
         )
+
+
+def _holder(repo: SettingsWriter, key: str) -> str | None:
+    """The profile this run reads ``key`` from, ``None`` when no profile sets it.
+
+    Read before a write: a write to the base never changes which picked
+    profile holds a key.
+    """
+    return repo.provenance().get(repo.descriptor(key).path)
+
+
+def _still_read(key: str, target: str, holder: str | None) -> tuple[Note, ...]:
+    """A line when a write to the base is hidden by ``holder``, a profile this run picks.
+
+    A named target is the one ``--profile`` names, the top of the pick, so
+    nothing layered over it can hide it.
+    """
+    if target != DEFAULT_PROFILE or holder is None or holder == DEFAULT_PROFILE:
+        return ()
+    return (("info", f"this run still reads {key} from profile {holder}, picked over the base"),)
 
 
 class UnsetSetting:
@@ -114,6 +138,7 @@ class UnsetSetting:
     ) -> SettingChange:
         """Unset ``key`` in ``profile`` (the active one by default); a key not set is unchanged."""
         spellings: list[str] = []
+        holder = _holder(self._repo, key)
         removed, target = self._repo.unset_value(
             key, profile=profile, dry_run=dry_run, on_spelling_removed=spellings.append
         )
@@ -122,7 +147,10 @@ class UnsetSetting:
         if not removed:
             notes = (("info", f"{key} was not set {where}"),)
         elif not dry_run:
-            notes = (("success", f"unset {key} {where}{_removed_note(spellings)}"),)
+            notes = (
+                ("success", f"unset {key} {where}{_removed_note(spellings)}"),
+                *_still_read(key, target, holder),
+            )
         action = "unchanged" if not removed else "planned" if dry_run else "deleted"
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), notes)
 

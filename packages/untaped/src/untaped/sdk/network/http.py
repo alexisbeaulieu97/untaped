@@ -35,7 +35,8 @@ from pydantic import BaseModel, SecretStr
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import (
     ACTIVE_PROFILE_ENV,
-    classify_active_profile,
+    DEFAULT_PROFILE,
+    picked_names,
     selected_profile,
 )
 from untaped.runtime.redaction import redact_credentials
@@ -597,7 +598,7 @@ def missing_setting_error(
     tail = tail if token_sources else ""
     fields = (field, *more_fields)
     keys = [f"{section}.{name}" for name in fields]
-    where = f" in profile {q(profile)}" if profile else ""
+    where = _in_profiles(profile)
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     details = {"profiles": list(set_in)} if set_in else None
     commands = [
@@ -962,7 +963,7 @@ def _not_set_up(config: BaseModel, *, section: str) -> ConfigError:
     else:
         profile, set_in = _profiles_for(section, [])
         what = "base_url= has no value"
-    where = f" in profile {q(profile)}" if profile else ""
+    where = _in_profiles(profile)
     lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
     return ConfigError(
         f"{section} is not set up{where}: {what}",
@@ -1016,6 +1017,13 @@ def _read_by_name(
     return values[base_url_field], token
 
 
+def _in_profiles(profile: str | None) -> str:
+    """`` in profile 'a'`` or `` in profiles 'a,b'`` for a missing-setting message, else ``""``."""
+    if not profile:
+        return ""
+    return f" in {'profiles' if ',' in profile else 'profile'} {q(profile)}"
+
+
 def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str | None, list[str]]:
     """The selected profile and the other profiles that resolve every one of ``needs``.
 
@@ -1028,17 +1036,18 @@ def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str |
     """
     if any(env_sets_key(section, need[0]) for need in needs):
         return None, []
+    picked = picked_names()
     try:
         data = read_config_dict()
     except ConfigError:
-        return classify_active_profile()[0], []
+        return ",".join(picked) or None, []
     profile = selected_profile()
     if not needs:
         return profile, []
     layout = active_settings_layout()
     found: list[str] = []
     for name in layout.profile_names(data):
-        if name == profile:
+        if name in (picked or (DEFAULT_PROFILE,)):
             continue
         try:
             values = layout.effective(data, profile=name).get(section)

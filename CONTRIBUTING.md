@@ -501,8 +501,8 @@ controller. A finding's location says which (`templates.yml#2`,
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.
 
-**Profile**: a named set of settings in `config.yml`; the selected profile is
-layered over `default`.
+**Profile**: a named set of settings in `config.yml`; the profiles a run picks
+are layered over the base, `default`.
 
 **Project**: a folder whose `.untaped/` holds `project.json`, the nearest one
 found by walking up from the working directory; it need not be a git

@@ -7,7 +7,7 @@ Every environment variable `untaped` reads or sets.
 | Variable | Effect |
 |---|---|
 | `UNTAPED_HOME` | The folder untaped keeps everything in: `config.yml`, `state.yml` and `plugins/<name>/`. An absolute path (`~` is expanded); a relative one exits 4. Default: `~/.untaped`. See [File and layout](../configuration.md#file-and-layout). |
-| `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
+| `UNTAPED_PROFILE` | Profiles every run in this process layers over the base, a comma list in order; each must exist. The root `--profile` option's profiles stack after them, and `--profile default` sets them aside. Writes never go to them. |
 | `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `untaped.ui.format` setting; an explicit `--format` wins over it. Any other value exits 2, except under `doctor` and `setup`, which ignore it. |
 | `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, info) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `untaped.ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](../scripting.md#stderr-diagnostics). |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the config or state file lock before a write fails. A non-negative number; default `5`. |

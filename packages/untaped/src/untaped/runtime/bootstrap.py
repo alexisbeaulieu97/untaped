@@ -260,7 +260,7 @@ def reset() -> None:
     just-composed shell and plugins. Exists for test isolation; never
     called implicitly between user invocations.
     """
-    set_profile_override(None)
+    set_profile_override(())
     _reset_verbose(None)
     _reset_quiet(None)
     _reregister()

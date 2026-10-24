@@ -158,7 +158,7 @@ def test_list_notes_a_value_from_an_old_key(_isolated_config: Path) -> None:
 
     assert (row["value"], row["source"], row["note"]) == (
         "/c",
-        "profile:default",
+        "base",
         "from renamed.corpus_path, removed in a future major release",
     )
 

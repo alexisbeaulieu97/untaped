@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from untaped.core.config import SettingsFileRepository
-from untaped.runtime.profile_resolver import base_sections
+from untaped.runtime.profile_resolver import base_sections, profile_scope
 from untaped.runtime.settings import (
     Settings,
     register_profile_settings,
@@ -317,15 +317,14 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
     ],
 )
 def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
-    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch, initial: str, profile: str
+    _isolate_settings: Path, initial: str, profile: str
 ) -> None:
     """Regression (#136): unsetting a required-without-default setting fails
     here, naming the key and the profile, instead of breaking the next
     ``get_settings`` with an opaque pydantic error; the file is untouched."""
     _isolate_settings.write_text(initial)
-    monkeypatch.setenv("UNTAPED_PROFILE", profile)
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
-    with pytest.raises(ConfigError) as exc_info:
+    with profile_scope(profile), pytest.raises(ConfigError) as exc_info:
         repo.unset_value("mandatory")
     assert "mandatory" in str(exc_info.value)
     assert profile in str(exc_info.value)

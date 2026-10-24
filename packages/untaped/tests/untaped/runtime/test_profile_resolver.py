@@ -1,6 +1,6 @@
 """Tests for the pure ``profile_resolver`` helper.
 
-The resolver layers the picked ``profiles.<name>`` (top) over the base,
+The resolver layers each picked ``profiles.<name>`` in order over the base,
 ``config.yml``'s top level (bottom), and returns ``(effective_dict,
 provenance_dict)``. ``provenance_dict`` maps every leaf path to the
 profile name that supplied that value (``default`` for the base).
@@ -11,14 +11,16 @@ from __future__ import annotations
 import pytest
 
 from untaped.runtime.profile_resolver import (
+    Picked,
     base_sections,
-    classify_active_profile,
-    effective_active_profile_name,
+    current_pick,
     profile_entries,
+    profile_scope,
     resolve_profiles,
-    set_profile_override,
+    selected_profile,
+    write_target,
 )
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UsageError
 
 
 def test_empty_config_returns_empty() -> None:
@@ -40,7 +42,7 @@ def test_the_pick_overrides_the_base_per_leaf() -> None:
         "awx": {"token": "d-tok", "api_prefix": "/api/v2/"},
         "profiles": {"prod": {"awx": {"token": "p-tok", "base_url": "https://prod"}}},
     }
-    effective, provenance = resolve_profiles(config, active_override="prod")
+    effective, provenance = resolve_profiles(config, picks=("prod",))
     assert effective == {
         "awx": {
             "token": "p-tok",
@@ -62,7 +64,7 @@ def test_named_profiles_are_read_only_when_picked() -> None:
 
 def test_picking_default_reads_the_base_alone() -> None:
     config = {"format_version": 2, "awx": {"token": "d"}, "profiles": {"prod": {}}}
-    effective, provenance = resolve_profiles(config, active_override="default")
+    effective, provenance = resolve_profiles(config, picks=("default",))
     assert effective == {"awx": {"token": "d"}}
     assert provenance == {("awx", "token"): "default"}
 
@@ -70,7 +72,7 @@ def test_picking_default_reads_the_base_alone() -> None:
 def test_an_unknown_pick_errors() -> None:
     config = {"format_version": 2, "awx": {"token": "d"}}
     with pytest.raises(ConfigError) as excinfo:
-        resolve_profiles(config, active_override="nope")
+        resolve_profiles(config, picks=("nope",))
     assert "nope" in str(excinfo.value)
 
 
@@ -81,7 +83,7 @@ def test_nested_dicts_are_deep_merged() -> None:
         "untaped": {"http": {"timeout_seconds": 5, "ca_bundle_path": "/default/ca"}},
         "profiles": {"prod": {"untaped": {"http": {"ca_bundle_path": "/prod/ca"}}}},
     }
-    effective, provenance = resolve_profiles(config, active_override="prod")
+    effective, provenance = resolve_profiles(config, picks=("prod",))
     assert effective == {
         "awx": {"api_prefix": "/api/v2/"},
         "untaped": {"http": {"timeout_seconds": 5, "ca_bundle_path": "/prod/ca"}},
@@ -96,7 +98,7 @@ def test_nested_dicts_are_deep_merged() -> None:
 def test_lists_are_replaced_not_merged() -> None:
     """A list in the picked profile replaces (not extends) the base's list."""
     config = {"some_list": [1, 2, 3], "profiles": {"prod": {"some_list": [4]}}}
-    effective, provenance = resolve_profiles(config, active_override="prod")
+    effective, provenance = resolve_profiles(config, picks=("prod",))
     assert effective == {"some_list": [4]}
     assert provenance == {("some_list",): "prod"}
 
@@ -116,49 +118,98 @@ def test_profile_entries_list_the_base_first_with_their_place() -> None:
     assert next(profile_entries(config))[1] is config
 
 
-# ----------------------- active-profile classification ----------------------- #
+def test_picks_layer_in_order_later_wins() -> None:
+    config = {
+        "awx": {"a": "base", "b": "base", "c": "base"},
+        "profiles": {"one": {"awx": {"a": "one", "b": "one"}}, "two": {"awx": {"b": "two"}}},
+    }
+    effective, provenance = resolve_profiles(config, picks=("one", "two"))
+    assert effective == {"awx": {"a": "one", "b": "two", "c": "base"}}
+    assert provenance == {("awx", "a"): "one", ("awx", "b"): "two", ("awx", "c"): "default"}
 
 
-def test_classify_active_profile_reads_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unknown_pick_is_a_usage_error_naming_the_known() -> None:
+    with pytest.raises(ConfigError) as refused:
+        resolve_profiles({"profiles": {"prod": {}}}, picks=("prod", "nope"))
+    assert refused.value.exit_code == 2
+    assert refused.value.details == {"known": ["default", "prod"]}
+
+
+# --------------------------------- the pick --------------------------------- #
+
+
+def test_the_variable_picks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
-    assert classify_active_profile() == ("stage", "env")
+    assert current_pick() == (Picked("stage", "env"),)
 
 
-def test_profile_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_PROFILE", "env-prof")
-    set_profile_override("flag-prof")
-    try:
-        assert classify_active_profile() == ("flag-prof", "flag")
-    finally:
-        set_profile_override(None)
+def test_the_flag_stacks_after_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "a, b")
+    with profile_scope(("c", "a")):
+        assert current_pick() == (Picked("b", "env"), Picked("c", "flag"), Picked("a", "flag"))
+        assert selected_profile() == "b,c,a"
 
 
-def test_classify_active_profile_falls_back_when_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_flag_default_reads_the_base_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    with profile_scope("default"):
+        assert current_pick() == ()
+        assert selected_profile() == "default"
+
+
+def test_variable_default_adds_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "default")
+    assert current_pick() == ()
+    with profile_scope("prod"):
+        assert current_pick() == (Picked("prod", "flag"),)
+
+
+def test_nothing_picks_without_flag_or_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    assert classify_active_profile() == (None, "fallback")
+    assert current_pick() == ()
     monkeypatch.setenv("UNTAPED_PROFILE", "")
-    assert classify_active_profile() == (None, "fallback")
+    assert current_pick() == ()
+    assert selected_profile() == "default"
 
 
-def test_effective_active_profile_name_matches_classification(
+@pytest.mark.parametrize(
+    ("value", "match"),
+    [
+        ("a,,b", "invalid profile name ''"),
+        ("a b", "invalid profile name 'a b'"),
+        ("-x", "invalid profile name '-x'"),
+        ("a,default", "stacks `default`"),
+    ],
+)
+def test_a_malformed_variable_is_a_usage_error(
+    monkeypatch: pytest.MonkeyPatch, value: str, match: str
+) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", value)
+    with pytest.raises(ConfigError, match=match) as refused:
+        current_pick()
+    assert refused.value.exit_code == 2
+
+
+def test_writes_go_to_the_one_flag_profile_else_the_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
-    assert effective_active_profile_name() == "stage"
-    monkeypatch.delenv("UNTAPED_PROFILE")
-    assert effective_active_profile_name() is None
+    assert write_target() == "default"  # the variable picks reads, never writes
+    with profile_scope("prod"):
+        assert write_target() == "prod"
+    with profile_scope(("prod", "lab")), pytest.raises(UsageError) as refused:
+        write_target()
+    assert refused.value.details == {"profiles": ["prod", "lab"]}
 
 
 @pytest.mark.parametrize("config", [{}, {"profiles": {}}, {"profiles": None}])
 def test_an_unknown_pick_errors_even_without_profiles(config: dict[str, object]) -> None:
     with pytest.raises(ConfigError, match="'prod'"):
-        resolve_profiles(config, active_override="prod")
+        resolve_profiles(config, picks=("prod",))
 
 
 def test_picking_default_resolves_without_profiles() -> None:
-    assert resolve_profiles({}, active_override="default") == ({}, {})
+    assert resolve_profiles({}, picks=("default",)) == ({}, {})
 
 
 @pytest.mark.parametrize(
@@ -175,4 +226,4 @@ def test_malformed_profiles_raise_config_error(config: dict[str, object], messag
 
 
 def test_null_profile_entry_is_an_empty_profile() -> None:
-    assert resolve_profiles({"profiles": {"prod": None}}, active_override="prod") == ({}, {})
+    assert resolve_profiles({"profiles": {"prod": None}}, picks=("prod",)) == ({}, {})

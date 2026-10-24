@@ -65,7 +65,7 @@ def test_management_commands_dispatch_through_root(_isolated_config: Path) -> No
     ):
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
-    assert profile_override() is None
+    assert profile_override() == ()
 
 
 def test_root_options_work_around_management_commands(_isolated_config: Path) -> None:
@@ -82,7 +82,7 @@ def test_root_options_work_around_management_commands(_isolated_config: Path) ->
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
         assert "https://w" in result.stdout
-    assert profile_override() is None
+    assert profile_override() == ()
 
 
 def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:

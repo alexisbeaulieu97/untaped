@@ -9,15 +9,26 @@ minimal — the CLI layer owns command-aware hints.
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
 
 from untaped.core.profile.models import Profile, ProfileDeletePreview
 from untaped.core.profile.ports import ProfileReader, ProfileWriter
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, ProfileSource
-from untaped.sdk.errors import ConfigError
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE, PROFILE_NAME, Picked
+from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.words import not_found, q
 
 _BASE_RESERVED = "`default` names the base, config.yml's top level; pick another name"
+
+
+def _check_name(name: str) -> None:
+    """Refuse a name ``--profile`` could not pick, and ``default`` (the base)."""
+    if name == DEFAULT_PROFILE:
+        raise ConfigError(_BASE_RESERVED, category="invalid")
+    if not PROFILE_NAME.fullmatch(name):
+        raise ConfigError(
+            f"invalid profile name {name!r}",
+            category="usage",
+            hint="a name is letters, digits, `_`, `.` and `-`, and does not start with `.` or `-`",
+        )
 
 
 class CreateProfile:
@@ -32,10 +43,7 @@ class CreateProfile:
         self._repo = repo
 
     def __call__(self, name: str, *, copy_from: str | None = None, dry_run: bool = False) -> None:
-        if not name:
-            raise ConfigError("profile name cannot be empty", category="invalid")
-        if name == DEFAULT_PROFILE:
-            raise ConfigError(_BASE_RESERVED, category="invalid")
+        _check_name(name)
         if self._repo.read(name) is not None:
             raise ConfigError(f"profile {name!r} already exists", category="conflict")
         if copy_from is not None:
@@ -85,21 +93,27 @@ class ListProfiles:
         self._repo = repo
 
     def __call__(self) -> list[Profile]:
-        active = self._repo.active_name() or DEFAULT_PROFILE
+        selected = _selected(self._repo)
         out: list[Profile] = []
         for name in self._repo.names():
             data = self._repo.read(name) or {}
-            out.append(Profile(name=name, data=data, is_active=(name == active)))
+            out.append(Profile(name=name, data=data, selected=name in selected))
         return out
 
 
+def _selected(repo: ProfileReader) -> set[str]:
+    """The profiles the run reads besides the base: its pick, else the base itself."""
+    return {pick.name for pick in repo.pick()} or {DEFAULT_PROFILE}
+
+
 class ShowProfile:
-    """Return the named profile.
+    """Return the named profile, or the run's pick when no name is given.
 
     By default the data is the **effective view**: the base merged with
-    the named profile (named wins per leaf). ``raw=True`` returns only
-    what's literally written under ``profiles.<name>`` (the base's own
-    sections for ``default``).
+    the named profile (named wins per leaf), or with each picked profile in
+    order. ``raw=True`` returns only what's literally written under
+    ``profiles.<name>`` (the base's own sections for ``default``), so it
+    needs one profile.
     """
 
     def __init__(self, repo: ProfileReader) -> None:
@@ -107,18 +121,27 @@ class ShowProfile:
 
     def __call__(
         self,
-        name: str,
+        name: str | None = None,
         *,
         raw: bool = False,
     ) -> Profile:
+        if name is None:
+            picked = [pick.name for pick in CurrentProfile(self._repo)()]
+            if len(picked) > 1:
+                if raw:
+                    raise UsageError(
+                        f"--raw shows one profile; the run picks {', '.join(picked)}",
+                        hint="name the profile: `profile show NAME --raw`",
+                    )
+                return Profile(name=",".join(picked), data=self._repo.resolved(None), selected=True)
+            name = picked[0] if picked else DEFAULT_PROFILE
         raw_data = self._repo.read(name)
         if raw_data is None:
             raise ConfigError(
                 not_found("profile", name, known=sorted(self._repo.names())), category="not_found"
             )
         data = raw_data if raw else self._repo.resolved(name)
-        active = self._repo.active_name() or DEFAULT_PROFILE
-        return Profile(name=name, data=data, is_active=(name == active))
+        return Profile(name=name, data=data, selected=name in _selected(self._repo))
 
 
 class RenameProfile:
@@ -131,12 +154,9 @@ class RenameProfile:
         self._repo = repo
 
     def __call__(self, old_name: str, new_name: str, *, dry_run: bool = False) -> None:
-        if not new_name:
-            raise ConfigError("new profile name cannot be empty", category="invalid")
         if old_name == DEFAULT_PROFILE:
             raise ConfigError("cannot rename the `default` profile", category="invalid")
-        if new_name == DEFAULT_PROFILE:
-            raise ConfigError(_BASE_RESERVED, category="invalid")
+        _check_name(new_name)
         if self._repo.read(old_name) is None:
             raise ConfigError(
                 not_found("profile", old_name, known=sorted(self._repo.names())),
@@ -148,18 +168,11 @@ class RenameProfile:
             self._repo.rename(old_name, new_name)
 
 
-@dataclass(frozen=True, slots=True)
-class CurrentProfileResult:
-    name: str
-    source: ProfileSource
-
-
 class CurrentProfile:
-    """Resolve the picked profile, classifying its source.
+    """The run's pick, each profile with what picked it (``()``: the base alone).
 
-    Powers ``profile current`` — a one-line answer to "which profile am I
-    using right now?". When the flag or the variable names a profile, the
-    use case validates that the profile actually exists, so the documented
+    Powers ``profile current`` — a one-line answer to "which profiles am I
+    using right now?". Each picked profile must exist, so the documented
     pipe usage ``--profile $(… profile current)`` can't silently print a
     typo'd name that other commands then reject.
     """
@@ -167,24 +180,23 @@ class CurrentProfile:
     def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
 
-    def __call__(self) -> CurrentProfileResult:
-        name, source = self._repo.classify_active()
-        if source in ("flag", "env"):
-            assert name is not None  # invariant of classify_active
-            if name not in self._repo.names():
-                known = ", ".join(sorted(self._repo.names())) or "(none)"
+    def __call__(self) -> tuple[Picked, ...]:
+        picks = self._repo.pick()
+        names = self._repo.names()
+        for pick in picks:
+            if pick.name not in names:
                 raise ConfigError(
-                    f"active profile {name!r} (from {source}) is not defined; known: {known}"
+                    f"profile {pick.name!r} (from {pick.source}) is not defined; "
+                    f"known: {', '.join(sorted(names))}",
+                    category="usage",
+                    details={"known": names},
                 )
-            return CurrentProfileResult(name=name, source=source)
-        # Nothing picks: the run reads the base alone.
-        return CurrentProfileResult(name=DEFAULT_PROFILE, source="fallback")
+        return picks
 
 
 __all__ = [
     "CreateProfile",
     "CurrentProfile",
-    "CurrentProfileResult",
     "DeleteProfile",
     "ListProfiles",
     "RenameProfile",

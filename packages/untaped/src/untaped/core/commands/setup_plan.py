@@ -90,7 +90,7 @@ def emit_plan(
     if fmt != "table":
         emit([SetupStep.model_validate(row) for row in rows], fmt=fmt, columns=columns)
         return
-    shown = [_table_row(row, profile) for row in rows]
+    shown = [_table_row(row) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
@@ -99,9 +99,9 @@ def emit_plan(
         emit(shown, fmt=fmt, columns=columns, table_columns=SetupStep.table_columns)
 
 
-def _table_row(row: Row, profile: str) -> Row:
+def _table_row(row: Row) -> Row:
     run = row["run"]
-    return {**row, "run": run_line(run, profile) if isinstance(run, list) and run else ""}
+    return {**row, "run": run_line(run) if isinstance(run, list) and run else ""}
 
 
 def _row(

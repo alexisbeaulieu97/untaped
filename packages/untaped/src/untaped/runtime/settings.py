@@ -42,7 +42,7 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     FILE_KEYS,
-    effective_active_profile_name,
+    picked_names,
 )
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
@@ -595,7 +595,7 @@ def resolve_with_overlay(
     ):
         raw = {**raw, "profiles": {**known, overlay.profile: {}}}
     resolved = active_settings_layout().resolve(raw, sections=sections)
-    selected = effective_active_profile_name() or DEFAULT_PROFILE
+    selected = (picked_names() or (DEFAULT_PROFILE,))[-1]  # the overlay is for the top layer
     return replace(resolved, effective=apply_overlay(resolved.effective, profile=selected))
 
 
@@ -901,8 +901,8 @@ def check_config_format(raw: dict[str, Any], path: Path) -> None:
     _check_stamp(raw, path, newest=FORMAT_VERSION)
     if "active" in raw:
         raise FormatVersionError(
-            f"`active:` in {path} is not read: a run picks its profile with --profile "
-            "or UNTAPED_PROFILE, else reads the base",
+            f"`active:` in {path} is not read: a run picks its profiles with "
+            "--profile or UNTAPED_PROFILE, else reads the base alone",
             hint="delete the `active:` line",
         )
     profiles = raw.get("profiles")

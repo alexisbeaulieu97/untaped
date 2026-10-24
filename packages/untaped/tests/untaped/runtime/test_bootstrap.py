@@ -187,7 +187,83 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "WT"
-    assert profile_override() is None
+    assert profile_override() == ()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--profile", "work,lab", "ext", "who"],
+        ["--profile", "work", "--profile", "lab", "ext", "who"],
+        ["ext", "--profile", "lab", "who"],  # stacked after UNTAPED_PROFILE=work
+    ],
+)
+def test_profiles_stack_from_a_list_a_repeated_option_and_the_variable(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    _write_config(
+        _isolated_config,
+        "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
+        "  lab:\n    ext:\n      token: LT\n",
+    )
+    if "work" not in " ".join(argv):
+        monkeypatch.setenv("UNTAPED_PROFILE", "work")
+    root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
+
+    result = CliInvoker().invoke(root.meta, argv)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "LT"  # the later pick wins
+
+    _write_config(
+        _isolated_config,
+        "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n  lab: {}\n",
+    )
+    stacked = CliInvoker().invoke(root.meta, argv)
+
+    assert stacked.stdout.strip() == "WT"  # still read: ``lab`` stacks on ``work``
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [("work,default", "stacks `default`"), ("work,,lab", "invalid profile name ''")],
+)
+def test_a_malformed_profile_option_exits_2(
+    _isolated_config: Path, value: str, message: str
+) -> None:
+    root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
+
+    result = CliInvoker().invoke(root.meta, ["--profile", value, "ext", "who"])
+
+    assert result.exit_code == 2
+    assert message in result.stderr
+
+
+def test_an_unknown_picked_profile_exits_2_naming_the_known(_isolated_config: Path) -> None:
+    _write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
+    root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
+
+    result = CliInvoker().invoke(root.meta, ["--profile", "wrok", "ext", "who"])
+
+    assert result.exit_code == 2, result.output
+    assert "profile 'wrok' is not defined" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("value", "details"), [("wrok", {"known": ["default", "work"]}), ("a b", {})]
+)
+def test_a_refused_pick_is_a_json_usage_line(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, value: str, details: object
+) -> None:
+    _write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
+
+    result = CliInvoker().invoke(root.meta, ["--profile", value, "ext", "who"])
+
+    (line,) = [json.loads(text) for text in result.stderr.splitlines()]
+    assert (line["category"], result.exit_code) == ("usage", 2)
+    assert line.get("details") == details
 
 
 @pytest.mark.parametrize(
@@ -219,7 +295,7 @@ def test_root_options_apply_between_nested_command_names(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT quiet=True"
-    assert profile_override() is None
+    assert profile_override() == ()
     assert not is_quiet()
 
 
@@ -250,7 +326,7 @@ def test_root_options_after_end_of_options_reach_the_command(
 
     result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "--profile"])
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "--profile profile=None"
+    assert result.stdout.strip() == "--profile profile=()"
 
     # Extra positionals after ``--`` are a usage error, never a root option.
     result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "echo", "--profile", "x"])
@@ -280,7 +356,7 @@ def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
     result = CliInvoker().invoke(root.meta, ["--profile", "work", "ext", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT"
-    assert profile_override() is None
+    assert profile_override() == ()
     assert os.environ.get("UNTAPED_PROFILE") == env_before
 
 
@@ -454,7 +530,7 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
         app_context().section("ext", _ExtProfile)
 
     bootstrap.reset()
-    assert profile_override() is None
+    assert profile_override() == ()
     assert app_context().section("ext", _ExtProfile).token == "default-token"
     assert not is_verbose()
     assert not is_quiet()

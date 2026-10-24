@@ -11,7 +11,7 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
 - Results are rows on stdout; progress and errors go to stderr, as JSON Lines under `--format json`. A command's own options, output formats and `--stdin` included where it has them, are on its page.
 - Without a terminal nothing prompts. A command that needs an answer exits 2, and its error names what to pass, such as `--yes`.
 - Options every command takes:
-  - `--profile`: Override the active profile for this invocation only (scoped to the invocation; does not mutate UNTAPED_PROFILE).
+  - `--profile`: Profiles to layer over the base for this invocation, comma-separated or repeated; stacked after UNTAPED_PROFILE's (`default` reads the base alone).
   - `--verbose`, `-v`: Stream underlying tool output live and enable debug logging.
   - `--quiet`, `-q`: Suppress progress and success/info messages (errors still print).
 - Exit codes:

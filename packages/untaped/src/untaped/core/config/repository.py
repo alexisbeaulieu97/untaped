@@ -23,10 +23,9 @@ from untaped.runtime.config_file import (
     unset_at_path,
 )
 from untaped.runtime.profile_resolver import (
-    DEFAULT_PROFILE,
-    effective_active_profile_name,
     profile_entries,
     profile_path,
+    write_target,
 )
 from untaped.runtime.settings import (
     CorePart,
@@ -343,7 +342,7 @@ class SettingsFileRepository:
         (or the profile) is not set.
         """
         descriptor = self.descriptor(key)
-        name = profile or effective_active_profile_name() or DEFAULT_PROFILE
+        name = profile or write_target()
         return self._own(self.profile_data(name) or {}, descriptor)
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:

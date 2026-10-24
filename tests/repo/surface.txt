@@ -3824,6 +3824,15 @@ cli untaped profile create --format choice=table
 cli untaped profile create --format choice=yaml
 cli untaped profile create NAME
 cli untaped profile current
+cli untaped profile current --columns VALUE... default=unset
+cli untaped profile current --columns alias=-c
+cli untaped profile current --format VALUE default=raw
+cli untaped profile current --format alias=-f
+cli untaped profile current --format choice=json
+cli untaped profile current --format choice=pipe
+cli untaped profile current --format choice=raw
+cli untaped profile current --format choice=table
+cli untaped profile current --format choice=yaml
 cli untaped profile delete --columns VALUE... default=unset
 cli untaped profile delete --columns alias=-c
 cli untaped profile delete --dry-run switch

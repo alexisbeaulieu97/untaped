@@ -10,6 +10,7 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_core import to_jsonable_python
 
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.redaction import redact_url_password
 from untaped.sdk._schema import (
     FieldDescriptor,
@@ -27,7 +28,8 @@ class Source:
     Resolution chain (high → low priority):
 
     - ``env``     — an ``UNTAPED_*`` environment variable.
-    - ``profile`` — a YAML profile (``profile`` field names which one).
+    - ``profile`` — a YAML profile (``profile`` field names which one; ``default``
+      is the base, labelled ``base``).
     - ``default`` — the schema default declared on the Pydantic model.
     - ``unset``   — no default, no value; the field is genuinely empty.
     """
@@ -39,8 +41,10 @@ class Source:
 
     @property
     def label(self) -> str:
-        """Human-readable single-line form (e.g. ``profile:prod``)."""
-        return f"profile:{self.profile}" if self.kind == "profile" else self.kind
+        """Human-readable single-line form (``profile:prod``, ``base``, ``env``)."""
+        if self.kind != "profile":
+            return self.kind
+        return "base" if self.profile == DEFAULT_PROFILE else f"profile:{self.profile}"
 
     def __str__(self) -> str:
         return self.label

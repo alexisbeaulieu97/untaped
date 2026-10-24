@@ -42,7 +42,7 @@ from untaped.core.commands.setup_plan import (
 )
 from untaped.core.commands.setup_state import service_store, setup_sections, setup_services
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import selected_profile
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE, picked_names, write_target
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
 from untaped.runtime.settings import active_settings_layout
 from untaped.runtime.sink import Diagnostics
@@ -151,7 +151,7 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
             services = setup_services(result, only)
             if not services:
                 raise ConfigError(_NOTHING_TO_PLAN if only else _NO_SERVICE)
-            profile = selected_profile()
+            profile = write_target()
             rows = plan_rows(shell, result, services, profile, online=online)
             emit_plan(rows, profile=profile, fmt=fmt, columns=columns)
         finish(False, predicate_hit=check and pending(rows))
@@ -218,7 +218,7 @@ def _run(
     sections = setup_sections(only)
     services = setup_services(result, only)
     raw = read_config_dict()
-    active = selected_profile()
+    active = write_target()
     screen = setup_screen(
         result,
         services,
@@ -242,14 +242,17 @@ def _run(
             if not outcome.interrupted:
                 raise
         else:
-            _diag.success(_ready(profile, active))
+            _diag.success(_ready(profile))
     if outcome.interrupted:
         raise PromptInterruptedError("prompt cancelled")
 
 
-def _ready(profile: str, active: str) -> str:
-    """The closing line: the profile is ready, and how to use it when it is not the active one."""
-    if profile == active:
+def _ready(profile: str) -> str:
+    """The closing line: the profile is ready, and how to use it when the run does not read it.
+
+    Every run reads the base, beneath any picked profile.
+    """
+    if profile == DEFAULT_PROFILE or profile in picked_names():
         return f"profile {profile} is ready"
     return (
         f"profile {profile} is ready; use it with `untaped --profile {profile} …` "
