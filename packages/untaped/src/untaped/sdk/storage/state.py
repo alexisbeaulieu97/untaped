@@ -784,7 +784,7 @@ def _shape_problems(rows: StateRows[Any] | ProjectStateRows[Any]) -> tuple[str, 
     """Why composition refuses ``rows``, which it names itself."""
     try:
         _shape_from(rows)
-    except _ShapeProblem as exc:
+    except (_ShapeProblem, ConfigError) as exc:  # ConfigError: a model function refusing
         return (str(exc),)
     return ()
 

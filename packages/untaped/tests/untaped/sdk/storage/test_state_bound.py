@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -266,3 +266,48 @@ def test_the_state_file_stamps_as_every_data_file_does() -> None:
     from untaped.sdk.storage import data_file, state
 
     assert state.STAMP == data_file.STAMP
+
+
+@pytest.mark.parametrize(
+    ("build", "match"),
+    [
+        (lambda: StateRows(key_field="name"), "not key_field= or remove_hint="),
+        (lambda: StateRows("acme", "x", model=Item), "the 11.x spelling takes"),
+        (
+            lambda: StateRows("acme", "x", model=Item, key_field="name", remove=Remove),
+            "remove= goes with a plugin class",
+        ),
+        (lambda: StateRows(model="Item"), "model takes a model class"),  # type: ignore[arg-type]
+        (lambda: StateRows.per_project(remove_hint="rm {key}"), "not key_field="),
+        (lambda: StateRows.per_project("acme", "x"), "the 11.x spelling takes"),
+        (lambda: StateRows.per_project(model="Item"), "model takes a model class"),  # type: ignore[arg-type]
+    ],
+)
+def test_a_misspelled_declaration_is_refused(build: Callable[[], object], match: str) -> None:
+    with pytest.raises(ConfigError, match=match):
+        build()
+
+
+def test_rows_a_plugin_class_holds_are_named_where_they_were_made() -> None:
+    assert repr(Demo.items) == f"StateRows('StateRows created in {__name__}')"
+    assert repr(Demo.checkouts) == f"ProjectStateRows('ProjectStateRows created in {__name__}')"
+    assert Demo.items == Demo.items
+    assert Demo.items != Demo.notes
+
+
+def test_composition_refuses_rows_per_project_it_cannot_key() -> None:
+    def refusing() -> type[Item]:
+        raise ConfigError("no model today")
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = Settings
+        twice = StateRows[Twice].per_project()
+        notmodel = StateRows(model=lambda: int)  # type: ignore[arg-type,return-value]
+        refused = StateRows(model=refusing)
+
+    problems = _shape_problems(Broken)
+    assert ("block-shape", "Twice marks a and b Key; a row has one key") in problems
+    assert ("block-shape", "model is not a pydantic model: <class 'int'>") in problems
+    assert ("block-shape", "no model today") in problems
