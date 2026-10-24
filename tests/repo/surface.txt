@@ -3773,21 +3773,19 @@ cli untaped lint rules --format choice=raw  [experimental]
 cli untaped lint rules --format choice=table  [experimental]
 cli untaped lint rules --format choice=yaml  [experimental]
 cli untaped plugin
-cli untaped plugin check  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --columns alias=-c  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format VALUE default=table  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format alias=-f  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format choice=json  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format choice=pipe  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format choice=raw  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format choice=table  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check --format choice=yaml  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
-cli untaped plugin check [NAME]@1 default=unset  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
+cli untaped plugin contracts
+cli untaped plugin contracts --columns VALUE... default=unset
+cli untaped plugin contracts --columns alias=-c
+cli untaped plugin contracts --format VALUE default=table
+cli untaped plugin contracts --format alias=-f
+cli untaped plugin contracts --format choice=json
+cli untaped plugin contracts --format choice=pipe
+cli untaped plugin contracts --format choice=raw
+cli untaped plugin contracts --format choice=table
+cli untaped plugin contracts --format choice=yaml
 cli untaped plugin list
 cli untaped plugin list --columns VALUE... default=unset
 cli untaped plugin list --columns alias=-c
-cli untaped plugin list --contracts switch
 cli untaped plugin list --format VALUE default=table
 cli untaped plugin list --format alias=-f
 cli untaped plugin list --format choice=json
@@ -3797,7 +3795,7 @@ cli untaped plugin list --format choice=table
 cli untaped plugin list --format choice=yaml
 cli untaped plugin new --columns VALUE... default=unset
 cli untaped plugin new --columns alias=-c
-cli untaped plugin new --dry-run switch
+cli untaped plugin new --dry-run switch default=unset
 cli untaped plugin new --format VALUE default=table
 cli untaped plugin new --format alias=-f
 cli untaped plugin new --format choice=json
@@ -3805,11 +3803,11 @@ cli untaped plugin new --format choice=pipe
 cli untaped plugin new --format choice=raw
 cli untaped plugin new --format choice=table
 cli untaped plugin new --format choice=yaml
-cli untaped plugin new --path VALUE default=.
+cli untaped plugin new --path VALUE default=unset
 cli untaped plugin new NAME --fills VALUE
 cli untaped plugin rank --columns VALUE... default=unset
 cli untaped plugin rank --columns alias=-c
-cli untaped plugin rank --dry-run switch
+cli untaped plugin rank --dry-run switch default=unset
 cli untaped plugin rank --format VALUE default=table
 cli untaped plugin rank --format alias=-f
 cli untaped plugin rank --format choice=json
@@ -4535,6 +4533,16 @@ convention entry-point untaped.plugins
 convention file fills.json
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
+record untaped.contract_method
+record untaped.contract_method.contract string
+record untaped.contract_method.method string
+record untaped.contract_method.owner string
+record untaped.contract_method.providers string[]
+record untaped.contract_method.ranked string[]
+record untaped.contract_method.stability choice=deprecated
+record untaped.contract_method.stability choice=experimental
+record untaped.contract_method.stability choice=stable
+record untaped.contract_method.stability string
 record untaped.debug
 record untaped.debug.hint string?
 record untaped.debug.level choice=debug
@@ -4570,6 +4578,18 @@ record untaped.failure.level choice=error
 record untaped.failure.message string
 record untaped.failure.retryable boolean
 record untaped.failure.system string
+record untaped.installed_plugin
+record untaped.installed_plugin.distribution string
+record untaped.installed_plugin.fills string[]
+record untaped.installed_plugin.name string
+record untaped.installed_plugin.package string?
+record untaped.installed_plugin.requires string[]
+record untaped.installed_plugin.source_dir string(format=path)?
+record untaped.installed_plugin.status choice=quarantined
+record untaped.installed_plugin.status choice=ready
+record untaped.installed_plugin.status string
+record untaped.installed_plugin.tests_dir string(format=path)?
+record untaped.installed_plugin.version string
 record untaped.message
 record untaped.message.hint string?
 record untaped.message.level choice=hint
@@ -4600,6 +4620,15 @@ record untaped.pruned.message string
 record untaped.pruned.path string
 record untaped.pruned.plugin string
 record untaped.pruned.store string?
+record untaped.scaffold_outcome
+record untaped.scaffold_outcome.action string
+record untaped.scaffold_outcome.error Failure?
+record untaped.scaffold_outcome.target_path string(format=path)
+record untaped.setting_outcome
+record untaped.setting_outcome.action string
+record untaped.setting_outcome.error Failure?
+record untaped.setting_outcome.key string
+record untaped.setting_outcome.profile string
 record untaped.stale
 record untaped.stale.age_seconds number
 record untaped.stale.attempted_at string(format=date-time)?
@@ -5166,7 +5195,7 @@ sdk untaped.sdk.GitResult.returncode
 sdk untaped.sdk.GitResult.stderr
 sdk untaped.sdk.GitResult.stdout
 sdk untaped.sdk.GitResult.text
-sdk untaped.sdk.Group()
+sdk untaped.sdk.Group implement=
 sdk untaped.sdk.Group.commands class
 sdk untaped.sdk.Group.stability class
 sdk untaped.sdk.Help()  [experimental]

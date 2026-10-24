@@ -153,7 +153,7 @@ def test_dry_run_plans_every_file_and_writes_none(tmp_path: Path) -> None:
     ("name", "fills", "message"),
     [
         ("Git_Lab", "rack.item_source", "must be lowercase words"),
-        ("plugin", "rack.item_source", "'plugin' is a reserved"),
+        ("plugin", "rack.item_source", "'plugin' is taken by a root command"),
         ("gitlab", "rack", "--fills takes OWNER.CONTRACT"),
         ("gitlab", "nowhere.item_source", "contract owner not found: 'nowhere'; known: rack"),
         ("gitlab", "rack.nothing", "contract not found: 'rack.nothing'; known: rack.item_source"),

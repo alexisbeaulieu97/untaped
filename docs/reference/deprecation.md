@@ -92,7 +92,7 @@ In this workspace `tests/repo/test_major_release.py` reads the marks of
 `tests/repo/surface.txt`:
 
 ```text
-cli untaped plugin check  [deprecated, removed in 12.0; use untaped lint, from untaped[lint]]
+cli untaped auth migrate  [deprecated, removed in 12.0; use untaped config migrate]
 ```
 
 - nothing may still be marked removed in the major main carries or earlier

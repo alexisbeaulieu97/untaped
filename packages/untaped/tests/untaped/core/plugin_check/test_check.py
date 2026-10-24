@@ -1,4 +1,4 @@
-"""``untaped plugin check``: conventions, conformance, a live call, fills and the schema hash."""
+"""The plugin checks: conventions, conformance, a live call, fills and the schema hash."""
 
 from __future__ import annotations
 
@@ -9,12 +9,11 @@ from pathlib import Path
 import pytest
 
 from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
-from untaped.core.plugin_check.check import PluginCheckRow, check_plugins, report_check_rows
-from untaped.core.plugin_check.rules import file_rules_installed
+from untaped.core.plugin_check.check import PluginCheckRow, check_plugins
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import doctor_rows
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.sdk.testing import assert_fills, compose_with, invoke_cli, plugin_candidate
+from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
@@ -118,20 +117,6 @@ def test_the_check_is_hermetic_and_keeps_the_composition(contract_plugins_site: 
     assert bootstrap.composition() is result
 
 
-def test_report_exits_one_on_a_failure_only(capsys: pytest.CaptureFixture[str]) -> None:
-    passing = PluginCheckRow(plugin="bin", check="live", title="x", status="pass")
-    warning = PluginCheckRow(plugin="bin", check="schema", title="x", status="warn")
-    report_check_rows([passing, warning], fmt="json", columns=None)
-    assert [row["status"] for row in json.loads(capsys.readouterr().out)] == ["pass", "warn"]
-    with pytest.raises(SystemExit) as exited:
-        report_check_rows(
-            [PluginCheckRow(plugin="bin", check="live", title="x", status="fail")],
-            fmt="json",
-            columns=None,
-        )
-    assert exited.value.code == 1
-
-
 def test_doctor_reports_owner_schema_drift(contract_plugins_site: Path) -> None:
     _record(contract_plugins_site, "0" * 64)
     bootstrap.compose_root(candidates=candidates())
@@ -172,22 +157,6 @@ def test_an_owner_whose_contracts_fail_is_reported(contract_plugins_site: Path) 
     importlib.import_module("untaped_rack").BROKEN = True
     rows = _rows(_check("rack"))
     assert ("contracts", "rack", "fail", "its contracts function fails; see doctor") in rows
-
-
-def test_the_command_prints_a_checklist_and_exits_one_on_a_failure(
-    contract_plugins_site: Path,
-) -> None:
-    _record(contract_plugins_site, _current_hash())
-    app = bootstrap.build_root_app(candidates=candidates()).meta
-    passed = invoke_cli(app, ["plugin", "check", "bin"])
-    assert passed.exit_code == 0, passed.output
-    assert "rack.item_source.items" in passed.stdout
-    assert "plugin check: 6 pass" in passed.stderr
-    _bin().broken = True
-    app = bootstrap.build_root_app(candidates=candidates()).meta
-    failed = invoke_cli(app, ["plugin", "check", "bin", "--format", "json"])
-    assert failed.exit_code == 1
-    assert {row["status"] for row in json.loads(failed.stdout)} == {"pass", "fail"}
 
 
 def test_assert_fills_finds_the_installed_plugin_and_its_owner(
@@ -253,18 +222,3 @@ def test_assert_fills_names_an_owner_whose_contracts_fail(contract_plugins_site:
         pytest.raises(LookupError, match="whose owner may be rack: its contracts function fails"),
     ):
         assert_fills(_bin(), samples=[box(id=3, label="pens")])
-
-
-def test_quiet_prints_the_checklist_without_its_footer(contract_plugins_site: Path) -> None:
-    _record(contract_plugins_site, _current_hash())
-    app = bootstrap.build_root_app(candidates=candidates()).meta
-    quiet = invoke_cli(app, ["-q", "plugin", "check", "bin"])
-    assert quiet.exit_code == 0, quiet.output
-    assert "rack.item_source.items" in quiet.stdout
-    # Only the deprecation warning (and, without untaped[lint], the skipped
-    # file rules), which -q never mutes: no footer.
-    assert quiet.stderr.splitlines()[0] == (
-        "warning: `untaped plugin check` is deprecated and will be removed in 12.0; "
-        "use untaped lint, from untaped[lint]"
-    )
-    assert len(quiet.stderr.splitlines()) == (1 if file_rules_installed() else 3)

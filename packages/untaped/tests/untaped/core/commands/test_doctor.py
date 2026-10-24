@@ -55,7 +55,9 @@ _PASS = "pass"
 def _doctor_app(*specs: object, quarantine: tuple[QuarantineRecord, ...] = ()) -> object:
     result = compose(*specs)  # type: ignore[arg-type]
     if quarantine:
-        result = CompositionResult(plugins=result.plugins, quarantine=quarantine)
+        result = CompositionResult(
+            plugins=result.plugins, quarantine=quarantine, mount=result.mount
+        )
     return build_root_doctor_app(
         shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=result
     )

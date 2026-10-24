@@ -241,7 +241,7 @@ class SetupStep(Record, kind="untaped.setup_step"):
 
 
 class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
-    """One finding of ``untaped plugin check``."""
+    """One finding of a plugin check (:func:`untaped.sdk.testing.check_plugin`)."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("plugin", "check", "title", "status", "detail")
 

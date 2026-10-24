@@ -423,8 +423,9 @@ class Output[R: BaseModel](FieldBlock):
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
             count_failed_actions,
             count_row_failures,
-            emit,
+            emit_with,
         )
+        from untaped.sdk._ui import ui_context  # noqa: PLC0415 - rendering is heavy
 
         count_failed_actions([records] if isinstance(records, BaseModel) else records)
         renderer = self.render.get(self.format)
@@ -432,8 +433,12 @@ class Output[R: BaseModel](FieldBlock):
             count_row_failures([records] if isinstance(records, BaseModel) else records)
             renderer(records)
             return
-        emit(
+        # The run is over: a broken ``ui`` section draws the default theme rather
+        # than losing what it printed.
+        themed = self.format in ("table", "tree")
+        emit_with(
             records,
+            ui=ui_context(strict=False) if themed else None,
             fmt=cast("OutputFormat", self.format),  # a plugin renderer's format returned above
             columns=self._requested,
             empty=self._empty,

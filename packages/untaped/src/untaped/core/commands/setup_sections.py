@@ -254,7 +254,7 @@ def _ranking_rows(
 ) -> list[SettingRow]:
     """A row per ranking the owner's ``extensions`` holds, then the row that adds one."""
     owner, label = descriptor.path[0], ".".join(descriptor.path[1:])
-    help_tail = f"`{command_line('plugin list --contracts')}` lists contracts and providers."
+    help_tail = f"`{command_line('plugin contracts')}` lists contracts and providers."
     rows = [
         SettingRow(
             key=f"{descriptor.key}.{each.contract}.rank.{each.method}",

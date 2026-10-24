@@ -313,11 +313,11 @@ def test_a_class_quarantined_after_composing_leaves_the_others_mounted() -> None
 
 
 def test_a_plugin_class_s_name_is_checked_like_a_spec_s() -> None:
-    reserved = PluginCandidate(distribution="untaped-config", name="config", target=Shapes)
+    taken = PluginCandidate(distribution="untaped-config", name="config", target=Shapes)
     nameless = PluginCandidate(distribution=" ", name="shapes", target=Shapes)
-    result = compose_root(candidates=[reserved, nameless])
+    result = compose_root(candidates=[taken, nameless])
     assert result.plugins == ()
     assert sorted(record.reason for record in result.quarantine) == [
         "bad-metadata",
-        "reserved-name",
+        "duplicate-name",
     ]

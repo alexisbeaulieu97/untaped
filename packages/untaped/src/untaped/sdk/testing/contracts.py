@@ -87,7 +87,7 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     is the one an enclosing :func:`compose_with` offers, else the installed
     plugin's. Records the owner's schema hash in the plugin package's
     ``fills.json`` (unless the package is installed in site-packages), which
-    ``untaped plugin check`` and ``untaped doctor`` compare with the installed
+    the plugin checks and ``untaped doctor`` compare with the installed
     owner's (``owner-schema-drift``).
     """
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415

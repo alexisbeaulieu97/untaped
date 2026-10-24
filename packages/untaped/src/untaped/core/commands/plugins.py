@@ -1,61 +1,42 @@
-"""Root ``untaped plugin`` group: what is installed, and how contracts are filled.
+"""``untaped plugin``: what is installed, and how contracts are filled.
 
-``plugin list`` reports one record per candidate
-plugin — ``name/status/distribution/version``, in name order — from the
-composition outcome: ready rows for committed plugins plus quarantined
-rows carrying the entry-point name (or the ``unknown`` sentinels when the
-entry point never resolved). The listing never touches settings, so invalid
-plugin values cannot block it. ``plugin list --contracts`` lists every
-contract method instead: its owner, stability and providers.
+``plugin list`` prints one ``untaped.installed_plugin`` record per candidate
+plugin, in name order, from the composition: ready rows for committed
+plugins plus quarantined rows carrying the entry-point name (or the
+``unknown`` sentinels when the entry point never resolved). The listing never
+touches settings, so invalid plugin values cannot block it. ``plugin
+contracts`` lists every contract method instead: its owner, stability and
+providers.
 
 ``plugin rank`` writes the order of a contract method's providers into the
 owner's ``extensions`` settings; ``plugin schema`` prints a record kind's
-JSON Schema. ``plugin new`` scaffolds a plugin filling a contract and
-``plugin check`` checks an installed one. These, and ``--contracts``, import
-``untaped.sdk.contracts`` only when they run.
+JSON Schema. ``plugin new`` scaffolds a plugin filling a contract. These, and
+``plugin contracts``, import ``untaped.sdk.contracts`` only when they run.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
-from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
-from untaped.core.commands._render import emit_isolated
-from untaped.core.commands.notes import print_notes
-from untaped.core.config.repository import SettingsFileRepository
-from untaped.core.config.use_cases import RankProviders
-from untaped.runtime.registry import (
-    CompositionResult,
-    PluginCandidate,
-    contract_owners,
-    owns_contracts,
-    run_deferred_factory,
-)
-from untaped.runtime.settings import ExtensionSettings
-from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk._cli import (
-    ColumnsOption,
-    DryRunOption,
-    FormatOption,
-    create_app,
-    echo,
-    emit,
-    report_errors,
-    writes,
-)
+from untaped.core.commands.records import ScaffoldOutcome
+from untaped.core.config.models import SettingOutcome
+from untaped.core.settings import CoreSettings
+from untaped.runtime.registry import CompositionResult, owns_contracts, run_deferred_factory
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.marks import deprecated
+from untaped.sdk.fields import Output, Positional
+from untaped.sdk.plugin import Command, Group
 from untaped.sdk.plugin_records import InstalledPlugin
-from untaped.sdk.records import Record, record_kinds, record_model
+from untaped.sdk.records import Record, record_model
 from untaped.sdk.words import not_found, run_hint
 
-_diag = Diagnostics()
+if TYPE_CHECKING:
+    from untaped.runtime.settings import ExtensionSettings
+    from untaped.sdk.run import Diag
 
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare
@@ -66,144 +47,19 @@ INSTALL_HINT = (
 )
 
 
-def build_root_plugin_app(
-    *,
-    result: CompositionResult,
-    candidates: Sequence[PluginCandidate],
-) -> App:
-    """Return the root ``plugin`` group for one composition."""
-    app = create_app(name="plugin", help="Inspect installed plugins and their contracts.")
+class List(Command[CoreSettings]):
+    """List installed and quarantined plugins, one row each."""
 
-    @app.command(name="list")
-    def list_command(
-        *,
-        contracts: Annotated[
-            bool,
-            Parameter(
-                name="--contracts",
-                negative="",
-                help="List each contract method instead: its owner, stability and providers.",
-            ),
-        ] = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """List installed and quarantined plugins, one row each."""
-        with report_errors():
-            if contracts:
-                emit(
-                    _contract_rows(),
-                    fmt=fmt,
-                    columns=columns,
-                    empty="No installed plugin declares a contract.",
-                )
-            else:
-                _show(result, candidates, fmt=fmt, columns=columns)
+    output: Output[InstalledPlugin]
 
-    @app.command(name="rank")
-    @writes
-    def rank_command(
-        contract: Annotated[str, Parameter(help="The contract, as OWNER.CONTRACT.")],
-        method: Annotated[str, Parameter(help="The contract method whose providers to order.")],
-        /,
-        *plugins: Annotated[
-            str,
-            Parameter(name="PLUGINS", help="Providers, first first; none removes the ranking."),
-        ],
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Order the providers of a contract method in the profile (the active one or --profile).
-
-        An unranked provider ranks below every ranked one; ranking none
-        removes the method's ranking.
-        """
-        with report_errors():
-            owners = contract_owners(result)
-            rank = RankProviders(SettingsFileRepository(), owners)
-            change = rank(contract, method, list(plugins), dry_run=dry_run)
-            print_notes(change.notes)
-            emit(change.outcome, fmt=fmt, columns=columns)
-
-    @app.command(name="new")
-    @writes
-    def new_command(
-        name: Annotated[str, Parameter(help="The plugin name; the package is untaped-NAME.")],
-        /,
-        *,
-        fills: Annotated[
-            str,
-            Parameter(
-                name="--fills",
-                help="The contract the plugin fills, as OWNER.CONTRACT (plugin list --contracts).",
-            ),
-        ],
-        path: Annotated[
-            Path, Parameter(name="--path", help="Where to create untaped-NAME.")
-        ] = Path(),
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Scaffold a plugin package that fills an installed owner's contract.
-
-        The package composes and follows the conventions as written: fill the
-        provider's stubs, add samples to its assert_fills test, then run
-        plugin check NAME on the installed package. A plugin with only
-        commands starts from the repository's examples/untaped-hello instead.
-        """
-        from untaped.core.commands.plugin_new import scaffold  # noqa: PLC0415 - imports contracts
-
-        with report_errors():
-            outcomes = scaffold(result, candidates, name, fills, path=path, dry_run=dry_run)
-            emit(outcomes, fmt=fmt, columns=columns)
-
-    @app.command(name="check")
-    @deprecated(removed_in=12, replacement="untaped lint, from untaped[lint]")
-    def check_command(
-        name: Annotated[
-            str | None, Parameter(help="The plugin to check; every installed one when left out.")
-        ] = None,
-        /,
-        *,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Check an installed plugin: conventions, and each contract it fills, live.
-
-        The contract checks compose only the plugin and its owners. Exits 1
-        when a check fails; owner-schema-drift only warns. The file conventions
-        run only when untaped[lint], which now owns them, is installed.
-        """
-        from untaped.core.plugin_check.check import (  # noqa: PLC0415 - loads the composition machinery
-            check_plugins,
-            report_check_rows,
-        )
-        from untaped.core.plugin_check.rules import (  # noqa: PLC0415 - imports the root
-            FILE_RULES_MISSING,
-            file_rules_installed,
-        )
-
-        with report_errors():
-            if not file_rules_installed():
-                _diag.warning(FILE_RULES_MISSING, hint="install untaped[lint] and run untaped lint")
-            rows = check_plugins(result, candidates, name)
-            report_check_rows(rows, fmt=fmt, columns=columns)
-
-    @app.command(name="schema")
-    def schema_command(
-        kind: Annotated[str, Parameter(help="A record kind, such as workspace.repo.")],
-        /,
-    ) -> None:
-        """Print a record kind's JSON Schema."""
-        with report_errors():
-            echo(json.dumps(_schema(kind, result), indent=2))
-
-    return app
+    def run(self) -> Iterator[InstalledPlugin]:
+        rows = self.ctx.plugins
+        if not rows:
+            self.ctx.diag.hint(INSTALL_HINT)
+        yield from rows
 
 
-class ContractRow(Record, kind="untaped.contract"):
+class ContractMethod(Record, kind="untaped.contract_method"):
     """One method of an installed contract and who fills it."""
 
     table_columns: ClassVar[tuple[str, ...]] = (
@@ -228,7 +84,91 @@ class ContractRow(Record, kind="untaped.contract"):
     ranked: list[str] = Field(description="The profile's explicit ranking (`plugin rank`).")
 
 
-def _contract_rows() -> list[ContractRow]:
+class Contracts(Command[CoreSettings]):
+    """List each method of the installed contracts: its owner, stability and providers."""
+
+    output: Output[ContractMethod]
+
+    def run(self) -> Iterator[ContractMethod]:
+        self.output.empty("No installed plugin declares a contract.")
+        yield from _contract_methods(self.ctx.diag)
+
+
+class Rank(Command[CoreSettings]):
+    """Order the providers of a contract method in the profile (the active one or --profile).
+
+    An unranked provider ranks below every ranked one; ranking none
+    removes the method's ranking.
+    """
+
+    contract: Positional[str] = Field(description="The contract, as OWNER.CONTRACT.")
+    method: Positional[str] = Field(description="The contract method whose providers to order.")
+    plugins: Positional[list[str]] = Field(
+        default_factory=list, description="Providers, first first; none removes the ranking."
+    )
+    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    output: Output[SettingOutcome]
+
+    def run(self) -> SettingOutcome:
+        from untaped.core.commands.notes import print_notes  # noqa: PLC0415 - config's cost
+        from untaped.core.config.repository import SettingsFileRepository  # noqa: PLC0415
+        from untaped.core.config.use_cases import RankProviders  # noqa: PLC0415
+        from untaped.runtime.registry import contract_owners  # noqa: PLC0415
+
+        rank = RankProviders(SettingsFileRepository(), contract_owners(_composition()))
+        change = rank(self.contract, self.method, list(self.plugins), dry_run=self.dry_run)
+        print_notes(change.notes)
+        return change.outcome
+
+
+class New(Command[CoreSettings]):
+    """Scaffold a plugin package that fills an installed owner's contract.
+
+    The package composes and follows the conventions as written: fill the
+    provider's stubs, add samples to its assert_fills test, then run
+    untaped lint on it. A plugin with only commands starts from the
+    repository's examples/untaped-hello instead.
+    """
+
+    name: Positional[str] = Field(description="The plugin name; the package is untaped-NAME.")
+    fills: str = Field(
+        description="The contract the plugin fills, as OWNER.CONTRACT (plugin contracts)."
+    )
+    path: Path = Field(Path(), description="Where to create untaped-NAME.")
+    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    output: Output[ScaffoldOutcome]
+
+    def run(self) -> Iterator[ScaffoldOutcome]:
+        from untaped.core.commands.plugin_new import scaffold  # noqa: PLC0415 - imports contracts
+
+        result = _composition()
+        yield from scaffold(
+            result, result.candidates, self.name, self.fills, path=self.path, dry_run=self.dry_run
+        )
+
+
+class Schema(Command[CoreSettings]):
+    """Print a record kind's JSON Schema."""
+
+    kind: Positional[str] = Field(description="A record kind, such as workspace.repo.")
+
+    def run(self) -> str:
+        return json.dumps(_schema(self.kind, _composition()), indent=2)
+
+
+class PluginGroup(Group):
+    """Inspect installed plugins and their contracts."""
+
+    commands = (List, Contracts, Rank, New, Schema)
+
+
+def _composition() -> CompositionResult:
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415 - bootstrap is the root
+
+    return composition()
+
+
+def _contract_methods(diag: Diag) -> list[ContractMethod]:
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415 - only when listing contracts
         method_providers,
         owned_contracts,
@@ -237,22 +177,22 @@ def _contract_rows() -> list[ContractRow]:
     )
     from untaped.sdk.contracts._schema import method_stability  # noqa: PLC0415
 
-    rows: list[ContractRow] = []
+    rows: list[ContractMethod] = []
     owned = owned_contracts()
     for owner in unreadable_owners():
-        _diag.warning(f"{owner}'s contracts couldn't be read", hint=run_hint("doctor"))
+        diag.warning(f"{owner}'s contracts couldn't be read", hint=run_hint("doctor"))
     for owner, infos in sorted(owned.items()):
         try:
             extensions: Mapping[str, ExtensionSettings] = rankings(owner)
         except ConfigError as exc:
-            _diag.warning(f"rankings not shown: {exc}")
+            diag.warning(f"rankings not shown: {exc}")
             extensions = {}
         for info in sorted(infos, key=lambda each: each.name):
             extension = extensions.get(info.name)
             for method in info.methods:
                 order = [] if extension is None else list(extension.rank.get(method, ()))
                 rows.append(
-                    ContractRow(
+                    ContractMethod(
                         contract=f"{owner}.{info.name}",
                         method=method,
                         owner=owner,
@@ -268,7 +208,7 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = kind_model(kind, result)
     if model is None:
-        known = record_kinds() if result.mount is None else result.mount.kinds
+        known = result.mount.kinds
         raise UsageError(not_found("record kind", kind, known=_near(kind, known)))
     schema = model.model_json_schema()
     return {
@@ -291,11 +231,11 @@ def kind_model(kind: str, result: CompositionResult) -> type[BaseModel] | None:
     """The model declaring ``kind``, importing lazily what declares kinds (contracts, commands).
 
     ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here; a
-    12.0 plugin's kinds are its declaration's.
+    plugin class's kinds are its declaration's.
     """
     if (model := record_model(kind)) is not None:
         return model
-    if result.mount is not None and kind in result.mount.kinds:
+    if kind in result.mount.kinds:
         return result.mount.kinds[kind]
     if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
         from untaped.runtime.contracts.registry import every_offer, owned_contracts  # noqa: PLC0415
@@ -310,26 +250,4 @@ def kind_model(kind: str, result: CompositionResult) -> type[BaseModel] | None:
     return record_model(kind)
 
 
-def _show(
-    result: CompositionResult,
-    candidates: Sequence[PluginCandidate],
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    rows = _rows(result, candidates)
-    emit_isolated(rows, fmt=fmt, columns=columns)
-    if not rows:
-        _diag.hint(INSTALL_HINT)
-
-
-def _rows(
-    result: CompositionResult,
-    candidates: Sequence[PluginCandidate],
-) -> list[InstalledPlugin]:
-    from untaped.sdk.plugin_records import plugin_records  # noqa: PLC0415 - locates packages
-
-    return plugin_records(result, candidates)
-
-
-__all__ = ["INSTALL_HINT", "build_root_plugin_app"]
+__all__ = ["INSTALL_HINT", "ContractMethod", "PluginGroup", "kind_model"]

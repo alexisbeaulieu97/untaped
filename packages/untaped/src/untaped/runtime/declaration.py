@@ -168,6 +168,17 @@ class PluginDecl(_Frozen):
     fills: tuple[str, ...] = ()
     skill: str | None = None
     blocks: tuple[BlockDecl, ...] = ()
+    #: Its commands mount at the root (core's): ``untaped plugin``, not ``untaped untaped plugin``.
+    root: bool = False
+
+    def command_words(self) -> set[str]:
+        """The first word of each of its commands, deprecated aliases included."""
+        found: set[str] = set()
+        for node in self.commands:
+            found.add(node.name)
+            if isinstance(node, CommandDecl):
+                found.update(alias.name for alias in node.aliases)
+        return found
 
 
 class Problem(_Frozen):
@@ -238,6 +249,11 @@ class Declaration(_Frozen):
             walk(plugin.commands)
         return found
 
+    def words(self, command: CommandDecl) -> tuple[str, ...]:
+        """The words ``command`` is typed as after ``untaped``: a root plugin's without its name."""
+        root = any(plugin.root and plugin.name == command.path[0] for plugin in self.plugins)
+        return command.path[1:] if root else command.path
+
     def section_of(self, settings_target: str) -> str | None:
         """The config section of the plugin whose settings model is ``settings_target``."""
         return next((p.name for p in self.plugins if p.settings == settings_target), None)
@@ -253,7 +269,7 @@ class Declaration(_Frozen):
         command = next((c for c in self.commands() if c.target == target), None)
         if command is None:
             raise LookupError(f"{target} is not a composed command")
-        words = ["untaped", *command.path]
+        words = ["untaped", *self.words(command)]
         for arg in spelled.args:
             if isinstance(arg, SettingKey):
                 section = self.section_of(target_of(SettingKey.model_of(arg)))

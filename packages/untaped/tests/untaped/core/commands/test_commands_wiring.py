@@ -8,6 +8,7 @@ end through the real surface.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -217,9 +218,10 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
     assert result.exit_code == 130
 
 
-def test_a_management_app_without_a_reserved_name_fails_the_build(
+def test_a_root_app_the_shell_does_not_list_fails_the_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(bootstrap, "ROOT_MANAGEMENT_COMMANDS", ("config", "profile"))
-    with pytest.raises(RuntimeError, match=r"unreserved management commands: .*'auth'"):
+    shell = dataclasses.replace(bootstrap.SHELL_SPEC, commands=("config", "profile"))
+    monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
+    with pytest.raises(RuntimeError, match=r"root commands SHELL_SPEC doesn't list: .*'auth'"):
         bootstrap.build_root_app(candidates=())

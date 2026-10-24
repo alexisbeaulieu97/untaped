@@ -33,27 +33,23 @@ def providing(
     ``house`` offering each instance to ``owner``'s contract it subclasses,
     so ``gather`` asks it like any provider and its answers' ``plugin`` is
     ``house``. ``candidates`` replaces entry-point discovery. A key that is
-    not a valid plugin name, is reserved (``untaped``, ``sdk``, a core config
-    section or command group) or is already a candidate's name raises
+    not a valid plugin name or is already a candidate's name raises
     :class:`ConfigError` before anything is composed, so a composed plugin
-    can never shadow an installed one; a key the composition quarantines
-    anyway raises :class:`ConfigError` too, once the composition is restored.
+    can never shadow an installed one; a key the composition quarantines (one
+    taken by core: ``untaped``, a root command, a config key) raises
+    :class:`ConfigError` too, once the composition is restored.
     Composing is refused inside a contract call, as every composition is.
     """
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.runtime.registry import (  # noqa: PLC0415
         check_plugin_name,
         discover_candidates,
-        reserved_as,
     )
 
     base = list(discover_candidates()) if candidates is None else list(candidates)
     held = {candidate.name for candidate in base}
     for key in offered:
         check_plugin_name(key)
-        reserved = reserved_as(key)
-        if reserved is not None:
-            raise ConfigError(f"{key!r} is a reserved {reserved}; pick another name")
         if key in held:
             raise ConfigError(f"{key!r} is the name of an installed plugin; pick another name")
     built = offering_candidates(offered, base, owner=owner)

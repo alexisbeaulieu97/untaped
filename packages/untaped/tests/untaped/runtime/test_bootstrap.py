@@ -839,23 +839,25 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
     assert get_config_section("acme-tools", _ToolsProfile).greeting == "blob"
 
 
-def test_the_root_mounts_exactly_the_reserved_management_commands() -> None:
-    from untaped.runtime.registry import RESERVED_COMMAND_GROUPS, ROOT_MANAGEMENT_COMMANDS
+def test_the_root_mounts_core_s_commands_its_class_and_the_shell_name() -> None:
+    from untaped.core.plugin import Core
+    from untaped.runtime.composition import kebab
 
     root = bootstrap.build_root_app(candidates=[])
 
-    mounted = [name for name in root if not name.startswith("-")]
-    assert mounted == list(ROOT_MANAGEMENT_COMMANDS)
-    assert set(mounted) <= RESERVED_COMMAND_GROUPS
+    mounted = {name for name in root if not name.startswith("-")}
+    on_class = {kebab(group.__name__.removesuffix("Group")) for group in Core.commands}
+    assert mounted == {*bootstrap.SHELL_SPEC.commands, *on_class}
+    assert not on_class & set(bootstrap.SHELL_SPEC.commands)
 
 
-def test_no_plugin_can_claim_a_management_command() -> None:
+def test_no_plugin_can_claim_a_root_command() -> None:
     root = bootstrap.build_root_app(candidates=[])
     management = [name for name in root if not name.startswith("-")]
-    assert "auth" in management
+    assert {"auth", "plugin"} <= set(management)
     for name in management:
         bootstrap.build_root_app(candidates=[make_candidate(make_spec(name))])
-        assert [r.reason for r in bootstrap.composition().quarantine] == ["reserved-name"], name
+        assert [r.reason for r in bootstrap.composition().quarantine] == ["duplicate-name"], name
 
 
 def test_the_console_entry_point_forwards_signals_to_git_before_running(

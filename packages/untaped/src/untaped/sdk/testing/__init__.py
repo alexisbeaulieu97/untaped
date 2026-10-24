@@ -693,7 +693,7 @@ def check_plugin(
 ) -> list[PluginCheckRow]:
     """The rows of the checks only an installed, composed plugin can answer.
 
-    Composes ``name`` hermetically, as ``untaped plugin check`` does, and
+    Composes ``name`` hermetically, as :func:`check` does, and
     returns one :class:`PluginCheckRow` per check: the conventions that read
     the composed root (names, provides requirements, the help tree, guides
     and map lines, stability marks, structure's class checks, the import

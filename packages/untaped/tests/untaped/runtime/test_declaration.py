@@ -85,6 +85,17 @@ def test_spell_writes_the_command_line_a_hint_names(declaration: Declaration) ->
     assert declaration.spell(Get.spelled()) == "untaped hello get"
 
 
+def test_a_root_entry_s_commands_are_typed_without_its_name() -> None:
+    root = compose([PluginEntry("hello", f"{__name__}:Hello", Hello, root=True)])
+    assert root.plugin("hello").root
+    assert root.plugin("hello").command_words() == {"config", "get"}
+    assert root.spell(Set.spelled(key(HelloSettings).greeting, "hi")) == (
+        "untaped config set hello.greeting hi"
+    )
+    [get] = [c for c in root.commands() if c.name == "get"]
+    assert (get.path, root.words(get)) == (("hello", "get"), ("get",))
+
+
 def test_spell_refuses_a_command_composition_never_saw(declaration: Declaration) -> None:
     class Stray(Command):
         """Stray."""

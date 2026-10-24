@@ -1,4 +1,4 @@
-"""The installed plugins as records: what ``untaped plugin list`` emits (``untaped.plugin``).
+"""The installed plugins as records (``untaped.installed_plugin``): ``untaped plugin list``.
 
 A ready plugin's record says where its code is (``package``, ``source_dir``),
 what it may import from (``requires``, ``fills``) and, from a checkout, where
@@ -30,7 +30,7 @@ from untaped.sdk.records import AbsolutePath, Record
 _UNKNOWN = "unknown"
 
 
-class InstalledPlugin(Record, kind="untaped.plugin"):
+class InstalledPlugin(Record, kind="untaped.installed_plugin"):
     """One installed plugin: ready, or quarantined (then only its entry point names its package)."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "status", "distribution", "version")

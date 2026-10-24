@@ -97,6 +97,7 @@ def make_shell(
     section: str = "shell",
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
+    commands: tuple[str, ...] = (),
 ) -> ApplicationSpec:
     return ApplicationSpec(
         name=name,
@@ -105,6 +106,7 @@ def make_shell(
         settings=OtherProfile,
         skills=skills,
         doctor_checks=checks,
+        commands=commands,
     )
 
 

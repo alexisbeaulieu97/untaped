@@ -56,8 +56,7 @@ def record_lines(
     With ``owner``, only the kinds and nested models that plugin owns.
     """
     kinds = _diagnostics()
-    if result.mount is not None:
-        _declared(result.mount, marks, kinds)
+    _declared(result.mount, marks, kinds)
     by_model: dict[type[BaseModel], list[_Reached]] = {}
     for each in kinds.values():
         by_model.setdefault(each.model, []).append(each)
@@ -180,11 +179,7 @@ def _owner_of(model: type, result: CompositionResult, reaching: str) -> str:
     """The plugin whose package defines ``model``; ``untaped`` for core's; else who reaches it."""
     if model.__module__.partition(".")[0] == "untaped":
         return "untaped"
-    if result.mount is not None:
-        found = result.mount.declaration.owner_of(model.__module__)
-        if found is not None:
-            return found
-    return reaching
+    return result.mount.declaration.owner_of(model.__module__) or reaching
 
 
 def _mark(subject: str, each: _Reached) -> LineMark | None:

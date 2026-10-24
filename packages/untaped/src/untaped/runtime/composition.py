@@ -121,20 +121,26 @@ def snake(name: str) -> str:
 
 @dataclass(frozen=True)
 class PluginEntry:
-    """One entry point: the plugin's name (its key), its target, and the object it loads."""
+    """One entry point: the plugin's name (its key), its target, and the object it loads.
+
+    ``root`` is core's own entry, which has no entry point: its commands mount
+    at the root, so their words are taken as plugin names are.
+    """
 
     name: str
     target: str
     plugin: object
+    root: bool = False
 
 
 def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Declaration:
     """Walk ``entries`` in order into one :class:`Declaration`.
 
-    ``taken`` are names a plugin may not have: core's root commands and
-    config.yml's own top-level keys (core composes first and wins). A plugin
-    whose name is taken, by those or by an earlier entry, or whose walk finds
-    any problem, is quarantined with every problem named. A record class
+    ``taken`` are names a plugin may not have: config.yml's own top-level
+    keys and the root commands not on a plugin class. A plugin whose name is
+    taken, by those, by an earlier entry or by a root entry's commands (core
+    composes first and wins), or whose walk finds any problem, is quarantined
+    with every problem named. A record class
     belongs to the plugin whose package defines it, whichever plugins reach
     it and in whatever order (shelf's ``Book``, which library's provider also
     returns, is ``shelf.book``); a class no composed plugin's package defines
@@ -194,6 +200,9 @@ def _compose(
             refused.add(index)
             continue
         names.add(entry.name)
+        if entry.root:
+            names.update(walk.decl.command_words())
+            walk.decl = walk.decl.model_copy(update={"root": True})
         plugins.append(walk.decl)
         kinds.update(claimed)
     declaration = Declaration(
@@ -347,8 +356,6 @@ class _PluginWalk:
 
     def _reserved(self, cls: type[Plugin]) -> None:
         """Each reserved name holds the one thing it names."""
-        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
-
         where = cls.__qualname__
         held: dict[str, object] = {name: getattr(cls, name) for name in RESERVED_NAMES[1:]}
         if not isinstance(held["commands"], tuple):
@@ -364,6 +371,10 @@ class _PluginWalk:
             )
         self.offers = _tuple(self, cls, "offers")
         self.fills = _tuple(self, cls, "fills")
+        if not (self.offers or self.fills):
+            return
+        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
+
         for offered in self.offers:
             info = contract_of(offered) if isinstance(offered, type) else None
             if info is None or info.cls is not offered:

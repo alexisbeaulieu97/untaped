@@ -1,38 +1,26 @@
-"""Core as a plugin of itself: the class that holds what untaped keeps for its own use.
+"""Core as a plugin of itself: ``Core``, the class holding what untaped has for its own use.
 
-Today it holds one block, the composed declaration of every 12.0 plugin
-class: a version-only cache keyed by the whole install's code, so a start
-reads it instead of importing a plugin class, which imports every command
-(plugin-interface.md, decision 11). Its files are under
-``~/.untaped/plugins/untaped/cached/declaration/``. Core's commands and
-settings join the class when core moves onto the plugin shape; until then
-composition reads the cache spelled (:func:`untaped.runtime.registry.compose`).
+Core composes it first, with no entry point (one would make core's own class
+removable), and mounts its commands at the root: ``PluginGroup`` is
+``untaped plugin``. The root commands not yet moved onto classes still
+mount through the 11.x seam (:data:`untaped.runtime.bootstrap.SHELL_SPEC`).
+Importing this module imports every command of core's, so a start reads
+:data:`~untaped.core.settings.DECLARATION` instead.
 """
 
 from __future__ import annotations
 
-from untaped.runtime.declaration import KeptDeclaration
+from untaped.core.commands.plugins import PluginGroup
+from untaped.core.settings import DECLARATION, NAME, CoreSettings
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.storage.cache import Cache
-from untaped.sdk.storage.installed_code import installed_code
-
-#: Core's name as a plugin: its folder is ``~/.untaped/plugins/untaped/``.
-NAME = "untaped"
-
-#: Every 12.0 plugin class this install composes, kept until any of its code changes.
-DECLARATION = Cache(
-    label="composed plugins",
-    model=KeptDeclaration,
-    version=installed_code(),
-    max_age=None,
-    split="none",
-)
 
 
 class Core(Plugin):
     """untaped's own commands: config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
+    settings = CoreSettings
+    commands = (PluginGroup,)
     declaration = DECLARATION
 
 
-__all__ = ["DECLARATION", "NAME", "Core"]
+__all__ = ["NAME", "Core"]

@@ -45,7 +45,6 @@ from untaped.runtime.registry import (
     check_plugin_name,
     owns_contracts,
     range_text,
-    reserved_as,
 )
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
 from untaped.sdk.words import not_found
@@ -67,7 +66,7 @@ def scaffold(
     dry_run: bool,
 ) -> list[ScaffoldOutcome]:
     """Write (or, with ``dry_run``, plan) the package ``untaped-<name>`` under ``path``."""
-    _check_name(name, candidates)
+    _check_name(name, result)
     owner, contract = _owner_contract(result, candidates, fills)
     dest = (path / f"untaped-{name}").absolute()
     if dest.exists():
@@ -89,15 +88,15 @@ def scaffold(
     return outcomes
 
 
-def _check_name(name: str, candidates: Sequence[PluginCandidate]) -> None:
+def _check_name(name: str, result: CompositionResult) -> None:
     try:
         check_plugin_name(name)
     except ConfigError as exc:
         raise UsageError(str(exc)) from None
-    reserved = reserved_as(name)
-    if reserved is not None:
-        raise UsageError(f"{name!r} is a reserved {reserved}; choose another plugin name")
-    if any(candidate.name == name for candidate in candidates):
+    taken = result.taken.get(name)
+    if taken is not None:
+        raise UsageError(f"{name!r} is taken by {taken}; choose another plugin name")
+    if any(candidate.name == name for candidate in result.candidates):
         raise UntapedError(
             f"a plugin named {name!r} is already installed", category=ErrorCategory.CONFLICT
         )

@@ -974,7 +974,8 @@ CORE_STATE_SECTIONS = frozenset({"credentials"})
 
 #: Config sections core owns: the ``Settings`` fields, the top-level layout
 #: keys and the keys injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
-#: No plugin section or state section may take one.
+#: No plugin section or state section may take one, so a plugin named after
+#: one is quarantined (``duplicate-name``).
 RESERVED_SECTIONS = frozenset(
     {
         *RESERVED_SECTION_KEYS,

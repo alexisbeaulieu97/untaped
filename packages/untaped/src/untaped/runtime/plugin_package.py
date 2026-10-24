@@ -3,7 +3,7 @@
 Read from what the plugin declares (the module of its app factory, settings
 or state model) or from its ``package:SPEC`` entry point, never guessed from
 a directory layout. The surface walk, ``plugin list``'s records, ``plugin
-new`` and ``plugin check`` all locate a plugin here.
+new`` and the plugin checks (:mod:`untaped.core.plugin_check`) all locate a plugin here.
 """
 
 from __future__ import annotations

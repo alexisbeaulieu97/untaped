@@ -1,4 +1,4 @@
-"""``untaped plugin check``: the rows an installed plugin is checked by, and their rendering.
+"""The rows an installed plugin is checked by: ``check(install)`` and doctor read them.
 
 Every check runs against the installed code (a developer's editable install
 included). The conventions (and lint's file rules, when ``untaped[lint]`` is
@@ -37,23 +37,18 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
-from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.runtime.settings import get_settings
-from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk.errors import ExitCode, UsageError, first_validation_error
+from untaped.sdk.errors import UsageError, first_validation_error
 from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
 from untaped.sdk.health.migrations import MigrationOptions, MigrationRow
-from untaped.sdk.words import not_found, plural, summary
+from untaped.sdk.words import not_found, plural
 
 if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import Provider
-
-_diag = Diagnostics()
 
 
 type _Violations = Callable[..., list[str]]
@@ -86,24 +81,6 @@ def check_plugins(
         for each in [name] if name is not None else installed:
             rows += _check(each, result, candidates, violations)
     return rows
-
-
-def report_check_rows(
-    rows: Sequence[PluginCheckRow], *, fmt: OutputFormat, columns: list[str] | None
-) -> None:
-    """Show the findings (a checklist by plugin in a table) and a footer; exit 1 on a failure."""
-    if fmt == "table" and columns is None:
-        emit_check_list([row.model_dump(mode="json") for row in rows], run_line=" ".join)
-        _diag.info("")
-    else:
-        emit_isolated(rows, fmt=fmt, columns=columns)
-    counts = {status: sum(row.status == status for row in rows) for status in _STATUSES}
-    _diag.info(summary("plugin check", counts))
-    if counts["fail"]:
-        raise SystemExit(ExitCode.FAILURE)
-
-
-_STATUSES = ("pass", "warn", "fail")
 
 
 def _check(

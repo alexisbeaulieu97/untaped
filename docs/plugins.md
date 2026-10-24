@@ -282,7 +282,7 @@ A plugin can answer another plugin's questions by filling a
 scaffold:
 
 ```bash
-untaped plugin list --contracts
+untaped plugin contracts
 untaped plugin new gitlab --fills workspace.repo_source
 ```
 
@@ -387,7 +387,7 @@ A plugin class (`class Hello(Plugin)`) is tested through the fixtures (see
 into the test's home; `.run(Greet())` and `.cli("hello say ada")` return a
 `Ran`; `clock`, `terminal` (absent until scripted) and `credentials` are the
 clock, terminal and password store commands meet; `check(install(Hello))`
-and `assert_surface(Hello)` guard its plugin check and surface.
+and `assert_surface(Hello)` guard its composition checks and surface.
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

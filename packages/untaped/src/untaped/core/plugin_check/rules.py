@@ -1,4 +1,4 @@
-"""The rules that read a composed plugin: what ``plugin check``'s ``conventions`` row runs.
+"""The rules that read a composed plugin: what the ``conventions`` check row runs.
 
 Help tree, guides and map lines, stability marks, settings names and
 structure's class checks, each family in its module beside this one. See
@@ -177,8 +177,8 @@ def file_lines(
     """The file rules' lines, from the lint plugin; ``None`` when it is not installed.
 
     The rules that read only a plugin's files moved to ``untaped[lint]``; the
-    deprecated ``plugin check`` and ``check_conventions`` reach them here, by
-    name, until both go at 12.0. This is the one place core calls a plugin.
+    deprecated ``check_conventions`` reaches them here, by name, until it goes
+    at 12.0. This is the one place core calls a plugin.
     ``plugins`` are every composed plugin's records, which the import
     boundary reads.
     """

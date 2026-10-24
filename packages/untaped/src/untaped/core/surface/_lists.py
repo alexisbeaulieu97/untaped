@@ -21,6 +21,7 @@ from collections.abc import Mapping
 
 IMPLEMENTERS: Mapping[str, str] = {
     "untaped.sdk.Command": "every command subclasses it, and core calls its run()",
+    "untaped.sdk.Group": "every command group subclasses it, and core reads its commands",
     "untaped.sdk.Plugin": "every plugin subclasses it, and core reads its attributes",
     "untaped.sdk.contracts.Contract": "every provider subclasses it, and the SDK calls its ready()",
     "untaped.sdk.testing.PromptBackend": (
@@ -53,8 +54,8 @@ HOOKS: Mapping[str, Mapping[str, str]] = {
 CONVENTIONS: Mapping[str, str] = {
     "entry-point untaped.plugins": "the entry-point group plugin distributions register under",
     "module untaped.sdk.testing.plugin": "the pytest plugin a plugin's conftest names",
-    "module <owner>.testing.conformance": "where plugin check finds an owner's conformance checks",
-    "file fills.json": "the file assert_fills writes and plugin check reads",
+    "module <owner>.testing.conformance": "where plugin checks find an owner's conformance checks",
+    "file fills.json": "the file assert_fills writes and the plugin checks read",
     "attribute renamed_keys": "core reads it off a settings model for renamed keys",
     "attribute retired_keys": "core reads it off a settings model for retired keys",
     "attribute token_sources": "core reads it off a settings model for where a token comes from",

@@ -1,7 +1,7 @@
 """Import boundary: plugin code reaches core only through ``untaped.sdk``.
 
 The checked plugin's files are written under a temporary directory; every
-plugin, the checked one included, is an ``untaped.plugin`` record, so each
+plugin, the checked one included, is an ``untaped.installed_plugin`` record, so each
 case controls the packages, distributions and requirements.
 """
 

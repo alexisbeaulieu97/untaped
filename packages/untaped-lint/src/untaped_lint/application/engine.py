@@ -1,6 +1,6 @@
 """One lint run: Conventions first, then every provider, answers turned into rows.
 
-``untaped.plugin`` subjects go to :class:`Conventions` directly, before any
+``untaped.installed_plugin`` subjects go to :class:`Conventions` directly, before any
 ``gather``: it composes, which no contract method may. Then the repository's
 own rule modules (``.untaped/lint.yml``) are composed as one plugin per key,
 the providers' rule tables are gathered once, ids prefixed with each
@@ -153,7 +153,7 @@ def run(
 def _conventions(
     subjects: list[Subject], report: Report, candidates: Sequence[PluginCandidate] | None
 ) -> list[Finding]:
-    """Conventions' findings for each ``untaped.plugin`` subject, before anything is gathered."""
+    """Conventions' findings for each ``untaped.installed_plugin`` subject, before gathering."""
     found: list[Finding] = []
     plugins: list[InstalledPlugin] | None = None
     for subject in subjects:

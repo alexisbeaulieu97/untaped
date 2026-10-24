@@ -172,6 +172,48 @@ def test_a_refused_plugin_is_quarantined_again_without_importing_it(toys: Path) 
     assert record.reason == "bad-plugin-class" and "Silent" in record.detail
 
 
+@pytest.mark.parametrize("name", ["plugin", "config"])
+def test_a_plugin_named_after_a_root_command_stays_refused_without_importing_it(
+    toys: Path, name: str
+) -> None:
+    taken = PluginCandidate(distribution="untaped-toyplug", name=name, target="toyplug.plugin:Toy")
+    _package(toys, "toyplug")
+    first = compose_root(candidates=[taken])
+    _unload("toyplug")
+    again = compose_root(candidates=[taken])
+    assert "toyplug.plugin" not in sys.modules
+    assert again.quarantine == first.quarantine
+    [record] = again.quarantine
+    assert (record.reason, record.detail) == (
+        "duplicate-name",
+        f"duplicate plugin name: {name!r} is taken by a root command",
+    )
+
+
+def test_a_plugin_named_after_core_leaves_core_mounted(toys: Path) -> None:
+    _package(toys, "toyplug")
+    named = PluginCandidate(
+        distribution="untaped-toyplug", name="untaped", target="toyplug.plugin:Toy"
+    )
+    result = compose_root(candidates=[named])
+    assert [record.reason for record in result.quarantine] == ["duplicate-name"]
+    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["untaped"]
+    root = build_root_app(candidates=[named])
+    assert CliInvoker().invoke(root.meta, ["plugin", "list"]).exit_code == 0
+
+
+def test_a_class_refused_before_the_mount_leaves_the_one_holding_its_name(toys: Path) -> None:
+    good = _package(toys, "toyplug")
+    _package(toys, "toyplug2")
+    blank = PluginCandidate(distribution=" ", name="toy", target="toyplug2.plugin:Toy")
+    first = compose_root(candidates=[good, blank])
+    assert [plugin.spec.name for plugin in first.plugins] == ["toy"]
+    _unload("toyplug")
+    again = compose_root(candidates=[good, blank])
+    assert "toyplug.plugin" not in sys.modules  # the kept declaration still has it
+    assert [plugin.spec.name for plugin in again.plugins] == ["toy"]
+
+
 def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     other = PluginCandidate(distribution="untaped-other", name="toy", target="toyother:SPEC")
@@ -222,14 +264,15 @@ def test_a_declaration_that_misses_a_plugin_class_is_composed_again(toys: Path) 
         "from untaped.runtime.registry import PluginSpec\nToy = PluginSpec(name='toy')\n",
         encoding="utf-8",
     )
-    assert compose_root(candidates=[toy]).mount is None
+    spec_only = compose_root(candidates=[toy]).mount
+    assert spec_only is not None
+    assert [plugin.name for plugin in spec_only.declaration.plugins] == ["untaped"]  # core's own
     _unload("toyplug")
     (folder / "plugin.py").write_text(
         textwrap.dedent(PLUGIN.format(package="toyplug")), encoding="utf-8"
     )
     result = compose_root(candidates=[toy])
-    assert result.mount is not None
-    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["toy"]
+    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["untaped", "toy"]
     _unload("toyplug")
     compose_root(candidates=[toy])
     assert "toyplug.plugin" not in sys.modules  # the declaration composed afresh was kept

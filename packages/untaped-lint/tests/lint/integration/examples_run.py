@@ -1,10 +1,9 @@
-"""Lint the repository's example plugins and run the deprecated ``plugin check`` on one: a script.
+"""Lint the repository's example plugins: a script.
 
 ``test_examples.py`` runs it in its own process: the examples declare record
 kinds core's test fakes declare too, so they can't share a test process.
 Prints one JSON object: per example the ``(rule, severity)`` of each finding
-and the failure count, and ``untaped plugin check shelf --format json``'s
-exit code, rows and warnings.
+and the failure count.
 """
 
 from __future__ import annotations
@@ -43,9 +42,8 @@ def _requires(name: str) -> tuple[str, ...]:
 def main() -> None:
     for name in NAMES:
         sys.path.insert(0, str(EXAMPLES / f"untaped-{name}" / "src"))
-    from untaped.runtime.bootstrap import build_root_app
     from untaped.sdk import installed_plugins
-    from untaped.sdk.testing import CliInvoker, PluginCandidate, compose_with
+    from untaped.sdk.testing import PluginCandidate, compose_with
     from untaped_lint.application.subjects import plugin_subject
     from untaped_lint.testing import run
 
@@ -75,14 +73,6 @@ def main() -> None:
             "findings": sorted([each.rule, each.severity] for each in report.findings),
             "failures": [each.message for each in report.failures],
         }
-    result = CliInvoker().invoke(
-        build_root_app(candidates=candidates).meta, ["plugin", "check", "shelf", "-f", "json"]
-    )
-    out["plugin check shelf"] = {
-        "exit_code": result.exit_code,
-        "rows": json.loads(result.stdout),
-        "warnings": [line for line in result.stderr.splitlines() if line.startswith("warning:")],
-    }
     print(json.dumps(out))
 
 

@@ -319,7 +319,7 @@ def test_a_quarantined_plugin_says_why_and_where_to_look() -> None:
     reserved = PluginSpec(name="agents", app_factory=_acme_app, help="Takes a reserved name.")
     code, _, err = _run("agents", candidates=[make_candidate(reserved, "untaped-agents")])
     assert code == 2
-    assert "agents is installed but was quarantined [reserved-name]" in err
+    assert "agents is installed but was quarantined [duplicate-name]" in err
     assert "`untaped plugin list` shows it" in err
 
 

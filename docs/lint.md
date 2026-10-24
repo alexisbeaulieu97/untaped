@@ -34,9 +34,9 @@ plugin. In a plugin's tests, `untaped_lint.testing.assert_clean("<name>")`
 fails where `untaped lint` would exit non-zero (`strict=True` for warnings
 too) and lists every finding, so CI catches what the command would.
 
-`untaped plugin check` and `untaped.sdk.testing.check_conventions` are
-deprecated and go at 12.0: they print the same rows as before, but run the
-file rules only when `untaped[lint]` is installed.
+`untaped.sdk.testing.check_conventions` is deprecated and goes at 12.0: it
+gives the same rows as before, but runs the file rules only when
+`untaped[lint]` is installed. The command that printed them is gone.
 
 ## Linting a repository
 
@@ -173,7 +173,7 @@ and declares the dependency under an extra named `lint`, as for
 [any owner](contracts.md). Its ids are then `acme.readme`. `Rules` validates
 each subject once as the model a rule reads, runs each rule on its own, and
 turns a rule that raises into a failure row (exit 1) while the other rules'
-findings still count. A rule over `untaped.plugin` sees the record, never
+findings still count. A rule over `untaped.installed_plugin` sees the record, never
 the composed root: composing inside a contract call fails.
 
 A plugin that turns a repository's files into its own records fills
