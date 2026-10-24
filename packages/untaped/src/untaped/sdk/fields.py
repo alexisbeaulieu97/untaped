@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from pathlib import Path
 from types import UnionType
@@ -790,6 +790,36 @@ class Parallel(FieldBlock):
                 category="invalid",
             )
         return self._clamped(value, f"{setting} {value}")
+
+    def map[ItemT, ResultT](
+        self,
+        fn: Callable[[ItemT], ResultT],
+        items: Iterable[ItemT],
+        *,
+        ordered: bool = False,
+        on_abort: Callable[[], None] | None = None,
+        while_running: Callable[[], None] | None = None,
+    ) -> Iterator[tuple[ItemT, ResultT]]:
+        """Run ``fn`` on every item, :attr:`value` at a time, yielding ``(item, result)``.
+
+        In completion order, so a row streams as soon as its item is done
+        (``ordered=True`` keeps the input order). An exception from ``fn`` is
+        raised here: catch it in ``fn`` to turn it into a failed row.
+        ``on_abort`` runs when the work stops early (Ctrl-C, an exception,
+        the loop left) for the calls in flight, such as killing their jobs;
+        ``while_running`` does foreground work on this thread while the
+        workers run, such as draining a queue they feed.
+        """
+        from untaped.sdk._concurrency import bounded_iter  # noqa: PLC0415 - threads pay
+
+        return bounded_iter(
+            fn,
+            items,
+            concurrency=self.value,
+            ordered=ordered,
+            on_abort=on_abort,
+            while_running=while_running,
+        )
 
     def _clamped(self, value: int, source: str) -> int:
         """``value`` within the cap; ``source`` says where it came from in the warning."""

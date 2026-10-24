@@ -42,10 +42,12 @@ checks, named in each violation line.
 
 - 0: return normally.
 - 1: raise an `UntapedError` (category `failed`, `not_found`, `invalid` or
-  `conflict`) inside `report_errors()`, or call `finish(any_failed)`.
+  `conflict`) inside `report_errors()`, or call `finish(any_failed)`; a 12.0
+  command yields a row whose `action` failed, or raises `Failed()` after them.
 - 2: raise `UsageError` inside `report_errors()`, or call `raise_usage()`
   outside it.
-- 3: call `finish(any_failed, predicate_hit=True)`.
+- 3: call `finish(any_failed, predicate_hit=True)`; a 12.0 command raises
+  `Matched()`.
 - 4: raise with category `config` (`ConfigError`), `auth` or `permission`.
 - 5: raise with category `unavailable` (`HttpTransportError` and 429/5xx
   statuses already are).

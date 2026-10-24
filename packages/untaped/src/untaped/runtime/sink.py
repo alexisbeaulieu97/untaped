@@ -98,6 +98,7 @@ from untaped.sdk.diagnostic import (
 )
 from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
 from untaped.sdk.progress import ProgressHandle
+from untaped.sdk.records import OutcomeRecord
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -1026,19 +1027,26 @@ def count_row_failures(rows: Iterable[object]) -> None:
     ``failure``) except one marked
     :data:`~untaped.sdk.diagnostic.NOT_COUNTED` (a remembered failure); a
     mapping row counts its ``error`` mapping by its ``exit_code`` or
-    ``category``. A row marked failed with no error is not counted.
+    ``category``. An :class:`~untaped.sdk.records.OutcomeRecord` whose
+    ``action`` says it failed (``failed``, ``partial``, ``conflict``) counts
+    ``1`` with no error too, unless a field marked not counted holds a value
+    (the failure is remembered from an earlier run).
     """
     scope = _scope()
     if scope is None:
         return
     for row in rows:
         if isinstance(row, BaseModel):
+            remembered = False
             for name, info in type(row).model_fields.items():
                 if NOT_COUNTED in info.metadata:
+                    remembered = remembered or getattr(row, name, None) is not None
                     continue
                 value = getattr(row, name, None)
                 if isinstance(value, Failure):
                     scope.note(value.exit_code)
+            if isinstance(row, OutcomeRecord) and row.failed and not remembered:
+                scope.note(ExitCode.FAILURE)
         elif isinstance(row, Mapping):
             code = _row_error_code(row.get("error"))
             if code is not None:

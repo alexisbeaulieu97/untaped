@@ -5012,6 +5012,15 @@ sdk untaped.sdk.ExitCode.PREDICATE = 3
 sdk untaped.sdk.ExitCode.UNAVAILABLE = 5
 sdk untaped.sdk.ExitCode.USAGE = 2
 sdk untaped.sdk.ExitCode.description
+sdk untaped.sdk.Failed()
+sdk untaped.sdk.Failed(message@1=) default="the command failed"
+sdk untaped.sdk.Failed.category class
+sdk untaped.sdk.Failed.details class
+sdk untaped.sdk.Failed.exit_code
+sdk untaped.sdk.Failed.fix_by class
+sdk untaped.sdk.Failed.hint class
+sdk untaped.sdk.Failed.retryable
+sdk untaped.sdk.Failed.system class
 sdk untaped.sdk.Failure(*, message, category, system)
 sdk untaped.sdk.Failure(details=) default={}
 sdk untaped.sdk.Failure(exit_code=) default=1
@@ -5332,6 +5341,15 @@ sdk untaped.sdk.Lock.problems()  [experimental]
 sdk untaped.sdk.Lock.spelled  [experimental]
 sdk untaped.sdk.Lock.try_locked()  [experimental]
 sdk untaped.sdk.Lock.where  [experimental]
+sdk untaped.sdk.Matched()
+sdk untaped.sdk.Matched(message@1=) default="the check matched"
+sdk untaped.sdk.Matched.category class
+sdk untaped.sdk.Matched.details class
+sdk untaped.sdk.Matched.exit_code
+sdk untaped.sdk.Matched.fix_by class
+sdk untaped.sdk.Matched.hint class
+sdk untaped.sdk.Matched.retryable
+sdk untaped.sdk.Matched.system class
 sdk untaped.sdk.Message(*, level, message)
 sdk untaped.sdk.Message(hint=) default=None
 sdk untaped.sdk.Message.__init_subclass__(kind=) default=None
@@ -5535,6 +5553,10 @@ sdk untaped.sdk.Parallel()
 sdk untaped.sdk.Parallel(cap=) default=None
 sdk untaped.sdk.Parallel(default=) default=4
 sdk untaped.sdk.Parallel.field_kind class
+sdk untaped.sdk.Parallel.map(fn, items) callback(fn, 1)
+sdk untaped.sdk.Parallel.map(on_abort=) default=None callback(0)
+sdk untaped.sdk.Parallel.map(ordered=) default=false
+sdk untaped.sdk.Parallel.map(while_running=) default=None callback(0)
 sdk untaped.sdk.Parallel.options class
 sdk untaped.sdk.Parallel.panel class
 sdk untaped.sdk.Parallel.value

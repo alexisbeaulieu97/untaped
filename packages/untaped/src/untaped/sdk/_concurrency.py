@@ -2,12 +2,14 @@
 
 Stdlib-only. ``resolve_each``/``batch_apply`` stay sequential by design —
 this is the standalone primitive for callers that manage their own loop.
+:func:`bounded_iter` is the same work as a generator, behind
+``Parallel.map``; :func:`bounded_map` is its 11.x callback form.
 """
 
 from __future__ import annotations
 
 import contextvars
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -64,3 +66,55 @@ def bounded_map[ItemT, ResultT](
                 on_abort()
             executor.shutdown(wait=True)
             raise
+
+
+def bounded_iter[ItemT, ResultT](
+    fn: Callable[[ItemT], ResultT],
+    items: Iterable[ItemT],
+    *,
+    concurrency: int,
+    ordered: bool = False,
+    on_abort: Callable[[], None] | None = None,
+    while_running: Callable[[], None] | None = None,
+) -> Iterator[tuple[ItemT, ResultT]]:
+    """Yield ``(item, fn(item))`` for every item, at most ``concurrency`` running at once.
+
+    Pairs come in completion order, so a slow first item never holds back the
+    rest, or in input order with ``ordered=True``. Serial (one item, or
+    ``concurrency == 1``) without ``while_running``; otherwise each call runs
+    in a worker thread with a copy of the caller's context. An exception from
+    ``fn`` is raised from the generator. When the caller stops early, is
+    interrupted (Ctrl-C) or ``fn`` raises, queued work is cancelled and
+    ``on_abort`` runs before waiting for the calls in flight, so it can stop
+    them. ``while_running`` runs on the caller's thread once every item is
+    submitted and before the first pair is yielded.
+    """
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
+    work = list(items)
+    if while_running is None and (len(work) <= 1 or concurrency == 1):
+        try:
+            for item in work:
+                yield item, fn(item)
+        except GeneratorExit:  # stopped between items: nothing is in flight
+            raise
+        except BaseException:
+            if on_abort is not None:
+                on_abort()
+            raise
+        return
+    executor = ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(work))))
+    try:
+        futures = [executor.submit(contextvars.copy_context().run, fn, item) for item in work]
+        index = {future: position for position, future in enumerate(futures)}
+        if while_running is not None:
+            while_running()
+        for future in futures if ordered else as_completed(futures):
+            yield work[index[future]], future.result()
+    except BaseException:  # GeneratorExit too: the caller stopped
+        executor.shutdown(wait=False, cancel_futures=True)
+        if on_abort is not None:
+            on_abort()
+        raise
+    finally:
+        executor.shutdown(wait=True)

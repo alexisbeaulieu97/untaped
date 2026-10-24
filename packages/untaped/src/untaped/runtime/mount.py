@@ -45,7 +45,7 @@ from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
-from untaped.sdk.errors import UsageError, first_validation_error
+from untaped.sdk.errors import UntapedError, UsageError, first_validation_error
 from untaped.sdk.fields import Output
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
@@ -473,9 +473,22 @@ def _print(mount: Mount, decl: CommandDecl, command: Command[Any], result: objec
     if decl.returns in ("line", "line-or-none"):
         print(result)
         return
-    records: BaseModel | list[BaseModel] = (
-        result if isinstance(result, BaseModel) else list(cast("Iterable[BaseModel]", result))
-    )
+    if isinstance(result, BaseModel):
+        _print_rows(mount, decl, command, result)
+        return
+    rows: list[BaseModel] = []
+    try:
+        rows.extend(cast("Iterable[BaseModel]", result))
+    except UntapedError:  # ``raise Failed()`` after the rows: they are printed first
+        if rows:
+            _print_rows(mount, decl, command, rows)
+        raise
+    _print_rows(mount, decl, command, rows)
+
+
+def _print_rows(
+    mount: Mount, decl: CommandDecl, command: Command[Any], records: BaseModel | list[BaseModel]
+) -> None:
     rows = [records] if isinstance(records, BaseModel) else records
     # a row of a subclass no plugin declares is the command's kind
     kinds = {mount.kind_of(type(row)) or decl.output for row in rows} or {decl.output}
