@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._home import CORE
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.fields import SettingKey
 from untaped.sdk.marks import experimental
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from untaped.sdk.storage.store import Store
 
 #: Names core keeps under ``plugins/<plugin>/`` itself: no Dir may take them.
-RESERVED = frozenset({"cached", "state", "untaped"})
+RESERVED = frozenset({"cached", "state", CORE})
 
 
 @experimental

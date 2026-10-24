@@ -715,10 +715,10 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     warns; an unreadable one (its drive or share away) is listed, not warned.
     """
     from untaped.sdk.storage._refs import (  # noqa: PLC0415 - runs only in doctor
+        REFS,
         environment,
         install_holder,
         read_references,
-        refs_dir,
     )
 
     title = "references"
@@ -732,7 +732,7 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     fix = None
     if env is None:
         parts.append("this run is from a source tree: it cannot be registered")
-    elif not registered and not any(ref.file == refs_dir() for ref in references):
+    elif not registered and not any(ref.file == REFS.place for ref in references):
         if _other_layouts(result, references):
             warn = True
             parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
@@ -750,13 +750,13 @@ def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
     from untaped.sdk.storage._refs import (  # noqa: PLC0415 - runs only in doctor
         INSTALL,
         PROJECT,
-        refs_dir,
+        REFS,
     )
 
     if ref.opaque is not None:
         if "newer" in ref.opaque:
             advice = "; upgrade this install to prune"
-        elif ref.file == refs_dir():
+        elif ref.file == REFS.place:
             advice = ", so nothing is pruned; check its permissions"
         else:
             advice = ", so nothing is pruned; delete it"

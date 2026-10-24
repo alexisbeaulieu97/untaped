@@ -27,7 +27,7 @@ from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure.state_store import StateWorkspaceStore
 
-pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config", "home_run")
 
 
 def git(cwd: Path, *args: str, bare: bool = False) -> str:

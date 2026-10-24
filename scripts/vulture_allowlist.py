@@ -157,3 +157,4 @@ Positional.__class_getitem__  # Positional[T, ...] at run time
 Core.config_permissions
 Core.unknown_keys
 Core.token_store
+Core.refs

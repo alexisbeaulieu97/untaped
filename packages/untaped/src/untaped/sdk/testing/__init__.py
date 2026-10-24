@@ -24,7 +24,7 @@ slow the run (``--verbose`` still prints every update); a deadline or a
 back-off inside keeps its time.
 
 :func:`write_reference` writes another install's reference in
-``~/.untaped/refs/``, so a test can say what holds a store's layouts.
+core's ``refs`` folder, so a test can say what holds a store's layouts.
 :func:`make_project` makes a folder a project in the hermetic home, as
 ``untaped project init`` does, holding the items it is given.
 :func:`release_ask`, :func:`move_ask` and :func:`plan_release` let a plugin
@@ -67,7 +67,7 @@ from untaped.runtime.sink import (
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import apply_marks, deprecated, experimental
-from untaped.sdk.projects import Project, holder_of, init
+from untaped.sdk.projects import Project, holder_of, init, untaped_home
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
     reset_prompt_backend_override,
@@ -75,8 +75,10 @@ from untaped.sdk.prompt.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
-from untaped.sdk.run import Clock, _installed, installed_clock, run_clock
-from untaped.sdk.storage._refs import PROJECT, RefHolder, write_reference
+from untaped.sdk.run import _RUN, Clock, Composition, Run, _installed, installed_clock, run_clock
+from untaped.sdk.run import run_scope as _run_scope
+from untaped.sdk.storage._refs import PROJECT, AnchorId, RefHolder, RefTarget
+from untaped.sdk.storage._refs import write_reference as _write_reference
 from untaped.sdk.storage.cache import Cache, versioned
 from untaped.sdk.storage.holds import (
     HolderState,
@@ -583,6 +585,61 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
+def _bare_run() -> Run:
+    """A run over the hermetic home that composes nothing, as an invocation opens one."""
+    from untaped.runtime.settings import get_config_section  # noqa: PLC0415
+    from untaped.runtime.sink import Diagnostics  # noqa: PLC0415
+    from untaped.sdk._app_context import app_context  # noqa: PLC0415
+
+    return Run(
+        home=untaped_home().expanduser(),
+        composition=Composition(),
+        picks=get_config_section,
+        diag=Diagnostics(),
+        terminal=lambda: app_context().ui(),
+    )
+
+
+@contextmanager
+def _in_a_run() -> Iterator[None]:
+    """The block under the current run, or a bare one: a helper writes where a command would."""
+    if _RUN.get() is not None:
+        yield
+        return
+    with _run_scope(_bare_run()):
+        yield
+
+
+@experimental
+def write_reference(
+    holder: RefHolder,
+    targets: Sequence[RefTarget],
+    *,
+    anchor: Path | None = None,
+    anchor_id: AnchorId | None = None,
+    moved_from: Sequence[Path] = (),
+    plugin: str | None = None,
+    version: str | None = None,
+) -> Path:
+    """Write another holder's reference in the hermetic home, as that holder would; its path.
+
+    An ``anchor`` is live while it holds an ``untaped-*.dist-info`` folder,
+    and a holder without one lives until its file is removed. ``anchor_id``
+    records the anchor's filesystem identity (a project's), and
+    ``moved_from`` where it was before each move not yet fully repaired.
+    """
+    with _in_a_run():
+        return _write_reference(
+            holder,
+            targets,
+            anchor=anchor,
+            anchor_id=anchor_id,
+            moved_from=moved_from,
+            plugin=plugin,
+            version=version,
+        )
+
+
 @experimental
 def make_project(
     path: Path, *, holds: Mapping[ItemStore[Any], Collection[object]] | None = None
@@ -593,14 +650,17 @@ def make_project(
     ``.gitignore`` and the home's reference, holding each store's items in
     ``holds`` (normalised by the store's item type; no composition needed).
     """
-    project = init(path).project
-    targets = tuple(store.target(item) for store, items in (holds or {}).items() for item in items)
-    if targets:
-        _rewrite(
-            holder_of(project),
-            lambda held: (*held, *(t for t in dict.fromkeys(targets) if t not in held)),
-            None,
+    with _in_a_run():
+        project = init(path).project
+        targets = tuple(
+            store.target(item) for store, items in (holds or {}).items() for item in items
         )
+        if targets:
+            _rewrite(
+                holder_of(project),
+                lambda held: (*held, *(t for t in dict.fromkeys(targets) if t not in held)),
+                None,
+            )
     return project
 
 

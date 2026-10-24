@@ -38,7 +38,7 @@ from untaped.sdk.health.migrations import (
 )
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 CALLS: list[str] = []
 

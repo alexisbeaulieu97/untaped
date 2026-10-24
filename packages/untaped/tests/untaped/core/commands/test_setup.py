@@ -40,7 +40,7 @@ from untaped.sdk.testing import (
 )
 from untaped.sdk.testing.screens import ScreenKey
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 def _wiz_spec() -> Any:

@@ -27,8 +27,9 @@ a project:
   when `init` creates it; a plugin's committed files, such as `recipe.lock`,
   stay tracked. A repository can share its own `.untaped/` files, such as
   `lint.yml`, never a project's id.
-- The home records the project in `~/.untaped/refs/project-<id>.json`: its
-  folder and the folder's filesystem identity.
+- The home records the project in
+  `~/.untaped/plugins/untaped/refs/project-<id>.json`: its folder and the
+  folder's filesystem identity.
 
 Projects don't nest: `init` refuses inside another project, and in a folder
 that holds one this home records. Run again in a project, `init` changes

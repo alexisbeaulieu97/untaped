@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,9 +11,12 @@ import pytest
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk.storage import _refs as refs
+from untaped.sdk.storage import data_file
 from untaped.sdk.storage._refs import RefTarget
 from untaped.sdk.storage.store import Store
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate
+
+pytestmark = pytest.mark.usefixtures("home_run")
 
 STORE = Store("acme", "data", base=lambda: Path("/nowhere/data.db"), layout=3)
 
@@ -73,7 +77,7 @@ def test_a_reference_that_cannot_be_written_is_an_error_not_a_traceback(
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise PermissionError(13, "Permission denied")
 
-    monkeypatch.setattr(refs, "atomic_write", refuse)
+    monkeypatch.setattr(data_file, "atomic_write", refuse)
     result = _cli()
     assert result.exit_code == 4, result.output  # a config error
     assert "error: could not write " in result.stderr and "Permission denied" in result.stderr
@@ -83,8 +87,9 @@ def test_a_reference_that_cannot_be_written_is_an_error_not_a_traceback(
 def test_a_busy_references_lock_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
     from filelock import FileLock
 
-    monkeypatch.setattr(refs, "_WAIT", 0.01)
-    refs.refs_dir().mkdir(parents=True)
-    with FileLock(str(refs.refs_dir() / ".lock")):
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
+    lock = refs.REFS.lock_path()
+    lock.parent.mkdir(parents=True)
+    with FileLock(str(lock)):
         result = _cli("--remove")
-    assert "another untaped is changing the install references" in result.stderr, result.output
+    assert "untaped.refs is busy (another untaped process)" in result.stderr, result.output

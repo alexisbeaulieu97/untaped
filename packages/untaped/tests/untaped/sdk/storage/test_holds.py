@@ -7,11 +7,12 @@ forced, and can be told to raise while planning or applying.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import shutil
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,13 @@ from untaped.sdk.testing import (
     release_ask,
     write_reference,
 )
+
+pytestmark = pytest.mark.usefixtures("home_run")
+
+
+def _in_this_run(target: Callable[[], object]) -> threading.Thread:
+    """A thread under this test's run, as a command's workers run (``bounded_map`` copies it)."""
+    return threading.Thread(target=contextvars.copy_context().run, args=(target,))
 
 
 class RepoKey(RootModel[str]):
@@ -206,13 +214,14 @@ def test_item_stores_share_the_stores_listing_and_its_checks() -> None:
 
 def test_holders_lists_every_holder_and_every_reference_it_cannot_read(tmp_path: Path) -> None:
     first, second = _two(tmp_path)
-    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    (refs.REFS.place / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
     seen = REPOS.holders(API)
     views = [h for h in seen if isinstance(h, HolderView)]
     assert {h.holder.name for h in views} == {first.id, second.id}
     assert all(h.state == "present" for h in views)
     assert [h.label for h in seen if isinstance(h, UnknownHolder)] == [
-        "~/.untaped/refs/project-ffffffffffff.json (unreadable (JSONDecodeError))"
+        "~/.untaped/plugins/untaped/refs/project-ffffffffffff.json "
+        "(unreadable (it is not valid JSON))"
     ]
     assert {h.holder.name for h in REPOS.holders(WEB) if isinstance(h, HolderView)} == {first.id}
 
@@ -274,7 +283,7 @@ def test_remove_releases_each_hold_then_deletes_only_what_core_wrote(tmp_path: P
     assert sorted(p.name for p in folder.iterdir()) == ["config.yml", "lint.yml"]
     assert (first.root / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert not refs.reference_file(holder_of(first)).exists()
-    assert not (refs.refs_dir() / f".project-{first.id}.lock").exists()
+    assert not (refs.REFS.place / f".project-{first.id}.lock").exists()
     assert [h.holder.name for h in REPOS.holders(API) if isinstance(h, HolderView)] == [second.id]
 
 
@@ -387,7 +396,7 @@ def test_the_item_store_lock_is_taken_per_item_and_times_out_with_exit_5(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     first, _ = _two(tmp_path)
-    lock = refs.refs_dir() / ".acme-repos.lock"
+    lock = refs.REFS.place / ".acme-repos.lock"
     held: list[bool] = []
 
     def probe() -> None:  # from another thread: is the store's lock free right now?
@@ -398,7 +407,7 @@ def test_the_item_store_lock_is_taken_per_item_and_times_out_with_exit_5(
             except ConfigError:
                 held.append(True)
 
-        thread = threading.Thread(target=take)
+        thread = _in_this_run(take)
         thread.start()
         thread.join()
 
@@ -431,7 +440,7 @@ def test_the_item_store_lock_is_taken_per_item_and_times_out_with_exit_5(
             taken.set()
             stop.wait(5)
 
-    thread = threading.Thread(target=hog)
+    thread = _in_this_run(hog)
     thread.start()
     taken.wait(5)
     try:
@@ -688,7 +697,7 @@ def test_move_dry_run_changes_nothing(tmp_path: Path) -> None:
 def test_known_projects_lists_every_record_holding_or_not(tmp_path: Path) -> None:
     empty = make_project(tmp_path / "EMPTY")
     full = make_project(tmp_path / "FULL", holds={REPOS: [API]})
-    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    (refs.REFS.place / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
     seen = known_projects()
     assert {h.holder.name for h in seen if isinstance(h, HolderView)} == {empty.id, full.id}
     assert sum(isinstance(h, UnknownHolder) for h in seen) == 1
@@ -711,7 +720,7 @@ def test_a_plugin_holder_kind_round_trips_and_keeps_its_holds_when_it_cannot_tel
     assert jobs.kind == "acme_ci_job"
     job = jobs.holder("build-42", anchor=anchor)
     job.hold(REPOS, API)
-    written = refs.read_reference(refs.refs_dir() / "acme_ci_job-build-42.json")
+    written = refs.read_reference(refs.REFS.place / "acme_ci_job-build-42.json")
     assert (written.holder, written.anchor) == (
         RefHolder(kind="acme_ci_job", name="build-42"),
         anchor,

@@ -442,10 +442,10 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     damaged = _damaged(layout)
     if layout.own or layout.holders:
         return damaged
-    from untaped.sdk.storage._refs import refs_dir  # noqa: PLC0415 - refs imports the registry
+    from untaped.sdk.storage._refs import REFS  # noqa: PLC0415 - refs imports the registry
 
     # Who holds it first: while that is unknown, nothing else may call it unheld.
-    folder = refs_dir()
+    folder = REFS.place
     if any(ref.opaque is not None and ref.file == folder for ref in references):
         return Kept(
             "unknown",

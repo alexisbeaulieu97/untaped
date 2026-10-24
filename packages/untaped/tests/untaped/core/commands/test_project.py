@@ -13,6 +13,8 @@ from untaped.sdk.projects import holder_of
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import CliResult, invoke_cli, make_project
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 def _cli(*args: str) -> CliResult:
     root = bootstrap.build_root_app(candidates=[])
@@ -55,7 +57,7 @@ def test_list_shows_each_project_its_state_and_the_current_one(
     here = make_project(tmp_path / "PROJ-1")
     gone = make_project(tmp_path / "PROJ-2")
     shutil.rmtree(gone.root)
-    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    (refs.REFS.place / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
     monkeypatch.chdir(here.root)
     result = _cli("project", "list", "--format", "json")
     assert result.exit_code == 0, result.output
@@ -72,7 +74,7 @@ def test_list_shows_each_project_its_state_and_the_current_one(
     assert rows["PROJ-2"]["detail"] == f"{gone.root} is gone"
     unknown = rows[""]
     assert unknown["state"] == "unknown" and "id" not in unknown
-    assert unknown["detail"].endswith("(unreadable (JSONDecodeError))")
+    assert unknown["detail"].endswith("(unreadable (it is not valid JSON))")
 
 
 def test_list_still_lists_from_a_folder_with_a_damaged_marker(

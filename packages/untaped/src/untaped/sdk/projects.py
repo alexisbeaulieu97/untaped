@@ -50,6 +50,7 @@ from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import atomic_write
 from untaped.sdk.storage._refs import (
     PROJECT,
+    REFS,
     AnchorId,
     Reference,
     RefHolder,
@@ -58,7 +59,6 @@ from untaped.sdk.storage._refs import (
     read_reference,
     read_references,
     reference_file,
-    refs_dir,
     write_reference,
 )
 from untaped.sdk.storage.holds import (
@@ -93,7 +93,7 @@ GITIGNORE = ("/project.json", "/state.yml", "/plugins/", *(f"/{name}" for name i
 #: The whole ``.gitignore`` ``init`` creates: those lines and itself.
 GITIGNORE_TEXT = "\n".join(("/.gitignore", *GITIGNORE)) + "\n"
 #: Folders under ``~/.untaped`` that are core's own, never a project.
-_CORE_FOLDERS = ("refs", "plugins")
+_CORE_FOLDERS = ("plugins",)
 
 _diag = Diagnostics()
 _SEEN: dict[str, Project] = {}
@@ -292,7 +292,7 @@ def known_projects() -> tuple[HolderView | UnknownHolder, ...]:
 
 def project_references() -> list[Reference]:
     """Every ``refs/project-*`` reference, readable or not; no other kind."""
-    folder = refs_dir()
+    folder = REFS.place
     return [
         ref
         for ref in read_references()
@@ -668,7 +668,7 @@ def _record(
             )
     except OSError as exc:
         raise ConfigError(
-            f"{shown_path(root)} is a project, but recording it in {shown_path(refs_dir())} "
+            f"{shown_path(root)} is a project, but recording it in {shown_path(REFS.place)} "
             f"failed: {exc.strerror or exc}",
             hint="the next command that changes the project records it",
         ) from exc

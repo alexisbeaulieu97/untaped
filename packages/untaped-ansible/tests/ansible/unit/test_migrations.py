@@ -13,6 +13,8 @@ from untaped_ansible import SPEC
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import AnsibleSettings
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 CTX, OPTIONS = PluginContext(settings=None), MigrationOptions()
 
 

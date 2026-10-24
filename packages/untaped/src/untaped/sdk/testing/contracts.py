@@ -34,16 +34,22 @@ def compose_with(
     ``provides={"fake": [FakeRepos()]}`` adds a plugin named ``fake`` that
     offers each instance to the plugin declaring its contract, so an owner
     tests ``gather`` against a provider it controls (a fake reads no
-    ``Configured`` settings). Yields the composition.
+    ``Configured`` settings). The block runs under a run of that composition,
+    as a command of it would. Yields the composition.
     """
     from untaped.runtime import (  # noqa: PLC0415 - the root is heavy; tests pay only on use
         bootstrap,
     )
+    from untaped.runtime.run import build_run  # noqa: PLC0415
     from untaped.sdk.contracts._providing import offering_candidates  # noqa: PLC0415
+    from untaped.sdk.run import run_scope  # noqa: PLC0415
 
     base = _candidates(plugins)
     fakes = offering_candidates(provides or {}, base)
-    with bootstrap.composed_with([*base, *fakes]) as result:
+    with (
+        bootstrap.composed_with([*base, *fakes]) as result,
+        run_scope(build_run(result.mount.declaration, result.mount.settings)),
+    ):
         token = _ACTIVE.set(result)
         try:
             yield result

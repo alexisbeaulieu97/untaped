@@ -32,7 +32,7 @@ from untaped.sdk import (
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 class ApiProfile(BaseModel):

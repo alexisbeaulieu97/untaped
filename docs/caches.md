@@ -279,8 +279,8 @@ pin together passes the check.
 ### Who holds a layout, and cleanup
 
 Each install of untaped that runs `untaped setup register` writes a
-*reference* in `~/.untaped/refs/`: where it is installed, its version, and the
-layouts its plugins' stores use. Each target is a `RefTarget` (experimental),
+*reference* in `~/.untaped/plugins/untaped/refs/`: where it is installed, its
+version, and the layouts its plugins' stores use. Each target is a `RefTarget` (experimental),
 written in the file as an object: a layout, `{"plugin": "acme", "store":
 "catalogue", "layout": 2}`, or one item of a store that keeps one per item,
 `{"plugin": "git", "store": "store", "item": "github.com/acme/pay"}`. Who the

@@ -25,7 +25,7 @@ from untaped.sdk.storage.store import Store, layout_path
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate, write_reference
 from untaped.sdk.words import shown_path
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 def _base() -> Path:
@@ -237,7 +237,7 @@ def test_an_unlistable_refs_folder_keeps_every_layout(
     real = Path.iterdir
 
     def iterdir(self: Path) -> Iterator[Path]:
-        if self == refs.refs_dir():
+        if self == refs.REFS.place:
             raise PermissionError(13, "Permission denied")
         return real(self)
 
@@ -259,8 +259,8 @@ def test_a_damaged_lock_never_hides_unknown_holders(
     old = _layout(4)
     Path(f"{old}.inuse").write_bytes(b"not a database")
     if unknown == "newer":  # a newer untaped's reference, which may name layout 4
-        refs.refs_dir().mkdir(parents=True)
-        (refs.refs_dir() / "install-future.json").write_text(
+        refs.REFS.place.mkdir(parents=True)
+        (refs.REFS.place / "install-future.json").write_text(
             '{"untaped": "99", "holder": {"kind": "install", "name": "x"}}'
         )
     else:  # a live install's reference names layout 4, in a folder this run cannot list
@@ -273,7 +273,7 @@ def test_a_damaged_lock_never_hides_unknown_holders(
         real = Path.iterdir
 
         def iterdir(self: Path) -> Iterator[Path]:
-            if self == refs.refs_dir():
+            if self == refs.REFS.place:
                 raise PermissionError(13, "Permission denied")
             return real(self)
 

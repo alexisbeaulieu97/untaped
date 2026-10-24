@@ -7,6 +7,7 @@ under the project's lock, and what can't be decided is refused (exit 4).
 
 from __future__ import annotations
 
+import contextvars
 import errno
 import json
 import os
@@ -40,6 +41,13 @@ from untaped.sdk.storage import data_file, holds
 from untaped.sdk.storage._refs import AnchorId, RefHolder, RefTarget
 from untaped.sdk.storage.data_file import written_by
 from untaped.sdk.testing import make_project, write_reference
+
+pytestmark = pytest.mark.usefixtures("home_run")
+
+
+def _in_this_run(target: Callable[[], object]) -> threading.Thread:
+    """A thread under this test's run, as a command's workers run (``bounded_map`` copies it)."""
+    return threading.Thread(target=contextvars.copy_context().run, args=(target,))
 
 
 def _reference(project: Project) -> refs.Reference:
@@ -248,7 +256,10 @@ def test_init_records_a_project_this_home_does_not_list(
     [
         (lambda: Path.home(), "it is the home folder"),
         (lambda: Path.home() / ".untaped", "untaped's own folder"),
-        (lambda: Path.home() / ".untaped" / "refs" / "x", "is untaped's own"),
+        (
+            lambda: Path.home() / ".untaped" / "plugins" / "untaped" / "refs" / "x",
+            "is untaped's own",
+        ),
         (lambda: Path.home() / ".untaped" / "plugins", "is untaped's own"),
     ],
     ids=["home", "untaped home", "refs", "plugins"],
@@ -293,7 +304,7 @@ def test_a_second_init_racing_the_first_reports_one_project(tmp_path: Path) -> N
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(projects, "_write_marker", create)
-        workers = [threading.Thread(target=run) for _ in range(2)]
+        workers = [_in_this_run(run) for _ in range(2)]
         for worker in workers:
             worker.start()
         for worker in workers:
@@ -315,10 +326,10 @@ def test_an_init_arriving_before_the_first_records_waits_for_it(tmp_path: Path) 
     done: list[projects.Initialized] = []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(projects, "_write_gitignore", write)
-        first = threading.Thread(target=lambda: done.append(init(tmp_path / "PROJ")))
+        first = _in_this_run(lambda: done.append(init(tmp_path / "PROJ")))
         first.start()
         assert linked.wait(5)
-        second = threading.Thread(target=lambda: done.append(init(tmp_path / "PROJ")))
+        second = _in_this_run(lambda: done.append(init(tmp_path / "PROJ")))
         second.start()
         second.join(0.2)
         assert second.is_alive()  # waiting on the project's lock
@@ -373,7 +384,7 @@ def test_a_failed_record_keeps_the_marker_and_exits_4(tmp_path: Path) -> None:
 
 
 def test_an_unwritable_home_makes_nothing_and_exits_4(tmp_path: Path) -> None:
-    refs_dir = refs.refs_dir()
+    refs_dir = refs.REFS.place
     refs_dir.parent.mkdir(parents=True, exist_ok=True)
     refs_dir.write_text("not a folder", encoding="utf-8")
     with pytest.raises(ConfigError) as caught:
@@ -389,7 +400,9 @@ def test_new_id_never_renews_a_folder_whose_record_it_cannot_read(tmp_path: Path
     project = make_project(tmp_path / "PROJ")
     file = refs.reference_file(holder_of(project))
     data = json.loads(file.read_text(encoding="utf-8"))
-    file.write_text(json.dumps({**data, "untaped": "2"}), encoding="utf-8")  # a newer untaped's
+    file.write_text(
+        json.dumps({**data, "untaped": {"file": 2}}), encoding="utf-8"
+    )  # a newer untaped's
     with pytest.raises(ConfigError, match="cannot read project PROJ's record"):
         init(project.root, new_id=True)
     assert _fresh(project.root) == project  # the id stays
@@ -600,7 +613,7 @@ def test_a_copy_while_the_original_drive_is_away_is_undecided(
 
 
 def test_an_unlistable_refs_folder_is_kept_as_unknown() -> None:
-    folder = refs.refs_dir()
+    folder = refs.REFS.place
     folder.parent.mkdir(parents=True, exist_ok=True)
     folder.write_text("not a folder", encoding="utf-8")  # listing it fails
     [ref] = projects.project_references()
@@ -610,7 +623,7 @@ def test_an_unlistable_refs_folder_is_kept_as_unknown() -> None:
 def test_only_project_references_are_projects(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     write_reference(RefHolder(kind="acme_job", name="build-1"), [], anchor=tmp_path)
-    (refs.refs_dir() / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
+    (refs.REFS.place / "project-ffffffffffff.json").write_text("{", encoding="utf-8")
     found = [projects.view(ref) for ref in projects.project_references()]
     assert [type(each).__name__ for each in found] == ["HolderView", "UnknownHolder"]
     view = found[0]
@@ -641,7 +654,7 @@ def test_the_project_lock_is_re_entrant_and_shuts_out_other_threads(
             busy.append(exc)
 
     with project.locked(), project.locked():
-        worker = threading.Thread(target=other)
+        worker = _in_this_run(other)
         worker.start()
         worker.join()
     [error] = busy
