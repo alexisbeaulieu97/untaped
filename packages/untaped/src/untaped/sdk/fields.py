@@ -353,8 +353,8 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks are the table's default columns, and
-    ``--columns`` names its fields (checked before ``run``, so a subclass's own
+    agree); its ``Column`` marks, else its ``table_columns``, are the table's
+    default columns, and ``--columns`` names its fields (checked before ``run``, so a subclass's own
     fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
     its own default columns, ``Output(render={"tree": render_tree})`` adds a
@@ -381,10 +381,11 @@ class Output[R: BaseModel](FieldBlock):
         #: The format ``--format`` chose (``table`` when unfilled).
         self.format = "table"
         #: The table's default columns this run: the declared ones, or ``R``'s
-        #: ``Column`` fields; ``.add(...)`` adds more. ``--columns`` applies on top.
+        #: (:func:`default_columns`); ``.add(...)`` adds more. ``--columns`` applies on top.
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
         self._empty: str | None = None
+        self._model: type[BaseModel] | None = None
 
     @property
     def formats(self) -> tuple[str, ...]:
@@ -408,8 +409,9 @@ class Output[R: BaseModel](FieldBlock):
         filled = _copy(self)
         filled.format = str(flags.get("--format") or "table")
         filled._requested = list(requested) if isinstance(requested, list) else None
-        filled.columns = Columns(self._declared or (column_fields(model) if model else ()))
+        filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None
+        filled._model = model
         if filled.format in self.render:
             if filled._requested is not None:
                 raise UsageError(f"--columns does not apply to --format {filled.format}")
@@ -421,6 +423,8 @@ class Output[R: BaseModel](FieldBlock):
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            _model_fields,
+            _print_available_columns,
             count_failed_actions,
             count_row_failures,
             emit_with,
@@ -432,6 +436,10 @@ class Output[R: BaseModel](FieldBlock):
         if renderer is not None:
             count_row_failures([records] if isinstance(records, BaseModel) else records)
             renderer(records)
+            return
+        if self._requested == ["?"] and records == [] and self._model is not None:
+            # no row to read the columns from: ``R`` names them
+            _print_available_columns(_model_fields(self._model), defaults=list(self.columns))
             return
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
@@ -453,6 +461,11 @@ class Columns(list[str]):
     def add(self, *names: str) -> None:
         """Show ``names`` too, after the columns already shown."""
         self.extend(name for name in names if name not in self)
+
+
+def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
+    """A table's default columns for ``model``: its ``Column`` fields, else ``table_columns``."""
+    return column_fields(model) or tuple(getattr(model, "table_columns", None) or ())
 
 
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
@@ -639,6 +652,12 @@ class Confirm(FieldBlock):
     def dry_run(self) -> bool:
         """``--dry-run`` was passed."""
         return self._dry_run
+
+    def as_dry_run(self) -> Confirm:
+        """The same answers with ``--dry-run`` on: what a ``--check`` flag passes on."""
+        dry = _copy(self)
+        dry._dry_run = True
+        return dry
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Confirm:
         """A copy for one invocation, from ``--yes`` and ``--dry-run``."""

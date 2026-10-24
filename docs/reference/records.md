@@ -18,7 +18,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `auth set`, `auth unset`, `auth migrate` (deprecated) | `untaped.auth_outcome` (never the secret; `field` names it, `token` or another; `action` `gone` when `unset` found the entry already deleted; a secret `migrate` could not move is `failed`, with `error`) |
 | `profile list` | `untaped.profile` |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
-| `project list` | `untaped.project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
+| `project list` | `untaped.recorded_project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
 | `project init` | `untaped.project_outcome` (`name`, `path`, `id`, `action` `created`, `unchanged`, `recorded`, `repaired` or `new id`, `detail`; experimental) |
 | `project move`, `remove`, `prune` | `untaped.hold_outcome` (`holder`, `plugin`, `item`, `action` `planned`, `refused`, `failed`, `released`, `forgotten`, `repaired`, `moved`, `removed` or `skipped`, `detail`, `hint`; experimental) |
 | `skills list` | `untaped.skill` |

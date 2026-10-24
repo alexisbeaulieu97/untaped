@@ -14,8 +14,8 @@ from typing import Literal
 type Mark = Literal["experimental"] | None
 """A stability mark a page shows; deprecated things are left out, as ``--help`` hides them."""
 
-type Writes = Literal["write", "destructive"] | None
-"""A command's declared ``@writes`` mark."""
+type Writes = Literal["write", "destructive", "asks"] | None
+"""A command's declared ``@writes`` mark; ``asks`` for a 12.0 command taking ``Confirm``."""
 
 
 @dataclass(frozen=True)

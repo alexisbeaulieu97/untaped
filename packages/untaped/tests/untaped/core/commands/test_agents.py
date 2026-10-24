@@ -305,6 +305,13 @@ def test_write_marks_follow_the_declared_writes() -> None:
     assert "- `widgets list`: List every widget.\n" in out
 
 
+def test_a_command_taking_confirm_asks_first() -> None:
+    _, out, _ = _run("untaped")
+    assert "- `project remove`: Remove a project: release what it holds, then delete what " in out
+    assert "untaped wrote in it. (asks first)\n" in out
+    assert "- `project list`: List the projects this home records, with each one's state.\n" in out
+
+
 # --- errors and paths ------------------------------------------------------------
 
 

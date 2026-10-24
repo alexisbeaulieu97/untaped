@@ -39,6 +39,19 @@ class Tidy(Command):
         return "tidied" if self.confirm(f"Tidy {self.name}?", needed=False) else "planned"
 
 
+class Sweep(Command):
+    """Sweep a thing; ``--check`` previews it, as ``--dry-run`` does."""
+
+    name: Positional[str] = Field(description="The thing to sweep.")
+    check: bool = Field(False, description="Preview only.")
+    confirm: Confirm
+
+    def run(self) -> str:
+        confirm = self.confirm.as_dry_run() if self.check else self.confirm
+        go = confirm(f"Sweep {self.name}?", preview=lambda: [f"would sweep {self.name}"])
+        return f"{'swept' if go else 'planned'} {self.confirm.dry_run}"
+
+
 class Fetch(Command):
     """Print what the refresh flags said."""
 
@@ -62,7 +75,7 @@ class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Fetch, Work)
+    commands = (Delete, Tidy, Sweep, Fetch, Work)
     motd = MOTD
 
 
@@ -98,6 +111,13 @@ def test_without_a_terminal_it_refuses_naming_the_command_and_question() -> None
     )
     assert "pass --yes to go ahead, or --dry-run to preview" in result.stderr
     assert "would delete x" not in result.stderr
+
+
+def test_as_dry_run_previews_without_asking_and_leaves_the_field_as_filled() -> None:
+    checked = _run("tool", "sweep", "x", "--check")
+    assert (checked.exit_code, checked.stdout) == (0, "planned False\n")
+    assert "would sweep x" in checked.stderr
+    assert _run("tool", "sweep", "x", "--yes").stdout == "swept False\n"
 
 
 def test_a_question_not_needed_goes_ahead_without_a_terminal() -> None:

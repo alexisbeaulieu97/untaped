@@ -25,7 +25,7 @@ from untaped.core.agents._model import (
 
 FOOTER = "The map of this untaped: `untaped agents`"
 
-_WRITES = {"write": " (changes things)", "destructive": " (destructive)"}
+_WRITES = {"write": " (changes things)", "destructive": " (destructive)", "asks": " (asks first)"}
 
 _INTRO = (
     "untaped is one command line built from plugins. Core (below) holds what every plugin "

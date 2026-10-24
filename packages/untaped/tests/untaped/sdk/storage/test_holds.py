@@ -41,6 +41,7 @@ from untaped.sdk.storage.holds import (
 )
 from untaped.sdk.testing import (
     CliResult,
+    ScriptedPromptBackend,
     invoke_cli,
     make_project,
     move_ask,
@@ -491,7 +492,26 @@ def test_remove_needs_yes_without_a_terminal(tmp_path: Path) -> None:
     first, _ = _two(tmp_path)
     result = _cli("project", "remove", str(first.root))
     assert result.exit_code == 2
+    assert (
+        f'untaped project remove requires --yes when not interactive: it asks "Remove project '
+        f'{first.root.name}?"'
+    ) in result.stderr
     assert len(_targets(first)) == 2
+
+
+def test_remove_at_a_terminal_previews_the_holds_as_the_rows_print_them(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(SPEC)])
+    result = invoke_cli(
+        root.meta,
+        ["project", "remove", str(first.root)],
+        terminal=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+    )
+    assert result.exit_code == 0, result.output
+    header = next(line for line in result.stderr.splitlines() if "plugin" in line)
+    cells = [cell.strip() for cell in header.strip("│ ").split("│")]
+    assert cells[:4] == ["plugin", "item", "action", "detail"]
 
 
 def test_remove_finds_a_project_by_its_name(tmp_path: Path) -> None:
