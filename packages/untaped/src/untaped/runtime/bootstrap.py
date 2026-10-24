@@ -23,7 +23,6 @@ from cyclopts.core import _apply_parent_defaults_to_app
 
 from untaped.core.commands import (
     build_root_agents_app,
-    build_root_auth_app,
     build_root_doctor_app,
     build_root_setup_app,
     build_root_skills_app,
@@ -124,7 +123,7 @@ SHELL_SPEC = ApplicationSpec(
     ),
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "skills", "doctor", "setup", "auth"),
+    commands=("agents", "skills", "doctor", "setup"),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -308,7 +307,6 @@ def build_root_app(
             builtin_for=lambda name: resolve_command(root, name),
         ),
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
-        "auth": build_root_auth_app(result=result),
     }
     for name in SHELL_SPEC.commands:
         _mount(root, management.pop(name), name=name)

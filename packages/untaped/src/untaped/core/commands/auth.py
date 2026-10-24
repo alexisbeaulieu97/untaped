@@ -18,13 +18,12 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from cyclopts import App, Parameter
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from untaped.core.commands.records import (
     AuthOutcome,
@@ -33,6 +32,7 @@ from untaped.core.commands.records import (
     TokenSource,
 )
 from untaped.core.config.repository import SettingsFileRepository
+from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
@@ -43,20 +43,11 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import active_settings_layout, load_settings_section
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._cli import (
-    ColumnsOption,
-    DryRunOption,
-    FormatOption,
-    YesOption,
-    create_app,
-    emit,
-    report_errors,
-    writes,
-)
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error, most_severe
+from untaped.sdk.fields import Confirm, Output, Positional
 from untaped.sdk.marks import deprecated
 from untaped.sdk.network._credential_store import (
     CredentialRow,
@@ -87,15 +78,12 @@ from untaped.sdk.network.credentials import (
     legacy_setting,
     override_variable,
 )
+from untaped.sdk.plugin import Command, Group
 from untaped.sdk.prompt.prompts import PromptChoice
 from untaped.sdk.words import command_line, hint, plural, run_hint
 
 _diag = Diagnostics()
 
-StoreOption = Annotated[
-    StoreName | None,
-    Parameter(name="--store", help="Store to use; default: the first usable one."),
-]
 
 # --------------------------------------------------------------------------- #
 # Declared credentials: login, list, forget, status
@@ -198,14 +186,13 @@ def _spelled(credential: Credential[Any]) -> str:
 def _key(
     result: CompositionResult, credential: Credential[Any], fields: dict[str, str]
 ) -> CredentialKey:
-    """The key to log in or forget: this run's from settings, or built from ``--<field>``s."""
+    """The key to log in or forget: this run's from settings, or built from ``--key``s."""
     model = _settings_model(result, credential.plugin)
     if held_by_settings(credential, model):
         if fields:
-            options = ", ".join(f"--{name}" for name in fields)
             raise UsageError(
                 f"{credential.label}'s key comes from {credential.plugin}'s settings, "
-                f"not from {options}; pick another profile to use another server"
+                "not from --key; pick another profile to use another server"
             )
         target = _run_target(result, credential)
         if target.key is None:
@@ -220,7 +207,9 @@ def _key(
     try:
         key: CredentialKey = credential.key.model_validate(data)
     except ValidationError as exc:
-        names = ", ".join(f"--{name.replace('_', '-')}" for name in credential.key.model_fields)
+        names = " ".join(
+            f"--key {name.replace('_', '-')}=…" for name in credential.key.model_fields
+        )
         raise UsageError(
             f"{credential.label} needs {names}: {first_validation_error(exc)}"
         ) from exc
@@ -242,9 +231,7 @@ def _login(
     token_command: str | None,
     store: StoreName | None,
     fields: dict[str, str],
-    fmt: Any,
-    columns: list[str] | None,
-) -> None:
+) -> CredentialOutcome:
     credential = _choose(result, plugin, name, verb="login")
     key = _key(result, credential, fields)
     _refuse_folder(credential, key, "logging in")
@@ -260,17 +247,13 @@ def _login(
     ident = credential.id(key)
     _diag.success(f"stored the {credential.label} for {describe_key(key)}: {where}")
     _name_outranked(credential)
-    emit(
-        CredentialOutcome(
-            plugin=credential.plugin,
-            name=credential.name,
-            key=describe_key(key),
-            id=ident[:SHORT_ID],
-            store=where,
-            action="stored",
-        ),
-        fmt=fmt,
-        columns=columns,
+    return CredentialOutcome(
+        plugin=credential.plugin,
+        name=credential.name,
+        key=describe_key(key),
+        id=ident[:SHORT_ID],
+        store=where,
+        action="stored",
     )
 
 
@@ -310,15 +293,12 @@ def _forget(
     *,
     ident: str | None,
     fields: dict[str, str],
-    yes: bool,
-    dry_run: bool,
-    fmt: Any,
-    columns: list[str] | None,
-) -> None:
+    confirm: Confirm,
+) -> CredentialOutcome:
     ui = ui_context(strict=False)
     if ident is not None:
         if plugin is not None or fields:
-            raise UsageError("--id names the row on its own; leave out the plugin and fields")
+            raise UsageError("--id names the row on its own; leave out the plugin and --key")
         row = _row_by_id(ident)
         key_text = _row_key(row)
     else:
@@ -333,19 +313,14 @@ def _forget(
         found = find_row(credential.id(key))
         if found is None:
             _diag.info(f"no stored {credential.label} for {key_text}")
-            emit(
-                CredentialOutcome(
-                    plugin=credential.plugin,
-                    name=credential.name,
-                    key=key_text,
-                    id=credential.id(key)[:SHORT_ID],
-                    store=None,
-                    action="unchanged",
-                ),
-                fmt=fmt,
-                columns=columns,
+            return CredentialOutcome(
+                plugin=credential.plugin,
+                name=credential.name,
+                key=key_text,
+                id=credential.id(key)[:SHORT_ID],
+                store=None,
+                action="unchanged",
             )
-            return
         row = found
     outcome = CredentialOutcome(
         plugin=row.plugin,
@@ -355,15 +330,10 @@ def _forget(
         store=row.where(),
         action="planned",
     )
-    if dry_run:
-        emit(outcome, fmt=fmt, columns=columns)
-        return
-    ui.confirm_or_cancel(
-        f"Forget the stored {row.plugin} {row.name} for {key_text} ({row.where()})?",
-        assume_yes=yes,
-    )
+    if not confirm(f"Forget the stored {row.plugin} {row.name} for {key_text} ({row.where()})?"):
+        return outcome
     _forget_row(row)
-    emit(outcome.model_copy(update={"action": "deleted"}), fmt=fmt, columns=columns)
+    return outcome.model_copy(update={"action": "deleted"})
 
 
 def _forget_row(row: CredentialRow) -> None:
@@ -398,7 +368,7 @@ def _row_key(row: CredentialRow) -> str:
     return " ".join(f"{name}={value}" for name, value in row.key.items()) or "(no key fields)"
 
 
-def _list(*, fmt: Any, columns: list[str] | None) -> None:
+def _list() -> list[StoredCredential]:
     listed = [
         StoredCredential(
             id=row.short,
@@ -412,10 +382,10 @@ def _list(*, fmt: Any, columns: list[str] | None) -> None:
     ]
     if not listed:
         _diag.info("no stored credentials")
-    emit(listed, fmt=fmt, columns=columns)
+    return listed
 
 
-def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -> None:
+def _status(result: CompositionResult) -> list[TokenSource]:
     profile = selected_profile()
     found: list[TokenSource] = []
     for credential in _declared(result):
@@ -424,7 +394,7 @@ def _status(result: CompositionResult, *, fmt: Any, columns: list[str] | None) -
     found.extend(_legacy_status(result))
     stores = ", ".join(store.name for store in usable_stores()) or "none"
     _diag.info(f"token stores usable here: {stores}")
-    emit(found, fmt=fmt, columns=columns)
+    return found
 
 
 def _status_row(target: _Target, profile: str) -> TokenSource:
@@ -568,196 +538,209 @@ def plaintext_token(data: dict[str, Any] | None, section: str) -> str | None:
 # --------------------------------------------------------------------------- #
 
 
-_FieldOptions = Annotated[
-    str,
-    Parameter(
-        help="A key field the plugin's settings don't hold, as --<field> VALUE "
-        "(ansible's --vault-id)."
-    ),
-]
+def _composition() -> CompositionResult:
+    # Lazy: bootstrap is the CLI's root and imports this module.
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415
+
+    return composition()
 
 
-def build_root_auth_app(*, result: CompositionResult) -> App:
-    """Return the root ``auth`` command group for one composition."""
-    app = create_app(name="auth", help="Log in to the servers plugins talk to; keep tokens safe.")
+def _key_fields(given: list[str]) -> dict[str, str]:
+    """``--key FIELD=VALUE`` pairs, by field name."""
+    fields: dict[str, str] = {}
+    for pair in given:
+        name, sep, value = pair.partition("=")
+        if not sep or not name.strip():
+            raise UsageError(f"--key takes FIELD=VALUE, not {pair!r}")
+        fields[name.strip()] = value
+    return fields
 
-    @app.command(name="login")
-    @writes
-    def login_command(
-        plugin: Annotated[
-            str | None, Parameter(help="The plugin, e.g. awx; a menu on a terminal when left out.")
-        ] = None,
-        name: Annotated[
-            str | None, Parameter(help="The credential, when the plugin declares several.")
-        ] = None,
-        /,
-        *,
-        token_command: Annotated[
-            str | None,
-            Parameter(
-                name="--token-command",
-                help="Store a command that prints the token, run each time it is needed.",
-            ),
-        ] = None,
-        store: StoreOption = None,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-        **fields: _FieldOptions,
-    ) -> None:
-        """Store a token for this run's server, in this machine's password store.
 
-        The server is the plugin's settings for the profile this run picks
-        (``awx.server``); the key is printed before anything is asked. The
-        token is read from a hidden prompt, or from stdin when stdin is not
-        a terminal; ``--token-command`` stores a command instead (its
-        program a bare name or an absolute path, run from the config file's
-        folder). The store is macOS ``security``, ``secret-tool`` (Secret
-        Service), then ``pass``, or ``--store``. A login wins over the
-        deprecated ``<plugin>.token`` settings and the plugin's variables;
-        ``UNTAPED_<PLUGIN>__TOKEN`` still wins over it. Logging in again
-        replaces it. A server a folder's settings chose is refused.
-        """
-        with report_errors():
-            _login(
-                result,
-                plugin,
-                name,
-                token_command=token_command,
-                store=store,
-                fields=dict(fields),
-                fmt=fmt,
-                columns=columns,
-            )
+_PLUGIN = "The plugin, e.g. awx; a menu on a terminal when left out."
+_NAME = "The credential, when the plugin declares several."
+_KEY = "A key field the plugin's settings don't hold, as FIELD=VALUE; repeat for several."
+_STORE = "Store to use; default: the first usable one."
 
-    @app.command(name="list")
-    def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-        """Show every stored credential, whichever profile names it; never a secret.
 
-        A command is shown by its program only. ``auth status`` shows what
-        this run uses.
-        """
-        with report_errors():
-            _list(fmt=fmt, columns=columns)
+class Login(Command[CoreSettings]):
+    """Store a token for this run's server, in this machine's password store.
 
-    @app.command(name="forget")
-    @writes(destructive=True)
-    def forget_command(
-        plugin: Annotated[
-            str | None, Parameter(help="The plugin, e.g. awx; a menu on a terminal when left out.")
-        ] = None,
-        name: Annotated[
-            str | None, Parameter(help="The credential, when the plugin declares several.")
-        ] = None,
-        /,
-        *,
-        ident: Annotated[
-            str | None,
-            Parameter(name="--id", help="The stored row's id from `auth list` (a prefix will do)."),
-        ] = None,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-        **fields: _FieldOptions,
-    ) -> None:
-        """Delete the stored credential for this run's server, or the one ``--id`` names.
+    The server is the plugin's settings for the profile this run picks
+    (awx.server); the key is printed before anything is asked. The token is
+    read from a hidden prompt, or from stdin when stdin is not a terminal;
+    --token-command stores a command instead (its program a bare name or an
+    absolute path, run from the config file's folder). The store is macOS
+    security, secret-tool (Secret Service), then pass, or --store. A login
+    wins over the deprecated <plugin>.token settings and the plugin's
+    variables; UNTAPED_<PLUGIN>__TOKEN still wins over it. Logging in again
+    replaces it. A server a folder's settings chose is refused.
 
-        Takes ``auth login``'s arguments; ``--id`` reaches a row no profile
-        names any more. Nothing is revoked on the server: revoke the token
-        there too. A credential moved from 11.0's settings leaves its old
-        entry, which an older untaped still reads.
-        """
-        with report_errors():
-            _forget(
-                result,
-                plugin,
-                name,
-                ident=ident,
-                fields=dict(fields),
-                yes=yes,
-                dry_run=dry_run,
-                fmt=fmt,
-                columns=columns,
-            )
+    Examples:
+        $ untaped --profile prod auth login awx
+        $ untaped auth login github --token-command 'gh auth token'
+    """
 
-    @app.command(name="status")
-    def status_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-        """Show which source answers each credential for this run, and which stores work here.
+    plugin: Positional[str | None] = Field(None, description=_PLUGIN)
+    name: Positional[str | None] = Field(None, description=_NAME)
+    token_command: str | None = Field(
+        None, description="Store a command that prints the token, run each time it is needed."
+    )
+    store: StoreName | None = Field(None, description=_STORE)
+    key: list[str] = Field(default_factory=list, description=_KEY)
+    output: Output[CredentialOutcome]
 
-        Reads and runs nothing, so it cannot tell whether a stored entry
-        still exists; ``untaped doctor --online`` checks that. A plugin
-        still on 11.0's ``token`` settings shows one row per profile.
-        """
-        with report_errors():
-            _status(result, fmt=fmt, columns=columns)
+    def run(self) -> CredentialOutcome:
+        return _login(
+            _composition(),
+            self.plugin,
+            self.name,
+            token_command=self.token_command,
+            store=self.store,
+            fields=_key_fields(self.key),
+        )
 
-    @app.command(name="set")
-    @deprecated(removed_in=12, replacement="untaped auth login")
-    @writes
-    def set_command(
-        section: Annotated[str, Parameter(help="Section whose token to store, e.g. awx.")],
-        /,
-        *,
-        stdin: Annotated[
-            bool, Parameter(name="--stdin", negative="", help="Read the token from stdin.")
-        ] = False,
-        store: StoreOption = None,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Store a token with this machine's password store and point the config at it.
 
-        Tries macOS ``security``, ``secret-tool`` (Secret Service), then
-        ``pass``. The token is read from a hidden prompt (or ``--stdin``),
-        stored on the tool's stdin, read back, and only then written as
-        ``<section>.token_command`` in the active profile (or the root
-        ``--profile``), replacing any plaintext ``<section>.token``.
-        Running it again replaces the stored token.
-        """
-        with report_errors():
-            _set(result, section, stdin=stdin, store=store, fmt=fmt, columns=columns)
+class List(Command[CoreSettings]):
+    """Show every stored credential, whichever profile names it; never a secret.
 
-    @app.command(name="unset")
-    @deprecated(removed_in=12, replacement="untaped auth forget")
-    @writes(destructive=True)
-    def unset_command(
-        section: Annotated[str, Parameter(help="Section whose stored token to remove.")],
-        /,
-        *,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Delete the token ``auth set`` stored and unset ``<section>.token_command``.
+    A command is shown by its program only. auth status shows what this run
+    uses.
 
-        Acts on the active profile's own setting only (or the root
-        ``--profile``); an inherited one is left alone. A ``token_command``
-        untaped did not write is left alone too.
-        """
-        with report_errors():
-            _unset(result, section, yes=yes, dry_run=dry_run, fmt=fmt, columns=columns)
+    Examples:
+        $ untaped auth list
+    """
 
-    @app.command(name="migrate")
-    @deprecated(removed_in=12, replacement="untaped auth login")
-    @writes
-    def migrate_command(
-        *,
-        store: StoreOption = None,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Move every plaintext token in ``config.yml``, in every profile, to a store.
+    output: Output[StoredCredential]
 
-        Each token is stored and read back before it is removed from the
-        file; one that fails stays where it was, and the command exits
-        non-zero, with the code of the most severe failure's category.
-        """
-        with report_errors():
-            _migrate(result, store=store, dry_run=dry_run, fmt=fmt, columns=columns)
+    def run(self) -> Iterator[StoredCredential]:
+        yield from _list()
 
-    return app
+
+class Forget(Command[CoreSettings]):
+    """Delete the stored credential for this run's server, or the one --id names.
+
+    Takes auth login's arguments; --id reaches a row no profile names any
+    more. Nothing is revoked on the server: revoke the token there too. A
+    credential moved from 11.0's settings leaves its old entry, which an
+    older untaped still reads.
+
+    Examples:
+        $ untaped --profile prod auth forget awx --yes
+        $ untaped auth forget --id 9b07e4 --dry-run
+    """
+
+    plugin: Positional[str | None] = Field(None, description=_PLUGIN)
+    name: Positional[str | None] = Field(None, description=_NAME)
+    id: str | None = Field(
+        None, description="The stored row's id from `auth list` (a prefix will do)."
+    )
+    key: list[str] = Field(default_factory=list, description=_KEY)
+    confirm: Confirm
+    output: Output[CredentialOutcome]
+
+    def run(self) -> CredentialOutcome:
+        return _forget(
+            _composition(),
+            self.plugin,
+            self.name,
+            ident=self.id,
+            fields=_key_fields(self.key),
+            confirm=self.confirm,
+        )
+
+
+class Status(Command[CoreSettings]):
+    """Show which source answers each credential for this run, and which stores work here.
+
+    Reads and runs nothing, so it cannot tell whether a stored entry still
+    exists; untaped doctor --online checks that. A plugin still on 11.0's
+    token settings shows one row per profile.
+
+    Examples:
+        $ untaped auth status
+        $ untaped --profile prod auth status -f json
+    """
+
+    output: Output[TokenSource]
+
+    def run(self) -> Iterator[TokenSource]:
+        yield from _status(_composition())
+
+
+_REMOVED = 12
+
+
+class Set(Command[CoreSettings]):
+    """Store a token with this machine's password store and point the config at it.
+
+    Tries macOS security, secret-tool (Secret Service), then pass. The token
+    is read from a hidden prompt (or --stdin), stored on the tool's stdin,
+    read back, and only then written as <section>.token_command in the
+    profile --profile names, else the base, replacing any plaintext
+    <section>.token. Running it again replaces the stored token.
+
+    Examples:
+        $ printf %s "$TOKEN" | untaped auth set github --stdin
+    """
+
+    stability = deprecated(removed_in=_REMOVED, replacement="untaped auth login")
+
+    section: Positional[str] = Field(description="Section whose token to store, e.g. awx.")
+    stdin: bool = Field(False, description="Read the token from stdin.")
+    store: StoreName | None = Field(None, description=_STORE)
+    output: Output[AuthOutcome]
+
+    def run(self) -> AuthOutcome:
+        return _set(_composition(), self.section, stdin=self.stdin, store=self.store)
+
+
+class Unset(Command[CoreSettings]):
+    """Delete the token auth set stored and unset <section>.token_command.
+
+    Acts on the picked profile's own setting only (or the base); an
+    inherited one is left alone. A token_command untaped did not write is
+    left alone too.
+
+    Examples:
+        $ untaped auth unset github --dry-run
+    """
+
+    stability = deprecated(removed_in=_REMOVED, replacement="untaped auth forget")
+
+    section: Positional[str] = Field(description="Section whose stored token to remove.")
+    confirm: Confirm
+    output: Output[AuthOutcome]
+
+    def run(self) -> AuthOutcome:
+        return _unset(_composition(), self.section, confirm=self.confirm)
+
+
+class Migrate(Command[CoreSettings]):
+    """Move every plaintext token in config.yml, in every profile, to a store.
+
+    Each token is stored and read back before it is removed from the file;
+    one that fails stays where it was, and the command exits non-zero, with
+    the code of the most severe failure's category.
+
+    Examples:
+        $ untaped auth migrate --dry-run
+    """
+
+    stability = deprecated(removed_in=_REMOVED, replacement="untaped auth login")
+
+    store: StoreName | None = Field(None, description=_STORE)
+    confirm: Confirm
+    output: Output[AuthOutcome]
+
+    def run(self) -> Iterator[AuthOutcome]:
+        moving = self.confirm("Move every plaintext token to a store?", needed=False)
+        yield from _migrate(_composition(), store=self.store, dry_run=not moving)
+
+
+class Auth(Group):
+    """Log in to the servers plugins talk to; keep tokens safe."""
+
+    commands = (Login, List, Forget, Status, Set, Unset, Migrate)
 
 
 def _section(result: CompositionResult, section: str) -> _TokenSection:
@@ -778,9 +761,7 @@ def _set(
     *,
     stdin: bool,
     store: StoreName | None,
-    fmt: Any,
-    columns: list[str] | None,
-) -> None:
+) -> AuthOutcome:
     spec = _section(result, section)
     profile = _target_profile()
     entry_name(profile, section)
@@ -796,11 +777,7 @@ def _set(
         f"stored the {section} token in {where}; {section}.token_command set in profile {profile}"
     )
     _warn_env_override(section)
-    emit(
-        AuthOutcome(section=section, profile=profile, store=where, action="stored"),
-        fmt=fmt,
-        columns=columns,
-    )
+    return AuthOutcome(section=section, profile=profile, store=where, action="stored")
 
 
 def _read_stdin_token() -> str:
@@ -843,17 +820,13 @@ def _unset(
     result: CompositionResult,
     section: str,
     *,
-    yes: bool,
-    dry_run: bool,
-    fmt: Any,
-    columns: list[str] | None,
-) -> None:
+    confirm: Confirm,
+) -> AuthOutcome:
     _section(result, section)
     profile = _target_profile()
     raw = read_config_dict()
     own = (active_settings_layout().profile_data(raw, profile) or {}).get(section)
     argv = own.get("token_command") if isinstance(own, dict) else None
-    ui = ui_context(strict=False)
     row = AuthOutcome(section=section, profile=profile, store=None, action="unchanged")
     if not argv:
         _, provenance = resolve_profiles(raw, picks=(profile,))
@@ -866,8 +839,7 @@ def _unset(
             _diag.hint(run_hint(f"--profile {holder} auth unset {section}"))
         else:
             _diag.info(f"{section}.token_command is not set in profile {profile}")
-        emit(row, fmt=fmt, columns=columns)
-        return
+        return row
     preset = preset_entry(argv)
     if preset is None:
         raise ConfigError(
@@ -877,14 +849,12 @@ def _unset(
         )
     where = preset[0].describe(preset[1])
     row = row.model_copy(update={"store": where})
-    if dry_run:
-        emit(row.model_copy(update={"action": "planned"}), fmt=fmt, columns=columns)
-        return
-    ui.confirm_or_cancel(
+    question = (
         f"Delete the {section} token from {where} and unset {section}.token_command "
-        f"in profile {profile}?",
-        assume_yes=yes,
+        f"in profile {profile}?"
     )
+    if not confirm(question):
+        return row.model_copy(update={"action": "planned"})
     repo = SettingsFileRepository()
     # A dry run first: a write the config refuses must not cost the stored token.
     repo.unset_value(f"{section}.token_command", profile=profile, dry_run=True)
@@ -897,7 +867,7 @@ def _unset(
         )
     else:
         _diag.success(f"deleted the {section} token from {where} (profile {profile})")
-    emit(row.model_copy(update={"action": deleted}), fmt=fmt, columns=columns)
+    return row.model_copy(update={"action": deleted})
 
 
 def _legacy_status(result: CompositionResult) -> list[TokenSource]:
@@ -943,9 +913,7 @@ def _migrate(
     *,
     store: StoreName | None,
     dry_run: bool,
-    fmt: Any,
-    columns: list[str] | None,
-) -> None:
+) -> Iterator[AuthOutcome]:
     raw = read_config_dict()
     layout = active_settings_layout()
     # `default` first: its token would otherwise win over another profile's command.
@@ -959,7 +927,6 @@ def _migrate(
     ]
     if not pending:
         _diag.info("no plaintext tokens in the config; nothing to move")
-        emit([], fmt=fmt, columns=columns)
         return
     chosen = pick_store(store)
     if chosen is None:
@@ -970,7 +937,7 @@ def _migrate(
     if not dry_run:
         chosen.preflight()
     moved, failures = _move_all(pending, chosen, dry_run=dry_run)
-    emit(moved, fmt=fmt, columns=columns)
+    yield from moved
     if failures:
         worst = most_severe(failures)
         raise ConfigError(
@@ -1008,8 +975,8 @@ def _move_all(
 
 
 __all__ = [
+    "Auth",
     "Deleted",
-    "build_root_auth_app",
     "delete_stored_token",
     "inherited_from_default",
     "plaintext_token",

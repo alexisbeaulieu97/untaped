@@ -10,6 +10,7 @@ Importing this module imports every command of core's, so a start reads
 
 from __future__ import annotations
 
+from untaped.core.commands.auth import Auth
 from untaped.core.commands.config import Config
 from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
@@ -22,7 +23,7 @@ class Core(Plugin):
     """untaped's own commands: config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
     settings = CoreSettings
-    commands = (Config, ProfileGroup, ProjectGroup, PluginGroup)
+    commands = (Config, ProfileGroup, Auth, ProjectGroup, PluginGroup)
     declaration = DECLARATION
 
 

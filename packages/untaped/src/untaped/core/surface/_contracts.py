@@ -229,5 +229,8 @@ def _model_mark(marks: set[LineMark | None], stable_export: bool) -> LineMark | 
         key=lambda mark: (mark.removed_in is None, mark.removed_in or 0),
     )
     if deprecations:
-        return deprecations[-1]
+        last = deprecations[-1]
+        uses = {mark.use for mark in deprecations if mark.removed_in == last.removed_in}
+        # Reached through several replacements, the model names none of them.
+        return last if len(uses) == 1 else DeprecatedMark(last.removed_in)
     return "experimental"

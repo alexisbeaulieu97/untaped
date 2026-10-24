@@ -407,10 +407,9 @@ cli untaped ansible source-alias set --format choice=yaml
 cli untaped ansible source-alias set ALIAS REPO
 cli untaped auth
 cli untaped auth forget
-cli untaped auth forget --<FIELDS> VALUE
 cli untaped auth forget --columns VALUE... default=unset
 cli untaped auth forget --columns alias=-c
-cli untaped auth forget --dry-run switch
+cli untaped auth forget --dry-run switch default=unset
 cli untaped auth forget --format VALUE default=table
 cli untaped auth forget --format alias=-f
 cli untaped auth forget --format choice=json
@@ -419,8 +418,9 @@ cli untaped auth forget --format choice=raw
 cli untaped auth forget --format choice=table
 cli untaped auth forget --format choice=yaml
 cli untaped auth forget --id VALUE default=unset
+cli untaped auth forget --key VALUE... default=unset
 cli untaped auth forget --yes alias=-y
-cli untaped auth forget --yes switch
+cli untaped auth forget --yes switch default=unset
 cli untaped auth forget [NAME]@2 default=unset
 cli untaped auth forget [PLUGIN]@1 default=unset
 cli untaped auth list
@@ -434,7 +434,6 @@ cli untaped auth list --format choice=raw
 cli untaped auth list --format choice=table
 cli untaped auth list --format choice=yaml
 cli untaped auth login
-cli untaped auth login --<FIELDS> VALUE
 cli untaped auth login --columns VALUE... default=unset
 cli untaped auth login --columns alias=-c
 cli untaped auth login --format VALUE default=table
@@ -444,6 +443,7 @@ cli untaped auth login --format choice=pipe
 cli untaped auth login --format choice=raw
 cli untaped auth login --format choice=table
 cli untaped auth login --format choice=yaml
+cli untaped auth login --key VALUE... default=unset
 cli untaped auth login --store VALUE default=unset
 cli untaped auth login --store choice=pass
 cli untaped auth login --store choice=secret-tool
@@ -454,7 +454,7 @@ cli untaped auth login [PLUGIN]@1 default=unset
 cli untaped auth migrate  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --columns alias=-c  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --dry-run switch  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth migrate --dry-run switch default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --format alias=-f  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --format choice=json  [deprecated, removed in 12.0; use untaped auth login]
@@ -466,6 +466,8 @@ cli untaped auth migrate --store VALUE default=unset  [deprecated, removed in 12
 cli untaped auth migrate --store choice=pass  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --store choice=secret-tool  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth migrate --store choice=security  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth migrate --yes alias=-y  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth migrate --yes switch default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --columns alias=-c  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth login]
@@ -475,7 +477,7 @@ cli untaped auth set --format choice=pipe  [deprecated, removed in 12.0; use unt
 cli untaped auth set --format choice=raw  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --format choice=table  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --format choice=yaml  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --stdin switch  [deprecated, removed in 12.0; use untaped auth login]
+cli untaped auth set --stdin switch default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --store VALUE default=unset  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --store choice=pass  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth set --store choice=secret-tool  [deprecated, removed in 12.0; use untaped auth login]
@@ -493,7 +495,7 @@ cli untaped auth status --format choice=table
 cli untaped auth status --format choice=yaml
 cli untaped auth unset --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --columns alias=-c  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --dry-run switch  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --dry-run switch default=unset  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --format alias=-f  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --format choice=json  [deprecated, removed in 12.0; use untaped auth forget]
@@ -502,7 +504,7 @@ cli untaped auth unset --format choice=raw  [deprecated, removed in 12.0; use un
 cli untaped auth unset --format choice=table  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --format choice=yaml  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset --yes alias=-y  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --yes switch  [deprecated, removed in 12.0; use untaped auth forget]
+cli untaped auth unset --yes switch default=unset  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped auth unset SECTION  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped awx
 cli untaped awx apply --allow-unverified switch
@@ -4545,6 +4547,13 @@ record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
 record untaped.PickedProfile.source choice=flag
 record untaped.PickedProfile.source string
+record untaped.auth_outcome  [deprecated, removed in 12.0]
+record untaped.auth_outcome.action string  [deprecated, removed in 12.0]
+record untaped.auth_outcome.detail string?  [deprecated, removed in 12.0]
+record untaped.auth_outcome.error Failure?  [deprecated, removed in 12.0]
+record untaped.auth_outcome.profile string  [deprecated, removed in 12.0]
+record untaped.auth_outcome.section string  [deprecated, removed in 12.0]
+record untaped.auth_outcome.store string?  [deprecated, removed in 12.0]
 record untaped.config_migration_outcome
 record untaped.config_migration_outcome.action string
 record untaped.config_migration_outcome.detail string
@@ -4562,6 +4571,15 @@ record untaped.contract_method.stability choice=deprecated
 record untaped.contract_method.stability choice=experimental
 record untaped.contract_method.stability choice=stable
 record untaped.contract_method.stability string
+record untaped.credential_outcome
+record untaped.credential_outcome.action string
+record untaped.credential_outcome.detail string?
+record untaped.credential_outcome.error Failure?
+record untaped.credential_outcome.id string
+record untaped.credential_outcome.key string
+record untaped.credential_outcome.name string
+record untaped.credential_outcome.plugin string
+record untaped.credential_outcome.store string?
 record untaped.debug
 record untaped.debug.hint string?
 record untaped.debug.level choice=debug
@@ -4721,6 +4739,22 @@ record untaped.stale.partial boolean
 record untaped.stale.plugin string
 record untaped.stale.refreshed_at string(format=date-time)
 record untaped.stale.retry_at string(format=date-time)?
+record untaped.stored_credential
+record untaped.stored_credential.backend string
+record untaped.stored_credential.id string
+record untaped.stored_credential.key string
+record untaped.stored_credential.name string
+record untaped.stored_credential.plugin string
+record untaped.stored_credential.where string
+record untaped.token_source
+record untaped.token_source.id string?
+record untaped.token_source.key string?
+record untaped.token_source.name string
+record untaped.token_source.profile string
+record untaped.token_source.refusal string?
+record untaped.token_source.section string
+record untaped.token_source.source string
+record untaped.token_source.step string?
 sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]

@@ -9,8 +9,7 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.commands.support import compose, make_spec, write_config
-from untaped.core.commands.auth import build_root_auth_app
+from core_test_support.commands.support import make_spec, root_group, write_config
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import deprecated
@@ -54,12 +53,13 @@ def _auth(
     backend: ScriptedPromptBackend | None = None,
     settings: type[BaseModel] = WizProfile,
 ) -> CliResult:
-    result = compose(
+    app = root_group(
+        "auth",
         make_spec("wiz", settings=settings, credentials=(TOKEN,)),
         make_spec("vlt", credentials=(VAULT,)),
     )
     return CliInvoker().invoke(
-        build_root_auth_app(result=result),
+        app,
         list(args),
         input=input,
         prompt_backend=backend,
@@ -139,7 +139,7 @@ def test_login_with_a_command_files_it_and_names_what_it_outranks(
 @pytest.mark.usefixtures("_server")
 @pytest.mark.parametrize(
     ("command", "message"),
-    [("", "--token-command is empty"), ("'open", "is not a valid command line")],
+    [("", "--token-command requires an argument"), ("'open", "is not a valid command line")],
 )
 def test_login_refuses_a_bad_token_command(command: str, message: str) -> None:
     result = _auth("login", "wiz", "--token-command", command)
@@ -171,14 +171,14 @@ def test_login_before_setup_names_the_setup_step() -> None:
 
 @pytest.mark.usefixtures("_server")
 def test_login_refuses_key_fields_the_settings_hold() -> None:
-    result = _auth("login", "wiz", "--url", "https://other.example.com", input="tok\n")
+    result = _auth("login", "wiz", "--key", "url=https://other.example.com", input="tok\n")
 
     assert result.exit_code == 2, result.output
-    assert "key comes from wiz's settings, not from --url" in result.stderr
+    assert "key comes from wiz's settings, not from --key" in result.stderr
 
 
 def test_a_key_the_settings_do_not_hold_comes_from_options() -> None:
-    row = _json(_auth("login", "vlt", "--vault-id", "prod", "--format", "json", input="pw\n"))
+    row = _json(_auth("login", "vlt", "--key", "vault-id=prod", "--format", "json", input="pw\n"))
 
     assert row["key"] == "vault_id=prod"
     assert _secret(VAULT, Vault(vault_id="prod")) == "pw"
@@ -188,7 +188,14 @@ def test_a_missing_key_option_is_named() -> None:
     result = _auth("login", "vlt", input="pw\n")
 
     assert result.exit_code == 2, result.output
-    assert "vlt password needs --vault-id" in result.stderr
+    assert "vlt password needs --key vault-id=" in result.stderr
+
+
+def test_a_key_option_without_a_value_is_refused() -> None:
+    result = _auth("login", "vlt", "--key", "vault-id", input="pw\n")
+
+    assert result.exit_code == 2, result.output
+    assert "--key takes FIELD=VALUE, not 'vault-id'" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -220,9 +227,7 @@ def test_login_without_a_plugin_offers_a_menu_on_a_terminal() -> None:
 
 
 def test_no_declared_credential_is_a_usage_error() -> None:
-    result = CliInvoker().invoke(
-        build_root_auth_app(result=compose(make_spec("bare"))), ["login"], input="t\n"
-    )
+    result = CliInvoker().invoke(root_group("auth", make_spec("bare")), ["login"], input="t\n")
 
     assert result.exit_code == 2, result.output
     assert "no installed plugin declares a credential" in result.stderr
