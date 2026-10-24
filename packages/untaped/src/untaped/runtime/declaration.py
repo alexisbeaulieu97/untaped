@@ -114,6 +114,20 @@ class GroupDecl(_Frozen):
     commands: tuple[CommandDecl | GroupDecl, ...] = ()
 
 
+class CacheDecl(_Frozen):
+    """What a cache's setting reads of it: its label, declared max age and old keys.
+
+    The settings section is composed from it at every start, so reading the
+    settings never imports the plugin class holding the cache.
+    """
+
+    label: str
+    #: The declared max age in seconds; ``None`` for a version-only cache, which has no setting.
+    max_age_seconds: int | None
+    renamed_from: tuple[str, ...] = ()
+    removed_in: int | None = None
+
+
 class BlockDecl(_Frozen):
     """A block a plugin class holds, under the name derived from its attribute."""
 
@@ -124,6 +138,8 @@ class BlockDecl(_Frozen):
     name: str
     #: The module that created the block, which the plugin's import loads.
     module: str
+    #: A cache's setting; ``None`` for any other block.
+    cache: CacheDecl | None = None
 
 
 class KindDecl(_Frozen):
@@ -166,11 +182,24 @@ class Problem(_Frozen):
 
 
 class Quarantined(_Frozen):
-    """A plugin composition refused, with every problem it found."""
+    """A plugin composition refused, with every problem it found.
+
+    ``reason`` is the quarantine reason core reports: every problem of the
+    walk is ``bad-plugin-class``; a check of 11.x composition (a doctor
+    check's id another plugin has) gives its own, with its one problem.
+    """
 
     name: str
     target: str
     problems: tuple[Problem, ...]
+    reason: str = "bad-plugin-class"
+
+    @property
+    def detail(self) -> str:
+        """What the quarantine record says: every problem, or the check's own words."""
+        if self.reason == "bad-plugin-class":
+            return "; ".join(map(str, self.problems))
+        return "; ".join(problem.detail for problem in self.problems)
 
 
 class Declaration(_Frozen):
@@ -232,6 +261,18 @@ class Declaration(_Frozen):
             else:
                 words.append(str(arg))
         return " ".join(words)
+
+
+class KeptDeclaration(_Frozen):
+    """Core's kept composition: the declaration, and the candidates it was composed from.
+
+    ``candidates`` is a digest of every candidate field composition reads
+    (group, ``Requires-Dist``, version...), so a kept declaration whose
+    candidates changed under the same cache key is composed again.
+    """
+
+    candidates: str
+    declaration: Declaration
 
 
 GroupDecl.model_rebuild()

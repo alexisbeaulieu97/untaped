@@ -172,9 +172,13 @@ _STARTUP_PROBE = (
 #: The 12.0 plugin classes (``untaped.sdk.plugin``, ``untaped.sdk.fields`` and
 #: ``untaped.sdk._block``), which every plugin's entry point imports from 12.0
 #: on, add three: 156 against 153 on their base, 2026-10-23, so the budget goes
-#: to 159.
-_TOTAL_BUDGET = 710
-_UNTAPED_BUDGET = 159
+#: to 159. Core's declaration cache, read at every start so a 12.0 plugin
+#: class isn't imported (``untaped.core.plugin``, ``untaped.runtime.declaration``,
+#: ``untaped.sdk.storage.installed_code`` and the data file), adds four: 161
+#: against 157 on its base, 2026-10-24, so the budget goes to 163, and the
+#: total (715 with them) to 718.
+_TOTAL_BUDGET = 718
+_UNTAPED_BUDGET = 163
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
@@ -186,8 +190,12 @@ def test_startup_stays_within_its_module_budget(flag: str) -> None:
     assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"
 
 
-def test_a_typed_cache_declared_at_startup_loads_neither_its_model_nor_the_data_file() -> None:
-    """``model=`` takes a function for a model whose import would cost startup; ``--help`` too."""
+def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:
+    """``model=`` takes a function for a model whose import would cost startup; ``--help`` too.
+
+    The data file loads at every start (core reads its declaration cache), so
+    only the model is held here.
+    """
     snippet = (
         "from datetime import timedelta\n"
         "from untaped.sdk import Cache\n"
@@ -196,8 +204,7 @@ def test_a_typed_cache_declared_at_startup_loads_neither_its_model_nor_the_data_
         "    raise AssertionError('resolved at declaration')\n"
         "Cache('acme', 'snapshots', label='x', max_age=timedelta(hours=1), model=model)\n"
         + _DISPATCH_PROBE.format(argv=["--help"])
-        + "assert 'untaped.sdk.storage.data_file' not in sys.modules\n"
-        "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
+        + "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
     )
     assert "httpx" not in _loaded_heavy_modules(snippet)
 

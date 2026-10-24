@@ -1184,10 +1184,12 @@ class Cache[M = None](OwnedBlock):
         Under ``split="settings"``, the root's folder named by the plugin's
         settings digest (:mod:`untaped.sdk.storage._digest`).
         """
+        root = self._root(None if self.store is None else self.store.layout)
+        if self.split == "none":
+            return root
         from untaped.sdk.storage._digest import settings_digest  # noqa: PLC0415 - no cycle
 
-        root = self._root(None if self.store is None else self.store.layout)
-        return root if self.split == "none" else root / settings_digest(self.plugin)
+        return root / settings_digest(self.plugin)
 
     def _paths(
         self, key: str, partition: str | None = None, *, folder: Path | None = None
