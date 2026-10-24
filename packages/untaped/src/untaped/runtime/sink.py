@@ -223,6 +223,29 @@ type _Mode = Literal["spinner", "lines", "silent"]
 
 #: Open tasks, by open time: the first is the line's, the last owns its phase. Guarded by the lock.
 _tasks: list[_Task] = []
+#: Whether progress time stands still (:func:`frozen_cadence`), for a test's invocation.
+_frozen: list[bool] = [False]
+
+
+def _still() -> float:
+    return 0.0
+
+
+@contextmanager
+def frozen_cadence() -> Iterator[None]:
+    """Hold progress time still for tasks opened in the block: no line falls due.
+
+    Only the cadence stands still; every other reader of the run's clock
+    (a deadline, a back-off) keeps its time. ``--verbose`` still prints
+    every update.
+    """
+    previous, _frozen[0] = _frozen[0], True
+    try:
+        yield
+    finally:
+        _frozen[0] = previous
+
+
 #: The thread driving the spinner and the deadlines while a task is open. Guarded by the lock.
 _ticker: _Ticker | None = None
 #: The spinner's frame counter. Guarded by the lock.
@@ -255,7 +278,7 @@ class _Task:
         self.verbose = verbose
         self.frames = frames
         #: The clock at open, so a task outliving a test's clock keeps its own.
-        self.clock = run_clock().monotonic
+        self.clock = _still if _frozen[0] else run_clock().monotonic
         self.opened = self.clock()
         self.phase: str | None = None
         self.done: int | None = None

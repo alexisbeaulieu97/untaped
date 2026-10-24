@@ -9,6 +9,7 @@ waits.
 from __future__ import annotations
 
 import email.utils
+import time
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -173,3 +174,35 @@ def test_progress_follows_the_clock_even_under_invoke_cli(move: str) -> None:
         result = invoke_cli(_resolving(clock, move), [])
     assert result.exit_code == 0, result.stderr
     assert "Resolving deps · installing · pinning (2s)" in result.stderr
+
+
+def test_a_deadline_keeps_the_clock_it_was_set_on() -> None:
+    clock = ManualClock(START)
+    with installed_clock(clock), request_deadline(10):
+        clock.advance(4)
+        with progress_clock() as progress:
+            progress.advance(100)
+            assert _time_left() == 6
+            with request_deadline(20):
+                assert _time_left() == 6
+            with request_deadline(1):
+                assert _time_left() == 1
+
+
+def _waiting(left: list[float | None]) -> App:
+    app = App(name="wait")
+
+    @app.default
+    def wait() -> None:
+        with request_deadline(0.05):
+            time.sleep(0.1)
+            left.append(_time_left())
+
+    return app
+
+
+def test_a_deadline_runs_out_under_invoke_cli_while_progress_stands_still() -> None:
+    left: list[float | None] = []
+    assert invoke_cli(_waiting(left), []).exit_code == 0
+    [after] = left
+    assert after is not None and after < 0

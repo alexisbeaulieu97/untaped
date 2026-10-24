@@ -61,7 +61,7 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import deprecated, deprecated_behaviour, deprecated_parameters
 from untaped.sdk.network.auth import takes_token_command, token_alternatives
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
-from untaped.sdk.run import run_clock
+from untaped.sdk.run import Clock, run_clock
 from untaped.sdk.words import command_line, q, run_hint
 
 if TYPE_CHECKING:
@@ -206,7 +206,10 @@ def _ssl_context(ca_bundle_path: Path | None) -> ssl.SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
-_DEADLINE: ContextVar[float | None] = ContextVar("untaped_http_deadline", default=None)
+#: The clock a deadline was set on and the time on it when the deadline ends.
+_DEADLINE: ContextVar[tuple[Clock, float] | None] = ContextVar(
+    "untaped_http_deadline", default=None
+)
 
 
 @contextmanager
@@ -224,9 +227,11 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
     if seconds is None:
         yield
         return
-    ends = run_clock().monotonic() + seconds
+    left = _time_left()
+    clock = run_clock()
     held = _DEADLINE.get()
-    token = _DEADLINE.set(ends if held is None else min(held, ends))
+    keep = held is not None and left is not None and left <= seconds
+    token = _DEADLINE.set(held if keep else (clock, clock.monotonic() + seconds))
     try:
         yield
     finally:
@@ -234,8 +239,11 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
 
 
 def _time_left() -> float | None:
-    ends = _DEADLINE.get()
-    return None if ends is None else ends - run_clock().monotonic()
+    held = _DEADLINE.get()
+    if held is None:
+        return None
+    clock, ends = held
+    return ends - clock.monotonic()
 
 
 def _fits(delay: float) -> bool:

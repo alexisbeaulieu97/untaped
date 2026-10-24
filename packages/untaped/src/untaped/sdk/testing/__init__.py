@@ -20,7 +20,7 @@ for one kind of time; the other kind stays real (or the manual clock's,
 inside one). :func:`invoke_cli` freezes progress time for the invocation
 unless the test installed a clock for it, so ``CliResult.diagnostics``
 carries no ``untaped.progress`` line however slow the run (``--verbose``
-still prints every update).
+still prints every update); a deadline or a back-off inside keeps its time.
 
 :func:`write_reference` writes another install's reference in
 ``~/.untaped/refs/``, so a test can say what holds a store's layouts.
@@ -57,7 +57,7 @@ from rich.console import Console
 
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.sink import recording, tick
+from untaped.runtime.sink import frozen_cadence, recording, tick
 from untaped.screen.core import Cancel, Quit, Screen
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.errors import ConfigError, PromptInterruptedError
@@ -500,7 +500,7 @@ def invoke_cli(
     token = set_prompt_backend_override(prompt_backend) if prompt_backend is not None else None
     terminal_token = set_terminal_override(TtyStringIO if terminal else no_terminal)
     try:
-        frozen = nullcontext() if _monotonic_is_manual() else progress_clock()
+        frozen = nullcontext() if _monotonic_is_manual() else frozen_cadence()
         with (
             frozen,
             redirect_stdout(stdout),
