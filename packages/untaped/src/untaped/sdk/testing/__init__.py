@@ -109,12 +109,15 @@ __all__ = [
     "CacheClock",
     "CliInvoker",
     "CliResult",
+    "Home",
+    "Install",
     "ManualClock",
     "MemoryStore",
     "PluginCandidate",
     "PluginCheckRow",
     "ProgressClock",
     "PromptBackend",
+    "Ran",
     "ScreenKeys",
     "ScreenRun",
     "ScriptedPromptBackend",
@@ -130,6 +133,7 @@ __all__ = [
     "current_memory_store",
     "damage",
     "drive_screen",
+    "install",
     "invoke_cli",
     "invoke_root",
     "keep_value",
@@ -946,3 +950,7 @@ def _exit_code(exc: SystemExit) -> int:
     if isinstance(code, int):
         return code
     return 1
+
+
+# Last: install reads this module's runners when it runs a command.
+from untaped.sdk.testing.install import Home, Install, Ran, install  # noqa: E402

@@ -381,6 +381,12 @@ in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
 with `untaped.sdk.testing.manual_clock()`).
+A plugin class is tested through the plugin's fixtures instead:
+`install(Hello, settings=HelloSettings(...))` composes it into the test's
+home, `.run(Greet())` runs a built command and `.cli("hello say ada")` a
+command line, both returning a `Ran` (exit code, output, `rows_as(Model)`),
+and `clock` is the one clock caches, progress and HTTP back-off read
+(`examples/untaped-hello/tests`).
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands
 with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,

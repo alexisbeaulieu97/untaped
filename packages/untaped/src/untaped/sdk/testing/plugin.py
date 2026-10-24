@@ -8,14 +8,20 @@ in-memory password store (:class:`untaped.sdk.testing.MemoryStore`), no
 controlling terminal, plain non-colour output, and a fresh settings
 registry. It is not auto-loaded, so installing untaped never changes
 another project's tests.
+
+Its fixtures: ``home`` (the hermetic home, :class:`~untaped.sdk.testing.Home`),
+``install`` (:func:`untaped.sdk.testing.install`, composing plugin classes into
+it) and ``clock`` (a :class:`~untaped.sdk.testing.ManualClock` every block
+reads time from).
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +32,16 @@ from untaped.sdk.network.credentials import credential_env_names
 from untaped.sdk.projects import _forget as _forget_projects
 from untaped.sdk.prompt.prompts import reset_terminal_override, set_terminal_override
 from untaped.sdk.storage.store import _forget_opened
-from untaped.sdk.testing import memory_store, no_terminal
+from untaped.sdk.testing import (
+    Home,
+    ManualClock,
+    manual_clock,
+    memory_store,
+    no_terminal,
+)
+from untaped.sdk.testing import (
+    install as _install,
+)
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
@@ -96,3 +111,22 @@ def _forget_contract_providers() -> None:
     registry = sys.modules.get("untaped.runtime.contracts.registry")
     if registry is not None:
         registry.reset()
+
+
+@pytest.fixture
+def home() -> Home:
+    """The hermetic home this test runs in: ``home.path``, ``home.plugin(Hello)``."""
+    return Home(Path.home())
+
+
+@pytest.fixture
+def install() -> Callable[..., Any]:
+    """Compose plugin classes into the home: ``install(Hello, settings=HelloSettings(...))``."""
+    return _install
+
+
+@pytest.fixture
+def clock() -> Iterator[ManualClock]:
+    """The one clock blocks read: ``clock.advance(hours=7)`` ages caches and skips back-offs."""
+    with manual_clock() as manual:
+        yield manual

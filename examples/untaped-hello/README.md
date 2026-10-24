@@ -36,5 +36,7 @@ cd /tmp/untaped-hello
 
 The tests use `untaped.sdk.testing` and `untaped_lint.testing`: `tests/conftest.py`
 enables the hermetic plugin, `assert_clean("hello")` fails where `untaped lint`
-would, and `invoke_root` runs `untaped ...` in-process. The building guide
+would, and the `install` fixture composes `Hello` into the test's home:
+`install(Hello).run(Greet())` runs a command, `.cli("hello say ada")` a
+command line, and the `clock` fixture ages the cache. The building guide
 is [`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).

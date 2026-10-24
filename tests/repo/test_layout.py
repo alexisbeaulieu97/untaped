@@ -64,6 +64,8 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk.storage.store",
         "untaped.sdk.testing",
         "untaped.sdk.testing.contracts",
+        # composes an install and runs its commands as the root does: the test context is core's
+        "untaped.sdk.testing.install",
         "untaped.sdk.testing.plugin",
         "untaped.sdk.testing.screens",
         "untaped.sdk.testing.surface",
