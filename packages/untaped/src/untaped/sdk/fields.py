@@ -19,20 +19,32 @@ command never parses a token itself.
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, cast, get_args
+from types import UnionType
+from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
 from pydantic.types import PathType
 from pydantic_core import core_schema
 
-from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, Mark
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
+from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, Invocation, Mark
+from untaped.sdk.errors import (
+    ConfigError,
+    ErrorCategory,
+    UntapedError,
+    UsageError,
+    first_validation_error,
+)
 
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler
+    from pydantic.fields import FieldInfo
+
+    from untaped.sdk._cli import OutputFormat
+    from untaped.sdk._pipe import PipeEnvelope
 
 # --- positionals and marks ------------------------------------------------------
 
@@ -324,6 +336,11 @@ def key(model: type[BaseModel]) -> SettingKey:
 # --- the fields core fills ---------------------------------------------------------
 
 
+def _copy[B: FieldBlock](block: B) -> B:
+    """A shallow copy of a field's default, which a filled field must never change."""
+    return copy.copy(block)
+
+
 OUTPUT_FORMATS: tuple[str, ...] = ("table", "json", "yaml", "pipe", "raw")
 """The formats every ``Output`` offers, before a plugin's own renderers."""
 
@@ -332,7 +349,9 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks are the table's default columns. The default
+    agree); its ``Column`` marks are the table's default columns, and
+    ``--columns`` names its fields (checked before ``run``, so a subclass's own
+    fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
     its own default columns, ``Output(render={"tree": render_tree})`` adds a
     format of the plugin's own.
@@ -353,13 +372,99 @@ class Output[R: BaseModel](FieldBlock):
         columns: Sequence[str] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
     ) -> None:
-        self.columns = tuple(columns)
+        self._declared = tuple(columns)
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
+        #: The format ``--format`` chose (``table`` when unfilled).
+        self.format = "table"
+        #: The table's default columns this run: the declared ones, or ``R``'s
+        #: ``Column`` fields; ``.add(...)`` adds more. ``--columns`` applies on top.
+        self.columns = Columns(self._declared)
+        self._requested: list[str] | None = None
+        self._empty: str | None = None
 
     @property
     def formats(self) -> tuple[str, ...]:
         """Every value ``--format`` takes for this command."""
         return (*OUTPUT_FORMATS, *self.render)
+
+    def empty(self, text: str) -> None:
+        """The text a table shows when ``run`` printed no row."""
+        self._empty = text
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Output[R]:
+        """A copy for one invocation, from ``--format`` and ``--columns``.
+
+        A ``--columns`` name ``R`` has no field for is a usage error here, before
+        ``run`` starts; a plugin renderer's format takes no ``--columns``.
+        """
+        from untaped.sdk._cli import check_columns  # noqa: PLC0415 - rendering is heavy
+
+        model = _type_argument(call.annotation)
+        requested = flags.get("--columns")
+        filled = _copy(self)
+        filled.format = str(flags.get("--format") or "table")
+        filled._requested = list(requested) if isinstance(requested, list) else None
+        filled.columns = Columns(self._declared or (column_fields(model) if model else ()))
+        filled._empty = None
+        if filled.format in self.render:
+            if filled._requested is not None:
+                raise UsageError(f"--columns does not apply to --format {filled.format}")
+        elif model is not None:
+            fmt = cast("OutputFormat", filled.format)
+            check_columns(model, columns=filled._requested, fmt=fmt)
+        return filled
+
+    def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
+        """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
+        from untaped.sdk._cli import count_row_failures, emit  # noqa: PLC0415 - rendering is heavy
+
+        renderer = self.render.get(self.format)
+        if renderer is not None:
+            count_row_failures([records] if isinstance(records, BaseModel) else records)
+            renderer(records)
+            return
+        emit(
+            records,
+            fmt=cast("OutputFormat", self.format),  # a plugin renderer's format returned above
+            columns=self._requested,
+            empty=self._empty,
+            kind=kind,
+            table_columns=list(self.columns) or None,
+        )
+
+
+class Columns(list[str]):
+    """A command's default table columns for one run: ``self.output.columns.add("url")``."""
+
+    def add(self, *names: str) -> None:
+        """Show ``names`` too, after the columns already shown."""
+        self.extend(name for name in names if name not in self)
+
+
+def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
+    """The fields of ``model`` marked ``Column``: a table's default columns (none: every field)."""
+    return tuple(name for name, info in model.model_fields.items() if Column in _marks(info))
+
+
+def key_field(model: type[BaseModel]) -> str | None:
+    """The field of ``model`` marked ``Key``: what a bare identifier stands for."""
+    return next((name for name, info in model.model_fields.items() if Key in _marks(info)), None)
+
+
+def _marks(info: FieldInfo) -> list[object]:
+    """A field's marks, those inside ``X | None`` too (pydantic lifts only top-level ones)."""
+    marks = list(info.metadata)
+    for arg in get_args(info.annotation):
+        if get_origin(arg) is Annotated:
+            marks.extend(get_args(arg)[1:])
+    return marks
+
+
+def _type_argument(annotation: object) -> type[BaseModel] | None:
+    """The model a generic field names (``Output[R]`` gives ``R``), if it is one model."""
+    args = get_args(annotation)
+    model = args[0] if args else None
+    return model if isinstance(model, type) and issubclass(model, BaseModel) else None
 
 
 class Stdin[R: BaseModel](FieldBlock):
@@ -376,6 +481,113 @@ class Stdin[R: BaseModel](FieldBlock):
 
     def __init__(self, *, via: Callable[..., Any] | None = None) -> None:
         self.via = via
+        self._requested = False
+        self._models: tuple[type[BaseModel], ...] = ()
+        #: Each kind read as its model; with ``_any`` the kinds core knows.
+        self._kinds: Mapping[str, type[BaseModel]] = {}
+        self._any = False
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Stdin[R]:
+        """A copy for one invocation: ``--stdin``, and the kinds ``R`` accepts.
+
+        A kind is accepted when its model is one of ``R``'s models or a subclass;
+        a model that is a record base (``Stdin[Record]``) accepts any kind.
+        """
+        from untaped.sdk.diagnostic import WireModel  # noqa: PLC0415 - reading only
+        from untaped.sdk.records import Record  # noqa: PLC0415 - reading only
+
+        args = get_args(call.annotation)
+        accepted = args[0] if args else None
+        members = get_args(accepted) if get_origin(accepted) in (UnionType, Union) else (accepted,)
+        models = tuple(m for m in members if isinstance(m, type) and issubclass(m, BaseModel))
+        filled = _copy(self)
+        filled._requested = bool(flags.get("--stdin"))
+        filled._models = models
+        filled._any = any(model in (BaseModel, WireModel, Record) for model in models)
+        filled._kinds = {
+            kind: model
+            for kind, model in call.kinds().items()
+            if filled._any or issubclass(model, models)
+        }
+        return filled
+
+    def identifiers(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str]:
+        """The identifiers given, or read from stdin: bare lines, or each row's ``Key`` field.
+
+        Both at once, or neither (unless ``allow_empty``), is a usage error.
+        """
+        return [
+            value if isinstance(value, str) else self._identifier(value)
+            for value in self._read(given, allow_empty=allow_empty)
+        ]
+
+    def values(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str | R]:
+        """The arguments as given, or what stdin carried: each a bare line or a validated row."""
+        return [
+            value if isinstance(value, str) else self._row(value)
+            for value in self._read(given, allow_empty=allow_empty)
+        ]
+
+    def rows(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[R]:
+        """Whole validated rows from stdin; a bare identifier is a usage error."""
+        rows: list[R] = []
+        for value in self.values(given, allow_empty=allow_empty):
+            if isinstance(value, str):
+                raise UsageError(f"expected rows on stdin, got the bare line {value!r}")
+            rows.append(value)
+        return rows
+
+    def _read(self, given: Sequence[str], *, allow_empty: bool) -> list[str | PipeEnvelope]:
+        from untaped.sdk._stdin import read_stdin_input  # noqa: PLC0415 - only a reader pays
+
+        if not self._requested:
+            if not given and not allow_empty:
+                raise UsageError("at least one identifier is required (or use --stdin)")
+            return list(given)
+        if given:
+            raise UsageError("provide identifiers as positional args or via --stdin, not both")
+        kinds = None if self._any else tuple(self._kinds)
+        piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
+        return list(piped.values) if piped.records is None else list(piped.records)
+
+    def _model(self, envelope: PipeEnvelope) -> type[BaseModel]:
+        if envelope.kind is not None:
+            model = self._kinds.get(envelope.kind)
+            if model is not None:
+                return model
+            raise ConfigError(
+                f"line {envelope.lineno}: no installed plugin declares the kind "
+                f"{envelope.kind!r}, so its rows cannot be read",
+                category="invalid",
+            )
+        if not self._models:
+            raise TypeError("Stdin was not filled with the models it accepts")
+        return self._models[0]
+
+    def _identifier(self, envelope: PipeEnvelope) -> str:
+        field = key_field(self._model(envelope))
+        if field is None:
+            raise ConfigError(
+                "stdin is untaped pipe format but this command cannot map records to "
+                "identifiers: no field of the accepted model is marked Key",
+                category="invalid",
+            )
+        value = envelope.record.get(field)
+        identifier = "" if value is None else str(value).strip()
+        if not identifier:
+            raise ConfigError(
+                f"line {envelope.lineno}: record {field!r} is missing or blank",
+                category="invalid",
+            )
+        return identifier
+
+    def _row(self, envelope: PipeEnvelope) -> R:
+        try:
+            return cast("R", self._model(envelope).model_validate(envelope.record))
+        except ValidationError as exc:
+            raise ConfigError(
+                f"line {envelope.lineno}: {first_validation_error(exc)}", category="invalid"
+            ) from exc
 
 
 class Lines(FieldBlock):

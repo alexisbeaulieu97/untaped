@@ -11,14 +11,16 @@ root importing the group (layout-12.0.md decision 2).
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, get_origin
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, get_origin
 
 from pydantic_core import PydanticOmit, core_schema
 
 if TYPE_CHECKING:
     from types import FrameType
 
-    from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
+    from pydantic import BaseModel, GetCoreSchemaHandler, GetJsonSchemaHandler
     from pydantic.json_schema import JsonSchemaValue
 
 
@@ -174,6 +176,18 @@ class FieldOption(NamedTuple):
     negative: str | None = None
 
 
+@dataclass(frozen=True)
+class Invocation:
+    """What a core-filled field learns when core fills it, beside its own flags."""
+
+    #: The command line run: ``("untaped", "hello", "say")``.
+    words: tuple[str, ...]
+    #: The field's annotation: ``Output[Salutation]``, ``Stdin[Repo | Host]``.
+    annotation: object
+    #: Every record kind core knows, and its model.
+    kinds: Callable[[], Mapping[str, type[BaseModel]]]
+
+
 class FieldBlock:
     """Base of the field types core fills (``Output``, ``Stdin``, ``Confirm``, ...).
 
@@ -190,6 +204,16 @@ class FieldBlock:
     panel: ClassVar[str] = "Options"
     #: The flags the field adds, before any per-instance ones.
     options: ClassVar[tuple[FieldOption, ...]] = ()
+
+    def _fill(self, flags: Mapping[str, object], call: Invocation) -> Self:
+        """This field for one invocation, from its flags (``{"--format": "json"}``).
+
+        Each block reads its own flags and returns a filled copy, so its default
+        (shared by every invocation) never changes; a block with nothing to fill
+        returns itself.
+        """
+        del flags, call
+        return self
 
     @classmethod
     def __get_pydantic_core_schema__(

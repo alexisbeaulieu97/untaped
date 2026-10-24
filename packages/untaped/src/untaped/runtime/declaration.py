@@ -45,6 +45,7 @@ class OptionDecl(_Frozen):
     choices: tuple[str, ...] = ()
     negative: str | None = None
     short: str | None = None
+    #: It must be given: its field is required, and so is every bundle around it.
     required: bool = False
     default: JsonValue = None
     help: str

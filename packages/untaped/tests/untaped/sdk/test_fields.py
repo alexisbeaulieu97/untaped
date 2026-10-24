@@ -11,20 +11,25 @@ from pydantic import BaseModel, Field, ValidationError
 
 from untaped.sdk import (
     AllowHyphen,
+    Column,
     ConfigError,
     ExistingFile,
     File,
+    Key,
     KeyJson,
     KeyValue,
     Output,
     Parallel,
     Positional,
+    Record,
     Short,
+    Stdin,
     UntapedError,
+    UsageError,
     key,
 )
-from untaped.sdk._block import POSITIONAL
-from untaped.sdk.fields import CORE_SHORTS, SettingKey
+from untaped.sdk._block import POSITIONAL, Invocation
+from untaped.sdk.fields import CORE_SHORTS, SettingKey, column_fields, key_field
 
 
 class Suite(BaseModel):
@@ -166,7 +171,7 @@ def test_a_key_is_a_field_type_dumped_as_its_path() -> None:
 def test_output_lists_its_formats_with_the_plugins_renderers() -> None:
     assert Output().formats == ("table", "json", "yaml", "pipe", "raw")
     assert Output(render={"tree": print}).formats[-1] == "tree"
-    assert Output(columns=["key"]).columns == ("key",)
+    assert list(Output(columns=["key"]).columns) == ["key"]
 
 
 def test_parallel_checks_its_numbers() -> None:
@@ -183,3 +188,71 @@ def test_annotated_marks_reach_the_field() -> None:
         repo: Annotated[str, Short("-r")] = Field("x", description="The repo.")
 
     assert [type(m) for m in Opts.model_fields["repo"].metadata] == [Short]
+
+
+class Row(BaseModel):
+    name: Annotated[str, Key, Column]
+    size: int = 0
+
+
+def _call(annotation: object, **kinds: type[BaseModel]) -> Invocation:
+    return Invocation(words=("untaped", "acme", "list"), annotation=annotation, kinds=lambda: kinds)
+
+
+def test_an_unfilled_output_is_a_table_with_its_declared_columns() -> None:
+    output: Output[Row] = Output(columns=("name",))
+    assert (output.format, list(output.columns)) == ("table", ["name"])
+    output.columns.add("size", "name")
+    assert list(output.columns) == ["name", "size"]
+
+
+def test_a_filled_output_is_a_copy_and_falls_back_to_the_column_marks() -> None:
+    default: Output[Row] = Output()
+    filled = default._fill({"--format": "json", "--columns": ["+size"]}, _call(Output[Row]))
+    filled.columns.add("size")
+    filled.empty("none")
+    assert (filled.format, list(filled.columns)) == ("json", ["name", "size"])
+    assert (default.format, list(default.columns)) == ("table", [])
+
+
+def test_an_unknown_column_is_refused_when_filled(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        Output()._fill({"--columns": ["nope"]}, _call(Output[Row]))
+    assert exited.value.code == 2
+    assert "unknown column 'nope'" in capsys.readouterr().err
+    banner: Output[Row] = Output(render={"banner": print})
+    with pytest.raises(UsageError, match="does not apply to --format banner"):
+        banner._fill({"--format": "banner", "--columns": ["name"]}, _call(Output[Row]))
+
+
+class Other(BaseModel):
+    name: Annotated[str, Key]
+
+
+class Narrower(Row):
+    pass
+
+
+def test_a_filled_stdin_accepts_its_models_and_their_subclasses() -> None:
+    kinds = {"acme.row": Row, "acme.narrower": Narrower, "acme.other": Other}
+    one = Stdin()._fill({"--stdin": True}, _call(Stdin[Row], **kinds))
+    assert sorted(one._kinds) == ["acme.narrower", "acme.row"]
+    both = Stdin()._fill({}, _call(Stdin[Row | Other], **kinds))
+    assert sorted(both._kinds) == sorted(kinds)
+    anything = Stdin()._fill({}, _call(Stdin[Record], **kinds))
+    assert anything._any and sorted(anything._kinds) == sorted(kinds)
+
+
+def test_an_unfilled_stdin_gives_back_what_was_given() -> None:
+    stdin: Stdin[Row] = Stdin()
+    assert stdin.identifiers(["ada"]) == ["ada"]
+    assert stdin.values(["ada"]) == ["ada"]
+    assert stdin.identifiers([], allow_empty=True) == []
+    with pytest.raises(UsageError, match="at least one identifier"):
+        stdin.identifiers([])
+
+
+def test_the_key_and_column_marks_name_their_fields() -> None:
+    assert key_field(Row) == "name"
+    assert column_fields(Row) == ("name",)
+    assert key_field(Suite) is None
