@@ -370,7 +370,7 @@ def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
     result = compose(make_shell(), [candidate])
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
-    assert "untaped.core.config.models.SettingRow" in result.quarantine[0].detail
+    assert "untaped.core.config.models.Setting" in result.quarantine[0].detail
 
 
 @pytest.mark.parametrize("kind", ["github.thing", "untaped.thing"])

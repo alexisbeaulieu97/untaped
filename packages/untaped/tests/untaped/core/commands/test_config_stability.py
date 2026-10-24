@@ -10,8 +10,8 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import compose, make_spec, write_config
-from untaped.core.commands.config import _emit_split_tables, build_root_config_app
+from core_test_support.commands.support import compose, config_root, make_spec, write_config
+from untaped.core.commands.config import _emit_split_tables
 from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.core.config.models import SettingEntry, Source
 from untaped.runtime import bootstrap
@@ -72,17 +72,20 @@ class Moved(BaseModel):
     wait: Annotated[int, experimental] = 5
 
 
+_SPECS = (
+    make_spec("trial", settings=Trial),
+    make_spec("beta", settings=Beta, stability=experimental),
+    make_spec("sunset", settings=Sunset, stability=deprecated(replacement="a newer service")),
+    make_spec("moved", settings=Moved),
+)
+
+
 def _compose() -> Any:
-    return compose(
-        make_spec("trial", settings=Trial),
-        make_spec("beta", settings=Beta, stability=experimental),
-        make_spec("sunset", settings=Sunset, stability=deprecated(replacement="a newer service")),
-        make_spec("moved", settings=Moved),
-    )
+    return compose(*_SPECS)
 
 
 def _config(*args: str) -> CliResult:
-    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=_compose())
+    app = config_root(*_SPECS)
     return CliInvoker().invoke(app, list(args))
 
 

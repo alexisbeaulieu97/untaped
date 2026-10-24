@@ -18,12 +18,10 @@ from core_test_support.commands.support import (
     GithubProfile,
     GithubState,
     JiraProfile,
-    compose,
+    config_root,
     make_spec,
     write_config,
 )
-from untaped.core.commands.config import build_root_config_app
-from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import FORMAT_VERSION, get_settings
 from untaped.sdk.storage.state import StateMap
@@ -35,8 +33,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 def _config_app() -> object:
     github = make_spec("github", settings=GithubProfile, state=GithubState)
     jira = make_spec("jira", settings=JiraProfile)
-    result = compose(github, jira)
-    return build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
+    return config_root(github, jira)
 
 
 # ── fully-qualified keys ─────────────────────────────────────────────────────
@@ -122,7 +119,7 @@ def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: l
 @pytest.mark.parametrize("argv", [["set", "acme.aliases", "abc"], ["get", "acme.aliases"]])
 def test_a_declared_state_key_is_rejected(_isolated_config: Path, argv: list[str]) -> None:
     acme = make_spec("acme", stores=(StateMap("acme", "aliases"),))
-    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(acme))
+    app = config_root(acme)
 
     result = CliInvoker().invoke(app, argv)  # type: ignore[arg-type]
 

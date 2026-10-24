@@ -1,4 +1,4 @@
-"""Root ``untaped config …`` command group.
+"""``untaped config …``: list, get, set, unset, migrate and edit settings.
 
 Key resolution is direct: a fully qualified ``section.key``
 selects its schema by ``section``. A renamed key resolves to its new name
@@ -6,28 +6,25 @@ with a warning and a retired one is rejected; the section's own state fields
 raise the "managed by" error, and anything else passes through to the
 schema. Bare keys are never implicitly expanded to a plugin section.
 
-All read/write logic (list/get/set/unset/edit) is imported from the existing
-config modules; only :class:`RootConfigContext` (the root resolution rule)
-is new. There is deliberately no nested ``config doctor`` here: config
-diagnostics live at the root ``doctor`` command, where one broken section
-cannot block the other rows.
+The commands call the config use cases; :class:`RootConfigContext` is the
+key-resolution rule, built from the run's composition. There is
+deliberately no ``config doctor``: config diagnostics live at the root
+``doctor`` command, where one broken section cannot block the other rows.
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import Annotated
 
-from cyclopts import App, Parameter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from untaped.core.commands.config_editor import run_config_editor
 from untaped.core.commands.config_prompting import resolve_set_value
 from untaped.core.commands.notes import print_notes
 from untaped.core.commands.records import ConfigMigrationOutcome
-from untaped.core.config.models import SettingEntry, SettingRow, setting_entry_row
+from untaped.core.config.models import Setting, SettingEntry, SettingOutcome, setting_entry_row
 from untaped.core.config.repository import SettingsFileRepository
 from untaped.core.config.use_cases import (
     GetSetting,
@@ -36,6 +33,7 @@ from untaped.core.config.use_cases import (
     SetSetting,
     UnsetSetting,
 )
+from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import (
     ApplicationSpec,
@@ -48,19 +46,9 @@ from untaped.runtime.settings import (
     notify_config_key,
     resolve_config_path,
 )
-from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk._cli import (
-    ColumnsOption,
-    DryRunOption,
-    FormatOption,
-    create_app,
-    echo,
-    emit,
-    report_errors,
-    writes,
-)
+from untaped.sdk._cli import echo, emit
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.fields import Output, Positional
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,
@@ -70,9 +58,10 @@ from untaped.sdk.health.deprecated_keys import (
 )
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.network.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command
+from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import hint, plural
 
-_diag = Diagnostics()
+_DRY_RUN = "Check the change and write nothing."
 
 
 @dataclass(frozen=True)
@@ -189,146 +178,183 @@ def section_scopes(
     return scopes
 
 
-def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
-    """Return the root ``config`` command group for one composition."""
-    ctx = RootConfigContext(sections=section_scopes(shell, result))
-    app = create_app(name="config", help="Inspect and modify the home's ``config.yml``.")
+def _context() -> RootConfigContext:
+    """The key-resolution rule for this run's composition: core's section and each plugin's."""
+    # Lazy: bootstrap is the CLI's root and imports this module.
+    from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
 
-    @app.command(name="list")
-    def list_command(
-        *,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-        show_secrets: Annotated[
-            bool,
-            Parameter(
-                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
-            ),
-        ] = False,
-        all_profiles: Annotated[
-            bool,
-            Parameter(
-                name="--all-profiles",
-                negative="",
-                help="Show one row per (profile, key) instead of the resolved view.",
-            ),
-        ] = False,
-    ) -> None:
-        """List settings for every composed section (resolved effective values)."""
-        _list(fmt=fmt, columns=columns, show_secrets=show_secrets, all_profiles=all_profiles)
-
-    @app.command(name="get")
-    def get_command(
-        key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
-        /,
-        *,
-        fmt: FormatOption = "raw",
-        show_secrets: Annotated[
-            bool,
-            Parameter(
-                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
-            ),
-        ] = False,
-    ) -> None:
-        """Print one effective setting value (mappings and lists as JSON in raw/table)."""
-        _get(ctx, key, fmt=fmt, show_secrets=show_secrets)
-
-    @app.command(name="set")
-    @writes
-    def set_command(
-        key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
-        value: Annotated[str | None, Parameter(help="New value (validated for its type).")] = None,
-        /,
-        *,
-        stdin: Annotated[
-            bool, Parameter(name="--stdin", negative="", help="Read the value from stdin.")
-        ] = False,
-        prompt: Annotated[
-            bool,
-            Parameter(
-                name="--prompt", negative="", help="Prompt for the value using the setting type."
-            ),
-        ] = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Persist ``section.key = value`` in the active profile (or the root ``--profile``)."""
-        _set(
-            ctx,
-            key,
-            value,
-            stdin=stdin,
-            prompt=prompt,
-            dry_run=dry_run,
-            fmt=fmt,
-            columns=columns,
-        )
-
-    @app.command(name="unset")
-    @writes
-    def unset_command(
-        key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
-        /,
-        *,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Remove ``section.key`` from the active profile (or the root ``--profile``)."""
-        _unset(ctx, key, dry_run=dry_run, fmt=fmt, columns=columns)
-
-    @app.command(name="migrate")
-    @writes
-    def migrate_command(
-        *,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Give renamed and retired keys their new names.
-
-        A key also set under its new name (or a closer old name) in the same
-        profile is dropped. A deleted key is removed, and the preview prints
-        the value it held so you can carry it over. Environment variables
-        are not changed.
-        """
-        _migrate(dry_run=dry_run, fmt=fmt, columns=columns)
-
-    @app.command(name="edit")
-    def edit_command() -> None:
-        """Open the home's ``config.yml`` in $VISUAL/$EDITOR and re-validate on save."""
-        run_config_editor()
-
-    return app
+    return RootConfigContext(sections=section_scopes(SHELL_SPEC, composition()))
 
 
-def _list(
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-    show_secrets: bool,
-    all_profiles: bool,
-) -> None:
-    with report_errors():
+class List(Command[CoreSettings]):
+    """List the settings of every installed plugin and untaped's own, as this run reads them.
+
+    A table lists stable settings, then experimental ones, then deprecated
+    ones set somewhere (every one with --deprecated). Secrets show as ***
+    unless --show-secrets.
+
+    Examples:
+        $ untaped config list
+        $ untaped config list --all-profiles -f json
+    """
+
+    show_secrets: bool = Field(False, description="Reveal secret values instead of ***.")
+    all_profiles: bool = Field(
+        False, description="One row per profile and key instead of the resolved view."
+    )
+    output: Output[Setting]
+
+    def run(self) -> Iterator[Setting]:
         repo = SettingsFileRepository()
-        if all_profiles:
-            entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
+        if self.all_profiles:
+            entries = ListAllProfilesSettings(repo)(reveal_secrets=self.show_secrets)
         else:
             list_settings = ListSettings(repo)
-            entries = list_settings(reveal_secrets=show_secrets)
+            entries = list_settings(reveal_secrets=self.show_secrets)
             for error in list_settings.errors.values():
                 # The error already names the section (or env var) and file.
-                _diag.warning(f"{error} (its keys show unvalidated values)")
-        human = fmt in ("table", "raw")
-        if fmt != "table" or columns == ["?"]:
-            rows = [setting_entry_row(e, human=human) for e in entries]
-            emit(rows, fmt=fmt, columns=columns)
+                self.ctx.diag.warning(f"{error} (its keys show unvalidated values)")
+        fmt = self.output.format
+        if fmt == "table" and self.output.requested != ["?"]:
+            _emit_split_tables(entries, columns=self.output.requested)
             return
-        _emit_split_tables(entries, columns=columns)
+        human = fmt in ("table", "raw")
+        yield from (setting_entry_row(entry, human=human) for entry in entries)
 
 
-_STABLE_COLUMNS = tuple(column for column in SettingRow.table_columns if column != "note")
+class Get(Command[CoreSettings]):
+    """Print one setting's value as this run reads it.
+
+    Raw output is the value alone (nothing when unset; a mapping or list as
+    JSON); other formats give its default and where it came from.
+
+    Examples:
+        $ untaped config get awx.server.url
+        $ untaped config get awx.server.url -f json
+    """
+
+    key: Positional[str] = Field(description="The setting's full key (section.key).")
+    show_secrets: bool = Field(False, description="Reveal a secret value instead of ***.")
+    output: Output[Setting] = Output(
+        format="raw",
+        columns=("key", "value", "default", "source"),
+        render={"raw": lambda row: _print_value(row)},
+    )
+
+    def run(self) -> Setting:
+        entry = GetSetting(SettingsFileRepository())(
+            _context().resolve_key(self.key), reveal_secrets=self.show_secrets
+        )
+        return setting_entry_row(entry, human=self.output.format in ("table", "raw"))
+
+
+def _print_value(row: Setting) -> None:
+    if row.value is not None:
+        echo(str(row.value))
+
+
+class Set(Command[CoreSettings]):
+    """Set one setting in the profile --profile names, else the base.
+
+    The value is checked against the setting's type before anything is
+    written; --prompt asks for it by type, --stdin reads it.
+
+    Examples:
+        $ untaped config set awx.server.url https://aap.example.com
+        $ printf %s "$URL" | untaped config set awx.server.url --stdin
+    """
+
+    key: Positional[str] = Field(description="The setting's full key (section.key).")
+    value: Positional[str | None] = Field(None, description="The new value, checked for its type.")
+    stdin: bool = Field(False, description="Read the value from stdin.")
+    prompt: bool = Field(False, description="Ask for the value, by the setting's type.")
+    dry_run: bool = Field(False, description=_DRY_RUN)
+    output: Output[SettingOutcome]
+
+    def run(self) -> SettingOutcome:
+        ctx = _context()
+        repo = SettingsFileRepository()
+        resolved = ctx.resolve_key(self.key)
+        value = resolve_set_value(
+            resolved, self.value, stdin=self.stdin, prompt=self.prompt, repo=repo
+        )
+        _warn_plaintext_token(ctx, resolved)
+        _warn_deprecated_setting(ctx, resolved)
+        change = SetSetting(repo)(resolved, value, dry_run=self.dry_run)
+        print_notes(change.notes)
+        return change.outcome
+
+
+class Unset(Command[CoreSettings]):
+    """Remove one setting from the profile --profile names, else the base.
+
+    Examples:
+        $ untaped config unset awx.server.url
+    """
+
+    key: Positional[str] = Field(description="The setting's full key (section.key).")
+    dry_run: bool = Field(False, description=_DRY_RUN)
+    output: Output[SettingOutcome]
+
+    def run(self) -> SettingOutcome:
+        resolved = _context().resolve_key(self.key)
+        change = UnsetSetting(SettingsFileRepository())(resolved, dry_run=self.dry_run)
+        print_notes(change.notes)
+        return change.outcome
+
+
+class Migrate(Command[CoreSettings]):
+    """Give renamed and retired keys their new names.
+
+    A key also set under its new name (or a closer old name) in the same
+    profile is dropped. A deleted key is removed, and the preview prints
+    the value it held so you can carry it over. Environment variables are
+    not changed.
+
+    Examples:
+        $ untaped config migrate --dry-run
+        $ untaped config migrate
+    """
+
+    dry_run: bool = Field(False, description=_DRY_RUN)
+    output: Output[ConfigMigrationOutcome]
+
+    def run(self) -> Iterator[ConfigMigrationOutcome]:
+        keys = SettingsFileRepository().migrate_keys(dry_run=self.dry_run)
+        rows = [{**row, "action": "planned"} for row in keys] if self.dry_run else keys
+        diag = self.ctx.diag
+        if not rows:
+            diag.info("no renamed, retired or deleted keys in the config")
+        else:
+            others = _other_readers()
+            summary = _migration_summary(keys, past=not self.dry_run)
+            if self.dry_run:
+                diag.info(f"would {summary}")
+            else:
+                diag.success(summary)
+            if others:
+                diag.warning(others)
+        yield from (ConfigMigrationOutcome.model_validate(row) for row in rows)
+
+
+class Edit(Command[CoreSettings]):
+    """Open the home's config.yml in $VISUAL or $EDITOR; it is checked before it is saved.
+
+    Examples:
+        $ untaped config edit
+    """
+
+    def run(self) -> None:
+        run_config_editor()
+
+
+class Config(Group):
+    """Inspect and change the settings in the home's config.yml."""
+
+    commands = (List, Get, Set, Unset, Migrate, Edit)
+
+
+_STABLE_COLUMNS = tuple(column for column in Setting.table_columns if column != "note")
 
 
 def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None) -> None:
@@ -354,7 +380,7 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
     tables = [
         (None, stable, _STABLE_COLUMNS),
         ("Experimental", experimental, _STABLE_COLUMNS),
-        ("Deprecated", deprecated, SettingRow.table_columns),
+        ("Deprecated", deprecated, Setting.table_columns),
     ]
     present = [table for table in tables if table[1]] or tables[:1]
     for index, (heading, group, table_columns) in enumerate(present):
@@ -373,41 +399,6 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
 def _shown(entry: SettingEntry) -> bool:
     """Whether a deprecated setting is listed: set somewhere, or ``--deprecated``."""
     return entry.source.kind in ("profile", "env") or show_deprecated()
-
-
-def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:
-    with report_errors():
-        resolved = ctx.resolve_key(key)
-        entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
-        # A detail view hides empty fields; naming them keeps an unset `—` shown.
-        columns = {"raw": ["value"], "table": ["key", "value", "default", "source"]}.get(fmt)
-        emit(
-            setting_entry_row(entry, human=fmt in ("table", "raw")),
-            fmt=fmt,
-            columns=columns,
-        )
-
-
-def _set(
-    ctx: RootConfigContext,
-    key: str,
-    value: str | None,
-    *,
-    stdin: bool,
-    prompt: bool,
-    dry_run: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    with report_errors():
-        repo = SettingsFileRepository()
-        resolved = ctx.resolve_key(key)
-        resolved_value = resolve_set_value(resolved, value, stdin=stdin, prompt=prompt, repo=repo)
-        _warn_plaintext_token(ctx, resolved)
-        _warn_deprecated_setting(ctx, resolved)
-        change = SetSetting(repo)(resolved, resolved_value, dry_run=dry_run)
-        print_notes(change.notes)
-        emit(change.outcome, fmt=fmt, columns=columns)
 
 
 def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
@@ -438,38 +429,6 @@ def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
     )
 
 
-def _unset(
-    ctx: RootConfigContext,
-    key: str,
-    *,
-    dry_run: bool,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> None:
-    with report_errors():
-        change = UnsetSetting(SettingsFileRepository())(ctx.resolve_key(key), dry_run=dry_run)
-        print_notes(change.notes)
-        emit(change.outcome, fmt=fmt, columns=columns)
-
-
-def _migrate(*, dry_run: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
-    with report_errors():
-        keys = SettingsFileRepository().migrate_keys(dry_run=dry_run)
-        rows = [{**row, "action": "planned"} for row in keys] if dry_run else keys
-        if not rows:
-            _diag.info("no renamed, retired or deleted keys in the config")
-        else:
-            others = _other_readers()
-            summary = _migration_summary(keys, past=not dry_run)
-            if dry_run:
-                _diag.info(f"would {summary}")
-            else:
-                _diag.success(summary)
-            if others:
-                _diag.warning(others)
-        emit([ConfigMigrationOutcome.model_validate(row) for row in rows], fmt=fmt, columns=columns)
-
-
 def _other_readers() -> str:
     """Who else may still read the old keys, as one sentence; ``""`` when nobody."""
     from untaped.sdk.storage._refs import others_text  # noqa: PLC0415 - reads refs/ only here
@@ -494,9 +453,4 @@ def _migration_summary(rows: list[dict[str, str]], *, past: bool) -> str:
     )
 
 
-__all__ = [
-    "RootConfigContext",
-    "RootSectionScope",
-    "build_root_config_app",
-    "section_scopes",
-]
+__all__ = ["Config", "RootConfigContext", "RootSectionScope", "section_scopes"]

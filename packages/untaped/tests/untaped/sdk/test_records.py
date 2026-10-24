@@ -552,7 +552,7 @@ def _samples() -> dict[str, WireModel]:
         StoredCredential,
         TokenSource,
     )
-    from untaped.core.config.models import SettingOutcome, SettingRow
+    from untaped.core.config.models import Setting, SettingOutcome
     from untaped.core.profile.models import (
         PickedProfile,
         Profile,
@@ -635,7 +635,7 @@ def _samples() -> dict[str, WireModel]:
             hint="h",
             message="`untaped hello old` is deprecated",
         ),
-        SettingRow(key="k", value={"a": [1]}, default=None, source="default", profile=None),
+        Setting(key="k", value={"a": [1]}, default=None, source="default", profile=None),
         SettingOutcome(key="k", profile="default", action="updated"),
         Profile(name="default", selected=True, keys=3),
         ProfilePick(

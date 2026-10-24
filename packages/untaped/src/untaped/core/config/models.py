@@ -105,7 +105,7 @@ _UNSET = TableGlyph(none="—")
 """Tables show an unset value as ``—``; every other format prints it natively."""
 
 
-class SettingRow(Record, kind="untaped.setting"):
+class Setting(Record, kind="untaped.setting"):
     """One row of ``config list``/``get``.
 
     ``value``/``default`` are native (``None`` when unset, secrets already
@@ -156,13 +156,13 @@ class SettingRow(Record, kind="untaped.setting"):
     )
 
 
-def setting_entry_row(entry: SettingEntry, *, human: bool) -> SettingRow:
+def setting_entry_row(entry: SettingEntry, *, human: bool) -> Setting:
     """Render a setting entry as the config list/get row contract.
 
     ``human`` (table/raw output) writes a set value verbatim as text, so a
     table never reformats it.
     """
-    return SettingRow(
+    return Setting(
         key=entry.key,
         value=_human(entry.value) if human else entry.value,
         default=_human(entry.default) if human else entry.default,

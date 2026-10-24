@@ -9,9 +9,12 @@ from typing import ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import compose, make_spec, write_config, written_profile
-from untaped.core.commands.config import build_root_config_app
-from untaped.runtime import bootstrap
+from core_test_support.commands.support import (
+    config_root,
+    make_spec,
+    write_config,
+    written_profile,
+)
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -39,8 +42,7 @@ class RenamedProfile(BaseModel):
 
 
 def _config(*args: str) -> CliResult:
-    result = compose(make_spec("renamed", settings=RenamedProfile))
-    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=result)
+    app = config_root(make_spec("renamed", settings=RenamedProfile))
     return CliInvoker().invoke(app, list(args))
 
 
