@@ -8,6 +8,7 @@ the machine's own.
 
 from __future__ import annotations
 
+import pkgutil
 from collections import deque
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -89,11 +90,14 @@ class ScriptedTerminal:
         """Present for the block, the next yes/no question answered no (``answer=False``)."""
         was = self.present
         self._confirms.appendleft(False)
+        queued = len(self._confirms)
         self.present = True
         try:
             yield self
         finally:
             self.present = was
+            if len(self._confirms) == queued:  # never asked: the no is not the next answer
+                self._confirms.popleft()
 
     # --- what a command's prompts call (PromptBackend) ---------------------------
 
@@ -218,11 +222,11 @@ class MemoryCredentials:
     def _install_of(self, credential: Credential[Any]) -> Install:
         """The test's latest install composing the plugin class that holds ``credential``."""
         owner = credential.binding.owner
-        named = f"{owner.__module__}:{owner.__qualname__}"
         for each in reversed(self.installs):
             for candidate in each.candidates:
                 target = candidate.target
-                if target is owner or target == named:
+                cls = pkgutil.resolve_name(target) if isinstance(target, str) else target
+                if isinstance(cls, type) and issubclass(cls, owner):  # declared, or inherited
                     return each
         raise RuntimeError(
             f"install {owner.__qualname__} before setting its credential: "

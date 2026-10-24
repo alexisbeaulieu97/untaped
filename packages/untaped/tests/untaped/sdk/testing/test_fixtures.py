@@ -47,6 +47,18 @@ class Rename(Command):
         return f"renamed {name}" if self.confirm(f"Rename to {name}?") else "planned"
 
 
+class Maybe(Command):
+    """Ask only when there is something to do."""
+
+    work: Positional[bool] = Field(False, description="Whether there is work.")
+    confirm: Confirm
+
+    def run(self) -> str:
+        if not self.work:
+            return "nothing to do"
+        return "done" if self.confirm("Do it?") else "planned"
+
+
 class Peek(Command):
     """Print the vault's token."""
 
@@ -60,8 +72,21 @@ class Vault(Plugin):
     """Keep secrets (a test's plugin)."""
 
     settings = VaultSettings
-    commands = (Wipe, Label, Rename, Peek)
+    commands = (Wipe, Label, Rename, Peek, Maybe)
     token = Credential(key=VaultServer, env=("VAULT_TOKEN",))
+
+
+class BaseVault(Plugin):
+    """A base plugin holding a credential (a test's)."""
+
+    settings = VaultSettings
+    token = Credential(key=VaultServer)
+
+
+class Locker(BaseVault):
+    """Keep things, with the base's credential (a test's plugin)."""
+
+    commands = (Maybe,)
 
 
 class Safe(Plugin):
@@ -175,3 +200,20 @@ def test_the_11x_backend_reads_secrets_only_from_its_secrets() -> None:
     with pytest.raises(ConfigError, match="no scripted secret answer"):
         ScriptedPromptBackend(texts=["name"]).secret("Token?", confirmation=False)
     assert ScriptedTerminal().types("typed").secret("Token?", confirmation=False) == "typed"
+
+
+def test_a_decline_nobody_asked_for_is_not_the_next_answer(
+    install: Installer, terminal: ScriptedTerminal
+) -> None:
+    vault = install(Vault)
+    terminal.answers(yes=True)
+    assert vault.run(Maybe(), answer=False).text == "nothing to do"
+    assert vault.cli("vault maybe true").text == "done"
+
+
+def test_an_inherited_credential_is_set_under_the_plugin_inheriting_it(
+    install: Installer, credentials: MemoryCredentials
+) -> None:
+    install(Locker)
+    credentials.set(Locker.token, VaultServer(), "s3cret")
+    assert list(credentials.entries.values()) == ["s3cret"]
