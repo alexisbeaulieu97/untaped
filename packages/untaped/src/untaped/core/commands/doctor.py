@@ -14,7 +14,7 @@ Quarantine records render as failed rows (nonzero exit). A config file other
 users can read renders as a ``warn`` row, which does not fail the run; so do
 profile keys no settings model declares, renamed, retired, deleted or deprecated keys
 in any profile (fixed by ``config migrate``, except deprecated settings),
-installed skills that differ from their packaged copy, and a plugin
+installed skills an older untaped wrote, someone edited or no plugin ships, and a plugin
 check that returns ``DoctorResult(..., warn=True)``. ``doctor fix``
 (:mod:`untaped.core.commands.fix`) runs every automatic fix the checks name.
 """
@@ -672,7 +672,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
 
 def _skill_label(item: InstalledSkill) -> str:
-    return f"{item.state.value} {item.kind.value}"
+    return f"{item.state.value} skill"
 
 
 def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:

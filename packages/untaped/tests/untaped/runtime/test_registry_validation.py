@@ -7,7 +7,6 @@ composition continues; first-party and third-party providers are judged alike.
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
@@ -48,7 +47,6 @@ class EndpointState(BaseModel):
 def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
     asset = object.__new__(SkillAsset)
     object.__setattr__(asset, "name", name)
-    object.__setattr__(asset, "source", Path("/tmp/broken"))
     object.__setattr__(asset, "description", description)
     return asset
 
@@ -106,6 +104,12 @@ SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
         lambda: make_spec(name="a", skills=(make_skill("dup"), make_skill("dup"))),
         "duplicate-skill",
         "dup",
+    ),
+    (
+        "skill-more-than-one",
+        lambda: make_spec(name="two", skills=(make_skill("a"), make_skill("b"))),
+        "bad-skill-asset",
+        "plugin 'two' ships more than one skill: a, b",
     ),
     (
         "skill-not-asset",

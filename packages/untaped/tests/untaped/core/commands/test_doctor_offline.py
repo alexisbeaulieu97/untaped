@@ -13,6 +13,7 @@ from pydantic import BaseModel, SecretStr
 
 from core_test_support.commands.support import (
     GithubProfile,
+    age_stub,
     asset,
     compose,
     config_root,
@@ -20,6 +21,7 @@ from core_test_support.commands.support import (
     write_config,
 )
 from untaped.core.commands.doctor import build_root_doctor_app
+from untaped.core.commands.skills import composed_skills
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
 from untaped.runtime import bootstrap
 from untaped.sdk import (
@@ -150,11 +152,11 @@ def test_known_keys_pass(_isolated_config: Path) -> None:
     assert _row(_rows(), "unknown-keys")["status"] == "pass"
 
 
-def test_outdated_installed_skill_warns(tmp_path: Path) -> None:
-    skill = asset(tmp_path, "untaped-demo")
+def test_outdated_installed_skill_warns() -> None:
+    spec = make_spec("demo", skills=(asset("untaped-demo"),))
     install_skills(
-        {skill.name: skill},
-        [skill.name],
+        composed_skills(compose(spec)),
+        ["untaped-demo"],
         stdin=False,
         all_skills=False,
         target=SkillInstallTarget.claude,
@@ -163,20 +165,19 @@ def test_outdated_installed_skill_warns(tmp_path: Path) -> None:
         project_dir=None,
         target_dir=None,
     )
-    spec = make_spec("demo", skills=(skill,))
     assert _row(_rows(spec), "skills")["status"] == "pass"
-    skill.source.joinpath("SKILL.md").write_text("changed\n", encoding="utf-8")
+    age_stub(Path.home() / ".claude" / "skills" / "untaped-demo")
     row = _row(_rows(spec), "skills")
     assert row["status"] == "warn"
     assert row["fix"] == ["--profile", "default", "skills", "update"]
     assert row["automatic"] is True
 
 
-def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
-    skill = asset(tmp_path, "untaped-gone")
+def test_skill_no_longer_shipped_warns() -> None:
+    spec = make_spec("gone", skills=(asset("untaped-gone"),))
     install_skills(
-        {skill.name: skill},
-        [skill.name],
+        composed_skills(compose(spec)),
+        ["untaped-gone"],
         stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
@@ -187,7 +188,7 @@ def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
     )
     row = _row(_rows(make_spec("demo")), "skills")
     assert row["status"] == "warn"
-    assert "orphaned copy:" in row["detail"]
+    assert "orphaned skill:" in row["detail"]
     assert "no plugin installed here" in row["detail"]
     assert "untaped skills remove" in row["detail"]
     # Orphaned skills alone have no fix, so nothing is automatic.

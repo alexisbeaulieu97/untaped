@@ -7,31 +7,15 @@ from pathlib import Path
 import pytest
 
 import untaped.core.skills as skills_module
-from core_test_support.commands.support import copy_asset
-from untaped.core.skills import SkillInstallScope, SkillInstallTarget
+from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
 from untaped.sdk import SkillAsset, checkout_root, project_root
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.git import run_git
 
 
-def _skill_dir(tmp_path: Path, name: str = "untaped-demo") -> Path:
-    source = tmp_path / "source" / name
-    source.mkdir(parents=True)
-    source.joinpath("SKILL.md").write_text(
-        "---\n"
-        f"name: {name}\n"
-        "description: Teach agents how to use demo untaped commands.\n"
-        "---\n"
-        "\n"
-        f"# {name}\n",
-    )
-    source.joinpath("references").mkdir()
-    source.joinpath("references", "commands.md").write_text("# Commands\n")
-    return source
-
-
-def _asset(source: Path) -> SkillAsset:
-    return copy_asset(source.name, source, f"Teach agents how to use {source.name}.")
+def _skill(name: str = "untaped-demo") -> PackagedSkill:
+    asset = SkillAsset(name=name, description=f"Teach agents how to use {name}.")
+    return PackagedSkill(asset=asset, plugin="demo", distribution="untaped-demo")
 
 
 def test_skill_install_scope_vocabulary_is_not_profile_vocabulary() -> None:
@@ -40,11 +24,11 @@ def test_skill_install_scope_vocabulary_is_not_profile_vocabulary() -> None:
 
 
 def test_install_skills_installs_one_skill_and_returns_metadata(tmp_path: Path) -> None:
-    source = _skill_dir(tmp_path)
+    skill = _skill()
     target = tmp_path / "codex-skills"
 
     results = skills_module.install_skills(
-        {source.name: _asset(source)},
+        {skill.name: skill},
         ["untaped-demo"],
         stdin=False,
         all_skills=False,
@@ -68,14 +52,14 @@ def test_install_skills_installs_one_skill_and_returns_metadata(tmp_path: Path) 
 
 
 def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path) -> None:
-    one = _skill_dir(tmp_path, name="untaped-one")
-    two = _skill_dir(tmp_path, name="untaped-two")
+    one = _skill("untaped-one")
+    two = _skill("untaped-two")
     project = tmp_path / "project"
     project.mkdir()
     project_root = project.resolve()
 
     results = skills_module.install_skills(
-        {one.name: _asset(one), two.name: _asset(two)},
+        {one.name: one, two.name: two},
         [],
         stdin=False,
         all_skills=True,
@@ -94,10 +78,10 @@ def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path)
     ]
 
 
-def _install_local_from_cwd(source: Path) -> list[skills_module.SkillInstallResult]:
+def _install_local_from_cwd(skill: PackagedSkill) -> list[skills_module.SkillInstallResult]:
     return skills_module.install_skills(
-        {source.name: _asset(source)},
-        [source.name],
+        {skill.name: skill},
+        [skill.name],
         stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
@@ -111,14 +95,13 @@ def _install_local_from_cwd(source: Path) -> list[skills_module.SkillInstallResu
 def test_local_install_without_project_dir_uses_the_git_checkout_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = _skill_dir(tmp_path)
     repo = tmp_path / "repo"
     run_git(["init", "-q", str(repo)], timeout=30)
     nested = repo / "sub"
     nested.mkdir()
     monkeypatch.chdir(nested)
 
-    [result] = _install_local_from_cwd(source)
+    [result] = _install_local_from_cwd(_skill())
 
     assert result.root == repo.resolve() / ".agents" / "skills"
 
@@ -126,12 +109,11 @@ def test_local_install_without_project_dir_uses_the_git_checkout_root(
 def test_local_install_outside_a_checkout_uses_the_current_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = _skill_dir(tmp_path)
     here = tmp_path / "plain"
     here.mkdir()
     monkeypatch.chdir(here)
 
-    [result] = _install_local_from_cwd(source)
+    [result] = _install_local_from_cwd(_skill())
 
     assert result.root == here.resolve() / ".agents" / "skills"
 
@@ -139,52 +121,26 @@ def test_local_install_outside_a_checkout_uses_the_current_directory(
 def test_local_install_without_git_still_finds_the_checkout_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = _skill_dir(tmp_path)
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / "sub").mkdir()
     monkeypatch.chdir(repo / "sub")
     monkeypatch.setattr("shutil.which", lambda *_, **__: None)
 
-    [result] = _install_local_from_cwd(source)
+    [result] = _install_local_from_cwd(_skill())
 
     assert result.root == repo.resolve() / ".agents" / "skills"
 
 
-def test_install_skills_missing_source_aborts_before_any_copy(tmp_path: Path) -> None:
-    good = _skill_dir(tmp_path, name="untaped-one")
-    missing = tmp_path / "gone" / "untaped-two"
-    target = tmp_path / "codex-skills"
-
-    with pytest.raises(ConfigError, match="untaped-two"):
-        skills_module.install_skills(
-            {
-                good.name: _asset(good),
-                "untaped-two": copy_asset("untaped-two", missing, "Teach agents how to use two."),
-            },
-            [],
-            stdin=False,
-            all_skills=True,
-            target=SkillInstallTarget.codex,
-            force=False,
-            scope=SkillInstallScope.global_,
-            project_dir=None,
-            target_dir=target,
-        )
-
-    assert not (target / "untaped-one").exists()
-    assert not (target / "untaped-two").exists()
-
-
 def test_install_skills_later_conflict_aborts_before_earlier_install(tmp_path: Path) -> None:
-    one = _skill_dir(tmp_path, name="untaped-one")
-    two = _skill_dir(tmp_path, name="untaped-two")
+    one = _skill("untaped-one")
+    two = _skill("untaped-two")
     target = tmp_path / "codex-skills"
     target.joinpath("untaped-two").mkdir(parents=True)
 
     with pytest.raises(ConfigError, match="skill already exists: untaped-two"):
         skills_module.install_skills(
-            {one.name: _asset(one), two.name: _asset(two)},
+            {one.name: one, two.name: two},
             [],
             stdin=False,
             all_skills=True,
@@ -215,11 +171,11 @@ def test_install_skills_selector_errors_preserve_messages(
     all_skills: bool,
     message: str,
 ) -> None:
-    source = _skill_dir(tmp_path)
+    skill = _skill()
 
     with pytest.raises((ConfigError, UsageError), match=message):
         skills_module.install_skills(
-            {source.name: _asset(source)},
+            {skill.name: skill},
             skill_names,
             stdin=stdin,
             all_skills=all_skills,
@@ -232,7 +188,7 @@ def test_install_skills_selector_errors_preserve_messages(
 
 
 def test_install_skills_force_replaces_existing_without_merging(tmp_path: Path) -> None:
-    source = _skill_dir(tmp_path)
+    skill = _skill()
     target = tmp_path / "codex-skills"
     installed = target / "untaped-demo"
     installed.mkdir(parents=True)
@@ -240,7 +196,7 @@ def test_install_skills_force_replaces_existing_without_merging(tmp_path: Path) 
     installed.joinpath("STALE.md").write_text("stale\n")
 
     results = skills_module.install_skills(
-        {source.name: _asset(source)},
+        {skill.name: skill},
         ["untaped-demo"],
         stdin=False,
         all_skills=False,
@@ -252,7 +208,7 @@ def test_install_skills_force_replaces_existing_without_merging(tmp_path: Path) 
     )
 
     assert [r.destination for r in results] == [installed]
-    assert installed.joinpath("SKILL.md").read_text() == source.joinpath("SKILL.md").read_text()
+    assert installed.joinpath("SKILL.md").read_bytes() == skill.stub_files()["SKILL.md"]
     assert not installed.joinpath("STALE.md").exists()
     assert not list(target.glob(".untaped-demo.backup-*"))
 
@@ -261,7 +217,7 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = _skill_dir(tmp_path)
+    skill = _skill()
     target = tmp_path / "codex-skills"
     installed = target / "untaped-demo"
     installed.mkdir(parents=True)
@@ -284,7 +240,7 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
 
     with pytest.raises(RuntimeError, match="placement failed"):
         skills_module.install_skills(
-            {source.name: _asset(source)},
+            {skill.name: skill},
             ["untaped-demo"],
             stdin=False,
             all_skills=False,
@@ -340,7 +296,6 @@ def test_updating_a_skill_no_plugin_ships_names_the_plugin_as_missing(tmp_path: 
         scope=SkillInstallScope.global_,
         path=tmp_path / "untaped-gone",
         state=skills_module.SkillState.orphaned,
-        kind=skills_module.SkillKind.copy,
     )
     with pytest.raises(ConfigError, match="no plugin installed here ships this skill"):
         skills_module.update_installed_skill({}, installed)

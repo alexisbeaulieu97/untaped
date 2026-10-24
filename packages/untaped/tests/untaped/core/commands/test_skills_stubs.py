@@ -2,7 +2,7 @@
 
 A newer run refreshes the home folder's stubs, an older one leaves them
 alone, an edited stub is the user's, and a project's own skills are never
-written by a run. Copies from 11.0 convert to stubs once, kept as backups.
+written by a run.
 """
 
 from __future__ import annotations
@@ -14,17 +14,15 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from core_test_support.commands.support import age_stub, asset, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_spec, write_config
 from untaped.core import skill_stubs
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skill_stubs import STUB_MARKER
 from untaped.core.skills import (
     SkillInstallScope,
     SkillInstallTarget,
-    SkillKind,
     SkillState,
     find_installed_skills,
-    skill_backups_dir,
     skill_roots,
     update_installed_skill,
 )
@@ -33,11 +31,8 @@ from untaped.runtime.registry import PluginSpec
 from untaped.sdk import SkillAsset
 from untaped.sdk.storage import data_file
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
-from untaped.sdk.words import shown_path
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
-
-_COPY_MARKER = ".untaped-skill.json"
 
 
 @pytest.fixture
@@ -85,18 +80,6 @@ def _mode(config: Path, mode: str) -> None:
     write_config(config, f"format_version: 2\nuntaped: {{skills: {{updates: '{mode}'}}}}\n")
 
 
-def _install_copy(tmp_path: Path, *, target: str = "codex", where: list[str] | None = None) -> Path:
-    """Install an 11.0-style copy of ``untaped-demo`` (with references)."""
-    copy = asset(tmp_path, "untaped-demo")
-    assert copy.source is not None
-    copy.source.joinpath("references").mkdir()
-    copy.source.joinpath("references", "commands.md").write_text("# Commands\n", encoding="utf-8")
-    root = _root(make_spec("demo", skills=(copy,)))
-    result = _run(root, "skills", "install", "demo", "--target", target, *(where or []))
-    assert result.exit_code == 0, result.output
-    return copy.source
-
-
 # install
 
 
@@ -133,41 +116,17 @@ def test_install_local_writes_a_stub_in_the_project(tmp_path: Path) -> None:
     assert _marker(project / ".agents" / "skills" / "untaped-demo")["scope"] == "local"
 
 
-@pytest.mark.usefixtures("run_as")
-def test_an_old_marker_scan_never_sees_a_stub() -> None:
-    # untaped 11.0 counts only directories with the copy marker, so it never
-    # reports a stub as outdated or writes a copy back over one (guardrail 4).
-    assert _run(_root(), "skills", "install", "demo", "--target", "all").exit_code == 0
-    for target in ("codex", "claude"):
-        assert not (_home(target=target) / _COPY_MARKER).exists()
-    roots = [root.root for root in skill_roots(project_dir=None)]
-    assert [path for root in roots for path in root.glob(f"*/{_COPY_MARKER}")] == []
+def test_skills_list_shows_each_skill_s_name_and_description() -> None:
+    rows = json.loads(_run(_root(), "skills", "list", "-f", "json").stdout)
+    assert [(row["name"], row["description"]) for row in rows] == [
+        ("untaped", composed_skills(bootstrap.compose_root(candidates=()))["untaped"].description),
+        ("untaped-demo", "Demo things: widgets and gadgets."),
+    ]
 
 
-@pytest.mark.usefixtures("run_as")
-def test_skills_list_shows_a_stub_s_kind_and_template_source(tmp_path: Path) -> None:
-    copy = asset(tmp_path, "untaped-other")
-    spec = make_spec("demo", skills=(SkillAsset(name="untaped-demo", description="Demo."),))
-    root = bootstrap.build_root_app(
-        candidates=(plugin_candidate(spec), plugin_candidate(make_spec("other", skills=(copy,))))
-    )
-    rows = {
-        row["name"]: row for row in json.loads(_run(root, "skills", "list", "-f", "json").stdout)
-    }
-    assert (rows["untaped-demo"]["kind"], rows["untaped-demo"]["source"]) == (
-        "stub",
-        "untaped:stub/1",
-    )
-    assert (rows["untaped-other"]["kind"], rows["untaped-other"]["source"]) == (
-        "copy",
-        str(copy.source),
-    )
-    assert (rows["untaped"]["kind"], rows["untaped"]["source"]) == ("stub", "untaped:stub/1")
-
-
-def test_core_s_own_skill_is_a_stub_named_untaped() -> None:
+def test_core_s_own_skill_is_named_untaped_and_points_at_core() -> None:
     skills = composed_skills(bootstrap.compose_root(candidates=()))
-    assert skills["untaped"].stub
+    assert (skills["untaped"].plugin, skills["untaped"].distribution) == ("untaped", "untaped")
 
 
 # the per-run check: home folder
@@ -246,9 +205,9 @@ def test_an_edited_stub_is_never_rewritten_by_a_run(
     assert result.stderr == ""
     assert (_home() / "SKILL.md").read_text(encoding="utf-8") == "my own notes\n"
     rows = json.loads(_run(root, "skills", "status", "-f", "json").stdout)
-    assert [
-        (row["name"], row["kind"], row["state"]) for row in rows if row["name"] == "untaped-demo"
-    ] == [("untaped-demo", "stub", "edited")]
+    assert [(row["name"], row["state"]) for row in rows if row["name"] == "untaped-demo"] == [
+        ("untaped-demo", "edited")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -267,67 +226,6 @@ def test_nothing_is_written_after_a_failed_or_previewing_command(
     assert result.exit_code == code, result.output
     assert "agent skills" not in result.stderr
     assert (_home() / "SKILL.md").read_text(encoding="utf-8") == "older wording\n"
-
-
-# conversion of 11.0 copies
-
-
-def test_auto_converts_an_old_copy_once_and_keeps_a_backup(
-    tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _install_copy(tmp_path, target="all")
-    result = _run(_root(), "demo", "--help")
-    assert result.exit_code == 0, result.output
-    assert result.stdout.count("converted") == 0  # stderr only
-    kept_in = shown_path(skill_backups_dir())
-    assert f"converted 2 agent skills to stubs; the old copies are in {kept_in}" in result.stderr
-    for target in ("codex", "claude"):
-        stub = _home(target=target)
-        assert sorted(path.name for path in stub.iterdir()) == [STUB_MARKER, "SKILL.md"]
-        kept = skill_backups_dir() / target / "untaped-demo"
-        assert (kept / "references" / "commands.md").is_file()
-        assert (kept / _COPY_MARKER).is_file()
-    assert _run(_root(), "demo", "--help").stderr == ""
-
-
-def test_the_conversion_line_shows_under_quiet(
-    tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _install_copy(tmp_path)
-    result = _run(_root(), "-q", "demo", "--help")
-    assert "converted 1 agent skill to stubs" in result.stderr
-
-
-def test_a_second_conversion_keeps_both_backups(
-    tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _install_copy(tmp_path)
-    _run(_root(), "demo", "--help")
-    _install_copy(tmp_path / "again", where=["--force"])
-    _run(_root(), "demo", "--help")
-    kept = skill_backups_dir() / "codex"
-    assert sorted(path.name for path in kept.iterdir()) == ["untaped-demo", "untaped-demo-2"]
-
-
-def test_warn_reports_an_old_copy(
-    _isolated_config: Path, tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _mode(_isolated_config, "warn")
-    _install_copy(tmp_path)
-    result = _run(_root(), "demo", "--help")
-    assert "warning: agent skills from an older untaped: untaped-demo" in result.stderr
-    assert (_home() / _COPY_MARKER).is_file()
-
-
-@pytest.mark.parametrize("version", ["11.0.0", "11.0.3", "11.1.0.dev2"])
-def test_a_run_before_11_1_0_converts_no_copy(
-    tmp_path: Path, run_as: Callable[[str], None], version: str
-) -> None:
-    _install_copy(tmp_path)
-    run_as(version)
-    result = _run(_root(), "demo", "--help")
-    assert result.stderr == ""
-    assert (_home() / _COPY_MARKER).is_file()
 
 
 # a project's own skills
@@ -357,22 +255,6 @@ def test_a_project_s_stub_is_never_written_or_warned_about(
     result = _run(root, "demo", "--help")
     assert result.stderr == ""
     assert (stub / "SKILL.md").read_text(encoding="utf-8") == "older wording\n"
-
-
-def test_a_project_s_old_copy_is_warned_about_and_not_converted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, run_as: Callable[[str], None]
-) -> None:
-    project = _project(tmp_path, monkeypatch)
-    _install_copy(tmp_path, where=["--scope", "local"])
-    result = _run(_root(), "demo", "--help")
-    assert (
-        "warning: copied skills from an older untaped in this project: untaped-demo"
-        in result.stderr
-    )
-    assert (
-        "run `untaped skills update` here (or set untaped.skills.updates to off)" in result.stderr
-    )
-    assert (project / ".agents" / "skills" / "untaped-demo" / _COPY_MARKER).is_file()
 
 
 def test_a_local_install_made_from_home_counts_as_the_home_folder(
@@ -435,92 +317,48 @@ def test_update_refreshes_a_stub_an_older_untaped_wrote(run_as: Callable[[str], 
     assert "`untaped agents demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
 
 
-def test_update_converts_a_project_s_copy_after_a_dry_run_shows_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, run_as: Callable[[str], None]
-) -> None:
-    project = _project(tmp_path, monkeypatch)
-    _install_copy(tmp_path, where=["--scope", "local"])
-    installed = project / ".agents" / "skills" / "untaped-demo"
-    preview = _run(_root(), "skills", "update", "--dry-run", "-f", "json")
-    assert [row["action"] for row in json.loads(preview.stdout)] == ["planned"]
-    assert (installed / _COPY_MARKER).is_file()
-    result = _run(_root(), "skills", "update", "-f", "json")
-    assert [row["action"] for row in json.loads(result.stdout)] == ["updated"]
-    assert sorted(path.name for path in installed.iterdir()) == [STUB_MARKER, "SKILL.md"]
-    assert not (skill_backups_dir().parent).exists()
-
-
-def test_status_shows_kind_and_state(tmp_path: Path, run_as: Callable[[str], None]) -> None:
-    _install_copy(tmp_path, target="claude")
-    assert _run(_root(), "skills", "install", "demo", "--target", "codex", "--force").exit_code == 0
+@pytest.mark.usefixtures("run_as")
+def test_status_shows_each_install_s_state() -> None:
+    assert _run(_root(), "skills", "install", "demo", "--target", "all").exit_code == 0
+    age_stub(_home(target="claude"), untaped="11.0.0")
     rows = json.loads(_run(_root(), "skills", "status", "-f", "json").stdout)
-    states = {
-        (row["target"], row["kind"], row["state"]) for row in rows if row["name"] == "untaped-demo"
-    }
-    assert states == {("codex", "stub", "current"), ("claude", "copy", "outdated")}
+    states = {(row["target"], row["state"]) for row in rows if row["name"] == "untaped-demo"}
+    assert states == {("codex", "current"), ("claude", "outdated")}
 
 
 # parallel first runs
 
 
-def test_parallel_conversions_and_refreshes_both_succeed(
-    tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _install_copy(tmp_path)
+@pytest.mark.usefixtures("run_as")
+def test_parallel_refreshes_both_succeed() -> None:
+    assert _run(_root(), "skills", "install", "demo").exit_code == 0
+    age_stub(_home(), untaped="11.0.0")
     skills = composed_skills(bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),)))
     roots = skill_roots(project_dir=None)
-    # Both runs found the copy before either converted it.
+    # Both runs found the outdated stub before either refreshed it.
     first, second = (
         next(item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo")
         for _ in range(2)
     )
-    backups = skill_backups_dir()
-    update_installed_skill(skills, first, backup_root=backups)
-    update_installed_skill(skills, second, backup_root=backups)
-    assert sorted(path.name for path in _home().iterdir()) == [STUB_MARKER, "SKILL.md"]
-    assert [path.name for path in (backups / "codex").iterdir()] == ["untaped-demo"]
-    assert [path.name for path in _home().parent.iterdir()] == ["untaped-demo"]
-
-    age_stub(_home(), untaped="11.0.0")
-    first, second = (
-        next(item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo")
-        for _ in range(2)
-    )
-    assert first.kind is SkillKind.stub and first.state is SkillState.outdated
+    assert first.state is SkillState.outdated
     update_installed_skill(skills, first)
     update_installed_skill(skills, second)
     assert sorted(path.name for path in _home().iterdir()) == [STUB_MARKER, "SKILL.md"]
+    assert [path.name for path in _home().parent.iterdir()] == ["untaped-demo"]
     assert _marker(_home())["untaped"]["by"] == "11.1.0"
-
-
-def test_a_conversion_that_finds_a_parallel_run_s_stub_keeps_no_backup(
-    tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _install_copy(tmp_path)
-    skills = composed_skills(bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),)))
-    roots = skill_roots(project_dir=None)
-    stale = next(
-        item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo"
-    )
-    backups = skill_backups_dir()
-    update_installed_skill(skills, stale, backup_root=backups)
-    # A slower run that still believes it holds the copy converts the stub again.
-    update_installed_skill(skills, stale, backup_root=backups)
-    assert [path.name for path in (backups / "codex").iterdir()] == ["untaped-demo"]
-    assert sorted(path.name for path in _home().iterdir()) == [STUB_MARKER, "SKILL.md"]
 
 
 # doctor
 
 
-def test_doctor_reports_a_leftover_copy_with_an_automatic_fix(
-    tmp_path: Path, run_as: Callable[[str], None]
+def test_doctor_reports_an_outdated_stub_with_an_automatic_fix(
+    run_as: Callable[[str], None],
 ) -> None:
-    _install_copy(tmp_path)
-    rows = json.loads(_run(_root(), "doctor", "-f", "json").stdout)
+    root = _install_then_age(run_as)
+    rows = json.loads(_run(root, "doctor", "-f", "json").stdout)
     row = next(row for row in rows if row["check"] == "skills")
     assert row["status"] == "warn"
-    assert "outdated copy:" in row["detail"]
+    assert "outdated skill:" in row["detail"]
     assert (row["fix"][-2:], row["automatic"]) == (["skills", "update"], True)
 
 
@@ -536,7 +374,7 @@ def test_doctor_reports_an_edited_stub_without_an_automatic_fix(
         if row["check"] == "skills"
     )
     assert row["status"] == "warn"
-    assert "edited stub:" in row["detail"]
+    assert "edited skill:" in row["detail"]
     assert "untaped skills update --force NAME" in row["detail"]
     assert (row["fix"], row["automatic"]) == (None, False)
 
@@ -571,18 +409,6 @@ def test_a_plugin_with_two_stubs_is_quarantined() -> None:
 def test_install_targets_and_scopes_vocabulary_is_unchanged() -> None:
     assert [target.value for target in SkillInstallTarget] == ["codex", "claude", "all"]
     assert [scope.value for scope in SkillInstallScope] == ["global", "local"]
-
-
-def test_update_keeps_a_backup_of_a_home_copy_it_converts(
-    _isolated_config: Path, tmp_path: Path, run_as: Callable[[str], None]
-) -> None:
-    _mode(_isolated_config, "warn")
-    _install_copy(tmp_path)
-    result = _run(_root(), "skills", "update")
-    assert result.exit_code == 0, result.output
-    assert f"the old copies are in {shown_path(skill_backups_dir())}" in result.stderr
-    kept = skill_backups_dir() / "codex" / "untaped-demo"
-    assert (kept / "references" / "commands.md").is_file()
 
 
 def test_a_refresh_leaves_a_parallel_run_s_temporary_file(run_as: Callable[[str], None]) -> None:

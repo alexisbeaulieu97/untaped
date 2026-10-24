@@ -116,8 +116,8 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     assert healed.exit_code == 0, healed.output
 
 
-def test_quarantined_provider_lists_and_fails_doctor_only(tmp_path: Path) -> None:
-    good = make_candidate(make_spec("good", skills=(asset(tmp_path, "untaped-good"),)))
+def test_quarantined_provider_lists_and_fails_doctor_only() -> None:
+    good = make_candidate(make_spec("good", skills=(asset("untaped-good"),)))
     bad = make_candidate(make_spec("good"), name="bad")
     root = _root(candidates=(good, bad))
 
@@ -135,7 +135,7 @@ def test_quarantined_provider_lists_and_fails_doctor_only(tmp_path: Path) -> Non
 
 
 def test_skills_short_selector_through_root(tmp_path: Path) -> None:
-    root = _root(make_spec("tools", skills=(asset(tmp_path, "untaped-demo"),)))
+    root = _root(make_spec("tools", skills=(asset("untaped-demo"),)))
     target = tmp_path / "skills"
     result = CliInvoker().invoke(  # type: ignore[union-attr]
         root.meta, ["skills", "install", "demo", "--target-dir", str(target)]

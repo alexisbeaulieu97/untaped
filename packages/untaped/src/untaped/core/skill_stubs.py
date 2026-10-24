@@ -9,9 +9,6 @@ untaped) and the plugin writes the description (``plugin_version``).
 :func:`compare` is the one rule every reader (the per-run check, ``skills
 update``, ``skills status``, ``doctor``) uses to decide whether a run is
 newer than the stub it finds.
-
-untaped 11.0 counts only directories with ``.untaped-skill.json`` (a copy),
-so it never sees a stub and never writes a copy back over one.
 """
 
 from __future__ import annotations
@@ -27,10 +24,8 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel
 
-#: The marker file in a stub's directory; a copy's is ``.untaped-skill.json``.
+#: The marker file in a stub's directory.
 STUB_MARKER = ".untaped-stub.json"
-#: What ``skills list`` shows as a stub's ``source``: the template's identity.
-STUB_SOURCE = "untaped:stub/1"
 #: The distribution whose version is the untaped side of a stub.
 CORE = "untaped"
 

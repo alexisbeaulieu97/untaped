@@ -8,15 +8,13 @@ installed directory and marker always keep the full ``untaped-*`` ID.
 
 :func:`check_installed_skills` runs after every root command. Under
 ``untaped.skills.updates: auto`` (the default) it refreshes the stub skills in the
-home folder that an older untaped wrote and converts copies from 11.0 to
-stubs, keeping the copies under the home's ``backups/skills``; ``warn``
-reports them instead. A project's own skills are never written by a run.
+home folder that an older untaped wrote; ``warn`` reports them instead. A
+project's own skills are never written by a run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import Field
@@ -30,13 +28,11 @@ from untaped.core.skills import (
     PackagedSkill,
     SkillInstallScope,
     SkillInstallTarget,
-    SkillKind,
     SkillState,
     find_installed_skills,
     install_skills,
     local_project_root,
     remove_installed_skill,
-    skill_backups_dir,
     skill_roots,
     skill_rows,
     update_installed_skill,
@@ -257,19 +253,16 @@ def _existing(path: Path | None) -> None:
 def check_installed_skills(
     skills: Mapping[str, PackagedSkill], *, allow_updates: bool = True
 ) -> None:
-    """Keep the agent skills in the home folder current; report a project's.
+    """Keep the agent skills in the home folder current.
 
     Runs after every root command. ``untaped.skills.updates`` picks the behaviour
     for the home roots (``~/.agents/skills``, ``~/.claude/skills``):
-    ``auto`` (default) silently refreshes stubs an older untaped wrote,
-    converts copies from 11.0 to stubs (keeping each copy under
-    the home's ``backups/skills``) and updates other outdated copies; ``warn``
-    reports them; ``off`` does nothing. Without ``allow_updates`` (after a
-    failed or previewing command) nothing is written: ``auto`` leaves stubs
-    and copies to convert for the next successful command and warns about
-    other copies. A project's own roots
-    are never written: old copies there are reported, stubs never. Skills no
-    composed plugin ships are left to ``untaped doctor``.
+    ``auto`` (default) silently refreshes stubs an older untaped wrote;
+    ``warn`` reports them; ``off`` does nothing. Without ``allow_updates``
+    (after a failed or previewing command) nothing is written: ``auto``
+    leaves them for the next successful command. A project's own stubs are
+    never written or reported. Skills no composed plugin ships are left to
+    ``untaped doctor``.
     """
     mode = _updates_mode()
     if mode == "off":
@@ -277,98 +270,27 @@ def check_installed_skills(
     found = find_installed_skills(
         skills, skill_roots(project_dir=local_project_root(None)), deep=False
     )
-    sorted_ = _sort_outdated(skills, found)
-    older, copies = sorted_.older, sorted_.copies
-    if mode == "auto" and not allow_updates:
-        older = []  # refreshed after the next command that succeeds
-    elif mode == "auto":
+    older = [item for item in found if item.state is SkillState.outdated and item.home]
+    if mode == "auto":
+        if not allow_updates:
+            return  # refreshed after the next command that succeeds
         older = _refresh(skills, older)
-        copies = _update_copies(skills, copies)
-    hint = f"{run_hint('skills update')} (set untaped.skills.updates to auto or off to change this)"
-    here = f"{run_hint('skills update')} here (or set untaped.skills.updates to off)"
-    for items, message, hint_text in (
-        (older, "agent skills from an older untaped", hint),
-        (copies, "installed skills are out of date", hint),
-        (sorted_.old_in_project, "copied skills from an older untaped in this project", here),
-        (sorted_.stale_in_project, "copied skills in this project are out of date", here),
-    ):
-        if items:
-            _diag.warning(f"{message}: {_names(items)}")
-            _diag.hint(hint_text)
-
-
-@dataclass(frozen=True)
-class _Outdated:
-    """The per-run check's outdated skills, by what it may do about each."""
-
-    older: list[InstalledSkill]  # home stubs this run is newer than, and copies to convert
-    copies: list[InstalledSkill]  # home copies a newer copy replaces
-    old_in_project: list[InstalledSkill]  # project copies a stub replaces
-    stale_in_project: list[InstalledSkill]  # project copies a newer copy replaces
-
-
-def _sort_outdated(skills: Mapping[str, PackagedSkill], found: list[InstalledSkill]) -> _Outdated:
-    """Sort outdated skills; a project's stubs drop out."""
-    sorted_ = _Outdated([], [], [], [])
-    for item in found:
-        if item.state is not SkillState.outdated:
-            continue
-        to_stub = item.kind is SkillKind.copy and skills[item.name].stub
-        if item.home:
-            (sorted_.older if item.kind is SkillKind.stub or to_stub else sorted_.copies).append(
-                item
-            )
-        elif item.kind is SkillKind.copy:
-            (sorted_.old_in_project if to_stub else sorted_.stale_in_project).append(item)
-    return sorted_
+    if older:
+        _diag.warning(f"agent skills from an older untaped: {_names(older)}")
+        change = "set untaped.skills.updates to auto or off to change this"
+        _diag.hint(f"{run_hint('skills update')} ({change})")
 
 
 def _refresh(
     skills: Mapping[str, PackagedSkill], items: list[InstalledSkill]
 ) -> list[InstalledSkill]:
-    """Rewrite stubs and convert copies; return the ones that failed."""
-    failed: list[InstalledSkill] = []
-    converted = 0
-    for item in items:
-        backup = _backup_root(skills, item)
-        try:
-            update_installed_skill(skills, item, backup_root=backup)
-        except UntapedError:
-            failed.append(item)
-            continue
-        converted += backup is not None
-    if converted:
-        # Unmuted: it shows once, and names where the old copies went.
-        _diag.info(_converted_line(converted), unmuted=True)
-    return failed
-
-
-def _backup_root(skills: Mapping[str, PackagedSkill], item: InstalledSkill) -> Path | None:
-    """Where a home-folder copy goes when it converts to a stub; a project has its VCS."""
-    converts = item.kind is SkillKind.copy and skills[item.name].stub
-    return skill_backups_dir() if converts and item.home else None
-
-
-def _converted_line(count: int) -> str:
-    return (
-        f"converted {plural(count, 'agent skill')} to stubs; "
-        f"the old copies are in {shown_path(skill_backups_dir())}"
-    )
-
-
-def _update_copies(
-    skills: Mapping[str, PackagedSkill], items: list[InstalledSkill]
-) -> list[InstalledSkill]:
-    """Replace outdated copies with this version's; return the ones that failed."""
+    """Rewrite stubs; return the ones that failed."""
     failed: list[InstalledSkill] = []
     for item in items:
         try:
             update_installed_skill(skills, item)
         except UntapedError:
             failed.append(item)
-    updated = len(items) - len(failed)
-    if updated:
-        _diag.info(f"updated {plural(updated, 'outdated skill')}")
     return failed
 
 
@@ -396,7 +318,6 @@ def _installed_row(item: InstalledSkill) -> records.InstalledSkill:
         target=item.target,
         scope=item.scope.value,
         state=item.state.value,
-        kind=item.kind.value,
         target_path=item.path,
     )
 
@@ -446,7 +367,6 @@ def _update(
     found = _select_installed(skills, skill_names, stdin=stdin, project_dir=project_dir)
     named = bool(skill_names) or stdin
     rows: list[SkillOutcome] = []
-    converted = 0
     for item in found:
         if item.state in (SkillState.newer, SkillState.edited) and not force:
             why = (
@@ -471,20 +391,16 @@ def _update(
         if dry_run:
             rows.append(_outcome(item, "planned"))
             continue
-        backup = _backup_root(skills, item)
         try:
-            update_installed_skill(skills, item, backup_root=backup)
+            update_installed_skill(skills, item)
         except UntapedError as exc:
             rows.append(_outcome(item, "failed", error=_diag.failure(exc, item=item.name)))
             continue
         rows.append(_outcome(item, "updated"))
-        converted += backup is not None
     yield from rows
     updated = sum(1 for row in rows if row.action == "updated")
     if updated:
         _diag.success(f"updated {plural(updated, 'skill')}")
-    if converted:
-        _diag.info(_converted_line(converted), unmuted=True)
 
 
 def _remove(
