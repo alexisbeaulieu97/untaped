@@ -28,8 +28,13 @@ from untaped.runtime.sink import (
     exit_on_counted_failure,
     failure_exit_code,
 )
+
+# re-exported: untaped.sdk.fields imports no runtime
 from untaped.runtime.sink import (
-    count_row_failures as count_row_failures,  # re-exported: untaped.sdk.fields imports no runtime
+    count_failed_actions as count_failed_actions,
+)
+from untaped.runtime.sink import (
+    count_row_failures as count_row_failures,
 )
 from untaped.runtime.theme import (
     OutputFormat as OutputFormat,
@@ -41,7 +46,14 @@ from untaped.runtime.theme import (
 )
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.diagnostic import Failure, dumped_names
-from untaped.sdk.errors import ExitCode, OperationCancelledError, UntapedError, UsageError
+from untaped.sdk.errors import (
+    ExitCode,
+    Failed,
+    Matched,
+    OperationCancelledError,
+    UntapedError,
+    UsageError,
+)
 from untaped.sdk.marks import (
     Stability,
     check_stability,
@@ -1121,13 +1133,19 @@ def report_errors() -> Iterator[None]:
     interrupted, ``1`` otherwise), raised to the most severe failure already
     reported in the run (:func:`~untaped.runtime.sink.failure_exit_code`). A
     declined confirmation (:class:`~untaped.sdk.errors.OperationCancelledError`)
-    prints its message without the ``error:`` prefix. Under JSON diagnostics
-    the error is one JSON line (``Diagnostics.failure``). Non-:class:`UntapedError`
-    exceptions are left to Cyclopts' default handling — those represent bugs
-    we want to see.
+    prints its message without the ``error:`` prefix. :class:`~untaped.sdk.errors.Failed`
+    and :class:`~untaped.sdk.errors.Matched` print nothing, since the rows
+    said it: ``1`` and ``3``, a counted failure winning over either. Under JSON
+    diagnostics the error is one JSON line (``Diagnostics.failure``).
+    Non-:class:`UntapedError` exceptions are left to Cyclopts' default
+    handling — those represent bugs we want to see.
     """
     try:
         yield
+    except Failed as exc:
+        raise SystemExit(failure_exit_code(exc.exit_code)) from exc
+    except Matched as exc:
+        raise SystemExit(derived_exit_code(exc.exit_code)) from exc
     except OperationCancelledError as exc:
         report_declined(exc)
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc

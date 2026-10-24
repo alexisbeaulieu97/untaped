@@ -333,6 +333,36 @@ class OperationCancelledError(UntapedError):
         super().__init__(message)
 
 
+class Failed(UntapedError):
+    """Raised after the rows when the command failed in a way its rows do not say: exit ``1``.
+
+    For a command whose rows carry no failure but whose outcome is one (a
+    check that failed, a job that ended badly): ``raise Failed()`` once every
+    row is printed. Nothing more is printed; a failure the rows counted (a
+    rejected token, ``4``) still sets the exit code.
+    """
+
+    def __init__(self, message: str = "the command failed") -> None:
+        super().__init__(message)
+
+
+class Matched(UntapedError):
+    """Raised when a check matched: exit ``3``.
+
+    For ``--check`` drift, ``--fail-on-match`` and ``--strict``. Nothing more
+    is printed, and a failure the run counted wins over it. Let it reach
+    core: a handler that catches every ``UntapedError`` (to turn it into a
+    row) takes it for a failure, exit ``1``.
+    """
+
+    def __init__(self, message: str = "the check matched") -> None:
+        super().__init__(message)
+
+    @property
+    def exit_code(self) -> int:
+        return ExitCode.PREDICATE
+
+
 class PromptInterruptedError(UntapedError):
     """Raised when a prompt is interrupted with Ctrl-C; exits ``130``."""
 
