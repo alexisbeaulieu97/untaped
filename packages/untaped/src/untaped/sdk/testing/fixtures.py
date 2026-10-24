@@ -49,6 +49,8 @@ class ScriptedTerminal:
         self.ran: list[Screen[Any, Any]] = []
         self._always: bool | None = None
         self._interrupt = False
+        #: Whether a secret prompt with no secret scripted reads what was typed.
+        self._secrets_typed = True
         self._confirms: deque[bool] = deque()
         self._texts: deque[str] = deque()
         self._secrets: deque[str] = deque()
@@ -60,7 +62,8 @@ class ScriptedTerminal:
     def answers(self, *answers: bool, yes: bool | None = None) -> Self:
         """Answer the next yes/no questions in order, or every one with ``yes``."""
         self._confirms.extend(answers)
-        self._always = yes
+        if yes is not None:
+            self._always = yes
         self.present = True
         return self
 
@@ -81,6 +84,17 @@ class ScriptedTerminal:
         self.present = False
         return self
 
+    @contextmanager
+    def _declining(self) -> Iterator[Self]:
+        """Present for the block, the next yes/no question answered no (``answer=False``)."""
+        was = self.present
+        self._confirms.appendleft(False)
+        self.present = True
+        try:
+            yield self
+        finally:
+            self.present = was
+
     # --- what a command's prompts call (PromptBackend) ---------------------------
 
     def confirm(self, message: str, *, default: bool) -> bool:
@@ -93,7 +107,8 @@ class ScriptedTerminal:
         return str(self._next(self._texts, "text", message))
 
     def secret(self, message: str, *, confirmation: bool) -> str:
-        return str(self._next(self._secrets or self._texts, "secret", message))
+        typed = self._texts if self._secrets_typed and not self._secrets else self._secrets
+        return str(self._next(typed, "secret", message))
 
     def select(
         self,
@@ -188,21 +203,31 @@ class MemoryCredentials:
         self.installs: list[Install] = []
 
     def set(self, credential: Credential[Any], key: CredentialKey, secret: str) -> None:
-        """File ``secret`` as ``credential``'s for ``key``, under the test's latest install."""
+        """File ``secret`` as ``credential``'s for ``key``, under the latest install holding it."""
         from untaped.sdk.run import NoRunError, current_run  # noqa: PLC0415
 
         try:
             current_run()
         except NoRunError:
-            if not self.installs:
-                raise RuntimeError(
-                    "install the credential's plugin before setting it: "
-                    "its install names the plugin it belongs to"
-                ) from None
-            with self.installs[-1].running():
-                credential.store(key, token=secret)
-            return
+            if not credential.spelled:  # a plugin class's: its install names its plugin
+                with self._install_of(credential).running():
+                    credential.store(key, token=secret)
+                return
         credential.store(key, token=secret)
+
+    def _install_of(self, credential: Credential[Any]) -> Install:
+        """The test's latest install composing the plugin class that holds ``credential``."""
+        owner = credential.binding.owner
+        named = f"{owner.__module__}:{owner.__qualname__}"
+        for each in reversed(self.installs):
+            for candidate in each.candidates:
+                target = candidate.target
+                if target is owner or target == named:
+                    return each
+        raise RuntimeError(
+            f"install {owner.__qualname__} before setting its credential: "
+            "its install names the plugin it belongs to"
+        )
 
     # --- what the credential store calls (ReadableStore) -------------------------
 

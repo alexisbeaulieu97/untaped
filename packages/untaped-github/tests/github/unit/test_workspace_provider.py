@@ -293,6 +293,7 @@ def test_repos_follow_git_protocol() -> None:
     assert repo.url == "git@github.com:acme/api.git"
 
 
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_a_failed_listing_fails_when_no_answer_is_cached() -> None:
     configure(default_org="acme")
 
@@ -304,6 +305,7 @@ def test_a_failed_listing_fails_when_no_answer_is_cached() -> None:
     assert (answer.error.category, answer.error.system) == ("unavailable", "github")
 
 
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_after_a_failed_refresh_only_the_answer_cache_is_served_stale() -> None:
     configure(default_org="acme")
     with respx.mock(base_url=API) as mock:

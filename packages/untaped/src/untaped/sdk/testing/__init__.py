@@ -801,6 +801,7 @@ class ScriptedPromptBackend(ScriptedTerminal):
     ) -> None:
         super().__init__()
         self.present = True
+        self._secrets_typed = False  # a secret prompt reads only ``secrets``
         self._interrupt = interrupt
         self._confirms.extend(confirms)
         self._texts.extend(texts)

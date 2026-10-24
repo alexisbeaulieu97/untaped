@@ -37,6 +37,16 @@ class Label(Command):
         return self.ctx.terminal.text("Label?")
 
 
+class Rename(Command):
+    """Ask for a new name, then ask before renaming."""
+
+    confirm: Confirm
+
+    def run(self) -> str:
+        name = self.ctx.terminal.text("New name?")
+        return f"renamed {name}" if self.confirm(f"Rename to {name}?") else "planned"
+
+
 class Peek(Command):
     """Print the vault's token."""
 
@@ -50,8 +60,15 @@ class Vault(Plugin):
     """Keep secrets (a test's plugin)."""
 
     settings = VaultSettings
-    commands = (Wipe, Label, Peek)
+    commands = (Wipe, Label, Rename, Peek)
     token = Credential(key=VaultServer, env=("VAULT_TOKEN",))
+
+
+class Safe(Plugin):
+    """Keep other secrets (a test's plugin)."""
+
+    settings = VaultSettings
+    token = Credential(key=VaultServer)
 
 
 def test_the_terminal_is_absent_until_scripted(
@@ -122,5 +139,39 @@ def test_answers_make_the_terminal_present(given: tuple[bool, ...]) -> None:
 
 
 def test_setting_a_credential_needs_its_plugin_installed(credentials: MemoryCredentials) -> None:
-    with pytest.raises(RuntimeError, match="install the credential's plugin"):
+    with pytest.raises(RuntimeError, match="install Vault before setting its credential"):
         credentials.set(Vault.token, VaultServer(), "s3cret")
+
+
+def test_a_credential_is_set_under_the_install_holding_it(
+    install: Installer, credentials: MemoryCredentials
+) -> None:
+    vault = install(Vault)
+    install(Safe)
+    credentials.set(Vault.token, VaultServer(), "s3cret")
+    assert vault.run(Peek()).text == "s3cret"
+
+
+def test_answer_false_declines_through_the_test_s_terminal(
+    install: Installer, terminal: ScriptedTerminal
+) -> None:
+    terminal.types("jar").absent()  # answer=False is a terminal answering no
+    ran = install(Vault).run(Rename(), answer=False)
+    assert ran.exit == 1  # declined
+    assert terminal.asked == [("text", "New name?"), ("confirm", "Rename to jar?")]
+    assert terminal.present is False  # as the test left it
+
+
+def test_answers_in_order_keep_an_answer_for_every_question() -> None:
+    terminal = ScriptedTerminal().answers(yes=True).answers(False)
+    assert terminal.confirm("first?", default=True) is False
+    assert terminal.confirm("second?", default=False) is True
+
+
+def test_the_11x_backend_reads_secrets_only_from_its_secrets() -> None:
+    from untaped.sdk.errors import ConfigError
+    from untaped.sdk.testing import ScriptedPromptBackend
+
+    with pytest.raises(ConfigError, match="no scripted secret answer"):
+        ScriptedPromptBackend(texts=["name"]).secret("Token?", confirmation=False)
+    assert ScriptedTerminal().types("typed").secret("Token?", confirmation=False) == "typed"

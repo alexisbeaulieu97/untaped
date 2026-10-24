@@ -79,3 +79,15 @@ def test_assert_surface_keeps_its_snapshot_beside_the_test(tmp_path: Path) -> No
     code = compile("assert_surface(Lamp)", str(caller), "exec")
     exec(code, {"assert_surface": assert_surface, "Lamp": Lamp})
     assert (tmp_path / "tests" / "snapshots" / "surface.txt").is_file()
+
+
+def test_assert_surface_through_a_helper_finds_the_calling_test(tmp_path: Path) -> None:
+    helper = compile(
+        "def guard(plugin):\n    assert_surface(plugin)\n", str(tmp_path / "helpers.py"), "exec"
+    )
+    space: dict[str, object] = {"assert_surface": assert_surface}
+    exec(helper, space)
+    test = compile("guard(Lamp)", str(tmp_path / "tests" / "test_lamp.py"), "exec")
+    exec(test, {"guard": space["guard"], "Lamp": Lamp})
+    assert (tmp_path / "tests" / "snapshots" / "surface.txt").is_file()
+    assert not (tmp_path / "snapshots").exists()

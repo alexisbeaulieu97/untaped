@@ -12,7 +12,7 @@ from __future__ import annotations
 import io
 import shlex
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, nullcontext, redirect_stdout
+from contextlib import AbstractContextManager, contextmanager, nullcontext, redirect_stdout
 from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import metadata
@@ -23,6 +23,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr
 from pydantic_core import to_jsonable_python
 
 from untaped.sdk.plugin import Command, Plugin
+from untaped.sdk.testing.fixtures import ScriptedTerminal
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import CommandDecl, OptionDecl
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
     from untaped.runtime.registry import PluginCandidate
     from untaped.sdk.diagnostic import Diagnostic
     from untaped.sdk.testing import CliResult
-    from untaped.sdk.testing.fixtures import ScriptedTerminal
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,7 @@ class Install:
         """
         from untaped.runtime.mount import watching  # noqa: PLC0415
         from untaped.sdk.testing import ScriptedPromptBackend, invoke_cli  # noqa: PLC0415
+        from untaped.sdk.testing.fixtures import current_terminal  # noqa: PLC0415
 
         mount = self._mount
         decl = _decl(mount, command)
@@ -117,10 +118,15 @@ class Install:
         def go(_args: object, **_consoles: object) -> None:
             _dispatch(mount, decl, command, flags, raises=raise_on_error)
 
-        backend = (
-            ScriptedPromptBackend(confirms=[False]) if knobs.get("answer") is False else _terminal()
-        )
-        with watching() as printed:
+        declined = knobs.get("answer") is False
+        scripted = current_terminal()
+        if not declined:
+            asking: AbstractContextManager[ScriptedTerminal | None] = nullcontext(_terminal())
+        elif scripted is not None:
+            asking = scripted._declining()  # the test's terminal, its next answer no
+        else:
+            asking = nullcontext(ScriptedPromptBackend(confirms=[False]))
+        with asking as backend, watching() as printed:
             result = invoke_cli(
                 go,
                 [],

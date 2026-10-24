@@ -779,12 +779,17 @@ class Cache[M = None](OwnedBlock):
                 # back to the parent's phase after a wait; an own task has none
                 self._lock(paths, label, task, resume=None if progress is NO_PROGRESS else text),
             ):
+                read_before = kept.freshness.refreshed_at
                 current = kept = self._load(paths, key, version, typing)
                 refreshed_at = current.freshness.refreshed_at
                 # another version's typed value is a fallback, never an answer: fill this one's
                 fallback = typing is not None and current.freshness.outdated
-                # after this run started: a stopped clock (a test's) never counts an earlier run
-                if refreshed_at is not None and refreshed_at > started and not fallback:
+                # another run refreshed it after this one started, or (on a stopped clock, a
+                # test's) since this one read it: an earlier run's fill is never that
+                moved = refreshed_at is not None and (
+                    refreshed_at > started or refreshed_at != read_before
+                )
+                if moved and not fallback:
                     return current  # refreshed while this run waited: serve it, under --refresh too
                 due = current.freshness.due(None, max_age=max_age, now=_utcnow())
                 if refresh is None and not due:

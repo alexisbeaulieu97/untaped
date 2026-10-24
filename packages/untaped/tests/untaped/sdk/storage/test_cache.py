@@ -620,8 +620,11 @@ def test_an_own_task_shows_the_wait_as_its_text_then_clears_it(clock: CacheClock
 def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> None:
     """Under --refresh too: the data was refreshed after this run started."""
 
+    fills: list[int] = []
+
     def other_process_fills() -> None:
-        fresh = Freshness(refreshed_at=START + timedelta(seconds=1))
+        fills.append(1)  # each of its fills at a later time
+        fresh = Freshness(refreshed_at=START + timedelta(seconds=len(fills)))
         TOY._write(TOY._paths("a").file(), "a", fresh, None, None)
         UP.held["a"] = ["a9"]
 
@@ -1030,7 +1033,6 @@ def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
     def load(self: Cache, paths: Any, key: str, version: str | None, typing: Any) -> Any:
         loads.append(1)
         if len(loads) == 2:  # the reload under the lock: the other install just filled it
-            clock.advance(timedelta(seconds=1))
             fresh = Freshness(refreshed_at=clock.now, version="1")
             self._write(paths.file(), key, fresh, None, None)
         return real_load(self, paths, key, version, typing)
