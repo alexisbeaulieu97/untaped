@@ -29,6 +29,7 @@ from pydantic_core import PydanticUndefined
 from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.core.surface._sdk import SurfaceError, line_mark
 from untaped.core.surface._types import (
+    TypeToken,
     choice_text,
     default_text,
     factory_default,
@@ -116,21 +117,30 @@ def method_mark(info: ContractInfo, name: str, plugin_mark: LineMark | None) -> 
     return line_mark(own) or plugin_mark
 
 
-def model_lines(
-    subject: str, model: type[BaseModel], mark: LineMark | None, *, written: bool = True
-) -> list[Line]:
-    """A payload model's owner line (its required fields) and one typed line per field.
+def model_lines(subject: str, model: type[BaseModel], mark: LineMark | None) -> list[Line]:
+    """A payload model's owner line (its required fields) and one typed line per field."""
+    required, fields = model_fields(model)
+    lines = [Line(f"{subject}({', '.join(required)})", mark)]
+    for key, token, default in fields:
+        text = f"{subject}.{key} {token.token}"
+        lines.append(Line(text if default is None else f"{text} default={default}", mark))
+        lines.extend(
+            Line(f"{subject}.{key} choice={choice_text(value)}", mark) for value in token.choices
+        )
+    return lines
 
-    A model only read from untaped (``written=False``, a record it prints) has a
-    bare owner line and no defaults: what its writer requires or fills in is
-    not the reader's promise.
-    """
+
+#: A JSON key, its type, and its default when the field is optional.
+type FieldLine = tuple[str, TypeToken, str | None]
+
+
+def model_fields(model: type[BaseModel]) -> tuple[list[str], list[FieldLine]]:
+    """``model``'s required JSON keys, then each key's type and, when optional, its default."""
     schema = schema_of(model)
     # A model that refers to itself is a reference to its own def.
     body: Mapping[str, Any] = schema["$defs"][schema["$ref"]] if "$ref" in schema else schema
     properties: Mapping[str, Any] = body.get("properties", {})
     required = sorted(body.get("required", ()))
-    lines = [Line(f"{subject}({', '.join(required)})" if written else subject, mark)]
     by_alias = {
         (info.validation_alias if isinstance(info.validation_alias, str) else None)
         or info.alias
@@ -138,17 +148,14 @@ def model_lines(
         for name, info in model.model_fields.items()
     }
     defs = generic_names(schema.get("$defs", {}), model)
+    fields: list[FieldLine] = []
     for key in sorted(properties):
-        token = node_token(properties[key], defs)
-        text = f"{subject}.{key} {token.token}"
-        if written and key not in required:
+        default = None
+        if key not in required:
             info = by_alias.get(key)
-            text += f" default={'None' if info is None else _field_default(info)}"
-        lines.append(Line(text, mark))
-        lines.extend(
-            Line(f"{subject}.{key} choice={choice_text(value)}", mark) for value in token.choices
-        )
-    return lines
+            default = "None" if info is None else _field_default(info)
+        fields.append((key, node_token(properties[key], defs), default))
+    return required, fields
 
 
 def _field_default(info: Any) -> str:

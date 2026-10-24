@@ -158,7 +158,11 @@ command) is marked with `@experimental` in the code and listed here, not in a
 
 `tests/repo/surface.txt` lists what this page promises, one line per
 promise, and its test fails a minor release that removes a stable line. A
-record kind gets `record` lines: one per field with its JSON type, and an
-owner line naming its required fields when a command reads it on `--stdin`.
-Core's stderr kinds (`untaped.failure`, `untaped.progress`...) are listed; a
+record kind gets `record` lines: a bare owner line and one per field with
+its JSON type, so a field that goes away or changes type fails. A kind that
+scripts write, because a command reads it on `--stdin` (`Stdin[R]` names its
+model or a base of it) or from a file, also gets an owner line naming its
+required fields and a `default=` line per optional field. Models nested in a
+kind are listed as `record <plugin>.<ClassName>`. Core's stderr kinds
+(`untaped.failure`, `untaped.progress`...) are listed with their `level`; a
 plugin's kinds are listed once the plugin is a 12.0 plugin class.

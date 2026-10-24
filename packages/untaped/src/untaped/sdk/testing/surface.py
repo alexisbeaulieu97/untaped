@@ -34,8 +34,7 @@ def assert_surface(spec: PluginSpec, path: Path, version: str | None = None) -> 
     in that version's major or earlier: a pre-release of ``3.0.0`` already
     fails a ``removed_in=3`` that is still there.
 
-    Experimental, like the line format it writes, until untaped's record
-    lines join it (#631) or 12.0, whichever comes first.
+    Experimental, like the line format it writes (#830).
     """
     from untaped.core.surface import due, parse, plugin_lines, removed, render  # noqa: PLC0415
 
