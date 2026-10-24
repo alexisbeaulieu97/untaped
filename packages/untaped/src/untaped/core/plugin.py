@@ -11,7 +11,7 @@ composition reads the cache spelled (:func:`untaped.runtime.registry.compose`).
 
 from __future__ import annotations
 
-from untaped.runtime.declaration import Declaration
+from untaped.runtime.declaration import KeptDeclaration
 from untaped.sdk.plugin import Plugin
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.installed_code import installed_code
@@ -22,7 +22,7 @@ NAME = "untaped"
 #: Every 12.0 plugin class this install composes, kept until any of its code changes.
 DECLARATION = Cache(
     label="composed plugins",
-    model=Declaration,
+    model=KeptDeclaration,
     version=installed_code(),
     max_age=None,
     split="none",

@@ -263,6 +263,18 @@ class Declaration(_Frozen):
         return " ".join(words)
 
 
+class KeptDeclaration(_Frozen):
+    """Core's kept composition: the declaration, and the candidates it was composed from.
+
+    ``candidates`` is a digest of every candidate field composition reads
+    (group, ``Requires-Dist``, version...), so a kept declaration whose
+    candidates changed under the same cache key is composed again.
+    """
+
+    candidates: str
+    declaration: Declaration
+
+
 GroupDecl.model_rebuild()
 
 

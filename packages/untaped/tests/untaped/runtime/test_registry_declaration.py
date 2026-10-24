@@ -230,3 +230,46 @@ def test_a_declaration_that_misses_a_plugin_class_is_composed_again(toys: Path) 
     result = compose_root(candidates=[toy])
     assert result.mount is not None
     assert [plugin.name for plugin in result.mount.declaration.plugins] == ["toy"]
+    _unload("toyplug")
+    compose_root(candidates=[toy])
+    assert "toyplug.plugin" not in sys.modules  # the declaration composed afresh was kept
+
+
+def test_a_kept_plugin_whose_settings_no_longer_import_is_quarantined_as_afresh(
+    toys: Path,
+) -> None:
+    toy = _package(toys, "toyplug")
+    compose_root(candidates=[toy])
+    _unload("toyplug")
+    (toys / "toyplug" / "settings.py").write_text(
+        "raise ImportError('a dependency is gone')\n", encoding="utf-8"
+    )
+    again = compose_root(candidates=[toy])
+    assert again.plugins == ()
+    [record] = again.quarantine
+    assert record.reason == "malformed-entry-point" and "a dependency is gone" in record.detail
+
+
+def test_a_candidate_whose_metadata_changed_is_checked_again(toys: Path) -> None:
+    toy = _package(toys, "toyplug")
+    compose_root(candidates=[toy])
+    _unload("toyplug")
+    pinned = PluginCandidate(
+        distribution=toy.distribution,
+        name=toy.name,
+        target=toy.target,
+        requires_dist=("untaped<1",),
+    )
+    again = compose_root(candidates=[pinned])
+    assert again.plugins == ()
+    assert [record.reason for record in again.quarantine] == ["bad-metadata"]
+    assert len(_declarations()) == 1  # the same key, composed again
+
+
+def test_doctor_counts_core_s_own_cache_as_installed(toys: Path) -> None:
+    toy = _package(toys, "toyplug")
+    root = build_root_app(candidates=[toy])
+    assert _declarations()
+    doctor = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
+    [caches] = [row for row in json.loads(doctor.stdout) if row["check"] == "caches"]
+    assert "of a plugin not installed" not in caches["detail"]

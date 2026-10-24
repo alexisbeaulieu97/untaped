@@ -38,7 +38,13 @@ from packaging.version import InvalidVersion
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, create_model, model_validator
 from pydantic.fields import FieldInfo
 
-from untaped.runtime.declaration import Declaration, PluginDecl, Problem, Quarantined
+from untaped.runtime.declaration import (
+    Declaration,
+    KeptDeclaration,
+    PluginDecl,
+    Problem,
+    Quarantined,
+)
 from untaped.runtime.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
@@ -1544,19 +1550,33 @@ def compose(
     point's target, composes without it.
     """
     ordered = sorted(candidates, key=_candidate_order)
-    key = _declaration_key(ordered)
-    if key is None:
+    if not all(isinstance(candidate.target, str) for candidate in ordered):
         return _compose(shell, ordered)
+    key, read = _declaration_key(ordered), _candidates_read(ordered)
     composed: list[CompositionResult] = []
     filling: list[bool] = []
 
-    def fill(_key: str, _progress: ProgressHandle) -> Filled[Declaration]:
+    def fill(_key: str, _progress: ProgressHandle) -> Filled[KeptDeclaration]:
         filling.append(True)
         composed.append(_compose(shell, ordered))
-        return Filled(value=_declaration_of(composed[-1]))
+        return Filled(
+            value=KeptDeclaration(candidates=read, declaration=_declaration_of(composed[-1]))
+        )
 
+    declarations = _declarations()
     try:
-        served = _declarations().serve({key: "composed plugins"}, refresh=None, fill=fill)
+        served = declarations.serve({key: "composed plugins"}, refresh=None, fill=fill)
+        if not composed:
+            try:
+                kept = served.value[key]
+                if kept.candidates != read:
+                    raise _StaleDeclaration("the candidates changed")
+                return _compose(shell, ordered, kept.declaration)
+            except Exception:
+                # a candidate it doesn't account for, or a part of it that no longer loads
+                # (a dependency gone): compose afresh and keep that instead
+                _LOG.debug("the kept declaration does not compose", exc_info=True)
+                declarations.serve({key: "composed plugins"}, refresh=True, fill=fill)
     except Exception:
         if composed:
             return composed[-1]
@@ -1565,15 +1585,10 @@ def compose(
         # the cache failed (its version, its folder): compose without it, as before it existed
         _LOG.debug("composing without the declaration cache", exc_info=True)
         return _compose(shell, ordered)
-    if composed:
-        return composed[-1]
-    try:
-        return _compose(shell, ordered, served.value[key])
-    except _StaleDeclaration:
-        return _compose(shell, ordered)
+    return composed[-1]
 
 
-def _declarations() -> Cache[Declaration]:
+def _declarations() -> Cache[KeptDeclaration]:
     """Core's declaration cache, named ``untaped.declaration`` (``plugins/untaped/cached/``).
 
     Composition runs before any run exists, and core composes as a plugin of
@@ -1584,14 +1599,39 @@ def _declarations() -> Cache[Declaration]:
     return DECLARATION._spelled_as(NAME, "declaration")
 
 
-def _declaration_key(ordered: Sequence[PluginCandidate]) -> str | None:
-    """The cache key of ``ordered``: each name, distribution and target; ``None`` for an object."""
-    if not all(isinstance(candidate.target, str) for candidate in ordered):
-        return None
-    listed = "\n".join(
+def _declaration_key(ordered: Sequence[PluginCandidate]) -> str:
+    """The cache key of ``ordered`` in this environment: each name, distribution and target.
+
+    The environment (``sys.prefix``) is part of it, so two virtualenvs sharing
+    one home keep a declaration each instead of replacing each other's.
+    """
+    listed = [sys.prefix] + [
         f"{candidate.name} {candidate.distribution} {candidate.target}" for candidate in ordered
+    ]
+    return _digest(listed)
+
+
+def _candidates_read(ordered: Sequence[PluginCandidate]) -> str:
+    """A digest of every candidate field composition reads, the key's and the metadata gates'."""
+    return _digest(
+        [
+            repr(
+                (
+                    candidate.name,
+                    candidate.distribution,
+                    candidate.target,
+                    candidate.distribution_version,
+                    candidate.entry_point_group,
+                    candidate.requires_dist,
+                )
+            )
+            for candidate in ordered
+        ]
     )
-    return hashlib.sha256(listed.encode()).hexdigest()[:16]
+
+
+def _digest(lines: list[str]) -> str:
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
 
 
 class _StaleDeclaration(Exception):
