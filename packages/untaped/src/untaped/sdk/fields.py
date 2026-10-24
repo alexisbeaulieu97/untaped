@@ -640,6 +640,12 @@ class Confirm(FieldBlock):
         """``--dry-run`` was passed."""
         return self._dry_run
 
+    def as_dry_run(self) -> Confirm:
+        """The same answers with ``--dry-run`` on: what a ``--check`` flag passes on."""
+        dry = _copy(self)
+        dry._dry_run = True
+        return dry
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Confirm:
         """A copy for one invocation, from ``--yes`` and ``--dry-run``."""
         filled = _copy(self)

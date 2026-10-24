@@ -397,7 +397,7 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
     command.__annotations__ = {p.name: p.annotation for p in signature.parameters.values()}
     command.__name__ = command.__qualname__ = decl.name.replace("-", "_")
     command.__doc__ = decl.doc
-    setattr(command, _DECLARED_ATTR, True)
+    setattr(command, _DECLARED_ATTR, decl)
     mark = _mark(decl.stability)
     return mark(command) if mark is not None else command
 
@@ -405,9 +405,15 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
 _DECLARED_ATTR = "__untaped_declared__"
 
 
+def declared(func: object) -> CommandDecl | None:
+    """The declaration the mount made ``func`` from; ``None`` for any other command."""
+    found = getattr(func, _DECLARED_ATTR, None)
+    return found if isinstance(found, CommandDecl) else None
+
+
 def is_declared(func: object) -> bool:
     """Whether ``func`` is a command the mount made from a plugin class's declaration."""
-    return getattr(func, _DECLARED_ATTR, False) is True
+    return declared(func) is not None
 
 
 def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
@@ -785,6 +791,7 @@ __all__ = [
     "add_commands",
     "build_app",
     "compose_plugins",
+    "declared",
     "is_declared",
     "plugin_spec",
     "run_built",

@@ -42,7 +42,8 @@ own untaped instead. Every page but the map ends by pointing back at it.
 `[experimental]` marks what `--help` marks experimental. A command that
 changes something says `(changes things)`, and one that deletes or
 overwrites says `(destructive)`, from what the command
-[declares](./conventions.md). Deprecated commands, options and settings are
+[declares](./conventions.md); a command built on a plugin class says
+`(asks first)` when it takes `Confirm`. Deprecated commands, options and settings are
 left out, as `--help` leaves them out; asked for by name, a deprecated
 command's page still prints.
 

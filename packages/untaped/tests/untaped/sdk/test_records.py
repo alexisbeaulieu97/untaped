@@ -543,7 +543,7 @@ def _samples() -> dict[str, WireModel]:
         MigrationPreviewRow,
         PluginCheckRow,
         ProjectOutcome,
-        ProjectRow,
+        RecordedProject,
         RegisterOutcome,
         ScaffoldOutcome,
         SetupStep,
@@ -598,7 +598,7 @@ def _samples() -> dict[str, WireModel]:
             version="11.1.0",
             targets=[RefTarget(plugin="hello", store="shelf", layout=4)],
         ),
-        ProjectRow(
+        RecordedProject(
             name="PROJ-123",
             path="/x/PROJ-123",
             state="present",

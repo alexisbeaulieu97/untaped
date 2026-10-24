@@ -491,6 +491,10 @@ def test_remove_needs_yes_without_a_terminal(tmp_path: Path) -> None:
     first, _ = _two(tmp_path)
     result = _cli("project", "remove", str(first.root))
     assert result.exit_code == 2
+    assert (
+        f'untaped project remove requires --yes when not interactive: it asks "Remove project '
+        f'{first.root.name}?"'
+    ) in result.stderr
     assert len(_targets(first)) == 2
 
 

@@ -41,10 +41,12 @@ from untaped.core.agents._model import (
     PluginPage,
     Setting,
     Shared,
+    Writes,
 )
 from untaped.core.agents._requirement import untaped_requirement
 from untaped.core.surface._types import home_relative
 from untaped.runtime.bootstrap import fail_if_unbuildable
+from untaped.runtime.mount import declared
 from untaped.runtime.registry import CompositionResult, RegisteredPlugin, owns_contracts
 from untaped.runtime.settings import resolve_config_path
 from untaped.sdk._cli import write_kind
@@ -317,7 +319,7 @@ def _commands(
 
 def _line(app: App, path: tuple[str, ...]) -> CommandLine:
     return CommandLine(
-        path, first_line(app.help), _mark(mark_of(app)), write_kind(app.default_command)
+        path, first_line(app.help), _mark(mark_of(app)), _writes(app.default_command)
     )
 
 
@@ -456,12 +458,20 @@ def build_command_page(
         summary=described.summary,
         body=described.body,
         mark=_mark(inherited),
-        writes=write_kind(app.default_command) if runs else None,
+        writes=_writes(app.default_command) if runs else None,
         runs=runs,
         options=_options(app) if runs else (),
         subcommands=tuple(_commands(app, tuple(path))),
         examples=described.examples,
     )
+
+
+def _writes(func: object) -> Writes:
+    """What a command says of its writes: ``@writes``, or a 12.0 command's ``Confirm``."""
+    decl = declared(func)
+    if decl is not None:
+        return "asks" if decl.asks_first else None
+    return write_kind(func)
 
 
 def _options(app: App) -> tuple[Option, ...]:

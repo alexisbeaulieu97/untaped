@@ -179,7 +179,7 @@ ProjectState = Literal["present", "unreadable", "missing", "unknown"]
 """Where a listed project stands; ``unknown`` is a record that can't be read."""
 
 
-class ProjectRow(Record, kind="untaped.project"):
+class RecordedProject(Record, kind="untaped.recorded_project"):
     """One project the home records (``project list``).
 
     ``path`` is its folder; ``holds`` the items it holds, per ``plugin.store``.

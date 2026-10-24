@@ -3886,7 +3886,7 @@ cli untaped project init --format choice=pipe  [experimental]
 cli untaped project init --format choice=raw  [experimental]
 cli untaped project init --format choice=table  [experimental]
 cli untaped project init --format choice=yaml  [experimental]
-cli untaped project init --new-id switch  [experimental]
+cli untaped project init --new-id switch default=unset  [experimental]
 cli untaped project init [PATH]@1 default=unset  [experimental]
 cli untaped project list  [experimental]
 cli untaped project list --columns VALUE... default=unset  [experimental]
@@ -3900,7 +3900,7 @@ cli untaped project list --format choice=table  [experimental]
 cli untaped project list --format choice=yaml  [experimental]
 cli untaped project move --columns VALUE... default=unset  [experimental]
 cli untaped project move --columns alias=-c  [experimental]
-cli untaped project move --dry-run switch  [experimental]
+cli untaped project move --dry-run switch default=unset  [experimental]
 cli untaped project move --format VALUE default=table  [experimental]
 cli untaped project move --format alias=-f  [experimental]
 cli untaped project move --format choice=json  [experimental]
@@ -3909,13 +3909,13 @@ cli untaped project move --format choice=raw  [experimental]
 cli untaped project move --format choice=table  [experimental]
 cli untaped project move --format choice=yaml  [experimental]
 cli untaped project move --yes alias=-y  [experimental]
-cli untaped project move --yes switch  [experimental]
+cli untaped project move --yes switch default=unset  [experimental]
 cli untaped project move OLD NEW  [experimental]
 cli untaped project prune  [experimental]
-cli untaped project prune --check switch  [experimental]
+cli untaped project prune --check switch default=unset  [experimental]
 cli untaped project prune --columns VALUE... default=unset  [experimental]
 cli untaped project prune --columns alias=-c  [experimental]
-cli untaped project prune --dry-run switch  [experimental]
+cli untaped project prune --dry-run switch default=unset  [experimental]
 cli untaped project prune --force VALUE... default=unset  [experimental]
 cli untaped project prune --format VALUE default=table  [experimental]
 cli untaped project prune --format alias=-f  [experimental]
@@ -3925,13 +3925,13 @@ cli untaped project prune --format choice=raw  [experimental]
 cli untaped project prune --format choice=table  [experimental]
 cli untaped project prune --format choice=yaml  [experimental]
 cli untaped project prune --yes alias=-y  [experimental]
-cli untaped project prune --yes switch  [experimental]
+cli untaped project prune --yes switch default=unset  [experimental]
 cli untaped project prune [PROJECT]@1 default=unset  [experimental]
 cli untaped project remove  [experimental]
-cli untaped project remove --check switch  [experimental]
+cli untaped project remove --check switch default=unset  [experimental]
 cli untaped project remove --columns VALUE... default=unset  [experimental]
 cli untaped project remove --columns alias=-c  [experimental]
-cli untaped project remove --dry-run switch  [experimental]
+cli untaped project remove --dry-run switch default=unset  [experimental]
 cli untaped project remove --force VALUE... default=unset  [experimental]
 cli untaped project remove --format VALUE default=table  [experimental]
 cli untaped project remove --format alias=-f  [experimental]
@@ -3941,7 +3941,7 @@ cli untaped project remove --format choice=raw  [experimental]
 cli untaped project remove --format choice=table  [experimental]
 cli untaped project remove --format choice=yaml  [experimental]
 cli untaped project remove --yes alias=-y  [experimental]
-cli untaped project remove --yes switch  [experimental]
+cli untaped project remove --yes switch default=unset  [experimental]
 cli untaped project remove [PROJECT]@1 default=unset  [experimental]
 cli untaped recipe
 cli untaped recipe apply --backup negative=--no-backup
@@ -4578,6 +4578,14 @@ record untaped.failure.level choice=error
 record untaped.failure.message string
 record untaped.failure.retryable boolean
 record untaped.failure.system string
+record untaped.hold_outcome  [experimental]
+record untaped.hold_outcome.action string  [experimental]
+record untaped.hold_outcome.detail string  [experimental]
+record untaped.hold_outcome.error Failure?  [experimental]
+record untaped.hold_outcome.hint string?  [experimental]
+record untaped.hold_outcome.holder string  [experimental]
+record untaped.hold_outcome.item string  [experimental]
+record untaped.hold_outcome.plugin string  [experimental]
 record untaped.installed_plugin
 record untaped.installed_plugin.distribution string
 record untaped.installed_plugin.fills string[]
@@ -4611,6 +4619,13 @@ record untaped.progress.state choice=failed
 record untaped.progress.state choice=running
 record untaped.progress.state string
 record untaped.progress.total integer?
+record untaped.project_outcome  [experimental]
+record untaped.project_outcome.action string  [experimental]
+record untaped.project_outcome.detail string  [experimental]
+record untaped.project_outcome.error Failure?  [experimental]
+record untaped.project_outcome.id string  [experimental]
+record untaped.project_outcome.name string  [experimental]
+record untaped.project_outcome.path string  [experimental]
 record untaped.pruned
 record untaped.pruned.bytes integer
 record untaped.pruned.hint string?
@@ -4620,6 +4635,18 @@ record untaped.pruned.message string
 record untaped.pruned.path string
 record untaped.pruned.plugin string
 record untaped.pruned.store string?
+record untaped.recorded_project  [experimental]
+record untaped.recorded_project.current boolean  [experimental]
+record untaped.recorded_project.detail string?  [experimental]
+record untaped.recorded_project.holds object  [experimental]
+record untaped.recorded_project.id string?  [experimental]
+record untaped.recorded_project.name string  [experimental]
+record untaped.recorded_project.path string  [experimental]
+record untaped.recorded_project.state choice=missing  [experimental]
+record untaped.recorded_project.state choice=present  [experimental]
+record untaped.recorded_project.state choice=unknown  [experimental]
+record untaped.recorded_project.state choice=unreadable  [experimental]
+record untaped.recorded_project.state string  [experimental]
 record untaped.scaffold_outcome
 record untaped.scaffold_outcome.action string
 record untaped.scaffold_outcome.error Failure?
@@ -4799,6 +4826,7 @@ sdk untaped.sdk.ConfigError.hint class
 sdk untaped.sdk.ConfigError.retryable
 sdk untaped.sdk.ConfigError.system class
 sdk untaped.sdk.Confirm()
+sdk untaped.sdk.Confirm.as_dry_run()
 sdk untaped.sdk.Confirm.dry_run
 sdk untaped.sdk.Confirm.field_kind class
 sdk untaped.sdk.Confirm.options class
