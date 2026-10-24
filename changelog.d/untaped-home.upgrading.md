@@ -1,6 +1,7 @@
-Replace `UNTAPED_CONFIG=/some/dir/config.yml` with `UNTAPED_HOME=/some/dir`,
-and move a config file with another name to `config.yml` in its own folder.
-`UNTAPED_STATE` has no replacement: state lives beside the config. Tests built
-on `untaped.sdk.testing` no longer see `UNTAPED_CONFIG`; `home.path` is now
-the untaped home (it was `HOME`), so `home.path / ".untaped" / "x"` becomes
-`home.path / "x"`.
+Replace `UNTAPED_CONFIG=/some/dir/config.yml` with `UNTAPED_HOME=/some/dir`.
+A config file with another name moves to `config.yml` in its own folder, and
+its `<name>.state.yml` to `state.yml` beside it; log in again there
+(`untaped auth login <plugin>`), since stored logins are keyed by the
+config file's path. `UNTAPED_STATE` has no replacement: state lives beside
+the config. A plugin's tests write `home.path / "x"` where they wrote
+`home.path / ".untaped" / "x"`.

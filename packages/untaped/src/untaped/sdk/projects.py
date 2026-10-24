@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._home import home
+from untaped.sdk._home import DEFAULT_HOME, home
 from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import atomic_write
@@ -773,17 +773,24 @@ def _write_gitignore(folder: Path) -> None:
 
 
 def _reserved(folder: Path) -> str | None:
-    """Why ``folder`` can never be a project, or ``None``."""
-    home, untaped = Path.home().resolve(), untaped_home().resolve()
+    """Why ``folder`` can never be a project, or ``None``.
+
+    The current home and ``~/.untaped`` are both untaped's own. A checkout may
+    hold a moved home (``UNTAPED_HOME=<checkout>/.untaped-home``) and stay a
+    project; only ``~/.untaped``'s parents are refused for holding it.
+    """
+    home = Path.home().resolve()
     if folder == home:
         return "it is the home folder"
-    if folder == untaped:
-        return f"it is {shown_path(untaped)}, untaped's own folder"
-    if untaped.is_relative_to(folder):
-        return f"it holds {shown_path(untaped)}, untaped's own folder"
-    for name in _CORE_FOLDERS:
-        if folder.is_relative_to(untaped / name):
-            return f"{shown_path(untaped / name)} is untaped's own"
+    default = DEFAULT_HOME.expanduser().resolve()
+    for untaped in dict.fromkeys((untaped_home().resolve(), default)):
+        if folder == untaped:
+            return f"it is {shown_path(untaped)}, untaped's own folder"
+        for name in _CORE_FOLDERS:
+            if folder.is_relative_to(untaped / name):
+                return f"{shown_path(untaped / name)} is untaped's own"
+    if default.is_relative_to(folder):
+        return f"it holds {shown_path(default)}, untaped's own folder"
     return None
 
 

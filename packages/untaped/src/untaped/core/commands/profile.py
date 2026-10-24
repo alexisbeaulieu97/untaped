@@ -1,7 +1,7 @@
 """Root ``untaped profile …`` command group.
 
 The root owns profile commands for the unified application. Profile data is
-stored in the shared ``~/.untaped/config.yml`` layout and the command hint
+stored in the home's shared ``config.yml`` layout and the command hint
 names the unified executable.
 """
 
@@ -53,7 +53,7 @@ def build_root_profile_app(*, command: str = "untaped") -> App:
     """Return the root ``profile`` command group."""
     app = create_app(
         name="profile",
-        help="Manage configuration profiles in ``~/.untaped/config.yml``.",
+        help="Manage configuration profiles in the home's ``config.yml``.",
     )
     empty_hint = f"No profiles configured. Create one with `{command} profile create <name>`."
     app.command(name="list")(_make_list_command(empty_hint))

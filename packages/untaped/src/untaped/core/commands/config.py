@@ -205,7 +205,7 @@ def section_scopes(
 def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
     """Return the root ``config`` command group for one composition."""
     ctx = RootConfigContext(sections=section_scopes(shell, result))
-    app = create_app(name="config", help="Inspect and modify ``~/.untaped/config.yml``.")
+    app = create_app(name="config", help="Inspect and modify the home's ``config.yml``.")
 
     @app.command(name="list")
     def list_command(
@@ -314,7 +314,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
 
     @app.command(name="edit")
     def edit_command() -> None:
-        """Open ``~/.untaped/config.yml`` in $VISUAL/$EDITOR and re-validate on save."""
+        """Open the home's ``config.yml`` in $VISUAL/$EDITOR and re-validate on save."""
         run_config_editor()
 
     return app
