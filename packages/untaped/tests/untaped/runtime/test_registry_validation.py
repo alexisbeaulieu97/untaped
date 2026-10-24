@@ -71,35 +71,32 @@ def _failing_factory() -> Any:
     raise RuntimeError("factory-boom")
 
 
-#: One name per reason it is reserved: a plugin name, a config section and
-#: a command group; the grammar already refuses ``format_version``.
-RESERVED = [
-    "untaped",
-    "core",
-    "sdk",
-    "contracts",
-    "plugins",
-    "extensions",
-    "profiles",
-    "default",
-    "shell",
-    "http",
-    "ui",
-    "skills",
-    "active",
-    "config",
-    "profile",
-    "doctor",
-    "setup",
-    "auth",
-    "plugin",
-    "caches",
-    "extensions",
-]
+#: Each name a plugin may not have, with what holds it: core's own name, one of
+#: its commands on its class, and config.yml's own keys (the grammar already
+#: refuses ``format_version``).
+TAKEN = {
+    "untaped": "core",
+    "plugin": "a root command",
+    "profiles": "a config key",
+    "active": "a config key",
+    "shell": "a config key",
+    "http": "a config key",
+    "ui": "a config key",
+    "skills": "a config key",
+    "credentials": "a config key",
+    "extensions": "a config key",
+    "caches": "a config key",
+}
+
+#: Names 11.x reserved that nothing holds any more.
+FREE = ["core", "sdk", "contracts", "plugins", "default", "state"]
 
 # (spec factory, reason, text the error/detail must name)
 SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
-    *((f"reserved-name-{v}", lambda v=v: make_spec(name=v), "reserved-name", v) for v in RESERVED),
+    *(
+        (f"taken-{v}", lambda v=v: make_spec(name=v), "duplicate-name", f"{v!r} is taken by {by}")
+        for v, by in TAKEN.items()
+    ),
     (
         "settings-state-overlap",
         lambda: make_spec(name="o", settings=TokenProfile, state=TokenState),
@@ -237,16 +234,16 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
     ("shell", "spec", "reason", "detail"),
     [
         (
-            make_shell(name="root"),
+            make_shell(commands=("root",)),
             make_spec(name="root"),
             "duplicate-name",
-            "duplicate plugin name: 'root' (already provided by the shell)",
+            "duplicate plugin name: 'root' is taken by a root command",
         ),
         (
             make_shell(section="root-section"),
             make_spec(name="root-section"),
             "duplicate-name",
-            "duplicate plugin name: 'root-section' (already provided by the shell)",
+            "duplicate plugin name: 'root-section' is taken by a config key",
         ),
         (
             make_shell(skills=(make_skill("shell-skill"),)),
@@ -261,7 +258,7 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
             "duplicate doctor id: 'shell.health'",
         ),
     ],
-    ids=["name", "section", "skill", "doctor-id"],
+    ids=["command", "section", "skill", "doctor-id"],
 )
 def test_collision_with_the_shell_quarantines(
     shell: Any, spec: PluginSpec, reason: str, detail: str
@@ -270,6 +267,13 @@ def test_collision_with_the_shell_quarantines(
     assert result.plugins == ()
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (reason, detail)
+
+
+@pytest.mark.parametrize("name", FREE)
+def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
+    result = compose(make_shell(), [make_candidate(make_spec(name=name))])
+    assert result.quarantine == ()
+    assert [plugin.spec.name for plugin in result.plugins] == [name]
 
 
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:

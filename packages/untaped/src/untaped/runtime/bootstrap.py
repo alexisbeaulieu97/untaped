@@ -26,7 +26,6 @@ from untaped.core.commands import (
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
-    build_root_plugin_app,
     build_root_profile_app,
     build_root_project_app,
     build_root_setup_app,
@@ -34,13 +33,13 @@ from untaped.core.commands import (
 )
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
-from untaped.core.settings import ShellProfileSettings
+from untaped.core.settings import NAME, ShellProfileSettings
 from untaped.core.skills import PackagedSkill
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
+from untaped.runtime.mount import Mount, add_commands
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import set_profile_override
 from untaped.runtime.registry import (
-    ROOT_MANAGEMENT_COMMANDS,
     ApplicationSpec,
     CompositionResult,
     PluginCandidate,
@@ -137,6 +136,8 @@ SHELL_SPEC = ApplicationSpec(
         ),
     ),
     deprecations=_shell_deprecations,
+    # the root commands not yet on Core's class, in the order they mount
+    commands=("agents", "config", "profile", "project", "skills", "doctor", "setup", "auth"),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -297,10 +298,11 @@ def build_root_app(
     *,
     candidates: Sequence[PluginCandidate] | None = None,
 ) -> App:
-    """Compose the shell plus plugins and return the root app.
+    """Compose core plus plugins and return the root app.
 
-    Mounts root management commands and each validated plugin's sub-app
-    under its plugin name, wires ``--version`` to installed-distribution
+    Mounts core's commands at the root (those on ``Core``'s class from the
+    declaration, the others through the 11.x seam) and each validated
+    plugin's sub-app under its plugin name, wires ``--version`` to installed-distribution
     metadata, installs position-independent root options, and registers shell
     completion. Drive ``app.meta`` directly in tests; run via
     :func:`run_root` in production.
@@ -324,12 +326,13 @@ def build_root_app(
         ),
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
         "auth": build_root_auth_app(result=result),
-        "plugin": build_root_plugin_app(result=result, candidates=candidates),
     }
-    for name in ROOT_MANAGEMENT_COMMANDS:
+    for name in SHELL_SPEC.commands:
         _mount(root, management.pop(name), name=name)
     if management:
-        raise RuntimeError(f"unreserved management commands: {sorted(management)}")
+        raise RuntimeError(f"root commands SHELL_SPEC doesn't list: {sorted(management)}")
+    if result.mount is not None:  # composed by compose_root, so core's class is in it
+        _mount_core(root, result.mount)
     for plugin in result.plugins:
         _mount_plugin(root, plugin)
     root.version = _resolve_version
@@ -358,6 +361,17 @@ def _mount(app: App, sub: App, *, name: str) -> None:
         del app[name]
     app.command(sub, name=name)
     apply_marks(sub, path=(name,))
+
+
+def _mount_core(root: App, mount: Mount) -> None:
+    """Mount the commands on ``Core``'s class at the root, from the declaration."""
+    core = mount.declaration.plugin(NAME)
+    for name in core.command_words():
+        if name in root:
+            del root[name]
+    add_commands(root, mount, NAME)
+    for node in core.commands:
+        apply_marks(root[node.name], path=(node.name,))
 
 
 class _LazyPluginCommand(CommandSpec):

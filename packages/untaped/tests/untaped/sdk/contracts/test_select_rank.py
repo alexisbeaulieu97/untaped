@@ -324,7 +324,7 @@ def test_plugin_rank_refuses_what_it_cant_rank(argv: list[str], message: str) ->
     assert _extensions() == {}
 
 
-# --- plugin list --contracts ------------------------------------------------
+# --- plugin contracts --------------------------------------------------------
 
 
 @experimental
@@ -343,9 +343,9 @@ def _tags_spec() -> PluginSpec:
     return PluginSpec(name="tags", contracts=lambda: (TagSource,))
 
 
-def test_plugin_list_contracts_lists_every_method_with_who_fills_it() -> None:
+def test_plugin_contracts_lists_every_method_with_who_fills_it() -> None:
     write_config(RANKED)
-    result = _run(["plugin", "list", "--contracts", "-f", "json"], *_all(), _tags_spec())
+    result = _run(["plugin", "contracts", "-f", "json"], *_all(), _tags_spec())
     rows = {(row["contract"], row["method"]): row for row in json.loads(result.stdout)}
     books = rows[("shelf.book_source", "books")]
     assert books == {
@@ -361,17 +361,17 @@ def test_plugin_list_contracts_lists_every_method_with_who_fills_it() -> None:
     assert rows[("tags.tag_source", "labels")]["stability"] == "deprecated"
 
 
-def test_plugin_list_contracts_survives_broken_owner_settings() -> None:
+def test_plugin_contracts_survives_broken_owner_settings() -> None:
     write_config(RANKED.replace("[shop, library]", "[shop, shop]"))
-    result = _run(["plugin", "list", "--contracts", "-f", "json"], *_all())
+    result = _run(["plugin", "contracts", "-f", "json"], *_all())
     assert result.exit_code == 0
     assert "rankings not shown" in result.stderr
     [books] = [row for row in json.loads(result.stdout) if row["method"] == "books"]
     assert books["ranked"] == []
 
 
-def test_plugin_list_contracts_with_no_owner_says_so() -> None:
-    result = _run(["plugin", "list", "--contracts"], shop_spec())
+def test_plugin_contracts_with_no_owner_says_so() -> None:
+    result = _run(["plugin", "contracts"], shop_spec())
     assert result.exit_code == 0
     assert "No installed plugin declares a contract." in result.stdout + result.stderr
 
@@ -421,13 +421,11 @@ def test_plugin_schema_loads_contract_offers_to_find_a_kind(tmp_path: Path) -> N
     assert json.loads(result.stdout)["required"] == ["name"]
 
 
-def test_plugin_list_contracts_names_an_owner_whose_contracts_break() -> None:
+def test_plugin_contracts_names_an_owner_whose_contracts_break() -> None:
     def broken() -> tuple[type[Contract], ...]:
         raise ImportError("acme api broke")
 
-    result = _run(
-        ["plugin", "list", "--contracts"], *_all(), PluginSpec(name="acme", contracts=broken)
-    )
+    result = _run(["plugin", "contracts"], *_all(), PluginSpec(name="acme", contracts=broken))
     assert "acme's contracts couldn't be read" in result.stderr
 
 

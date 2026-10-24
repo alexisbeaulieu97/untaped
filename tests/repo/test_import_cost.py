@@ -176,9 +176,14 @@ _STARTUP_PROBE = (
 #: class isn't imported (``untaped.core.plugin``, ``untaped.runtime.declaration``,
 #: ``untaped.sdk.storage.installed_code`` and the data file), adds four: 161
 #: against 157 on its base, 2026-10-24, so the budget goes to 163, and the
-#: total (715 with them) to 718.
-_TOTAL_BUDGET = 718
-_UNTAPED_BUDGET = 163
+#: total (715 with them) to 718. Core composing its own class first, at every
+#: start, adds the mount (``untaped.runtime.mount``) and, on a start that
+#: composes afresh as this one does, composition (``untaped.runtime.composition``):
+#: 164 against 162 on its base (a start reading the declaration cache: 162, as
+#: ``untaped.core.plugin`` is no longer read), 2026-10-24, so the budget goes
+#: to 167, and the total (717 with them) to 720.
+_TOTAL_BUDGET = 720
+_UNTAPED_BUDGET = 167
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

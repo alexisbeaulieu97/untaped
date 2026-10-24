@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeGuard, cast, get_
 from cyclopts import App, Group, Parameter
 from pydantic import BaseModel, ValidationError
 
-from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import (
     BlockDecl,
     CommandDecl,
@@ -46,7 +45,6 @@ from untaped.runtime.declaration import (
     target_of,
 )
 from untaped.runtime.registry import DeclaredBlocks, PluginSpec, SkillAsset, resolve_target
-from untaped.runtime.run import build_run
 from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
@@ -72,6 +70,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from pydantic.fields import FieldInfo
+
+    from untaped.runtime.composition import PluginEntry
 
 
 @dataclass(frozen=True)
@@ -230,9 +230,14 @@ def _is_model(obj: object) -> TypeGuard[type[BaseModel]]:
     return isinstance(obj, type) and issubclass(obj, BaseModel)
 
 
-def compose_plugins(entries: Sequence[PluginEntry]) -> Mount:
-    """Compose the plugin classes of ``entries`` (each a :class:`Plugin` subclass) in one walk."""
-    declaration = compose(entries)
+def compose_plugins(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Mount:
+    """Compose the plugin classes of ``entries`` (each a :class:`Plugin` subclass) in one walk.
+
+    ``taken`` are the names no plugin may have (:func:`untaped.runtime.composition.compose`).
+    """
+    from untaped.runtime.composition import compose  # noqa: PLC0415 - a start reads the cache
+
+    declaration = compose(entries, taken=taken)
     by_name = {entry.name: cast("type[Plugin]", entry.plugin) for entry in entries}
     return Mount.of(
         declaration, {plugin.name: by_name[plugin.name] for plugin in declaration.plugins}
@@ -333,10 +338,15 @@ def build_app(mount: Mount, name: str) -> App:
     """The Cyclopts app of plugin ``name``: its groups and commands, from the declaration."""
     plugin = mount.declaration.plugin(name)
     app = App(name=name, help=plugin.doc)
-    _add(app, mount, plugin.commands)
+    add_commands(app, mount, name)
     if plugin.runs is not None:
         app.default(_command(mount, plugin.runs))
     return app
+
+
+def add_commands(app: App, mount: Mount, name: str) -> None:
+    """Add plugin ``name``'s groups and commands to ``app``: its own, or the root for core's."""
+    _add(app, mount, mount.declaration.plugin(name).commands)
 
 
 def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> None:
@@ -387,8 +397,17 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
     command.__annotations__ = {p.name: p.annotation for p in signature.parameters.values()}
     command.__name__ = command.__qualname__ = decl.name.replace("-", "_")
     command.__doc__ = decl.doc
+    setattr(command, _DECLARED_ATTR, True)
     mark = _mark(decl.stability)
     return mark(command) if mark is not None else command
+
+
+_DECLARED_ATTR = "__untaped_declared__"
+
+
+def is_declared(func: object) -> bool:
+    """Whether ``func`` is a command the mount made from a plugin class's declaration."""
+    return getattr(func, _DECLARED_ATTR, False) is True
 
 
 def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
@@ -450,6 +469,8 @@ def _mark(stability: StabilityDecl | None) -> Stability | None:
 
 def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl, object]]) -> None:
     """Build the command from the tokens given, run it under the run, print what it returns."""
+    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+
     with report_errors():
         cls = mount.command(decl)
         with run_scope(build_run(mount.declaration, mount.settings)):
@@ -494,6 +515,8 @@ def run_built(
     built around it, as the parser builds it. Errors propagate: the
     caller reports them.
     """
+    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+
     with run_scope(build_run(mount.declaration, mount.settings)):
         return _ran(mount, decl, _refilled(mount, decl, command, flags))
 
@@ -614,7 +637,7 @@ def _filled(
     assert block is not None  # the declaration's block options come from core fields
     default = current if isinstance(current, block) else block()
     call = Invocation(
-        words=("untaped", *decl.path),
+        words=("untaped", *mount.declaration.words(decl)),
         annotation=info.annotation,
         kinds=lambda: mount.kinds,
     )
@@ -759,8 +782,10 @@ def _output(decl: CommandDecl, command: Command[Any]) -> Output[Any]:
 __all__ = [
     "Mount",
     "Printed",
+    "add_commands",
     "build_app",
     "compose_plugins",
+    "is_declared",
     "plugin_spec",
     "run_built",
     "watching",

@@ -532,7 +532,7 @@ def _import_every_shipped_module() -> None:
 
 
 def _samples() -> dict[str, WireModel]:
-    from untaped.core.commands.plugins import ContractRow
+    from untaped.core.commands.plugins import ContractMethod
     from untaped.core.commands.records import (
         AuthOutcome,
         ConfigMigrationOutcome,
@@ -633,7 +633,7 @@ def _samples() -> dict[str, WireModel]:
         SettingOutcome(key="k", profile="default", action="updated"),
         ProfileRow(name="default", active=True, keys=3),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
-        ContractRow(
+        ContractMethod(
             contract="workspace.repo_source",
             method="repos",
             owner="workspace",
@@ -1059,7 +1059,12 @@ def _samples() -> dict[str, WireModel]:
         )
 
         rows += [
-            Rule(id="no-print", reads="untaped.plugin", severity="error", summary="No print."),
+            Rule(
+                id="no-print",
+                reads="untaped.installed_plugin",
+                severity="error",
+                summary="No print.",
+            ),
             Finding(
                 rule="lint.print",
                 severity="error",
@@ -1068,7 +1073,7 @@ def _samples() -> dict[str, WireModel]:
                 location=FileLocation(path="src/a.py", line=3),
                 error=Failure.from_exception(ConfigError("x")),
             ),
-            Subject(kind="untaped.plugin", record={"name": "acme", "tags": [1, None]}),
+            Subject(kind="untaped.installed_plugin", record={"name": "acme", "tags": [1, None]}),
             Tree(root="/repo", paths=("README.md", "src/a.py")),
             ScaffoldOutcome(action="created", target_path="/repo/.untaped/lint/no_print.py"),
         ]

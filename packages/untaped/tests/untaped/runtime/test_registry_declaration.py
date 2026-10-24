@@ -222,14 +222,16 @@ def test_a_declaration_that_misses_a_plugin_class_is_composed_again(toys: Path) 
         "from untaped.runtime.registry import PluginSpec\nToy = PluginSpec(name='toy')\n",
         encoding="utf-8",
     )
-    assert compose_root(candidates=[toy]).mount is None
+    spec_only = compose_root(candidates=[toy]).mount
+    assert spec_only is not None
+    assert [plugin.name for plugin in spec_only.declaration.plugins] == ["untaped"]  # core's own
     _unload("toyplug")
     (folder / "plugin.py").write_text(
         textwrap.dedent(PLUGIN.format(package="toyplug")), encoding="utf-8"
     )
     result = compose_root(candidates=[toy])
     assert result.mount is not None
-    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["toy"]
+    assert [plugin.name for plugin in result.mount.declaration.plugins] == ["untaped", "toy"]
     _unload("toyplug")
     compose_root(candidates=[toy])
     assert "toyplug.plugin" not in sys.modules  # the declaration composed afresh was kept

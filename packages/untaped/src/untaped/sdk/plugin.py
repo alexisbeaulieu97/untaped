@@ -122,7 +122,8 @@ class Group:
     commands: ClassVar[tuple[type[Command[Any]] | type[Group], ...]] = ()
     stability: ClassVar[Stability | None] = None
 
-    def __init__(self) -> NoReturn:
+    # ``-> None``, not ``NoReturn``: a type checker would take the class for a function
+    def __init__(self) -> None:
         raise TypeError(
             f"{type(self).__name__} is a group; core reads the class, never an instance"
         )

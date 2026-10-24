@@ -5,7 +5,7 @@ A plugin's own source may import ``untaped`` only as one of the SDK modules
 ``untaped.sdk.testing.git``), and another plugin only as that
 plugin's ``api`` module, and only when its distribution requires the
 other's (by default, or under an extra named after an owner it fills: the
-``requires`` of its ``untaped.plugin`` record). Which packages are plugins
+``requires`` of its ``untaped.installed_plugin`` record). Which packages are plugins
 comes from every installed plugin's record, quarantined ones included. Its
 own package is always allowed; third-party libraries are not this rule's
 business. Every import counts, including function-level and

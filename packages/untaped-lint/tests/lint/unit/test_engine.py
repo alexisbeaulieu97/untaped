@@ -134,7 +134,7 @@ def test_a_provider_with_two_rules_of_one_id_is_not_loaded() -> None:
 
 def test_an_invalid_plugin_record_is_a_failure_row_not_a_crash() -> None:
     with compose_with("lint"):
-        report = run([Subject(kind="untaped.plugin", record={"name": "git"})])
+        report = run([Subject(kind="untaped.installed_plugin", record={"name": "git"})])
     (failure,) = report.failures
     assert (failure.item, failure.details["reason"]) == ("git", "invalid-record")
     assert failure.category == "invalid"

@@ -2,7 +2,7 @@
 
 Inside a plugin repository the nearest ``pyproject.toml`` (up to the project
 root) names its plugins under ``[project.entry-points."untaped.plugins"]``;
-each installed one is an ``untaped.plugin`` subject, and one that is not
+each installed one is an ``untaped.installed_plugin`` subject, and one that is not
 installed is a finding, never a subject. ``--stdin`` reads pipe envelopes,
 each one subject of its kind.
 """

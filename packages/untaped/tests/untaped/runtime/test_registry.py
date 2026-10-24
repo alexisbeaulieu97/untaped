@@ -206,7 +206,7 @@ def test_failed_provider_registers_nothing() -> None:
         ],
     )
     assert [cap.spec.name for cap in result.plugins] == ["good", "later"]
-    assert [q.reason for q in result.quarantine] == ["reserved-name"]
+    assert [q.reason for q in result.quarantine] == ["duplicate-name"]
     assert "good" in [cap.spec.name for cap in result.plugins]
     registered_skills = [skill.name for cap in result.plugins for skill in cap.skills]
     assert registered_skills == ["good-skill"]

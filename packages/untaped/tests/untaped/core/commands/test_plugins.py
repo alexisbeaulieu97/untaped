@@ -1,13 +1,14 @@
-"""Tests for the root ``untaped plugin list`` command.
+"""``untaped plugin``: core's group on its own class, and ``plugin list`` in particular.
 
-Reports one record per candidate provider — ``name/status/distribution/
-version`` — from the composition outcome, in name order. The listing never
-touches settings, so invalid plugin values cannot block it.
+``plugin list`` reports one record per candidate plugin (``name/status/
+distribution/version``) from the composition, in name order. The listing
+never touches settings, so invalid plugin values cannot block it.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,20 +17,15 @@ import pytest
 from core_test_support.commands.support import (
     GithubProfile,
     JiraProfile,
-    compose,
     make_spec,
     write_config,
 )
 from core_test_support.runtime.plugin_harness import make_candidate
-from untaped.core.commands.plugins import INSTALL_HINT, build_root_plugin_app
+from untaped.core.commands.plugins import INSTALL_HINT, List, Schema
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import (
-    CompositionResult,
-    PluginCandidate,
-    QuarantineRecord,
-)
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.settings import get_settings
-from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker, Install
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -117,22 +113,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
         target="example_mod:provider",
         distribution_version="0.1.0",
     )
-    result = CompositionResult(
-        plugins=(),
-        quarantine=(
-            QuarantineRecord(
-                name="ghost",
-                distribution="example-dist",
-                entry_point="example_mod:provider",
-                reason="malformed-entry-point",
-                detail="could not resolve entry point 'example_mod:provider'",
-            ),
-        ),
-    )
-    app = build_root_plugin_app(result=result, candidates=(candidate,))
-    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
-    assert invoked.exit_code == 0, invoked.output
-    assert _rows(invoked.stdout) == [
+    assert _listing([candidate]) == [
         {
             "name": "ghost",
             "status": "quarantined",
@@ -149,36 +130,19 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
 
 def test_unresolvable_provider_uses_unknown_sentinels() -> None:
     candidate = PluginCandidate(distribution="unknown", name="mystery", target="nope:missing")
-    result = CompositionResult(
-        plugins=(),
-        quarantine=(
-            QuarantineRecord(
-                name="mystery",
-                distribution="unknown",
-                entry_point="",
-                reason="malformed-entry-point",
-                detail="could not resolve entry point 'nope:missing'",
-            ),
-        ),
-    )
-    app = build_root_plugin_app(result=result, candidates=(candidate,))
-    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
-    assert invoked.exit_code == 0, invoked.output
-    (row,) = _rows(invoked.stdout)
+    (row,) = _listing([candidate])
     assert row["name"] == "mystery"
     assert row["version"] == "unknown"
 
 
 def test_table_headers_name_the_listing_contract() -> None:
-    result = compose(make_spec("github", settings=GithubProfile))
-    app = build_root_plugin_app(result=result, candidates=())
-    invoked = CliInvoker().invoke(app, ["list"])  # type: ignore[arg-type]
+    github = make_candidate(make_spec("github", settings=GithubProfile))
+    root = bootstrap.build_root_app(candidates=[github])
+    invoked = CliInvoker().invoke(root.meta, ["plugin", "list"])
     assert invoked.exit_code == 0, invoked.output
     header = [cell.strip() for cell in invoked.stdout.splitlines()[1].strip("│").split("│")]
     assert header == ["name", "status", "distribution", "version"]
     assert "github" in invoked.stdout
-    listed = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
-    assert {"distribution", "version"} <= set(_rows(listed.stdout)[0])
 
 
 def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> None:
@@ -188,14 +152,21 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
         "profiles:\n  default:\n    jira:\n      timeout: not-a-number\n",
     )
     get_settings.cache_clear()
-    result = compose(
-        make_spec("github", settings=GithubProfile),
-        make_spec("jira", settings=JiraProfile),
+    listed = _listing(
+        [
+            make_candidate(make_spec("github", settings=GithubProfile)),
+            make_candidate(make_spec("jira", settings=JiraProfile)),
+        ]
     )
-    app = build_root_plugin_app(result=result, candidates=())
-    invoked = CliInvoker().invoke(app, ["list", "--format", "json"])  # type: ignore[arg-type]
-    assert invoked.exit_code == 0, invoked.output
-    assert {row["name"] for row in _rows(invoked.stdout)} == {"github", "jira"}
+    assert {row["name"] for row in listed} == {"github", "jira"}
+
+
+def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., Install]) -> None:
+    core = install()
+    assert core.run(List()).rows == []
+    schema = json.loads(core.run(Schema(kind="untaped.installed_plugin")).text)
+    assert schema["$id"] == schema["title"] == "untaped.installed_plugin"
+    assert core.cli("plugin schema untaped.installed_plugin").text == json.dumps(schema, indent=2)
 
 
 @pytest.mark.parametrize(

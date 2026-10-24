@@ -16,7 +16,8 @@ Checks each visible command of a command subtree:
 - ``ambiguous-short`` — a non-reserved short flag has two meanings within
   the checked subtrees;
 - ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
-  declaring ``@writes``;
+  declaring ``@writes`` (a plugin class's command has no such declaration:
+  its ``Confirm`` field is one);
 - ``mutation-format`` — a declared write has no ``--format``;
 - ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``;
 - ``reserved-panel`` — a command or option group named after one of core's
@@ -45,6 +46,7 @@ from cyclopts import App, Group
 
 from untaped.runtime.command_lines import console_lines, examples_of, parse_problem, segments
 from untaped.runtime.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
+from untaped.runtime.mount import is_declared
 from untaped.sdk._cli import write_kind
 
 RESERVED_SHORTS = {
@@ -97,6 +99,8 @@ def command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, s
     yield from _argument_violations(arguments)
     options = {flag for argument in arguments for flag in argument.names}
     kind = write_kind(app.default_command)
+    if is_declared(app.default_command):
+        return
     if kind is None and options & {"--yes", "--dry-run"}:
         yield "undeclared-write", " ".join(sorted(options & {"--yes", "--dry-run"}))
     if kind is not None and "--format" not in options:

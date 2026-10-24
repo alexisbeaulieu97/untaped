@@ -633,6 +633,21 @@ def test_a_record_class_belongs_to_the_plugin_whose_package_defines_it() -> None
         assert ("hello.salutation", "hello") in [(k.kind, k.plugin) for k in declaration.kinds]
 
 
+def test_a_root_entry_takes_its_name_and_its_commands_words() -> None:
+    class Core(Plugin):
+        """Core."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    core = PluginEntry("core", f"{__name__}:Core", Core, root=True)
+    declaration = compose([core, _entry(Hello, "say"), _entry(Hello, "core")])
+    assert [p.name for p in declaration.plugins] == ["core"]
+    assert declaration.plugin("core").root
+    assert [q.name for q in declaration.quarantined] == ["say", "core"]
+    assert {p.rule for q in declaration.quarantined for p in q.problems} == {"duplicate-name"}
+
+
 def test_a_quarantined_plugin_owns_no_kind() -> None:
     class Peer(Plugin):
         """Peer."""

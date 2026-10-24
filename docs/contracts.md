@@ -169,7 +169,7 @@ Loading config checks only the names' spelling, so a ranking in
 `profiles.default` never breaks a profile where a ranked plugin isn't
 installed or configured.
 
-`untaped plugin list --contracts` lists every contract method with its
+`untaped plugin contracts` lists every contract method with its
 owner, stability, the providers that fill it in the order they are asked
 and the profile's ranking, including contracts nobody fills yet.
 `untaped plugin schema <kind>` prints a record or diagnostic kind's JSON
@@ -267,7 +267,7 @@ def test_the_library_fills_the_shelf_contract() -> None:
   `doctor`) and never fails: rerun the provider's tests against that owner.
   It exits 3 when a check fails. `untaped.sdk.testing.check_plugin(NAME)`
   returns the rows of these checks, without the conventions that read only
-  the plugin's files, for a linter to judge; the deprecated
-  `untaped plugin check [NAME]` prints them.
+  the plugin's files, for a linter to judge; `check(install(...))` fails a
+  test on any of them.
 - [Filling another plugin's contract](./plugins.md#filling-another-plugins-contract)
   covers starting a provider with `untaped plugin new`.

@@ -1,4 +1,4 @@
-"""The example plugins: lint finds what ``plugin check`` recorded; the old command is unchanged.
+"""The example plugins: lint finds what ``plugin check`` recorded before lint replaced it.
 
 ``tests/fixtures/plugin_check/<name>.json`` is ``untaped plugin check <name>
 --format json`` from before lint, with ``library.volumes`` configured as CI
@@ -67,16 +67,3 @@ def test_lint_reports_what_plugin_check_recorded(examples: dict[str, Any], name:
     expected = {_as_finding(row) for row in _recorded(name) if row["status"] != "pass"}
     assert {tuple(each) for each in examples[name]["findings"]} == expected
     assert examples[name]["failures"] == []
-
-
-def test_the_deprecated_plugin_check_prints_the_recorded_rows(examples: dict[str, Any]) -> None:
-    ran = examples["plugin check shelf"]
-
-    def shape(rows: list[dict[str, str]]) -> list[tuple[str, str, str]]:
-        return [(row["check"], row["title"], row["status"]) for row in rows]
-
-    recorded = _recorded("shelf")
-    assert shape(ran["rows"]) == shape(recorded)
-    assert ran["exit_code"] == (1 if any(row["status"] == "fail" for row in recorded) else 0)
-    (warning,) = ran["warnings"]
-    assert "untaped lint" in warning

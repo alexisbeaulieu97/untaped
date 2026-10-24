@@ -9,7 +9,6 @@ from untaped.core.plugin_check.help_tree import help_tree_violations
 from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime.bootstrap import SHELL_SPEC, build_root_app, composition
-from untaped.runtime.registry import ROOT_MANAGEMENT_COMMANDS
 from untaped.runtime.settings import Settings, model_sections
 
 
@@ -17,12 +16,13 @@ def _core_violations() -> list[str]:
     """Violations in the root commands and core's sections (lint checks the stderr wording)."""
     root = build_root_app(candidates=[])
     result = composition()
+    commands = sorted(name for name in root if not name.startswith("-"))
     sections = {**model_sections(Settings), SHELL_SPEC.section: SHELL_SPEC.settings}
     src = Path(untaped.__file__).parent.parent
     return sorted(
         [
-            *help_tree_violations(root, sorted(ROOT_MANAGEMENT_COMMANDS)),
-            *stability_violations(root, result, ROOT_MANAGEMENT_COMMANDS, sections=sections),
+            *help_tree_violations(root, commands),
+            *stability_violations(root, result, commands, sections=sections),
             *(
                 line
                 for section, model in sections.items()

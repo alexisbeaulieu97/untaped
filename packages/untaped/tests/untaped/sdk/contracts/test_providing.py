@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from core_test_support.contracts.support import Book, BookSource, compose, shelf_spec, shop_spec
-from untaped.runtime import bootstrap, registry
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.contracts import Ok, gather, providing
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import plugin_candidate
@@ -36,9 +36,6 @@ def test_the_instances_answer_as_the_named_plugin_and_the_composition_comes_back
 @pytest.mark.parametrize(
     ("key", "message"),
     [
-        ("untaped", "reserved plugin name"),
-        ("sdk", "reserved plugin name"),
-        ("doctor", "reserved"),
         ("shop", "the name of an installed plugin"),
         ("Bad Key", "must be lowercase words"),
     ],
@@ -64,21 +61,17 @@ def test_an_instance_of_another_owners_contract_is_refused() -> None:
         pass
 
 
+@pytest.mark.parametrize(
+    ("key", "taken_by"),
+    [("untaped", "core"), ("plugin", "a root command"), ("http", "a config key")],
+)
 def test_a_key_the_composition_quarantines_is_refused_and_the_composition_comes_back(
-    monkeypatch: pytest.MonkeyPatch,
+    key: str, taken_by: str
 ) -> None:
     before = compose(shelf_spec(), shop_spec())
-    checked = registry._check_reserved_name
-
-    def refuse_house(spec: PluginSpec, state: registry._CompositionState) -> None:
-        if spec.name == "house":
-            raise registry._Quarantine("reserved-name", "refused for the test: 'house'")
-        checked(spec, state)
-
-    monkeypatch.setattr(registry, "_check_reserved_name", refuse_house)
     with (
-        pytest.raises(ConfigError, match="house: reserved-name: refused for the test"),
-        providing("shelf", {"house": [_House()]}, candidates=_installed()),
+        pytest.raises(ConfigError, match=f"{key}: duplicate-name: .* is taken by {taken_by}"),
+        providing("shelf", {key: [_House()]}, candidates=_installed()),
     ):
         pass
     assert bootstrap.composition() is before

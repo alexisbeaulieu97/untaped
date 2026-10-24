@@ -239,7 +239,7 @@ class RankProviders:
             owners = ", ".join(sorted(self._owners)) or "none"
             raise UsageError(
                 f"{owner_name!r} owns no contract (contract owners: {owners})",
-                hint=run_hint("plugin list --contracts"),
+                hint=run_hint("plugin contracts"),
             )
         notes: list[Note] = []
         if plugins:

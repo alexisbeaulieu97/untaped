@@ -141,7 +141,7 @@ UNCHECKED = frozenset(
 
 
 class Conventions:
-    """The rules over an ``untaped.plugin`` subject; the engine's own code, never a provider."""
+    """The rules over an ``untaped.installed_plugin`` subject: the engine's own, not a provider."""
 
     def rules(self) -> list[Rule]:
         return list(RULES)

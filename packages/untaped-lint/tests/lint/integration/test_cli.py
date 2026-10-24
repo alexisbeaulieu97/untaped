@@ -242,7 +242,7 @@ def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(
     lint = InstalledPlugin.model_validate(next(each for each in listed if each["name"] == "lint"))
     PluginReader.read.clear()
     with compose_with("lint", provides={"acme": [Reader()]}):
-        result = _lint(input=pipe(lint, kind="untaped.plugin"))
+        result = _lint(input=pipe(lint, kind="untaped.installed_plugin"))
     assert result.exit_code == 0, result.stderr
     assert events[:2] == ["conventions", "rules"]
     assert PluginReader.read == [lint]

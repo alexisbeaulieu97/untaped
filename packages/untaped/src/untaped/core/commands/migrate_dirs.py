@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from untaped.core.commands.records import MigrationPreviewRow
-from untaped.core.plugin import NAME
+from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import CompositionResult, PluginSpec, section_settings
 from untaped.runtime.settings import active_settings_layout, check_settings_field
