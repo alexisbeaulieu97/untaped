@@ -26,7 +26,7 @@ from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -61,6 +61,7 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import deprecated, deprecated_behaviour, deprecated_parameters
 from untaped.sdk.network.auth import takes_token_command, token_alternatives
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
+from untaped.sdk.run import Clock, run_clock
 from untaped.sdk.words import command_line, q, run_hint
 
 if TYPE_CHECKING:
@@ -141,11 +142,12 @@ def _parse_retry_after(value: str) -> float | None:
         return None
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+    return max(0.0, (when - run_clock().now()).total_seconds())
 
 
-def _sleep(seconds: float) -> None:  # pragma: no cover - thin wrapper, patched in tests
-    time.sleep(seconds)
+def _sleep(seconds: float) -> None:
+    """Wait ``seconds`` before a retry, on the run's clock (a test's clock moves at once)."""
+    run_clock().sleep(seconds)
 
 
 def resolve_verify(http: HttpSettings) -> VerifyTypes:
@@ -204,7 +206,10 @@ def _ssl_context(ca_bundle_path: Path | None) -> ssl.SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
-_DEADLINE: ContextVar[float | None] = ContextVar("untaped_http_deadline", default=None)
+#: The clock a deadline was set on and the time on it when the deadline ends.
+_DEADLINE: ContextVar[tuple[Clock, float] | None] = ContextVar(
+    "untaped_http_deadline", default=None
+)
 
 
 @contextmanager
@@ -217,14 +222,17 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
     last error stands). A request past it raises :class:`HttpTransportError`
     (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
     deadline is a context variable, so threads started with a copied context
-    (``bounded_map``) share it.
+    (``bounded_map``) share it. It counts down on the clock it was set on
+    (:func:`~untaped.sdk.run.run_clock` then).
     """
     if seconds is None:
         yield
         return
-    ends = time.monotonic() + seconds
+    left = _time_left()
+    clock = run_clock()
     held = _DEADLINE.get()
-    token = _DEADLINE.set(ends if held is None else min(held, ends))
+    keep = held is not None and left is not None and left <= seconds
+    token = _DEADLINE.set(held if keep else (clock, clock.monotonic() + seconds))
     try:
         yield
     finally:
@@ -232,8 +240,11 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
 
 
 def _time_left() -> float | None:
-    ends = _DEADLINE.get()
-    return None if ends is None else ends - time.monotonic()
+    held = _DEADLINE.get()
+    if held is None:
+        return None
+    clock, ends = held
+    return ends - clock.monotonic()
 
 
 def _fits(delay: float) -> bool:

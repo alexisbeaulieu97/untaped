@@ -7192,6 +7192,14 @@ sdk untaped.sdk.testing.CliResult.exit_code
 sdk untaped.sdk.testing.CliResult.output
 sdk untaped.sdk.testing.CliResult.stderr
 sdk untaped.sdk.testing.CliResult.stdout
+sdk untaped.sdk.testing.ManualClock()
+sdk untaped.sdk.testing.ManualClock(start@1=) default=None
+sdk untaped.sdk.testing.ManualClock.advance()
+sdk untaped.sdk.testing.ManualClock.advance(**parts)
+sdk untaped.sdk.testing.ManualClock.advance(by@1/=) default=0
+sdk untaped.sdk.testing.ManualClock.monotonic()
+sdk untaped.sdk.testing.ManualClock.now()
+sdk untaped.sdk.testing.ManualClock.sleep(seconds)
 sdk untaped.sdk.testing.MemoryStore()
 sdk untaped.sdk.testing.MemoryStore.delete(entry)
 sdk untaped.sdk.testing.MemoryStore.describe(entry)
@@ -7332,6 +7340,8 @@ sdk untaped.sdk.testing.keep_value(partition=) default=None  [experimental]
 sdk untaped.sdk.testing.keep_value(version=) default=None  [experimental]
 sdk untaped.sdk.testing.make_project(holds=) default=None  [experimental]
 sdk untaped.sdk.testing.make_project(path)  [experimental]
+sdk untaped.sdk.testing.manual_clock()
+sdk untaped.sdk.testing.manual_clock(start@1=) default=None
 sdk untaped.sdk.testing.memory_store()
 sdk untaped.sdk.testing.memory_store(store@1=) default=None
 sdk untaped.sdk.testing.move_ask(store, item, *, moved_from)  [experimental]

@@ -393,6 +393,6 @@ now=…)`; its `refresh_error` never fails the row, and `outdated` says the
 key was filled by another version. `cached(key, read)` (`cached(key)` for a
 cache with `model=`) peeks at what is cached with no refresh, lock or warning, for in-process readers
 such as a screen; `seed()` and `forget()` record what an owner already holds
-or forget a key whose data changed. In tests, `untaped.sdk.testing.cache_clock()`
-moves the clock a cache reads. The example plugin (`examples/untaped-hello`,
+or forget a key whose data changed. In tests, `untaped.sdk.testing.manual_clock()`
+moves the clock a cache reads (`clock.advance(hours=1)`). The example plugin (`examples/untaped-hello`,
 `hello motd`) has one cache.

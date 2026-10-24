@@ -58,7 +58,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, overload
@@ -75,6 +75,7 @@ from untaped.sdk.git import safe_path_segment
 from untaped.sdk.network.upstream import fail_fast, full_retries
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Record, UtcTimestamp
+from untaped.sdk.run import run_clock
 from untaped.sdk.storage._fs import file_lock
 from untaped.sdk.storage.store import Store
 from untaped.sdk.words import duration_text
@@ -167,31 +168,9 @@ def _answering_for(cache: Cache[Any]) -> str | None:
     return scope[1] if scope is not None and scope[0] is cache else None
 
 
-# --------------------------------------------------------------------------- #
-# The wall clock (``untaped.sdk.testing.cache_clock`` installs its own)
-# --------------------------------------------------------------------------- #
-
-
-def _system_now() -> datetime:
-    return datetime.now(UTC)
-
-
-_now: Callable[[], datetime] = _system_now
-
-
 def _utcnow() -> datetime:
-    return _now()
-
-
-@contextmanager
-def installed_utcnow(clock: Callable[[], datetime]) -> Iterator[None]:
-    """Read the time caches compare ages against from ``clock`` inside the block."""
-    global _now
-    previous, _now = _now, clock
-    try:
-        yield
-    finally:
-        _now = previous
+    """The time caches compare ages against: the run's clock (:func:`untaped.sdk.run.run_clock`)."""
+    return run_clock().now()
 
 
 # --------------------------------------------------------------------------- #
@@ -2006,7 +1985,6 @@ __all__ = [
     "call_state",
     "code_version",
     "current_call",
-    "installed_utcnow",
     "refresh_option",
     "refresh_scope",
 ]
