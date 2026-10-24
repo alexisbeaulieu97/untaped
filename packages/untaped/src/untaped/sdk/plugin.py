@@ -63,13 +63,16 @@ class Command[S: BaseModel](BaseModel):
     every other field is an option, or an argument when it is
     ``Positional[...]``, with its ``description`` as help. The docstring is
     the summary and the behaviour; ``run``'s return type says what it prints.
-    ``stability`` and ``aliases`` are class-level marks.
+    ``stability``, ``aliases`` and ``repairs`` are class-level marks;
+    ``repairs = True`` says the command repairs untaped's setup, so it runs
+    under a bad ``UNTAPED_FORMAT`` and the per-run skills check skips it.
     """
 
     model_config = ConfigDict(extra="forbid", ignored_types=(Experimental, Deprecated))
 
     stability: ClassVar[Stability | None] = None
     aliases: ClassVar[tuple[Deprecated, ...]] = ()
+    repairs: ClassVar[bool] = False
 
     @model_validator(mode="before")
     @classmethod

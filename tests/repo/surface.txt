@@ -4923,6 +4923,7 @@ sdk untaped.sdk.ColumnsOption
 sdk untaped.sdk.Command implement=
 sdk untaped.sdk.Command.aliases class
 sdk untaped.sdk.Command.ctx
+sdk untaped.sdk.Command.repairs class
 sdk untaped.sdk.Command.run()
 sdk untaped.sdk.Command.settings
 sdk untaped.sdk.Command.spelled()
@@ -5146,6 +5147,10 @@ sdk untaped.sdk.DoctorResult.fix
 sdk untaped.sdk.DoctorResult.id
 sdk untaped.sdk.DoctorResult.ok
 sdk untaped.sdk.DoctorResult.warn
+sdk untaped.sdk.DryRun()
+sdk untaped.sdk.DryRun.field_kind class
+sdk untaped.sdk.DryRun.options class
+sdk untaped.sdk.DryRun.panel class
 sdk untaped.sdk.DryRunOption
 sdk untaped.sdk.ErrorCategory.AUTH = auth
 sdk untaped.sdk.ErrorCategory.CONFIG = config

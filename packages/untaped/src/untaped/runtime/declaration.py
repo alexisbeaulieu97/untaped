@@ -99,6 +99,8 @@ class CommandDecl(_Frozen):
     asks_first: bool = False
     stability: StabilityDecl | None = None
     aliases: tuple[AliasDecl, ...] = ()
+    #: ``repairs = True``: it runs under a bad ``UNTAPED_FORMAT`` and skips the skills check.
+    repairs: bool = False
 
 
 class GroupDecl(_Frozen):

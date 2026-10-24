@@ -82,6 +82,7 @@ RESERVED_FIELDS: frozenset[str] = frozenset(
         "spelled",
         "stability",
         "aliases",
+        "repairs",
         "json",
         "copy",
         "schema",
@@ -613,10 +614,18 @@ class _CommandWalk:
             asks_first=seen.blocks["confirm"] > 0,
             stability=self._mark(cls),
             aliases=self._aliases(),
+            repairs=self._repairs(),
         )
 
     def _mark(self, cls: type[Command[Any]]) -> StabilityDecl | None:
         return self.plugin.stability_of(cls, cls.stability)
+
+    def _repairs(self) -> bool:
+        repairs: object = self.cls.repairs
+        if not isinstance(repairs, bool):
+            self.problem("reserved-name", f"{self.where}.repairs", f"holds {repairs!r}, not a bool")
+            return False
+        return repairs
 
     def _aliases(self) -> tuple[AliasDecl, ...]:
         aliases = self.cls.aliases

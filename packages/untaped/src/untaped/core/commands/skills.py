@@ -43,7 +43,7 @@ from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import not_found, plural, run_hint, shown_path
 
@@ -94,6 +94,7 @@ class List(Command[CoreSettings]):
         $ untaped skills list
     """
 
+    repairs = True
     output: Output[records.Skill]
 
     def run(self) -> Iterator[records.Skill]:
@@ -109,6 +110,7 @@ class Install(Command[CoreSettings]):
         $ untaped skills install awx --scope local
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     all: bool = Field(False, description="Install every registered skill.")
@@ -147,6 +149,7 @@ class Status(Command[CoreSettings]):
         $ untaped skills status --check
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     project_dir: Path | None = Field(None, description=_PROJECT)
@@ -178,13 +181,14 @@ class Update(Command[CoreSettings]):
         $ untaped skills update untaped-awx --force
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     project_dir: Path | None = Field(None, description=_PROJECT)
     force: bool = Field(
         False, description="Also rewrite stubs someone edited or a newer untaped wrote."
     )
-    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    dry_run: DryRun
     output: Output[SkillOutcome]
 
     def run(self) -> Iterator[SkillOutcome]:
@@ -196,7 +200,7 @@ class Update(Command[CoreSettings]):
             stdin=self.stdin,
             project_dir=self.project_dir,
             force=self.force,
-            dry_run=self.dry_run,
+            dry_run=bool(self.dry_run),
         )
 
 
@@ -208,6 +212,7 @@ class Remove(Command[CoreSettings]):
         $ untaped skills remove --all --target claude --yes
     """
 
+    repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
     stdin: bool = Field(False, description=_STDIN)
     all: bool = Field(False, description="Remove every installed untaped skill.")
