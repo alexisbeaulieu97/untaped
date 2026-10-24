@@ -302,3 +302,23 @@ def test_a_model_core_cannot_import_is_skipped() -> None:
             return ""
 
     assert "record shop.shelf" in _texts(_plugin(Read, Shelves))
+
+
+class Box[T](BaseModel):
+    """A box of anything."""
+
+    name: Annotated[str, Key]
+    held: T | None = None
+
+
+class Boxes(Command):
+    """List boxes of numbers."""
+
+    output: Output[Box[int]]
+
+    def run(self) -> Iterator[Box[int]]:
+        yield Box[int](name="a")
+
+
+def test_a_kind_core_cannot_import_is_skipped() -> None:
+    assert "record shop.shelf" in _texts(_plugin(Boxes, Shelves))

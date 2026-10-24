@@ -53,7 +53,7 @@ def record_lines(
 ) -> list[Line]:
     """The ``record`` lines of core's diagnostic kinds and of ``result``'s declared kinds.
 
-    With ``owner``, only that plugin's kinds and the models they reach.
+    With ``owner``, only the kinds and nested models that plugin owns.
     """
     kinds = _diagnostics()
     if result.mount is not None:
@@ -70,7 +70,7 @@ def record_lines(
             for found in by_model.get(model) or [_nested(model, each, result, nested)]:
                 found.marks |= reaching
                 found.written |= written
-    subjects = {kind: each for kind, each in kinds.items()}
+    subjects = dict(kinds)
     subjects.update({f"{at}.{name}": each for (at, name), each in nested.items()})
     return [
         line
