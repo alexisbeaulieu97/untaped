@@ -4,7 +4,7 @@ The repo store asks it, never github's code: a fetch of a URL on the Git host
 of ``github.server.url`` (``github.com``, or the GitHub Enterprise host) gets
 the GitHub token as an ``x-access-token`` credential with the server's TLS
 setting, and the profile's
-``http.proxy`` when one is set, so one setting proxies both GitHub's API and
+``untaped.http.proxy`` when one is set, so one setting proxies both GitHub's API and
 its Git fetches. A URL on any other host gets nothing from GitHub.
 """
 
@@ -39,7 +39,7 @@ class GithubHost(GitHost):
         if not token:
             return None
         verify = settings.server.verify_tls
-        if verify is True:  # untaped's trust: root http.ca_bundle_path, when one is set
+        if verify is True:  # untaped's trust: untaped.http.ca_bundle_path, when one is set
             verify = app_context().http.ca_bundle_path or True
         return Credential(username=TOKEN_USERNAME, password=SecretStr(token), verify_tls=verify)
 

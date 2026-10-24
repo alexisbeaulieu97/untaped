@@ -172,7 +172,7 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
             if entry.key in hidden or (entry.stability == "deprecated" and not set_here):
                 continue
             section = descriptor.path[0]
-            raw = section in listing.errors
+            raw = listing.unvalidated(descriptor)
             if ranks(descriptor) and not raw:
                 rows.setdefault(section, []).extend(_ranking_rows(repo, descriptor, profile))
                 continue

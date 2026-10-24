@@ -1,7 +1,7 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
-The page lists every setting of the root app (``http.*``, ``ui.*``,
-``skills.*``) and of each first-party plugin's settings model, plus each
+The page lists every setting of core (``untaped.http.*``, ``untaped.ui.*``,
+``untaped.skills.*``) and of each first-party plugin's settings model, plus each
 plugin's state model. Types, defaults and environment variables come from
 the Pydantic models, and each description from the field's
 ``Field(description=...)``, followed by its :class:`~untaped.sdk._schema.Choices`
@@ -136,7 +136,7 @@ def _first_party() -> tuple[PluginCandidate, ...]:
 
 
 def collect_sections() -> list[Section]:
-    """``(title, prefix, model, is_state, stability, rows)``: the shell and each first-party plugin.
+    """``(title, prefix, model, is_state, stability, rows)``: core and each first-party plugin.
 
     ``stability`` is the owning plugin's mark; ``rows`` its typed state rows. Plugins follow in name
     order. Raises :class:`RuntimeError` naming every quarantined first-party
@@ -220,15 +220,13 @@ def _description(row: Row) -> str:
 
 def _renamed_table() -> list[str]:
     """The Renamed settings table: every declared rename, in section order."""
-    from untaped.runtime.settings import model_sections  # noqa: PLC0415
     from untaped.sdk.health.deprecated_keys import key_mappings  # noqa: PLC0415
 
     rows: list[str] = []
     for _, prefix, model, is_state, _, _ in collect_sections():
         if is_state:
             continue
-        sections = {prefix: model} if prefix else model_sections(model)
-        for section, section_model in sections.items():
+        for section, section_model in {prefix: model}.items():
             mappings = key_mappings(section_model)
             for old, new in sorted(mappings.migratable.items()):
                 kind = "retired" if old in mappings.retired else "renamed"

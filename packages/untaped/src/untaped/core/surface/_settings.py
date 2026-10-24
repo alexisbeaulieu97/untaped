@@ -1,7 +1,7 @@
 """``cfg`` and ``state`` lines, and the settings sections they share with the config reference.
 
-The sections are the root's own (``http``, ``ui``, ``skills``), the shell's,
-and each composed plugin's settings and state models, as
+The sections are core's own (``untaped``: ``http``, ``ui``, ``skills``) and
+each composed plugin's settings and state models, as
 ``scripts/gen_config_reference.py`` documents them; both read them through
 :func:`sections` and :func:`setting_leaves`. The surface asks for each owner's
 ``extensions`` too, written as one key per owned contract and method
@@ -33,13 +33,6 @@ if TYPE_CHECKING:
     from untaped.runtime.registry import CompositionResult
     from untaped.sdk._schema import Choices
     from untaped.sdk.marks import Stability
-
-
-def _root_sections() -> frozenset[str]:
-    """The root model's own sections: ``Settings``' fields, not the pydantic-settings base."""
-    from untaped.runtime.settings import Settings  # noqa: PLC0415
-
-    return frozenset(Settings.model_fields)
 
 
 class Section(NamedTuple):
@@ -88,7 +81,7 @@ def check_quarantine(result: CompositionResult) -> None:
 
 
 def sections(result: CompositionResult, *, extensions: bool, root: bool = True) -> list[Section]:
-    """The root's and shell's sections (unless ``root=False``), then each plugin's, in name order.
+    """Core's sections (unless ``root=False``), then each plugin's, in name order.
 
     ``extensions=False`` leaves the injected ``extensions`` key out of an
     owner's section (the config reference documents it elsewhere).
@@ -99,12 +92,10 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
         state_declarations,
         state_model,
     )
-    from untaped.runtime.settings import Settings  # noqa: PLC0415
     from untaped.sdk.storage.state import ProjectStateRows, StateRows  # noqa: PLC0415
 
     found: list[Section] = []
     if root:
-        found.append(Section("Root", "", Settings, False, None))
         found.append(
             Section(f"`{SHELL_SPEC.section}`", SHELL_SPEC.section, SHELL_SPEC.settings, False, None)
         )
@@ -140,15 +131,12 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
 
 def setting_leaves(section: Section) -> list[Setting]:
     """Every leaf key of ``section``, collections included, with its effective mark."""
-    from untaped.runtime.settings import model_sections  # noqa: PLC0415
     from untaped.sdk._schema import bounds_text, walk_settings  # noqa: PLC0415
     from untaped.sdk.marks import setting_mark  # noqa: PLC0415
 
     prefix, model = section.prefix, section.model
-    leaves = walk_settings(model, (prefix,) if prefix else (), include_collections=True)
-    if not prefix:
-        leaves = [leaf for leaf in leaves if leaf.path[0] in _root_sections()]
-    models = {prefix: model} if prefix else model_sections(model)
+    leaves = walk_settings(model, (prefix,), include_collections=True)
+    models = {prefix: model}
     return [
         Setting(
             key=leaf.key,
@@ -185,7 +173,7 @@ def settings_lines(
         schema = schema_of(section.model)
         for leaf in setting_leaves(section):
             mark = plugin_mark if section.is_state else line_mark(leaf.mark, tree)
-            lines.extend(_leaf_lines(area, leaf, mark, schema, section.prefix))
+            lines.extend(_leaf_lines(area, leaf, mark, schema))
         if not section.is_state:
             lines.extend(_renamed(section))
         for rows in section.rows:
@@ -230,9 +218,9 @@ def extension_lines(
 
 
 def _leaf_lines(
-    area: str, leaf: Setting, mark: LineMark | None, schema: Mapping[str, Any], prefix: str
+    area: str, leaf: Setting, mark: LineMark | None, schema: Mapping[str, Any]
 ) -> list[Line]:
-    parts = leaf.key.split(".")[1:] if prefix else leaf.key.split(".")
+    parts = leaf.key.split(".")[1:]
     token = node_token(_node(schema, parts, leaf.key), schema.get("$defs", {}))
     text = f"{area} {leaf.key} {token.token}"
     if area == "cfg":
@@ -264,18 +252,10 @@ def _model_node(node: Mapping[str, Any], defs: Mapping[str, Any]) -> Mapping[str
 
 
 def _renamed(section: Section) -> list[Line]:
-    """``cfg <old> -> <new>  [deprecated, removed in <major>.0]`` for each renamed key still read.
-
-    The root's sections (``Settings``' own fields) declare their own.
-    """
-    from untaped.runtime.settings import model_sections  # noqa: PLC0415
+    """``cfg <old> -> <new>  [deprecated, removed in <major>.0]`` per renamed key still read."""
     from untaped.sdk.health.deprecated_keys import key_mappings  # noqa: PLC0415
 
-    if section.prefix:
-        models = {section.prefix: section.model}
-    else:
-        found = model_sections(section.model)
-        models = {name: found[name] for name in sorted(_root_sections() & set(found))}
+    models = {section.prefix: section.model}
     lines: list[Line] = []
     for prefix, model in models.items():
         mappings = key_mappings(model)

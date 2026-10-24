@@ -3,7 +3,7 @@
 Used by the root ``untaped config list/set/unset`` commands to enumerate
 what's configurable without hard-coding the schema. Lists, dicts, and other
 collection types are skipped unless ``include_collections`` asks for them as
-whole-value leaves (the ``config`` commands do, e.g. ``ui.symbols``).
+whole-value leaves (the ``config`` commands do, e.g. ``untaped.ui.symbols``).
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ if TYPE_CHECKING:
 class Choices:
     """``Annotated`` marker: the names a setting accepts, for a set its type can't carry.
 
-    On a ``str`` field the value must be one of them (``ui.theme``); on a
-    mapping, its keys (``ui.symbols``). A ``Literal`` needs no marker. The
+    On a ``str`` field the value must be one of them (``untaped.ui.theme``); on a
+    mapping, its keys (``untaped.ui.symbols``). A ``Literal`` needs no marker. The
     field's write-time validator is the only reader that enforces it; doctor,
     the config reference and ``config set --prompt`` read the same names, so
     none of them keeps its own list.
@@ -47,7 +47,7 @@ class Choices:
 
     defaults: Callable[[Any], Mapping[str, str]] | None = None
     """For a mapping: each name's value while the mapping doesn't set it, given the validated
-    model that holds the field (``ui.symbols`` reads the chosen theme's symbols)."""
+    model that holds the field (``untaped.ui.symbols`` reads the chosen theme's symbols)."""
 
     defaults_label: str = "default"
     """Where :attr:`defaults` come from, as a source is shown (``theme``)."""
@@ -60,7 +60,7 @@ class Choices:
         """Why ``value`` is refused, listing the accepted names; ``None`` when accepted.
 
         ``value`` is a string, or a mapping whose keys are checked; ``prefix``
-        (``ui.symbols``) qualifies each stray key.
+        (``untaped.ui.symbols``) qualifies each stray key.
         """
         names = self.names()
         valid = ", ".join(sorted(names))
@@ -127,12 +127,12 @@ class FieldDescriptor:
 
     @property
     def key(self) -> str:
-        """Dotted key, e.g. ``"http.verify_ssl"``."""
+        """Dotted key, e.g. ``"untaped.http.verify_ssl"``."""
         return ".".join(self.path)
 
     @property
     def is_collection(self) -> bool:
-        """Whether the leaf holds a whole mapping or list (e.g. ``ui.symbols``)."""
+        """Whether the leaf holds a whole mapping or list (e.g. ``untaped.ui.symbols``)."""
         return _is_collection(self.annotation)
 
 

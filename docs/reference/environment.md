@@ -8,10 +8,10 @@ Every environment variable `untaped` reads or sets.
 |---|---|
 | `UNTAPED_HOME` | The folder untaped keeps everything in: `config.yml`, `state.yml` and `plugins/<name>/`. An absolute path (`~` is expanded); a relative one exits 4. Default: `~/.untaped`. See [File and layout](../configuration.md#file-and-layout). |
 | `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
-| `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `ui.format` setting; an explicit `--format` wins over it. Any other value exits 2, except under `doctor` and `setup`, which ignore it. |
-| `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, info) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](../scripting.md#stderr-diagnostics). |
+| `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `untaped.ui.format` setting; an explicit `--format` wins over it. Any other value exits 2, except under `doctor` and `setup`, which ignore it. |
+| `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, info) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `untaped.ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](../scripting.md#stderr-diagnostics). |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the config or state file lock before a write fails. A non-negative number; default `5`. |
-| `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_HTTP__TIMEOUT_SECONDS`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__PARALLEL`. A hyphen in a plugin name is an underscore: `UNTAPED_ACME_TOOLS__TOKEN`. |
+| `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__PARALLEL`. A hyphen in a plugin name is an underscore: `UNTAPED_ACME_TOOLS__TOKEN`. |
 | `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when no override variable, stored login or old `github.token` setting answers (read as the GitHub CLI reads them). See [Tokens](../configuration.md#tokens). |
 | `JIRA_API_TOKEN` | Jira token used when no override variable, stored login or old `jira.token` setting answers (read as `jira-cli` reads it). |
 | `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when no override variable, stored login or old `awx.token` setting answers (read as the `ansible.controller` and `awx.awx` collections read them). |
@@ -56,9 +56,9 @@ output that does not go to a terminal is not wrapped.
 
 ## HTTP
 
-When the `http.proxy` setting is unset, the HTTP client honors the standard
+When the `untaped.http.proxy` setting is unset, the HTTP client honors the standard
 proxy variables: `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY`. TLS
-trust comes from the `http.*` settings (the OS trust store by default), not
+trust comes from the `untaped.http.*` settings (the OS trust store by default), not
 from environment variables.
 
 ## Git

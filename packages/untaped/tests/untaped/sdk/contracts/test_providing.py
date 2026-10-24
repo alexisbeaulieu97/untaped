@@ -63,7 +63,7 @@ def test_an_instance_of_another_owners_contract_is_refused() -> None:
 
 @pytest.mark.parametrize(
     ("key", "taken_by"),
-    [("untaped", "core"), ("plugin", "a root command"), ("http", "a config key")],
+    [("untaped", "core"), ("plugin", "a root command"), ("profiles", "a config key")],
 )
 def test_a_key_the_composition_quarantines_is_refused_and_the_composition_comes_back(
     key: str, taken_by: str

@@ -32,7 +32,7 @@ from untaped.core.commands import (
 )
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
-from untaped.core.settings import NAME, ShellProfileSettings
+from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import PackagedSkill
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Mount, add_commands
@@ -92,19 +92,9 @@ from untaped.sdk.marks import (
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage.cache import current_call
 
-#: Unified executable name; also the identity reported before dispatch selects
-#: a plugin.
-SHELL_NAME = "untaped"
-
-#: Config section owned by the shell itself.
-SHELL_SECTION = "shell"
-
-#: Distribution owning the unified product version.
-SHELL_DISTRIBUTION = "untaped"
-
 
 def _shell_app() -> App:
-    return App(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    return App(name=NAME, help="Unified untaped developer CLI.")
 
 
 def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
@@ -118,13 +108,13 @@ def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
 #: The root application. A singleton so repeated
 #: compositions re-register the identical models idempotently.
 SHELL_SPEC = ApplicationSpec(
-    name=SHELL_NAME,
+    name=NAME,
     app_factory=_shell_app,
-    section=SHELL_SECTION,
-    settings=ShellProfileSettings,
+    section=NAME,
+    settings=CoreSettings,
     skills=(
         SkillAsset(
-            name=SHELL_NAME,
+            name=NAME,
             description=(
                 "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
                 "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
@@ -285,11 +275,10 @@ def _clear_for_tests() -> None:
 
 def _resolve_version() -> str:
     try:
-        return metadata.version(SHELL_DISTRIBUTION)
+        return metadata.version(NAME)
     except metadata.PackageNotFoundError as exc:
         raise ConfigError(
-            f"shell {SHELL_NAME!r} could not resolve version from "
-            f"distribution {SHELL_DISTRIBUTION!r}"
+            f"shell {NAME!r} could not resolve version from distribution {NAME!r}"
         ) from exc
 
 
@@ -315,7 +304,7 @@ def build_root_app(
     management = {
         "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
-        "profile": build_root_profile_app(command=SHELL_NAME),
+        "profile": build_root_profile_app(command=NAME),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
         "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,
@@ -596,11 +585,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 __all__ = [
-    "SHELL_DISTRIBUTION",
-    "SHELL_NAME",
-    "SHELL_SECTION",
     "SHELL_SPEC",
-    "ShellProfileSettings",
     "build_root_app",
     "compose_root",
     "fail_if_unbuildable",

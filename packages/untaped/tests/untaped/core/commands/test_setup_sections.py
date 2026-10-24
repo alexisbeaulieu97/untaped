@@ -149,17 +149,15 @@ def test_sections_are_listed_services_first_then_core_then_plugins() -> None:
     assert [row.name for row in model.rows] == [
         "this install",
         "wiz",
-        "http",
-        "ui",
-        "skills",
+        "untaped",
         "knobs",
     ]
 
 
 def test_only_lists_the_named_sections() -> None:
-    model, _ = _build(only=["ui"]).init()
+    model, _ = _build(only=["untaped"]).init()
 
-    assert [row.name for row in model.rows] == ["this install", "ui"]
+    assert [row.name for row in model.rows] == ["this install", "untaped"]
 
 
 def test_rows_fit_a_small_terminal() -> None:
@@ -672,27 +670,27 @@ def test_a_secret_field_starts_empty_and_writes_what_is_typed() -> None:
 # --- maps that declare their names ------------------------------------------------
 
 _SYMBOLS = (
-    "profiles:\n  default:\n    ui: {symbols: {error: X}}\n"
-    "  work:\n    ui: {symbols: {success: S}}\nactive: work\n"
+    "profiles:\n  default:\n    untaped:\n      ui: {symbols: {error: X}}\n"
+    "  work:\n    untaped:\n      ui: {symbols: {success: S}}\nactive: work\n"
 )
 
 
 def _ui(profile: str = "work") -> Screen[SetupModel, SetupResult]:
-    return _build(profile=profile, only=["ui"])
+    return _build(profile=profile, only=["untaped"])
 
 
 def _to_symbols(profile: str = "work") -> list[ScreenKey]:
-    """The keys from the list into the open ``ui.symbols`` editor."""
+    """The keys from the list into the open ``untaped.ui.symbols`` editor."""
     model, _ = _ui(profile).init()
-    section = next(i for i, row in enumerate(model.rows) if row.name == "ui")
+    section = next(i for i, row in enumerate(model.rows) if row.name == "untaped")
     keys: list[ScreenKey] = [*(["down"] * (section - model.selected)), "enter"]
-    rows = drive_screen(_ui(profile), keys).model.panes["ui"].rows
-    index = next(i for i, row in enumerate(rows) if row.label == "symbols")
+    rows = drive_screen(_ui(profile), keys).model.panes["untaped"].rows
+    index = next(i for i, row in enumerate(rows) if row.label == "ui.symbols")
     return [*keys, *(["down"] * index), "enter"]
 
 
 def _ui_data(path: Path, profile: str = "work") -> object:
-    return read_config_dict(path)["profiles"][profile].get("ui")
+    return read_config_dict(path)["profiles"][profile].get("untaped", {}).get("ui")
 
 
 def test_a_map_row_counts_its_overrides(_isolated_config: Path) -> None:
@@ -700,7 +698,7 @@ def test_a_map_row_counts_its_overrides(_isolated_config: Path) -> None:
 
     run = drive_screen(_ui(), _to_symbols()[:-1], size=(140, 40))
 
-    row = next(row for row in run.model.panes["ui"].rows if row.label == "symbols")
+    row = next(row for row in run.model.panes["untaped"].rows if row.label == "ui.symbols")
     assert row.value == "1 override"  # the profile's own; ``error`` is the default profile's
 
 
@@ -714,7 +712,7 @@ def test_a_symbol_is_edited_in_place_and_the_profiles_own_map_written(
     run = drive_screen(_ui(), keys, size=(140, 40))
 
     assert _ui_data(_isolated_config) == {"symbols": {"success": "S", "warning": "!"}}
-    assert run.model.written == (("work", "ui.symbols"),)
+    assert run.model.written == (("work", "untaped.ui.symbols"),)
 
 
 def test_an_override_cleared_shows_what_it_inherits_and_the_last_one_unsets(
@@ -737,8 +735,8 @@ def test_an_inherited_value_opened_and_kept_is_not_copied(_isolated_config: Path
     run = drive_screen(_ui(), keys, size=(140, 40))
 
     assert "enter close" in run.frame.splitlines()[-1]
-    assert run.model.panes["ui"].editing is not None
-    assert run.model.panes["ui"].editing.value == {"success": "S"}
+    assert run.model.panes["untaped"].editing is not None
+    assert run.model.panes["untaped"].editing.value == {"success": "S"}
 
 
 def test_a_map_editor_footer_offers_edit_then_keep(_isolated_config: Path) -> None:
@@ -763,14 +761,17 @@ def test_a_map_changed_while_its_editor_was_open_is_not_overwritten(
     host.run_jobs()
     host.deliver()  # the editor is open, holding {success: S}
 
-    SetSetting(SettingsFileRepository())("ui.symbols", '{"info": "i"}', profile="work")
+    SetSetting(SettingsFileRepository())("untaped.ui.symbols", '{"info": "i"}', profile="work")
     for key in ["down", "enter", "!", "enter", "ctrl-s"]:
         runtime.send(_message(key))
     host.run_jobs()
     host.deliver()
 
     assert _ui_data(_isolated_config) == {"symbols": {"info": "i"}}
-    assert "ui.symbols changed in profile work while it was open" in runtime.model.panes["ui"].error
+    assert (
+        "untaped.ui.symbols changed in profile work while it was open"
+        in runtime.model.panes["untaped"].error
+    )
 
 
 # --- rankings ---------------------------------------------------------------------
@@ -976,3 +977,19 @@ def test_a_malformed_own_ranking_opens_on_what_the_row_shows(
 
     editing = run.model.panes["shelf"].editing
     assert isinstance(editing, ListEditor) and editing.value == ("library",)
+
+
+def test_a_bad_part_of_core_s_section_leaves_the_other_parts_validated(
+    _isolated_config: Path,
+) -> None:
+    from untaped.core.commands.setup_sections import read_listing
+
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    untaped:\n"
+        "      http: {timeout_seconds: 5}\n      ui: {border: bogus}\n"
+    )
+    listing = read_listing("default", {})
+    rows = {row.key: row for row in listing.rows["untaped"]}
+    assert "border" in listing.errors["untaped"]
+    assert not rows["untaped.http.timeout_seconds"].raw
+    assert rows["untaped.ui.border"].raw

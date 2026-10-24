@@ -287,7 +287,7 @@ def test_clamp_parallel_caps_above_with_warning_naming_the_policy(
 
 def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> None:
     """json/raw output must stay byte-stable no matter the configured theme."""
-    _isolated_config.write_text("ui:\n  theme: dark\n")
+    _isolated_config.write_text("untaped:\n  ui:\n    theme: dark\n")
     get_settings.cache_clear()
 
     rows: list[dict[str, object]] = [{"name": "alpha", "value": "1"}]
@@ -792,7 +792,9 @@ def test_a_named_column_shows_even_when_empty(_isolated_config: Path) -> None:
 
 
 def test_hide_empty_columns_can_be_turned_off(_isolated_config: Path) -> None:
-    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      hide_empty_columns: false\n")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    untaped:\n      ui:\n        hide_empty_columns: false\n"
+    )
     get_settings.cache_clear()
     assert _table_header(render_rows(_SPARSE, fmt="table")) == ["name", "detail", "tags", "kind"]
 
@@ -895,7 +897,9 @@ def test_removing_every_column_is_a_usage_error(_isolated_config: Path) -> None:
 def test_record_list_view_shows_each_rows_own_keys(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    untaped:\n      ui:\n        collection_view: list\n"
+    )
     get_settings.cache_clear()
     out = render_rows([{"a": 1, "b": 2}, {"a": 3, "c": 4}], fmt="table")
     assert out.split("\n\n") == ["a: 1\nb: 2", "a: 3\nc: 4"]

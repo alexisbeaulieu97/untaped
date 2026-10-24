@@ -67,7 +67,7 @@ def test_list_raw_is_the_key_stream_of_every_composed_section(_isolated_config: 
     result = CliInvoker().invoke(app, ["list", "--format", "raw"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     keys = set(result.stdout.splitlines())
-    assert {"github.token", "github.base_url", "jira.base_url", "skills.updates"} <= keys
+    assert {"github.token", "github.base_url", "jira.base_url", "untaped.skills.updates"} <= keys
     assert "https://api.github.com" not in keys
 
 
@@ -92,16 +92,16 @@ def test_unset_fully_qualified_key_removes_value(_isolated_config: Path) -> None
     assert "github" not in read_config_dict(_isolated_config)["profiles"]["default"]
 
 
-# ── SDK roots win ────────────────────────────────────────────────────────────
+# ── core's keys ────────────────────────────────────────────────────────────
 
 
-def test_sdk_root_key_resolves_to_sdk_settings(_isolated_config: Path) -> None:
+def test_core_s_key_resolves_to_core_settings(_isolated_config: Path) -> None:
     app = _config_app()
-    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "false"])  # type: ignore[arg-type]
+    result = CliInvoker().invoke(app, ["set", "untaped.http.verify_ssl", "false"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert "set http.verify_ssl in profile default" in result.output
+    assert "set untaped.http.verify_ssl in profile default" in result.output
     data = read_config_dict(_isolated_config)
-    assert data["profiles"]["default"]["http"] == {"verify_ssl": False}
+    assert data["profiles"]["default"]["untaped"]["http"] == {"verify_ssl": False}
     assert "http" not in data["profiles"]["default"].get("github", {})
 
 

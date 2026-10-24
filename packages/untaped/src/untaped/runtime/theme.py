@@ -90,7 +90,7 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
 
 DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}
 
-#: The declared names ``ui.symbols`` and ``ui.color_roles`` accept on write.
+#: The declared names ``untaped.ui.symbols`` and ``untaped.ui.color_roles`` accept on write.
 SYMBOL_NAMES: tuple[str, ...] = (*STATUS_SYMBOLS, *SCREEN_SYMBOLS)
 TABLE_ROLE_NAMES: tuple[str, ...] = (
     "header",
@@ -162,17 +162,17 @@ class ThemeSpec(BaseModel):
 
 #: Pydantic validation context enabling write-time checks (``config set``):
 #: ``validate_settings_section`` passes it so values that only fail at use
-#: time (e.g. an unknown ``ui.theme``) are rejected before landing on disk.
+#: time (e.g. an unknown ``untaped.ui.theme``) are rejected before landing on disk.
 CONFIG_WRITE_CONTEXT = "untaped_config_write"
 
-#: Optional write-context entry naming the key being written (``ui.symbols``).
+#: Optional write-context entry naming the key being written (``untaped.ui.symbols``).
 #: When present, the declared-name checks run only for that key, so a stray
 #: name already on disk never blocks writing another ``ui`` key.
 CONFIG_WRITTEN_KEY_CONTEXT = "untaped_config_written_key"
 
 
 THEME_CHOICES = Choices(lambda: BUILTIN_THEMES, "themes", noun="UI theme")
-"""The themes ``ui.theme`` accepts: the write check, doctor and theme resolution read it."""
+"""The themes ``untaped.ui.theme`` accepts: the write check, doctor and theme resolution read it."""
 
 
 class UiSettings(BaseModel):
@@ -248,7 +248,7 @@ class UiSettings(BaseModel):
         if choices is None or not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
             return value
         written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
-        if isinstance(value, Mapping) and written not in (None, f"ui.{info.field_name}"):
+        if isinstance(value, Mapping) and written not in (None, f"untaped.ui.{info.field_name}"):
             return value
         refusal = choices.refusal(value)
         if refusal is not None:
@@ -330,7 +330,7 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
 def check_declared_tokens(ui: UiSettings) -> None:
     """Raise :class:`ConfigError` naming any stray key of a mapping with :class:`Choices`.
 
-    That is ``ui.symbols`` and ``ui.color_roles``; the message lists the valid
+    That is ``untaped.ui.symbols`` and ``untaped.ui.color_roles``; the message lists the valid
     names. ``doctor`` calls it; ``config set`` reaches the same rule through
     :class:`UiSettings`' write-time validator.
     """
@@ -340,7 +340,7 @@ def check_declared_tokens(ui: UiSettings) -> None:
         value = getattr(ui, name)
         if choices is None or not isinstance(value, Mapping):
             continue
-        refusal = choices.refusal(value, prefix=f"ui.{name}")
+        refusal = choices.refusal(value, prefix=f"untaped.ui.{name}")
         if refusal is not None:
             problems.append(refusal)
     if problems:

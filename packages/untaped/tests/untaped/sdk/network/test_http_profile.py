@@ -27,9 +27,9 @@ def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> N
         "active: work\n"
         "profiles:\n"
         "  default:\n"
-        "    http:\n      proxy: http://base:3128\n      verify_ssl: true\n"
+        "    untaped:\n      http:\n        proxy: http://base:3128\n        verify_ssl: true\n"
         "  work:\n"
-        "    http:\n      verify_ssl: false\n"
+        "    untaped:\n      http:\n        verify_ssl: false\n"
         "    github:\n      token: t\n",
         encoding="utf-8",
     )
@@ -37,8 +37,8 @@ def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> N
 
     settings = get_settings()
     # ``default`` supplies the proxy (base layer); ``work`` overrides verify_ssl.
-    assert settings.http.proxy == "http://base:3128"
-    assert settings.http.verify_ssl is False
+    assert settings.untaped.http.proxy == "http://base:3128"
+    assert settings.untaped.http.verify_ssl is False
     assert settings.github.token is not None
     assert settings.github.token.get_secret_value() == "t"
 
@@ -60,7 +60,7 @@ def test_connected_client_http_default_ignores_invalid_sibling_section(
     register_profile_settings("paged", _PagedSettings)
     _isolated_config.write_text(
         "profiles:\n  default:\n"
-        "    http:\n      timeout_seconds: 7\n"
+        "    untaped:\n      http:\n        timeout_seconds: 7\n"
         "    paged:\n      page_size: notanint\n",
         encoding="utf-8",
     )

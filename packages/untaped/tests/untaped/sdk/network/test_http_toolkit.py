@@ -104,7 +104,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
     tool without each one remembering to thread it."""
     cfg = tmp_path / "config.yml"
     cfg.write_text(
-        "profiles:\n  default:\n    http:\n      proxy: http://corp-proxy:3128\n",
+        "profiles:\n  default:\n    untaped:\n      http:\n        proxy: http://corp-proxy:3128\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))

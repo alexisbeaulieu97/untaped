@@ -128,7 +128,7 @@ Use the shared option aliases instead of declaring your own copy:
 
 | Alias | Flag |
 |---|---|
-| `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`ui.format`) |
+| `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`) |
 | `TreeFormatOption` | `FormatOption` plus `tree`; pass the records as graphs, `emit(tree=)` |
 | `ColumnsOption` | `-c/--columns` |
 | `YesOption` | `-y/--yes`: skips only the prompt. `--dry-run` still wins. |

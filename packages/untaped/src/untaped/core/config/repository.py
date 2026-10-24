@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
 
 from untaped.core.config.models import OldSpelling
+from untaped.core.settings import NAME, CoreSettings
 from untaped.runtime.config_file import (
     mutate_config,
     read_config_dict,
@@ -23,14 +24,17 @@ from untaped.runtime.config_file import (
 )
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.runtime.settings import (
+    CorePart,
     Settings,
     active_settings_layout,
     env_var_name,
     env_var_setting,
     get_profile_settings_model,
+    load_core_part,
     load_settings_section,
     model_sections,
     section_stabilities,
+    validate_core_part,
     validate_settings_section,
 )
 from untaped.runtime.settings_layout import ResolvedConfig
@@ -80,8 +84,8 @@ class SettingsFileRepository:
     def setting_value(self, descriptor: FieldDescriptor) -> Any:
         """Effective (env ⤥ profile ⤥ default) value of one leaf.
 
-        Validates only the leaf's top-level section; raises ``ConfigError``
-        when that section is invalid.
+        Validates only the leaf's section (a part of core's, for ``untaped.*``);
+        raises ``ConfigError`` when it is invalid.
         """
         holder = self.holder_value(descriptor)
         return None if holder is None else getattr(holder, descriptor.path[-1], None)
@@ -91,15 +95,25 @@ class SettingsFileRepository:
 
         Raises ``ConfigError`` when the leaf's section is invalid.
         """
-        section = descriptor.path[0]
-        if section not in self._sections:
-            self._sections[section] = load_settings_section(section, self._settings_cls)
-        cursor: Any = self._sections[section]
-        for segment in descriptor.path[1:-1]:
+        part = _core_part(descriptor.path)
+        loaded = self.validated_with(descriptor)
+        if loaded not in self._sections:
+            self._sections[loaded] = (
+                load_settings_section(descriptor.path[0], self._settings_cls)
+                if part is None
+                else load_core_part(part)
+            )
+        cursor: Any = self._sections[loaded]
+        for segment in descriptor.path[len(loaded.split(".")) : -1]:
             cursor = getattr(cursor, segment, None)
             if cursor is None:
                 return None
         return cursor
+
+    def validated_with(self, descriptor: FieldDescriptor) -> str:
+        """What is validated with the leaf: its section, or its part of core's (``untaped.ui``)."""
+        depth = 1 if _core_part(descriptor.path) is None else 2
+        return ".".join(descriptor.path[:depth])
 
     def raw_setting_value(self, descriptor: FieldDescriptor) -> Any:
         """Unvalidated effective value of one leaf (env string wins over YAML)."""
@@ -493,12 +507,21 @@ class SettingsFileRepository:
         the file must be valid on its own.
         """
         effective = active_settings_layout().effective(data, profile=profile)
+        written = ".".join(descriptor.path)
+        part = _core_part(descriptor.path)
+        if part is not None:
+            validate_core_part(effective, part, written_key=written)
+            return
         validate_settings_section(
-            effective,
-            descriptor.path[0],
-            self._profile_model(),
-            written_key=".".join(descriptor.path),
+            effective, descriptor.path[0], self._profile_model(), written_key=written
         )
+
+
+def _core_part(path: tuple[str, ...]) -> CorePart | None:
+    """The part of core's section ``path`` is in: core's parts are read, and written, apart."""
+    if len(path) > 2 and path[0] == NAME and path[1] in CoreSettings.model_fields:
+        return cast("CorePart", path[1])
+    return None
 
 
 def _relative(descriptor: FieldDescriptor) -> str:

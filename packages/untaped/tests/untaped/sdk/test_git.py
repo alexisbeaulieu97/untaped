@@ -956,7 +956,7 @@ def test_git_does_not_run_an_inherited_ssh_askpass_for_https_credentials(
                     "-c",
                     "credential.helper=",
                     "-c",
-                    "http.proxy=",  # reach the server even behind a configured proxy
+                    "untaped.http.proxy=",  # reach the server even behind a configured proxy
                     "-c",
                     "credential.interactive=true",  # git >= 2.46: undo conftest's "never"
                     "ls-remote",

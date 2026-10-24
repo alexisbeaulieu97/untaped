@@ -24,22 +24,23 @@ from untaped.runtime.config_file import (
 )
 from untaped.sdk import yaml_mapping_indent
 
-COMMENTED = """\
-# untaped config -- hand edited
+COMMENTED = """# untaped config -- hand edited
 active: work   # the profile I use most
 
 profiles:
   # shared base layer
   default:
-    http:
-      verify_ssl: yes     # YAML 1.1 boolean, keep as written
-      timeout: 30
+    untaped:
+      http:
+        verify_ssl: yes     # YAML 1.1 boolean, keep as written
+        timeout: 30
     github:
       base_url: 'https://api.github.com'
   work:
     github:
       token: old-token  # rotate monthly
-    ui: {theme: classic}
+    untaped:
+      ui: {theme: classic}
 
 # plugin state below
 workspace:
@@ -87,7 +88,9 @@ def test_new_keys_are_appended_without_reordering(cfg: Path) -> None:
 
 
 def test_unset_keeps_surrounding_comments(cfg: Path) -> None:
-    mutate_config(lambda data: unset_at_path(data, ("profiles", "default", "http", "timeout")))
+    mutate_config(
+        lambda data: unset_at_path(data, ("profiles", "default", "untaped", "http", "timeout"))
+    )
 
     text = cfg.read_text(encoding="utf-8")
     assert "timeout" not in text
@@ -99,7 +102,7 @@ def test_unset_keeps_surrounding_comments(cfg: Path) -> None:
 def test_untouched_yaml_1_1_scalars_keep_their_meaning(cfg: Path) -> None:
     mutate_config(lambda data: set_at_path(data, ("profiles", "work", "log_level"), "DEBUG"))
 
-    assert read_config_dict(cfg)["profiles"]["default"]["http"]["verify_ssl"] is True
+    assert read_config_dict(cfg)["profiles"]["default"]["untaped"]["http"]["verify_ssl"] is True
 
 
 @pytest.mark.parametrize(
@@ -213,7 +216,10 @@ def _rename(old: tuple[str, ...], new: tuple[str, ...]) -> None:
 
 
 def test_a_rename_hint_keeps_the_key_in_place_with_its_comment(cfg: Path) -> None:
-    _rename(("profiles", "default", "http", "verify_ssl"), ("profiles", "default", "http", "tls"))
+    _rename(
+        ("profiles", "default", "untaped", "http", "verify_ssl"),
+        ("profiles", "default", "untaped", "http", "tls"),
+    )
 
     assert cfg.read_text(encoding="utf-8") == _replace_line(
         COMMENTED,
@@ -223,8 +229,10 @@ def test_a_rename_hint_keeps_the_key_in_place_with_its_comment(cfg: Path) -> Non
 
 
 def test_a_rename_to_another_mapping_is_removed_and_added(cfg: Path) -> None:
-    _rename(("profiles", "default", "http", "timeout"), ("profiles", "default", "timeout"))
+    _rename(
+        ("profiles", "default", "untaped", "http", "timeout"), ("profiles", "default", "timeout")
+    )
 
     text = cfg.read_text(encoding="utf-8")
-    assert "      timeout: 30\n" not in text
+    assert "        timeout: 30\n" not in text
     assert read_config_dict(cfg)["profiles"]["default"]["timeout"] == 30

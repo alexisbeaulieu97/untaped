@@ -13,25 +13,25 @@ Set a profile setting with `untaped config set KEY VALUE` (a token:
 [Settings](../configuration.md#settings)). Each profile setting can be
 overridden for one process with the environment variable shown.
 
-## Root
+## `untaped`
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `http.ca_bundle_path` | path (optional) | unset | `UNTAPED_HTTP__CA_BUNDLE_PATH` | PEM file of extra CA certificates to trust instead of the OS trust store. |
-| `http.verify_ssl` | boolean | `true` | `UNTAPED_HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks, and reads as `verify_tls: false` on every server key; `config migrate` writes it there. Deprecated: removed in 12.0; use each server's verify_tls. |
-| `http.verify_hostname` | boolean | `true` | `UNTAPED_HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. Deprecated: removed in 12.0. |
-| `http.timeout_seconds` | number | `30.0` | `UNTAPED_HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |
-| `http.proxy` | string (optional) | unset | `UNTAPED_HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
-| `ui.theme` | string | `default` | `UNTAPED_UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
-| `ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
-| `ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UI__BORDER` | Table border style; overrides the theme. |
-| `ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UI__DENSITY` | Table density; overrides the theme. |
-| `ui.collection_view` | `table` \| `list` (optional) | unset | `UNTAPED_UI__COLLECTION_VIEW` | How lists render in `table` format; overrides the theme. |
-| `ui.detail_view` | `list` \| `table` (optional) | unset | `UNTAPED_UI__DETAIL_VIEW` | How a single record renders in `table` format; overrides the theme. |
-| `ui.hide_empty_columns` | boolean (optional) | unset | `UNTAPED_UI__HIDE_EMPTY_COLUMNS` | Leave out `table` columns that are empty on every row (on unless the theme turns it off); a column named in `--columns` always shows. |
-| `ui.symbols` | mapping | empty | `UNTAPED_UI__SYMBOLS` | Symbol overrides merged over the theme's symbols. Names: `success`, `warning`, `error`, `info`, `chosen`, `checked`, `unchecked`, `on`, `off`, `expand`, `collapse`, `mask`, `ellipsis`, `separator`, `cycle.left`, `cycle.right`, `tab.active`, `tab.inactive`, `tree.open`, `tree.closed`, `tag.add`, `tag.remove`, `heading`, `dash`. |
-| `ui.color_roles` | mapping | empty | `UNTAPED_UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. Names: `header`, `border`, `key`, `value`, `success`, `info`, `warning`, `error`, `screen.accent`, `screen.muted`, `screen.highlight`, `screen.focus`, `screen.border`, `screen.value`, `screen.success`, `screen.error`, `screen.caret`, `screen.emphasis`, `screen.match`. |
-| `skills.updates` | `warn` \| `auto` \| `off` | `auto` | `UNTAPED_SKILLS__UPDATES` | What each run does about agent skills in your home folder that an older untaped wrote: `auto` (refresh them), `warn` (print a warning), or `off`. Skills inside a project are never changed by a run. |
+| `untaped.http.ca_bundle_path` | path (optional) | unset | `UNTAPED_UNTAPED__HTTP__CA_BUNDLE_PATH` | PEM file of extra CA certificates to trust instead of the OS trust store. |
+| `untaped.http.verify_ssl` | boolean | `true` | `UNTAPED_UNTAPED__HTTP__VERIFY_SSL` | Verify TLS certificates. `false` disables all certificate checks, and reads as `verify_tls: false` on every server key; `config migrate` writes it there. Deprecated: removed in 12.0; use each server's verify_tls. |
+| `untaped.http.verify_hostname` | boolean | `true` | `UNTAPED_UNTAPED__HTTP__VERIFY_HOSTNAME` | Check the certificate host name. `false` keeps chain validation. Deprecated: removed in 12.0. |
+| `untaped.http.timeout_seconds` | number | `30.0` | `UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |
+| `untaped.http.proxy` | string (optional) | unset | `UNTAPED_UNTAPED__HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
+| `untaped.ui.theme` | string | `default` | `UNTAPED_UNTAPED__UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
+| `untaped.ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UNTAPED__UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
+| `untaped.ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UNTAPED__UI__BORDER` | Table border style; overrides the theme. |
+| `untaped.ui.density` | `normal` \| `compact` (optional) | unset | `UNTAPED_UNTAPED__UI__DENSITY` | Table density; overrides the theme. |
+| `untaped.ui.collection_view` | `table` \| `list` (optional) | unset | `UNTAPED_UNTAPED__UI__COLLECTION_VIEW` | How lists render in `table` format; overrides the theme. |
+| `untaped.ui.detail_view` | `list` \| `table` (optional) | unset | `UNTAPED_UNTAPED__UI__DETAIL_VIEW` | How a single record renders in `table` format; overrides the theme. |
+| `untaped.ui.hide_empty_columns` | boolean (optional) | unset | `UNTAPED_UNTAPED__UI__HIDE_EMPTY_COLUMNS` | Leave out `table` columns that are empty on every row (on unless the theme turns it off); a column named in `--columns` always shows. |
+| `untaped.ui.symbols` | mapping | empty | `UNTAPED_UNTAPED__UI__SYMBOLS` | Symbol overrides merged over the theme's symbols. Names: `success`, `warning`, `error`, `info`, `chosen`, `checked`, `unchecked`, `on`, `off`, `expand`, `collapse`, `mask`, `ellipsis`, `separator`, `cycle.left`, `cycle.right`, `tab.active`, `tab.inactive`, `tree.open`, `tree.closed`, `tag.add`, `tag.remove`, `heading`, `dash`. |
+| `untaped.ui.color_roles` | mapping | empty | `UNTAPED_UNTAPED__UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. Names: `header`, `border`, `key`, `value`, `success`, `info`, `warning`, `error`, `screen.accent`, `screen.muted`, `screen.highlight`, `screen.focus`, `screen.border`, `screen.value`, `screen.success`, `screen.error`, `screen.caret`, `screen.emphasis`, `screen.match`. |
+| `untaped.skills.updates` | `warn` \| `auto` \| `off` | `auto` | `UNTAPED_UNTAPED__SKILLS__UPDATES` | What each run does about agent skills in your home folder that an older untaped wrote: `auto` (refresh them), `warn` (print a warning), or `off`. Skills inside a project are never changed by a run. |
 
 ## `ansible`
 
@@ -165,9 +165,6 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
-| `http.ca_bundle` | `UNTAPED_HTTP__CA_BUNDLE` | `http.ca_bundle_path` | retired |
-| `http.timeout` | `UNTAPED_HTTP__TIMEOUT` | `http.timeout_seconds` | retired |
-| `shell.aliases` | `UNTAPED_SHELL__ALIASES` | none | deleted in 11.0; use a shell alias or function |
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
 | `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | `ansible.caches.index.max_age_seconds` | renamed |

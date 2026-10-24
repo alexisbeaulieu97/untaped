@@ -314,7 +314,7 @@ def _untrusted() -> Exception:
         (
             _untrusted(),
             "[SSL] handshake failed for https://wiz",
-            ["config", "set", "http.ca_bundle_path", "<PATH>"],
+            ["config", "set", "untaped.http.ca_bundle_path", "<PATH>"],
         ),
         (
             HttpTransportError("cannot connect to https://wiz"),

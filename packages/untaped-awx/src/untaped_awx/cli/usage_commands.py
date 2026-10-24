@@ -137,7 +137,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         where the depth limit stopped (a stderr hint says how to read
         further). A branch drawn earlier is numbered ``[n]`` and later holds
         one ``… see [n]`` line; a cycle is marked ``↻ cycle``. Set
-        ``ui.border: ascii`` for a terminal that misdraws box characters.
+        ``untaped.ui.border: ascii`` for a terminal that misdraws box characters.
         """
         max_depth = resolve_max_depth(depth, recursive)
         check_columns(WorkflowUsage, columns=columns, fmt=fmt)

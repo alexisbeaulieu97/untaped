@@ -43,7 +43,7 @@ def _migrate(*args: str) -> CliResult:
 def _rows(result: CliResult) -> list[dict[str, str]]:
     assert result.exit_code == 0, result.output
     found: list[dict[str, str]] = json.loads(result.stdout)
-    return [row for row in found if row["from"].startswith(("wiz.", "http."))]
+    return [row for row in found if row["from"].startswith(("wiz.", "untaped.http."))]
 
 
 def _profiles(path: Path) -> dict[str, Any]:
@@ -164,18 +164,18 @@ def test_a_server_only_the_environment_sets_is_kept(
 def test_root_verify_ssl_false_becomes_the_keys_verify_tls(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    http: {verify_ssl: false}\n"
+        "profiles:\n  default:\n    untaped:\n      http: {verify_ssl: false}\n"
         "    wiz: {server: {url: https://wiz.example.com}, token: s3cret}\n",
     )
 
     rows = _rows(_migrate("--yes", "--format", "json"))
 
-    assert ("http.verify_ssl", "wiz.server.verify_tls", "copied") in {
+    assert ("untaped.http.verify_ssl", "wiz.server.verify_tls", "copied") in {
         (row["from"], row["to"], row["action"]) for row in rows
     }
     default = _profiles(_isolated_config)["default"]
     assert default["wiz"]["server"]["verify_tls"] is False
-    assert default["http"] == {"verify_ssl": False}, "the root line stays until 12.0"
+    assert default["untaped"]["http"] == {"verify_ssl": False}, "the root line stays until 12.0"
     [stored] = stored_rows()
     assert stored.key == {"url": "https://wiz.example.com", "verify_tls": False}
 
@@ -185,7 +185,7 @@ def test_root_verify_ssl_false_keeps_the_key_a_login_was_filed_for(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    http: {verify_ssl: false}\n"
+        "profiles:\n  default:\n    untaped:\n      http: {verify_ssl: false}\n"
         "    wiz: {server: {url: https://wiz.example.com}, token: old}\n",
     )
     compose(make_spec("wiz", settings=WizProfile, credentials=(TOKEN,)))

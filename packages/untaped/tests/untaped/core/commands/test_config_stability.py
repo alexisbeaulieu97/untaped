@@ -193,7 +193,7 @@ def test_structured_output_is_one_flat_list_with_every_setting() -> None:
         "trial.gone": "deprecated",
     }
     assert rows["trial.gone"]["note"] == "removed in a future major release"
-    assert rows["http.timeout_seconds"]["stability"] == "stable"
+    assert rows["untaped.http.timeout_seconds"]["stability"] == "stable"
 
 
 def test_config_get_carries_the_stability() -> None:
@@ -245,7 +245,7 @@ def test_hide_empty_columns_applies_to_each_table(monkeypatch: pytest.MonkeyPatc
     for text in (_tables()[""], _tables()["Experimental"]):
         assert " profile " not in text.splitlines()[1]
 
-    monkeypatch.setenv("UNTAPED_UI__HIDE_EMPTY_COLUMNS", "false")
+    monkeypatch.setenv("UNTAPED_UNTAPED__UI__HIDE_EMPTY_COLUMNS", "false")
     tables = _tables()
 
     for text in (tables[""], tables["Experimental"]):

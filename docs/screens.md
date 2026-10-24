@@ -144,8 +144,8 @@ emoji and highlighting are off, so a title such as `[WIP] fix [/]` prints as
 is. Take every glyph, color and border from the `Frame` the view receives
 (`frame.symbol(name)`, `frame.style(role)`, `frame.box()`), never a literal, so
 a theme change reaches every screen. The names are declared; the
-[settings reference](./reference/config.md) lists `ui.symbols` and
-`ui.color_roles`. Tables and detail views do not read the `screen.*` roles.
+[settings reference](./reference/config.md) lists `untaped.ui.symbols` and
+`untaped.ui.color_roles`. Tables and detail views do not read the `screen.*` roles.
 
 Every glyph and colour a component draws is a token, the caret and bold
 emphasis too: `screen.caret` (reverse by default) styles the caret and the
@@ -214,7 +214,7 @@ request that has a title still requires one.
 picked from the shape of its type (a `Check` for a `bool`, a `NumberInput` for
 a number, a `SingleList` or `Select` for a `Literal`, a list editor for a
 `list[str]`, a row per name for a map that declares its names, such as
-`ui.symbols`, a row per ranking for a contract owner's `extensions`), never
+`untaped.ui.symbols`, a row per ranking for a contract owner's `extensions`), never
 from its key, so a plugin's settings need no screen code: the help under a setting's row is its
 `Field(description=...)` and its bounds (`gt=0` reads "Above 0."). A command
 that builds its screen only after reading config or probing a store asks
@@ -239,7 +239,7 @@ is redirected, so it never paints into a log.
 
 The look comes from the theme: the label sits in the top border, the caret is
 drawn, help is muted below, an error is a red border and message, and the only
-fill is the highlighted cursor row. With `ui.border: none` a field is its label
+fill is the highlighted cursor row. With `untaped.ui.border: none` a field is its label
 line, its value and its help line.
 
 ## Testing

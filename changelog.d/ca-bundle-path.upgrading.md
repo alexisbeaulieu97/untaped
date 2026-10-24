@@ -1,4 +1,2 @@
-Run `untaped config migrate` to rename `http.ca_bundle` to
-`http.ca_bundle_path` in `config.yml` (`untaped doctor` names the old key
-until then), and rename `UNTAPED_HTTP__CA_BUNDLE` to
-`UNTAPED_HTTP__CA_BUNDLE_PATH`.
+In `config.yml`, rename `http.ca_bundle` to `untaped.http.ca_bundle_path`, and
+`UNTAPED_HTTP__CA_BUNDLE` to `UNTAPED_UNTAPED__HTTP__CA_BUNDLE_PATH`.

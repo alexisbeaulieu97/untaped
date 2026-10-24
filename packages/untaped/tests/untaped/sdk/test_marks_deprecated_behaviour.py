@@ -299,7 +299,7 @@ def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch
     shell = replace(bootstrap.SHELL_SPEC, deprecations=lambda: (gone,))
     monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
     root = _compose()
-    found = stability_violations(root, bootstrap.composition(), [], sections=["shell"])
+    found = stability_violations(root, bootstrap.composition(), [], sections=["untaped"])
     assert found == [
         "untaped.gone::bad-replacement::`untaped auth nowhere` does not resolve to a command"
     ]

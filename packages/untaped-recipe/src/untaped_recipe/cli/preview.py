@@ -158,8 +158,8 @@ def _render_stderr_table(rows: list[dict[str, object]], *, columns: list[str]) -
 
     A preview is text a person reads before the question, not records, so it
     is the same whatever ``--format`` asks of stdout, and ``--quiet`` keeps
-    it. With ``ui.hide_empty_columns`` (the default) a column empty on every
-    row is left out; ``ui.collection_view: list`` shows each row as
+    it. With ``untaped.ui.hide_empty_columns`` (the default) a column empty on every
+    row is left out; ``untaped.ui.collection_view: list`` shows each row as
     ``key: value`` lines.
     """
     if not rows:

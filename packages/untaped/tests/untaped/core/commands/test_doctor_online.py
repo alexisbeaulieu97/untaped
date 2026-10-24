@@ -207,7 +207,7 @@ def _rejected() -> Exception:
             {"base_url": "https://svc", "token": "t"},
             _tls(20),  # X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
             "[SSL] handshake failed for https://svc",
-            "config set http.ca_bundle_path <PATH>",
+            "config set untaped.http.ca_bundle_path <PATH>",
         ),
         (
             {"base_url": "https://svc", "token": "t"},

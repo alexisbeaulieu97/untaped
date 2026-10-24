@@ -352,7 +352,7 @@ def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str])
 
 @dataclass(frozen=True)
 class NamedValue:
-    """One name of a mapping that declares its names (``ui.symbols``), and its value's source."""
+    """One name of a mapping that declares its names (``untaped.ui.symbols``), and its source."""
 
     name: str
     value: str | None
@@ -483,26 +483,35 @@ class ListSettings:
 
     A section that fails validation does not abort the listing: its leaves
     show their raw (unvalidated) values and the section's error is recorded
-    in :attr:`errors` so the caller can warn about it.
+    in :attr:`errors` so the caller can warn about it. Core's section fails
+    part by part (``untaped.ui`` apart from ``untaped.http``), its errors
+    joined under ``untaped``.
     """
 
     def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
         self.errors: dict[str, str] = {}
+        self._failed: set[str] = set()
 
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
         provenance = self._repo.provenance()
         entries: list[SettingEntry] = []
         for descriptor in self._repo.descriptors():
             section = descriptor.path[0]
+            unit = self._repo.validated_with(descriptor)
             current: Any
-            if section in self.errors:
+            if unit in self._failed:
                 current = self._repo.raw_setting_value(descriptor)
             else:
                 try:
                     current = self._repo.setting_value(descriptor)
                 except ConfigError as exc:
-                    self.errors[section] = str(exc)
+                    self._failed.add(unit)
+                    earlier = self.errors.get(section)
+                    if earlier is None:
+                        self.errors[section] = str(exc)
+                    elif str(exc) not in earlier.split("; "):
+                        self.errors[section] = f"{earlier}; {exc}"
                     current = self._repo.raw_setting_value(descriptor)
             entries.append(
                 setting_entry_for_descriptor(
@@ -514,6 +523,10 @@ class ListSettings:
                 )
             )
         return entries
+
+    def unvalidated(self, descriptor: FieldDescriptor) -> bool:
+        """Whether the last listing showed this leaf raw: what it is validated with failed."""
+        return self._repo.validated_with(descriptor) in self._failed
 
 
 class ListAllProfilesSettings:
@@ -634,7 +647,7 @@ def _iter_leaves(
     """Yield ``(path, value)`` pairs for every leaf of ``data``.
 
     A mapping whose path is in ``stop_at`` (a mapping-typed setting such as
-    ``ui.symbols``) is one leaf rather than a subtree.
+    ``untaped.ui.symbols``) is one leaf rather than a subtree.
     """
     out: list[tuple[tuple[str, ...], Any]] = []
     for key, value in data.items():

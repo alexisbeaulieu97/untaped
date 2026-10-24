@@ -42,8 +42,8 @@ def test_walks_nested_models() -> None:
     descriptors = walk_settings(get_settings_model())
     keys = {d.key for d in descriptors}
     # HttpSettings
-    assert "http.ca_bundle_path" in keys
-    assert "http.verify_ssl" in keys
+    assert "untaped.http.ca_bundle_path" in keys
+    assert "untaped.http.verify_ssl" in keys
     # Plugin settings
     assert "demo.directory" in keys
     assert "demo.token" in keys
@@ -108,8 +108,8 @@ def test_a_descriptor_built_without_the_new_fields_keeps_working() -> None:
 
 def test_real_settings_keep_their_optionality() -> None:
     descriptors = walk_settings(get_settings_model())
-    timeout = find_descriptor(descriptors, "http.timeout_seconds")
-    hide = find_descriptor(descriptors, "ui.hide_empty_columns")
+    timeout = find_descriptor(descriptors, "untaped.http.timeout_seconds")
+    hide = find_descriptor(descriptors, "untaped.ui.hide_empty_columns")
 
     assert timeout is not None
     assert not timeout.optional
@@ -125,26 +125,26 @@ def test_secrets_are_marked() -> None:
     assert token.is_secret is True
     assert token.annotation is SecretStr
 
-    updates = find_descriptor(descriptors, "skills.updates")
+    updates = find_descriptor(descriptors, "untaped.skills.updates")
     assert updates is not None
     assert updates.is_secret is False
 
 
 def test_defaults_are_captured() -> None:
     descriptors = walk_settings(get_settings_model())
-    updates = find_descriptor(descriptors, "skills.updates")
+    updates = find_descriptor(descriptors, "untaped.skills.updates")
     assert updates is not None
     assert updates.has_default
     assert updates.default == "auto"
 
-    verify = find_descriptor(descriptors, "http.verify_ssl")
+    verify = find_descriptor(descriptors, "untaped.http.verify_ssl")
     assert verify is not None
     assert verify.default is True
 
 
 def test_optional_unwrapped() -> None:
     descriptors = walk_settings(get_settings_model())
-    ca_bundle_path = find_descriptor(descriptors, "http.ca_bundle_path")
+    ca_bundle_path = find_descriptor(descriptors, "untaped.http.ca_bundle_path")
     assert ca_bundle_path is not None
     assert ca_bundle_path.annotation is Path
 
@@ -207,8 +207,10 @@ def test_redact_url_password_masks_only_the_password(value: str, expected: str) 
 
 
 def test_redact_secrets_masks_url_passwords_in_any_string_leaf() -> None:
-    out = redact_secrets({"http": {"proxy": "http://u:p@h"}, "tags": ["https://u:p@h"]}, [])
-    assert out == {"http": {"proxy": "http://u:***@h"}, "tags": ["https://u:***@h"]}
+    out = redact_secrets(
+        {"tags": ["https://u:p@h"], "untaped": {"http": {"proxy": "http://u:p@h"}}}, []
+    )
+    assert out == {"tags": ["https://u:***@h"], "untaped": {"http": {"proxy": "http://u:***@h"}}}
 
 
 class _Chosen(BaseModel):

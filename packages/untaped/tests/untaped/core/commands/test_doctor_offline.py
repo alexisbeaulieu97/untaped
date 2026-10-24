@@ -72,13 +72,14 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
     write_config(
         _isolated_config,
         "profiles:\n  default:\n    github:\n      tokn: x\n      base_url: https://g\n"
-        "    http:\n      timout: 3\n    ui:\n      symbols: {success: y}\n"
+        "    untaped:\n      http:\n        timout: 3\n      ui:\n        symbols: {success: y}\n"
         "  work:\n    nope: 1\n",
     )
     row = _row(_rows(make_spec("github", settings=GithubProfile)), "unknown-keys")
     assert row["status"] == "warn"
     assert row["detail"] == (
-        "ignored: profiles.default.github.tokn, profiles.default.http.timout, profiles.work.nope"
+        "ignored: profiles.default.github.tokn, profiles.default.untaped.http.timout, "
+        "profiles.work.nope"
     )
 
 
@@ -101,10 +102,13 @@ def test_unknown_keys_name_the_other_registered_installs(
 
 
 def test_an_unknown_ui_symbol_name_fails_the_ui_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {zzz: y}\n")
-    row = _row(_rows(exit_code=1), "settings", "validate ui")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {zzz: y}\n",
+    )
+    row = _row(_rows(exit_code=1), "settings", "validate untaped.ui")
     assert row["status"] == "fail"
-    assert "ui.symbols.zzz" in row["detail"]
+    assert "untaped.ui.symbols.zzz" in row["detail"]
     assert "success" in row["detail"]
 
 
@@ -113,35 +117,42 @@ def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
 ) -> None:
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    http:\n      timeout_seconds: 3\n"
-        "    ui:\n      symbols: {zzz: y}\n",
+        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 3\n"
+        "    untaped:\n      ui:\n        symbols: {zzz: y}\n",
     )
     listed = CliInvoker().invoke(
         build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose()), ["list"]
     )
     assert listed.exit_code == 0, listed.output
     rows = _rows(exit_code=1)
-    assert _row(rows, "settings", "validate ui")["status"] == "fail"
-    assert _row(rows, "settings", "validate http")["status"] == "pass"
-    assert [r["title"] for r in rows if r["status"] == "fail"] == ["validate ui"]
+    assert _row(rows, "settings", "validate untaped.ui")["status"] == "fail"
+    assert _row(rows, "settings", "validate untaped.http")["status"] == "pass"
+    assert [r["title"] for r in rows if r["status"] == "fail"] == ["validate untaped.ui"]
 
 
 def test_an_unknown_ui_color_role_name_fails_the_ui_row(_isolated_config: Path) -> None:
     write_config(
-        _isolated_config, "profiles:\n  default:\n    ui:\n      color_roles: {zzz: red}\n"
+        _isolated_config,
+        "profiles:\n  default:\n    untaped:\n      ui:\n        color_roles: {zzz: red}\n",
     )
-    row = _row(_rows(exit_code=1), "settings", "validate ui")
+    row = _row(_rows(exit_code=1), "settings", "validate untaped.ui")
     assert row["status"] == "fail"
-    assert "ui.color_roles.zzz" in row["detail"]
+    assert "untaped.ui.color_roles.zzz" in row["detail"]
 
 
 def test_a_declared_ui_symbol_name_passes_the_ui_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      symbols: {success: y}\n")
-    assert _row(_rows(), "settings", "validate ui")["status"] == "pass"
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    untaped:\n      ui:\n        symbols: {success: y}\n",
+    )
+    assert _row(_rows(), "settings", "validate untaped.ui")["status"] == "pass"
 
 
 def test_known_keys_pass(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    http:\n      timeout_seconds: 3\n")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    untaped:\n      http:\n        timeout_seconds: 3\n",
+    )
     assert _row(_rows(), "unknown-keys")["status"] == "pass"
 
 

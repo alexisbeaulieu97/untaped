@@ -601,6 +601,6 @@ def test_without_a_service_there_is_nothing_to_plan() -> None:
 
 
 def test_only_naming_no_service_has_nothing_to_plan() -> None:
-    result = _cli("setup", "plan", "--only", "ui")
+    result = _cli("setup", "plan", "--only", "untaped")
     assert result.exit_code == 4
     assert "none of the named sections is a plugin with settings to set up" in result.stderr

@@ -62,13 +62,13 @@ active: prod
 
 profiles:
   default:
-    http:
-      ca_bundle_path: ~/certs/corp-ca.pem
-    ui:
-      theme: default
-      border: rounded
-      collection_view: table
-      detail_view: list
+    untaped:
+      http:
+        ca_bundle_path: ~/certs/corp-ca.pem
+      ui:
+        theme: default
+        border: rounded
+        detail_view: list
     awx:
       server: {url: https://aap.example.com}
     github:
@@ -104,8 +104,8 @@ workspace:
 Things that surprise people:
 
 - Only `active` and `profiles` are read at the top level of `config.yml`. A
-  section placed there by mistake (`http:` instead of
-  `profiles.default.http:`), or a state section left there, is ignored;
+  section placed there by mistake (`untaped:` instead of
+  `profiles.default.untaped:`), or a state section left there, is ignored;
   `untaped doctor` flags it in its `unknown-keys` row. Move it by hand.
 - Each section is validated only when a command reads it. An invalid
   `awx.page_size: abc` breaks `untaped awx ...` but not `untaped github ...`;
@@ -186,15 +186,15 @@ Tokens after `--` belong to the command and are never read as `untaped` options.
 
 ## Settings
 
-Plugin keys are always fully qualified (`awx.server.url`, never
-`server.url`). `http.*`, `ui.*` and `skills.*` are shared root sections.
+Keys are always fully qualified (`awx.server.url`, never `server.url`),
+untaped's own too (`untaped.http.*`, `untaped.ui.*`, `untaped.skills.*`).
 
 ```bash
 untaped config list --all-profiles
 untaped config get awx.server.url
-untaped config set http.timeout_seconds 60 --dry-run
+untaped config set untaped.http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset jira.default_project
-untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
+untaped config set untaped.ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
 
@@ -254,13 +254,13 @@ writes each setting through the same code as `config set`.
 
 ## TLS and shared UI settings
 
-`http.*` and `ui.*` are profile settings shared by all plugins. HTTP
+`untaped.http.*` and `untaped.ui.*` apply to every plugin. HTTP
 clients use the operating system trust store by default. To trust a corporate
 CA (a proxy that inspects TLS, say) for every client and for git, set a CA
 bundle once:
 
 ```bash
-untaped config set http.ca_bundle_path /path/to/corp-ca.pem
+untaped config set untaped.http.ca_bundle_path /path/to/corp-ca.pem
 ```
 
 One server's own certificate check belongs to that server: its
@@ -273,12 +273,13 @@ another way than when it was stored:
 untaped --profile work config set awx.server.verify_tls /path/to/aap-ca.pem
 ```
 
-Root `http.verify_ssl` and `http.verify_hostname` are deprecated. In 11.x,
-`http.verify_ssl: false` reads as each server's `verify_tls: false` (unless
-the server sets its own) and `config migrate` writes it there. `ui.theme` picks a built-in
-theme and `ui.format` the default `--format`; the
-[configuration reference](./reference/config.md#root) lists every `http.*`
-and `ui.*` setting, including the names `ui.symbols` and `ui.color_roles`
+`untaped.http.verify_ssl` and `untaped.http.verify_hostname` are deprecated:
+`verify_ssl: false` reads as each server's `verify_tls: false` (unless the
+server sets its own) and `config migrate` writes it there. untaped's own
+settings sit in its `untaped` section: `untaped.ui.theme` picks a built-in
+theme and `untaped.ui.format` the default `--format`; the
+[configuration reference](./reference/config.md#untaped) lists each one,
+including the names `untaped.ui.symbols` and `untaped.ui.color_roles`
 accept. `config set` and `doctor` reject any other name; a stray name already
 in `config.yml` keeps working.
 
@@ -385,7 +386,7 @@ An older untaped sharing the config stops reading the lines it moved.
 `DEBUG untaped.<area>: <message>` lines:
 
 - `untaped.http`: each request's method, URL, outcome and time, each retry
-  wait and redirect, and the `http.proxy` a service's client uses;
+  wait and redirect, and the `untaped.http.proxy` a service's client uses;
 - `untaped.git`: each `git` command's arguments (URL credentials masked), its
   directory, exit status and time, and `[auth header]` when a token was
   passed (the header itself never appears);

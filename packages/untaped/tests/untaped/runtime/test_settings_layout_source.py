@@ -44,8 +44,9 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         """
         profiles:
           default:
-            skills:
-              updates: auto
+            untaped:
+              skills:
+                updates: auto
             demo:
               base_url: https://aap.local
               token: secret-value
@@ -53,7 +54,7 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings()
-    assert s.skills.updates == "auto"
+    assert s.untaped.skills.updates == "auto"
     assert s.demo.base_url == "https://aap.local"
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "secret-value"
@@ -124,7 +125,7 @@ def test_empty_config_file_yields_schema_defaults(
 ) -> None:
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     s = get_settings()
-    assert s.skills.updates == "auto"
+    assert s.untaped.skills.updates == "auto"
     assert s.demo.token is None
 
 
@@ -146,7 +147,7 @@ def test_empty_yaml_document_is_treated_as_empty(
     cfg.write_text("# only a comment\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     s = get_settings_model()()
-    assert s.skills.updates == "auto"
+    assert s.untaped.skills.updates == "auto"
 
 
 def test_source_translates_yaml_error_to_config_error(
@@ -155,7 +156,7 @@ def test_source_translates_yaml_error_to_config_error(
     """Broken YAML must surface as ``ConfigError`` naming the file, straight
     from the source — not as a raw ``yaml.YAMLError`` traceback."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("skills: [unterminated\n")
+    cfg.write_text("untaped:\n  skills: [unterminated\n")
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     with pytest.raises(ConfigError, match=str(cfg)):
         LayoutSettingsSource(get_settings_model(), yaml_file=cfg)

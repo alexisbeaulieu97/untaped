@@ -41,37 +41,37 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ("config", "env", "key", "source", "value"),
     [
         ("", None, "demo.token", Source(kind="unset"), None),
-        ("", None, "skills.updates", Source(kind="default"), "auto"),
+        ("", None, "untaped.skills.updates", Source(kind="default"), "auto"),
         ("", None, "demo.api_prefix", Source(kind="default"), "/api/demo/v1/"),
         ("", None, "demo.directory", Source(kind="default"), "~/.demo"),
         # Profile-scoped values are attributed to the supplying profile.
         (
-            "profiles:\n  default:\n    skills:\n      updates: warn\n",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n",
             None,
-            "skills.updates",
+            "untaped.skills.updates",
             Source(kind="profile", profile="default"),
             "warn",
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n"
-            "  prod:\n    skills:\n      updates: warn\nactive: prod\n",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
+            "  prod:\n    untaped:\n      skills:\n        updates: warn\nactive: prod\n",
             None,
-            "skills.updates",
+            "untaped.skills.updates",
             Source(kind="profile", profile="prod"),
             "warn",
         ),
         (
-            "profiles:\n  default:\n    http:\n      verify_ssl: false\n",
+            "profiles:\n  default:\n    untaped:\n      http:\n        verify_ssl: false\n",
             None,
-            "http.verify_ssl",
+            "untaped.http.verify_ssl",
             Source(kind="profile", profile="default"),
             False,
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n",
             "off",
-            "skills.updates",
-            Source(kind="env", variable="UNTAPED_SKILLS__UPDATES"),
+            "untaped.skills.updates",
+            Source(kind="env", variable="UNTAPED_UNTAPED__SKILLS__UPDATES"),
             "off",
         ),
     ],
@@ -97,7 +97,7 @@ def test_list_attributes_each_value_to_its_source(
 ) -> None:
     _isolate_settings.write_text(config)
     if env is not None:
-        monkeypatch.setenv("UNTAPED_SKILLS__UPDATES", env)
+        monkeypatch.setenv("UNTAPED_UNTAPED__SKILLS__UPDATES", env)
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     assert entries[key].source == source
     assert entries[key].value == value
@@ -121,7 +121,10 @@ def test_collection_fields_skipped() -> None:
 
 @pytest.mark.parametrize(
     ("key", "env_var"),
-    [("skills.updates", "UNTAPED_SKILLS__UPDATES"), ("demo.token", "UNTAPED_DEMO__TOKEN")],
+    [
+        ("untaped.skills.updates", "UNTAPED_UNTAPED__SKILLS__UPDATES"),
+        ("demo.token", "UNTAPED_DEMO__TOKEN"),
+    ],
 )
 def test_env_var_naming(key: str, env_var: str) -> None:
     repo = SettingsFileRepository()
@@ -131,16 +134,31 @@ def test_env_var_naming(key: str, env_var: str) -> None:
 def test_all_profiles_shows_one_row_per_profile_and_key(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
-        "  default:\n    skills:\n      updates: warn\n"
-        "  prod:\n    skills:\n      updates: auto\n    demo:\n      page_size: 50\n"
+        "  default:\n    untaped:\n      skills:\n        updates: warn\n"
+        "  prod:\n    untaped:\n      skills:\n        updates: auto\n"
+        "    demo:\n      page_size: 50\n"
         "active: prod\n"
     )
 
     entries = ListAllProfilesSettings(SettingsFileRepository())()
     rows = {(e.profile, e.key, e.value) for e in entries}
     assert rows == {
-        ("default", "skills.updates", "warn"),
-        ("prod", "skills.updates", "auto"),
+        ("default", "untaped.skills.updates", "warn"),
+        ("prod", "untaped.skills.updates", "auto"),
         ("prod", "demo.page_size", 50),
     }
     assert all(e.source.kind == "profile" for e in entries)
+
+
+def test_each_bad_part_of_core_s_section_is_reported_and_the_rest_validated(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    untaped:\n"
+        "      http: {timeout_seconds: -1}\n      ui: {border: bogus}\n"
+    )
+    listing = ListSettings(SettingsFileRepository())
+    entries = {e.key: e for e in listing()}
+    assert "timeout_seconds" in listing.errors["untaped"]
+    assert "border" in listing.errors["untaped"]
+    assert entries["untaped.skills.updates"].value == "auto"

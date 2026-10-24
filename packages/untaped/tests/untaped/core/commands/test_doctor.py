@@ -459,7 +459,7 @@ def test_core_settings_rows_pass_on_empty_config(_isolated_config: Path) -> None
     code, rows = _rows(_doctor_app())
     assert code == 0
     titles = [row["title"] for row in rows if row["plugin"] == "untaped"]
-    for title in ("validate http", "validate ui", "resolve active profile"):
+    for title in ("validate untaped.http", "validate untaped.ui", "resolve active profile"):
         assert title in titles
     assert "validate log_level" not in titles
 
@@ -489,23 +489,34 @@ def test_top_level_keys_other_than_active_and_profiles_are_unknown(
 
 
 def test_unknown_ui_theme_fails_ui_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      theme: bogus\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        theme: bogus\n"
+    )
     code, rows = _rows(_doctor_app())
     assert code == 1
-    assert "unknown UI theme" in _failed(rows)["validate ui"]
+    assert "unknown UI theme" in _failed(rows)["validate untaped.ui"]
+
+
+def test_a_section_that_is_not_a_mapping_fails_each_core_row(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    untaped: 5\n")
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    failed = _failed(rows)
+    for part in ("http", "ui", "skills"):
+        assert failed[f"validate untaped.{part}"] == "section 'untaped' must be a mapping"
 
 
 def test_bad_env_override_fails_its_row_and_names_the_variable(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT_SECONDS", "abc")
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "abc")
     monkeypatch.setenv("UNTAPED_JIRA__TIMEOUT", "soon")
     code, rows = _rows(_doctor_app(make_spec("jira", settings=JiraProfile)))
     assert code == 1
     failed = _failed(rows)
-    assert "UNTAPED_HTTP__TIMEOUT_SECONDS" in failed["validate http"]
+    assert "UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS" in failed["validate untaped.http"]
     assert "UNTAPED_JIRA__TIMEOUT" in failed["validate settings"]
-    assert "validate ui" not in failed
+    assert "validate untaped.ui" not in failed
 
 
 def test_non_mapping_config_root_fails_config_row(_isolated_config: Path) -> None:
@@ -632,11 +643,12 @@ def test_state_left_in_config_is_ignored(
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:
     missing = tmp_path / "nope.pem"
     write_config(
-        _isolated_config, f"profiles:\n  default:\n    http:\n      ca_bundle_path: {missing}\n"
+        _isolated_config,
+        f"profiles:\n  default:\n    untaped:\n      http:\n        ca_bundle_path: {missing}\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
-    assert str(missing) in _failed(rows)["validate http"]
+    assert str(missing) in _failed(rows)["validate untaped.http"]
 
 
 @pytest.mark.parametrize("verify_hostname", ["true", "false"])
@@ -647,12 +659,12 @@ def test_invalid_ca_bundle_fails_http_row(
     bundle.write_text("not a certificate")
     write_config(
         _isolated_config,
-        "profiles:\n  default:\n    http:\n"
-        f"      ca_bundle_path: {bundle}\n      verify_hostname: {verify_hostname}\n",
+        "profiles:\n  default:\n    untaped:\n      http:\n"
+        f"        ca_bundle_path: {bundle}\n        verify_hostname: {verify_hostname}\n",
     )
     code, rows = _rows(_doctor_app())
     assert code == 1
-    assert str(bundle) in _failed(rows)["validate http"]
+    assert str(bundle) in _failed(rows)["validate untaped.http"]
 
 
 def test_quiet_keeps_the_checklist_but_mutes_its_footer(_isolated_config: Path) -> None:

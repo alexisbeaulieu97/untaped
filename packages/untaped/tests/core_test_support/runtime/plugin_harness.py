@@ -94,7 +94,7 @@ def make_spec(
 
 def make_shell(
     name: str = "untaped",
-    section: str = "shell",
+    section: str = "untaped",
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
     commands: tuple[str, ...] = (),

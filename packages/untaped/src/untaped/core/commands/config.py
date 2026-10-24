@@ -45,9 +45,7 @@ from untaped.runtime.registry import (
     state_keys,
 )
 from untaped.runtime.settings import (
-    Settings,
     active_settings_layout,
-    model_sections,
     notify_config_key,
     resolve_config_path,
 )
@@ -85,7 +83,7 @@ class RootSectionScope:
     """One section's key-resolution scope for the root config command."""
 
     plugin: str
-    """Owning plugin name (the shell name for the shell section)."""
+    """Owning plugin name (``untaped`` for core's own section)."""
 
     state_fields: frozenset[str]
     """Tool-managed field names of the section's state model (never settable)."""
@@ -175,16 +173,8 @@ def _split_first(key: str) -> tuple[str, str | None]:
 def section_scopes(
     shell: ApplicationSpec, result: CompositionResult
 ) -> dict[str, RootSectionScope]:
-    """Build the root resolution scopes for core, the shell and composed plugins."""
-    scopes = {
-        section: RootSectionScope(
-            plugin=shell.name,
-            state_fields=frozenset(),
-            mappings=key_mappings(model),
-            model=model,
-        )
-        for section, model in model_sections(Settings).items()
-    }
+    """Build the root resolution scopes for core and composed plugins."""
+    scopes: dict[str, RootSectionScope] = {}
     scopes[shell.section] = RootSectionScope(
         plugin=shell.name,
         state_fields=state_keys(shell),
@@ -355,7 +345,7 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
     set in a file or the environment it is listed, as is every setting read
     through an old spelling (whatever its stability, so the deprecated
     spelling is never missed). Each table has its own columns, so
-    ``ui.hide_empty_columns`` and ``--columns`` apply per table, and only the
+    ``untaped.ui.hide_empty_columns`` and ``--columns`` apply per table, and only the
     deprecated table carries ``note``.
     """
     stable: list[SettingEntry] = []

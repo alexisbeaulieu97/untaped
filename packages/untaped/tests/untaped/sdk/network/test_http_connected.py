@@ -242,7 +242,7 @@ def test_a_folder_proxy_carries_a_credential_only_over_verified_https(
 ) -> None:
     monkeypatch.setattr(
         "untaped.sdk.network.credentials.folder_leaves",
-        lambda: {("http", "proxy"): "/work/.untaped.yml"},
+        lambda: {("untaped", "http", "proxy"): "/work/.untaped.yml"},
     )
 
     def build() -> None:
@@ -260,7 +260,7 @@ def test_a_folder_proxy_carries_a_credential_only_over_verified_https(
 def test_a_folder_trust_setting_carries_no_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "untaped.sdk.network.credentials.folder_leaves",
-        lambda: {("http", "ca_bundle_path"): "/work/.untaped.yml"},
+        lambda: {("untaped", "http", "ca_bundle_path"): "/work/.untaped.yml"},
     )
 
     with pytest.raises(ConfigError, match="won't send a credential under a trust setting"):

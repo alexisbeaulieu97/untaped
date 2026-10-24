@@ -583,4 +583,4 @@ def test_marks_lists_a_settings_mark_with_its_key_and_replacement() -> None:
 def test_the_core_sections_pass() -> None:
     root = bootstrap.build_root_app(candidates=[])
 
-    assert stability_violations(root, bootstrap.composition(), [], sections=["shell"]) == []
+    assert stability_violations(root, bootstrap.composition(), [], sections=["untaped"]) == []

@@ -7,7 +7,7 @@ naming no skill exactly retries with the ``untaped-`` prefix, while the
 installed directory and marker always keep the full ``untaped-*`` ID.
 
 :func:`check_installed_skills` runs after every root command. Under
-``skills.updates: auto`` (the default) it refreshes the stub skills in the
+``untaped.skills.updates: auto`` (the default) it refreshes the stub skills in the
 home folder that an older untaped wrote and converts copies from 11.0 to
 stubs, keeping the copies under the home's ``backups/skills``; ``warn``
 reports them instead. A project's own skills are never written by a run.
@@ -49,7 +49,7 @@ from untaped.core.skills import (
     update_installed_skill,
 )
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
-from untaped.runtime.settings import SkillsSettings, load_settings_section
+from untaped.runtime.settings import SkillsSettings, load_core_part
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._batch import batch_apply, finish
@@ -268,7 +268,7 @@ def check_installed_skills(
 ) -> None:
     """Keep the agent skills in the home folder current; report a project's.
 
-    Runs after every root command. ``skills.updates`` picks the behaviour
+    Runs after every root command. ``untaped.skills.updates`` picks the behaviour
     for the home roots (``~/.agents/skills``, ``~/.claude/skills``):
     ``auto`` (default) silently refreshes stubs an older untaped wrote,
     converts copies from 11.0 to stubs (keeping each copy under
@@ -293,8 +293,8 @@ def check_installed_skills(
     elif mode == "auto":
         older = _refresh(skills, older)
         copies = _update_copies(skills, copies)
-    hint = f"{run_hint('skills update')} (set skills.updates to auto or off to change this)"
-    here = f"{run_hint('skills update')} here (or set skills.updates to off)"
+    hint = f"{run_hint('skills update')} (set untaped.skills.updates to auto or off to change this)"
+    here = f"{run_hint('skills update')} here (or set untaped.skills.updates to off)"
     for items, message, hint_text in (
         (older, "agent skills from an older untaped", hint),
         (copies, "installed skills are out of date", hint),
@@ -386,10 +386,9 @@ _DEFAULT_MODE: str = SkillsSettings.model_fields["updates"].default
 
 def _updates_mode() -> str:
     try:
-        settings = load_settings_section("skills")
+        return load_core_part("skills").updates
     except UntapedError, ValueError:
         return _DEFAULT_MODE
-    return settings.updates if isinstance(settings, SkillsSettings) else _DEFAULT_MODE
 
 
 def _names(items: list[InstalledSkill]) -> str:

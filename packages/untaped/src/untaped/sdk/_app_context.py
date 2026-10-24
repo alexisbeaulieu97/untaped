@@ -12,7 +12,7 @@ here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
@@ -21,13 +21,17 @@ from untaped.runtime.settings import (
     Settings,
     get_settings,
     get_settings_model,
+    load_core_part,
     load_settings_section,
 )
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import UiSettings, resolve_theme_or_default
+from untaped.runtime.theme import resolve_theme_or_default
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.auth import resolve_token
+
+if TYPE_CHECKING:
+    from untaped.runtime.theme import UiSettings
 
 
 @dataclass(frozen=True)
@@ -82,8 +86,10 @@ class AppContext:
 
     @property
     def http(self) -> HttpSettings:
-        """Cross-cutting HTTP settings for building clients."""
-        return self.section("http", HttpSettings)
+        """Cross-cutting HTTP settings for building clients (``untaped.http``, validated once)."""
+        if "untaped.http" not in self._resolved:
+            self._resolved["untaped.http"] = load_core_part("http")
+        return cast("HttpSettings", self._resolved["untaped.http"])
 
     @property
     def diag(self) -> Diagnostics:
@@ -93,15 +99,20 @@ class AppContext:
         """
         return Diagnostics()
 
+    def _ui_settings(self) -> UiSettings:
+        if "untaped.ui" not in self._resolved:
+            self._resolved["untaped.ui"] = load_core_part("ui")
+        return cast("UiSettings", self._resolved["untaped.ui"])
+
     def ui(self, *, strict: bool = True) -> UiContext:
         """The themed UI context for messages and prompts.
 
-        The ``ui`` section is resolved once per context, so the theme is
+        ``untaped.ui`` is resolved once per context, so the theme is
         stable for the life of the context even if the settings cache is later
         invalidated. ``strict=False`` degrades a theme-resolution
         :class:`ConfigError` (e.g. an unknown theme name) to the default theme.
         """
-        theme = resolve_theme_or_default(lambda: self.section("ui", UiSettings), strict=strict)
+        theme = resolve_theme_or_default(self._ui_settings, strict=strict)
         return ui_context(theme=theme)
 
 

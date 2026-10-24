@@ -101,9 +101,7 @@ def test_unwritable_state_location_is_a_config_error(
         StateCollection("demo", "items").upsert({"name": "a"})
 
 
-@pytest.mark.parametrize(
-    "section", ["profiles", "active", "format_version", "http", "ui", "skills"]
-)
+@pytest.mark.parametrize("section", ["profiles", "active", "format_version"])
 def test_reserved_sections_are_never_state(cfg: Path, section: str) -> None:
     cfg.write_text("profiles:\n  default: {}\nactive: default\n")
     with pytest.raises(ConfigError, match="reserved"):

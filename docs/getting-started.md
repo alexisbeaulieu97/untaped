@@ -36,8 +36,8 @@ untaped doctor --online
 
 `untaped setup` is one full-screen screen for one profile, in a terminal. The
 left lists every settings section: the services (`awx`, `github`, `jira`)
-first, with their status, then `http`, `ui`, `skills` and the other plugins'
-sections. The right lists the selected section's settings, one row each, with
+first, with their status, then `untaped` (untaped's own) and the other
+plugins' sections. The right lists the selected section's settings, one row each, with
 its value and where it comes from (`profile:work`, `profile:default`,
 `default` for the built-in value, or the environment variable that sets it);
 under the rows is the focused setting's description, its bounds, its built-in
@@ -53,7 +53,7 @@ A list of names opens a list editor: enter edits an item or adds one on
 `+ add`, `delete` removes one, `m` then up or down moves one, and enter on
 `done` (or ctrl-s) writes the whole list, an empty one included. A setting
 that holds a command to run is one line, as you would type it in a shell.
-A map of known names, such as `ui.symbols` or `ui.color_roles`, lists every
+A map of known names, such as `untaped.ui.symbols` or `untaped.ui.color_roles`, lists every
 name with its value and where it comes from (a profile, a variable, or the
 theme): enter edits a value in place (an empty one too), `delete` clears
 the profile's own one so the name inherits again, and enter on `done` (or
@@ -220,10 +220,10 @@ wrapped. `--columns '?'` lists every column and marks the defaults with `*`;
 `--columns +url` adds a column, `--columns=-url` removes one, and
 `--columns name,url` shows exactly those.
 
-To change the `table` default, set `ui.format` or export `UNTAPED_FORMAT`:
+To change the `table` default, set `untaped.ui.format` or export `UNTAPED_FORMAT`:
 
 ```bash
-untaped config set ui.format json
+untaped config set untaped.ui.format json
 ```
 
 Only data goes to stdout. Progress, warnings and errors go to stderr, so a

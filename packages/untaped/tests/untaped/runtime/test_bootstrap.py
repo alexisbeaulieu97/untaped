@@ -151,7 +151,7 @@ def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyP
 
     assert "ext" in root
     assert events[0] == "discover"
-    assert events.index("register:shell") < events.index("register:ext")
+    assert events.index("register:untaped") < events.index("register:ext")
 
 
 def test_provider_settings_register_before_config_resolution(_isolated_config: Path) -> None:

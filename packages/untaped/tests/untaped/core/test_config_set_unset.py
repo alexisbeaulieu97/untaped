@@ -52,55 +52,65 @@ def _write(cfg: Path, text: str | None) -> None:
     [
         (
             None,
-            "skills.updates",
+            "untaped.skills.updates",
             "auto",
             None,
             "default",
-            {"default": {"skills": {"updates": "auto"}}},
+            {"default": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
         (None, "demo.token", "ghp_x", None, "default", {"default": {"demo": {"token": "ghp_x"}}}),
         # YAML scalars are coerced; ``http`` is an ordinary per-profile setting.
         (
             None,
-            "http.verify_ssl",
+            "untaped.http.verify_ssl",
             "false",
             None,
             "default",
-            {"default": {"http": {"verify_ssl": False}}},
+            {"default": {"untaped": {"http": {"verify_ssl": False}}}},
         ),
-        (None, "ui.theme", "classic", None, "default", {"default": {"ui": {"theme": "classic"}}}),
         (
             None,
-            "ui.collection_view",
+            "untaped.ui.theme",
+            "classic",
+            None,
+            "default",
+            {"default": {"untaped": {"ui": {"theme": "classic"}}}},
+        ),
+        (
+            None,
+            "untaped.ui.collection_view",
             "list",
             None,
             "default",
-            {"default": {"ui": {"collection_view": "list"}}},
+            {"default": {"untaped": {"ui": {"collection_view": "list"}}}},
         ),
         # Writing the default scope creates it and leaves other profiles intact.
         (
-            "profiles:\n  prod:\n    skills:\n      updates: warn\n",
-            "skills.updates",
+            "profiles:\n  prod:\n    untaped:\n      skills:\n        updates: warn\n",
+            "untaped.skills.updates",
             "auto",
             None,
             "default",
-            {"prod": {"skills": {"updates": "warn"}}, "default": {"skills": {"updates": "auto"}}},
+            {
+                "prod": {"untaped": {"skills": {"updates": "warn"}}},
+                "default": {"untaped": {"skills": {"updates": "auto"}}},
+            },
         ),
         (
             "profiles:\n  default: {}\n  prod: {}\nactive: prod\n",
-            "skills.updates",
+            "untaped.skills.updates",
             "auto",
             None,
             "prod",
-            {"default": {}, "prod": {"skills": {"updates": "auto"}}},
+            {"default": {}, "prod": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
         (
             "profiles:\n  default: {}\n  work: {}\n",
-            "http.proxy",
+            "untaped.http.proxy",
             "http://p:8080",
             "work",
             "work",
-            {"default": {}, "work": {"http": {"proxy": "http://p:8080"}}},
+            {"default": {}, "work": {"untaped": {"http": {"proxy": "http://p:8080"}}}},
         ),
     ],
     ids=[
@@ -132,7 +142,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n"
-        "    skills:\n      updates: auto\n"
+        "    untaped:\n      skills:\n        updates: auto\n"
         "    demo:\n      base_url: https://prod\n"
         "workspace:\n  active:\n    - name: ws1\n"
         '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n'
@@ -140,7 +150,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     SettingsFileRepository().set_value("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
     default = data["profiles"]["default"]
-    assert default["skills"] == {"updates": "auto"}
+    assert default["untaped"]["skills"] == {"updates": "auto"}
     assert default["demo"] == {"base_url": "https://prod", "token": "tok"}
     # Unknown top-level keys are untouched by a profile write.
     assert data["workspace"]["active"][0]["name"] == "ws1"
@@ -149,14 +159,14 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
 @pytest.mark.parametrize(
     ("initial", "key", "value", "profile", "match"),
     [
-        (None, "http.verify_ssl", "not-a-bool", None, "verify_ssl"),
+        (None, "untaped.http.verify_ssl", "not-a-bool", None, "verify_ssl"),
         (None, "bogus.key", "x", None, "unknown setting"),
         (None, "plugins.tool.spec", "untaped", None, "unknown setting"),
-        (None, "skills.updates", "auto", "prod", "profile not found.*prod"),
-        ("profiles:\n  default: {}\n", "skills.updates", "auto", "ghost", "ghost"),
+        (None, "untaped.skills.updates", "auto", "prod", "profile not found.*prod"),
+        ("profiles:\n  default: {}\n", "untaped.skills.updates", "auto", "ghost", "ghost"),
         (
-            "profiles:\n  default:\n    ui:\n      theme: classic\n",
-            "ui.collection_view",
+            "profiles:\n  default:\n    untaped:\n      ui:\n        theme: classic\n",
+            "untaped.ui.collection_view",
             "nope",
             None,
             "invalid value",
@@ -205,9 +215,9 @@ def test_set_validation_isolated_from_env_overlay(
     """Regression (#136): validation judges the written YAML alone, so a
     valid env var can't mask an invalid value landing on disk (which would
     break ``get_settings()`` the day the env var goes away)."""
-    monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__VERIFY_SSL", "true")
     with pytest.raises(ConfigError, match="verify_ssl"):
-        SettingsFileRepository().set_value("http.verify_ssl", "not-a-bool-or-anything")
+        SettingsFileRepository().set_value("untaped.http.verify_ssl", "not-a-bool-or-anything")
 
 
 # ── unset ────────────────────────────────────────────────────────────────────
@@ -217,20 +227,21 @@ def test_set_validation_isolated_from_env_overlay(
     ("initial", "key", "profile", "removed", "expected"),
     [
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n"
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
             "    demo:\n      base_url: https://x\n",
-            "skills.updates",
+            "untaped.skills.updates",
             None,
             True,
             {"default": {"demo": {"base_url": "https://x"}}},
         ),
         # An emptied parent mapping is cleaned up; siblings are kept.
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n    demo:\n      token: x\n",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
+            "    demo:\n      token: x\n",
             "demo.token",
             None,
             True,
-            {"default": {"skills": {"updates": "auto"}}},
+            {"default": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
         (
             "profiles:\n  default:\n    demo:\n      token: x\n      base_url: https://y\n",
@@ -240,12 +251,12 @@ def test_set_validation_isolated_from_env_overlay(
             {"default": {"demo": {"base_url": "https://y"}}},
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: auto\n"
-            "    ui:\n      theme: classic\n",
-            "ui.theme",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
+            "      ui:\n        theme: classic\n",
+            "untaped.ui.theme",
             None,
             True,
-            {"default": {"skills": {"updates": "auto"}}},
+            {"default": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
         # The schema default fills the gap, so the merged dict stays valid.
         (
@@ -256,14 +267,14 @@ def test_set_validation_isolated_from_env_overlay(
             {"default": {}},
         ),
         (
-            "profiles:\n  default:\n    skills:\n      updates: warn\n"
-            "  prod:\n    skills:\n      updates: auto\nactive: prod\n",
-            "skills.updates",
+            "profiles:\n  default:\n    untaped:\n      skills:\n        updates: warn\n"
+            "  prod:\n    untaped:\n      skills:\n        updates: auto\nactive: prod\n",
+            "untaped.skills.updates",
             "default",
             True,
-            {"default": {}, "prod": {"skills": {"updates": "auto"}}},
+            {"default": {}, "prod": {"untaped": {"skills": {"updates": "auto"}}}},
         ),
-        ("profiles:\n  default: {}\n", "skills.updates", None, False, {"default": {}}),
+        ("profiles:\n  default: {}\n", "untaped.skills.updates", None, False, {"default": {}}),
     ],
     ids=[
         "core",
@@ -292,10 +303,10 @@ def test_unset_removes_the_key(
 
 
 def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
-    original = "profiles:\n  default:\n    skills:\n      updates: auto\n"
+    original = "profiles:\n  default:\n    untaped:\n      skills:\n        updates: auto\n"
     _isolate_settings.write_text(original)
     with pytest.raises(ConfigError, match="profile not found") as excinfo:
-        SettingsFileRepository().unset_value("skills.updates", profile="ghost")
+        SettingsFileRepository().unset_value("untaped.skills.updates", profile="ghost")
     assert "ghost" in str(excinfo.value)
     assert "untaped-profile" not in str(excinfo.value)
     assert _isolate_settings.read_text() == original

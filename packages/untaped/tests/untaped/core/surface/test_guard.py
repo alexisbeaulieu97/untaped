@@ -188,11 +188,11 @@ CASES = {
         "contract workspace.Repo.url object",
         False,
     ),
-    "remove a setting key": ("cfg http.timeout number? default=unset", "", False),
+    "remove a setting key": ("cfg untaped.http.timeout number? default=unset", "", False),
     "rename a setting with renamed_keys": (
         "cfg http.timeout_secs number? default=unset",
-        "cfg http.timeout number? default=unset\n"
-        "cfg http.timeout_secs -> http.timeout  [deprecated]\n"
+        "cfg untaped.http.timeout number? default=unset\n"
+        "cfg http.timeout_secs -> untaped.http.timeout  [deprecated]\n"
         "cfg http.timeout_secs number? default=unset  [deprecated]",
         True,
     ),

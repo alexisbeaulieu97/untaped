@@ -25,6 +25,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 _WIZ_MODULE = """
+from typing import ClassVar
+
 from pydantic import BaseModel, SecretStr
 
 from untaped.sdk._cli import create_app
@@ -35,6 +37,9 @@ class WizProfile(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
     token_command: TokenCommand = None
+    timeout_seconds: float | None = None
+
+    renamed_keys: ClassVar[dict[str, str]] = {"timeout": "timeout_seconds"}
 
 
 SPEC = PluginSpec(
@@ -118,3 +123,24 @@ def test_auth_migrate_moves_a_plaintext_token(
     assert stores.entries() == {"untaped/default/wiz": "s3cret"}
     assert _status("wiz.connection") == "pass"
     assert "s3cret" not in result.output
+
+
+def test_config_migrate_renames_an_old_key(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_wiz(tmp_path, monkeypatch)
+    write_config(_isolated_config, "profiles:\n  default:\n    wiz: {timeout: 9}\n")
+    assert _status("deprecated-keys") == "warn"
+    result = _untaped("doctor", "fix", "--yes", "--format", "json")
+    assert result.exit_code == 0, result.output
+    [row] = _rows(result)
+    assert (row["fix"], row["checks"], row["action"], row["detail"]) == (
+        ["--profile", "default", "config", "migrate"],
+        ["deprecated-keys"],
+        "fixed",
+        "1 renamed",
+    )
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["wiz"] == {
+        "timeout_seconds": 9
+    }
+    assert _status("deprecated-keys") == "pass"

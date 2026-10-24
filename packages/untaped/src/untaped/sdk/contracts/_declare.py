@@ -319,12 +319,10 @@ def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
 
 def _http_client(binding: Binding | None, *, verify: VerifyTypes | None = None) -> HttpClient:
     """The profile's client for ``binding``'s provider; ``verify`` replaces the profile's TLS."""
-    from untaped.runtime.settings import HttpSettings, load_settings_section  # noqa: PLC0415
+    from untaped.runtime.settings import load_core_part  # noqa: PLC0415
     from untaped.sdk.network.http import HttpClient, RetryPolicy, resolve_verify  # noqa: PLC0415
 
-    http = load_settings_section("http")
-    if not isinstance(http, HttpSettings):
-        http = HttpSettings.model_validate(http)
+    http = load_core_part("http")
     return HttpClient(
         verify=resolve_verify(http) if verify is None else verify,
         timeout=http.timeout_seconds,

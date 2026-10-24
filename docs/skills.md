@@ -80,7 +80,7 @@ untaped looks at the skills in your home folder, `~/.agents/skills` and
 - A copy a third-party plugin still ships is updated when its files differ
   from this version's.
 
-The `skills.updates` setting picks what happens: `auto` (the default) does the
+The `untaped.skills.updates` setting picks what happens: `auto` (the default) does the
 above, `warn` prints a warning instead, and `off` does nothing; see the
 [configuration reference](./reference/config.md). After a failed or
 previewing command `auto` writes nothing: stubs and copies to convert wait
@@ -90,12 +90,12 @@ keeps a backup of a home-folder copy it converts, too.
 
 ```text
 warning: agent skills from an older untaped: untaped-awx, untaped-github
-hint: run `untaped skills update` (set skills.updates to auto or off to change this)
+hint: run `untaped skills update` (set untaped.skills.updates to auto or off to change this)
 ```
 
 ```bash
-untaped config set skills.updates warn
-UNTAPED_SKILLS__UPDATES=off untaped …      # one process only
+untaped config set untaped.skills.updates warn
+UNTAPED_UNTAPED__SKILLS__UPDATES=off untaped …      # one process only
 ```
 
 Skills inside a project (`.agents/skills` and `.claude/skills` at the current

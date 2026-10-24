@@ -1,4 +1,4 @@
-"""The ``ui.format`` setting and ``UNTAPED_FORMAT`` pick the default ``--format``.
+"""The ``untaped.ui.format`` setting and ``UNTAPED_FORMAT`` pick the default ``--format``.
 
 Only commands taking the shared ``--format`` with the ``table`` default
 follow them; an explicit ``--format`` always wins, and ``UNTAPED_FORMAT``
@@ -37,7 +37,7 @@ def _base_url_row(stdout: str) -> dict[str, object]:
 
 
 def test_ui_format_setting_changes_the_table_default(_isolated_config: Path) -> None:
-    write_config(_isolated_config, _CONFIG + "    ui:\n      format: json\n")
+    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: json\n")
     result = _invoke(["config", "list"])
     assert result.exit_code == 0, result.output
     assert _base_url_row(result.stdout)["value"] == "https://g"
@@ -46,7 +46,7 @@ def test_ui_format_setting_changes_the_table_default(_isolated_config: Path) -> 
 def test_untaped_format_wins_over_the_setting(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    write_config(_isolated_config, _CONFIG + "    ui:\n      format: json\n")
+    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: json\n")
     monkeypatch.setenv("UNTAPED_FORMAT", "yaml")
     result = _invoke(["config", "list"])
     assert result.exit_code == 0, result.output
@@ -60,7 +60,7 @@ def test_untaped_format_wins_over_the_setting(
 def test_explicit_format_wins(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
-    write_config(_isolated_config, _CONFIG + "    ui:\n      format: yaml\n")
+    write_config(_isolated_config, _CONFIG + "    untaped:\n      ui:\n        format: yaml\n")
     monkeypatch.setenv("UNTAPED_FORMAT", "yaml")
     result = _invoke(["config", "list", flag, "json"])
     assert result.exit_code == 0, result.output
@@ -119,7 +119,9 @@ def _lazy_spec() -> PluginSpec:
 
 
 def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: json\n"
+    )
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_lazy_spec()),))
     result = CliInvoker().invoke(root.meta, ["lazy", "list"])
     assert result.exit_code == 0, result.output
@@ -127,8 +129,10 @@ def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> No
 
 
 def test_an_invalid_ui_section_falls_back_so_it_can_be_repaired(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: xml\n")
-    result = _invoke(["config", "set", "ui.format", "json"])
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: xml\n"
+    )
+    result = _invoke(["config", "set", "untaped.ui.format", "json"])
     assert result.exit_code == 0, result.output
     assert "key" in result.stdout
     assert json.loads(_invoke(["config", "list"]).stdout)
@@ -138,7 +142,9 @@ def test_format_help_names_the_overrides_only_for_the_table_default() -> None:
     def help_text(argv: list[str]) -> str:
         return " ".join(_invoke([*argv, "--help"]).stdout.replace("│", " ").split())
 
-    assert "[default: table, or UNTAPED_FORMAT / ui.format]" in help_text(["config", "list"])
+    assert "[default: table, or UNTAPED_FORMAT / untaped.ui.format]" in help_text(
+        ["config", "list"]
+    )
     raw_help = help_text(["config", "get"])
     assert "[default: raw]" in raw_help
     assert "UNTAPED_FORMAT" not in raw_help
@@ -160,7 +166,9 @@ def _warning_spec() -> PluginSpec:
 
 
 def test_ui_format_setting_makes_stderr_json_once_settings_load(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "profiles:\n  default:\n    ui:\n      format: json\n")
+    write_config(
+        _isolated_config, "profiles:\n  default:\n    untaped:\n      ui:\n        format: json\n"
+    )
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_warning_spec()),))
 
     result = CliInvoker().invoke(root.meta, ["warns", "list"])

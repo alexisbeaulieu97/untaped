@@ -120,16 +120,16 @@ def test_mutate_config_clears_get_settings_cache(
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    write_config_dict({"profiles": {"default": {"skills": {"updates": "warn"}}}})
+    write_config_dict({"profiles": {"default": {"untaped": {"skills": {"updates": "warn"}}}}})
 
     get_settings.cache_clear()
-    assert get_settings().skills.updates == "warn"
+    assert get_settings().untaped.skills.updates == "warn"
 
     def _set_off(data: dict[str, Any]) -> None:
-        data["profiles"]["default"]["skills"]["updates"] = "off"
+        data["profiles"]["default"]["untaped"]["skills"]["updates"] = "off"
 
     mutate_config(_set_off)
-    assert get_settings().skills.updates == "off"
+    assert get_settings().untaped.skills.updates == "off"
 
 
 def test_mutate_config_no_op_does_not_clear_cache(

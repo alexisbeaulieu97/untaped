@@ -74,7 +74,7 @@ from untaped.sdk.tree import TreeGraph, print_tree
 def _format_default(value: object) -> str:
     """Help text for a ``--format`` default; ``table`` defers to the overrides."""
     shown = getattr(value, "value", value)
-    return "table, or UNTAPED_FORMAT / ui.format" if shown == "table" else str(shown)
+    return "table, or UNTAPED_FORMAT / untaped.ui.format" if shown == "table" else str(shown)
 
 
 FormatOption = Annotated[
@@ -89,7 +89,7 @@ TreeFormatOption = Annotated[
 ]
 """``--format`` plus ``tree``, for a command that draws its rows as a tree (``emit(tree=)``)."""
 
-#: Environment variable naming the default ``--format`` (wins over ``ui.format``).
+#: Environment variable naming the default ``--format`` (wins over ``untaped.ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
 #: Root commands that diagnose the setup: an invalid ``UNTAPED_FORMAT`` is
 #: ignored there instead of blocking them.
@@ -105,15 +105,15 @@ def apply_default_format(
     ``--format`` offering every shared format, such as ``TreeFormatOption``)
     whose command default is ``table`` follows the user's choice (a command
     defaulting to ``raw`` or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first,
-    then the ``ui.format`` setting. An explicit ``--format`` has tokens
+    then the ``untaped.ui.format`` setting. An explicit ``--format`` has tokens
     already and always wins. A ``ui`` section that fails to load is ignored
     here so ``config set`` can still repair it; ``doctor`` reports it. An
     invalid ``UNTAPED_FORMAT`` is a usage error, except under ``doctor`` and
     ``setup``, which ignore it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
-    ``ui.format``; not a command's own default) is recorded for the stderr
+    ``untaped.ui.format``; not a command's own default) is recorded for the stderr
     diagnostics (:func:`untaped.runtime.output_policy.note_format`, phase 2), and,
-    when they are text, the ``ui.theme`` messages render with
+    when they are text, the ``untaped.ui.theme`` messages render with
     (:func:`untaped.runtime.output_policy.note_theme`; a broken ``ui`` section
     degrades to the default theme).
     """
@@ -130,11 +130,11 @@ def apply_default_format(
 
 
 def _user_theme() -> ThemeSpec:
-    """The user's ``ui.theme`` for stderr messages; the default on a broken ``ui`` section."""
+    """The user's ``untaped.ui.theme`` for stderr messages; the default on a broken ``ui``."""
     # Keep settings lazy, as ``_default_format`` does.
-    from untaped.runtime.settings import load_settings_section  # noqa: PLC0415
+    from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
-    return resolve_theme_or_default(lambda: load_settings_section("ui"), strict=False)
+    return resolve_theme_or_default(lambda: load_core_part("ui"), strict=False)
 
 
 def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) -> None:
@@ -167,13 +167,13 @@ def _default_format(commands: tuple[str, ...], arguments: ArgumentCollection) ->
             raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
     if value is None:
         # Keep settings lazy: only commands printing rows need them here.
-        from untaped.runtime.settings import load_settings_section  # noqa: PLC0415
+        from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
         try:
-            value = load_settings_section("ui").format
+            value = load_core_part("ui").format
         except UntapedError:
             return
-        source = "ui.format"
+        source = "untaped.ui.format"
     if value is not None:
         argument.append(Token(keyword=source, value=value, source=source))
 
@@ -424,7 +424,7 @@ def render_rows(
     other format keeps the whole record); ``--columns +name`` / ``-name``
     edit them. A ``table`` never shows a failed row's structured ``error``
     unless asked (its ``detail`` says the same for humans), and, with
-    ``ui.hide_empty_columns`` (the default), leaves out a column empty on
+    ``untaped.ui.hide_empty_columns`` (the default), leaves out a column empty on
     every row unless ``--columns`` names it.
     """
     _validate_kind(kind)
