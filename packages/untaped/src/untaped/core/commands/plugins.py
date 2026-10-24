@@ -268,7 +268,8 @@ def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
     """``kind``'s JSON Schema, with ``$id`` and ``title`` the kind."""
     model = kind_model(kind, result)
     if model is None:
-        raise UsageError(not_found("record kind", kind, known=_near(kind, record_kinds())))
+        known = record_kinds() if result.mount is None else result.mount.kinds
+        raise UsageError(not_found("record kind", kind, known=_near(kind, known)))
     schema = model.model_json_schema()
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

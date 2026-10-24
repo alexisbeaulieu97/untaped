@@ -158,23 +158,36 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),
         skills=skills,
-        caches=tuple(blocks["cache"]),
-        migrations=tuple(blocks["dir-migration"]),
-        doctor_checks=tuple(blocks["doctor-check"]),
-        credentials=tuple(blocks["credential"]),
-        deprecations=partial(tuple, blocks["deprecated-behaviour"]),
+        caches=blocks["caches"],
+        migrations=blocks["migrations"],
+        doctor_checks=blocks["doctor_checks"],
+        credentials=blocks["credentials"],
+        deprecations=partial(tuple, blocks["deprecations"]),
     )
 
 
-def _spelled_blocks(mount: Mount, name: str) -> defaultdict[str, list[Any]]:
-    """The plugin's blocks by kind, each given its plugin and name for core's 11.x readers."""
+#: The ``PluginSpec`` field each owned block kind goes to.
+_SPEC_FIELDS = {
+    "cache": "caches",
+    "dir-migration": "migrations",
+    "doctor-check": "doctor_checks",
+    "credential": "credentials",
+    "deprecated-behaviour": "deprecations",
+}
+
+
+def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
+    """The plugin's owned blocks by spec field, each given its plugin and name for 11.x readers."""
     cls = mount.plugins[name]
-    blocks: defaultdict[str, list[Any]] = defaultdict(list)
+    blocks: dict[str, list[Any]] = {field: [] for field in _SPEC_FIELDS.values()}
     for decl in mount.declaration.plugin(name).blocks:
         block = getattr(cls, decl.attribute)
-        if isinstance(block, OwnedBlock):
-            blocks[decl.block].append(block._spelled_as(name, decl.name))
-    return blocks
+        if not isinstance(block, OwnedBlock):
+            continue
+        if decl.block not in _SPEC_FIELDS:
+            raise TypeError(f"the 11.x seam has no PluginSpec field for a {decl.block} block")
+        blocks[_SPEC_FIELDS[decl.block]].append(block._spelled_as(name, decl.name))
+    return {field: tuple(each) for field, each in blocks.items()}
 
 
 # --- the command line ----------------------------------------------------------

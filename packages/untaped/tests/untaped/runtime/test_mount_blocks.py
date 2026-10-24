@@ -10,11 +10,14 @@ from typing import Annotated
 
 from pydantic import BaseModel
 
-from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.bootstrap import build_root_app, compose_root
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
     Cache,
     Command,
+    Credential,
+    CredentialKey,
+    DeprecatedBehaviour,
     DirMigration,
     DoctorCheck,
     DoctorResult,
@@ -37,6 +40,10 @@ FILLED: list[str] = []
 
 class KeeperSettings(BaseModel):
     pass
+
+
+class KeeperServer(CredentialKey):
+    name: str = "keeper"
 
 
 class Note(BaseModel):
@@ -88,6 +95,8 @@ class Keeper(Plugin):
     notes = NOTES
     old_notes = DirMigration(title="notes into the plugin's folder", preview=_preview, apply=_apply)
     readable = DoctorCheck(title="notes are readable", run=_healthy)
+    token = Credential(key=KeeperServer, env=("KEEPER_TOKEN",))
+    plain_notes = DeprecatedBehaviour(removed_in=13, replacement="untaped keeper read")
 
 
 KEEPER = PluginCandidate(distribution="untaped-keeper", name="keeper", target=Keeper)
@@ -128,3 +137,21 @@ def test_plugin_schema_finds_a_kind_the_declaration_names() -> None:
     assert result.exit_code == 0, result.stderr
     schema = json.loads(result.stdout)
     assert (schema["$id"], list(schema["properties"])) == ("keeper.note", ["title"])
+
+
+def test_credentials_and_behaviours_reach_the_spec_named_and_compose_again() -> None:
+    first = compose_root(candidates=[KEEPER])
+    again = compose_root(candidates=[KEEPER])
+    assert not first.quarantine and not again.quarantine
+    [plugin] = again.plugins
+    [token] = plugin.spec.credentials
+    assert token.qualified == "keeper.token"
+    assert token is first.plugins[0].spec.credentials[0]
+    assert [each.name for each in plugin.spec.deprecations()] == ["plain-notes"]
+    assert _run("keeper", "show").exit_code == 0
+
+
+def test_an_unknown_kind_suggests_the_declaration_s_kinds() -> None:
+    result = _run("plugin", "schema", "keeper.notte")
+    assert result.exit_code == 2
+    assert "keeper.note" in result.stderr
