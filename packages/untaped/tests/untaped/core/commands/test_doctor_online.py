@@ -362,3 +362,19 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
     # since the bare line would write to the base.
     assert row["fix"] == ["--profile", "b", "auth", "set", "svc"]
     assert "→ untaped --profile b auth set svc\n" in listed.stdout
+
+
+def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "a")
+    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    app = build_root_doctor_app(
+        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
+    )
+    with profile_scope("default"):  # `--profile default` sets the variable aside
+        result = CliInvoker().invoke(app, ["--format", "table", "--online"])
+
+    # The bare line would read profile `a` again.
+    assert "→ untaped --profile default auth set svc\n" in result.stdout

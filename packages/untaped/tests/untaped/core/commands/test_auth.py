@@ -662,6 +662,21 @@ def test_unset_cleans_up_when_the_entry_is_already_gone(
     assert _config(_isolated_config) == {"format_version": 2}
 
 
+def test_unset_keeps_the_entry_when_the_pick_is_undefined(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
+    assert _auth("set", "svc", "--stdin", input="tok").exit_code == 0
+    monkeypatch.setenv("UNTAPED_PROFILE", "typo")
+
+    result = _auth("unset", "svc", "--yes")
+
+    assert result.exit_code == 2
+    assert "profile 'typo' is not defined" in result.stderr
+    assert len(stores.entries()) == 1
+    assert "token_command" in _config(_isolated_config)["svc"]
+
+
 def test_unset_keeps_everything_when_the_store_is_unreachable(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

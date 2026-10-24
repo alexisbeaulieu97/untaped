@@ -322,3 +322,41 @@ def test_create_and_rename_refuse_a_name_profile_cannot_pick(
         assert result.exit_code == 2, result.output  # a usage error, as in a pick
         assert f"invalid profile name {name!r}" in result.stderr
     assert set(read_config_dict(_isolated_config)["profiles"]) == {"prod", "stage"}
+
+
+@pytest.mark.parametrize(
+    ("pick", "args", "message"),
+    [
+        ("typo", ["create", "qa"], "profile 'typo' is not defined"),
+        ("typo", ["rename", "stage", "qa"], "profile 'typo' is not defined"),
+        ("typo", ["delete", "stage", "--yes"], "profile 'typo' is not defined"),
+        ("stage", ["delete", "stage", "--yes"], "profile 'stage' is in this run's pick"),
+        ("stage", ["rename", "stage", "qa"], "profile 'stage' is in this run's pick"),
+    ],
+)
+def test_a_change_that_leaves_the_pick_undefined_writes_nothing(
+    app,
+    _isolated_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pick: str,
+    args: list[str],
+    message: str,
+) -> None:
+    _seed(_isolated_config)
+    before = _isolated_config.read_text(encoding="utf-8")
+    monkeypatch.setenv("UNTAPED_PROFILE", pick)
+
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code == 2, result.output
+    assert message in result.stderr
+    assert _isolated_config.read_text(encoding="utf-8") == before
+
+
+def test_creating_the_profile_the_pick_misses_is_the_way_out(
+    app, _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(_isolated_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "typo")
+
+    assert _outcome(app, ["create", "typo"])["action"] == "created"

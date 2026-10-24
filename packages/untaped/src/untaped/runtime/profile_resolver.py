@@ -259,7 +259,7 @@ def check_defined(picks: Sequence[str], profiles: dict[str, Any]) -> None:
             known = sorted(profiles)
             raise ConfigError(
                 f"profile {name!r} is not defined in `profiles`. "
-                f"Known profiles: {', '.join(known) or '(none)'}",
+                f"Known profiles: {', '.join([DEFAULT_PROFILE, *known])}",
                 category="usage",
                 details={"known": [DEFAULT_PROFILE, *known]},
             )

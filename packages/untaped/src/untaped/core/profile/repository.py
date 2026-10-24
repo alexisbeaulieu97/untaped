@@ -12,14 +12,30 @@ from __future__ import annotations
 from typing import Any
 
 from untaped.runtime.config_file import mutate_config, read_config_dict
-from untaped.runtime.profile_resolver import Picked, current_pick
+from untaped.runtime.profile_resolver import Picked, check_defined, current_pick, picked_names
 from untaped.runtime.settings import active_settings_layout
+from untaped.sdk.errors import ConfigError
 
 
 def _profiles(config: dict[str, Any]) -> dict[str, Any]:
     """Return the ``profiles`` mapping from a config dict, or empty if absent/malformed."""
     profiles = config.get("profiles")
     return profiles if isinstance(profiles, dict) else {}
+
+
+def _keep_pick(config: dict[str, Any], *, losing: str | None = None) -> None:
+    """Refuse a change that leaves this run's pick naming an undefined profile.
+
+    ``losing`` is the profile the change removes; picking it is refused by
+    name. Called on the changed dict, so nothing is written when it raises.
+    """
+    if losing is not None and losing in picked_names():
+        raise ConfigError(
+            f"profile {losing!r} is in this run's pick",
+            category="usage",
+            hint="run it without that profile in UNTAPED_PROFILE or --profile",
+        )
+    check_defined(picked_names(), _profiles(config))
 
 
 class ProfileFileRepository:
@@ -50,6 +66,7 @@ class ProfileFileRepository:
                 profiles = {}
                 config["profiles"] = profiles
             profiles[name] = data
+            _keep_pick(config)
 
         mutate_config(_apply)
 
@@ -63,6 +80,7 @@ class ProfileFileRepository:
                 return
             del profiles[name]
             removed = True
+            _keep_pick(config, losing=name)
 
         mutate_config(_apply)
         return removed
@@ -81,5 +99,6 @@ class ProfileFileRepository:
             if new in profiles:
                 raise ValueError(f"profile {new!r} already exists")
             profiles[new] = profiles.pop(old)
+            _keep_pick(config, losing=old)
 
         mutate_config(_apply)

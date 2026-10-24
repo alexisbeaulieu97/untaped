@@ -11,4 +11,7 @@ is `{name, profiles: [{name, source}]}`; `profile list` and `profile show`
 say `selected` instead of `active`; provenance labels the base `base`.
 Doctor's fix lines name the last picked profile, so a fix lands where the run
 reads it. Profile names are letters, digits, `_`, `.` and `-`, not starting
-with `.` or `-`; `profile create` and `rename` refuse others (exit 2).
+with `.` or `-`; `profile create` and `rename` refuse others (exit 2). No
+write leaves the run's pick naming an undefined profile: `profile delete` and
+`rename` refuse a picked profile (exit 2), and with an undefined pick only
+`profile create` of the missing name writes.

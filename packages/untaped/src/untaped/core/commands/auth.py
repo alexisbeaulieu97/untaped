@@ -885,8 +885,11 @@ def _unset(
         f"in profile {profile}?",
         assume_yes=yes,
     )
+    repo = SettingsFileRepository()
+    # A dry run first: a write the config refuses must not cost the stored token.
+    repo.unset_value(f"{section}.token_command", profile=profile, dry_run=True)
     deleted, _ = delete_stored_token(argv)
-    SettingsFileRepository().unset_value(f"{section}.token_command", profile=profile)
+    repo.unset_value(f"{section}.token_command", profile=profile)
     if deleted == "gone":
         _diag.success(
             f"the {section} token was already gone from {where}; "
