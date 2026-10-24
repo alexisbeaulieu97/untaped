@@ -4688,9 +4688,11 @@ sdk untaped.sdk.ConfigError.hint class
 sdk untaped.sdk.ConfigError.retryable
 sdk untaped.sdk.ConfigError.system class
 sdk untaped.sdk.Confirm()
+sdk untaped.sdk.Confirm.dry_run
 sdk untaped.sdk.Confirm.field_kind class
 sdk untaped.sdk.Confirm.options class
 sdk untaped.sdk.Confirm.panel class
+sdk untaped.sdk.Confirm.yes
 sdk untaped.sdk.Credential(*, key)
 sdk untaped.sdk.Credential(env=) default=[]
 sdk untaped.sdk.Credential(name@2=) default=None
@@ -5175,6 +5177,7 @@ sdk untaped.sdk.Limit(default=) default=None
 sdk untaped.sdk.Limit.field_kind class
 sdk untaped.sdk.Limit.options class
 sdk untaped.sdk.Limit.panel class
+sdk untaped.sdk.Limit.value
 sdk untaped.sdk.LimitOption
 sdk untaped.sdk.Lines()
 sdk untaped.sdk.Lines.field_kind class
@@ -5252,6 +5255,15 @@ sdk untaped.sdk.MultiList.with_error(text)  [experimental]
 sdk untaped.sdk.NOT_COUNTED
 sdk untaped.sdk.NO_PROGRESS
 sdk untaped.sdk.NeedsSetup
+sdk untaped.sdk.NeedsYesError(command=) default="this command"
+sdk untaped.sdk.NeedsYesError(question)
+sdk untaped.sdk.NeedsYesError.category class
+sdk untaped.sdk.NeedsYesError.details class
+sdk untaped.sdk.NeedsYesError.exit_code
+sdk untaped.sdk.NeedsYesError.fix_by class
+sdk untaped.sdk.NeedsYesError.hint class
+sdk untaped.sdk.NeedsYesError.retryable
+sdk untaped.sdk.NeedsYesError.system class
 sdk untaped.sdk.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.NeverRefreshed.category class
 sdk untaped.sdk.NeverRefreshed.details class
@@ -5386,6 +5398,7 @@ sdk untaped.sdk.Parallel(default=) default=4
 sdk untaped.sdk.Parallel.field_kind class
 sdk untaped.sdk.Parallel.options class
 sdk untaped.sdk.Parallel.panel class
+sdk untaped.sdk.Parallel.value
 sdk untaped.sdk.ParallelOption
 sdk untaped.sdk.Paste(text)  [experimental]
 sdk untaped.sdk.Paste.text  [experimental]
@@ -5592,6 +5605,7 @@ sdk untaped.sdk.RefTarget.plugin  [experimental]
 sdk untaped.sdk.RefTarget.store  [experimental]
 sdk untaped.sdk.Refresh()
 sdk untaped.sdk.Refresh(*caches)
+sdk untaped.sdk.Refresh.directive
 sdk untaped.sdk.Refresh.field_kind class
 sdk untaped.sdk.Refresh.options class
 sdk untaped.sdk.Refresh.panel class
