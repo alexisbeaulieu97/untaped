@@ -16,8 +16,10 @@ import pytest
 from cyclopts import App, Parameter
 
 from core_test_support.commands.support import age_stub, asset, make_spec, write_config
+from untaped.core.commands import skills as skills_cli
 from untaped.runtime import bootstrap
 from untaped.sdk._cli import create_app
+from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -110,6 +112,21 @@ def test_auto_refreshes_outdated_skills_in_place(_isolated_config: Path) -> None
     assert code == 0
     assert "warning" not in output
     assert "`untaped agents demo`" in _installed("untaped-demo").read_text()
+
+
+def test_auto_warns_about_a_stub_it_could_not_refresh(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
+    root = _install_then_age()
+
+    def broken(*_args: object, **_kwargs: object) -> None:
+        raise ConfigError("could not update it")
+
+    monkeypatch.setattr(skills_cli, "update_installed_skill", broken)
+    output = _run(root, "demo", "--help")[1]
+    assert "warning: agent skills from an older untaped: untaped-demo" in output
+    assert _installed("untaped-demo").read_text() == _OLDER
 
 
 def test_env_var_selects_the_mode(monkeypatch: pytest.MonkeyPatch) -> None:

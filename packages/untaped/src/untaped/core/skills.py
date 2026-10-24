@@ -162,9 +162,6 @@ def install_skills(
     return results
 
 
-_IGNORED_PARTS = ("__pycache__",)
-
-
 class SkillState(StrEnum):
     """How an installed skill compares with the skills this version ships.
 
@@ -384,8 +381,6 @@ def _tree_bytes(root: Path) -> dict[str, bytes]:
         if path.is_file()
         and path.name != STUB_MARKER
         and not is_write_temp(path.name)  # a stub write in flight
-        and path.suffix != ".pyc"
-        and not any(part in _IGNORED_PARTS for part in path.relative_to(root).parts)
     }
 
 

@@ -39,9 +39,9 @@ directory outright; it cannot be combined with `--target all` or
 `--project-dir`.
 
 Each skill lands in `<root>/<full-id>/` with a marker, `.untaped-stub.json`,
-that records the untaped version and the plugin's distribution and version that wrote it, and
-a digest of what it wrote. The full ID is used even when you installed by
-short selector. An existing directory is replaced only with `--force`.
+that records the untaped version and the plugin's distribution and version
+that wrote it, and a digest of what it wrote. The full ID is used even when
+you installed by short selector. An existing directory is replaced only with `--force`.
 
 Agents usually pick up changed skills on their own. Restart the agent if a
 new skill does not appear in its catalog.
@@ -80,8 +80,9 @@ UNTAPED_UNTAPED__SKILLS__UPDATES=off untaped …      # one process only
 
 Skills inside a project (`.agents/skills` and `.claude/skills` at the current
 git root, or the current directory outside a repository) are never changed by
-a run, and a stub there is never warned about. Only directories with a marker count, so skills you wrote yourself are never
-touched. Installs made with `--target-dir` are not checked.
+a run, and a stub there is never warned about. Only directories with a
+marker count, so skills you wrote yourself are never touched. Installs made
+with `--target-dir` are not checked.
 
 To manage installs by hand:
 
@@ -94,9 +95,8 @@ untaped skills remove awx --target claude --scope local
 ```
 
 `status` reports each install's `state`: `current`, `outdated` (an older
-untaped wrote it),
-`newer` (a newer untaped or plugin wrote this stub), `edited` (someone changed
-this stub), or `orphaned` (no plugin installed here ships it: either it was
+untaped wrote it), `newer` (a newer untaped or plugin wrote this stub),
+`edited` (someone changed this stub), or `orphaned` (no plugin installed here ships it: either it was
 dropped, or the plugin that ships it is missing, as with `uvx untaped`
 without extras). The per-run check never reports orphaned skills;
 `untaped doctor` and `skills status` do. Install the plugin, or run

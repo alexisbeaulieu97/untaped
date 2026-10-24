@@ -461,8 +461,9 @@ def _check_skills_after(
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
     the skills-managing commands. After a failed or previewing command (a
-    ``_PREVIEW_FLAGS`` option before any ``--``) it only reports, never
-    updates. Never lets the check break the command.
+    ``_PREVIEW_FLAGS`` option before any ``--``) it writes nothing: ``warn``
+    still reports, ``auto`` waits for the next successful command. Never lets
+    the check break the command.
     """
     if not tokens or tokens[0].startswith("-"):
         return
