@@ -103,6 +103,28 @@ def test_a_namespace_package_is_found_without_importing_it(
     assert _again(code) != before
 
 
+@pytest.mark.parametrize(
+    ("layout", "name"),
+    [
+        (("acme_outer/acme_inner/a.py",), "acme_outer.acme_inner"),
+        (("acme_outer/acme_inner/a.py",), "acme_outer.acme_inner.a"),
+        (("acme_reg/__init__.py", "acme_reg/acme_nsub/a.py"), "acme_reg.acme_nsub"),
+    ],
+)
+def test_a_namespace_package_under_an_unloaded_parent_is_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: tuple[str, ...], name: str
+) -> None:
+    for each in layout:
+        (tmp_path / each).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / each).write_text("")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    code = installed_code(name)
+    before = code()
+    assert name.partition(".")[0] not in sys.modules
+    (tmp_path / layout[-1]).write_text("A = 2\n")
+    assert _again(code) != before
+
+
 def test_a_submodule_is_looked_for_where_its_loaded_parent_is(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

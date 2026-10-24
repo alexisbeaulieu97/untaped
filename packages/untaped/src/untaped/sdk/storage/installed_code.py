@@ -15,13 +15,16 @@ per process.
 Two installs the whole-install form cannot see into: a development install
 with neither ``RECORD`` nor ``direct_url.json`` (``setup.py develop``) counts
 by its version alone, and files a plugin reads from outside its source root
-(its ``src`` folder when it has one) never count.
+(its ``src`` folder when it has one) never count. A named top-level package
+an import hook installs (a setuptools editable finder) is found once it is
+imported, not before.
 """
 
 from __future__ import annotations
 
 import functools
 import hashlib
+import os
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -137,26 +140,50 @@ def _module_roots(module: str) -> list[Path]:
 
 
 def _found_roots(module: str) -> list[str | None]:
-    from importlib.machinery import PathFinder  # noqa: PLC0415 - read when a version is asked for
+    """``module``'s folders or file, searched as the path finder would, importing nothing.
 
-    search: list[str] | None = None  # sys.path for the top-level name
-    spec = None
+    Each name is looked for in its parent's folders (``sys.path`` for the top
+    one, a loaded parent's ``__path__``): the first regular package or module
+    wins, and a name found only as folders is a namespace package of them all.
+    """
+    from importlib.machinery import all_suffixes  # noqa: PLC0415 - read when a version is asked for
+
+    search: list[str] = [entry for entry in sys.path if isinstance(entry, str)]
     parts = module.split(".")
-    for index in range(len(parts)):
-        name = ".".join(parts[: index + 1])
-        loaded = sys.modules.get(name)
+    for index, part in enumerate(parts):
+        loaded = sys.modules.get(".".join(parts[: index + 1]))
         if loaded is not None and index < len(parts) - 1:
-            search = list(getattr(loaded, "__path__", None) or [])
+            search = [
+                each for each in getattr(loaded, "__path__", None) or [] if isinstance(each, str)
+            ]
             continue
-        spec = PathFinder.find_spec(name, search)
-        if spec is None:
+        portions: list[str] = []
+        found: list[str | None] | None = None
+        for entry in search:
+            folder = os.path.join(entry or ".", part)
+            if os.path.isfile(os.path.join(folder, "__init__.py")):
+                found = [folder]
+                break
+            file = next(
+                (folder + suffix for suffix in all_suffixes() if os.path.isfile(folder + suffix)),
+                None,
+            )
+            if file is not None:
+                found = [file]
+                break
+            if os.path.isdir(folder):
+                portions.append(folder)
+        if found is None:
+            found = list(portions)
+        if not found:
             return []
-        search = list(spec.submodule_search_locations or [])
-    if spec is None:
-        return []
-    if spec.submodule_search_locations is not None:
-        return list(spec.submodule_search_locations)
-    return [spec.origin]
+        if index < len(parts) - 1:
+            if not os.path.isdir(str(found[0])):  # a module has no submodules
+                return []
+            search = [str(each) for each in found]
+        else:
+            return found
+    return []
 
 
 # --------------------------------------------------------------------------- #
