@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import Command, ConfigError, Key, Plugin, StateRows, UntapedError
+from untaped.sdk.plugin import SpelledCommand
 from untaped.sdk.projects import Project
 from untaped.sdk.run import Run, run_scope
 
@@ -98,6 +100,80 @@ def test_a_damaged_row_offers_the_remove_command(tmp_path: Path) -> None:
     assert caught.value.hint == "correct that row by hand, or remove it with `Remove ada`"
 
 
+def test_a_damaged_list_row_is_named_by_its_place(tmp_path: Path) -> None:
+    folder = tmp_path / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("notes:\n- text: one\n- text: [two]\n")
+    with pytest.raises(ConfigError, match=r"demo\.notes row #2 .* is damaged") as caught:
+        Demo.notes.all()
+    assert caught.value.hint == "correct or remove that row by hand"
+
+
+def test_a_remove_command_the_run_cannot_spell_leaves_the_hand_fix(
+    tmp_path: Path, run: Run
+) -> None:
+    def unknown(spelled: SpelledCommand) -> str:
+        raise LookupError(spelled.command.__name__)
+
+    folder = tmp_path / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("items:\n- name: ada\n  size: lots\n")
+    composition = replace(run.composition, spell=unknown)
+    with run_scope(replace(run, composition=composition)), pytest.raises(ConfigError) as caught:
+        Demo.items.get("ada")
+    assert caught.value.hint == "correct or remove that row by hand"
+
+
+@pytest.mark.parametrize("method", ["add", "put", "update"])
+def test_keyed_writes_on_list_rows_say_the_rows_are_a_list(method: str) -> None:
+    calls = {
+        "add": lambda: Demo.notes.add(Note(text="one")),  # type: ignore[arg-type]
+        "put": lambda: Demo.notes.put(Note(text="one")),
+        "update": lambda: Demo.notes.update("one", lambda note: note),
+    }
+    with pytest.raises(TypeError, match=f"rows are a list .* which {method} cannot"):
+        calls[method]()
+
+
+def test_a_write_that_changes_nothing_leaves_the_file_alone(tmp_path: Path) -> None:
+    path = tmp_path / "plugins" / "demo" / "state.yml"
+    Demo.notes.replace_all(lambda _: [])
+    assert not path.exists()
+    Demo.items.put(Item(name="ada"))
+    path.write_text(path.read_text())  # same content, a known mtime
+    before = path.stat().st_mtime_ns
+    Demo.items.put(Item(name="ada"))
+    assert path.stat().st_mtime_ns == before
+
+
+def test_a_file_without_a_stamp_is_read_and_stamped_on_write(tmp_path: Path) -> None:
+    folder = tmp_path / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("items:\n- name: ada\n")
+    assert Demo.items.keys() == ["ada"]
+    Demo.items.put(Item(name="bob"))
+    assert _file(tmp_path)["untaped"]["file"] == 1  # type: ignore[index]
+
+
+def test_a_stamp_that_is_not_a_mapping_is_damaged(tmp_path: Path) -> None:
+    folder = tmp_path / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("untaped: 1\nitems: []\n")
+    with pytest.raises(ConfigError, match="damaged 'untaped' stamp"):
+        Demo.items.keys()
+
+
+def test_a_failed_write_is_a_config_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.sdk.storage import state
+
+    def refuse(_data: object, path: Path) -> None:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(state, "write_config_dict", refuse)
+    with pytest.raises(ConfigError, match=r"could not write .*Permission denied; nothing changed"):
+        Demo.items.add(Item(name="ada"))
+
+
 def test_a_newer_untapeds_file_is_never_overwritten(tmp_path: Path) -> None:
     folder = tmp_path / "plugins" / "demo"
     folder.mkdir(parents=True)
@@ -140,12 +216,7 @@ def test_composition_refuses_rows_it_cannot_key() -> None:
         bare = StateRows()  # type: ignore[var-annotated]
 
     problems = _shape_problems(Broken)
-    assert (
-        "block-shape",
-        "state rows StateRows created in "
-        + __name__
-        + ": Twice marks a and b Key; a row has one key",
-    ) in problems
+    assert ("block-shape", "Twice marks a and b Key; a row has one key") in problems
     assert any("name the rows' model" in detail for _, detail in problems)
 
 
@@ -157,6 +228,38 @@ def test_state_rows_cannot_be_named_after_the_stamp() -> None:
         untaped = StateRows[Note]()
 
     assert [rule for rule, _ in _shape_problems(Stamped)] == ["block-name"]
+
+
+def test_bound_rows_kept_per_project_take_a_remove_command(tmp_path: Path) -> None:
+    class PerProject(Plugin):
+        """Per project."""
+
+        settings = Settings
+        commands = (Remove,)
+        checkouts = StateRows[Item].per_project(remove=Remove)
+
+    assert PerProject.checkouts.remove is Remove
+    project = Project(id="0123456789ab", root=tmp_path / "proj")
+    PerProject.checkouts.of(project).add(Item(name="ada"))
+    assert PerProject.checkouts.of(project).keys() == ["ada"]
+
+
+def test_the_11x_spelling_keeps_its_repr_and_compares_by_name() -> None:
+    first = StateRows("acme", "spelled_things", model=Item, key_field="name")
+    again = StateRows("acme", "spelled_things", model=Item, key_field="name")
+    assert repr(first) == "StateRows('acme', 'spelled_things')"
+    assert first == again
+
+
+def test_a_subscripted_11x_per_project_keeps_its_spelling() -> None:
+    rows = StateRows[Item].per_project("acme", "spelled_checkouts", model=Item, key_field="name")
+    assert rows.spelled
+    assert repr(rows) == "ProjectStateRows('acme', 'spelled_checkouts')"
+
+
+def test_the_11x_spelling_per_project_takes_no_remove_command() -> None:
+    with pytest.raises(ConfigError, match="remove= goes with a plugin class"):
+        StateRows.per_project("acme", "nope", model=Item, key_field="name", remove=Remove)
 
 
 def test_the_state_file_stamps_as_every_data_file_does() -> None:

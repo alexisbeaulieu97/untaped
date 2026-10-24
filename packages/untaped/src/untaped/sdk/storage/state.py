@@ -18,19 +18,19 @@ a project live in its own ``.untaped/state.yml``
 
 from __future__ import annotations
 
-import os
+import copy
 import sys
 import types
 import typing
 import weakref
 from collections.abc import Callable, Mapping, Sequence
-from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
 from pydantic import AliasChoices, BaseModel, ValidationError
 
 from untaped.runtime.config_file import (
+    locked_write,
     mutate_plugin_state,
     read_config_dict,
     read_plugin_state,
@@ -40,7 +40,6 @@ from untaped.runtime.settings import CORE_STATE_SECTIONS, RESERVED_SECTIONS, res
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
 from untaped.sdk.marks import experimental
-from untaped.sdk.storage._fs import file_lock
 
 if TYPE_CHECKING:
     from untaped.sdk.plugin import Command
@@ -302,11 +301,7 @@ class StateRows[M: BaseModel](OwnedBlock):
         return None
 
     def problems(self) -> tuple[str, ...]:
-        try:
-            self._shape()
-        except ConfigError as exc:
-            return (str(exc),)
-        return ()
+        return _shape_problems(self)
 
     @property
     def _file(self) -> _RowFile | _PluginFile:
@@ -343,6 +338,8 @@ class StateRows[M: BaseModel](OwnedBlock):
         return hash(self._identity())
 
     def __repr__(self) -> str:
+        if self.spelled:
+            return f"StateRows({self._plugin!r}, {self._name!r})"
         return f"StateRows({self.where!r})"
 
     def path(self) -> Path:
@@ -377,13 +374,14 @@ class StateRows[M: BaseModel](OwnedBlock):
         """Append ``value`` to rows that are a list (their model has no ``Key`` field)."""
         if self._shape().key is not None:
             raise TypeError(
-                f"{self.where} rows are keyed: add, put or update one instead of appending"
+                f"{_label(self)} rows are keyed: add, put or update one instead of appending"
             )
         self._check_type(value)
         self._file.mutate(lambda rows: [*rows, self._dump(value)])
 
     def add(self, value: M) -> None:
         """Append ``value``; :class:`RowExists` when its key already has a row."""
+        self._key_name("add")
         key = self._key_of(value)
 
         def _add(rows: list[Any]) -> list[Any]:
@@ -398,6 +396,7 @@ class StateRows[M: BaseModel](OwnedBlock):
 
     def put(self, value: M) -> None:
         """Replace the row with ``value``'s key in place, or append ``value``."""
+        self._key_name("put")
         key = self._key_of(value)
 
         def _put(rows: list[Any]) -> list[Any]:
@@ -416,6 +415,7 @@ class StateRows[M: BaseModel](OwnedBlock):
         ``change`` must keep the key, and must not write state itself (a
         nested write to the file is refused).
         """
+        self._key_name("update")
         updated: M | None = None
 
         def _update(rows: list[Any]) -> list[Any] | None:
@@ -487,15 +487,7 @@ class StateRows[M: BaseModel](OwnedBlock):
 
     def _shape(self) -> _Shape:
         if self._resolved is None:
-            model: object = self.model
-            if model is None:
-                model = _model_argument(self)
-            elif not isinstance(model, type):
-                model = model()  # type: ignore[operator]
-            if self.key_field is None:
-                self._resolved = _marked_shape(self.where, model)
-            else:
-                self._resolved = _shape_of(self.where, model, self.key_field)
+            self._resolved = _resolved_shape(self)
         return self._resolved
 
     def _key_name(self, method: str) -> str:
@@ -503,7 +495,7 @@ class StateRows[M: BaseModel](OwnedBlock):
         key = self._shape().key
         if key is None:
             raise TypeError(
-                f"{self.where} rows are a list (their model has no Key field), which {method} "
+                f"{_label(self)} rows are a list (their model has no Key field), which {method} "
                 "cannot read: use all, append and replace_all"
             )
         return key
@@ -577,7 +569,10 @@ class StateRows[M: BaseModel](OwnedBlock):
         if self.remove is not None:
             from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
-            return current_run().composition.spell(self.remove.spelled(key))
+            try:
+                return current_run().composition.spell(self.remove.spelled(key))
+            except LookupError:  # a command this run did not compose: the hand fix alone
+                return None
         return None if self.remove_hint is None else self.remove_hint.format(key=key)
 
     def _damaged(self, label: str, key: str | None, problem: str) -> ConfigError:
@@ -627,12 +622,16 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
                     f"state rows {plugin}.{name}: the 11.x spelling takes the plugin, the name, "
                     "model= and key_field="
                 )
+            if remove is not None:
+                raise ConfigError(f"state rows {plugin}.{name}: remove= goes with a plugin class")
             _check_declaration(plugin, name, model, key_field, remove_hint)
         elif key_field is not None or remove_hint is not None:
             raise ConfigError(
                 "state rows a plugin class holds take their key from the field marked "
                 "Key and their remove command as remove=, not key_field= or remove_hint="
             )
+        if model is not None and not callable(model):
+            raise ConfigError("state rows: model takes a model class or a function returning one")
         super().__init__(plugin, name)
         self.model = model
         self.key_field = key_field
@@ -647,17 +646,7 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
         return StateRows.name_problem(name)
 
     def problems(self) -> tuple[str, ...]:
-        try:
-            model = self.model if self.model is not None else _model_argument(self)
-            if not isinstance(model, type):
-                model = model()  # type: ignore[operator]
-            if self.key_field is None:
-                _marked_shape(self.where, model)
-            else:
-                _shape_of(self.where, model, self.key_field)
-        except ConfigError as exc:
-            return (str(exc),)
-        return ()
+        return _shape_problems(self)
 
     @property
     def qualified(self) -> str:
@@ -684,13 +673,15 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
         return hash(self._identity())
 
     def __repr__(self) -> str:
+        if self.spelled:
+            return f"ProjectStateRows({self._plugin!r}, {self._name!r})"
         return f"ProjectStateRows({self.where!r})"
 
     def of(self, project: Project) -> StateRows[M]:
         """This project's rows."""
         from untaped.sdk.projects import DIRECTORY  # noqa: PLC0415 - projects imports the registry
 
-        model = self.model if self.model is not None else _model_argument(self)
+        model = self.model if self.model is not None else _resolved_shape(self).model
         if self.spelled:
             return StateRows._bound(
                 self.plugin,
@@ -699,7 +690,7 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
                 self.key_field,
                 self.omit_none,
                 self.remove_hint,
-                project.root / DIRECTORY / _STATE_FILE,
+                project_state_path(project),
             )
         plugin, name = self.plugin, self.name
         return StateRows._bound(
@@ -777,36 +768,72 @@ class _Shape(typing.NamedTuple):
     """The key field's name on the model."""
 
 
-def _shape_of(qualified: str, model: object, key_field: str) -> _Shape:
-    model = _row_model(qualified, model)
+class _ShapeProblem(ValueError):
+    """Why rows cannot be read: their model or its ``Key`` marks; the caller names the rows."""
+
+
+def _resolved_shape(rows: StateRows[Any] | ProjectStateRows[Any]) -> _Shape:
+    """The shape of ``rows``; :class:`ConfigError` naming them when they have none."""
+    try:
+        return _shape_from(rows)
+    except _ShapeProblem as exc:
+        raise ConfigError(f"state rows {_label(rows)}: {exc}") from None
+
+
+def _shape_problems(rows: StateRows[Any] | ProjectStateRows[Any]) -> tuple[str, ...]:
+    """Why composition refuses ``rows``, which it names itself."""
+    try:
+        _shape_from(rows)
+    except _ShapeProblem as exc:
+        return (str(exc),)
+    return ()
+
+
+def _shape_from(rows: StateRows[Any] | ProjectStateRows[Any]) -> _Shape:
+    model: object = rows.model
+    if model is None:
+        model = _model_argument(rows)
+    elif not isinstance(model, type):
+        model = model()  # type: ignore[operator]
+    if rows.key_field is not None:
+        return _shape_of(model, rows.key_field)
+    return _marked_shape(model)
+
+
+def _label(rows: StateRows[Any] | ProjectStateRows[Any]) -> str:
+    """How a message names ``rows``: ``acme.items``, or where they were made outside a run."""
+    try:
+        return rows.qualified
+    except LookupError, RuntimeError:  # unbound, or no run to name the plugin
+        return rows.where
+
+
+def _shape_of(model: object, key_field: str) -> _Shape:
+    model = _row_model(model)
     field = model.model_fields.get(key_field)
     if field is None or field.annotation is not str or not field.is_required():
-        raise ConfigError(
-            f"state rows {qualified}: key_field {key_field!r} must be a required str field "
-            f"of {model.__name__}"
+        raise _ShapeProblem(
+            f"key_field {key_field!r} must be a required str field of {model.__name__}"
         )
     return _Shape(model, field.serialization_alias or field.alias or key_field, key_field)
 
 
-def _marked_shape(qualified: str, model: object) -> _Shape:
+def _marked_shape(model: object) -> _Shape:
     """The rows' shape from the model's one field marked ``Key``; none makes them a list."""
     from untaped.sdk.fields import Key  # noqa: PLC0415 - fields imports the declaration's blocks
 
-    model = _row_model(qualified, model)
+    model = _row_model(model)
     marked = [name for name, field in model.model_fields.items() if Key in field.metadata]
     if not marked:
         return _Shape(model, None)
     if len(marked) > 1:
-        raise ConfigError(
-            f"state rows {qualified}: {model.__name__} marks {' and '.join(marked)} Key; "
-            "a row has one key"
-        )
-    return _shape_of(qualified, model, marked[0])
+        raise _ShapeProblem(f"{model.__name__} marks {' and '.join(marked)} Key; a row has one key")
+    return _shape_of(model, marked[0])
 
 
-def _row_model(qualified: str, model: object) -> type[BaseModel]:
+def _row_model(model: object) -> type[BaseModel]:
     if not (isinstance(model, type) and issubclass(model, BaseModel)):
-        raise ConfigError(f"state rows {qualified}: model is not a pydantic model: {model!r}")
+        raise _ShapeProblem(f"model is not a pydantic model: {model!r}")
     return model
 
 
@@ -815,14 +842,16 @@ def _model_argument(rows: StateRows[Any] | ProjectStateRows[Any]) -> object:
     alias = getattr(rows, "__orig_class__", None)
     args: tuple[object, ...] = getattr(alias, "__args__", ())
     if len(args) != 1:
-        raise ConfigError(f"state rows {rows.where}: name the rows' model, as in StateRows[Item]()")
+        raise _ShapeProblem("name the rows' model, as in StateRows[Item]()")
     return args[0]
 
 
 class _RowsAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,name-defined,misc]
     """``StateRows[Item]``: the alias that hands its model to ``.per_project()`` too."""
 
-    def per_project(self, **options: Any) -> ProjectStateRows[Any]:
+    def per_project(self, *args: Any, **options: Any) -> ProjectStateRows[Any]:
+        if args or "plugin" in options or "model" in options:  # the 11.x spelling
+            return self.__origin__.per_project(*args, **options)  # type: ignore[no-any-return]
         return ProjectStateRows(model=self.__args__[0], **options)
 
 
@@ -839,8 +868,6 @@ STAMP = "untaped"
 _STATE_FILE = "state.yml"
 #: How long a write waits for another process writing the same state file.
 _WRITE_WAIT = 10.0
-#: The plugin state files this context is writing: a nested write would be saved over.
-_WRITING: ContextVar[frozenset[str]] = ContextVar("untaped_state_writing", default=frozenset())
 
 
 class _PluginFile:
@@ -860,35 +887,13 @@ class _PluginFile:
         return self.rows(self._load())
 
     def mutate(self, fn: Callable[[list[Any]], list[Any] | None]) -> None:
-        """Replace the rows under the file's lock; ``None`` from ``fn`` writes nothing."""
-        real = os.path.realpath(self._path)
-        writing = _WRITING.get()
-        if real in writing:
-            raise UntapedError(
-                f"a write to {self._path} started inside another write to it; the inner "
-                "write is refused so the outer one cannot save over it",
-                details={"path": str(self._path)},
-            )
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise ConfigError(
-                f"could not create the directory for {self._path}: {exc.strerror or exc}"
-            ) from exc
-        with file_lock(
-            self._path.with_name(f".{_STATE_FILE}.lock"),
-            timeout=_WRITE_WAIT,
-            error=ConfigError,
-            busy=f"{self.plugin} state is busy (another untaped process)",
-            failed=f"could not lock {self._path}",
-        ):
+        """Replace the rows under the file's lock; ``None`` or the same rows write nothing."""
+        busy = f"{self.plugin} state is busy (another untaped process)"
+        with locked_write(self._path, timeout=_WRITE_WAIT, busy=busy):
             state = self._load()
-            token = _WRITING.set(writing | {real})
-            try:
-                replacement = fn(self.rows(state))
-            finally:
-                _WRITING.reset(token)
-            if replacement is None:
+            before = self.rows(state)
+            replacement = fn(copy.deepcopy(before))
+            if replacement is None or replacement == before:
                 return
             if replacement:
                 state[self.name] = replacement
@@ -900,7 +905,12 @@ class _PluginFile:
             )
 
             state[STAMP] = {"file": FILE, "by": written_by()}
-            write_config_dict(state, self._path)
+            try:
+                write_config_dict(state, self._path)
+            except OSError as exc:
+                raise ConfigError(
+                    f"could not write {self._path}: {exc.strerror or exc}; nothing changed"
+                ) from exc
 
     def _load(self) -> dict[str, Any]:
         from untaped.sdk.storage.data_file import (  # noqa: PLC0415 - kept off startup
