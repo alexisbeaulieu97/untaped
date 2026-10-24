@@ -838,10 +838,12 @@ class _CommandWalk:
                 "settings-model", where, "Parallel's default reads another plugin's settings"
             )
         for option in block.options:
+            choices: tuple[str, ...] = ()
+            initial: str | None = None
             if option.flag == "--format" and isinstance(default, Output):
                 choices = default.formats
-            else:
-                choices = ()
+                # ``table`` is every command's, so only another default is recorded
+                initial = None if default.default_format == "table" else default.default_format
             seen.options.append(
                 OptionDecl(
                     field=path,
@@ -854,6 +856,7 @@ class _CommandWalk:
                     help=option.help,
                     panel=block.panel,
                     block=block.field_kind,
+                    default=initial,
                 )
             )
 

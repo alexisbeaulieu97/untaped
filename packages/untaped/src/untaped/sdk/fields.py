@@ -358,7 +358,9 @@ class Output[R: BaseModel](FieldBlock):
     fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
     its own default columns, ``Output(render={"tree": render_tree})`` adds a
-    format of the plugin's own.
+    format of the plugin's own, and ``Output(format="raw")`` makes another
+    format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
+    ``untaped.ui.format``).
     """
 
     field_kind = "output"
@@ -375,9 +377,14 @@ class Output[R: BaseModel](FieldBlock):
         *,
         columns: Sequence[str] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
+        format: str = "table",
     ) -> None:
         self._declared = tuple(columns)
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
+        if format not in self.formats:
+            raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
+        #: The format a run without ``--format`` prints.
+        self.default_format = format
         #: The format ``--format`` chose (``table`` when unfilled).
         self.format = "table"
         #: The table's default columns this run: the declared ones, or ``R``'s
@@ -407,7 +414,7 @@ class Output[R: BaseModel](FieldBlock):
         model = _type_argument(call.annotation)
         requested = flags.get("--columns")
         filled = _copy(self)
-        filled.format = str(flags.get("--format") or "table")
+        filled.format = str(flags.get("--format") or self.default_format)
         filled._requested = list(requested) if isinstance(requested, list) else None
         filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None

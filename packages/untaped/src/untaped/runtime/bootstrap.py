@@ -26,7 +26,6 @@ from untaped.core.commands import (
     build_root_auth_app,
     build_root_config_app,
     build_root_doctor_app,
-    build_root_profile_app,
     build_root_setup_app,
     build_root_skills_app,
 )
@@ -126,7 +125,7 @@ SHELL_SPEC = ApplicationSpec(
     ),
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "config", "profile", "skills", "doctor", "setup", "auth"),
+    commands=("agents", "config", "skills", "doctor", "setup", "auth"),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -304,7 +303,6 @@ def build_root_app(
     management = {
         "agents": build_root_agents_app(result=result, root=lambda: root),
         "config": build_root_config_app(shell=SHELL_SPEC, result=result),
-        "profile": build_root_profile_app(),
         "skills": build_root_skills_app(shell=SHELL_SPEC, result=result),
         "doctor": build_root_doctor_app(
             shell=SHELL_SPEC,

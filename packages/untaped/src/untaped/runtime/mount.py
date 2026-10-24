@@ -447,7 +447,7 @@ def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
             metadata.append(mark)
     if option.flag == "--format":
         settings["show_default"] = format_default
-        return Annotated[value, Parameter(**settings), *metadata], "table"
+        return Annotated[value, Parameter(**settings), *metadata], option.default or "table"
     if option.required and option.block is None:
         return Annotated[value, Parameter(**settings), *metadata], inspect.Parameter.empty
     shown = option.default is not None and option.default is not False

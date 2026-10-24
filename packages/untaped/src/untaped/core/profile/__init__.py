@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from untaped.core.profile.models import Profile, ProfileDeletePreview
+from untaped.core.profile.models import ProfileDeletePreview, StoredProfile
 
 __all__ = [
-    "Profile",
     "ProfileDeletePreview",
+    "StoredProfile",
 ]

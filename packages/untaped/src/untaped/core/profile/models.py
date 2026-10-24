@@ -12,7 +12,7 @@ from untaped.sdk.records import OutcomeRecord, Record, TableGlyph
 
 
 @dataclass(frozen=True)
-class Profile:
+class StoredProfile:
     """One profile entry with its raw YAML data and metadata.
 
     ``data`` is the verbatim ``profiles.<name>`` block (no fallback merge);
@@ -38,7 +38,7 @@ class ProfileDeletePreview:
     top_level_keys: tuple[str, ...]
 
 
-class ProfileRow(Record, kind="untaped.profile"):
+class Profile(Record, kind="untaped.profile"):
     """One row of ``profile list``."""
 
     name: str
@@ -60,6 +60,15 @@ class ProfilePick(Record, kind="untaped.profile_pick"):
         description="The pick as one `--profile` value: the names comma-joined, else `default`."
     )
     profiles: list[PickedProfile]
+
+
+class ProfileView(Record, kind="untaped.profile_view"):
+    """``profile show``: one profile's settings, or the run's pick merged."""
+
+    name: str = Field(description="The profile, or the pick comma-joined.")
+    selected: bool = Field(description="The run reads it.")
+    raw: bool = Field(description="Only the keys the profile itself sets, not merged.")
+    data: dict[str, Any] = Field(description="The settings, secrets shown as *** by default.")
 
 
 class ProfileOutcome(OutcomeRecord, kind="untaped.profile_outcome"):

@@ -3814,7 +3814,7 @@ cli untaped profile
 cli untaped profile create --columns VALUE... default=unset
 cli untaped profile create --columns alias=-c
 cli untaped profile create --copy-from VALUE default=unset
-cli untaped profile create --dry-run switch
+cli untaped profile create --dry-run switch default=unset
 cli untaped profile create --format VALUE default=table
 cli untaped profile create --format alias=-f
 cli untaped profile create --format choice=json
@@ -3835,7 +3835,7 @@ cli untaped profile current --format choice=table
 cli untaped profile current --format choice=yaml
 cli untaped profile delete --columns VALUE... default=unset
 cli untaped profile delete --columns alias=-c
-cli untaped profile delete --dry-run switch
+cli untaped profile delete --dry-run switch default=unset
 cli untaped profile delete --format VALUE default=table
 cli untaped profile delete --format alias=-f
 cli untaped profile delete --format choice=json
@@ -3844,7 +3844,7 @@ cli untaped profile delete --format choice=raw
 cli untaped profile delete --format choice=table
 cli untaped profile delete --format choice=yaml
 cli untaped profile delete --yes alias=-y
-cli untaped profile delete --yes switch
+cli untaped profile delete --yes switch default=unset
 cli untaped profile delete NAME
 cli untaped profile list
 cli untaped profile list --columns VALUE... default=unset
@@ -3858,7 +3858,7 @@ cli untaped profile list --format choice=table
 cli untaped profile list --format choice=yaml
 cli untaped profile rename --columns VALUE... default=unset
 cli untaped profile rename --columns alias=-c
-cli untaped profile rename --dry-run switch
+cli untaped profile rename --dry-run switch default=unset
 cli untaped profile rename --format VALUE default=table
 cli untaped profile rename --format alias=-f
 cli untaped profile rename --format choice=json
@@ -3868,12 +3868,17 @@ cli untaped profile rename --format choice=table
 cli untaped profile rename --format choice=yaml
 cli untaped profile rename OLD_NAME NEW_NAME
 cli untaped profile show
+cli untaped profile show --columns VALUE... default=unset
+cli untaped profile show --columns alias=-c
 cli untaped profile show --format VALUE default=yaml
 cli untaped profile show --format alias=-f
 cli untaped profile show --format choice=json
+cli untaped profile show --format choice=pipe
+cli untaped profile show --format choice=raw
+cli untaped profile show --format choice=table
 cli untaped profile show --format choice=yaml
-cli untaped profile show --raw switch
-cli untaped profile show --show-secrets switch
+cli untaped profile show --raw switch default=unset
+cli untaped profile show --show-secrets switch default=unset
 cli untaped profile show [NAME]@1 default=unset
 cli untaped project  [experimental]
 cli untaped project init  [experimental]
@@ -4533,6 +4538,11 @@ convention entry-point untaped.plugins
 convention file fills.json
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
+record untaped.PickedProfile
+record untaped.PickedProfile.name string
+record untaped.PickedProfile.source choice=env
+record untaped.PickedProfile.source choice=flag
+record untaped.PickedProfile.source string
 record untaped.contract_method
 record untaped.contract_method.contract string
 record untaped.contract_method.method string
@@ -4606,6 +4616,24 @@ record untaped.message.level choice=success
 record untaped.message.level choice=warning
 record untaped.message.level string
 record untaped.message.message string
+record untaped.profile
+record untaped.profile.keys integer
+record untaped.profile.name string
+record untaped.profile.selected boolean
+record untaped.profile_outcome
+record untaped.profile_outcome.action string
+record untaped.profile_outcome.copied_from string?
+record untaped.profile_outcome.error Failure?
+record untaped.profile_outcome.name string
+record untaped.profile_outcome.previous_name string?
+record untaped.profile_pick
+record untaped.profile_pick.name string
+record untaped.profile_pick.profiles PickedProfile[]
+record untaped.profile_view
+record untaped.profile_view.data object
+record untaped.profile_view.name string
+record untaped.profile_view.raw boolean
+record untaped.profile_view.selected boolean
 record untaped.progress
 record untaped.progress.done integer?
 record untaped.progress.elapsed number
@@ -5568,6 +5596,7 @@ sdk untaped.sdk.OutcomeRecord.failed
 sdk untaped.sdk.OutcomeRecord.table_columns class
 sdk untaped.sdk.Output()
 sdk untaped.sdk.Output(columns=) default=[]
+sdk untaped.sdk.Output(format=) default=table
 sdk untaped.sdk.Output(render=) default=None callback(*)
 sdk untaped.sdk.Output.empty(text)
 sdk untaped.sdk.Output.field_kind class
