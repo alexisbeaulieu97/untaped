@@ -51,8 +51,8 @@ delete it and run `untaped setup`, or keep untaped 11.1 for that home.
 or a `format_version` that is not a positive integer, is refused on read and
 on write (exit 4): upgrade untaped instead of letting an older release misread
 it. `config edit` refuses to open while `config.yml` or `state.yml` has a
-newer format, but opens a config with an invalid `format_version` so you can
-fix it.
+newer format, but opens a config with an invalid `format_version`, or one
+written by 11.x, so you can fix it; the edit is saved only as format 2.
 
 `config` and `profile` commands write only `config.yml`; plugin state
 writes touch only `state.yml`.

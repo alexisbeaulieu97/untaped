@@ -295,6 +295,26 @@ def test_config_edit_names_a_newer_draft_format(
     assert kept.read_text() == draft
 
 
+def test_config_edit_opens_an_11x_config_and_saves_it_only_as_format_2(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    eleven = "profiles:\n  default:\n    jira: {timeout: 5}\n"
+    write_config(_isolated_config, eleven)
+    _scripted_editor(tmp_path, monkeypatch, "jira: {timeout: 5}\n")
+    refused = CliInvoker().invoke(_config_app(), ["edit"])
+    assert refused.exit_code == 1, refused.output
+    assert f"error: the edit is not format {FORMAT_VERSION}" in refused.stderr
+    assert "11.x" not in refused.stderr
+    assert f"hint: start it with `format_version: {FORMAT_VERSION}`" in refused.stderr
+    assert _isolated_config.read_text() == eleven
+
+    rewritten = f"format_version: {FORMAT_VERSION}\njira: {{timeout: 5}}\n"
+    _scripted_editor(tmp_path, monkeypatch, rewritten)
+    saved = CliInvoker().invoke(_config_app(), ["edit"])
+    assert saved.exit_code == 0, saved.output
+    assert _isolated_config.read_text() == rewritten
+
+
 def test_config_edit_saves_verbatim_owner_only_and_through_a_symlink(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

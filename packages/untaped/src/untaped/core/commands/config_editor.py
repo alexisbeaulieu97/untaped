@@ -11,6 +11,7 @@ from untaped.runtime.config_file import read_config_text, replace_config_text
 from untaped.runtime.settings import (
     FORMAT_VERSION,
     NewerFormatError,
+    OlderFormatError,
     check_config_text,
     load_state_yaml,
     resolve_config_path,
@@ -66,6 +67,15 @@ def run_config_editor() -> None:
                     f"(format {FORMAT_VERSION})",
                     category="invalid",
                 ) from exc
+            except OlderFormatError as exc:
+                raise ConfigError(
+                    f"the edit is not format {FORMAT_VERSION}",
+                    category="invalid",
+                    hint=(
+                        f"start it with `format_version: {FORMAT_VERSION}`, the base's sections "
+                        "at the top and named profiles under `profiles:`"
+                    ),
+                ) from exc
             except ConfigError as exc:
                 # The edit is the invalid input here, not the setup.
                 raise ConfigError(str(exc), category="invalid") from exc
@@ -93,7 +103,10 @@ def run_config_editor() -> None:
 
 
 def _refuse_a_newer_format(check: Callable[[], object]) -> None:
-    """Never edit beside a file a newer untaped wrote; leave any other error to repair."""
+    """Never edit beside a file a newer untaped wrote; leave any other error to repair.
+
+    An 11.x ``config.yml`` opens too, so it can be rewritten by hand as format 2.
+    """
     try:
         check()
     except NewerFormatError:

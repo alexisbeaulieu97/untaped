@@ -542,11 +542,10 @@ def _token_store_row(shell: ApplicationSpec, raw: dict[str, Any]) -> dict[str, o
 
 
 def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
-    """Warn about keys no settings model reads: typos in profiles, stray top-level keys.
+    """Warn about keys no settings model reads, in the base and in each named profile.
 
-    Only ``active``, ``profiles`` and ``format_version`` are read at the top
-    level, so anything else there (a pre-8.0 state section, ``log_level``) is
-    flagged, not moved.
+    The top level is the base, so a section there no installed plugin reads
+    (``log_level``, an uninstalled plugin's section) is flagged, not moved.
     """
     title = "unknown config keys"
     model = get_profile_settings_model()

@@ -133,7 +133,7 @@ def _rename_profiles(
     raw: dict[str, Any], models: SectionModels, active: str | None
 ) -> tuple[dict[str, Any], dict[str, dict[str, tuple[KeyUse, ...]]]]:
     """Copy of ``raw`` with the layered profiles' sections at current key names."""
-    if not models or not isinstance(raw.get("profiles", {}), dict):
+    if not models or not isinstance(raw.get("profiles") or {}, dict):
         return raw, {}  # ``resolve_profiles`` reports a malformed ``profiles``
     layered = {DEFAULT_PROFILE, active or DEFAULT_PROFILE}
     renamed = {**raw, "profiles": dict(raw.get("profiles") or {})}

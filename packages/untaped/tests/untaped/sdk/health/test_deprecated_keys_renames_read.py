@@ -95,6 +95,16 @@ def test_old_key_is_read_with_a_warning_once_per_process(
     assert capsys.readouterr().err.count(RENAMED) == 1
 
 
+def test_an_empty_profiles_key_still_reads_the_base_s_old_keys(
+    config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    register_profile_settings("demo", DemoSettings)
+    config.write_text("format_version: 2\ndemo:\n  corpus_path: /old\nprofiles:\n")
+
+    assert get_config_section("demo", DemoSettings).cache_dir == "/old"
+    assert RENAMED in capsys.readouterr().err
+
+
 def test_both_spellings_in_one_profile_the_new_key_wins(
     config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
