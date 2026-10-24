@@ -4898,6 +4898,33 @@ sdk untaped.sdk.Diagnostics.relay(text)
 sdk untaped.sdk.Diagnostics.success(text)
 sdk untaped.sdk.Diagnostics.warning(hint=) default=None
 sdk untaped.sdk.Diagnostics.warning(text)
+sdk untaped.sdk.Dir()  [experimental]
+sdk untaped.sdk.Dir(at=) default=None  [experimental]
+sdk untaped.sdk.Dir(file=) default=None  [experimental]
+sdk untaped.sdk.Dir(layout=) default=None  [experimental]
+sdk untaped.sdk.Dir(wait=) default=None  [experimental]
+sdk untaped.sdk.Dir.base  [experimental]
+sdk untaped.sdk.Dir.binding  [experimental]
+sdk untaped.sdk.Dir.bindings  [experimental]
+sdk untaped.sdk.Dir.block_kind class  [experimental]
+sdk untaped.sdk.Dir.derived_name(attribute)  [experimental]
+sdk untaped.sdk.Dir.lock_path()  [experimental]
+sdk untaped.sdk.Dir.lock_path(name@1=) default=None  [experimental]
+sdk untaped.sdk.Dir.locked()  [experimental]
+sdk untaped.sdk.Dir.locked(name@1=) default=None  [experimental]
+sdk untaped.sdk.Dir.module  [experimental]
+sdk untaped.sdk.Dir.name  [experimental]
+sdk untaped.sdk.Dir.name_problem(name)  [experimental]
+sdk untaped.sdk.Dir.name_style class  [experimental]
+sdk untaped.sdk.Dir.open()  [experimental]
+sdk untaped.sdk.Dir.path()  [experimental]
+sdk untaped.sdk.Dir.plugin  [experimental]
+sdk untaped.sdk.Dir.problems()  [experimental]
+sdk untaped.sdk.Dir.prune()  [experimental]
+sdk untaped.sdk.Dir.spelled  [experimental]
+sdk untaped.sdk.Dir.try_locked()  [experimental]
+sdk untaped.sdk.Dir.try_locked(name@1=) default=None  [experimental]
+sdk untaped.sdk.Dir.where  [experimental]
 sdk untaped.sdk.DirMigration(*, title, preview, apply) callback(preview, 2) callback(apply, 2)
 sdk untaped.sdk.DirMigration(id@1=) default=None
 sdk untaped.sdk.DirMigration.apply

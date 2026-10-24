@@ -354,6 +354,20 @@ DotfilesPlugin.sync.locked():` waits that long for another process
 `try_locked()` yields whether it got it, and taking it again in one thread
 only counts.
 
+A folder of the plugin's own is a `Dir` on the plugin class. `notes =
+Dir()` is `plugins/<plugin>/notes/` under the home; `checkouts =
+Dir(at=key(WorkspaceSettings).workspaces_dir)` is the folder a path
+setting names. `layout=N` numbers it as a store numbers its layouts, so two
+installs never open each other's data, and `file="index.sqlite3"` makes it
+one file per layout (`index.v4.sqlite3`). `open()` creates the folder and
+returns the path (a numbered one holds its layout for the process), `prune()`
+removes the other layouts nothing holds, and `locked(name)` holds the lock of
+one thing in the place (`locked()` the whole place) for the declared
+`wait=`; `try_locked(name)` tries once. The lock files stay in the plugin's
+folder, never in the place. Locks are taken in one order: a plugin's own
+before its provider's, so workspace's lock inside git's fails, naming both.
+A `Dir` cannot be named `cached`, `state` or `untaped`: core keeps those.
+
 ## Status rows and tests
 
 For a command that reports a cache's state, subclass `FreshnessRecord` and
