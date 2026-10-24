@@ -44,6 +44,7 @@ from untaped.runtime.settings import (
     legacy_credential_fields,
     reserved_section_keys,
     section_model,
+    timed_caches,
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._block import OwnedBlock
@@ -437,7 +438,8 @@ class PluginSpec:
     surface, and its warnings name this plugin's distribution.
 
     ``caches`` are the :class:`~untaped.sdk.storage.cache.Cache` objects the plugin
-    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``.
+    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``,
+    except a version-only one (``max_age=None``), which has none.
     ``stores`` is what the plugin keeps on disk outside its settings: the
     :class:`~untaped.sdk.storage.store.Store` objects, each file in a layout of its own
     (``doctor`` lists them), and the :class:`~untaped.sdk.storage.holds.ItemStore`
@@ -566,11 +568,12 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     reference documents it elsewhere).
     """
     owner = extensions and owns_contracts(spec)
-    if owner or spec.caches or spec.credentials:
+    caches = timed_caches(spec.caches)
+    if owner or caches or spec.credentials:
         return section_model(
             spec.settings or _NoSettings,
             extensions=owner,
-            caches=spec.caches,
+            caches=caches,
             section=spec.name,
             credentials=spec.credentials,
         )
@@ -1006,7 +1009,7 @@ def _check_section_keys(spec: PluginSpec) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
         ({"extensions"} if owns_contracts(spec) else set())
-        | ({"caches"} if spec.caches else set())
+        | ({"caches"} if timed_caches(spec.caches) else set())
         | set(
             legacy_credential_fields(
                 spec.settings or _NoSettings, spec.credentials, section=spec.name

@@ -309,6 +309,7 @@ def section_model(
     still supply it (:func:`legacy_credential_fields`, which marks them),
     unless the model declares them itself.
     """
+    caches = timed_caches(caches)
     renamed = _cache_renames(model, caches)
     if renamed:
         model = cast(
@@ -423,14 +424,24 @@ def _cache_renames(
     }
 
 
+def timed_caches(caches: Iterable[Cache[Any]]) -> tuple[Cache[Any], ...]:
+    """The caches with a max age: each has a ``caches.<name>.max_age_seconds`` setting.
+
+    A version-only cache (``max_age=None``) has none.
+    """
+    return tuple(cache for cache in caches if not cache.version_only)
+
+
 def _caches_model(model: type[BaseModel], caches: tuple[Cache[Any], ...]) -> type[BaseModel]:
     """The ``caches`` key's model: one :class:`CacheSettings` field per cache."""
     fields: dict[str, Any] = {}
     for declared in caches:
+        max_age = declared.default_max_age
+        assert max_age is not None  # timed_caches(): only a cache with a max age has a setting
         seconds: Any = (
             int,
             Field(
-                default=int(declared.default_max_age.total_seconds()),
+                default=int(max_age.total_seconds()),
                 ge=0,
                 description=(
                     f"Seconds {declared.label} is served before untaped checks upstream; "

@@ -593,6 +593,30 @@ def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
     ]
 
 
+def test_refresh_refuses_a_version_only_cache_even_on_the_plugin_class() -> None:
+    held = Cache(
+        label="composed", max_age=None, model=HelloSettings, version=lambda: "1", split="none"
+    )
+
+    class Again(Command):
+        """Again."""
+
+        refresh: Refresh = Refresh(held)
+
+        def run(self) -> None:
+            return None
+
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = HelloSettings
+        commands = (Again,)
+        composed = held
+
+    [problem] = _problems(Demo)
+    assert (problem.rule, "version-only" in problem.detail) == ("refresh-cache", True)
+
+
 def test_a_record_class_belongs_to_the_plugin_whose_package_defines_it() -> None:
     class Peer(Plugin):
         """Peer."""

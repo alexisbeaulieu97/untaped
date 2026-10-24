@@ -199,7 +199,7 @@ untaped config set ui.symbols '{"success": "✓", "error": "✗"}'
 untaped config edit
 ```
 
-Each cache a plugin keeps has a setting
+Each cache a plugin keeps from an upstream has a setting
 `<plugin>.caches.<cache>.max_age_seconds`: how long its data is used before
 untaped checks upstream again (`0` checks every time). The
 [config reference](./reference/config.md) lists them.

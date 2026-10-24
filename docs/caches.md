@@ -25,7 +25,8 @@ def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> Non
 ```
 
 List each cache on your spec, `PluginSpec(..., caches=(MOTD,))`: that
-gives it the setting `acme.caches.motd.max_age_seconds`, defaulting to the
+gives it the setting `acme.caches.motd.max_age_seconds` (a version-only
+cache, below, has none), defaulting to the
 declared `max_age` (in whole seconds; `0` checks every time), listed with your
 other settings in `config list`, and read by `serve()` on every call. A cache
 left off the spec always uses its declared default. Composition quarantines a
@@ -189,6 +190,18 @@ using data from …`). `seed()` writes no version, so data seeded from an older
 release is refreshed on its first read. Two installs at different versions
 that share settings (a release and a development checkout) refill each
 other's keys on every read. Without `version=` nothing changes.
+
+A value that depends only on the code that computes it, never on an
+upstream, is a version-only cache: `max_age=None` with `model=`, `version=`
+and `split="none"`. Time never makes it due: it is filled when this version
+has no value and served from then on. It has no
+`caches.<name>.max_age_seconds` setting and no `--refresh`/`--cached`
+(`Refresh` refuses it). It never serves another version's value, and its
+complete fill removes the key's other versions. It writes nothing on stderr: a
+home it can't write leaves the value in memory, and the next run fills it
+again. A fill that raises propagates. Two installs at different versions that
+share a home remove each other's value, so each fills again after the other
+ran.
 
 A default is not part of the settings digest, so a release that changes a
 default leaves every folder where it is. When that changed default alters
