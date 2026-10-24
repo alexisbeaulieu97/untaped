@@ -17,13 +17,13 @@ per plugin per run, wherever that fallback is read.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, SecretStr
 
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout, resolve_config_path
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.health.doctor import DoctorResult
 from untaped.sdk.health.marks import (
     UNMARKED_SERVICE,
     MarkedField,
@@ -41,6 +41,10 @@ from untaped.sdk.network.credentials import (
     legacy_setting,
     override_variable,
 )
+
+if TYPE_CHECKING:
+    from untaped.runtime.registry import PluginSpec
+    from untaped.sdk.health.doctor import DoctorResult
 
 #: The id and title of core's doctor row for a plugin that marks what it needs.
 SETUP_CHECK = "setup"
@@ -150,6 +154,8 @@ def setup_result(settings: BaseModel | None, marks: SetupMarks, *, section: str)
     the config file, or with ``config migrate`` when a credential still
     comes from its deprecated setting.
     """
+    from untaped.sdk.health.doctor import DoctorResult  # noqa: PLC0415 - doctor imports this
+
     if settings is None:
         return DoctorResult(id=SETUP_CHECK, ok=True, detail="skipped: settings are invalid")
     required = marks.required

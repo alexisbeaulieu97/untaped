@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 __all__ = ["PromptChoice", "run_editor"]
 
-__getattr__, __dir__ = lazy_names(
-    globals(), {"editor": ("run_editor",), "prompts": ("PromptChoice",)}
-)
+if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
+    __getattr__, __dir__ = lazy_names(
+        globals(), {"editor": ("run_editor",), "prompts": ("PromptChoice",)}
+    )

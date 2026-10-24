@@ -33,19 +33,20 @@ __all__ = [
     "rejected_token_error",
 ]
 
-__getattr__, __dir__ = lazy_names(
-    globals(),
-    {
-        "auth": ("find_program",),
-        "credentials": ("Credential", "CredentialKey", "TlsVerify"),
-        "http": (
-            "HttpClient",
-            "RetryPolicy",
-            "connected_client",
-            "paginate_link",
-            "paginate_offset",
-            "paginate_pages",
-            "rejected_token_error",
-        ),
-    },
-)
+if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
+    __getattr__, __dir__ = lazy_names(
+        globals(),
+        {
+            "auth": ("find_program",),
+            "credentials": ("Credential", "CredentialKey", "TlsVerify"),
+            "http": (
+                "HttpClient",
+                "RetryPolicy",
+                "connected_client",
+                "paginate_link",
+                "paginate_offset",
+                "paginate_pages",
+                "rejected_token_error",
+            ),
+        },
+    )

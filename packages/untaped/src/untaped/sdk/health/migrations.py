@@ -1,6 +1,10 @@
-"""Building blocks for ``PluginSpec.migrations`` rows (``untaped setup migrate-dirs``).
+"""Directory migrations: the :class:`DirMigration` block, its rows and outcomes, and 11.x helpers.
 
-:func:`delete_migration` is the whole migration for the commonest case: an
+A plugin class holds a :class:`DirMigration` whose ``preview`` returns
+:class:`MigrationRow` lines and whose ``apply`` returns
+:class:`MigrationOutcome` records (``untaped setup migrate-dirs``). The
+helpers below build an 11.x ``PluginSpec.migrations`` row until its plugin
+moves: :func:`delete_migration` is the whole migration for the commonest case: an
 old directory nothing reads any more, deleted with a preview;
 :func:`move_migration` is the whole migration for data that only changes
 place (into ``plugin_dir``), never merged into or over what is already
@@ -30,6 +34,7 @@ from untaped.runtime.settings import (
     DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
     env_var_name,
+    plugins_root,
     resolve_config_path,
     resolve_state_path,
 )
@@ -241,8 +246,6 @@ def _unsafe(path: Path, *, plugins: bool) -> str | None:
             return f"it holds {shown_path(held)}"
     if overlapping(path, refs_dir()):
         return f"it overlaps the install references in {shown_path(refs_dir())}"
-    from untaped.runtime.registry import plugins_root  # noqa: PLC0415 - the registry imports this
-
     if plugins and overlapping(path, plugins_root()):
         return f"it overlaps the plugins' data in {shown_path(plugins_root())}"
     return None
@@ -393,8 +396,6 @@ UNINSTALLED_CACHES = "untaped.uninstalled-caches"
 
 def uninstalled_caches(installed: Collection[str]) -> list[Path]:
     """Each ``plugins/<name>/cached`` folder whose plugin isn't one of ``installed``, by name."""
-    from untaped.runtime.registry import plugins_root  # noqa: PLC0415 - the registry imports this
-
     try:
         folders = sorted(plugins_root().iterdir())
     except OSError:

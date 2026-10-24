@@ -46,11 +46,11 @@ from untaped.runtime.declaration import (
     Quarantined,
 )
 from untaped.runtime.settings import (
-    DEFAULT_CONFIG_PATH,
     PLUGIN_NAME_PATTERN,
     RESERVED_SECTION_KEYS,
     RESERVED_SECTIONS,
     legacy_credential_fields,
+    plugins_root,
     reserved_section_keys,
     section_model,
     timed_caches,
@@ -60,9 +60,7 @@ from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
 from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
-from untaped.sdk.health.migrations import (
-    DirMigration,
-)
+from untaped.sdk.health.migrations import DirMigration
 from untaped.sdk.marks import (
     Deprecated,
     DeprecatedBehaviour,
@@ -477,11 +475,6 @@ def plugin_dir(spec: PluginSpec) -> Path:
 def named_plugin_dir(name: str) -> Path:
     """:func:`plugin_dir` by the plugin's name, for core code that holds a name, not a spec."""
     return plugins_root() / name
-
-
-def plugins_root() -> Path:
-    """``~/.untaped/plugins/``: every plugin's folder, installed here or not."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins"
 
 
 @dataclass(frozen=True)

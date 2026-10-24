@@ -1,4 +1,4 @@
-"""Health and moves (``untaped.sdk.health``): doctor checks, setup marks, renamed keys."""
+"""Health and moves (``untaped.sdk.health``): doctor checks, setup marks, keys, migrations."""
 
 from __future__ import annotations
 
@@ -31,18 +31,19 @@ __all__ = [
     "Suggest",
 ]
 
-__getattr__, __dir__ = lazy_names(
-    globals(),
-    {
-        "deprecated_keys": ("Renamed", "Retired"),
-        "doctor": (
-            "DoctorCheck",
-            "DoctorResult",
-            "ExecutableCheck",
-            "OnlineCheck",
-            "PluginContext",
-        ),
-        "marks": ("NeedsSetup", "Suggest"),
-        "migrations": ("DirMigration",),
-    },
-)
+if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
+    __getattr__, __dir__ = lazy_names(
+        globals(),
+        {
+            "deprecated_keys": ("Renamed", "Retired"),
+            "doctor": (
+                "DoctorCheck",
+                "DoctorResult",
+                "ExecutableCheck",
+                "OnlineCheck",
+                "PluginContext",
+            ),
+            "marks": ("NeedsSetup", "Suggest"),
+            "migrations": ("DirMigration",),
+        },
+    )

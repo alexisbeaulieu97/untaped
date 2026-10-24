@@ -1,7 +1,10 @@
-"""Reusable doctor-check factories for plugins.
+"""Doctor checks: the :class:`DoctorCheck` block, the row it returns, and the checks plugins reuse.
 
-Each factory returns a :class:`DoctorCheck` a plugin lists in its
-``SPEC.doctor_checks``. :func:`executable_check` and :func:`connection_check`
+A plugin class holds a :class:`DoctorCheck`, :class:`OnlineCheck` or
+:class:`ExecutableCheck`; each body gets a :class:`PluginContext` and
+returns a :class:`DoctorResult`, one row of ``untaped doctor``. The 11.x
+factories return a check a plugin lists in its ``SPEC.doctor_checks``
+until its move: :func:`executable_check` and :func:`connection_check`
 read the validated settings snapshot and the local machine only: no network
 I/O and no ``token_command`` runs. :func:`online_check` is the one online
 check: ``doctor --online`` runs it to contact the configured service.
@@ -16,9 +19,15 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.settings import resolve_config_path
+from untaped.runtime.settings import plugins_root, resolve_config_path
 from untaped.sdk._block import OwnedBlock, spelled_id
 from untaped.sdk.errors import HttpError, HttpTransportError, UntapedError
+from untaped.sdk.health._setup_status import (
+    set_command,
+    shown_value,
+    stored_plaintext,
+    unset_fields,
+)
 from untaped.sdk.health.marks import MarkedField, SetupMarks, section_marks
 from untaped.sdk.network.auth import (
     PLAINTEXT_TOKEN,
@@ -118,8 +127,6 @@ class PluginContext:
         """The plugin the body runs for: its folder and the files it names."""
         if self.owner is None:
             raise LookupError("this context runs for no plugin: core sets owner= when it builds it")
-        from untaped.runtime.registry import plugins_root  # noqa: PLC0415 - imports this module
-
         return PluginHandle(name=self.owner, home=plugins_root().parent)
 
     @property
@@ -208,10 +215,6 @@ def connection_check(check_id: str, *, section: str) -> DoctorCheck:
                     f"{section} commands that call the API will fail"
                 ),
             )
-        from untaped.sdk.health._setup_status import (  # noqa: PLC0415 - imports this
-            stored_plaintext,
-        )
-
         if stored_plaintext(section):
             subject = plaintext_subject(section, resolve_config_path().name)
             if takes_token_command(type(settings)):
@@ -356,11 +359,6 @@ def _marked_probe(
     ``http.ca_bundle_path``; any other failure names the marked fields' values and
     the command that sets the first of them (none when every mark is a secret).
     """
-    from untaped.sdk.health._setup_status import (  # noqa: PLC0415 - imports this
-        set_command,
-        unset_fields,
-    )
-
     if unset_fields(settings, marks, section=section):
         # Core's `setup` row says what is missing.
         return DoctorResult(id=check_id, ok=True, detail="skipped: not set up")
@@ -410,8 +408,6 @@ def _noun(secret: MarkedField) -> str:
 
 def _shown(settings: BaseModel, field: MarkedField) -> str:
     """``is <value>``, or ``is set`` for a masked one: a failure line never prints a secret."""
-    from untaped.sdk.health._setup_status import shown_value  # noqa: PLC0415 - imports this
-
     return "is set" if field.masked else f"is {shown_value(settings, field)}"
 
 

@@ -6894,9 +6894,6 @@ sdk untaped.sdk.projects.Project.release(items=) default=None  [experimental]
 sdk untaped.sdk.projects.Project.release(store)  [experimental]
 sdk untaped.sdk.projects.Project.root  [experimental]
 sdk untaped.sdk.projects.checkout_root(start)
-sdk untaped.sdk.projects.committed_path(spec, name, *, root)  [experimental]
-sdk untaped.sdk.projects.current_project()  [experimental]
-sdk untaped.sdk.projects.known_projects()  [experimental]
 sdk untaped.sdk.projects.nearest_pyproject(start)
 sdk untaped.sdk.projects.project_at(path)  [experimental]
 sdk untaped.sdk.prompt.PromptChoice(description@3=) default=None

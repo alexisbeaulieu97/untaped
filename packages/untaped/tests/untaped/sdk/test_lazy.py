@@ -41,8 +41,8 @@ def test_a_group_name_is_the_roots_object(path: str) -> None:
 
     group = importlib.import_module(path)
     for name in group.__all__:
-        if name in root.__all__:
-            assert getattr(group, name) is getattr(root, name), f"{path}.{name}"
+        assert name in root.__all__, f"{path}.{name}"
+        assert getattr(group, name) is getattr(root, name), f"{path}.{name}"
 
 
 def test_an_unknown_name_is_an_attribute_error() -> None:
@@ -70,9 +70,16 @@ def test_a_resolved_name_is_kept_in_the_group() -> None:
     assert namespace["plural"] is plural
 
 
-@pytest.mark.parametrize(
-    "path", [g for g in GROUPS if g.endswith(("health", "network", "storage"))]
+#: The groups that are packages (``git`` and ``projects`` are one module each).
+PACKAGES = (
+    "untaped.sdk.health",
+    "untaped.sdk.network",
+    "untaped.sdk.prompt",
+    "untaped.sdk.storage",
 )
+
+
+@pytest.mark.parametrize("path", PACKAGES)
 def test_importing_a_group_loads_none_of_its_members(path: str) -> None:
     code = (
         "import sys, importlib\n"

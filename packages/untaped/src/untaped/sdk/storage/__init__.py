@@ -40,14 +40,15 @@ __all__ = [
     "Unreadable",
 ]
 
-__getattr__, __dir__ = lazy_names(
-    globals(),
-    {
-        "cache": ("Cache", "Filled", "NeverRefreshed", "Served"),
-        "data_file": ("Absent", "DataFile", "Found", "OtherVersion", "Unreadable"),
-        "dir": ("Dir",),
-        "lock": ("Lock",),
-        "state": ("RowExists", "StateRows"),
-        "untaped.sdk.progress": ("NO_PROGRESS", "ProgressHandle"),
-    },
-)
+if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
+    __getattr__, __dir__ = lazy_names(
+        globals(),
+        {
+            "cache": ("Cache", "Filled", "NeverRefreshed", "Served"),
+            "data_file": ("Absent", "DataFile", "Found", "OtherVersion", "Unreadable"),
+            "dir": ("Dir",),
+            "lock": ("Lock",),
+            "state": ("RowExists", "StateRows"),
+            "untaped.sdk.progress": ("NO_PROGRESS", "ProgressHandle"),
+        },
+    )
