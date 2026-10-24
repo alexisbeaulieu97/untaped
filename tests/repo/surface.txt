@@ -2974,6 +2974,8 @@ cli untaped awx workflow-templates usage --stdin switch
 cli untaped awx workflow-templates usage [IDENTIFIERS...]@1 default=unset
 cli untaped config
 cli untaped config edit
+cli untaped config get --columns VALUE... default=unset
+cli untaped config get --columns alias=-c
 cli untaped config get --format VALUE default=raw
 cli untaped config get --format alias=-f
 cli untaped config get --format choice=json
@@ -2981,10 +2983,10 @@ cli untaped config get --format choice=pipe
 cli untaped config get --format choice=raw
 cli untaped config get --format choice=table
 cli untaped config get --format choice=yaml
-cli untaped config get --show-secrets switch
+cli untaped config get --show-secrets switch default=unset
 cli untaped config get KEY
 cli untaped config list
-cli untaped config list --all-profiles switch
+cli untaped config list --all-profiles switch default=unset
 cli untaped config list --columns VALUE... default=unset
 cli untaped config list --columns alias=-c
 cli untaped config list --format VALUE default=table
@@ -2994,11 +2996,11 @@ cli untaped config list --format choice=pipe
 cli untaped config list --format choice=raw
 cli untaped config list --format choice=table
 cli untaped config list --format choice=yaml
-cli untaped config list --show-secrets switch
+cli untaped config list --show-secrets switch default=unset
 cli untaped config migrate
 cli untaped config migrate --columns VALUE... default=unset
 cli untaped config migrate --columns alias=-c
-cli untaped config migrate --dry-run switch
+cli untaped config migrate --dry-run switch default=unset
 cli untaped config migrate --format VALUE default=table
 cli untaped config migrate --format alias=-f
 cli untaped config migrate --format choice=json
@@ -3008,7 +3010,7 @@ cli untaped config migrate --format choice=table
 cli untaped config migrate --format choice=yaml
 cli untaped config set --columns VALUE... default=unset
 cli untaped config set --columns alias=-c
-cli untaped config set --dry-run switch
+cli untaped config set --dry-run switch default=unset
 cli untaped config set --format VALUE default=table
 cli untaped config set --format alias=-f
 cli untaped config set --format choice=json
@@ -3016,13 +3018,13 @@ cli untaped config set --format choice=pipe
 cli untaped config set --format choice=raw
 cli untaped config set --format choice=table
 cli untaped config set --format choice=yaml
-cli untaped config set --prompt switch
-cli untaped config set --stdin switch
+cli untaped config set --prompt switch default=unset
+cli untaped config set --stdin switch default=unset
 cli untaped config set KEY
 cli untaped config set [VALUE]@2 default=unset
 cli untaped config unset --columns VALUE... default=unset
 cli untaped config unset --columns alias=-c
-cli untaped config unset --dry-run switch
+cli untaped config unset --dry-run switch default=unset
 cli untaped config unset --format VALUE default=table
 cli untaped config unset --format alias=-f
 cli untaped config unset --format choice=json
@@ -4543,6 +4545,13 @@ record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
 record untaped.PickedProfile.source choice=flag
 record untaped.PickedProfile.source string
+record untaped.config_migration_outcome
+record untaped.config_migration_outcome.action string
+record untaped.config_migration_outcome.detail string
+record untaped.config_migration_outcome.error Failure?
+record untaped.config_migration_outcome.from string
+record untaped.config_migration_outcome.profile string
+record untaped.config_migration_outcome.to string
 record untaped.contract_method
 record untaped.contract_method.contract string
 record untaped.contract_method.method string
@@ -4679,6 +4688,19 @@ record untaped.scaffold_outcome
 record untaped.scaffold_outcome.action string
 record untaped.scaffold_outcome.error Failure?
 record untaped.scaffold_outcome.target_path string(format=path)
+record untaped.setting
+record untaped.setting.default any
+record untaped.setting.distribution string?
+record untaped.setting.key string
+record untaped.setting.note string?
+record untaped.setting.profile string?
+record untaped.setting.removed_in integer?
+record untaped.setting.source string
+record untaped.setting.stability choice=deprecated
+record untaped.setting.stability choice=experimental
+record untaped.setting.stability choice=stable
+record untaped.setting.stability string
+record untaped.setting.value any
 record untaped.setting_outcome
 record untaped.setting_outcome.action string
 record untaped.setting_outcome.error Failure?
@@ -5603,6 +5625,7 @@ sdk untaped.sdk.Output.field_kind class
 sdk untaped.sdk.Output.formats
 sdk untaped.sdk.Output.options class
 sdk untaped.sdk.Output.panel class
+sdk untaped.sdk.Output.requested
 sdk untaped.sdk.OutputFormat choice=json
 sdk untaped.sdk.OutputFormat choice=pipe
 sdk untaped.sdk.OutputFormat choice=raw

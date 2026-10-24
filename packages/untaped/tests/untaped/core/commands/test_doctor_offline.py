@@ -15,10 +15,10 @@ from core_test_support.commands.support import (
     GithubProfile,
     asset,
     compose,
+    config_root,
     make_spec,
     write_config,
 )
-from untaped.core.commands.config import build_root_config_app
 from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
 from untaped.runtime import bootstrap
@@ -116,9 +116,7 @@ def test_a_stray_ui_name_loads_leniently_and_only_fails_the_ui_row(
         "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 3\n"
         "untaped:\n  ui:\n    symbols: {zzz: y}\n",
     )
-    listed = CliInvoker().invoke(
-        build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose()), ["list"]
-    )
+    listed = CliInvoker().invoke(config_root(), ["list"])
     assert listed.exit_code == 0, listed.output
     rows = _rows(exit_code=1)
     assert _row(rows, "settings", "validate untaped.ui")["status"] == "fail"

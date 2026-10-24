@@ -19,11 +19,10 @@ from core_test_support.commands.support import (
     GithubProfile,
     GithubState,
     JiraProfile,
-    compose,
+    config_root,
     make_spec,
     write_config,
 )
-from untaped.core.commands.config import build_root_config_app
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import profile_scope
@@ -37,7 +36,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 def _invoke(args: list[str], *, input: str | None = None) -> CliResult:
     github = make_spec("github", settings=GithubProfile, state=GithubState)
     jira = make_spec("jira", settings=JiraProfile)
-    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(github, jira))
+    app = config_root(github, jira)
     return CliInvoker().invoke(app, args, input=input)
 
 
@@ -179,10 +178,11 @@ def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: P
     write_config(_isolated_config, _BROKEN_JIRA)
     result = _invoke(["list", "--format", "json"])
     assert result.exit_code == 0, result.output
-    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning:")]
-    assert len(warnings) == 1
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    warnings = [line["message"] for line in lines if line["level"] == "warning"]
+    assert len(warnings) == 1, result.stderr
     # One sentence naming the section once (no "section 'jira' is invalid: invalid …").
-    assert warnings[0].startswith("warning: invalid config section 'jira' in ")
+    assert warnings[0].startswith("invalid config section 'jira' in ")
     assert warnings[0].count("'jira'") == 1
     assert warnings[0].endswith("(its keys show unvalidated values)")
     assert "untaped.http.timeout_seconds" in result.stdout
@@ -384,7 +384,7 @@ def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
     write_config(_isolated_config, _BROKEN_JIRA)
     github = make_spec("github", settings=GithubProfile, state=GithubState)
     jira = make_spec("jira", settings=JiraProfile)
-    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(github, jira))
+    app = config_root(github, jira)
     backend = ScriptedPromptBackend(texts=["12"])
     result = invoke_cli(
         app, ["set", "jira.timeout", "--prompt"], interactive=True, prompt_backend=backend

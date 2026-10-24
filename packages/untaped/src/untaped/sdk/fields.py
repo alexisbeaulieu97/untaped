@@ -357,8 +357,9 @@ class Output[R: BaseModel](FieldBlock):
     default columns, and ``--columns`` names its fields (checked before ``run``, so a subclass's own
     fields are not columns). The default
     configures it: ``Output(columns=("key", "summary"))`` gives this command
-    its own default columns, ``Output(render={"tree": render_tree})`` adds a
-    format of the plugin's own, and ``Output(format="raw")`` makes another
+    its own default columns (a one-record table shows them even when empty),
+    ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
+    (one named after a core format replaces it), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
     ``untaped.ui.format``).
     """
@@ -397,7 +398,12 @@ class Output[R: BaseModel](FieldBlock):
     @property
     def formats(self) -> tuple[str, ...]:
         """Every value ``--format`` takes for this command."""
-        return (*OUTPUT_FORMATS, *self.render)
+        return tuple(dict.fromkeys((*OUTPUT_FORMATS, *self.render)))
+
+    @property
+    def requested(self) -> list[str] | None:
+        """The ``--columns`` this run asked for, as given; ``None`` without the flag."""
+        return self._requested
 
     def empty(self, text: str) -> None:
         """The text a table shows when ``run`` printed no row."""
@@ -451,11 +457,15 @@ class Output[R: BaseModel](FieldBlock):
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
         themed = self.format in ("table", "tree")
+        columns = self._requested
+        detail = isinstance(records, BaseModel) and self.format == "table"
+        if columns is None and self._declared and detail:
+            columns = list(self.columns)  # a detail view would hide the empty ones
         emit_with(
             records,
             ui=ui_context(strict=False) if themed else None,
             fmt=cast("OutputFormat", self.format),  # a plugin renderer's format returned above
-            columns=self._requested,
+            columns=columns,
             empty=self._empty,
             kind=kind,
             table_columns=list(self.columns) or None,

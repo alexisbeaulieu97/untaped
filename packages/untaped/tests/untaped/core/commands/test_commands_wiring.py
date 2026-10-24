@@ -219,7 +219,7 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
 def test_a_root_app_the_shell_does_not_list_fails_the_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    shell = dataclasses.replace(bootstrap.SHELL_SPEC, commands=("config", "skills"))
+    shell = dataclasses.replace(bootstrap.SHELL_SPEC, commands=("agents", "skills"))
     monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
     with pytest.raises(RuntimeError, match=r"root commands SHELL_SPEC doesn't list: .*'auth'"):
         bootstrap.build_root_app(candidates=())

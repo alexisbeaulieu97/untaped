@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 
 import pytest
 from cyclopts import App
 from pydantic import BaseModel, HttpUrl, SecretStr
+from rich.console import Console
 
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
@@ -25,7 +27,7 @@ from untaped.sdk import (  # type: ignore[deprecated]
     TokenSources,
     online_check,
 )
-from untaped.sdk._cli import create_app
+from untaped.sdk._cli import create_app, run_cyclopts_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability, UntapedDeprecationWarning, deprecated
 from untaped.sdk.testing import plugin_candidate
@@ -189,6 +191,22 @@ def make_spec(
 def compose(*specs: PluginSpec) -> CompositionResult:
     """Compose ``specs`` as providers (registers settings sections)."""
     return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
+
+
+def config_root(*specs: PluginSpec) -> Callable[..., None]:
+    """The composed root with ``specs``, run as ``untaped config <args>``."""
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs]).meta
+
+    def run(args: list[str], *, console: Console, error_console: Console) -> None:
+        run_cyclopts_app(
+            root,
+            ["config", *args],
+            console=console,
+            error_console=error_console,
+            result_action="print_non_int_sys_exit",
+        )
+
+    return run
 
 
 def write_config(path: Path, text: str) -> None:
