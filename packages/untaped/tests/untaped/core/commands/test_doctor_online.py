@@ -17,9 +17,12 @@ import pytest
 import respx
 from pydantic import BaseModel, SecretStr
 
-from core_test_support.commands.support import GithubProfile, compose, make_spec, write_config
-from untaped.core.commands.doctor import build_root_doctor_app
-from untaped.runtime import bootstrap
+from core_test_support.commands.support import (
+    GithubProfile,
+    make_spec,
+    root_group,
+    write_config,
+)
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.sdk import (
     ConfigError,
@@ -51,9 +54,7 @@ class ProbeProfile(BaseModel):
 
 def _doctor(checks: tuple[DoctorCheck, ...], *args: str) -> CliResult:
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=checks)
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     return CliInvoker().invoke(app, ["--format", "json", *args])
 
 
@@ -136,9 +137,7 @@ def test_a_default_base_url_without_a_token_is_not_configured(_isolated_config: 
 
     check = online_check("github.api", section="github", probe=probe)
     spec = make_spec("github", settings=GithubProfile, doctor_checks=(check,))
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--online", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert _row(result, "github.api")["detail"] == "not configured"
@@ -319,9 +318,7 @@ def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
 
 def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     assert "token rejected\n" in result.stdout
     assert "→ untaped auth set svc\n" in result.stdout
@@ -329,9 +326,7 @@ def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_confi
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     with profile_scope("default"):
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     # Without the flag the same line would read the profiles UNTAPED_PROFILE picks.
@@ -351,9 +346,7 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
     if env:
         monkeypatch.setenv("UNTAPED_PROFILE", env)
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     with profile_scope(flag or ()):
         listed = CliInvoker().invoke(app, ["--format", "table", "--online"])
         row = _row(CliInvoker().invoke(app, ["--format", "json", "--online"]), "svc.api")
@@ -370,9 +363,7 @@ def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "a")
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(spec)
-    )
+    app = root_group("doctor", spec)
     with profile_scope("default"):  # `--profile default` sets the variable aside
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
 

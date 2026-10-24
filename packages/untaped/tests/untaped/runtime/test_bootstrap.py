@@ -92,6 +92,23 @@ def test_composition_is_the_last_composed_result() -> None:
     assert bootstrap.composition() is composed
 
 
+def test_root_command_resolves_a_word_in_the_root_built_last() -> None:
+    with pytest.raises(RuntimeError):
+        bootstrap.root_command("doctor")
+    bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("ext"))])
+    assert bootstrap.root_command("doctor") == "doctor"
+    assert bootstrap.root_command("ext") == "ext"
+    assert bootstrap.root_command("nope") is None
+
+
+def test_a_kept_composition_brings_back_the_root_built_before_it() -> None:
+    bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("ext"))])
+    with bootstrap.kept_composition():
+        bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("other"))])
+        assert bootstrap.root_command("ext") is None
+    assert bootstrap.root_command("ext") == "ext"
+
+
 def test_version_resolves_unified_distribution_lazily(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

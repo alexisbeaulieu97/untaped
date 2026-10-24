@@ -28,17 +28,15 @@ from core_test_support.commands.support import (
     JiraProfile,
     StrictProfile,
     check,
-    compose,
     make_spec,
+    root_group,
     write_config,
 )
-from untaped.core.commands.doctor import build_root_doctor_app, collect_doctor_rows
+from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import (
-    CompositionResult,
     PluginCandidate,
     PluginSpec,
-    QuarantineRecord,
     named_plugin_dir,
 )
 from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
@@ -52,25 +50,17 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 _PASS = "pass"
 
 
-def _doctor_app(*specs: object, quarantine: tuple[QuarantineRecord, ...] = ()) -> object:
-    result = compose(*specs)  # type: ignore[arg-type]
-    if quarantine:
-        result = CompositionResult(
-            plugins=result.plugins, quarantine=quarantine, mount=result.mount
-        )
-    return build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=result
+def _doctor_app(*specs: PluginSpec, ghost: bool = False) -> object:
+    """``untaped doctor`` composed with ``specs``; ``ghost`` adds a plugin quarantined by name."""
+    ghosts = (
+        [
+            plugin_candidate(make_spec("ghost"), distribution="example-dist"),
+            plugin_candidate(make_spec("ghost"), distribution="other-dist"),
+        ]
+        if ghost
+        else []
     )
-
-
-def _quarantine() -> QuarantineRecord:
-    return QuarantineRecord(
-        name="ghost",
-        distribution="example-dist",
-        entry_point="example_mod:provider",
-        reason="duplicate-name",
-        detail="duplicate plugin name: 'ghost'",
-    )
+    return root_group("doctor", *specs, also=ghosts)
 
 
 # ── happy path ───────────────────────────────────────────────────────────────
@@ -316,7 +306,7 @@ def test_unparseable_config_fails_config_row_without_blocking_others(
     get_settings.cache_clear()
     app = _doctor_app(
         make_spec("ext", doctor_checks=(check("ext.auth", detail="still ran"),)),
-        quarantine=(_quarantine(),),
+        ghost=True,
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
@@ -329,7 +319,7 @@ def test_unparseable_config_fails_config_row_without_blocking_others(
 
 
 def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
-    app = _doctor_app(quarantine=(_quarantine(),))
+    app = _doctor_app(ghost=True)
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "example-dist" in result.stdout

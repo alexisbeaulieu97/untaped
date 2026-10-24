@@ -25,12 +25,12 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
   - A run that sees several failures exits with the most severe: 130 > 2 > 4 > 5 > 1 > 3 > 0
 
 ## untaped (core) · details: `untaped agents untaped`
-- `doctor`: Check the health of the shell and every composed plugin.
 - `setup`: Configure a profile's settings and services interactively.
 - `config`: Inspect and change the settings in the home's config.yml.
 - `profile`: Manage the profiles in the home's config.yml.
 - `auth`: Log in to the servers plugins talk to; keep tokens safe.
 - `project` [experimental]: Make a folder a project and list the projects this home records.
+- `doctor`: Check the health of the shell and every composed plugin.
 - `skills`: List, install, update, and remove agent skills shipped by untaped.
 - `plugin`: Inspect installed plugins and their contracts.
 

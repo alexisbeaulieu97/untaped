@@ -18,12 +18,11 @@ from core_test_support.commands.support import (
     compose,
     config_root,
     make_spec,
+    root_group,
     write_config,
 )
-from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
-from untaped.runtime import bootstrap
 from untaped.sdk import (
     TokenCommand,
     TokenSources,
@@ -47,9 +46,7 @@ class ApiProfile(BaseModel):
 
 
 def _rows(*specs: Any, exit_code: int = 0) -> list[dict[str, Any]]:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=compose(*specs)
-    )
+    app = root_group("doctor", *specs)
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == exit_code, result.output
     rows: list[dict[str, Any]] = json.loads(result.stdout)

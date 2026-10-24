@@ -146,11 +146,19 @@ class Draw(Command):
         yield Salutation(name="ada", text="hi")
 
 
+class Count(Command):
+    """Count your friends: what ``untaped hello friends`` runs on its own."""
+
+    def run(self) -> str:
+        return "2 friends"
+
+
 class FriendsGroup(Group):
     """Friends you greet."""
 
     stability = experimental
     commands = (Whoami, Draw)
+    runs = Count
 
 
 class Status(Command):
@@ -333,6 +341,13 @@ def test_a_plugin_renderer_draws_its_own_format() -> None:
 
 def test_the_plugin_root_runs_its_command() -> None:
     assert _run("hello").stdout == "all good\n"
+
+
+def test_a_group_runs_its_command_beside_its_subcommands() -> None:
+    assert _run("hello", "friends").stdout == "2 friends\n"
+    assert _run("hello", "friends", "whoami").stdout == "ada\n"
+    listing = _run("hello", "friends", "--help").stdout
+    assert "whoami" in listing
 
 
 def test_the_stub_skill_and_status_reach_the_plugin_listing() -> None:

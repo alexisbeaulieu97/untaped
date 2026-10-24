@@ -311,6 +311,16 @@ def test_dry_run_plans_automatic_fixes_and_runs_nothing(monkeypatch: pytest.Monk
     assert RAN == []
 
 
+def test_a_dry_run_prints_its_planned_rows_and_no_plan_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = _cli(_spec(_MIGRATE), "--dry-run", monkeypatch=monkeypatch)
+    assert result.exit_code == 0, result.output
+    assert "untaped auth migrate" in result.stdout and "planned" in result.stdout
+    assert "Fixes to run" not in result.stderr
+    assert result.stderr.endswith("doctor fix: 1 planned\n")
+
+
 def test_a_dry_run_with_a_refused_fix_fails_like_the_real_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -329,13 +339,14 @@ def test_a_declined_prompt_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.stderr.endswith("cancelled; no changes made\n")
     assert "Fixes to run (1):\n  → untaped auth migrate  svc.a\n" in result.stderr
     assert "Needs you (1):\n  → untaped auth set svc  svc.token\n" in result.stderr
-    assert backend.calls == [("confirm", "Continue?")]
+    assert backend.calls == [("confirm", "Run 1 automatic fix?")]
     assert RAN == []
 
 
 def test_without_a_terminal_it_needs_yes(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _cli(_spec(_MIGRATE), monkeypatch=monkeypatch)
     assert result.exit_code == 2
+    assert "Run 1 automatic fix?" in result.stderr
     assert RAN == []
 
 

@@ -10,9 +10,14 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import compose, config_root, make_spec, write_config
+from core_test_support.commands.support import (
+    compose,
+    config_root,
+    make_spec,
+    root_group,
+    write_config,
+)
 from untaped.core.commands.config import _emit_split_tables
-from untaped.core.commands.doctor import build_root_doctor_app
 from untaped.core.config.models import SettingEntry, Source
 from untaped.runtime import bootstrap
 from untaped.runtime.settings import profile_section_models, section_stabilities
@@ -322,9 +327,7 @@ def test_the_registry_holds_the_composed_sections_and_their_marks() -> None:
 
 
 def _doctor_detail() -> str:
-    app = build_root_doctor_app(
-        shell=bootstrap.SHELL_SPEC, builtin_for=lambda _name: None, result=_compose()
-    )
+    app = root_group("doctor", *_SPECS)
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     return next(

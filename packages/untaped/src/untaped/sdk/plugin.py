@@ -116,11 +116,14 @@ class Group:
     """Base of a command group: its docstring is its help and page, ``commands`` its children.
 
     Its name is the class name in kebab case, a trailing ``Group`` dropped
-    (``ProfileGroup`` is ``profile``). ``stability`` marks it as on a plugin.
+    (``ProfileGroup`` is ``profile``). ``stability`` marks it as on a plugin,
+    and ``runs`` is the command the group's own words run, as on a plugin
+    (``untaped doctor`` beside ``untaped doctor fix``).
     """
 
     commands: ClassVar[tuple[type[Command[Any]] | type[Group], ...]] = ()
     stability: ClassVar[Stability | None] = None
+    runs: ClassVar[type[Command[Any]] | None] = None
 
     # ``-> None``, not ``NoReturn``: a type checker would take the class for a function
     def __init__(self) -> None:

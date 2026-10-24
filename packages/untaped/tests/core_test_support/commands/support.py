@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
 
@@ -14,7 +14,7 @@ from rich.console import Console
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import CompositionResult, PluginSpec, SkillAsset
+from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, SkillAsset
 from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.sdk import (  # type: ignore[deprecated]
     Credential,
@@ -192,9 +192,12 @@ def compose(*specs: PluginSpec) -> CompositionResult:
     return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
 
 
-def root_group(word: str, *specs: PluginSpec) -> Callable[..., None]:
-    """The composed root with ``specs``, run as ``untaped <word> <args>``."""
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs]).meta
+def root_group(
+    word: str, *specs: PluginSpec, also: Sequence[PluginCandidate] = ()
+) -> Callable[..., None]:
+    """The composed root with ``specs`` and ``also``'s candidates, run as ``untaped <word> …``."""
+    candidates = [*(plugin_candidate(spec) for spec in specs), *also]
+    root = bootstrap.build_root_app(candidates=candidates).meta
 
     def run(args: list[str], *, console: Console, error_console: Console) -> None:
         run_cyclopts_app(

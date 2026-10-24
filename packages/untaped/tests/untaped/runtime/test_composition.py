@@ -112,6 +112,7 @@ class ProfileGroup(Group):
     """Manage profiles."""
 
     commands = (Version,)
+    runs = Version
 
 
 class Hello(Plugin):
@@ -343,6 +344,23 @@ def test_settings_is_required_and_a_model() -> None:
 
     assert _rules(NoSettings) == [("reserved-name", "NoSettings.settings")]
     assert _rules(WrongSettings) == [("reserved-name", "WrongSettings.settings")]
+
+
+def test_a_group_s_runs_is_declared_under_the_group_s_words(declaration: Declaration) -> None:
+    _, profile = declaration.plugin("hello").commands
+    assert isinstance(profile, GroupDecl)
+    assert profile.runs is not None
+    assert profile.runs.path == ("hello", "profile")
+    assert profile.runs in declaration.commands()
+
+
+def test_a_group_s_runs_holds_a_command() -> None:
+    class Muddled(Group):
+        """Muddled."""
+
+        runs = HelloSettings  # type: ignore[assignment]
+
+    assert _rules(_plugin_with(Muddled)) == [("reserved-name", "Muddled.runs")]
 
 
 def test_reserved_names_hold_what_they_name() -> None:

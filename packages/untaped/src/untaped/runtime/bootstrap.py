@@ -21,11 +21,7 @@ from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
-from untaped.core.commands import (
-    build_root_agents_app,
-    build_root_doctor_app,
-    build_root_setup_app,
-)
+from untaped.core.commands import build_root_agents_app, build_root_setup_app
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
@@ -109,10 +105,12 @@ SHELL_SPEC = ApplicationSpec(
     settings=CoreSettings,
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "doctor", "setup"),
+    commands=("agents", "setup"),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
+#: The root :func:`build_root_app` last built, which :func:`root_command` reads.
+_BUILT_ROOT: App | None = None
 
 #: Set inside :func:`kept_composition` ``(quiet=True)``: the warnings were shown once.
 _QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", default=False)
@@ -197,15 +195,15 @@ def kept_composition(*, quiet: bool = False) -> Iterator[None]:
     plugins again. Raises ``RuntimeError`` inside a contract call, as
     :func:`compose_root` does, since leaving the block re-registers the settings.
     """
-    global _COMPOSED_RESULT
+    global _COMPOSED_RESULT, _BUILT_ROOT
     _refuse_inside_a_contract_call()
-    previous = _COMPOSED_RESULT
+    previous, previous_root = _COMPOSED_RESULT, _BUILT_ROOT
     token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
     try:
         yield
     finally:
         _QUIET_QUARANTINE.reset(token)
-        _COMPOSED_RESULT = previous
+        _COMPOSED_RESULT, _BUILT_ROOT = previous, previous_root
         _reregister()
 
 
@@ -250,9 +248,10 @@ def reset() -> None:
 
 
 def _clear_for_tests() -> None:
-    """Drop the remembered composition entirely (test isolation only)."""
-    global _COMPOSED_RESULT
+    """Drop the remembered composition and root entirely (test isolation only)."""
+    global _COMPOSED_RESULT, _BUILT_ROOT
     _COMPOSED_RESULT = None
+    _BUILT_ROOT = None
     reset()
 
 
@@ -286,11 +285,6 @@ def build_root_app(
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     management = {
         "agents": build_root_agents_app(result=result, root=lambda: root),
-        "doctor": build_root_doctor_app(
-            shell=SHELL_SPEC,
-            result=result,
-            builtin_for=lambda name: resolve_command(root, name),
-        ),
         "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
     }
     for name in SHELL_SPEC.commands:
@@ -313,7 +307,20 @@ def build_root_app(
     for flag in chain(root.help_flags, root.version_flags):
         root[flag].group = (GLOBAL_OPTIONS_GROUP,)
     root.register_install_completion_command(group=GLOBAL_OPTIONS_GROUP)
+    global _BUILT_ROOT
+    _BUILT_ROOT = root
     return root
+
+
+def root_command(token: str) -> str | None:
+    """The root command ``token`` selects in the root :func:`build_root_app` last built.
+
+    As dispatch would pick it (exact names, then deprecated aliases, then the
+    one loose match); ``None`` when no command, core's or a plugin's, has it.
+    """
+    if _BUILT_ROOT is None:
+        raise RuntimeError("no root app built yet; call build_root_app() first")
+    return resolve_command(_BUILT_ROOT, token)
 
 
 def _mount(app: App, sub: App, *, name: str) -> None:

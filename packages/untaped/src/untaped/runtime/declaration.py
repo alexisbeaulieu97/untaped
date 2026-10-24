@@ -112,6 +112,8 @@ class GroupDecl(_Frozen):
     doc: str
     stability: StabilityDecl | None = None
     commands: tuple[CommandDecl | GroupDecl, ...] = ()
+    #: The command the group's own words run (``runs = Check``).
+    runs: CommandDecl | None = None
 
 
 class CacheDecl(_Frozen):
@@ -239,6 +241,8 @@ class Declaration(_Frozen):
         def walk(nodes: tuple[CommandDecl | GroupDecl, ...]) -> None:
             for node in nodes:
                 if isinstance(node, GroupDecl):
+                    if node.runs is not None:
+                        found.append(node.runs)
                     walk(node.commands)
                 else:
                     found.append(node)
