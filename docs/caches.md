@@ -173,7 +173,10 @@ A 12.0 plugin class names the code instead:
 module or package (a module or its dotted name; neither is imported to find
 it), and `version=installed_code()` versions by the whole install: untaped
 and every plugin distribution, by version, `RECORD` and, for an editable
-install, the modification times and sizes under its source folder.
+install, the modification times and sizes under its source folder (hidden
+and editor files, `node_modules` and virtual environments left out). A
+`setup.py develop` install counts by its version alone, and files a plugin
+reads from outside its source folder never count.
 
 Each key's file keeps the version it was filled at. A key filled at
 another version is *outdated*: due the way a key past its max age is (auto

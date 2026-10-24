@@ -245,7 +245,6 @@ from untaped.sdk.storage.holds import (
     ReleaseAsk,
     UnknownHolder,
 )
-from untaped.sdk.storage.installed_code import installed_code
 from untaped.sdk.storage.state import (
     ProjectStateRows,
     RowExists,
@@ -311,10 +310,13 @@ if _typing.TYPE_CHECKING:
         read_data_file,
         write_data_file,
     )
+    from untaped.sdk.storage.installed_code import installed_code
 
 #: Names exported lazily, by the module that defines them, resolved on first access
-#: (PEP 562): the screen names, and core's data file, which a command reads on first use.
+#: (PEP 562): the screen names, core's data file, which a command reads on first use,
+#: and the installed code's version, which a cache reads when it is served.
 _LAZY_MODULES: dict[str, tuple[str, ...]] = {
+    "untaped.sdk.storage.installed_code": ("installed_code",),
     "untaped.sdk.storage.data_file": (
         "Absent",
         "DataRead",

@@ -11,12 +11,18 @@ under its source root, walked by modification time and size. That is what
 core's composed-plugins cache follows, so an edit to any plugin rebuilds it on
 the next run. Neither form imports a module to find it, and each computes once
 per process.
+
+Two installs the whole-install form cannot see into: a development install
+with neither ``RECORD`` nor ``direct_url.json`` (``setup.py develop``) counts
+by its version alone, and files a plugin reads from outside its source root
+(its ``src`` folder when it has one) never count.
 """
 
 from __future__ import annotations
 
 import functools
 import hashlib
+import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +36,8 @@ if TYPE_CHECKING:
 
 #: The entry point group a distribution offers untaped plugins under.
 _PLUGIN_GROUP = "untaped.plugins"
+#: Folders a walk never enters, besides hidden ones: bytecode and other tools' trees.
+_SKIPPED_FOLDERS = frozenset({"__pycache__", "node_modules"})
 
 
 @dataclass(frozen=True)
@@ -66,16 +74,35 @@ def installed_code(*modules: ModuleType | str) -> InstalledCode:
     return InstalledCode(tuple(names))
 
 
+# --------------------------------------------------------------------------- #
+# Named modules: their files' bytes
+# --------------------------------------------------------------------------- #
+
+
 @functools.cache
 def _modules_version(modules: tuple[str, ...]) -> str:
     parts: list[bytes] = []
     for module in modules:
+        parts.append(f"module:{module}".encode())
         for root, files in _module_files(module):
-            parts.append(f"module:{module}".encode())
             for path in files:
-                parts.append(f"file:{path.relative_to(root).as_posix()}".encode())
-                parts.append(path.read_bytes())
+                content = _read(path, module)
+                if content is not None:
+                    parts.append(f"file:{path.relative_to(root).as_posix()}".encode())
+                    parts.append(content)
     return _hash(parts)
+
+
+def _read(path: Path, module: str) -> bytes | None:
+    """``path``'s bytes; ``None`` when it went away while walking (an editor's save)."""
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ConfigError(
+            f"installed_code: cannot read {path} of module {module!r}: {exc.strerror or exc}"
+        ) from exc
 
 
 def _module_files(module: str) -> Iterator[tuple[Path, list[Path]]]:
@@ -88,24 +115,53 @@ def _module_files(module: str) -> Iterator[tuple[Path, list[Path]]]:
 
 
 def _module_roots(module: str) -> list[Path]:
-    """Where ``module``'s files are, found on ``sys.path`` without importing it."""
-    import sys  # noqa: PLC0415 - read when a version is asked for
+    """Where ``module``'s files are on disk, found the way an import would, without one.
 
+    A loaded module is read from itself; otherwise each package on the way
+    is searched in its parent's folders (a loaded parent's ``__path__``), so
+    namespace packages and import-hook installs resolve as Python does.
+    """
     loaded = sys.modules.get(module)
     if loaded is not None:
         paths = getattr(loaded, "__path__", None)
-        if paths is not None:
-            return [Path(path) for path in paths]
-        if getattr(loaded, "__file__", None):
-            return [Path(loaded.__file__)]  # type: ignore[arg-type]
-    *parents, last = module.split(".")
-    for entry in sys.path:
-        folder = Path(entry or ".").joinpath(*parents)
-        if (folder / last / "__init__.py").is_file():
-            return [folder / last]
-        if (folder / f"{last}.py").is_file():
-            return [folder / f"{last}.py"]
-    raise ConfigError(f"installed_code: module {module!r} has no source files to hash")
+        found = list(paths) if paths is not None else [getattr(loaded, "__file__", None)]
+    else:
+        found = _found_roots(module)
+    roots = [Path(each) for each in found if isinstance(each, str)]
+    if not roots or not all(root.is_dir() or root.is_file() for root in roots):
+        raise ConfigError(
+            f"installed_code: module {module!r} has no source files on disk to hash "
+            "(not found, or loaded from an archive)"
+        )
+    return roots
+
+
+def _found_roots(module: str) -> list[str | None]:
+    from importlib.machinery import PathFinder  # noqa: PLC0415 - read when a version is asked for
+
+    search: list[str] | None = None  # sys.path for the top-level name
+    spec = None
+    parts = module.split(".")
+    for index in range(len(parts)):
+        name = ".".join(parts[: index + 1])
+        loaded = sys.modules.get(name)
+        if loaded is not None and index < len(parts) - 1:
+            search = list(getattr(loaded, "__path__", None) or [])
+            continue
+        spec = PathFinder.find_spec(name, search)
+        if spec is None:
+            return []
+        search = list(spec.submodule_search_locations or [])
+    if spec is None:
+        return []
+    if spec.submodule_search_locations is not None:
+        return list(spec.submodule_search_locations)
+    return [spec.origin]
+
+
+# --------------------------------------------------------------------------- #
+# The whole install: every plugin distribution, and untaped
+# --------------------------------------------------------------------------- #
 
 
 @functools.cache
@@ -116,11 +172,15 @@ def _install_version() -> str:
     try:
         found["untaped"] = importlib.metadata.distribution("untaped")
     except importlib.metadata.PackageNotFoundError:  # untaped run from a source tree
-        pass
+        untaped = None
+    else:
+        untaped = found["untaped"]
     for entry_point in importlib.metadata.entry_points(group=_PLUGIN_GROUP):
         if entry_point.dist is not None:
             found.setdefault(entry_point.dist.name, entry_point.dist)
     parts: list[bytes] = []
+    if untaped is None:
+        parts.extend(_stat_parts("untaped", *_module_roots("untaped")))
     for name in sorted(found):
         parts.extend(_distribution_parts(name, found[name]))
     return _hash(parts)
@@ -132,14 +192,22 @@ def _distribution_parts(name: str, distribution: importlib.metadata.Distribution
     parts.append(b"record:" + (record or "").encode())
     root = _editable_root(distribution)
     if root is not None:
-        for path in sorted(_walk(root)):
+        parts.extend(_stat_parts(name, root))
+    return parts
+
+
+def _stat_parts(name: str, *roots: Path) -> list[bytes]:
+    """Each file under ``roots`` by path, modification time and size."""
+    parts: list[bytes] = []
+    for root in roots:
+        files = sorted(_walk(root)) if root.is_dir() else [root]
+        for path in files:
             try:
                 stat = path.stat()
             except OSError:  # gone while walking
                 continue
-            parts.append(
-                f"source:{path.relative_to(root).as_posix()}:{stat.st_mtime_ns}:{stat.st_size}".encode()
-            )
+            where = path.relative_to(root).as_posix() if root.is_dir() else path.name
+            parts.append(f"source:{name}:{where}:{stat.st_mtime_ns}:{stat.st_size}".encode())
     return parts
 
 
@@ -164,11 +232,30 @@ def _editable_root(distribution: importlib.metadata.Distribution) -> Path | None
     return root / "src" if (root / "src").is_dir() else root
 
 
+# --------------------------------------------------------------------------- #
+# Shared
+# --------------------------------------------------------------------------- #
+
+
 def _walk(root: Path) -> Iterable[Path]:
-    """Every file under ``root``, leaving out hidden folders and bytecode."""
+    """Every file under ``root`` that is code or data, not a tool's.
+
+    Hidden files and folders, bytecode, editor backups (``x~``, ``#x#``),
+    ``node_modules`` and virtual environments (a folder with ``pyvenv.cfg``)
+    are left out, so an open editor or a stray environment changes nothing.
+    """
     for folder, subfolders, files in root.walk():
-        subfolders[:] = [s for s in subfolders if not s.startswith(".") and s != "__pycache__"]
-        yield from (folder / name for name in files if not name.endswith((".pyc", ".pyo")))
+        subfolders[:] = [
+            each
+            for each in subfolders
+            if not each.startswith(".")
+            and each not in _SKIPPED_FOLDERS
+            and not (folder / each / "pyvenv.cfg").exists()
+        ]
+        for name in files:
+            if name.startswith((".", "#")) or name.endswith(("~", ".pyc", ".pyo")):
+                continue
+            yield folder / name
 
 
 def _hash(parts: Iterable[bytes]) -> str:

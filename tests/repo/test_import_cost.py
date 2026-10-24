@@ -172,10 +172,8 @@ _STARTUP_PROBE = (
 #: The 12.0 plugin classes (``untaped.sdk.plugin``, ``untaped.sdk.fields`` and
 #: ``untaped.sdk._block``), which every plugin's entry point imports from 12.0
 #: on, add three: 156 against 153 on their base, 2026-10-23, so the budget goes
-#: to 159. ``installed_code`` (``untaped.sdk.storage.installed_code``) adds one:
-#: 711 in all against 710 on its base, 2026-10-24, so the total goes to 714 to
-#: keep three spare.
-_TOTAL_BUDGET = 714
+#: to 159.
+_TOTAL_BUDGET = 710
 _UNTAPED_BUDGET = 159
 
 
