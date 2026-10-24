@@ -182,11 +182,10 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
     blocks: dict[str, list[Any]] = {field: [] for field in _SPEC_FIELDS.values()}
     for decl in mount.declaration.plugin(name).blocks:
         block = getattr(cls, decl.attribute)
-        if not isinstance(block, OwnedBlock):
-            continue
-        if decl.block not in _SPEC_FIELDS:
-            raise TypeError(f"the 11.x seam has no PluginSpec field for a {decl.block} block")
-        blocks[_SPEC_FIELDS[decl.block]].append(block._spelled_as(name, decl.name))
+        # every owned block core ships has a field (tested); one of a kind core
+        # doesn't know has no 11.x reader to reach
+        if isinstance(block, OwnedBlock) and decl.block in _SPEC_FIELDS:
+            blocks[_SPEC_FIELDS[decl.block]].append(block._spelled_as(name, decl.name))
     return {field: tuple(each) for field, each in blocks.items()}
 
 

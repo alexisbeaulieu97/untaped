@@ -155,3 +155,16 @@ def test_an_unknown_kind_suggests_the_declaration_s_kinds() -> None:
     result = _run("plugin", "schema", "keeper.notte")
     assert result.exit_code == 2
     assert "keeper.note" in result.stderr
+
+
+def test_every_owned_block_core_ships_reaches_a_spec_field() -> None:
+    from untaped.runtime.mount import _SPEC_FIELDS
+    from untaped.sdk._block import OwnedBlock
+
+    def subclasses(cls: type) -> set[type]:
+        return {sub for each in cls.__subclasses__() for sub in (each, *subclasses(each))}
+
+    kinds = {
+        sub.block_kind for sub in subclasses(OwnedBlock) if sub.__module__.startswith("untaped.")
+    }
+    assert kinds == set(_SPEC_FIELDS)
