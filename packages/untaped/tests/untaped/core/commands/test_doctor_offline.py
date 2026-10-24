@@ -60,11 +60,11 @@ def _row(rows: list[dict[str, Any]], check: str, title: str | None = None) -> di
 def test_group_readable_config_file_warns(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\n")
     _isolated_config.chmod(0o644)
-    row = _row(_rows(), "config", "config file permissions")
+    row = _row(_rows(), "untaped.config-permissions")
     assert row["status"] == "warn"
     assert "chmod 600" in row["detail"]
     _isolated_config.chmod(0o600)
-    assert _row(_rows(), "config", "config file permissions")["status"] == "pass"
+    assert _row(_rows(), "untaped.config-permissions")["status"] == "pass"
 
 
 def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
@@ -74,7 +74,7 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
         "untaped:\n  http:\n    timout: 3\n  ui:\n    symbols: {success: y}\n"
         "profiles:\n  work:\n    nope: 1\n",
     )
-    row = _row(_rows(make_spec("github", settings=GithubProfile)), "unknown-keys")
+    row = _row(_rows(make_spec("github", settings=GithubProfile)), "untaped.unknown-keys")
     assert row["status"] == "warn"
     assert row["detail"] == ("ignored: github.tokn, untaped.http.timout, profiles.work.nope")
 
@@ -90,7 +90,7 @@ def test_unknown_keys_name_the_other_registered_installs(
     write_reference(
         RefHolder(kind="install", name="aaaaaaaaaaaa"), [], anchor=other, version="11.1.0"
     )
-    row = _row(_rows(), "unknown-keys")
+    row = _row(_rows(), "untaped.unknown-keys")
     assert row["detail"] == (
         f"ignored: acme (another untaped here may read them: untaped 11.1.0 at {other})"
     )
@@ -146,7 +146,7 @@ def test_known_keys_pass(_isolated_config: Path) -> None:
         _isolated_config,
         "format_version: 2\nuntaped:\n  http:\n    timeout_seconds: 3\n",
     )
-    assert _row(_rows(), "unknown-keys")["status"] == "pass"
+    assert _row(_rows(), "untaped.unknown-keys")["status"] == "pass"
 
 
 def test_outdated_installed_skill_warns() -> None:
@@ -293,3 +293,9 @@ def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) ->
     absent = _row(rows, "ext.absent")
     assert absent["status"] == "warn"
     assert absent["detail"] == "`absent-tool` not found on PATH; absent things will fail"
+
+
+def test_core_s_own_checks_are_rows_of_its_class(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "format_version: 2\n")
+    checks = [r["check"] for r in _rows() if r["check"].startswith("untaped.")]
+    assert checks == ["untaped.config-permissions", "untaped.unknown-keys", "untaped.token-store"]

@@ -152,3 +152,8 @@ OptionDecl.or_stdin
 CommandDecl.asks_first
 Declaration.spell
 Positional.__class_getitem__  # Positional[T, ...] at run time
+
+# Blocks on a plugin class: composition reads them from the class, never by name.
+Core.config_permissions
+Core.unknown_keys
+Core.token_store
