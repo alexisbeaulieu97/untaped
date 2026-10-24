@@ -5,11 +5,9 @@ Its schemas are guarded by ``tests/repo/surface.txt`` (``contract workspace.*`` 
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
+from untaped.sdk import home
 from untaped.sdk.testing import compose_with
 from untaped_git import SPEC as GIT
 from untaped_workspace import SPEC as WORKSPACE
@@ -52,7 +50,7 @@ def test_a_max_age_of_zero_asks_the_providers_every_time(
     if by == "env":
         monkeypatch.setenv("UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS", "0")
     else:
-        path = Path(os.environ["UNTAPED_CONFIG"])
+        path = home().expanduser() / "config.yml"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             "profiles:\n  default:\n    workspace:\n      caches:\n"

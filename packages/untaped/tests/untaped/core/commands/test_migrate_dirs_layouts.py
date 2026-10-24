@@ -23,6 +23,7 @@ from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store, layout_path
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate, write_reference
+from untaped.sdk.words import shown_path
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -111,7 +112,7 @@ def test_a_layout_a_running_process_has_open_is_listed_and_fails_to_apply() -> N
     result = _cli("--yes")
     outcome = next(row for row in json.loads(result.stdout) if row["id"] == "acme.data-layouts")
     assert outcome["action"] == "failed"
-    assert outcome["detail"] == "~/.untaped/plugins/acme/data.v4.db is open in a running untaped"
+    assert outcome["detail"] == f"{shown_path(old)} is open in a running untaped"
     assert old.exists()
 
 

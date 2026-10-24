@@ -171,10 +171,11 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/contracts/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
           (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
           (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
-          printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts.yml"
+          mkdir -p "$RUNNER_TEMP/contracts-home"
+          printf 'profiles:\n  default:\n    library:\n      volumes:\n        - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts-home/config.yml"
           # --strict: owner-schema-drift only warns, but the committed fills.json must match shelf here.
-          (cd "$RUNNER_TEMP/shelf-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
-          (cd "$RUNNER_TEMP/library-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
+          (cd "$RUNNER_TEMP/shelf-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
+          (cd "$RUNNER_TEMP/library-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
 
       - name: A broken example plugin is quarantined
         run: |

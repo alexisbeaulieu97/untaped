@@ -1,4 +1,4 @@
-"""Registry-backed configuration loaded from ``~/.untaped/config.yml``.
+"""Registry-backed configuration loaded from the home's ``config.yml``.
 
 The unified composition root owns YAML/env loading and the in-process registry
 of typed plugin settings sections over the profiles layout. Plugin
@@ -41,6 +41,7 @@ from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, effective_active_profile_name
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
+from untaped.sdk._home import config_path, home
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
@@ -57,14 +58,12 @@ if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.storage.cache import Cache
 
-DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 STATE_FILE_NAME = "state.yml"
-STATE_PATH_ENV = "UNTAPED_STATE"
 
 
 def plugins_root() -> Path:
-    """``~/.untaped/plugins/``: every plugin's folder, installed here or not."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "plugins"
+    """The home's ``plugins/``: every plugin's folder, installed here or not."""
+    return home().expanduser() / "plugins"
 
 
 #: On-disk format of ``config.yml`` and ``state.yml``. A file without
@@ -1000,33 +999,13 @@ def check_state_section_name(section: str, *, core: bool = False) -> None:
 
 
 def resolve_state_path() -> Path:
-    """Return the active state file path.
-
-    ``UNTAPED_STATE`` wins; otherwise the name derives from the resolved
-    config file in the same directory: ``config.yml`` → ``state.yml``
-    (``~/.untaped/state.yml`` by default), any other ``<stem>.<ext>`` →
-    ``<stem>.state.yml``, so sibling config files never share state. The
-    state file must never be the config file itself.
-    """
-    config_path = resolve_config_path()
-    override = os.environ.get(STATE_PATH_ENV, "").strip()
-    if override:
-        path = Path(override).expanduser()
-    elif config_path.name == "config.yml":
-        path = config_path.parent / STATE_FILE_NAME
-    else:
-        path = config_path.parent / f"{config_path.stem}.{STATE_FILE_NAME}"
-    if path.resolve() == config_path.resolve():
-        raise ConfigError(
-            f"the state file {path} must not be the config file; "
-            f"point {STATE_PATH_ENV} (or UNTAPED_CONFIG) elsewhere"
-        )
-    return path
+    """``state.yml`` at the home's root (:func:`untaped.sdk.home`)."""
+    return home().expanduser() / STATE_FILE_NAME
 
 
 def resolve_config_path() -> Path:
-    """Return the active config file path."""
-    return Path(os.environ.get("UNTAPED_CONFIG", DEFAULT_CONFIG_PATH)).expanduser()
+    """``config.yml`` at the home's root (:func:`untaped.sdk.home`)."""
+    return config_path()
 
 
 @lru_cache(maxsize=1)

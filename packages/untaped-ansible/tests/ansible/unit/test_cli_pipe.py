@@ -39,7 +39,7 @@ def test_pipe_output_tags_envelope_with_kind(
     state = {"aliases": {"common": "acme/common"}, "sources": [{"name": "prod", "repos": ["a/b"]}]}
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
     (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     result = CliInvoker().invoke(app, [*args, "--format", "pipe"])
 

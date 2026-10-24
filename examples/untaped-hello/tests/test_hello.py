@@ -105,7 +105,7 @@ def test_hello_say_refuses_records_of_another_kind(install: Installer) -> None:
 
 
 def test_hello_moves_its_old_greetings_with_migrate_dirs(install: Installer, home: Home) -> None:
-    old = home.path / ".untaped" / "hello-greetings"
+    old = home.path / "hello-greetings"
     old.mkdir(parents=True)
     (old / "fr.txt").write_text("bonjour", encoding="utf-8")
     hello = install(Hello)

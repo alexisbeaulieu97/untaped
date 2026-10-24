@@ -9,17 +9,17 @@ their tokens live outside the file ([Tokens](#tokens)).
 ## File and layout
 
 ```text
-~/.untaped/config.yml             # settings and profiles (default)
-$UNTAPED_CONFIG                   # one-process override
-~/.untaped/state.yml              # plugin state (default: derived from the config file)
-$UNTAPED_STATE                    # one-process override
+~/.untaped/                       # the home; $UNTAPED_HOME moves it
+  config.yml                      # settings and profiles
+  state.yml                       # plugin state
+  plugins/<name>/                 # each plugin's own files
 ```
 
-The state file sits in the config file's directory and is named after it:
-`config.yml` pairs with `state.yml`, and any other `<name>.<ext>` pairs with
-`<name>.state.yml`. So `UNTAPED_CONFIG=~/work.yml` keeps its state in
-`~/work.state.yml`, and sibling config files never share state.
-`UNTAPED_STATE` puts it elsewhere, but must not name the config file itself.
+untaped keeps everything in one folder, the home: `~/.untaped`, or the
+absolute path in `UNTAPED_HOME` (`~` is expanded; a relative path exits 4).
+Moving the home moves config, state, logins and core's files, so a second home
+shares none of them. A folder setting whose default is spelled under
+`~/.untaped` (`git.store_dir`, …) does not follow `UNTAPED_HOME` yet.
 
 ### Renamed settings
 
@@ -37,8 +37,7 @@ lists every renamed setting.
 Two installs that share one config file can disagree about a renamed setting:
 writes keep keys a version does not know, but an install older than the
 rename ignores the new key and uses the default. Run `config migrate` once every install
-is upgraded, or give the second install its own `UNTAPED_CONFIG` (its state
-follows it); `untaped doctor` reports keys the running version ignores, and
+is upgraded, or give the second install its own `UNTAPED_HOME`; `untaped doctor` reports keys the running version ignores, and
 names the other installs [registered](#several-versions-on-one-machine) here.
 
 ### File format
@@ -313,8 +312,8 @@ gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
 It hands the token to the store on stdin and reads it back before filing it.
 Run it again to replace a rotated token. The index of logins (never the
 tokens) is kept in `state.yml`; entries are `<plugin>/<name>/<id>` under the
-`untaped` service, prefixed by a hash of the config file's path for a config
-other than `~/.untaped/config.yml`, so two config files never share one.
+`untaped` service, prefixed by a hash of the config file's path for a home
+other than `~/.untaped`, so two homes never share one.
 
 A plugin's token for a server comes from the first of these that has one:
 
@@ -332,7 +331,7 @@ and setting a token variable are the person's steps, never an agent's.
 
 A token command (`--token-command`) is an argv list, run without a shell, at
 most once per process and only when a command first needs the token. It runs
-in the config file's folder (`~/.untaped` by default) rather than the folder
+in the home (`~/.untaped` by default) rather than the folder
 you are in, so a repository can't plant the program it finds; give a file the
 command reads as an absolute path. `untaped` strips surrounding whitespace
 from the output and never prints the token, the command's arguments or its

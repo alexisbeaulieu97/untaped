@@ -460,7 +460,7 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
         assert _find(steps, run=tests) == pair
         # Each example is linted from its own checkout, warnings included.
         check = (
-            f'(cd "$RUNNER_TEMP/{example}-src" && UNTAPED_CONFIG="$RUNNER_TEMP/contracts.yml" '
+            f'(cd "$RUNNER_TEMP/{example}-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" '
             '"$RUNNER_TEMP/contracts/bin/untaped" lint --strict)'
         )
         assert _find(steps, run=check) == pair

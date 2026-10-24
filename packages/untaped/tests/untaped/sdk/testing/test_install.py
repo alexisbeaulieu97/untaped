@@ -241,8 +241,8 @@ def test_a_test_plugin_is_named_after_its_class_unless_named(install: Installer)
 
 
 def test_home_is_the_hermetic_home(home: Home) -> None:
-    assert home.path == Path.home()
-    assert home.plugin("shop") == Path.home() / ".untaped" / "plugins" / "shop"
+    assert home.path == Path.home() / ".untaped"
+    assert home.plugin("shop") == home.path / "plugins" / "shop"
 
 
 def test_ran_is_one_type_for_both_spellings(install: Installer) -> None:

@@ -17,7 +17,7 @@ from untaped_github.cli import app
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
 
 def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict[str, object]:

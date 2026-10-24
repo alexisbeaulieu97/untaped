@@ -52,6 +52,12 @@ _FILES: dict[str, dict[str, str]] = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The home is the test's folder from the start, so a cache seeded first is read back."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+
+
 def _sha(repo: str) -> str:
     return f"sha-{repo.rsplit('/', maxsplit=1)[-1]}"
 

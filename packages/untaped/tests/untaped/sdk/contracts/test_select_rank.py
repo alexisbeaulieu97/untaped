@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import ClassVar
@@ -33,6 +32,7 @@ from untaped.runtime.settings import (
     registered_profile_model,
 )
 from untaped.sdk import deprecated, experimental
+from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Contract, Ok, Skipped, gather, select_one
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import Record
@@ -274,7 +274,7 @@ def test_plugin_rank_removing_what_isnt_there_changes_nothing() -> None:
     result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
     assert json.loads(result.stdout)["action"] == "unchanged"
     assert "shelf.extensions.book_source.rank.books unchanged" in result.stderr
-    assert "shelf" not in Path(os.environ["UNTAPED_CONFIG"]).read_text()
+    assert "shelf" not in config_path().read_text()
 
 
 def test_plugin_rank_reports_unchanged_updated_and_deleted() -> None:

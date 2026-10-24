@@ -19,8 +19,8 @@ from packaging.version import InvalidVersion, Version
 
 from untaped.core import skill_stubs
 from untaped.core.skill_stubs import STUB_MARKER, STUB_SOURCE, Comparison, StubAuthor
-from untaped.runtime.settings import DEFAULT_CONFIG_PATH
 from untaped.sdk._cli import existing_directory
+from untaped.sdk._home import home
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.marks import deprecated
@@ -322,8 +322,8 @@ def converts_copies() -> bool:
 
 
 def skill_backups_dir() -> Path:
-    """Where a converted copy is kept: ``~/.untaped/backups/skills``. Never removed."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "backups" / "skills"
+    """Where a converted copy is kept: the home's ``backups/skills``. Never removed."""
+    return home().expanduser() / "backups" / "skills"
 
 
 def skill_roots(*, project_dir: Path | None) -> list[SkillInstallDestination]:

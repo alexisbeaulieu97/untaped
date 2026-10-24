@@ -6,7 +6,6 @@ from abc import abstractmethod
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel
@@ -16,6 +15,7 @@ from untaped.runtime.contracts.registry import reset
 from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.settings import get_settings
 from untaped.sdk import experimental
+from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Configured, Contract, Issued, Record, bridge, cached, listing
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.testing import plugin_candidate
@@ -139,9 +139,8 @@ def compose(*specs: PluginSpec) -> CompositionResult:
 
 
 def write_config(text: str) -> None:
-    import os
 
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     get_settings.cache_clear()

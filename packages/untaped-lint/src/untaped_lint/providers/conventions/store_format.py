@@ -8,8 +8,8 @@ keeps each layout under its own name.
 Only the decidable case is flagged: a call to ``sqlite3.connect``,
 ``shelve.open`` or ``dbm.open`` (a submodule's too, such as ``dbm.gnu.open``,
 and a name ``from <module> import connect`` or ``open`` binds in the call's
-scope) one of whose arguments itself contains a ``plugin_dir(...)`` or
-``named_plugin_dir(...)`` call or a ``~/.untaped`` string. A path built
+scope) one of whose arguments itself contains a ``plugin_dir(...)``,
+``named_plugin_dir(...)`` or ``plugin_path(...)`` call or a ``~/.untaped`` string. A path built
 elsewhere, kept on ``self`` or returned by ``Store.open()`` is not read.
 Lines are
 ``<file>:<line>::store-format::sqlite3.connect() on a path under plugin_dir() ...``.
@@ -30,7 +30,7 @@ from untaped_lint.infrastructure.files import SourceFile, callee
 RULE = "store-format"
 #: The openers, by module: the function that opens a database file.
 _OPENERS = {"sqlite3": "connect", "shelve": "open", "dbm": "open"}
-_DIRS = frozenset({"plugin_dir", "named_plugin_dir"})
+_DIRS = frozenset({"plugin_dir", "named_plugin_dir", "plugin_path"})
 _HOME = "~/.untaped"
 
 

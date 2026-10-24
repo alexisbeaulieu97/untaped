@@ -1,8 +1,8 @@
 """``untaped doctor fix`` end to end: real ``python -m untaped`` children.
 
 Each first-party automatic fix runs as the subprocess a user's run starts,
-under the test plugin's isolated ``HOME``, ``UNTAPED_CONFIG`` and
-``UNTAPED_STATE``; the token store is the fake ``pass`` on a narrowed
+under the test plugin's isolated ``HOME`` (and so its own untaped home);
+the token store is the fake ``pass`` on a narrowed
 ``PATH``. Core's tests run without any plugin package, so a token check
 comes from a ``wiz`` plugin installed on ``PYTHONPATH`` for the test.
 """

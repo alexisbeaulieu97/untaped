@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 import yaml
 
 from untaped.runtime.settings import HttpSettings, load_settings_section
+from untaped.sdk._home import config_path
 
 
 def test_the_timeout_alias_is_gone() -> None:
@@ -16,7 +14,7 @@ def test_the_timeout_alias_is_gone() -> None:
 
 
 def test_the_retired_http_timeout_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"profiles": {"default": {"http": {"timeout": 9}}}}))
 

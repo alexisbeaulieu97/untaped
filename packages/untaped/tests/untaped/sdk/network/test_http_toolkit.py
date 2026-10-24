@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar
@@ -17,6 +16,7 @@ from untaped.runtime.settings import (
     register_profile_settings,
     reset_config_registry,
 )
+from untaped.sdk._home import config_path
 from untaped.sdk.diagnostic import format_error
 from untaped.sdk.errors import ConfigError, HttpError, UntapedError
 from untaped.sdk.network.auth import TokenCommand, TokenSources
@@ -107,7 +107,7 @@ def test_connected_client_defaults_to_resolved_profile_http(
         "profiles:\n  default:\n    http:\n      proxy: http://corp-proxy:3128\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     reset_config_registry()
 
     captured: dict[str, object] = {}
@@ -199,7 +199,7 @@ def test_connected_client_rejects_missing_settings(config: BaseModel, message: s
 
 
 def _write_config(text: str) -> None:
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 

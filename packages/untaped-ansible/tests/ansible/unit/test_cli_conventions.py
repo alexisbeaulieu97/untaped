@@ -32,7 +32,7 @@ def _config(
     cfg.write_text(yaml.safe_dump({"profiles": {"default": profile}}))
     if state is not None:
         (tmp_path / "state.yml").write_text(yaml.safe_dump({"ansible": state}))
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 

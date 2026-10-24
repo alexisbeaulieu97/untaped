@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 
 import pytest
 
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import home
 from untaped.sdk.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -35,7 +34,7 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 def test_root_pipe_records_carry_an_untaped_kind(
     first_party_candidates: tuple[PluginCandidate, ...], args: list[str], kind: str
 ) -> None:
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("profiles:\n  default: {}\n  stage: {}\n", encoding="utf-8")
     root = build_root_app(candidates=first_party_candidates)

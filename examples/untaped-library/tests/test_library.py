@@ -10,7 +10,7 @@ import pytest
 from untaped_library.providers.shelf import LibraryBooks
 from untaped_library.records import Volume
 
-from untaped.sdk import StaleData
+from untaped.sdk import StaleData, home
 from untaped.sdk.testing import assert_fills, invoke_root
 from untaped_lint.testing import assert_clean
 
@@ -26,7 +26,7 @@ profiles:
 
 @pytest.fixture
 def configured() -> None:
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_CONFIG, encoding="utf-8")
 
@@ -76,7 +76,7 @@ def test_the_owner_finds_one_book_and_reports_none() -> None:
 
 @pytest.mark.usefixtures("configured")
 def test_the_answer_is_cached_per_provider_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.write_text(
         _CONFIG
         + "  same:\n"

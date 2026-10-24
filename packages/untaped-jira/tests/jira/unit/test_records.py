@@ -126,7 +126,7 @@ def test_plugin_schema_describes_a_jira_kind_in_a_fresh_process(tmp_path: Path) 
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "UNTAPED_CONFIG": str(tmp_path / "config.yml")},
+        env={**os.environ, "UNTAPED_HOME": str(tmp_path)},
     )
 
     assert proc.returncode == 0, proc.stderr

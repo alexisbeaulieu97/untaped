@@ -47,7 +47,7 @@ def test_ping_uses_configured_api_prefix(
     expected_path: str,
 ) -> None:
     cfg = _write_config(tmp_path, api_prefix=api_prefix)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         _mock_me(mock, expected_path.replace("ping/", "me/"))
@@ -84,7 +84,7 @@ def test_ping_ignores_invalid_sibling_section(
                 max_age_seconds: not-a-number
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         _mock_me(mock)
@@ -120,7 +120,7 @@ def test_ping_table_renders_detail_view(
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
 
     with respx.mock(base_url="https://aap.example.com") as mock:
@@ -156,7 +156,7 @@ def test_ping_json_emits_bare_object(
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     get_settings.cache_clear()
 
     with respx.mock(base_url="https://aap.example.com") as mock:
@@ -177,7 +177,7 @@ def test_ping_fails_when_the_token_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``/ping/`` is unauthenticated; ping must also prove the token works."""
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path, api_prefix="/api/v2/")))
+    monkeypatch.setenv("UNTAPED_HOME", str(_write_config(tmp_path, api_prefix="/api/v2/").parent))
     get_settings.cache_clear()
 
     with respx.mock(base_url="https://aap.example.com") as mock:
@@ -196,7 +196,7 @@ def test_ping_fails_when_the_token_is_rejected(
 def _list_answering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response, *args: str
 ) -> CliResult:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path, api_prefix="/api/v2/")))
+    monkeypatch.setenv("UNTAPED_HOME", str(_write_config(tmp_path, api_prefix="/api/v2/").parent))
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(return_value=response)
         return CliInvoker().invoke(app, ["job-templates", "list", *args])
@@ -274,7 +274,7 @@ def test_ping_rejects_command_local_profile_flag(
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     result = CliInvoker().invoke(
         app,
@@ -285,7 +285,7 @@ def test_ping_rejects_command_local_profile_flag(
 
 
 def test_ping_requires_base_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     result = CliInvoker().invoke(app, ["ping"])
     assert result.exit_code != 0
     assert "awx.server is not set" in result.output
@@ -310,7 +310,7 @@ def test_list_applies_default_organization_only_to_scoped_kinds(
               default_organization: Default
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     captured: list[httpx.Request] = []
 
@@ -350,7 +350,7 @@ def test_list_filter_passes_through_to_awx(tmp_path: Path, monkeypatch: pytest.M
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     captured: list[httpx.Request] = []
 
@@ -397,7 +397,7 @@ def test_list_filter_rejects_malformed_entry(
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
     result = CliInvoker().invoke(app, ["job-templates", "list", "--filter", "bogus"])
     assert result.exit_code != 0
@@ -432,7 +432,7 @@ def test_apply_emits_clamp_warning_above_cap(
     they ask for more concurrency than they get. Without this test the
     warning could silently regress to a no-op."""
     cfg = _write_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     yml = tmp_path / "empty.yml"
     yml.write_text("")  # zero docs → no AWX calls, runner just prints rows
     result = CliInvoker().invoke(app, ["apply", str(yml), "--parallel", "100"])
@@ -454,7 +454,7 @@ def test_apply_accepts_positional_file(
 ) -> None:
     """Apply commands take the YAML file as a required positional argument."""
     cfg = _write_config(tmp_path)
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     yml = tmp_path / "empty.yml"
     yml.write_text("")
     args = [str(yml) if a == "FILE" else a for a in template]
@@ -489,7 +489,7 @@ def test_root_verify_ssl_false_reaches_a_server_a_variable_sets(
 ) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    http: {verify_ssl: false}\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     monkeypatch.setenv(variable, value)
     get_settings.cache_clear()
 

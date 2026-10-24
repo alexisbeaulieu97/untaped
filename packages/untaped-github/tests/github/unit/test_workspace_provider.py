@@ -7,9 +7,7 @@ Asked the way workspace asks it: ``gather`` for the listing and readiness,
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
-from pathlib import Path
 
 import httpx
 import pytest
@@ -17,7 +15,7 @@ import respx
 import yaml
 
 from untaped.runtime.settings import get_settings
-from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError
+from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError, home
 from untaped.sdk.contracts import Failed, NoProviderReady, Ok, convert, gather
 from untaped.sdk.testing import assert_fills, compose_with
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
@@ -75,7 +73,7 @@ def configure(**github: object) -> None:
 
     The token is ``GH_TOKEN``'s (:func:`_token`); a ``base_url`` is the server's URL.
     """
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     url = github.pop("base_url", None)
     section = {**github, **({"server": {"url": url}} if url else {})}

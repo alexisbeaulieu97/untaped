@@ -25,7 +25,7 @@ SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
 
 def _repo(full_name: str, source: Path, *, clone_url: str | None = None) -> dict[str, object]:

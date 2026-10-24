@@ -186,7 +186,7 @@ def test_section_accessors_apply_token_fallbacks(
 ) -> None:
     config = tmp_path / "config.yml"
     config.write_text("profiles:\n  default:\n    demo:\n      base_url: https://x\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(config))
+    monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
     monkeypatch.setenv("DEMO_TOKEN_2", "env-token")
     reset_config_registry()
     register_profile_settings("demo", DemoSettings)

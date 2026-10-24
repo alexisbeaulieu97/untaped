@@ -53,7 +53,7 @@ MIGRATE_HINT = "hint: run `untaped config migrate` to rename it in config.yml"
 @pytest.fixture
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(path))
+    monkeypatch.setenv("UNTAPED_HOME", str(path.parent))
     return path
 
 

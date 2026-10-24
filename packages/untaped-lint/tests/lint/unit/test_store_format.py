@@ -39,12 +39,14 @@ def test_each_opener_on_a_plugin_directory_is_flagged(tmp_path: Path) -> None:
             dbm.open(str(named_plugin_dir("acme") / "k"), "c")
             shelve.open(filename=f"{plugin_dir(SPEC)}/shelf")
             sqlite3.connect(Path("~/.untaped/plugins/acme/x.db").expanduser())
+            sqlite3.connect(plugin_path("acme", "x.db").expanduser())
         """
     assert _violations(tmp_path, source) == [
         _line(6),
         _line(7, "dbm.open", "named_plugin_dir()"),
         _line(8, "shelve.open"),
         _line(9, under="~/.untaped"),
+        _line(10, "sqlite3.connect", "plugin_path()"),
     ]
 
 

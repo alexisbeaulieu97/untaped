@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import os
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from pathlib import Path
@@ -24,6 +23,7 @@ from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec, settings_model
 from untaped.runtime.settings import get_settings
 from untaped.sdk._cli import create_app, echo, report_errors
+from untaped.sdk._home import config_path
 from untaped.sdk.diagnostic import DeprecationNotice, Message
 from untaped.sdk.health.deprecated_keys import Retired, key_mappings, mapping_errors
 from untaped.sdk.progress import ProgressHandle
@@ -71,7 +71,7 @@ def _run(*argv: str, spec: PluginSpec = SPEC) -> CliResult:
 
 
 def _write(text: str) -> Path:
-    path = Path(os.environ["UNTAPED_CONFIG"])
+    path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     get_settings.cache_clear()

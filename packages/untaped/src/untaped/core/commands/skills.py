@@ -9,7 +9,7 @@ installed directory and marker always keep the full ``untaped-*`` ID.
 :func:`check_installed_skills` runs after every root command. Under
 ``skills.updates: auto`` (the default) it refreshes the stub skills in the
 home folder that an older untaped wrote and converts copies from 11.0 to
-stubs, keeping the copies under ``~/.untaped/backups/skills``; ``warn``
+stubs, keeping the copies under the home's ``backups/skills``; ``warn``
 reports them instead. A project's own skills are never written by a run.
 """
 
@@ -272,7 +272,7 @@ def check_installed_skills(
     for the home roots (``~/.agents/skills``, ``~/.claude/skills``):
     ``auto`` (default) silently refreshes stubs an older untaped wrote,
     converts copies from 11.0 to stubs (keeping each copy under
-    ``~/.untaped/backups/skills``) and updates other outdated copies; ``warn``
+    the home's ``backups/skills``) and updates other outdated copies; ``warn``
     reports them; ``off`` does nothing. Without ``allow_updates`` (after a
     failed or previewing command) nothing is written: ``auto`` leaves stubs
     and copies to convert for the next successful command and warns about

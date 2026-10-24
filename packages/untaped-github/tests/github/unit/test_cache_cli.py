@@ -15,6 +15,7 @@ import pytest
 import respx
 
 from untaped.runtime import bootstrap
+from untaped.sdk import plugin_path
 from untaped.sdk.testing import (
     CliInvoker,
     CliResult,
@@ -37,7 +38,7 @@ _NO_MAX_AGE = "      caches:\n        sweep:\n          max_age_seconds: 0\n"
 def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
 
@@ -373,7 +374,7 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
-    assert Path(row["path"]).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
+    assert Path(row["path"]).is_relative_to(plugin_path("github", "worktrees").expanduser())
     assert next(iter(row)) == "target_path" and row["target_path"] == row["path"]
 
 
@@ -388,7 +389,7 @@ def test_cache_worktree_refuses_an_unknown_column_before_materializing(
 
     assert result.exit_code == 2, result.output
     assert "unknown column 'nope'" in result.stderr
-    assert not (Path.home() / ".untaped/plugins/github/worktrees").exists()
+    assert not (plugin_path("github", "worktrees").expanduser()).exists()
 
 
 def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:

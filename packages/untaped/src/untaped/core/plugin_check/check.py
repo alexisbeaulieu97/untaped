@@ -41,6 +41,7 @@ from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.runtime.settings import get_settings
+from untaped.sdk._home import HOME_ENV
 from untaped.sdk.errors import UsageError, first_validation_error
 from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
@@ -145,11 +146,10 @@ _EMPTY_HOME = "preview runs on an empty HOME"
 def _migrations(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
     """Each migration's preview, run against an empty HOME: it must read only and return rows."""
     rows: list[PluginCheckRow] = []
-    saved = {key: os.environ.get(key) for key in ("HOME", "UNTAPED_CONFIG", "UNTAPED_STATE")}
+    saved = {key: os.environ.get(key) for key in ("HOME", HOME_ENV)}
     with tempfile.TemporaryDirectory(prefix="untaped-plugin-check-") as home:
         os.environ["HOME"] = home
-        os.environ["UNTAPED_CONFIG"] = os.path.join(home, ".untaped", "config.yml")
-        os.environ.pop("UNTAPED_STATE", None)
+        os.environ[HOME_ENV] = os.path.join(home, ".untaped")
         get_settings.cache_clear()
         try:
             for migration in spec.migrations:

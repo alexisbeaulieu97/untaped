@@ -29,7 +29,7 @@ def isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
     """Use an isolated untaped config for CLI tests."""
     cfg = tmp_path / "config.yml"
     library = tmp_path / "recipe-library"
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     monkeypatch.setenv("UNTAPED_RECIPE__LIBRARY_DIR", str(library))
     get_settings.cache_clear()
     yield cfg

@@ -24,6 +24,7 @@ from untaped.core.skills import (
     SkillKind,
     SkillState,
     find_installed_skills,
+    skill_backups_dir,
     skill_roots,
     update_installed_skill,
 )
@@ -32,6 +33,7 @@ from untaped.runtime.registry import PluginSpec
 from untaped.sdk import SkillAsset
 from untaped.sdk.storage import data_file
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
+from untaped.sdk.words import shown_path
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -274,14 +276,12 @@ def test_auto_converts_an_old_copy_once_and_keeps_a_backup(
     result = _run(_root(), "demo", "--help")
     assert result.exit_code == 0, result.output
     assert result.stdout.count("converted") == 0  # stderr only
-    assert (
-        "converted 2 agent skills to stubs; the old copies are in ~/.untaped/backups/skills"
-        in result.stderr
-    )
+    kept_in = shown_path(skill_backups_dir())
+    assert f"converted 2 agent skills to stubs; the old copies are in {kept_in}" in result.stderr
     for target in ("codex", "claude"):
         stub = _home(target=target)
         assert sorted(path.name for path in stub.iterdir()) == [STUB_MARKER, "SKILL.md"]
-        kept = Path.home() / ".untaped" / "backups" / "skills" / target / "untaped-demo"
+        kept = skill_backups_dir() / target / "untaped-demo"
         assert (kept / "references" / "commands.md").is_file()
         assert (kept / _COPY_MARKER).is_file()
     assert _run(_root(), "demo", "--help").stderr == ""
@@ -302,7 +302,7 @@ def test_a_second_conversion_keeps_both_backups(
     _run(_root(), "demo", "--help")
     _install_copy(tmp_path / "again", where=["--force"])
     _run(_root(), "demo", "--help")
-    kept = Path.home() / ".untaped" / "backups" / "skills" / "codex"
+    kept = skill_backups_dir() / "codex"
     assert sorted(path.name for path in kept.iterdir()) == ["untaped-demo", "untaped-demo-2"]
 
 
@@ -442,7 +442,7 @@ def test_update_converts_a_project_s_copy_after_a_dry_run_shows_it(
     result = _run(_root(), "skills", "update", "-f", "json")
     assert [row["action"] for row in json.loads(result.stdout)] == ["updated"]
     assert sorted(path.name for path in installed.iterdir()) == [STUB_MARKER, "SKILL.md"]
-    assert not (Path.home() / ".untaped" / "backups").exists()
+    assert not (skill_backups_dir().parent).exists()
 
 
 def test_status_shows_kind_and_state(tmp_path: Path, run_as: Callable[[str], None]) -> None:
@@ -471,7 +471,7 @@ def test_parallel_conversions_and_refreshes_both_succeed(
         next(item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo")
         for _ in range(2)
     )
-    backups = Path.home() / ".untaped" / "backups" / "skills"
+    backups = skill_backups_dir()
     update_installed_skill(skills, first, backup_root=backups)
     update_installed_skill(skills, second, backup_root=backups)
     assert sorted(path.name for path in _home().iterdir()) == [STUB_MARKER, "SKILL.md"]
@@ -501,7 +501,7 @@ def test_a_conversion_that_finds_a_parallel_run_s_stub_keeps_no_backup(
     stale = next(
         item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo"
     )
-    backups = Path.home() / ".untaped" / "backups" / "skills"
+    backups = skill_backups_dir()
     update_installed_skill(skills, stale, backup_root=backups)
     # A slower run that still believes it holds the copy converts the stub again.
     update_installed_skill(skills, stale, backup_root=backups)
@@ -579,8 +579,8 @@ def test_update_keeps_a_backup_of_a_home_copy_it_converts(
     _install_copy(tmp_path)
     result = _run(_root(), "skills", "update")
     assert result.exit_code == 0, result.output
-    assert "the old copies are in ~/.untaped/backups/skills" in result.stderr
-    kept = Path.home() / ".untaped" / "backups" / "skills" / "codex" / "untaped-demo"
+    assert f"the old copies are in {shown_path(skill_backups_dir())}" in result.stderr
+    kept = skill_backups_dir() / "codex" / "untaped-demo"
     assert (kept / "references" / "commands.md").is_file()
 
 

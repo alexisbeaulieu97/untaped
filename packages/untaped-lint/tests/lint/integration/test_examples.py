@@ -34,7 +34,7 @@ def _run(home: Path) -> dict[str, Any]:
         check=False,
         timeout=180,
         cwd=home,
-        env={**os.environ, "UNTAPED_CONFIG": str(config)},
+        env={**os.environ, "UNTAPED_HOME": str(config.parent)},
     )
     assert done.returncode == 0, done.stderr
     result: dict[str, Any] = json.loads(done.stdout)

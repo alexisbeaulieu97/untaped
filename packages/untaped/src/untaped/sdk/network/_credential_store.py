@@ -23,13 +23,13 @@ import shlex
 from collections.abc import Callable, Sequence
 from contextvars import ContextVar, Token
 from functools import cache
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
-from untaped.runtime.settings import DEFAULT_CONFIG_PATH, resolve_config_path
+from untaped.runtime.settings import resolve_config_path
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk._home import CONFIG_FILE, DEFAULT_HOME
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import StoreName, TokenStore, no_backend_message, pick_store
 from untaped.sdk.network.auth import check_program, read_command
@@ -207,12 +207,12 @@ def _read_argv(row: CredentialRow) -> list[str]:
 
 
 def config_prefix() -> str:
-    """The entry prefix for this config file: ``""`` for the default one, else a short hash.
+    """The entry prefix for this home's config file: ``""`` for the default home's, else a hash.
 
-    So two config files on one machine never read each other's entries.
+    So two homes on one machine never read each other's entries.
     """
     path = resolve_config_path().expanduser().absolute()
-    if path == Path(DEFAULT_CONFIG_PATH).expanduser().absolute():
+    if path == (DEFAULT_HOME / CONFIG_FILE).expanduser().absolute():
         return ""
     return hashlib.sha256(str(path).encode()).hexdigest()[:8] + "/"
 

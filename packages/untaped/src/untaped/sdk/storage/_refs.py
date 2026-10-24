@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from untaped.runtime.settings import DEFAULT_CONFIG_PATH
+from untaped.sdk._home import home
 from untaped.sdk.diagnostic import _is_none
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import experimental
@@ -69,8 +69,8 @@ _refreshed = False
 
 
 def refs_dir() -> Path:
-    """``~/.untaped/refs``: beside ``plugins/``, so it reserves no plugin name."""
-    return Path(DEFAULT_CONFIG_PATH).expanduser().parent / "refs"
+    """The home's ``refs``: beside ``plugins/``, so it reserves no plugin name."""
+    return home().expanduser() / "refs"
 
 
 @experimental

@@ -8,7 +8,6 @@ would leave behind. Checks name real root commands of a test composition.
 from __future__ import annotations
 
 import json
-import os
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -22,6 +21,7 @@ from untaped.core.commands.fix import ChildRun
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.registry import PluginSpec
+from untaped.sdk._home import config_path
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
 
@@ -504,9 +504,7 @@ def _stale_skill() -> None:
 
 
 def _old_http_key() -> None:
-    write_config(
-        Path(os.environ["UNTAPED_CONFIG"]), "profiles:\n  default:\n    http:\n      timeout: 9\n"
-    )
+    write_config(config_path(), "profiles:\n  default:\n    http:\n      timeout: 9\n")
 
 
 #: Puts each shell row that can name a fix into its fixable state, by check id.

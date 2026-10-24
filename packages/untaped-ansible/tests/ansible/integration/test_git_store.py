@@ -9,7 +9,6 @@ wires it: GitHub's REST inventory is the only fake.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import threading
 from collections.abc import Callable, Iterator, Sequence
@@ -21,7 +20,7 @@ import yaml
 
 from untaped.runtime import bootstrap
 from untaped.runtime.settings import get_settings
-from untaped.sdk import ErrorCategory, GitCommandError, GitResult
+from untaped.sdk import ErrorCategory, GitCommandError, GitResult, home
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_ansible import SPEC as ANSIBLE
@@ -86,7 +85,7 @@ def store_root(
 ) -> Iterator[Path]:
     """A temp store root, a github token in the profile, and git + github + ansible composed."""
     root = tmp_path / "store"
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     profile = {"github": {"token": _TOKEN}, "git": {"store_dir": str(root)}}
     config.write_text(yaml.safe_dump({"profiles": {"default": profile}}), encoding="utf-8")
@@ -316,7 +315,7 @@ def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(
 
 def _save_sources(*names: str, repo: str = "acme/site") -> None:
     """Save sources ``names`` (each selecting ``repo``) and point the index at the tests' file."""
-    config = Path(os.environ["UNTAPED_CONFIG"])
+    config = home().expanduser() / "config.yml"
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
     data["profiles"]["default"]["ansible"] = {"index_path": str(config.parent / "index.sqlite3")}
     config.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -338,7 +337,7 @@ def test_removing_a_source_keeps_a_repo_another_source_selects_then_removes_it(
     tmp_path: Path, store_root: Path
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a", "b", "c", "d")
     for key in ("a", "b", "c", "d"):
         _refresh(index_dir, "site", source_key=f"source:{key}")
@@ -362,7 +361,7 @@ def test_removing_a_source_keeps_a_repo_another_source_selects_then_removes_it(
 
 def test_a_dry_run_plans_the_release_and_frees_nothing(tmp_path: Path, store_root: Path) -> None:
     _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a")
 
@@ -381,7 +380,7 @@ def test_removing_a_source_releases_a_repo_whose_refs_it_no_longer_scans(
     """A branch deleted upstream leaves no ref scan, but the source still selects the repo."""
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     site.branch("release-1")
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a", ref_patterns=["release-*"])
     site.delete_branch("release-1")
@@ -401,7 +400,7 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     worktree = tmp_path / "ws" / "site"
     workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a")
 
@@ -421,7 +420,7 @@ def test_removing_a_source_leaves_a_repo_it_never_fetched(tmp_path: Path, store_
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a", ref_patterns=["nomatch-*"])
     before = _git(_repo(store_root, "site"), "for-each-ref", "--format=%(refname)")
@@ -436,7 +435,7 @@ def test_rerunning_a_remove_finishes_a_release_that_was_interrupted(
 ) -> None:
     """Killed after ansible's refs and file went, before the repo was removed."""
     _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a")
     _refresh(index_dir, "site", source_key="source:a")
     repo = _repo(store_root, "site")
@@ -457,7 +456,7 @@ def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it
 ) -> None:
     """The decision reads the other sources' last refreshes, not the store: no wait, no release."""
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    index_dir = Path(os.environ["UNTAPED_CONFIG"]).parent
+    index_dir = (home().expanduser() / "config.yml").parent
     _save_sources("a", "b")
     _refresh(index_dir, "site", source_key="source:a")
     _refresh(index_dir, "site", source_key="source:b")

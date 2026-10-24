@@ -62,6 +62,7 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
     writes,
 )
 from untaped.sdk._concurrency import bounded_map
+from untaped.sdk._home import home, plugin_path
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.sdk._stdin import (
     StdinInput,
@@ -566,6 +567,9 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "current_project",
     "known_projects",
     "project_at",
+    # the home
+    "home",
+    "plugin_path",
     # caches and stores
     "Cache",
     "Dir",

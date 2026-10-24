@@ -29,6 +29,7 @@ from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk._cli import DryRunOption, FormatOption, YesOption, create_app, writes
+from untaped.sdk._home import config_path
 from untaped.sdk.marks import DEPRECATED_OPTIONS, deprecated, experimental
 from untaped.sdk.testing import CliInvoker
 from untaped.sdk.words import shown_path
@@ -135,7 +136,7 @@ def _normalised(page: str) -> str:
     head, second, rest = page.split("\n", 2)
     second = re.sub(r"^untaped \S+", "untaped VERSION", second)
     second = second.replace(_shown_prefix(), "ENV")
-    return "\n".join([head, second, rest.replace(os.environ["UNTAPED_CONFIG"], "CONFIG")])
+    return "\n".join([head, second, rest.replace(str(config_path()), "CONFIG")])
 
 
 def _shown_prefix() -> str:
@@ -394,9 +395,9 @@ def test_the_second_line_names_the_version_and_environment() -> None:
 def test_the_shared_section_names_the_config_file_in_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "elsewhere.yml"))
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "elsewhere"))
     _, out, _ = _run()
-    assert f"- Settings live in `{tmp_path / 'elsewhere.yml'}`" in out
+    assert f"- Settings live in `{tmp_path / 'elsewhere' / 'config.yml'}`" in out
 
 
 def test_a_project_asking_for_another_untaped_adds_a_third_line(

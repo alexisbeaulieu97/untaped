@@ -1423,7 +1423,7 @@ def aap_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
               api_prefix: /api/v2/
         """
     )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     # Not in the file: a plaintext token there warns on every run.
     monkeypatch.setenv("UNTAPED_AWX__TOKEN", "secret")
     return cfg

@@ -6,8 +6,7 @@ Every environment variable `untaped` reads or sets.
 
 | Variable | Effect |
 |---|---|
-| `UNTAPED_CONFIG` | Path of the config file. Default: `~/.untaped/config.yml`. See [File and layout](../configuration.md#file-and-layout). |
-| `UNTAPED_STATE` | Path of the state file. Default: derived from the config file; see [File and layout](../configuration.md#file-and-layout). |
+| `UNTAPED_HOME` | The folder untaped keeps everything in: `config.yml`, `state.yml` and `plugins/<name>/`. An absolute path (`~` is expanded); a relative one exits 4. Default: `~/.untaped`. See [File and layout](../configuration.md#file-and-layout). |
 | `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
 | `UNTAPED_FORMAT` | Default `--format` (`json`, `yaml`, `table`, `raw` or `pipe`) for commands whose default is `table`. Wins over the `ui.format` setting; an explicit `--format` wins over it. Any other value exits 2, except under `doctor` and `setup`, which ignore it. |
 | `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, info) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](../scripting.md#stderr-diagnostics). |
