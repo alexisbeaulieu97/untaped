@@ -269,6 +269,7 @@ class Prune(Command[CoreSettings]):
             unlink_lock,
         )
 
+        confirm = self.confirm.as_dry_run() if self.check else self.confirm
         diag = self.ctx.diag
         if self.project is None:
             missing, unreadable = missing_projects()
@@ -287,7 +288,6 @@ class Prune(Command[CoreSettings]):
         if not missing:
             diag.info("no project's folder is gone; nothing to prune")
             return
-        confirm = self.confirm.as_dry_run() if self.check else self.confirm
         with ExitStack() as stack:
             removals: list[Removal] = []
             for ref in missing:

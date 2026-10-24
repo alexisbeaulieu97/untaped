@@ -95,7 +95,18 @@ def test_failed_command_still_warns() -> None:
 
 @pytest.mark.usefixtures("_warn")
 @pytest.mark.parametrize(
-    "args", [("skills", "list"), ("doctor",), ("--version",), ("Skills", "list"), ("DOCTOR",)]
+    "args",
+    [
+        ("skills", "list"),
+        ("doctor",),
+        ("--version",),
+        ("Skills", "list"),
+        ("DOCTOR",),
+        ("skills",),
+        ("skills", "--help"),
+        ("doctor", "--help"),
+        ("skills", "install", "--bogus"),
+    ],
 )
 def test_skills_and_doctor_commands_do_not_warn(args: tuple[str, ...]) -> None:
     root = _install_then_age()
@@ -274,3 +285,11 @@ def test_a_repairing_command_does_not_warn() -> None:
     root = _declared_root()
     assert "from an older untaped" not in _run(root, "demo", "repair")[1]
     assert "from an older untaped" in _run(root, "demo", "move")[1]
+
+
+def test_a_check_that_finds_nothing_is_still_a_preview(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
+    root = _install_then_age()
+    code, output = _run(root, "project", "prune", "--check")
+    assert code == 0, output
+    assert _installed("untaped-demo").read_text() == _OLDER

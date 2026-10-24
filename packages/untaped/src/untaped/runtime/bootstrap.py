@@ -27,7 +27,7 @@ from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import PackagedSkill
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
-from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching
+from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import set_profile_override
 from untaped.runtime.registry import (
@@ -301,7 +301,7 @@ def build_root_app(
         root,
         _root_options(),
         after_command=lambda tokens, ran, failed: _check_skills_after(
-            tokens, ran, skills, failed=failed
+            root, tokens, ran, skills, failed=failed
         ),
     )
     for flag in chain(root.help_flags, root.version_flags):
@@ -461,6 +461,7 @@ _PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
 
 
 def _check_skills_after(
+    root: App,
     tokens: list[str],
     ran: Sequence[Dispatched],
     skills: Mapping[str, PackagedSkill],
@@ -470,16 +471,17 @@ def _check_skills_after(
     """Run the per-run installed-skills check after a command.
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
-    a command marked ``repairs``. After a failed or previewing command
-    (``--dry-run``; for an 11.x command a ``_PREVIEW_FLAGS`` option before
-    any ``--``) it writes nothing: ``warn`` still reports, ``auto`` waits for
-    the next successful command. Never lets the check break the command.
+    a command marked ``repairs``, its help and a bad flag included. After a
+    failed or previewing command (``--dry-run``, ``Confirm.as_dry_run()``; for
+    an 11.x command a ``_PREVIEW_FLAGS`` option before any ``--``) it writes
+    nothing: ``warn`` still reports, ``auto`` waits for the next successful
+    command. Never lets the check break the command.
     """
     if not tokens or tokens[0].startswith("-"):
         return
-    if ran and ran[0].decl.repairs:
-        return
     try:
+        if _repairs(root, tokens):
+            return
         if ran:
             preview = ran[0].preview
         else:
@@ -487,6 +489,17 @@ def _check_skills_after(
         check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
+
+
+def _repairs(root: App, tokens: list[str]) -> bool:
+    """Whether ``tokens`` select a command marked ``repairs``, however it ended."""
+    app = root
+    for token in tokens:
+        name = None if token.startswith("-") else resolve_command(app, token)
+        if name is None:
+            break
+        app = app[name]
+    return app is not root and repairs_at(app) is True
 
 
 def _install_root_callback(

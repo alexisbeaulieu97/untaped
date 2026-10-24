@@ -17,7 +17,7 @@ Checks each visible command of a command subtree:
   the checked subtrees;
 - ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
   declaring ``@writes`` (a plugin class's command has no such declaration:
-  its ``Confirm`` field is one);
+  its ``Confirm`` or ``DryRun`` field is one);
 - ``mutation-format`` — a declared write has no ``--format``;
 - ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``;
 - ``reserved-panel`` — a command or option group named after one of core's

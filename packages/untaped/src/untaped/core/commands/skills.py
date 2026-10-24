@@ -43,7 +43,7 @@ from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import not_found, plural, run_hint, shown_path
 
@@ -188,7 +188,7 @@ class Update(Command[CoreSettings]):
     force: bool = Field(
         False, description="Also rewrite stubs someone edited or a newer untaped wrote."
     )
-    dry_run: bool = Field(False, description="Show what would change and change nothing.")
+    dry_run: DryRun
     output: Output[SkillOutcome]
 
     def run(self) -> Iterator[SkillOutcome]:
@@ -200,7 +200,7 @@ class Update(Command[CoreSettings]):
             stdin=self.stdin,
             project_dir=self.project_dir,
             force=self.force,
-            dry_run=self.dry_run,
+            dry_run=bool(self.dry_run),
         )
 
 

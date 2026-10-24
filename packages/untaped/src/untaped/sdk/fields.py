@@ -8,7 +8,7 @@ module is the vocabulary its fields use beyond plain Python types:
   record's or a file option's fields for core.
 - ``File[M]``, ``ExistingFile``, ``TextOrStdin``, ``PathOrStdin``,
   ``KeyValue`` and ``KeyJson`` are value types core parses.
-- ``Output[R]``, ``Stdin[R]``, ``Lines``, ``Confirm``, ``Refresh``,
+- ``Output[R]``, ``Stdin[R]``, ``Lines``, ``Confirm``, ``DryRun``, ``Refresh``,
   ``Parallel`` and ``Limit`` are fields core fills: each adds its fixed flags,
   configured by the field's default value.
 - ``key(Model).field`` is a typed reference to one settings field.
@@ -673,7 +673,8 @@ class Confirm(FieldBlock):
     def as_dry_run(self) -> Confirm:
         """The same answers with ``--dry-run`` on: what a ``--check`` flag passes on.
 
-        Noted on the current run, so core treats the invocation as a preview.
+        Noted on the current run, so core treats the invocation as a preview:
+        call it at the top of ``run``, before any early return.
         """
         from untaped.sdk.run import note_preview  # noqa: PLC0415 - only a --check pays
 

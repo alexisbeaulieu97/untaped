@@ -415,6 +415,27 @@ def declared(func: object) -> CommandDecl | None:
     return found if isinstance(found, CommandDecl) else None
 
 
+def repairs_at(app: App) -> bool | None:
+    """Whether the command ``app`` parses to repairs the setup (``repairs = True``).
+
+    A group without a command of its own (its help, a bad flag) repairs when
+    every command in it does. ``None`` when ``app`` is no declared command or
+    group: one mounted through the 11.x seam.
+    """
+    decl = declared(app.default_command)
+    if decl is not None:
+        return decl.repairs
+    marks: list[bool] = []
+    for name in app:
+        if name.startswith("-"):
+            continue
+        mark = repairs_at(app[name])
+        if mark is None:
+            return None
+        marks.append(mark)
+    return all(marks) if marks else None
+
+
 def is_declared(func: object) -> bool:
     """Whether ``func`` is a command the mount made from a plugin class's declaration."""
     return declared(func) is not None
@@ -854,6 +875,7 @@ __all__ = [
     "dispatching",
     "is_declared",
     "plugin_spec",
+    "repairs_at",
     "run_built",
     "watching",
 ]

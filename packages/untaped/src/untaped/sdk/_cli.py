@@ -140,11 +140,11 @@ def _user_theme() -> ThemeSpec:
 def _repairs(app: App, commands: tuple[str, ...]) -> bool:
     """Whether the command parsed (``app``, at ``commands``) repairs the setup."""
     # Lazy: the mount imports this module.
-    from untaped.runtime.mount import declared  # noqa: PLC0415
+    from untaped.runtime.mount import repairs_at  # noqa: PLC0415
 
-    decl = declared(app.default_command)
-    if decl is not None:
-        return decl.repairs
+    repairs = repairs_at(app)
+    if repairs is not None:
+        return repairs
     return bool(commands[:1]) and commands[0] in _FORMAT_ENV_LENIENT
 
 
