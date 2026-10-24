@@ -71,13 +71,16 @@ def _package_of_module(module: str) -> str:
         return module
     if found is None or not found.submodule_search_locations or not rest:
         return module
-    folder = Path(found.submodule_search_locations[0])
-    for index, part in enumerate(rest):
-        if not (folder / part / "__init__.py").is_file():
-            leaf = index == len(rest) - 1 and (folder / f"{part}.py").is_file()
-            return ".".join([top, *rest[:index]]) if leaf else module
-        folder = folder / part
-    return module
+    folders = [Path(each) for each in found.submodule_search_locations]
+    *packages, leaf = rest
+    for part in packages:
+        folders = [folder / part for folder in folders if (folder / part).is_dir()]
+        if not folders:
+            return module
+    # the last part is a package when it is a folder, else a module in the one before
+    if any((folder / leaf).is_dir() for folder in folders):
+        return module
+    return module.rpartition(".")[0]
 
 
 def _source_dir(package: str) -> Path:

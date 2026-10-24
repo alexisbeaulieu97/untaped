@@ -36,3 +36,14 @@ def test_a_package_that_fails_to_import_is_found_without_importing_it(
     monkeypatch.syspath_prepend(str(tmp_path))
     assert candidate_package("acme_broken.plugin:Acme") == "acme_broken"
     assert "acme_broken" not in sys.modules
+
+
+def test_a_namespace_subpackage_and_a_compiled_leaf_name_their_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "acme_ns" / "sub").mkdir(parents=True)
+    (tmp_path / "acme_ns" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "acme_ns" / "sub" / "plugin.cpython-314-x86_64-linux-gnu.so").write_bytes(b"")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert candidate_package("acme_ns.sub.plugin:Acme") == "acme_ns.sub"
+    assert candidate_package("acme_ns.sub:SPEC") == "acme_ns.sub"
