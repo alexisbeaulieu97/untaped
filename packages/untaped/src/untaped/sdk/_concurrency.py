@@ -48,7 +48,8 @@ def bounded_map[ItemT, ResultT](
             for item in items:
                 on_each(item, fn(item))
         except BaseException:
-            _abort(on_abort)
+            if on_abort is not None:
+                on_abort()
             raise
         return
     with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(items)))) as executor:
@@ -103,8 +104,7 @@ def bounded_iter[ItemT, ResultT](
         except GeneratorExit:  # stopped between items: nothing is in flight
             raise
         except BaseException:
-            if on_abort is not None:
-                on_abort()
+            _abort(on_abort)
             raise
         return
     executor = ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(work))))

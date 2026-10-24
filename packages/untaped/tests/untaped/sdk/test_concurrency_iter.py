@@ -192,8 +192,9 @@ def test_the_original_exception_wins_over_one_on_abort_raises() -> None:
     def abort() -> None:
         raise RuntimeError("abort failed")
 
-    with pytest.raises(ValueError, match="original"):
-        list(bounded_iter(fail, [1, 2], concurrency=2, on_abort=abort))
+    for concurrency in (1, 2):
+        with pytest.raises(ValueError, match="original"):
+            list(bounded_iter(fail, [1, 2], concurrency=concurrency, on_abort=abort))
 
 
 def test_ordered_raises_a_later_items_exception_after_the_earlier_pairs() -> None:
