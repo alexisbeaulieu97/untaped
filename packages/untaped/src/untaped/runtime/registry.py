@@ -817,7 +817,8 @@ class _CompositionState:
 
     def __init__(self, shell: ApplicationSpec) -> None:
         self.shell = shell
-        self.skill_names: set[str] = {skill.name for skill in shell.skills}
+        # Core's own stub skill is named after it.
+        self.skill_names: set[str] = {shell.name, *(skill.name for skill in shell.skills)}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
         self.migration_ids: set[str] = set()
         #: The names no plugin may have, each with what holds it.

@@ -15,16 +15,24 @@ from untaped.core.commands.config import Config
 from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
 from untaped.core.commands.project import ProjectGroup
+from untaped.core.commands.skills import Skills
 from untaped.core.settings import DECLARATION, NAME, CoreSettings
-from untaped.sdk.plugin import Plugin
+from untaped.sdk.plugin import Plugin, StubSkill
 
 
 class Core(Plugin):
     """untaped's own commands: config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
     settings = CoreSettings
-    commands = (Config, ProfileGroup, Auth, ProjectGroup, PluginGroup)
+    commands = (Config, ProfileGroup, Auth, ProjectGroup, Skills, PluginGroup)
     declaration = DECLARATION
+    skill = StubSkill(
+        "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
+        "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
+        "skills). Use when the user asks to install or set up untaped, configure or "
+        "switch a profile, connect AWX/AAP, GitHub or Jira, fix a failing "
+        "`untaped doctor`, or install untaped's skills for an agent."
+    )
 
 
 __all__ = ["NAME", "Core"]

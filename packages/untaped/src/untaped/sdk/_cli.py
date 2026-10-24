@@ -1032,16 +1032,6 @@ def _exit_broken_pipe() -> NoReturn:
     raise SystemExit(0) from None
 
 
-def existing_directory(type_: object, value: Path | None) -> None:
-    """Cyclopts validator for an existing directory path."""
-    if value is None:
-        return
-    if not value.exists():
-        raise ValueError(f"path does not exist: {value}")
-    if not value.is_dir():
-        raise ValueError(f"path is not a directory: {value}")
-
-
 def existing_file(type_: object, value: Path | None) -> None:
     """Cyclopts validator for an existing file path."""
     if value is None:

@@ -77,6 +77,7 @@ def _failing_factory() -> Any:
 TAKEN = {
     "untaped": "core",
     "plugin": "a root command",
+    "skills": "a root command",
     "profiles": "a config key",
     "active": "a config key",
     "credentials": "a config key",
@@ -86,7 +87,7 @@ TAKEN = {
 }
 
 #: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
-FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui", "skills"]
+FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui"]
 
 # (spec factory, reason, text the error/detail must name)
 SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [

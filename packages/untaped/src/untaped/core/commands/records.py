@@ -266,7 +266,7 @@ class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcom
     table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
 
 
-class SkillRow(Record, kind="untaped.skill"):
+class Skill(Record, kind="untaped.skill"):
     """A skill the installed plugins ship (``skills list``).
 
     ``kind`` is ``stub`` (written from core's template) or ``copy`` (copied
@@ -280,7 +280,7 @@ class SkillRow(Record, kind="untaped.skill"):
     kind: Literal["stub", "copy"]
 
 
-class InstalledSkillRow(TargetRecord, kind="untaped.installed_skill"):
+class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
     """An untaped-installed skill directory and whether it matches this version."""
 
     table_columns: ClassVar[tuple[str, ...]] = (

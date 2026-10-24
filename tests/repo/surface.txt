@@ -4251,14 +4251,14 @@ cli untaped setup register --format choice=yaml
 cli untaped setup register --remove switch
 cli untaped skills
 cli untaped skills install
-cli untaped skills install --all switch
-cli untaped skills install --force switch
+cli untaped skills install --all switch default=unset
+cli untaped skills install --force switch default=unset
 cli untaped skills install --project-dir VALUE default=unset
-cli untaped skills install --scope VALUE default=SkillInstallScope.global_
+cli untaped skills install --scope VALUE default=unset
 cli untaped skills install --scope choice=global
 cli untaped skills install --scope choice=local
-cli untaped skills install --stdin switch
-cli untaped skills install --target VALUE default=SkillInstallTarget.codex
+cli untaped skills install --stdin switch default=unset
+cli untaped skills install --target VALUE default=unset
 cli untaped skills install --target choice=all
 cli untaped skills install --target choice=claude
 cli untaped skills install --target choice=codex
@@ -4275,10 +4275,10 @@ cli untaped skills list --format choice=raw
 cli untaped skills list --format choice=table
 cli untaped skills list --format choice=yaml
 cli untaped skills remove
-cli untaped skills remove --all switch
+cli untaped skills remove --all switch default=unset
 cli untaped skills remove --columns VALUE... default=unset
 cli untaped skills remove --columns alias=-c
-cli untaped skills remove --dry-run switch
+cli untaped skills remove --dry-run switch default=unset
 cli untaped skills remove --format VALUE default=table
 cli untaped skills remove --format alias=-f
 cli untaped skills remove --format choice=json
@@ -4290,16 +4290,16 @@ cli untaped skills remove --project-dir VALUE default=unset
 cli untaped skills remove --scope VALUE default=unset
 cli untaped skills remove --scope choice=global
 cli untaped skills remove --scope choice=local
-cli untaped skills remove --stdin switch
-cli untaped skills remove --target VALUE default=SkillInstallTarget.all
+cli untaped skills remove --stdin switch default=unset
+cli untaped skills remove --target VALUE default=unset
 cli untaped skills remove --target choice=all
 cli untaped skills remove --target choice=claude
 cli untaped skills remove --target choice=codex
 cli untaped skills remove --yes alias=-y
-cli untaped skills remove --yes switch
+cli untaped skills remove --yes switch default=unset
 cli untaped skills remove [SKILL_NAMES...]@1 default=unset
 cli untaped skills status
-cli untaped skills status --check switch
+cli untaped skills status --check switch default=unset
 cli untaped skills status --columns VALUE... default=unset
 cli untaped skills status --columns alias=-c
 cli untaped skills status --format VALUE default=table
@@ -4310,13 +4310,13 @@ cli untaped skills status --format choice=raw
 cli untaped skills status --format choice=table
 cli untaped skills status --format choice=yaml
 cli untaped skills status --project-dir VALUE default=unset
-cli untaped skills status --stdin switch
+cli untaped skills status --stdin switch default=unset
 cli untaped skills status [SKILL_NAMES...]@1 default=unset
 cli untaped skills update
 cli untaped skills update --columns VALUE... default=unset
 cli untaped skills update --columns alias=-c
-cli untaped skills update --dry-run switch
-cli untaped skills update --force switch
+cli untaped skills update --dry-run switch default=unset
+cli untaped skills update --force switch default=unset
 cli untaped skills update --format VALUE default=table
 cli untaped skills update --format alias=-f
 cli untaped skills update --format choice=json
@@ -4325,7 +4325,7 @@ cli untaped skills update --format choice=raw
 cli untaped skills update --format choice=table
 cli untaped skills update --format choice=yaml
 cli untaped skills update --project-dir VALUE default=unset
-cli untaped skills update --stdin switch
+cli untaped skills update --stdin switch default=unset
 cli untaped skills update [SKILL_NAMES...]@1 default=unset
 cli untaped workspace  [experimental]
 cli untaped workspace add  [experimental]
@@ -4633,6 +4633,16 @@ record untaped.installed_plugin.status choice=ready
 record untaped.installed_plugin.status string
 record untaped.installed_plugin.tests_dir string(format=path)?
 record untaped.installed_plugin.version string
+record untaped.installed_skill
+record untaped.installed_skill.error Failure?
+record untaped.installed_skill.kind choice=copy
+record untaped.installed_skill.kind choice=stub
+record untaped.installed_skill.kind string
+record untaped.installed_skill.name string
+record untaped.installed_skill.scope string
+record untaped.installed_skill.state string
+record untaped.installed_skill.target string
+record untaped.installed_skill.target_path string(format=path)
 record untaped.message
 record untaped.message.hint string?
 record untaped.message.level choice=hint
@@ -4722,6 +4732,20 @@ record untaped.setting_outcome.action string
 record untaped.setting_outcome.error Failure?
 record untaped.setting_outcome.key string
 record untaped.setting_outcome.profile string
+record untaped.skill
+record untaped.skill.description string
+record untaped.skill.kind choice=copy
+record untaped.skill.kind choice=stub
+record untaped.skill.kind string
+record untaped.skill.name string
+record untaped.skill.source string
+record untaped.skill_outcome
+record untaped.skill_outcome.action string
+record untaped.skill_outcome.error Failure?
+record untaped.skill_outcome.name string
+record untaped.skill_outcome.scope string
+record untaped.skill_outcome.target string
+record untaped.skill_outcome.target_path string(format=path)
 record untaped.stale
 record untaped.stale.age_seconds number
 record untaped.stale.attempted_at string(format=date-time)?

@@ -165,9 +165,9 @@ def test_skills_list_shows_a_stub_s_kind_and_template_source(tmp_path: Path) -> 
     assert (rows["untaped"]["kind"], rows["untaped"]["source"]) == ("stub", "untaped:stub/1")
 
 
-def test_core_s_own_skill_is_a_stub() -> None:
-    (core,) = bootstrap.SHELL_SPEC.skills
-    assert core.source is None
+def test_core_s_own_skill_is_a_stub_named_untaped() -> None:
+    skills = composed_skills(bootstrap.compose_root(candidates=()))
+    assert skills["untaped"].stub
 
 
 # the per-run check: home folder
@@ -467,9 +467,7 @@ def test_parallel_conversions_and_refreshes_both_succeed(
     tmp_path: Path, run_as: Callable[[str], None]
 ) -> None:
     _install_copy(tmp_path)
-    skills = composed_skills(
-        bootstrap.SHELL_SPEC, bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),))
-    )
+    skills = composed_skills(bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),)))
     roots = skill_roots(project_dir=None)
     # Both runs found the copy before either converted it.
     first, second = (
@@ -499,9 +497,7 @@ def test_a_conversion_that_finds_a_parallel_run_s_stub_keeps_no_backup(
     tmp_path: Path, run_as: Callable[[str], None]
 ) -> None:
     _install_copy(tmp_path)
-    skills = composed_skills(
-        bootstrap.SHELL_SPEC, bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),))
-    )
+    skills = composed_skills(bootstrap.compose_root(candidates=(plugin_candidate(_stub_spec()),)))
     roots = skill_roots(project_dir=None)
     stale = next(
         item for item in find_installed_skills(skills, roots) if item.name == "untaped-demo"

@@ -15,10 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.commands.support import asset, compose, make_spec
+from core_test_support.commands.support import asset, make_spec, root_group
 from untaped.core.commands import skills as skills_cli
-from untaped.core.commands.skills import build_root_skills_app
-from untaped.runtime import bootstrap
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import CliInvoker
 
@@ -30,8 +28,7 @@ def _skills_app(tmp_path: Path, *names: str) -> object:
         make_spec(f"plugin-{index}", skills=(asset(tmp_path, name),))
         for index, name in enumerate(names)
     ]
-    result = compose(*specs)
-    return build_root_skills_app(shell=bootstrap.SHELL_SPEC, result=result)
+    return root_group("skills", *specs)
 
 
 def test_list_unions_skills_across_plugins(tmp_path: Path) -> None:
@@ -65,11 +62,11 @@ def test_install_short_selector_keeps_full_installed_id(tmp_path: Path) -> None:
 def test_exact_name_wins_over_short_expansion(tmp_path: Path) -> None:
     first = asset(tmp_path, "untaped-demo")
     second = asset(tmp_path, "demo")
-    result_compose = compose(
+    app = root_group(
+        "skills",
         make_spec("plugin-a", skills=(first,)),
         make_spec("plugin-b", skills=(second,)),
     )
-    app = build_root_skills_app(shell=bootstrap.SHELL_SPEC, result=result_compose)
     target = tmp_path / "skills"
     result = CliInvoker().invoke(app, ["install", "demo", "--target-dir", str(target)])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
@@ -184,13 +181,13 @@ def test_status_reports_state_of_global_and_project_installs(
 
 
 def test_status_ignores_hand_made_skills_and_flags_unshipped_ones(tmp_path: Path) -> None:
+    _install(_skills_app(tmp_path, "untaped-gone"), "gone")
+    # Built last: the run reads the composition the newest root built.
     app = _skills_app(tmp_path, "untaped-one")
     _install(app, "one")
     root = Path.home() / ".agents" / "skills"
     (root / "mine").mkdir()
     (root / "mine" / "SKILL.md").write_text("mine\n")
-    gone = _skills_app(tmp_path, "untaped-gone")
-    _install(gone, "gone")
 
     rows = _json(app, "status")
 
@@ -277,7 +274,8 @@ def test_update_keeps_a_failure_s_category_on_its_row(
     assert row["action"] == "failed"
     assert row["error"]["category"] == "config"
     assert row["error"]["hint"] == "check the permissions"
-    assert "error: untaped-one: could not update it" in result.stderr
+    [line] = [json.loads(line) for line in result.stderr.splitlines()]
+    assert (line["item"], line["message"]) == ("untaped-one", "could not update it")
 
 
 def test_update_named_unshipped_skill_says_no_installed_plugin_ships_it(tmp_path: Path) -> None:
