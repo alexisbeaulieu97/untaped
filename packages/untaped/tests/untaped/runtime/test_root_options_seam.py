@@ -62,6 +62,13 @@ def _old_app() -> App:
         """Print what it was given, and whether the root went verbose."""
         echo(f"x={x} name={name} p={pattern} verbose={is_verbose()}")
 
+    @app.command(name="own")
+    def own(
+        *, deprecated: Annotated[bool, Parameter(name="--deprecated", help="Own flag.")] = False
+    ) -> None:
+        """Print whether this command saw its own ``--deprecated``."""
+        echo(f"own={deprecated} root={show_deprecated()}")
+
     jobs = create_app(name="jobs", help="Jobs.")
 
     @jobs.command(name="list")
@@ -92,6 +99,14 @@ OLD = PluginCandidate(
         (["old", "--profile"], 2, "", "--profile expects a value"),
         (["old", "jobs", "--profile"], 2, "", "--profile expects a value"),
         (["old", "--verbose=x"], 2, "", "--verbose takes no value"),
+        # the retry reads a malformed value as the path does, in line order
+        (["old", "who", "-x", "--profile"], 2, "", "--profile expects a value"),
+        (["old", "who", "-x", "--verbose=x"], 2, "", "--verbose takes no value"),
+        (["old", "who", "-x", "-v", "-q", "--profile"], 2, "", "cannot be combined"),
+        (["old", "who", "-v", "-q", "--profile"], 2, "", "cannot be combined"),
+        (["old", "who", "-z"], 2, "", "Unknown option: -z"),
+        # as before the token pass: the seam command parses it, so the root never sees it
+        (["old", "own", "--deprecated"], 0, "own=True root=False", ""),
     ],
 )
 def test_an_11x_command_reads_root_letters_and_root_option_errors_as_before(
@@ -119,6 +134,30 @@ def test_an_11x_command_reads_root_letters_and_root_option_errors_as_before(
     ],
 )
 def test_the_retry_takes_a_root_option_no_option_reads_as_its_value(
+    argv: list[str], out: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, candidates=[OLD])
+    captured = capsys.readouterr()
+
+    assert (exit_info.value.code or 0, captured.out.strip()) == (0, out), captured.err
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize(
+    ("argv", "out"),
+    [
+        (["old", "who", "-v", "-v"], "x=False name=None p=None verbose=True"),
+        (["old", "who", "-xv", "-v"], "x=True name=None p=None verbose=True"),
+        (["old", "who", "-v", "-xv"], "x=True name=None p=None verbose=True"),
+        (["old", "who", "-xvv"], "x=True name=None p=None verbose=True"),
+        (
+            ["old", "who", "--profile", "a", "--profile", "b", "-x"],
+            "x=True name=None p=None verbose=False",
+        ),
+    ],
+)
+def test_the_retry_takes_each_repeat_of_a_root_option(
     argv: list[str], out: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
     with pytest.raises(SystemExit) as exit_info:

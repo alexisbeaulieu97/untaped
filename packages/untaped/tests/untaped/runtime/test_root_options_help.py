@@ -6,10 +6,8 @@ leading root options, and dispatch takes the rest as before.
 
 from __future__ import annotations
 
-from typing import Annotated
-
 import pytest
-from cyclopts import App, Parameter
+from cyclopts import App
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
@@ -18,7 +16,7 @@ from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
-from untaped.sdk._cli import create_app, echo
+from untaped.sdk._cli import create_app
 from untaped.sdk.marks import deprecated, show_deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
@@ -27,13 +25,6 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 def _root() -> App:
     app = create_app(name="svc", help="Service.")
-
-    @app.command(name="own")
-    def own_command(
-        *, deprecated: Annotated[bool, Parameter(name="--deprecated", help="Own flag.")] = False
-    ) -> None:
-        """Print whether this command saw its own ``--deprecated``."""
-        echo(f"own={deprecated} root={show_deprecated()}")
 
     @app.command(name="old")
     @deprecated()
@@ -90,14 +81,6 @@ def test_conflicting_options_around_help_are_still_a_usage_error() -> None:
 
     assert result.exit_code == 2
     assert "--verbose and --quiet cannot be combined" in result.stderr
-
-
-def test_an_11x_command_s_homonymous_option_is_its_own() -> None:
-    # As before the token pass: the seam command parses it, so the root never sees it.
-    result = CliInvoker().invoke(_root().meta, ["svc", "own", "--deprecated"])
-
-    assert result.exit_code == 0, result.output
-    assert "own=True root=False" in result.stdout
 
 
 class OwningSettings(BaseModel):

@@ -285,6 +285,37 @@ def test_verbose_and_quiet_conflict_only_as_root_options() -> None:
     assert exit_info.value.code == 2
 
 
+@pytest.mark.usefixtures("read")
+@pytest.mark.parametrize(
+    ("tokens", "error"),
+    [
+        (["hello", "greet", "--profile"], "--profile expects a value"),
+        (["hello", "greet", "--names", "Ada", "--verbose=x"], "--verbose takes no value"),
+        # the run between words is the root's: another word follows it
+        (["hello", "jobs", "--profile", "-v", "list"], "--profile expects a value"),
+        # raised in line order, after what precedes it
+        (["hello", "greet", "-v", "-q", "--profile"], "--verbose and --quiet cannot be combined"),
+        (["-v", "-q", "hello", "greet", "--profile"], "--verbose and --quiet cannot be combined"),
+        (["-v", "-q", "--profile"], "--verbose and --quiet cannot be combined"),
+    ],
+)
+def test_a_root_option_s_malformed_value_is_a_usage_error_where_it_sits(
+    tokens: list[str], error: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        _line(*tokens)
+
+    assert exit_info.value.code == 2
+    assert error in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("read")
+def test_a_run_between_words_no_word_follows_is_the_command_s_with_its_malformed_value() -> None:
+    tokens = ["hello", "exec", "-v", "--profile=", "x"]
+
+    assert _line(*tokens) == (tokens, True, False)
+
+
 class HelloSettings(BaseModel):
     """Nothing to configure."""
 
@@ -389,6 +420,8 @@ def _outcome(
         (["hello", "run", "ls", "-v"], "ls -v"),
         (["hello", "greet", "--help", "--deprecated"], None),
         (["hello", "grep", "-p"], None),
+        # the conflict comes first, whether the leading run was applied apart or not
+        (["-v", "-q", "hello", "greet", "--profile"], None),
     ],
 )
 def test_a_line_means_the_same_with_or_without_a_kept_declaration(

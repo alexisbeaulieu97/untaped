@@ -41,19 +41,24 @@ def dispatch_seam(app: App, line: RootLine, root_options: dict[str, _RootOption]
     command (its ``*args`` absorb every token) and a command declaring its
     own homonymous option parse successfully, so they keep the token. Parse
     errors surface before the command body runs, so a retry never repeats
-    side effects.
+    side effects. Each retry takes a root option or a help letter out of the
+    line and puts none in, so the line never comes back; a line seen before
+    stops it all the same.
     """
     command_tokens = _take_help_root_options(line.tokens, root_options, line)
     remaining = canonical_command_tokens(
         app, _consume_path_root_options(app, command_tokens, root_options, line)
     )
-    retried: set[str] = set()
+    seen: set[tuple[str, ...]] = set()
     while True:
         try:
             return _call(app, remaining)
         except CycloptsError as exc:
-            if not isinstance(exc, UnknownOptionError) or not _retake(
-                exc, remaining, root_options, line, retried
+            seen.add(tuple(remaining))
+            if (
+                not isinstance(exc, UnknownOptionError)
+                or not _retake(exc, remaining, root_options, line)
+                or tuple(remaining) in seen
             ):
                 note_requested_format(remaining)
                 raise_usage(str(exc))
@@ -89,7 +94,7 @@ def _consume_path_root_options(
     (resolving lazy plugins only along the chain dispatch would
     resolve anyway), each run of root options followed by another command
     name is applied and removed (a malformed value in any run is a usage
-    error). Options after the last command name stay
+    error, raised in line order). Options after the last command name stay
     in place for the leaf to parse, so a leaf's homonymous option still wins,
     and trailing root options go through the retry in :func:`dispatch_seam`.
     """
@@ -97,11 +102,11 @@ def _consume_path_root_options(
     current = app
     while walk.index < walk.end:
         ahead = walk.ahead()
-        if ahead.problem is not None:
-            raise_usage(ahead.problem)
         word = tokens[ahead.index] if ahead.index < ahead.end else "-"
         name = None if word.startswith("-") else _command_name(current, word)
         if name is None:
+            if ahead.problem is not None:
+                ahead.apply_to(line)  # raises it, after the root options before it
             break
         walk = ahead
         walk.apply_to(line)
@@ -116,7 +121,6 @@ def _retake(
     tokens: list[str],
     root_options: dict[str, _RootOption],
     line: RootLine,
-    retried: set[str],
 ) -> bool:
     """Take the root option cyclopts found unknown out of ``tokens``, in place, if it is one.
 
@@ -125,16 +129,13 @@ def _retake(
     to ``line``; or else the first short cluster holding its letter (or help's),
     whose root letters are applied and help letter its own token, as cyclopts
     would read them if they were in scope (``-xv`` is ``-x`` then ``-v``).
-    Each root option (and help) is retried once.
     """
     keyword = _unknown_keyword(exc)
     if keyword is None:
         return False
     spec = _match_option(keyword.partition("=")[0], root_options)
-    tried = keyword if spec is None else spec.name
-    if tried in retried or (spec is None and tried not in _HELP_FLAGS):
+    if spec is None and keyword not in _HELP_FLAGS:
         return False
-    retried.add(tried)
     spots = list(_options(tokens, _cyclopts_shapes(exc), root_options))
     names = () if spec is None else (spec.name, *spec.aliases)
     spelled = [index for index, _ in spots if tokens[index].partition("=")[0] in names]
@@ -155,7 +156,7 @@ def _retake(
 
 
 def _options(
-    tokens: Sequence[str], shapes: Mapping[str, bool], root_options: dict[str, _RootOption]
+    tokens: Sequence[str], shapes: Mapping[str, int], root_options: dict[str, _RootOption]
 ) -> Iterator[tuple[int, _Cluster | None]]:
     """Where each token before a ``--`` that is no option's value is, with it as a cluster."""
     index, end = 0, _separator_index(tokens)
@@ -165,13 +166,14 @@ def _options(
         index += _option_width(tokens[index], shapes, cluster) or 1
 
 
-def _cyclopts_shapes(exc: UnknownOptionError) -> dict[str, bool]:
-    """Each spelling of the options cyclopts parsed by, and whether it takes a value."""
+def _cyclopts_shapes(exc: UnknownOptionError) -> dict[str, int]:
+    """Each spelling of the options cyclopts parsed by, and how many tokens its value takes."""
     return {
-        name: name not in argument.negatives and argument.token_count()[0] > 0
+        name: 0 if name in argument.negatives else argument.token_count()[0]
         for argument in getattr(exc, "argument_collection", ())
         if argument.parse
         for name in argument.names
+        if name.startswith("-")
     }
 
 

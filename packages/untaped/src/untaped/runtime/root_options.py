@@ -258,9 +258,9 @@ class _LineWalk:
     root_options: dict[str, _RootOption]
     index: int = 0
     left: list[str] = field(default_factory=list)
-    taken: list[tuple[_RootOption, str]] = field(default_factory=list)
-    #: The usage error of the first root option taken with a malformed value.
-    problem: str | None = None
+    #: Each root option taken, in line order: its value, or its usage error
+    #: when the value is malformed.
+    taken: list[tuple[_RootOption, str, str | None]] = field(default_factory=list)
     #: Where the walk stops: the ``--`` that ends the options.
     end: int = field(init=False)
 
@@ -278,8 +278,7 @@ class _LineWalk:
             self.split(cluster)
             return True
         value, width, problem = _root_value(self.tokens, self.index, spec)
-        self.taken.append((spec, value))
-        self.problem = self.problem or problem
+        self.taken.append((spec, value, problem))
         self.index = min(self.index + width, self.end)
         return True
 
@@ -301,22 +300,30 @@ class _LineWalk:
 
     def split(self, cluster: _Cluster) -> None:
         """Take the root letters of ``cluster`` (at the index), and keep the rest of it."""
-        self.taken.extend((spec, _FLAG_PRESENT) for spec in cluster.roots)
+        self.taken.extend((spec, _FLAG_PRESENT, None) for spec in cluster.roots)
         self.left.extend(cluster.kept)
         self.index += 1
-        if cluster.reads_next:
-            self.keep(min(1, self.end - self.index))
+        self.keep(min(cluster.reads_next, self.end - self.index))
 
     def keep(self, count: int) -> None:
         """Keep the next ``count`` tokens for the command."""
         self.left.extend(self.tokens[self.index : self.index + count])
         self.index += count
 
+    @property
+    def problem(self) -> str | None:
+        """The usage error of the first root option taken with a malformed value."""
+        return next((problem for *_, problem in self.taken if problem is not None), None)
+
     def apply_to(self, line: RootLine) -> None:
-        """Apply the root options taken so far to ``line``; a malformed value is a usage error."""
-        if self.problem is not None:
-            raise_usage(self.problem)
-        for spec, value in self.taken:
+        """Apply the root options taken so far to ``line``, in line order.
+
+        A malformed value is a usage error where it sits, so an earlier
+        conflict (``-v -q --profile``) is the one raised.
+        """
+        for spec, value, problem in self.taken:
+            if problem is not None:
+                raise_usage(problem)
             line.apply(spec, value)
         self.taken.clear()
 
@@ -422,12 +429,12 @@ def _word(nodes: Sequence[_Node], token: str) -> _Node | None:
     return None if name is None else named[name]
 
 
-def _option_shapes(command: CommandDecl | None) -> dict[str, bool]:
-    """Each spelling of ``command``'s options (flag, short, negative), and if it takes a value."""
+def _option_shapes(command: CommandDecl | None) -> dict[str, int]:
+    """Each spelling of ``command``'s options (flag, short, negative), and its value's tokens."""
     if command is None:
         return {}
     return {
-        name: option.token != "bool"
+        name: int(option.token != "bool")
         for option in command.options
         if not option.positional
         for name in (option.flag, option.short, option.negative)
@@ -435,23 +442,23 @@ def _option_shapes(command: CommandDecl | None) -> dict[str, bool]:
     }
 
 
-def _option_width(token: str, shapes: Mapping[str, bool], cluster: _Cluster | None) -> int:
+def _option_width(token: str, shapes: Mapping[str, int], cluster: _Cluster | None) -> int:
     """How many tokens the command's own option spelled ``token`` spans (0: it is none).
 
     Read as cyclopts reads it: ``--name=value`` (or ``-n=5``) is one token; a
-    whole spelling is one for a flag and two for an option taking a value,
-    whatever the next token looks like (cyclopts refuses one that looks like an
+    whole spelling is one, and its value's tokens for an option taking one,
+    whatever the next tokens look like (cyclopts refuses one that looks like an
     option unless it takes a leading ``-``); and a short cluster holding one of
-    the command's letters (``cluster``) is one, or two when its last letter
-    takes a value and reads the next token.
+    the command's letters (``cluster``) is one, and the tokens its last letter
+    reads next when that letter takes a value.
     """
     name, separator, _ = token.partition("=")
     if separator and name in shapes:
         return 1
     if token in shapes:
-        return 2 if shapes[token] else 1
+        return 1 + shapes[token]
     if cluster is not None and cluster.own:
-        return 2 if cluster.reads_next else 1
+        return 1 + cluster.reads_next
     return 0
 
 
@@ -471,8 +478,8 @@ class _Cluster:
     helps: bool
     #: One of its letters is unknown: neither the command's, a root option's nor help's.
     unknown: bool
-    #: Its last letter takes a value, which is the next token.
-    reads_next: bool
+    #: How many of the next tokens its last letter reads as its value (0: none).
+    reads_next: int
 
     def splits(self, value: bool) -> bool:
         """Whether its root letters and help letter come out of it.
@@ -488,12 +495,12 @@ class _Cluster:
 
 
 def _read_cluster(
-    token: str, shapes: Mapping[str, bool], root_options: dict[str, _RootOption]
+    token: str, shapes: Mapping[str, int], root_options: dict[str, _RootOption]
 ) -> _Cluster | None:
     """``token`` read as a short cluster, with the root letters in scope; ``None`` if it is none.
 
-    ``shapes``: each spelling of the command's options, and whether it takes
-    a value. Cyclopts reads ``-xvn5`` as ``-x``, ``-v``, then ``-n`` reading
+    ``shapes``: each spelling of the command's options, and how many tokens
+    its value takes. Cyclopts reads ``-xvn5`` as ``-x``, ``-v``, then ``-n`` reading
     the rest of the token as its value (or, ending the cluster, the next
     token), once no option is spelled ``-xvn5`` (nor ``-xvn`` before an
     ``=``). Here the root shorts (``-v``, ``-q``) and help (``-h``) are
@@ -518,7 +525,7 @@ def _read_cluster(
             rest = letters[position:]
             # `-n` and `=5` apart: as one token, cyclopts would read `-n=5` as `5`
             kept.extend((short, rest) if rest.startswith("=") else (short + rest,))
-            return _Cluster(kept, roots, True, helps, unknown, not rest)
+            return _Cluster(kept, roots, True, helps, unknown, 0 if rest else shapes[short])
         if short in shapes:
             own = True
         elif (spec := _match_option(short, root_options)) is not None:
@@ -529,7 +536,7 @@ def _read_cluster(
         else:
             unknown = True
         kept.append(short)
-    return _Cluster(kept, roots, own, helps, unknown, False)
+    return _Cluster(kept, roots, own, helps, unknown, 0)
 
 
 def _takes_hyphen(option: OptionDecl) -> bool:

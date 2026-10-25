@@ -519,7 +519,7 @@ only through the item's owner.
 
 **Global option**: one of the options that work anywhere in a command
 (`--profile`, `--verbose`, `--quiet`, `--deprecated`); the code calls them
-root options (`_root_options.py`).
+root options (`root_options.py`).
 
 **Renamed key**: an old name of a setting that still works, with a warning,
 until its removal version.
