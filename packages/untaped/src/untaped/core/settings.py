@@ -17,11 +17,12 @@ from pydantic import BaseModel, Field
 from untaped.runtime.declaration import KeptDeclaration
 from untaped.runtime.settings import HttpSettings, SkillsSettings
 from untaped.runtime.theme import UiSettings
+from untaped.sdk._home import CORE
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.installed_code import installed_code
 
-#: Core's name as a plugin: its folder is ``~/.untaped/plugins/untaped/``.
-NAME = "untaped"
+#: Core's name as a plugin, which the SDK reserves: its folder is ``~/.untaped/plugins/untaped/``.
+NAME = CORE
 
 #: Every plugin class this install composes, kept until any of its code changes.
 DECLARATION = Cache(

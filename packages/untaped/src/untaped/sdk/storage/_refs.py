@@ -1,4 +1,4 @@
-"""References: who still uses a store's layout, one file per holder in ``~/.untaped/refs/``.
+"""References: who still uses a store's layout, one file per holder in core's ``refs`` folder.
 
 A holder declares what it uses; the store decides when an unheld layout goes
 (:meth:`untaped.sdk.storage.store.Store.prune`). 11.1 writes one kind of holder, a
@@ -23,54 +23,55 @@ row removes it.
 Each target is a :class:`RefTarget`, written as a JSON object: a layout of a
 store, or one item of a store that keeps one per item. No clock is read
 anywhere.
+
+The folder is core's block :data:`REFS`, ``plugins/untaped/refs/`` under the
+home, and each file a data file (:class:`~untaped.sdk.storage.data_file.DataFile`)
+whose stamp names its format; every writer and every pruner holds the
+block's lock. ``Core`` holds the block as ``refs``, but its readers (every
+store) have no core class in hand, so it is bound where it is declared.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import timedelta
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
-from untaped.sdk._home import home
+from untaped.sdk._home import CORE
 from untaped.sdk.diagnostic import _is_none
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.marks import experimental
-from untaped.sdk.storage._fs import atomic_write, file_lock
+from untaped.sdk.run import NoRunError
+from untaped.sdk.storage.data_file import Absent, DataFile, OtherVersion, Unreadable
+from untaped.sdk.storage.dir import Dir
 
 if TYPE_CHECKING:
     from untaped.sdk.storage.store import Store
 
 _LOG = logging.getLogger("untaped.refs")
 
-#: The reference file's own format, bumped only for a change an older reader cannot use
-#: (a new field in a target or the holder is one: an older reader refuses unknown fields).
-FORMAT = "1"
 #: The holder kind of a registered install.
 INSTALL = "install"
 #: The holder kind of a project (:mod:`untaped.sdk.projects`).
 PROJECT = "project"
 #: The kinds this untaped writes, read strictly.
 _OWN_KINDS = frozenset({INSTALL, PROJECT})
-#: Seconds a writer waits for ``refs/.lock``.
-_WAIT = 10.0
-_LOCK = ".lock"
 _STATE = threading.Lock()
 _refreshed = False
 
-
-def refs_dir() -> Path:
-    """The home's ``refs``: beside ``plugins/``, so it reserves no plugin name."""
-    return home().expanduser() / "refs"
+#: Core's ``refs``: the folder of reference files, and the lock every writer and pruner
+#: holds, waiting up to ten seconds. ``Core.refs`` holds it.
+REFS = Dir(wait=timedelta(seconds=10))._bound_to(CORE, "refs")
 
 
 @experimental
@@ -134,6 +135,22 @@ class AnchorId(BaseModel):
         """The identity of ``path`` (following symlinks); raises :class:`OSError`."""
         found = path.stat()
         return cls(dev=found.st_dev, ino=found.st_ino)
+
+
+class _Stored(BaseModel):
+    """A reference file's fields as stored, each read as any JSON: :func:`read_reference` judges.
+
+    A holder of a kind this untaped writes is read strictly and any other
+    kind tolerantly, so the shape of each field is decided there, not here.
+    """
+
+    holder: JsonValue = None
+    anchor: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    anchor_id: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    moved_from: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    plugin: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    version: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    targets: JsonValue = None
 
 
 @dataclass(frozen=True)
@@ -226,7 +243,7 @@ def install_holder(env: Path) -> RefHolder:
 
 def reference_file(holder: RefHolder) -> Path:
     """``refs/<kind>-<name>.json``: the file a holder's reference lives in."""
-    return refs_dir() / f"{holder.kind}-{holder.name}.json"
+    return REFS.place / f"{holder.kind}-{holder.name}.json"
 
 
 def this_install() -> Reference | None:
@@ -248,7 +265,7 @@ def read_references() -> list[Reference]:
     is one opaque reference for the folder itself, so the cleanup stops
     rather than take every layout for unheld.
     """
-    folder = refs_dir()
+    folder = REFS.place
     try:
         files = sorted(
             entry
@@ -265,20 +282,17 @@ def read_references() -> list[Reference]:
 
 def read_reference(file: Path) -> Reference:
     """One reference file, read tolerantly."""
-    try:
-        data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        return Reference(file, opaque=f"unreadable ({exc.__class__.__name__})")
-    if not isinstance(data, dict):
-        return Reference(file, opaque="unreadable (not an object)")
-    form = data.get("untaped")
-    if form != FORMAT:
-        newer = isinstance(form, str) and form.isdigit() and int(form) > int(FORMAT)
-        why = "written by a newer untaped" if newer else f"unreadable (format {form!r})"
-        return Reference(file, holder=_holder(data.get("holder")), opaque=why)
-    holder, targets, anchor = _holder(data.get("holder")), data.get("targets"), data.get("anchor")
+    found = DataFile(file, _Stored).read()
+    if isinstance(found, Absent):
+        return Reference(file, opaque="unreadable (it is gone)")
+    if isinstance(found, OtherVersion):
+        return Reference(file, opaque="written by a newer untaped")
+    if isinstance(found, Unreadable):
+        return Reference(file, opaque=f"unreadable (it {found.reason})")
+    data = found.value
+    holder, targets, anchor = _holder(data.holder), data.targets, data.anchor
     if holder is None:
-        why = "no holder" if data.get("holder") is None else "the holder is malformed"
+        why = "no holder" if data.holder is None else "the holder is malformed"
         return Reference(file, opaque=f"unreadable ({why})")
     anchor_id = None
     moved_from: tuple[Path, ...] = ()
@@ -294,13 +308,13 @@ def read_reference(file: Path) -> Reference:
             if not isinstance(anchor, str) or not anchor:
                 return Reference(file, holder=holder, opaque="unreadable (no anchor)")
             try:
-                anchor_id = AnchorId.model_validate(data.get("anchor_id"))
+                anchor_id = AnchorId.model_validate(data.anchor_id)
             except ValidationError:
                 return Reference(file, holder=holder, opaque="unreadable (no anchor identity)")
-            moved = data.get("moved_from", [])
+            moved = [] if data.moved_from is None else data.moved_from
             if not isinstance(moved, list) or not all(isinstance(m, str) and m for m in moved):
                 return Reference(file, holder=holder, opaque="unreadable (moved_from is malformed)")
-            moved_from = tuple(Path(m) for m in moved)
+            moved_from = tuple(Path(str(m)) for m in moved)
     else:
         # Another kind (a later untaped's) is live and holds what it can read; it never pauses.
         read = _readable(targets)
@@ -310,8 +324,8 @@ def read_reference(file: Path) -> Reference:
         anchor=Path(anchor) if isinstance(anchor, str) and anchor else None,
         anchor_id=anchor_id,
         moved_from=moved_from,
-        plugin=_text(data.get("plugin")) or None,
-        version=_text(data.get("version")) or None,
+        plugin=_text(data.plugin) or None,
+        version=_text(data.version) or None,
         targets=read,
     )
 
@@ -434,8 +448,9 @@ def refresh() -> None:
     """Keep a registered install's reference current, once per process.
 
     Rewrites the file when this run's version or layouts differ from what
-    it records; writes nothing for an install nobody registered. Never
-    raises: a reference that cannot be refreshed waits for the next run.
+    it records; writes nothing for an install nobody registered, nor
+    outside a run (a library call). Never raises: a reference that cannot
+    be refreshed waits for the next run.
     """
     global _refreshed
     with _STATE:
@@ -444,7 +459,7 @@ def refresh() -> None:
         _refreshed = True
     try:
         _refresh()
-    except (OSError, ConfigError) as exc:
+    except (OSError, UntapedError, NoRunError) as exc:
         _LOG.debug("could not refresh this install's reference: %s", exc)
 
 
@@ -452,13 +467,13 @@ def _refresh() -> None:
     env = environment()
     if env is None:
         return
+    targets = composed_targets()
+    if targets is None:
+        return  # no composition to describe (a library call): keep what the file says
     holder = install_holder(env)
     file = reference_file(holder)
     if not file.is_file():
         return
-    targets = composed_targets()
-    if targets is None:
-        return  # no composition to describe: keep what the file says
     current = read_reference(file)
     if current.opaque is None and (current.version, current.targets) == (_version(), targets):
         return
@@ -469,23 +484,13 @@ def _refresh() -> None:
 
 @contextmanager
 def locked() -> Iterator[None]:
-    """Hold ``refs/.lock`` for the block (every writer and every pruner takes it).
+    """Hold the ``refs`` block's lock for the block (every writer and every pruner takes it).
 
-    Raises :class:`ConfigError` when the folder cannot be made or the lock
-    cannot be taken (busy past the wait, or refused).
+    Raises :class:`ConfigError` when the folder cannot be made, and an
+    unavailable :class:`UntapedError` when the lock is busy past the wait.
     """
-    folder = refs_dir()
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise ConfigError(f"could not create {folder}: {exc.strerror or exc}") from exc
-    with file_lock(
-        folder / _LOCK,
-        timeout=_WAIT,
-        error=ConfigError,
-        busy=f"another untaped is changing the install references in {folder}; try again",
-        failed=f"could not lock the install references in {folder}",
-    ):
+    REFS.open()
+    with REFS.locked():
         yield
 
 
@@ -500,7 +505,7 @@ def write_reference(
     plugin: str | None = None,
     version: str | None = None,
 ) -> Path:
-    """Write one holder's reference file whole, ``refs/<kind>-<name>.json``; return its path.
+    """Write one holder's reference file, ``refs/<kind>-<name>.json``; return its path.
 
     ``untaped.sdk.testing`` exports it to fake another holder in the hermetic
     home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
@@ -508,30 +513,22 @@ def write_reference(
     ``anchor_id`` records the anchor's filesystem identity (a project's), and
     ``moved_from`` where it was before each move not yet fully repaired.
     """
-    data: dict[str, object] = {"untaped": FORMAT, "holder": holder.model_dump()}
-    if anchor is not None:
-        data["anchor"] = str(anchor)
-    if anchor_id is not None:
-        data["anchor_id"] = anchor_id.model_dump()
-    if moved_from:
-        data["moved_from"] = [str(path) for path in moved_from]
-    if plugin is not None:
-        data["plugin"] = plugin
-    if version is not None:
-        data["version"] = version
-    data["targets"] = [target.model_dump() for target in targets]
+    data = _Stored(
+        holder=holder.model_dump(),
+        anchor=None if anchor is None else str(anchor),
+        anchor_id=None if anchor_id is None else anchor_id.model_dump(),
+        moved_from=[str(path) for path in moved_from] or None,
+        plugin=plugin,
+        version=version,
+        targets=[target.model_dump() for target in targets],
+    )
     file = reference_file(holder)
-    atomic_write(file, json.dumps(data, indent=2) + "\n")
+    DataFile(file, _Stored).write(data)
     return file
 
 
 def _write(holder: RefHolder, env: Path, targets: Sequence[RefTarget]) -> None:
-    try:
-        write_reference(holder, targets, anchor=env, version=_version())
-    except OSError as exc:
-        raise ConfigError(
-            f"could not write {reference_file(holder)}: {exc.strerror or exc}"
-        ) from exc
+    write_reference(holder, targets, anchor=env, version=_version())
 
 
 def _version() -> str | None:

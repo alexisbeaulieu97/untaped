@@ -18,6 +18,8 @@ from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candi
 from untaped.runtime.sink import drop_tasks
 from untaped.sdk import _cli as cli
 from untaped.sdk.records import table_columns_of
+from untaped.sdk.run import Run, run_scope
+from untaped.sdk.testing import _bare_run
 
 pytest_plugins = ["untaped.sdk.testing.plugin"]
 
@@ -116,6 +118,21 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
+
+
+@pytest.fixture
+def home_run(request: pytest.FixtureRequest) -> Iterator[Run]:
+    """A run over the test's home, as every invocation opens one, for code a test calls directly.
+
+    Built after ``_isolated_config`` when the test uses it, so the run's home
+    is the one the test points ``UNTAPED_HOME`` at. It composes nothing: the
+    code under test reads the home (core's ``refs``), not a plugin's blocks.
+    """
+    if "_isolated_config" in request.fixturenames:
+        request.getfixturevalue("_isolated_config")
+    run = _bare_run()
+    with run_scope(run):
+        yield run
 
 
 @pytest.fixture

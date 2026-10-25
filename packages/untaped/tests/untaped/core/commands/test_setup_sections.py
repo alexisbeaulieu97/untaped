@@ -47,7 +47,7 @@ from untaped.sdk.marks import deprecated, experimental
 from untaped.sdk.testing import drive_screen
 from untaped.sdk.testing.screens import ScreenKey, _message
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 class KnobsSweep(BaseModel):

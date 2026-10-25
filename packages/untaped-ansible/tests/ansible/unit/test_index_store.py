@@ -16,6 +16,8 @@ from untaped_ansible.infrastructure import open_index
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_SQL, SCHEMA_VERSION
 from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, default_index_path
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 _PINS = Path(__file__).parent / "index_schema"
 _SOURCE = Path(__file__).parents[3] / "src" / "untaped_ansible"
 

@@ -27,6 +27,8 @@ from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.store import Store, _FileInUse, _forget_opened, _SqliteInUse
 from untaped.sdk.testing import write_reference
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 @pytest.fixture(params=["sqlite", "files"])
 def lock_kind(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
@@ -127,6 +129,21 @@ def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[RefTar
     assert line.layout == 6 and not newer.exists()
 
 
+def test_a_busy_refs_lock_skips_the_prune_and_never_raises(
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from filelock import FileLock
+
+    _registered(composed)
+    old = _layout(base, 4)
+    store = _store(base)
+    store.open()
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(0))
+    with FileLock(str(refs.REFS.lock_path())):
+        assert _prune(store) == []
+    assert old.exists()  # the next complete fill tries again
+
+
 def test_the_line_survives_quiet(
     base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -214,8 +231,8 @@ def test_a_reference_of_an_unknown_kind_never_pauses_pruning(
         [RefTarget(plugin="acme", store="data", layout=4)],
         anchor=tmp_path / "gone",
     )
-    (refs.refs_dir() / "acme_job-other.json").write_text(
-        '{"untaped": "1", "holder": {"kind": "acme_job", "name": "other"}, '
+    (refs.REFS.place / "acme_job-other.json").write_text(
+        '{"untaped": {"file": 1}, "holder": {"kind": "acme_job", "name": "other"}, '
         '"targets": [{"shape": "unknown"}]}'
     )
     held, unheld = _layout(base, 4), _layout(base, 3)
@@ -230,8 +247,8 @@ def test_a_malformed_project_reference_pauses_pruning(
 ) -> None:
     # A project is this untaped's own kind: one it can't read may hold anything.
     _registered(composed)
-    (refs.refs_dir() / "project-3f9a1c2b7d10.json").write_text(
-        '{"untaped": "1", "holder": {"kind": "project", "name": "3f9a1c2b7d10"}, '
+    (refs.REFS.place / "project-3f9a1c2b7d10.json").write_text(
+        '{"untaped": {"file": 1}, "holder": {"kind": "project", "name": "3f9a1c2b7d10"}, '
         '"targets": [{"shape": "unknown"}]}'
     )
     unheld = _layout(base, 3)
@@ -245,9 +262,9 @@ def test_a_reference_from_a_newer_untaped_stops_pruning(
     base: Path, composed: list[RefTarget]
 ) -> None:
     _registered(composed)
-    folder = refs.refs_dir()
+    folder = refs.REFS.place
     (folder / "install-future.json").write_text(
-        '{"untaped": "2", "holder": {"kind": "install", "name": "f"}}'
+        '{"untaped": {"file": 2}, "holder": {"kind": "install", "name": "f"}}'
     )
     old = _layout(base, 4)
     store = _store(base)
@@ -453,7 +470,7 @@ def test_an_unlistable_refs_folder_stops_the_cleanup(
     real = Path.iterdir
 
     def iterdir(self: Path) -> Iterator[Path]:
-        if self == refs.refs_dir():
+        if self == refs.REFS.place:
             raise OSError(24, "Too many open files")
         return real(self)
 

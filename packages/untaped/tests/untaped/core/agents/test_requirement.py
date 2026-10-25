@@ -15,6 +15,8 @@ from untaped.core.agents import untaped_requirement
 from untaped.sdk import nearest_pyproject
 from untaped.sdk.testing import make_project
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 def _project(folder: Path, text: str, *, git: bool = True) -> Path:
     folder.mkdir(parents=True, exist_ok=True)

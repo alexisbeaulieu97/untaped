@@ -301,3 +301,30 @@ def test_options_are_checked_where_declared(options: dict[str, object], message:
 
 def test_it_reads_as_written() -> None:
     assert repr(Demo.index) == f"Dir('Dir created in {__name__}', layout=4, file='index.sqlite3')"
+
+
+def test_a_dir_bound_where_it_is_declared_needs_no_plugin_class(tmp_path: Path) -> None:
+    bound = Dir()._bound_to("acme", "notes")
+    assert (bound.plugin, bound.name, bound.where) == ("acme", "notes", "acme.notes")
+    assert bound.path == tmp_path / "home" / "plugins" / "acme" / "notes"
+
+
+def test_composition_takes_a_bound_dir_held_as_it_is_bound() -> None:
+    bound = Dir()._bound_to("demo", "notes")
+    holder = type("Bound", (Plugin,), {"__doc__": "Bound.", "settings": Settings, "notes": bound})
+    declaration = compose([PluginEntry("demo", f"{__name__}:Bound", holder)])
+    assert declaration.quarantined == ()
+
+
+@pytest.mark.parametrize(("plugin", "attribute"), [("demo", "other"), ("acme", "notes")])
+def test_composition_refuses_a_holder_a_bound_dir_disagrees_with(
+    plugin: str, attribute: str
+) -> None:
+    bound = Dir()._bound_to(plugin, attribute)
+    holder = type("Bound", (Plugin,), {"__doc__": "Bound.", "settings": Settings, "notes": bound})
+    declaration = compose([PluginEntry("demo", f"{__name__}:Bound", holder)])
+    [quarantined] = declaration.quarantined
+    assert [p.rule for p in quarantined.problems] == ["block-name"]
+    assert (
+        f"is bound to {plugin}.{attribute} where it is declared" in quarantined.problems[0].detail
+    )

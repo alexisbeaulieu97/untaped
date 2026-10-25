@@ -49,7 +49,7 @@ from untaped.sdk.testing import (
     plugin_candidate,
 )
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 class HubServer(CredentialKey):

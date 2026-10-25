@@ -22,6 +22,8 @@ from untaped.sdk.storage.state import (
 )
 from untaped.sdk.testing import make_project, read_rows, write_rows
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 class Repo(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")

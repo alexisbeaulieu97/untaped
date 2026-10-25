@@ -875,6 +875,7 @@ def test_bare_management_commands_work(argv: list[str]) -> None:
     assert CliInvoker().invoke(root.meta, argv).exit_code == 0
 
 
+@pytest.mark.usefixtures("home_run")
 def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
     from untaped.core.commands.doctor import collect_doctor_rows
     from untaped.runtime.settings import _CONFIG_REGISTRY

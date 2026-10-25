@@ -15,7 +15,7 @@ from untaped.sdk.marks import deprecated
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker, CliResult
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 class Sweep(BaseModel):

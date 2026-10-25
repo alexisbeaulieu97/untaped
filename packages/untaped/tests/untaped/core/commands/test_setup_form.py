@@ -33,7 +33,7 @@ from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.testing import drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 class DuoServer(CredentialKey):

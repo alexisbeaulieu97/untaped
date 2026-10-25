@@ -23,6 +23,8 @@ from untaped.sdk.storage.state import StateCollection, StateMap, StateRows
 from untaped.sdk.storage.store import Store
 from untaped.sdk.testing import check_plugin, make_project, plugin_candidate
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 DATA = Store("hello", "data", base=lambda: Path("data.db"))
 
 

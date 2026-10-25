@@ -45,7 +45,7 @@ from untaped.sdk.storage.data_file import write_lines
 from untaped.sdk.storage.state import StateRows
 from untaped.sdk.testing import CliInvoker, make_project, plugin_candidate, write_rows
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 _PASS = "pass"
 

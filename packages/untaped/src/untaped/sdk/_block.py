@@ -136,6 +136,8 @@ class OwnedBlock(Block):
     block ``motd``, and the plugin's name is the one this run composed for
     the package defining that class, so it is read inside a run. The 11.x
     spelling passes both (``Cache("hello", "motd", ...)``) and needs no run.
+    A block read where its owner's class is deliberately not imported is bound
+    where it is declared instead (:meth:`_bound_to`).
     """
 
     def __init__(self, plugin: str | None = None, name: str | None = None) -> None:
@@ -147,6 +149,19 @@ class OwnedBlock(Block):
             )
         self._plugin = plugin
         self._name = name
+        self._held_as: tuple[str, str] | None = None
+
+    def _bound_to(self, plugin: str, attribute: str) -> Self:
+        """Bind the block where it is declared: to ``plugin``, as its class's ``attribute``.
+
+        For a block its readers reach with no plugin class in hand (core's
+        ``refs``, which every store reads, while core's class is not imported
+        at start): it knows its plugin and its name with no run. The plugin
+        class still holds it, as ``attribute``; composition refuses a holder
+        that disagrees.
+        """
+        self._held_as = (plugin, attribute)
+        return self
 
     def _spelled_as(self, plugin: str, name: str) -> Self:
         """A copy given ``plugin`` and ``name``, for a reader that runs outside any run.
@@ -174,6 +189,8 @@ class OwnedBlock(Block):
         """The plugin the block belongs to."""
         if self._plugin is not None:
             return self._plugin
+        if self._held_as is not None:
+            return self._held_as[0]
         from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
         owner = self.binding.owner
@@ -191,6 +208,8 @@ class OwnedBlock(Block):
         """The block's name: the attribute holding it, or the name it was given."""
         if self._name is not None:
             return self._name
+        if self._held_as is not None:
+            return self.derived_name(self._held_as[1])
         return self.derived_name(self.binding.attribute)
 
     @property
@@ -198,6 +217,8 @@ class OwnedBlock(Block):
         """How a message names the block: ``hello.motd``, or its kind and module while unnamed."""
         if self._plugin is not None:
             return f"{self._plugin}.{self._name}" if self._name else self._plugin
+        if self._held_as is not None:
+            return f"{self.plugin}.{self.name}"
         return f"{type(self).__name__} created in {self._module}"
 
 

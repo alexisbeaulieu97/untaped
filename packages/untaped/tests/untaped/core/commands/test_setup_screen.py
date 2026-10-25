@@ -66,7 +66,7 @@ from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import ScreenKeys, current_memory_store, drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun, rendered_text
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 SECRET = "s3cr3t-t0ken"
 

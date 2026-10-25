@@ -18,6 +18,8 @@ from untaped.sdk.storage._digest import settings_digest
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.store import Store, _FileInUse, _forget_opened, _in_use, _SqliteInUse
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 @pytest.fixture(params=["sqlite", "files"])
 def lock_kind(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:

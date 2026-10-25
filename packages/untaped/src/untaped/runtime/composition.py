@@ -432,6 +432,15 @@ class _PluginWalk:
                     f"{value.block_kind} takes its name from the attribute, so leave it out",
                 )
                 continue
+            held_as = value._held_as if isinstance(value, OwnedBlock) else None
+            if held_as is not None and held_as != (self.name, attribute):
+                self.problem(
+                    "block-name",
+                    where,
+                    f"is bound to {held_as[0]}.{held_as[1]} where it is declared, "
+                    f"not to {self.name}.{attribute}",
+                )
+                continue
             name = value.derived_name(attribute)
             problem = value.name_problem(name)
             if problem is not None:

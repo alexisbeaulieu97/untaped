@@ -20,6 +20,8 @@ HOME_ENV = "UNTAPED_HOME"
 DEFAULT_HOME = Path("~/.untaped")
 #: The settings file at the home's root.
 CONFIG_FILE = "config.yml"
+#: Core's name as a plugin, reserved: its folder is ``plugins/untaped/``.
+CORE = "untaped"
 
 
 #: Variables 11.x read that 12.0 does not; one still set would silently send
@@ -69,4 +71,4 @@ def config_path() -> Path:
     return (home() / CONFIG_FILE).expanduser()
 
 
-__all__ = ["DEFAULT_HOME", "HOME_ENV", "config_path", "home", "plugin_path"]
+__all__ = ["CORE", "DEFAULT_HOME", "HOME_ENV", "config_path", "home", "plugin_path"]

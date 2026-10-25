@@ -35,8 +35,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.marks import experimental
+from untaped.sdk.run import NoRunError
 
 if TYPE_CHECKING:
     from filelock import FileLock, ReadWriteLock
@@ -266,7 +267,7 @@ class Store:
                     for layout, path in self._candidates(held)
                     if isinstance(aside := self._set_aside(layout, path), _Aside)
                 ]
-        except (OSError, ConfigError) as exc:
+        except (OSError, UntapedError, NoRunError) as exc:  # a busy refs lock, no run
             _LOG.debug("could not prune %s: %s", self.qualified, exc)
             return
         for aside in removed:
@@ -442,10 +443,10 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     damaged = _damaged(layout)
     if layout.own or layout.holders:
         return damaged
-    from untaped.sdk.storage._refs import refs_dir  # noqa: PLC0415 - refs imports the registry
+    from untaped.sdk.storage._refs import REFS  # noqa: PLC0415 - refs imports the registry
 
     # Who holds it first: while that is unknown, nothing else may call it unheld.
-    folder = refs_dir()
+    folder = REFS.place
     if any(ref.opaque is not None and ref.file == folder for ref in references):
         return Kept(
             "unknown",

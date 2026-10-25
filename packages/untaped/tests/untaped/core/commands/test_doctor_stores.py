@@ -18,6 +18,8 @@ from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store
 from untaped.sdk.testing import make_project, plugin_candidate, write_reference
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 
 def _install(root: Path, version: str = "11.1.0") -> Path:
     (root / f"untaped-{version}.dist-info").mkdir(parents=True)
@@ -123,7 +125,7 @@ def test_a_damaged_lock_is_named_with_what_to_delete(tmp_path: Path) -> None:
 def test_a_reference_this_untaped_cannot_read_warns(tmp_path: Path) -> None:
     (tmp_path / "data.v3.db").write_bytes(b"xyz")
     refs.register([RefTarget(plugin="acme", store="data", layout=4)])
-    (refs.refs_dir() / "install-future.json").write_text('{"untaped": "2"}')
+    (refs.REFS.place / "install-future.json").write_text('{"untaped": {"file": 2}}')
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "warn"
     assert "a reference this untaped cannot read pauses cleanup" in str(row["detail"])
@@ -257,8 +259,8 @@ def test_an_unreadable_project_is_information(
 
 def test_a_newer_reference_warns(tmp_path: Path) -> None:
     refs.register([])
-    (refs.refs_dir() / "install-future.json").write_text(
-        '{"untaped": "2", "holder": {"kind": "install", "name": "x"}}'
+    (refs.REFS.place / "install-future.json").write_text(
+        '{"untaped": {"file": 2}, "holder": {"kind": "install", "name": "x"}}'
     )
     row = _row(_store(tmp_path / "data.db"), check="references")
     assert row["status"] == "warn"
@@ -273,7 +275,7 @@ def test_an_unlistable_refs_folder_warns_in_both_rows(
     real = Path.iterdir
 
     def iterdir(self: Path) -> Iterator[Path]:
-        if self == refs.refs_dir():
+        if self == refs.REFS.place:
             raise PermissionError(13, "Permission denied")
         return real(self)
 
@@ -327,7 +329,7 @@ def test_a_layout_with_unknown_holders_still_names_its_damaged_lock(
     real = Path.iterdir
 
     def iterdir(self: Path) -> Iterator[Path]:
-        if self == refs.refs_dir():
+        if self == refs.REFS.place:
             raise PermissionError(13, "Permission denied")
         return real(self)
 

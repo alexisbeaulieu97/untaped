@@ -28,6 +28,8 @@ from untaped.sdk.storage._digest import settings_digest
 from untaped.sdk.storage.cache import Cache, Filled, Freshness, NeverRefreshed
 from untaped.sdk.testing import CacheClock, cache_clock, damage, keep_value
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 START = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
 TOKEN = "s3cr3t-token-value"
 

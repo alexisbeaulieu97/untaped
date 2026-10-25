@@ -35,6 +35,8 @@ from untaped.sdk.errors import HttpTransportError, UntapedError
 from untaped.sdk.storage.cache import RETRY_AFTER, Cache, Filled
 from untaped.sdk.testing import CacheClock, ProgressClock, cache_clock, progress_clock
 
+pytestmark = pytest.mark.usefixtures("home_run")
+
 DOWN = HttpTransportError("HTTP 503", system="library")
 
 

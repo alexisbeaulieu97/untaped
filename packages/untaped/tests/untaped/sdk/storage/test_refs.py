@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 from importlib.metadata import PackageNotFoundError
@@ -11,10 +12,15 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.run import Run
 from untaped.sdk.storage import _refs as refs
+from untaped.sdk.storage import data_file
 from untaped.sdk.storage._refs import RefHolder, RefTarget
+from untaped.sdk.storage.data_file import written_by
 from untaped.sdk.storage.store import Store
 from untaped.sdk.testing import write_reference
+
+pytestmark = pytest.mark.usefixtures("home_run")
 
 
 def _install(root: Path, version: str = "11.1.0") -> Path:
@@ -69,6 +75,13 @@ def test_the_real_environment_is_the_directory_holding_untaped() -> None:
 # --- the file ------------------------------------------------------------------
 
 
+def test_the_references_are_in_cores_refs_block(home_run: Run) -> None:
+    from untaped.core.plugin import Core
+
+    assert Core.refs is refs.REFS
+    assert refs.REFS.place == home_run.home / "plugins" / "untaped" / "refs"
+
+
 def test_register_writes_one_file_for_this_install(site: Path) -> None:
     ref = refs.register(
         [
@@ -78,10 +91,10 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
     )
 
     holder = refs.install_holder(site)
-    assert ref.file == refs.refs_dir() / f"install-{holder.name}.json"
+    assert ref.file == refs.REFS.place / f"install-{holder.name}.json"
     data = json.loads(ref.file.read_text())
     assert data == {
-        "untaped": "1",
+        "untaped": {"file": 1, "by": written_by()},
         "holder": {"kind": "install", "name": holder.name},
         "anchor": str(site),
         "version": "11.1.0",
@@ -106,7 +119,7 @@ def test_unregister_removes_the_file(site: Path) -> None:
 def test_a_holders_file_is_its_kind_and_name() -> None:
     holder = RefHolder(kind="workspace", name="acme.pay-1")
     file = refs.reference_file(holder)
-    assert file == refs.refs_dir() / "workspace-acme.pay-1.json"
+    assert file == refs.REFS.place / "workspace-acme.pay-1.json"
     write_reference(
         holder,
         [RefTarget(plugin="git", store="store", item="github.com/acme/pay")],
@@ -189,55 +202,58 @@ def test_holders_lists_only_live_references(tmp_path: Path) -> None:
     ("content", "why"),
     [
         (
-            '{"untaped": "2", "holder": {"kind": "install", "name": "x"}, "targets": []}',
+            '{"untaped": {"file": 2}, "holder": {"kind": "install", "name": "x"}, "targets": []}',
             "newer untaped",
         ),
         ('{"untaped": "x"}', "unreadable"),
         ("not json", "unreadable"),
         ("[]", "unreadable"),
-        ('{"untaped": "1", "holder": "install:x", "targets": []}', "holder is malformed"),
+        ('{"untaped": {"file": 1}, "holder": "install:x", "targets": []}', "holder is malformed"),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x", "extra": 1}, '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x", "extra": 1}, '
             '"targets": []}',
             "holder is malformed",
         ),
-        ('{"untaped": "1", "holder": {"kind": "install", "name": ""}, "targets": []}', "malformed"),
-        ('{"untaped": "1", "targets": []}', "unreadable"),
-        ('{"untaped": "1", "holder": {"kind": "install", "name": "x"}}', "no targets"),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": ""}, "targets": []}',
+            "malformed",
+        ),
+        ('{"untaped": {"file": 1}, "targets": []}', "unreadable"),
+        ('{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}}', "no targets"),
+        (
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, '
             '"targets": ["acme.data@1"]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, "targets": '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, "targets": '
             '[{"plugin": "acme", "store": "data", "layout": 1, "item": "a"}]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, "targets": '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, "targets": '
             '[{"plugin": "acme", "store": "data", "layout": 1, "extra": 1}]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, "targets": '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, "targets": '
             '[{"plugin": "", "store": "data", "layout": 1}]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, "targets": '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, "targets": '
             '[{"plugin": "acme", "store": "data"}]}',
             "malformed",
         ),
         (
-            '{"untaped": "1", "holder": {"kind": "install", "name": "x"}, "targets": '
+            '{"untaped": {"file": 1}, "holder": {"kind": "install", "name": "x"}, "targets": '
             '[{"plugin": "acme", "store": "data", "layout": "1"}]}',
             "malformed",
         ),
     ],
 )
 def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> None:
-    folder = refs.refs_dir()
+    folder = refs.REFS.place
     folder.mkdir(parents=True)
     (folder / "install-x.json").write_text(content)
     [ref] = refs.read_references()
@@ -250,13 +266,13 @@ def test_an_unreadable_or_newer_reference_is_opaque(content: str, why: str) -> N
 def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     tmp_path: Path,
 ) -> None:
-    folder = refs.refs_dir()
+    folder = refs.REFS.place
     folder.mkdir(parents=True)
     target = {"plugin": "git", "store": "store", "item": "github.com/acme/pay"}
     (folder / "acme_job-pay.json").write_text(
         json.dumps(
             {
-                "untaped": "1",
+                "untaped": {"file": 1},
                 "holder": {"kind": "acme_job", "name": "pay"},
                 "anchor": str(tmp_path / "gone"),  # no untaped there: an install would be dead
                 "targets": [
@@ -269,7 +285,7 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
         )
     )
     (folder / "acme_job-bare.json").write_text(
-        '{"untaped": "1", "holder": {"kind": "acme_job", "name": "bare"}}'
+        '{"untaped": {"file": 1}, "holder": {"kind": "acme_job", "name": "bare"}}'
     )
     bare, pay = refs.read_references()
     assert pay.opaque is None and pay.live and not pay.pre_upgrade
@@ -300,14 +316,14 @@ def test_an_item_target_is_written_without_a_layout() -> None:
 
 def _project_file(tmp_path: Path, **fields: object) -> Path:
     data: dict[str, object] = {
-        "untaped": "1",
+        "untaped": {"file": 1},
         "holder": {"kind": "project", "name": "3f9a1c2b7d10"},
         "anchor": str(tmp_path / "PROJ-123"),
         "anchor_id": {"dev": 1, "ino": 2},
         "targets": [],
     }
     data.update(fields)
-    folder = refs.refs_dir()
+    folder = refs.REFS.place
     folder.mkdir(parents=True, exist_ok=True)
     file = folder / "project-3f9a1c2b7d10.json"
     file.write_text(json.dumps(data))
@@ -415,9 +431,18 @@ def test_an_unchanged_reference_is_not_rewritten(
 ) -> None:
     refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     writes: list[object] = []
-    monkeypatch.setattr(refs, "atomic_write", lambda *args, **_kw: writes.append(args))
+    monkeypatch.setattr(data_file, "atomic_write", lambda *args, **_kw: writes.append(args))
     refs.refresh()
     assert writes == []
+
+
+def test_a_refresh_outside_a_run_never_raises(site: Path, composed: list[RefTarget]) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
+    contextvars.Context().run(refs.refresh)  # a library call: no run, so nothing to place
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 1}
+    ]
 
 
 def test_no_run_registers(site: Path, composed: list[RefTarget], tmp_path: Path) -> None:
@@ -444,7 +469,7 @@ def test_a_read_only_refs_folder_gives_no_error(
     def refused(*_args: object, **_kwargs: object) -> None:
         raise PermissionError("read-only")
 
-    monkeypatch.setattr(refs, "atomic_write", refused)
+    monkeypatch.setattr(data_file, "atomic_write", refused)
     refs.refresh()  # never raises: the next run tries again
 
 

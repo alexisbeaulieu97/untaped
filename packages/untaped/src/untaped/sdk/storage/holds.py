@@ -3,7 +3,7 @@
 An **owner** is a plugin that lets others hold its items: it declares an
 :class:`ItemStore` on ``PluginSpec.stores`` and says how a holder lets go
 (``release=``) and whether a holder's move needs repair (``moved=``). A
-**holder** is a reference in ``~/.untaped/refs/`` (:mod:`untaped.sdk.storage._refs`) of
+**holder** is a reference in core's ``refs`` (:mod:`untaped.sdk.storage._refs`) of
 some kind: a project (:mod:`untaped.sdk.projects`) today. A **hold** is one
 :class:`~untaped.sdk.storage._refs.RefTarget` with ``item`` set in the holder's reference.
 
@@ -13,7 +13,7 @@ other holder of the item), preview, confirm, then apply each plan on a fresh
 ask taken under the item store's lock (``refs/.<plugin>-<store>.lock``, per
 item). One refusal applies nothing; an apply may do less than its preview,
 never more. Lock order, always: the holder's lock, the item store's, the
-owner's own, then ``refs/.lock`` for the moment a reference is rewritten.
+owner's own, then the ``refs`` block's lock for the moment a reference is rewritten.
 
 Holder kinds other than a project are designed but internal
 (:class:`HolderKind`): a plugin's kind is spelled ``<plugin>_<word>``, and a
@@ -39,6 +39,7 @@ from untaped.sdk.storage._fs import file_lock
 from untaped.sdk.storage._refs import (
     INSTALL,
     PROJECT,
+    REFS,
     Reference,
     RefHolder,
     RefTarget,
@@ -46,7 +47,6 @@ from untaped.sdk.storage._refs import (
     read_reference,
     read_references,
     reference_file,
-    refs_dir,
     write_reference,
 )
 
@@ -429,7 +429,7 @@ def holder_lock(holder: RefHolder, name: str) -> AbstractContextManager[None]:
 
 def holder_lock_file(holder: RefHolder) -> Path:
     """The file a holder's lock takes, ``refs/.<kind>-<name>.lock``."""
-    return refs_dir() / f".{holder.kind}-{holder.name}.lock"
+    return REFS.place / f".{holder.kind}-{holder.name}.lock"
 
 
 def store_lock(store: ItemStore[Any]) -> AbstractContextManager[None]:
@@ -444,7 +444,7 @@ def _target_lock(plugin: str, store: str) -> AbstractContextManager[None]:
 
 @contextmanager
 def _lock(file: str, what: str) -> Iterator[None]:
-    folder = refs_dir()
+    folder = REFS.place
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -507,7 +507,7 @@ def _rewrite(
         elif anchor is not None:
             ref = Reference(file, holder=holder, anchor=anchor)
         else:
-            raise ConfigError(f"{holder.describe()} has no reference in {refs_dir()}")
+            raise ConfigError(f"{holder.describe()} has no reference in {REFS.place}")
         targets = change(ref.targets)
         if targets == ref.targets and file.exists():
             return
