@@ -47,6 +47,7 @@ def base() -> Path:
 def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
     targets = [RefTarget(plugin="acme", store="data", layout=5)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
+    monkeypatch.setattr(refs, "composed_plugins", lambda: ("acme",))
     return targets
 
 

@@ -101,6 +101,42 @@ def test_a_start_that_meets_a_busy_lock_leaves_the_refresh_to_the_next(
     assert ref is not None and ref.plugins == ("acme", "jira")
 
 
+def test_a_command_waits_for_the_references_lock_to_record_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A prune elsewhere holds the lock: the command waits, so that prune can't miss it."""
+    assert _cli().exit_code == 0
+    waited: list[object] = []
+    held = refs.REFS.locked
+
+    @contextmanager
+    def _waits(name: str | None = None) -> Iterator[None]:
+        waited.append(name)
+        with held(name):
+            yield
+
+    monkeypatch.setattr(refs.REFS, "locked", _waits)
+    _start("doctor", "--help")
+    ref = refs.this_install()
+    assert waited == [None] and ref is not None and ref.plugins == ("acme", "jira")
+
+
+def test_a_command_still_runs_when_the_references_lock_stays_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from filelock import FileLock
+
+    assert _cli().exit_code == 0
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
+    with FileLock(str(refs.REFS.lock_path())):
+        _start("doctor", "--help")  # busy past the wait: logged, never fails
+    ref = refs.this_install()
+    assert ref is not None and ref.plugins == ("acme",)
+    _start("doctor", "--help")
+    ref = refs.this_install()
+    assert ref is not None and ref.plugins == ("acme", "jira")
+
+
 @contextmanager
 def _busy(_name: str | None = None) -> Iterator[bool]:
     yield False  # another process holds the references' lock

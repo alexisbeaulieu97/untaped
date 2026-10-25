@@ -480,7 +480,7 @@ def unregister() -> Reference | None:
     return found
 
 
-def refresh() -> None:
+def refresh(*, wait: bool = False) -> None:
     """Keep a registered install's reference current: the CLI calls it on every start.
 
     Reads the file and rewrites it only when this run's version, layouts or
@@ -489,16 +489,19 @@ def refresh() -> None:
     registered. The CLI calls it at dispatch, under the root composition,
     so a store opened under a narrower one (a plugin check's) never records
     that. Outside a run (a library call) or before anything is composed it
-    writes nothing. It never waits: a busy references lock, like a write
-    that fails, leaves the file to the next start. Never raises.
+    writes nothing. With ``wait`` (a command about to run, which a prune
+    elsewhere must not miss) it waits for a busy references lock like any
+    writer; without it (root ``--help`` and ``--version``) it never waits.
+    A lock still busy, like a write that fails, leaves the file to the next
+    start. Never raises.
     """
     try:
-        _refresh()
+        _refresh(wait=wait)
     except (OSError, UntapedError, NoRunError) as exc:
         _LOG.debug("could not refresh this install's reference: %s", exc)
 
 
-def _refresh() -> None:
+def _refresh(*, wait: bool) -> None:
     env = environment()
     if env is None:
         return
@@ -512,6 +515,12 @@ def _refresh() -> None:
     if _current(file, targets, plugins):
         return
     REFS.open()
+    if wait:
+        # Busy past the wait raises: the next start compares again.
+        with REFS.locked():
+            if file.is_file() and not _current(file, targets, plugins):
+                _write(holder, env, targets, plugins)
+        return
     with REFS.try_locked() as held:
         # Busy: another process writes or prunes, and the next start compares again.
         if held and file.is_file() and not _current(file, targets, plugins):

@@ -520,7 +520,7 @@ def _refresh_reference(run: Callable[[], Run] | None = None) -> None:
     print even when the home doesn't resolve.
     """
     if run is None:
-        refresh()
+        refresh(wait=True)  # a prune elsewhere waits on the same lock
         return
     try:
         scope = run_scope(run())

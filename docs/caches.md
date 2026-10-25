@@ -281,9 +281,11 @@ it holds layouts. An install's reference also lists the plugins it composes,
 `"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses; the
 list is always written, empty included, and a file without it doesn't say, so
 `setup prune` keeps every folder. Each start of an install compares its own
-reference with what it composes and rewrites it when they differ; when it
-can't (the references' lock is busy, say), the next start tries again. So an
-upgrade needs nothing more. Every install sharing a 12.0 home is a 12.0
+reference with what it composes and rewrites it when they differ. A command
+waits for the references' lock like any writer, so a prune elsewhere can't
+miss what it is about to use; root `--help` and `--version` never wait. When
+it can't (the lock stays busy past the wait, say), the next start tries
+again. So an upgrade needs nothing more. Every install sharing a 12.0 home is a 12.0
 one: 11.1 refuses its config as newer, so it cannot run there.
 `holders(target)` (experimental) returns the `RefHolder` of each live
 reference that keeps a target, and raises while a reference cannot be read
