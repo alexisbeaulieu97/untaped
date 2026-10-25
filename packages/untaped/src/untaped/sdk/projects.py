@@ -375,6 +375,7 @@ def init(path: Path, *, new_id: bool = False) -> Initialized:
     # The lock is held before the marker appears, so a racing init or writing
     # use that reads the new id waits until the project is recorded.
     with project.locked():
+        REFS.open()  # a home that cannot record it fails here, before the marker is written
         try:
             folder.mkdir(parents=True, exist_ok=True)
             created = _write_marker(folder / MARKER, project.id, exclusive=True)

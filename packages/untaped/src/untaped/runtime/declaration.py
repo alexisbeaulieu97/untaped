@@ -144,6 +144,10 @@ class BlockDecl(_Frozen):
     module: str
     #: A cache's setting; ``None`` for any other block.
     cache: CacheDecl | None = None
+    #: A numbered ``Dir``'s layout (the oldest its code opens): what references name.
+    layout: int | None = None
+    #: Whether a ``Dir`` declares ``items=``: things other installs' holders hold.
+    items: bool = False
 
 
 class KindDecl(_Frozen):

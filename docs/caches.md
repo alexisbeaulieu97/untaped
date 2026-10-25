@@ -367,22 +367,24 @@ DotfilesPlugin.sync.locked():` waits that long for another process
 `try_locked()` yields whether it got it, and taking it again in one thread
 only counts.
 
-A folder of the plugin's own is a `Dir` on the plugin class. `notes =
-Dir()` is `plugins/<plugin>/notes/` under the home; `checkouts =
-Dir(at=key(WorkspaceSettings).workspaces_dir)` is the folder a path
-setting names, which must be absolute. `file="log.txt"` makes it one file
-in that folder. `layout=N` numbers what it holds as a store numbers its
-layouts, inside the folder (`images/images.v4/`, or `index.v4.sqlite3` with
-`file="index.sqlite3"`), so two installs never open each other's data and
-nothing numbered lands beside the user's folder. `path` says where it is,
-`open()` creates the folder and returns the path (a numbered one holds its
-layout for the process). `locked(name)` holds the lock of one thing in the
-place for the declared `wait=` and `try_locked(name)` tries once;
-`locked()` is the place's own lock, separate from its things' locks, so a
-plugin uses one or the other. The lock files live under the home
+A folder of the plugin's own is a `Dir` on the plugin class. `notes = Dir()`
+is `plugins/<plugin>/notes/` under the home; `checkouts =
+Dir(at=key(WorkspaceSettings).workspaces_dir)` is the folder a path setting
+names, which must be absolute. `file="log.txt"` makes it one file in that
+folder. `layout=N` numbers what it holds as a store numbers its layouts,
+inside the folder (`images/images.v4/`, or `index.v4.sqlite3` with
+`file="index.sqlite3"`), so installs never open each other's data; references
+name the layout, `prune()` after a complete refresh removes the layouts
+nothing holds, and doctor's `stores` row lists them. `items=RepoUrl` with
+`release=` and `moved=` lets holders hold things in it; `items()` is that item
+store. `path` says where it is, `open()` creates the folder and returns the
+path (a numbered one holds its layout for the process, its in-use files inside
+the place). `locked(name)` holds the lock of one thing in the place for the
+declared `wait=` and `try_locked(name)` tries once; `locked()` is the place's
+own lock, separate from its things' locks. The lock files live under the home
 (`plugins/<plugin>/`), never in the place. Locks are taken in one order: a
-plugin's own before that of a plugin it requires, so workspace's lock
-inside git's fails, naming both.
+plugin's own before that of a plugin it requires, so workspace's lock inside
+git's fails, naming both.
 A `Dir` cannot be named `cached`, `state` or `untaped`: core keeps those.
 
 ## Status rows and tests

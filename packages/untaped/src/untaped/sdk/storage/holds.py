@@ -10,8 +10,8 @@ some kind: a project (:mod:`untaped.sdk.projects`) today. A **hold** is one
 Core never knows what an item is. It keeps track of who holds what, and
 releases through one service: plan (ask the owner for each hold, with every
 other holder of the item), preview, confirm, then apply each plan on a fresh
-ask taken under the item store's lock (``refs/.<plugin>-<store>.lock``, per
-item). One refusal applies nothing; an apply may do less than its preview,
+ask taken under the item store's lock (one of the ``refs`` block's named
+locks, per item). One refusal applies nothing; an apply may do less than its preview,
 never more. Lock order, always: the holder's lock, the item store's, the
 owner's own, then the ``refs`` block's lock for the moment a reference is rewritten.
 
@@ -423,34 +423,33 @@ def _same_holder(other: Seen, holder: HolderView) -> bool:
 
 
 def holder_lock(holder: RefHolder, name: str) -> AbstractContextManager[None]:
-    """A holder's lock, ``refs/.<kind>-<name>.lock``: re-entrant; 600 s, then exit 5."""
-    return _lock(holder_lock_file(holder).name, f"{holder.kind} {name}")
+    """A holder's lock, one of the ``refs`` block's named locks: re-entrant; 600 s, then exit 5."""
+    return _lock(holder_lock_file(holder), f"{holder.kind} {name}")
 
 
 def holder_lock_file(holder: RefHolder) -> Path:
-    """The file a holder's lock takes, ``refs/.<kind>-<name>.lock``."""
-    return REFS.place / f".{holder.kind}-{holder.name}.lock"
+    """The file a holder's lock takes: the ``refs`` block's lock of ``holder <kind>-<name>``."""
+    return REFS.lock_path(f"holder {holder.kind}-{holder.name}")
 
 
 def store_lock(store: ItemStore[Any]) -> AbstractContextManager[None]:
-    """An item store's lock, ``refs/.<plugin>-<store>.lock``: re-entrant; 600 s, then exit 5."""
+    """An item store's lock, one of the ``refs`` block's named locks: 600 s, then exit 5."""
     return _target_lock(store.plugin, store.name)
 
 
 def _target_lock(plugin: str, store: str) -> AbstractContextManager[None]:
     """The lock of item store ``<plugin>.<store>``, declared here or not (a forgotten hold's)."""
-    return _lock(f".{plugin}-{store}.lock", f"the items of {plugin}.{store}")
+    return _lock(REFS.lock_path(f"items {plugin}.{store}"), f"the items of {plugin}.{store}")
 
 
 @contextmanager
-def _lock(file: str, what: str) -> Iterator[None]:
-    folder = REFS.place
+def _lock(file: Path, what: str) -> Iterator[None]:
     try:
-        folder.mkdir(parents=True, exist_ok=True)
+        file.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise ConfigError(f"could not create {folder}: {exc.strerror or exc}") from exc
+        raise ConfigError(f"could not create {file.parent}: {exc.strerror or exc}") from exc
     with file_lock(
-        folder / file,
+        file,
         timeout=LOCK_WAIT,
         error=ConfigError,
         busy=f"another untaped is changing {what}; try again",

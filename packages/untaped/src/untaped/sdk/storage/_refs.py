@@ -373,15 +373,24 @@ def composed_targets() -> tuple[RefTarget, ...] | None:
         result = composition()
     except RuntimeError:
         return None
+    from untaped.runtime.registry import DeclaredBlocks  # noqa: PLC0415 - read with the root
     from untaped.sdk.storage.store import Store  # noqa: PLC0415 - store imports this module
 
-    stores = [
-        store
+    # A plugin class's numbered places are read from its declaration, never its class.
+    targets = [
+        RefTarget(plugin=plugin.name, store=block.name, layout=block.layout)
+        for plugin in result.mount.declaration.plugins
+        for block in plugin.blocks
+        if block.block == "dir" and block.layout is not None
+    ]
+    targets += [
+        store.target
         for registered in result.plugins
+        if not isinstance(registered.spec.stores, DeclaredBlocks)
         for store in registered.spec.stores
         if isinstance(store, Store)  # an item store's holds are its holders', not an install's
     ]
-    return tuple(store.target for store in sorted(stores, key=lambda s: (s.plugin, s.name)))
+    return tuple(sorted(targets, key=lambda target: (target.plugin, target.store)))
 
 
 def others_text() -> str:
@@ -467,13 +476,13 @@ def _refresh() -> None:
     env = environment()
     if env is None:
         return
-    targets = composed_targets()
-    if targets is None:
-        return  # no composition to describe (a library call): keep what the file says
     holder = install_holder(env)
-    file = reference_file(holder)
+    file = reference_file(holder)  # outside a run (a library call): NoRunError, nothing written
     if not file.is_file():
         return
+    targets = composed_targets()
+    if targets is None:
+        return  # no composition to describe: keep what the file says
     current = read_reference(file)
     if current.opaque is None and (current.version, current.targets) == (_version(), targets):
         return

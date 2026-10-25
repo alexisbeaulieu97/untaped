@@ -289,7 +289,7 @@ def test_remove_releases_each_hold_then_deletes_only_what_core_wrote(tmp_path: P
     assert sorted(p.name for p in folder.iterdir()) == ["config.yml", "lint.yml"]
     assert (first.root / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert not refs.reference_file(holder_of(first)).exists()
-    assert not (refs.REFS.place / f".project-{first.id}.lock").exists()
+    assert not holds.holder_lock_file(RefHolder(kind="project", name=first.id)).exists()
     assert [h.holder.name for h in REPOS.holders(API) if isinstance(h, HolderView)] == [second.id]
 
 
@@ -402,7 +402,7 @@ def test_the_item_store_lock_is_taken_per_item_and_times_out_with_exit_5(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     first, _ = _two(tmp_path)
-    lock = refs.REFS.place / ".acme-repos.lock"
+    lock = refs.REFS.lock_path("items acme.repos")
     held: list[bool] = []
 
     def probe() -> None:  # from another thread: is the store's lock free right now?
