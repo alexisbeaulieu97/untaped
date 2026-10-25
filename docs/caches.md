@@ -308,9 +308,15 @@ a `keep` that raises keeps the path too.
 What the cleanup will not remove on its own (no registered install keeps the
 store, a running untaped has it open, a damaged in-use lock, a reference it
 cannot read) the `stores` row names with its reason, and `untaped doctor`'s
-`references` row lists every reference, a dead one included. A plugin
-uninstalled here leaves its `cached/` folder, since another install sharing
-the home may still use it: `doctor`'s `caches` row notes it. In tests,
+`references` row lists every reference. A dead one (an install deleted without
+`setup register --remove`) warns, and so does `doctor`'s `plugin-folders` row
+for the `plugins/<name>/` folder a plugin uninstalled here leaves, with its
+data, caches and state, since another install sharing the home may still use
+it. Neither is removed by a run: `untaped setup prune` lists both, then
+removes them once you confirm (`--dry-run` previews, `--yes` skips the
+question). It keeps a symlinked folder and one whose plugin's data a reference
+still names (a project or another install holds it), never touches anything
+outside `plugins/`, and checks each item again before removing it. In tests,
 `untaped.sdk.testing.write_reference` writes another install's reference.
 
 ## Other files your plugin keeps

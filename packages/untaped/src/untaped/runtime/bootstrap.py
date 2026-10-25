@@ -21,7 +21,7 @@ from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
-from untaped.core.commands import build_root_agents_app, build_root_setup_app
+from untaped.core.commands import build_root_agents_app
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
@@ -106,7 +106,7 @@ SHELL_SPEC = ApplicationSpec(
     settings=CoreSettings,
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "setup"),
+    commands=("agents",),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -284,10 +284,7 @@ def build_root_app(
     root.meta.group_parameters = GLOBAL_OPTIONS_GROUP
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    management = {
-        "agents": build_root_agents_app(result=result, root=lambda: root),
-        "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
-    }
+    management = {"agents": build_root_agents_app(result=result, root=lambda: root)}
     for name in SHELL_SPEC.commands:
         _mount(root, management.pop(name), name=name)
     if management:

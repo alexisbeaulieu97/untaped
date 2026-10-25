@@ -10,19 +10,44 @@ registers an install.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+from pydantic import Field
+
 from untaped.core.commands.records import RegisterOutcome
+from untaped.core.settings import CoreSettings
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
-from untaped.sdk._cli import emit
+from untaped.sdk.fields import Output
+from untaped.sdk.marks import experimental
+from untaped.sdk.plugin import Command
 from untaped.sdk.storage._refs import Reference, register_this_install, unregister
 
 _diag = Diagnostics()
 
 
-def run_register(*, remove: bool, fmt: OutputFormat, columns: list[str] | None) -> None:
-    """Register this install, or with ``remove`` unregister it, and report it."""
-    outcome = _remove() if remove else _register()
-    emit([outcome], fmt=fmt, columns=columns)
+class Register(Command[CoreSettings]):
+    """Register this install, so cleanup keeps the store layouts it uses.
+
+    Once per install: its later runs keep the registration current, and
+    its complete fills remove the layouts no registered install uses.
+
+    Examples:
+        $ untaped setup register
+        $ untaped setup register --remove
+    """
+
+    # its record names the experimental RefHolder and RefTarget
+    stability = experimental
+    repairs = True
+    remove: bool = Field(
+        False,
+        description="Unregister this install: other installs may then remove the layouts it used.",
+    )
+    output: Output[RegisterOutcome]
+
+    def run(self) -> Iterator[RegisterOutcome]:
+        # a list of one row, as 11.x printed it
+        yield _remove() if self.remove else _register()
 
 
 def _register() -> RegisterOutcome:
@@ -54,4 +79,4 @@ def _outcome(ref: Reference, action: str) -> RegisterOutcome:
     )
 
 
-__all__ = ["RegisterOutcome", "run_register"]
+__all__ = ["Register"]

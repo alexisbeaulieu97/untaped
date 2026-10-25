@@ -542,6 +542,7 @@ def _samples() -> dict[str, WireModel]:
         InstalledSkill,
         PluginCheckRow,
         ProjectOutcome,
+        PruneOutcome,
         RecordedProject,
         RegisterOutcome,
         ScaffoldOutcome,
@@ -601,6 +602,13 @@ def _samples() -> dict[str, WireModel]:
             environment="/x/site-packages",
             version="11.1.0",
             targets=[RefTarget(plugin="hello", store="shelf", layout=4)],
+        ),
+        PruneOutcome(
+            what="folder",
+            target_path=Path("/x/plugins/gone"),
+            action="removed",
+            detail="plugin 'gone' isn't installed here (1 B)",
+            bytes=1,
         ),
         RecordedProject(
             name="PROJ-123",

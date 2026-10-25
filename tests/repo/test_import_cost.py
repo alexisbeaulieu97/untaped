@@ -181,9 +181,15 @@ _STARTUP_PROBE = (
 #: composes afresh as this one does, composition (``untaped.runtime.composition``):
 #: 164 against 162 on its base (a start reading the declaration cache: 162, as
 #: ``untaped.core.plugin`` is no longer read), 2026-10-24, so the budget goes
-#: to 167, and the total (717 with them) to 720.
-_TOTAL_BUDGET = 720
-_UNTAPED_BUDGET = 167
+#: to 167, and the total (717 with them) to 720. Setup on core's class adds,
+#: on a start that composes afresh, its two command modules
+#: (``untaped.core.commands.register``, until then imported when it ran, and
+#: ``untaped.core.commands.setup_prune``): 168 against 166 on its base, while a
+#: start reading the declaration cache drops twelve (setup's 11.x app and what it
+#: imported), 2026-10-25, so the budget goes to 169, and the total (721 with
+#: them) to 723.
+_TOTAL_BUDGET = 723
+_UNTAPED_BUDGET = 169
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])

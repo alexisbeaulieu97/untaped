@@ -29,7 +29,8 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`) |
+| `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`; experimental) |
+| `setup prune` | `untaped.prune_outcome` (`what` `reference` or `folder`, `target_path`, `bytes`, `detail`; `action` `planned` under `--dry-run`, `removed`, `kept` with why in `detail`, `skipped` when it changed since the preview, or `failed` with `error`) |
 | `plugin list` | `untaped.installed_plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions it requires, canonical, including an extra named after an owner it fills) and `fills` (those owners)) |
 | `plugin contracts` | `untaped.contract_method` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
@@ -37,8 +38,8 @@ command runs and needs at least one row, so use it on a read command or add
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
-`plugin rank`, `plugin new`, `auth unset/migrate`, `profile create/delete/rename`
-and `doctor fix` validate, write nothing and print their outcome
+`plugin rank`, `plugin new`, `auth unset/migrate`, `profile create/delete/rename`,
+`doctor fix` and `setup prune` validate, write nothing and print their outcome
 with `action` `planned`; `doctor fix`'s manual fixes stay `skipped` and its
 refused ones `failed`.
 

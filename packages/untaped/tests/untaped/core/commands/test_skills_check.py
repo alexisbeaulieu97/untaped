@@ -106,6 +106,9 @@ def test_failed_command_still_warns() -> None:
         ("skills", "--help"),
         ("doctor", "--help"),
         ("skills", "install", "--bogus"),
+        ("setup", "plan"),
+        ("setup", "prune", "--dry-run"),
+        ("setup", "--help"),
     ],
 )
 def test_skills_and_doctor_commands_do_not_warn(args: tuple[str, ...]) -> None:

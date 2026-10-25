@@ -157,6 +157,26 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     targets: list[RefTarget]
 
 
+PruneWhat = Literal["reference", "folder"]
+"""What a ``setup prune`` row is about: an install's reference, or a plugin's folder."""
+
+
+class PruneOutcome(OutcomeRecord, TargetRecord, kind="untaped.prune_outcome"):
+    """What ``setup prune`` did, or would do, to one dead reference or leftover plugin folder.
+
+    ``target_path`` is the reference file or the ``plugins/<name>/`` folder.
+    ``action`` is ``planned`` (``--dry-run``), ``removed``, ``kept`` (it
+    stays, ``detail`` says why), ``skipped`` (it changed since the preview)
+    or ``failed``, with ``error``.
+    """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("what", "target_path", "action", "detail")
+
+    what: PruneWhat
+    detail: str
+    bytes: int = Field(description="Its size on disk when it was listed.")
+
+
 ProjectState = Literal["present", "unreadable", "missing", "unknown"]
 """Where a listed project stands; ``unknown`` is a record that can't be read."""
 

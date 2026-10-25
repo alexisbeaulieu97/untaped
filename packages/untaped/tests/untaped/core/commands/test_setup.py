@@ -204,7 +204,7 @@ def test_leaving_without_saving_changes_nothing(_isolated_config: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "nothing saved; no changes made" in result.stderr
-    assert result.stdout == ""
+    assert json.loads(result.stdout) == []  # the run finished, with no row
     assert not _isolated_config.exists()
 
 
@@ -309,7 +309,7 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
 
     assert result.exit_code == 0, result.output
     assert "hi" in result.stderr and "nothing saved; no changes made" in result.stderr
-    assert result.stdout == ""
+    assert json.loads(result.stdout) == []  # the run finished, with no row
 
 
 def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
@@ -340,7 +340,7 @@ def test_written_keys_print_with_no_doctor_rows(_isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     assert line in result.stderr
     assert "nothing saved" not in result.stderr
-    assert result.stdout == ""
+    assert json.loads(result.stdout) == []  # the run finished, with no row
 
 
 def test_setup_opens_without_a_service(_isolated_config: Path) -> None:

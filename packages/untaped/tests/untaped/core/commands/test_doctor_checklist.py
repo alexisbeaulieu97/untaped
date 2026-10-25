@@ -18,6 +18,7 @@ from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import report_check_rows
 from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.registry import PluginSpec
+from untaped.sdk.fields import Output
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -119,7 +120,7 @@ def test_the_footer_names_the_operation(capsys: pytest.CaptureFixture[str]) -> N
         "fix": None,
         "automatic": False,
     }
-    report_check_rows([row], op="setup", fmt="table", columns=None)
+    assert list(report_check_rows([row], op="setup", output=Output())) == []
     assert capsys.readouterr().err.splitlines()[-1] == "setup: 1 warn"
 
 

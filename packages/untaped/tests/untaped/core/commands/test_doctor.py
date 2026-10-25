@@ -705,7 +705,12 @@ def test_a_cache_whose_version_code_fails_is_named_and_doctor_goes_on() -> None:
     assert _caches_row(rows)["detail"] == "acme.names: could not check its files: no source"
 
 
-def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> None:
+def _folders_row(rows: list[dict[str, str]]) -> dict[str, str]:
+    [row] = [row for row in rows if row["check"] == "plugin-folders"]
+    return row
+
+
+def test_an_uninstalled_plugins_folder_warns_with_setup_prune_as_its_fix() -> None:
     folder = named_plugin_dir("gone") / "cached" / "items"
     folder.mkdir(parents=True)
     (folder / "k.json").write_bytes(b"x" * 2048)
@@ -713,19 +718,35 @@ def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> No
     code, rows = _rows(_doctor_app(make_spec("acme")))
 
     assert code == 0, _failed(rows)
-    row = _caches_row(rows)
-    assert row["status"] == _PASS
-    assert row["detail"].endswith(
-        "cached: 2.0 KiB of a plugin not installed here (another install sharing this "
-        "home may use it)"
+    assert "not installed" not in _caches_row(rows)["detail"]
+    row = _folders_row(rows)
+    assert row["status"] == "warn"
+    assert row["detail"] == (
+        f"{named_plugin_dir('gone')}: plugin 'gone' isn't installed here (2.0 KiB); "
+        "another install sharing this home may use it"
     )
-    assert [row for row in rows if row["status"] == "warn"] == []
+    assert row["fix"] == ["--profile", "default", "setup", "prune"]
+    assert row["automatic"] is False
 
 
-def test_a_quarantined_plugins_caches_and_a_folder_no_plugin_could_own_are_not_noted() -> None:
+def test_a_symlinked_plugin_folder_is_listed_as_kept_and_passes(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    link = named_plugin_dir("gone")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(shared)
+
+    _, rows = _rows(_doctor_app(make_spec("acme")))
+
+    row = _folders_row(rows)
+    assert row["status"] == _PASS and row["fix"] is None
+    assert row["detail"].endswith(f"kept: a symlink to {shared}: it stays")
+
+
+def test_a_quarantined_plugins_folder_and_a_folder_no_plugin_could_own_are_not_noted() -> None:
     for plugin in ("ghost", ".trash"):
         (named_plugin_dir("acme").parent / plugin / "cached" / "items").mkdir(parents=True)
 
     _, rows = _rows(_doctor_app(make_spec("acme"), ghost=True))
 
-    assert "of a plugin not installed here" not in _caches_row(rows)["detail"]
+    assert _folders_row(rows)["detail"] == "nothing to note"

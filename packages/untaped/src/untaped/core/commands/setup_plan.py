@@ -29,7 +29,6 @@ from untaped.core.commands.setup_state import (
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, profile_scope
 from untaped.runtime.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
-from untaped.runtime.theme import OutputFormat
 from untaped.sdk._cli import emit
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
@@ -83,20 +82,14 @@ def pending(rows: list[Row]) -> bool:
     return any(row["state"] in ("todo", "failed") and row["step"] != "install" for row in rows)
 
 
-def emit_plan(
-    rows: list[Row], *, profile: str, fmt: OutputFormat, columns: list[str] | None
-) -> None:
-    """Print the rows; a table shows each ``run`` as the command line to type."""
-    if fmt != "table":
-        emit([SetupStep.model_validate(row) for row in rows], fmt=fmt, columns=columns)
-        return
+def emit_plan(rows: list[Row], *, profile: str, columns: list[str] | None) -> None:
+    """Print the rows as a table, each ``run`` as the command line to type."""
     shown = [_table_row(row) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
     with profile_scope(scope):
-        # A table shows ``run`` as the line to type, so it is a view, not the record.
-        emit(shown, fmt=fmt, columns=columns, table_columns=SetupStep.table_columns)
+        emit(shown, fmt="table", columns=columns, table_columns=SetupStep.table_columns)
 
 
 def _table_row(row: Row) -> Row:

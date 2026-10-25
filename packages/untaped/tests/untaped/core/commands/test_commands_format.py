@@ -88,7 +88,17 @@ def test_invalid_untaped_format_is_a_usage_error(
     assert "'xml'" in result.stderr
 
 
-@pytest.mark.parametrize("command", [["doctor"], ["setup"], ["skills", "list"]])
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["doctor"],
+        ["setup"],
+        ["setup", "plan"],
+        ["setup", "register"],
+        ["setup", "prune", "--dry-run"],
+        ["skills", "list"],
+    ],
+)
 def test_an_invalid_untaped_format_does_not_block_diagnosis(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, command: list[str]
 ) -> None:
