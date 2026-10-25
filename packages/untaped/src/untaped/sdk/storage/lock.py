@@ -17,6 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.errors import ErrorCategory, UntapedError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import file_lock
@@ -47,7 +48,7 @@ class Lock(OwnedBlock):
         """The lock file: ``plugins/<plugin>/<name>.lock`` under the home."""
         from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
-        return current_run().home / "plugins" / self.plugin / f"{self.name}.lock"
+        return current_run().home / PLUGINS_FOLDER / self.plugin / f"{self.name}.lock"
 
     @contextmanager
     def locked(self) -> Iterator[None]:

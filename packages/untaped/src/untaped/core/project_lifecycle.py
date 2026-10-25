@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from untaped.runtime.settings import STATE_FILE_NAME
+from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError
 from untaped.sdk.projects import (
@@ -76,8 +77,6 @@ from untaped.sdk.words import shown_path
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
 _CORE_FILES = (MARKER, STATE_FILE_NAME)
-#: Core's own folder there: plugins' machine files (``Project.plugin_dir``).
-_CORE_FOLDERS = ("plugins",)
 
 
 @dataclass(frozen=True)
@@ -223,7 +222,7 @@ def core_files(root: Path) -> tuple[list[str], list[str]]:
     for name in names:
         path = folder / name
         core_file = name in _CORE_FILES or name in CORE_LOCKS or name == ".gitignore"
-        if name in _CORE_FOLDERS and path.is_dir() and not path.is_symlink():
+        if name == PLUGINS_FOLDER and path.is_dir() and not path.is_symlink():
             deletes.append(f"{name}/")
         elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):
             deletes.append(name)

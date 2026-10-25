@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import RootModel as PydanticRootModel
 
 from untaped.sdk._block import OwnedBlock
-from untaped.sdk._home import CORE
+from untaped.sdk._home import CORE, PLUGINS_FOLDER
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.fields import SettingKey
 from untaped.sdk.marks import experimental
@@ -120,7 +120,10 @@ class Dir(OwnedBlock):
     @classmethod
     def name_problem(cls, name: str) -> str | None:
         if name in RESERVED:
-            return f"a Dir cannot be named {name!r}: core keeps plugins/<plugin>/{name} itself"
+            return (
+                f"a Dir cannot be named {name!r}: "
+                f"core keeps {PLUGINS_FOLDER}/<plugin>/{name} itself"
+            )
         return None
 
     def problems(self) -> tuple[str, ...]:
@@ -150,7 +153,7 @@ class Dir(OwnedBlock):
         )
 
         if self.at is None:
-            return current_run().home / "plugins" / self.plugin / self.name
+            return current_run().home / PLUGINS_FOLDER / self.plugin / self.name
         value: object = settings_of(SettingKey.model_of(self.at))
         for part in SettingKey.path_of(self.at):
             value = getattr(value, part)
@@ -274,7 +277,7 @@ class Dir(OwnedBlock):
         """The lock file of ``name`` (or the place's own): under the home, never in the place."""
         from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
-        folder = current_run().home / "plugins" / self.plugin
+        folder = current_run().home / PLUGINS_FOLDER / self.plugin
         if name is None:
             return folder / f"{self.name}.lock"
         digest = hashlib.sha256(name.encode()).hexdigest()[:32]

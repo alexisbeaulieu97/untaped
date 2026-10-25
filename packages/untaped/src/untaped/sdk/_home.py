@@ -20,6 +20,9 @@ HOME_ENV = "UNTAPED_HOME"
 DEFAULT_HOME = Path("~/.untaped")
 #: The settings file at the home's root.
 CONFIG_FILE = "config.yml"
+#: The folder of every plugin's own files, ``plugins/<name>/``: at the home's root, and in a
+#: project's ``.untaped/`` for its machine files there. Core's, never a plugin's or a project.
+PLUGINS_FOLDER = "plugins"
 #: Core's name as a plugin, reserved: its folder is ``plugins/untaped/``.
 CORE = "untaped"
 
@@ -63,7 +66,8 @@ def home() -> Path:
 
 def plugin_path(name: str, *parts: str) -> Path:
     """``home()/plugins/<name>/<parts>``, as spelled: a plugin's own default folder or file."""
-    return home() / "plugins" / name / Path(*parts) if parts else home() / "plugins" / name
+    folder = home() / PLUGINS_FOLDER / name
+    return folder / Path(*parts) if parts else folder
 
 
 def config_path() -> Path:
@@ -71,4 +75,12 @@ def config_path() -> Path:
     return (home() / CONFIG_FILE).expanduser()
 
 
-__all__ = ["CORE", "DEFAULT_HOME", "HOME_ENV", "config_path", "home", "plugin_path"]
+__all__ = [
+    "CORE",
+    "DEFAULT_HOME",
+    "HOME_ENV",
+    "PLUGINS_FOLDER",
+    "config_path",
+    "home",
+    "plugin_path",
+]

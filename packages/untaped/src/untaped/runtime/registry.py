@@ -1279,9 +1279,10 @@ def compose(
             value=KeptDeclaration(candidates=read, declaration=composed[-1].mount.declaration)
         )
 
-    declarations = _declarations()
+    from untaped.core.settings import DECLARATION  # noqa: PLC0415 - core imports the runtime
+
     try:
-        served = declarations.serve({key: "composed plugins"}, refresh=None, fill=fill)
+        served = DECLARATION.serve({key: "composed plugins"}, refresh=None, fill=fill)
         if not composed:
             try:
                 kept = served.value[key]
@@ -1292,7 +1293,7 @@ def compose(
                 # a candidate it doesn't account for, or a part of it that no longer loads
                 # (a dependency gone): compose afresh and keep that instead
                 _LOG.debug("the kept declaration does not compose", exc_info=True)
-                declarations.serve({key: "composed plugins"}, refresh=True, fill=fill)
+                DECLARATION.serve({key: "composed plugins"}, refresh=True, fill=fill)
     except Exception:
         if composed:
             return composed[-1]
@@ -1302,17 +1303,6 @@ def compose(
         _LOG.debug("composing without the declaration cache", exc_info=True)
         return _compose(shell, ordered)
     return composed[-1]
-
-
-def _declarations() -> Cache[KeptDeclaration]:
-    """Core's declaration cache, named ``untaped.declaration`` (``plugins/untaped/cached/``).
-
-    Composition runs before any run exists, and core's class is what it is
-    composing, so the cache is read spelled.
-    """
-    from untaped.core.settings import DECLARATION, NAME  # noqa: PLC0415 - core imports the runtime
-
-    return DECLARATION._spelled_as(NAME, "declaration")
 
 
 def _declaration_key(ordered: Sequence[PluginCandidate]) -> str:

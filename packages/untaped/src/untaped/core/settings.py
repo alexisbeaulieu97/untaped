@@ -24,14 +24,16 @@ from untaped.sdk.storage.installed_code import installed_code
 #: Core's name as a plugin, which the SDK reserves: its folder is ``~/.untaped/plugins/untaped/``.
 NAME = CORE
 
-#: Every plugin class this install composes, kept until any of its code changes.
+#: Core's ``declaration``: every plugin class this install composes, kept until any of its
+#: code changes. Composition reads it before any run exists, while core's class is what it
+#: is composing, so it is bound where it is declared. ``Core.declaration`` holds it.
 DECLARATION = Cache(
     label="composed plugins",
     model=KeptDeclaration,
     version=installed_code(),
     max_age=None,
     split="none",
-)
+)._bound_to(NAME, "declaration")
 
 
 class CoreSettings(BaseModel):
