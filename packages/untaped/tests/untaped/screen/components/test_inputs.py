@@ -346,12 +346,13 @@ def test_secret_never_appears_in_a_frame() -> None:
 def test_a_secret_error_message_cannot_carry_the_secret_unless_the_validator_puts_it_there() -> (
     None
 ):
+    # Not hex, so an object address in the repr can't hold it by chance.
     component = SecretInput(
-        "Token", SecretStr("abc"), validator=lambda v: "Too short." if len(v) < 8 else ""
+        "Token", SecretStr("zq!x"), validator=lambda v: "Too short." if len(v) < 8 else ""
     )
 
     assert component.validate() == "Too short."
-    assert "abc" not in repr(component.with_error(component.validate()))
+    assert "zq!x" not in repr(component.with_error(component.validate()))
 
 
 def test_secret_masks_with_the_theme_symbol_and_plain_uses_ascii() -> None:
