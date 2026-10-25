@@ -559,6 +559,9 @@ def _install_root_callback(
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
+                # What dispatch reports before the command parses (the reference
+                # refresh's warning) follows the --format the tokens ask for.
+                note_requested_format(command_tokens)
                 with ExitStack() as stack:
                     if command_tokens and not command_tokens[0].startswith("-"):
                         # A command runs under the run; root --help and --version need none,

@@ -21,6 +21,7 @@ from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate
 pytestmark = pytest.mark.usefixtures("home_run")
 
 STORE = Store("acme", "data", base=lambda: Path("/nowhere/data.db"), layout=3)
+_JIRA = plugin_candidate(PluginSpec(name="jira"))
 
 
 def _cli(*args: str) -> CliResult:
@@ -91,7 +92,8 @@ def test_a_start_that_meets_a_busy_lock_leaves_the_refresh_to_the_next(
     assert _cli().exit_code == 0
     with monkeypatch.context() as busy:
         busy.setattr(refs.REFS, "try_locked", _busy)
-        _start("--version")  # never waits, never fails
+        result = _start("--version")  # never waits, never fails, says nothing
+    assert result.stderr == ""
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme",)
 
@@ -130,10 +132,10 @@ def test_a_command_still_runs_when_the_references_lock_stays_busy(
     monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
     with FileLock(str(refs.REFS.lock_path())):
         result = _start("doctor", "--help")  # busy past the wait: warns, never fails
-    assert "could not record this install's plugins before the command" in result.stderr
+    assert "could not record this install's plugins" in result.stderr
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme",)
-    _start("doctor", "--help")
+    assert "could not record" not in _start("doctor", "--help").stderr
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme", "jira")
 
@@ -195,3 +197,20 @@ def test_a_busy_references_lock_says_so(monkeypatch: pytest.MonkeyPatch) -> None
     with FileLock(str(lock)):
         result = _cli("--remove")
     assert "untaped.refs is busy (another untaped process)" in result.stderr, result.output
+
+
+def test_the_busy_lock_warning_follows_the_commands_format(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under ``--format json`` stderr stays one JSON object per line, this warning included."""
+    from filelock import FileLock
+
+    assert _cli().exit_code == 0
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
+    spec = PluginSpec(name="acme", stores=(STORE,))
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec), _JIRA])
+    with FileLock(str(refs.REFS.lock_path())):
+        # Nothing marks settings to set up, so plan fails: its error is a JSON line too.
+        result = invoke_cli(root.meta, ["setup", "plan", "--format", "json"])
+    lines = [json.loads(line) for line in result.stderr.splitlines()]
+    assert any("could not record this install's plugins" in str(line) for line in lines)

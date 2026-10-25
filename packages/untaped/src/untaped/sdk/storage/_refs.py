@@ -495,7 +495,7 @@ def refresh(*, wait: bool = False) -> None:
     elsewhere must not miss) it waits for a busy references lock like any
     writer; without it (root ``--help`` and ``--version``) it never waits.
     A lock still busy, like a write that fails, leaves the file to the next
-    start; a command's warns, since a prune elsewhere may then miss it.
+    start; for a command it warns, since a prune elsewhere may then miss it.
     Never raises.
     """
     try:
@@ -504,8 +504,9 @@ def refresh(*, wait: bool = False) -> None:
         if wait and isinstance(exc, UntapedError) and exc.category == ErrorCategory.UNAVAILABLE:
             # A prune elsewhere outlasted the wait: it may not see what this command uses.
             _diag.warning(
-                f"could not record this install's plugins before the command: {exc}",
-                hint="the next start records them",
+                "could not record this install's plugins: another untaped process "
+                "held the references' lock past the wait",
+                hint="a `setup prune` running now may not see them; the next command records them",
             )
             return
         _LOG.debug("could not refresh this install's reference: %s", exc)
