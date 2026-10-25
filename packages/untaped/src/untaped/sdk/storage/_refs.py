@@ -163,7 +163,7 @@ class Reference:
     one (a project does); ``moved_from`` is where the holder was before each
     move whose repairs haven't all succeeded yet, oldest first. ``plugins``
     names the plugins an install composes, whose ``plugins/<name>/`` folders
-    it uses (none when the file names none).
+    it uses; ``None`` when the file doesn't say (it has no ``plugins`` key).
     """
 
     file: Path
@@ -173,7 +173,7 @@ class Reference:
     moved_from: tuple[Path, ...] = ()
     plugin: str | None = None
     version: str | None = None
-    plugins: tuple[str, ...] = ()
+    plugins: tuple[str, ...] | None = None
     targets: tuple[RefTarget, ...] = ()
     opaque: str | None = None
 
@@ -302,7 +302,7 @@ def read_reference(file: Path) -> Reference:
     plugins = _names(data.plugins)
     if holder.kind in _OWN_KINDS:
         # This untaped's own kinds: anything it cannot read pauses cleanup.
-        own = _own_targets(targets, plugins)
+        own = _own_targets(targets, malformed=plugins is False)
         if isinstance(own, str):
             return Reference(file, holder=holder, opaque=f"unreadable ({own})")
         read = own
@@ -328,7 +328,7 @@ def read_reference(file: Path) -> Reference:
         moved_from=moved_from,
         plugin=_text(data.plugin) or None,
         version=_text(data.version) or None,
-        plugins=plugins or (),
+        plugins=plugins if isinstance(plugins, tuple) else None,
         targets=read,
     )
 
@@ -487,38 +487,50 @@ def refresh() -> None:
     """Keep a registered install's reference current, once per process.
 
     Rewrites the file when this run's version, layouts or plugins differ
-    from what it records; writes nothing for an install nobody registered, nor
-    outside a run (a library call). Never raises: a reference that cannot
-    be refreshed waits for the next run.
+    from what it records; writes nothing for an install nobody registered.
+    The CLI calls it when a start composes afresh rather than from its kept
+    declaration (the first start after an install change) and each store
+    open calls it. Outside a run (a library call) or before anything is
+    composed it writes nothing and a later call tries again. Never raises:
+    a reference that cannot be refreshed waits for the next run.
     """
     global _refreshed
     with _STATE:
         if _refreshed:
             return
         _refreshed = True
+    done = False
     try:
-        _refresh()
-    except (OSError, UntapedError, NoRunError) as exc:
+        done = _refresh()
+    except NoRunError:
+        pass
+    except (OSError, UntapedError) as exc:
+        done = True
         _LOG.debug("could not refresh this install's reference: %s", exc)
+    if not done:
+        with _STATE:
+            _refreshed = False  # nothing to compare with yet: a later call refreshes
 
 
-def _refresh() -> None:
+def _refresh() -> bool:
+    """Refresh the reference; ``False`` when there is no composition to describe yet."""
     env = environment()
     if env is None:
-        return
+        return True
     holder = install_holder(env)
     file = reference_file(holder)  # outside a run (a library call): NoRunError, nothing written
     if not file.is_file():
-        return
+        return True
     targets, plugins = composed_targets(), composed_plugins()
     if targets is None or plugins is None:
-        return  # no composition to describe: keep what the file says
+        return False  # no composition to describe: keep what the file says
     current = read_reference(file)
     if current.opaque is None and _recorded(current) == (_version(), targets, plugins):
-        return
+        return True
     with locked():
         if file.is_file():
             _write(holder, env, targets, plugins)
+    return True
 
 
 @contextmanager
@@ -543,7 +555,7 @@ def write_reference(
     moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
-    plugins: Sequence[str] = (),
+    plugins: Sequence[str] | None = (),
 ) -> Path:
     """Write one holder's reference file, ``refs/<kind>-<name>.json``; return its path.
 
@@ -552,7 +564,8 @@ def write_reference(
     folder, and a holder without one lives until its file is removed.
     ``anchor_id`` records the anchor's filesystem identity (a project's), and
     ``moved_from`` where it was before each move not yet fully repaired;
-    ``plugins`` names the plugins an install composes.
+    ``plugins`` names the plugins an install composes, written even when
+    empty; ``None`` leaves the key out, as a file that doesn't say.
     """
     data = _Stored(
         holder=holder.model_dump(),
@@ -561,7 +574,7 @@ def write_reference(
         moved_from=[str(path) for path in moved_from] or None,
         plugin=plugin,
         version=version,
-        plugins=list(plugins) or None,
+        plugins=None if plugins is None else list(plugins),
         targets=[target.model_dump() for target in targets],
     )
     file = reference_file(holder)
@@ -623,7 +636,7 @@ def _holder(value: object) -> RefHolder | None:
         return None
 
 
-def _own_targets(targets: object, plugins: object) -> tuple[RefTarget, ...] | str:
+def _own_targets(targets: object, *, malformed: bool) -> tuple[RefTarget, ...] | str:
     """The targets of this untaped's own kind of reference, or why the file can't be read."""
     if not isinstance(targets, list):
         return "no targets"
@@ -631,17 +644,17 @@ def _own_targets(targets: object, plugins: object) -> tuple[RefTarget, ...] | st
         read = tuple(RefTarget.model_validate(target) for target in targets)
     except ValidationError:
         return "a target is malformed"
-    if plugins is None:
+    if malformed:
         return "plugins is malformed"
     return read
 
 
-def _names(value: object) -> tuple[str, ...] | None:
-    """A stored ``plugins`` list: ``()`` when the file names none, ``None`` when it is malformed."""
+def _names(value: object) -> tuple[str, ...] | Literal[False] | None:
+    """A stored ``plugins`` list: ``None`` when the file has none, ``False`` if malformed."""
     if value is None:
-        return ()
-    if not isinstance(value, list) or not all(isinstance(name, str) and name for name in value):
         return None
+    if not isinstance(value, list) or not all(isinstance(name, str) and name for name in value):
+        return False
     return tuple(str(name) for name in value)
 
 

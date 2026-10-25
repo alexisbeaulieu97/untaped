@@ -70,7 +70,7 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
     DeprecatedBehaviour,
@@ -508,6 +508,30 @@ def _invocation_run(mount: Mount) -> Run:
     return build_run(mount.declaration, mount.settings)
 
 
+def _follow_composition(run: Callable[[], Run] | None = None) -> None:
+    """After a fresh composition, keep this install's registered reference current.
+
+    A composition replayed from the kept declaration composes what the last
+    fresh one did, so only a fresh one (the first start after an install
+    change) refreshes; each store open refreshes too. Called inside the
+    command's run, or with ``run`` to open one for root ``--help`` and
+    ``--version``, which then print even when the home doesn't resolve.
+    """
+    if _COMPOSED_RESULT is None or not _COMPOSED_RESULT.fresh:
+        return
+    from untaped.sdk.storage._refs import refresh  # noqa: PLC0415 - only after a fresh start
+
+    if run is None:
+        refresh()
+        return
+    try:
+        scope = run_scope(run())
+    except UntapedError:
+        return  # a home that doesn't resolve: the next start refreshes
+    with scope:
+        refresh()
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
@@ -542,6 +566,9 @@ def _install_root_callback(
                         # A command runs under the run; root --help and --version need none,
                         # so a home that doesn't resolve still lets them print.
                         stack.enter_context(run_scope(run()))
+                        _follow_composition()
+                    else:
+                        _follow_composition(run)
                     result = _dispatch_with_root_options(
                         app, command_tokens, root_options, applied_tokens
                     )

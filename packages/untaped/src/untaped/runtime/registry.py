@@ -533,6 +533,9 @@ class CompositionResult:
     taken: Mapping[str, str] = field(default_factory=dict, compare=False)
     #: The plugin classes composed, core's included, mounted.
     mount: Mount = field(kw_only=True, compare=False)
+    #: Whether it was composed afresh, not replayed from core's kept declaration: the first
+    #: start after an install change, when what an install composes can have changed.
+    fresh: bool = field(default=True, kw_only=True, compare=False)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -1425,6 +1428,7 @@ def _compose(
         candidates=tuple(ordered),
         mount=mount,
         taken={**state.taken, **state.core},
+        fresh=declared is None,
     )
 
 

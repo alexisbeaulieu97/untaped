@@ -46,6 +46,28 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     assert ref.plugins == ("acme",)  # the plugins it composes, whose folders it uses
 
 
+@pytest.mark.parametrize("command", [["doctor", "--help"], ["--version"]])
+def test_a_start_that_composes_afresh_records_a_plugin_added_since(
+    command: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A registered install gains jira and runs no command that opens a store."""
+    assert _cli().exit_code == 0
+    refs._forget()  # the next start is a new process
+    opened: list[object] = []
+    monkeypatch.setattr(Store, "open", lambda self: opened.append(self))
+    acme = PluginSpec(name="acme", stores=(STORE,))
+    root = bootstrap.build_root_app(
+        candidates=[plugin_candidate(acme), plugin_candidate(PluginSpec(name="jira"))]
+    )
+    assert bootstrap.composition().fresh  # candidates given as objects always compose afresh
+    result = invoke_cli(root.meta, command)
+
+    assert result.exit_code == 0, result.output
+    assert opened == []
+    ref = refs.this_install()
+    assert ref is not None and ref.plugins == ("acme", "jira")
+
+
 def test_registering_twice_changes_nothing() -> None:
     assert _cli().exit_code == 0
     result = _cli("--format", "json")

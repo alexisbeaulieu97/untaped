@@ -10,7 +10,8 @@ plugin's data, caches and state. A folder counts when its name could be a
 plugin's, it is not core's own and no plugin is composed or quarantined
 under that name; it stays, as a ``kept`` row, when it is a symlink, when a
 live reference names its plugin (an install composing it, or a target of
-it), or while any reference cannot be read. Applying holds the references'
+it), or while any reference cannot be read or a live install's doesn't
+list the plugins it composes. Applying holds the references'
 lock throughout, checks each item again and removes nothing outside the
 home's ``plugins/``; an item that fails is a failed row and the others
 still go.
@@ -91,6 +92,12 @@ def _kept(folder: Path, references: Sequence[Reference]) -> str | None:
     user = next((ref for ref in references if _names(ref, folder.name)), None)
     if user is not None:
         return f"{user.describe()} uses it"
+    silent = next((ref for ref in references if _unlisted(ref)), None)
+    if silent is not None:
+        return (
+            f"{silent.describe()} may use it: {shown_path(silent.file)} doesn't list "
+            "the plugins it composes"
+        )
     return None
 
 
@@ -98,7 +105,15 @@ def _names(ref: Reference, plugin: str) -> bool:
     """Whether live ``ref`` names ``plugin``: among the plugins it composes, or a target's."""
     if not ref.live:
         return False
-    return plugin in ref.plugins or any(target.plugin == plugin for target in ref.targets)
+    composed = ref.plugins or ()
+    return plugin in composed or any(target.plugin == plugin for target in ref.targets)
+
+
+def _unlisted(ref: Reference) -> bool:
+    """Whether ``ref`` is a live install's that doesn't say which plugins it composes."""
+    from untaped.sdk.storage._refs import INSTALL  # noqa: PLC0415 - read only with references
+
+    return ref.kind == INSTALL and ref.plugins is None and ref.live
 
 
 class Prune(Command[CoreSettings]):
@@ -111,7 +126,8 @@ class Prune(Command[CoreSettings]):
     plugin (an install sharing this home that composes it, a project
     holding its items). Both are listed first; a symlinked folder, one a
     live reference names, and every folder while a reference can't be read
-    stay. Always confirms; without a terminal it needs --yes (else exit 2).
+    or a live install's doesn't list its plugins stay. Always confirms;
+    without a terminal it needs --yes (else exit 2).
     An item that can't be removed fails the run, and the others still go;
     a busy references lock fails them all (exit 5, retry later).
 

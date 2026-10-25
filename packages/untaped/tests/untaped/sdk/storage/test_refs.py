@@ -299,12 +299,16 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     ]
 
 
-def test_an_install_reference_without_plugins_names_none_and_a_malformed_list_is_opaque(
+def test_the_plugins_list_is_written_even_empty_and_a_file_without_it_does_not_say(
     tmp_path: Path,
 ) -> None:
-    file = write_reference(RefHolder(kind="install", name="aaaaaaaaaaaa"), [], anchor=tmp_path)
-    assert "plugins" not in json.loads(file.read_text())
+    holder = RefHolder(kind="install", name="aaaaaaaaaaaa")
+    file = write_reference(holder, [], anchor=tmp_path)
+    assert json.loads(file.read_text())["plugins"] == []
     assert refs.read_reference(file).plugins == ()
+    write_reference(holder, [], anchor=tmp_path, plugins=None)
+    assert "plugins" not in json.loads(file.read_text())
+    assert refs.read_reference(file).plugins is None  # absent: it doesn't say, unlike empty
     data = json.loads(file.read_text())
     file.write_text(json.dumps({**data, "plugins": "jira"}))
     assert refs.read_reference(file).opaque == "unreadable (plugins is malformed)"
@@ -491,6 +495,20 @@ def test_a_refresh_without_a_composition_keeps_the_file(
     refs.refresh()
     assert json.loads(ref.file.read_text())["targets"] == [
         {"plugin": "acme", "store": "data", "layout": 1}
+    ]
+
+
+def test_a_refresh_before_the_composition_exists_leaves_the_next_one_to_refresh(
+    site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
+    with monkeypatch.context() as early:
+        early.setattr(refs, "composed_targets", lambda: None)  # nothing composed yet
+        refs.refresh()
+    refs.refresh()
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 2}
     ]
 
 

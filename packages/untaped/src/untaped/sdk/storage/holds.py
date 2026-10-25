@@ -519,6 +519,7 @@ def _rewrite(
                 moved_from=ref.moved_from,
                 plugin=ref.plugin,
                 version=ref.version,
+                plugins=ref.plugins,
             )
         except OSError as exc:
             raise ConfigError(f"could not write {file}: {exc.strerror or exc}") from exc

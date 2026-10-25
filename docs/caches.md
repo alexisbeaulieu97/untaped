@@ -278,12 +278,15 @@ one per item, `{"plugin": "git", "store": "store", "item":
 (experimental), written as `{"kind": "install", "name": "3f9a1c2e8b7d"}` in
 `refs/install-3f9a1c2e8b7d.json`; the install is the only holder in 11.1, and
 it holds layouts. An install's reference also lists the plugins it composes,
-`"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses (a file
-without the list names none). An install refreshes its own reference whenever
-a command opens a store after its plugins or their layouts changed, so an
-upgrade needs nothing more. `holders(target)` (experimental) returns the `RefHolder` of each
-live reference that keeps a target, and raises while a reference cannot be
-read (who holds it is unknown then, never nobody). A reference is *live* while
+`"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses; the
+list is always written, empty included, and a file without it doesn't say, so
+`setup prune` keeps every folder. An install refreshes its own reference on
+the first start after an install change and whenever a command opens a store,
+so an upgrade needs nothing more. Every install sharing a 12.0 home is a 12.0
+one: 11.1 refuses its config as newer, so it cannot run there.
+`holders(target)` (experimental) returns the `RefHolder` of each live
+reference that keeps a target, and raises while a reference cannot be read
+(who holds it is unknown then, never nobody). A reference is *live* while
 its folder still holds an untaped install; one written by a newer untaped, or
 one this untaped cannot read, is kept as if live and pauses all cleanup until
 this install is upgraded. A reference of a kind this untaped does not know,
@@ -318,8 +321,8 @@ is removed by a run: `untaped setup prune` lists both, then removes them once
 you confirm (`--dry-run` previews, `--yes` skips the question). A folder goes
 whole, its data, caches and state included. It stays while a live reference
 names its plugin (another install sharing the home composes it, or a project
-or install holds its items or layouts), while any reference cannot be read,
-or when it is a symlink. Prune never touches anything outside `plugins/`, and
+or install holds its items or layouts), while any reference cannot be read or
+a live install's doesn't list its plugins, or when it is a symlink. Prune never touches anything outside `plugins/`, and
 checks each item again under the references' lock before removing it. In
 tests, `untaped.sdk.testing.write_reference` writes another install's
 reference, `plugins=` the plugins it composes.

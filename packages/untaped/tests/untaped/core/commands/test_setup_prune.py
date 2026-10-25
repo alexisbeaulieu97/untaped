@@ -21,6 +21,7 @@ from untaped.sdk.testing import (
     plugin_candidate,
     write_reference,
 )
+from untaped.sdk.words import shown_path
 
 pytestmark = pytest.mark.usefixtures("home_run")
 
@@ -53,7 +54,7 @@ def _dead(tmp_path: Path, name: str = "aaaaaaaaaaaa") -> Path:
     )
 
 
-def _live(tmp_path: Path, *targets: RefTarget, plugins: tuple[str, ...] = ()) -> Path:
+def _live(tmp_path: Path, *targets: RefTarget, plugins: tuple[str, ...] | None = ()) -> Path:
     alive = tmp_path / "tool"
     (alive / "untaped-12.0.0.dist-info").mkdir(parents=True, exist_ok=True)
     return write_reference(
@@ -175,6 +176,23 @@ def test_another_live_install_composing_the_plugin_keeps_its_folder(tmp_path: Pa
     assert (row["action"], row["detail"]) == (
         "kept",
         f"untaped 12.0.0 at {tmp_path / 'tool'} uses it",
+    )
+    assert (jira / "state.yml").exists()
+
+
+def test_a_live_install_that_does_not_list_its_plugins_keeps_every_folder(
+    tmp_path: Path,
+) -> None:
+    """Its file has no ``plugins`` key (unlike an empty list): it may compose any of them."""
+    file = _live(tmp_path, plugins=None)
+    jira = _folder("jira")
+
+    [row] = _rows(_cli("--yes", "-f", "json"))
+
+    assert (row["action"], row["detail"]) == (
+        "kept",
+        f"untaped 12.0.0 at {tmp_path / 'tool'} may use it: {shown_path(file)} doesn't list "
+        "the plugins it composes",
     )
     assert (jira / "state.yml").exists()
 
