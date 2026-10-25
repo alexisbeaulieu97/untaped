@@ -707,12 +707,14 @@ def plan_release(project: Project, store: ItemStore[Any]) -> list[LetGo[Any] | R
 
     Every other holder is read from the hermetic home, as core reads them.
     """
-    seen = holder_view(holder_of(project))
-    if not isinstance(seen, HolderView):
-        raise ConfigError(f"project {project.name} has no readable record in this home")
-    return [
-        store.release(_release_ask(store, item, seen, force=False)) for item in project.holds(store)
-    ]
+    with _in_a_run():
+        seen = holder_view(holder_of(project))
+        if not isinstance(seen, HolderView):
+            raise ConfigError(f"project {project.name} has no readable record in this home")
+        return [
+            store.release(_release_ask(store, item, seen, force=False))
+            for item in project.holds(store)
+        ]
 
 
 def _view(n: int, state: HolderState) -> HolderView:

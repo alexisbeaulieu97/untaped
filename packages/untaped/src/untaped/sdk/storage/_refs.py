@@ -51,6 +51,7 @@ from untaped.sdk._home import CORE
 from untaped.sdk.diagnostic import _is_none
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.marks import experimental
+from untaped.sdk.run import NoRunError
 from untaped.sdk.storage.data_file import Absent, DataFile, OtherVersion, Unreadable
 from untaped.sdk.storage.dir import Dir
 
@@ -447,8 +448,9 @@ def refresh() -> None:
     """Keep a registered install's reference current, once per process.
 
     Rewrites the file when this run's version or layouts differ from what
-    it records; writes nothing for an install nobody registered. Never
-    raises: a reference that cannot be refreshed waits for the next run.
+    it records; writes nothing for an install nobody registered, nor
+    outside a run (a library call). Never raises: a reference that cannot
+    be refreshed waits for the next run.
     """
     global _refreshed
     with _STATE:
@@ -457,7 +459,7 @@ def refresh() -> None:
         _refreshed = True
     try:
         _refresh()
-    except (OSError, UntapedError) as exc:
+    except (OSError, UntapedError, NoRunError) as exc:
         _LOG.debug("could not refresh this install's reference: %s", exc)
 
 

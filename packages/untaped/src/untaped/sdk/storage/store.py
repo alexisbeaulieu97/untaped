@@ -35,8 +35,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.marks import experimental
+from untaped.sdk.run import NoRunError
 
 if TYPE_CHECKING:
     from filelock import FileLock, ReadWriteLock
@@ -266,7 +267,7 @@ class Store:
                     for layout, path in self._candidates(held)
                     if isinstance(aside := self._set_aside(layout, path), _Aside)
                 ]
-        except (OSError, ConfigError) as exc:
+        except (OSError, UntapedError, NoRunError) as exc:  # a busy refs lock, no run
             _LOG.debug("could not prune %s: %s", self.qualified, exc)
             return
         for aside in removed:

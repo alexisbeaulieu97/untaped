@@ -375,8 +375,8 @@ def test_a_failed_record_keeps_the_marker_and_exits_4(tmp_path: Path) -> None:
         raise OSError(errno.ENOSPC, "No space left on device")
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(projects, "write_reference", fail)
-        with pytest.raises(ConfigError, match="recording it in") as caught:
+        patch.setattr(data_file, "atomic_write", fail)
+        with pytest.raises(ConfigError, match=r"recording it in .* failed: No space") as caught:
             init(tmp_path / "PROJ")
     assert caught.value.hint == "the next command that changes the project records it"
     assert (tmp_path / "PROJ" / ".untaped" / "project.json").is_file()

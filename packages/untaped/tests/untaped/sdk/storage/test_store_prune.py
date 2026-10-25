@@ -129,6 +129,21 @@ def test_a_newer_layout_nothing_holds_goes_too(base: Path, composed: list[RefTar
     assert line.layout == 6 and not newer.exists()
 
 
+def test_a_busy_refs_lock_skips_the_prune_and_never_raises(
+    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from filelock import FileLock
+
+    _registered(composed)
+    old = _layout(base, 4)
+    store = _store(base)
+    store.open()
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(0))
+    with FileLock(str(refs.REFS.lock_path())):
+        assert _prune(store) == []
+    assert old.exists()  # the next complete fill tries again
+
+
 def test_the_line_survives_quiet(
     base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:

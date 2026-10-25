@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 from importlib.metadata import PackageNotFoundError
@@ -433,6 +434,15 @@ def test_an_unchanged_reference_is_not_rewritten(
     monkeypatch.setattr(data_file, "atomic_write", lambda *args, **_kw: writes.append(args))
     refs.refresh()
     assert writes == []
+
+
+def test_a_refresh_outside_a_run_never_raises(site: Path, composed: list[RefTarget]) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
+    contextvars.Context().run(refs.refresh)  # a library call: no run, so nothing to place
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 1}
+    ]
 
 
 def test_no_run_registers(site: Path, composed: list[RefTarget], tmp_path: Path) -> None:
