@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -61,11 +61,9 @@ from untaped.runtime.registry import (
     state_model,
 )
 from untaped.runtime.settings import (
-    PLUGIN_NAME_PATTERN,
     HttpSettings,
     active_settings_layout,
     check_settings_field,
-    plugins_root,
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
@@ -75,8 +73,8 @@ from untaped.runtime.settings import (
     settings_overlay,
 )
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat, UiSettings, check_declared_tokens, resolve_theme
-from untaped.sdk.errors import ConfigError, ExitCode, Failed, UntapedError, first_validation_error
+from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
+from untaped.sdk.errors import ConfigError, Failed, UntapedError, first_validation_error
 from untaped.sdk.fields import Confirm, Output
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.sdk.health.deprecated_keys import scan_keys
@@ -99,6 +97,7 @@ from untaped.sdk.words import (
 )
 
 if TYPE_CHECKING:
+    from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.projects import Project
     from untaped.sdk.storage._refs import Reference, RefHolder
     from untaped.sdk.storage.store import Layout, Store
@@ -145,11 +144,7 @@ class Check(Command[CoreSettings]):
         from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
 
         rows = collect_doctor_rows(SHELL_SPEC, composition(), online=self.online)
-        if _shows_itself(self.output):
-            _show_check_rows(rows, columns=self.output.requested)
-        else:
-            yield from (records.DoctorCheck.model_validate(row) for row in rows)
-        if _check_footer(rows, op="doctor"):
+        if (yield from report_check_rows(rows, op="doctor", output=self.output)):
             raise Failed("a doctor check failed")
 
 
@@ -208,20 +203,19 @@ def _shows_itself(output: Output[Any]) -> bool:
 
 
 def report_check_rows(
-    rows: list[dict[str, object]], *, op: str, fmt: OutputFormat, columns: list[str] | None
-) -> None:
-    """Emit ``untaped.doctor_check`` rows and an ``op`` footer; exit 1 when any failed.
+    rows: list[dict[str, object]], *, op: str, output: Output[Any]
+) -> Generator[records.DoctorCheck, None, bool]:
+    """Report doctor rows and an ``op`` footer; return whether a check failed.
 
-    ``table`` prints the checklist; with ``--columns`` it prints the table,
-    whose ``fix`` is the command line to type.
+    Under a ``table`` the command prints the checklist itself (with
+    ``--columns``, the table whose ``fix`` is the command line to type);
+    otherwise it yields the ``untaped.doctor_check`` records for ``output``.
     """
-    if fmt == "table":
-        _show_check_rows(rows, columns=columns)
+    if _shows_itself(output):
+        _show_check_rows(rows, columns=output.requested)
     else:
-        checks = [records.DoctorCheck.model_validate(row) for row in rows]
-        emit_isolated(checks, fmt=fmt, columns=columns)
-    if _check_footer(rows, op=op):
-        raise SystemExit(ExitCode.FAILURE)
+        yield from (records.DoctorCheck.model_validate(row) for row in rows)
+    return _check_footer(rows, op=op)
 
 
 def _show_check_rows(rows: list[dict[str, object]], *, columns: list[str] | None) -> None:
@@ -419,6 +413,7 @@ def collect_doctor_rows(
         rows.append(_references_row(shell, result))
         rows.append(_stores_row(shell, result))
         rows.append(_caches_row(shell, result))
+        rows.append(_plugin_folders_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     for registered in result.plugins:
@@ -623,14 +618,12 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """What doctor notes about caches: always a pass, since every cache refills.
 
-    A cache's keys holding only another version's value, and the
-    ``cached/`` folder of a plugin not installed here (another install
-    sharing this home may use it).
+    A cache's keys holding only another version's value. The caches of a
+    plugin not installed here are in its folder's row (:func:`_plugin_folders_row`).
     """
-    from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.sdk.storage.cache import outdated_keys  # noqa: PLC0415 - runs only in doctor
 
-    title = "no caches of another version or of a plugin not installed here"
+    title = "no caches of another version"
     parts: list[str] = []
     for spec in (_core_spec(result), *(registered.spec for registered in result.plugins)):
         for cache in spec.caches:
@@ -644,35 +637,61 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
                 parts.append(
                     f"{cache.qualified}: {keys} filled by another version, refilled when due"
                 )
-    for folder in _uninstalled_caches(result):
-        parts.append(
-            f"{shown_path(folder)}: {size_text(dir_bytes(folder))} of a plugin not installed"
-            " here (another install sharing this home may use it)"
-        )
     return _row("caches", shell.name, _PASS, title, "; ".join(parts) or "nothing to note")
 
 
-def _uninstalled_caches(result: CompositionResult) -> list[Path]:
-    """Each ``plugins/<name>/cached`` folder whose plugin is not installed here.
+def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Each ``plugins/<name>/`` folder of a plugin not installed here, offered to ``setup prune``.
 
-    Installed is core and every plugin composed or quarantined (its data is
-    still its own).
+    It warns while one could go (no live reference names its plugin): it
+    goes whole, state included, so only a person removes it. One that stays
+    (a symlink, a plugin a live reference names, any reference unreadable)
+    is listed with why.
     """
-    installed = {
-        NAME,
-        *(registered.spec.name for registered in result.plugins),
-        *(record.name for record in result.quarantine),
-    }
-    try:
-        folders = sorted(plugins_root().iterdir())
-    except OSError:
-        return []
-    return [
-        cached
-        for folder in folders
-        if PLUGIN_NAME_PATTERN.fullmatch(folder.name) and folder.name not in installed
-        if (cached := folder / "cached").exists() or cached.is_symlink()
-    ]
+    from untaped.core.commands.setup_prune import leftover_folders  # noqa: PLC0415
+    from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    from untaped.sdk.storage._refs import read_references  # noqa: PLC0415
+
+    title = "no folders of plugins not installed here"
+    leftovers = leftover_folders(result, read_references())
+    if not leftovers:
+        return _row("plugin-folders", shell.name, _PASS, title, "nothing to note")
+    parts = []
+    for leftover in leftovers:
+        text = f"{shown_path(leftover.path)}: plugin {leftover.path.name!r} isn't installed here"
+        if leftover.kept is not None:
+            parts.append(f"{text}; kept: {leftover.kept}")
+        else:
+            size = size_text(dir_bytes(leftover.path))
+            parts.append(f"{text} and nothing here uses it ({size}); it goes whole, state included")
+    if all(leftover.kept is not None for leftover in leftovers):
+        return _row("plugin-folders", shell.name, _PASS, title, "; ".join(parts))
+    return _row("plugin-folders", shell.name, _WARN, title, "; ".join(parts), _prune_fix())
+
+
+def _prune_fix() -> list[str]:
+    """``setup prune``'s argv, spelled from its class.
+
+    Never automatic: what it removes may be a disk not mounted now, or a
+    plugin's state, so a person decides.
+    """
+    from untaped.core.commands.setup_prune import Prune  # noqa: PLC0415 - setup imports doctor
+
+    return spelled_argv(Prune.spelled(), profile=fix_target())
+
+
+def _register_fix() -> list[str]:
+    """``setup register``'s argv, spelled from its class; never automatic (a deliberate step)."""
+    from untaped.core.commands.register import Register  # noqa: PLC0415 - setup imports doctor
+
+    return spelled_argv(Register.spelled(), profile=fix_target())
+
+
+def spelled_argv(spelled: SpelledCommand, *, profile: str) -> list[str]:
+    """The argv after ``untaped`` for a command named by its class, as this run spells it."""
+    from untaped.sdk.run import current_run  # noqa: PLC0415
+
+    return command_argv(current_run().composition.spell(spelled), profile=profile)
 
 
 def _layout_text(
@@ -717,7 +736,7 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
     Never automatic: registering is a deliberate step.
     """
     if "unregistered" in reasons:
-        return command_argv("setup register", profile=fix_target())
+        return _register_fix()
     return None
 
 
@@ -726,7 +745,10 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
 
     Installs hold store layouts; projects hold items. A missing project
     warns; an unreadable one (its drive or share away) is listed, not warned.
+    An install that is not reachable warns, its fix ``setup prune``, unless
+    this install needs registering first.
     """
+    from untaped.core.commands.setup_prune import dead_references  # noqa: PLC0415
     from untaped.sdk.storage._refs import (  # noqa: PLC0415 - runs only in doctor
         REFS,
         environment,
@@ -742,14 +764,15 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     parts = [text for text, _ in described]
     warn = any(warns for _, warns in described)
     registered = any(ref.opaque is None and ref.holder == mine for ref in references)
-    fix = None
+    # a dead reference is removed by a person: another install's registration is never a run's
+    fix = _prune_fix() if dead_references(references) else None
     if env is None:
         parts.append("this run is from a source tree: it cannot be registered")
     elif not registered and not any(ref.file == REFS.place for ref in references):
         if _other_layouts(result, references):
             warn = True
             parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
-            fix = command_argv("setup register", profile=fix_target())
+            fix = _register_fix()
         else:
             parts.insert(0, "this install: not registered")
     detail = "; ".join(parts) or "no install is registered"
@@ -782,8 +805,8 @@ def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
     if ref.holder == mine:
         text += " (this install)"
     if not ref.live:
-        text += ": no untaped there any more"
-    elif ref.pre_upgrade:
+        return f"{text}: not reachable", True
+    if ref.pre_upgrade:
         text += ": reference from before an upgrade; run any command from that install"
         text += " to refresh it"
     return text, False

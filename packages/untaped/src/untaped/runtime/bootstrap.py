@@ -21,7 +21,7 @@ from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
-from untaped.core.commands import build_root_agents_app, build_root_setup_app
+from untaped.core.commands import build_root_agents_app
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
@@ -70,7 +70,7 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
     DeprecatedBehaviour,
@@ -82,6 +82,7 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.run import Run, run_scope
+from untaped.sdk.storage._refs import refresh
 from untaped.sdk.storage.cache import current_call
 
 
@@ -106,7 +107,7 @@ SHELL_SPEC = ApplicationSpec(
     settings=CoreSettings,
     deprecations=_shell_deprecations,
     # the root commands not yet on Core's class, in the order they mount
-    commands=("agents", "setup"),
+    commands=("agents",),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -284,10 +285,7 @@ def build_root_app(
     root.meta.group_parameters = GLOBAL_OPTIONS_GROUP
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    management = {
-        "agents": build_root_agents_app(result=result, root=lambda: root),
-        "setup": build_root_setup_app(shell=SHELL_SPEC, result=result),
-    }
+    management = {"agents": build_root_agents_app(result=result, root=lambda: root)}
     for name in SHELL_SPEC.commands:
         _mount(root, management.pop(name), name=name)
     if management:
@@ -511,6 +509,27 @@ def _invocation_run(mount: Mount) -> Run:
     return build_run(mount.declaration, mount.settings)
 
 
+def _refresh_reference(run: Callable[[], Run] | None = None) -> None:
+    """Keep this install's registered reference in step with the root composition.
+
+    Every start compares, so a write that failed or met a busy lock is
+    tried again by the next; one where nothing changed only reads the file.
+    It runs here, under the composition the root mounted, never a narrower
+    one a command composes. Called inside the command's run, or with
+    ``run`` to open one for root ``--help`` and ``--version``, which then
+    print even when the home doesn't resolve.
+    """
+    if run is None:
+        refresh(wait=True)  # a prune elsewhere waits on the same lock
+        return
+    try:
+        scope = run_scope(run())
+    except UntapedError:
+        return  # a home that doesn't resolve: the next start refreshes
+    with scope:
+        refresh()
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
@@ -540,11 +559,18 @@ def _install_root_callback(
                 if command_tokens[:1] == ["--"]:
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
+                # What dispatch reports before the command parses (the reference
+                # refresh's warning, deprecated command and option notices)
+                # follows the --format the tokens ask for.
+                note_requested_format(command_tokens)
                 with ExitStack() as stack:
                     if command_tokens and not command_tokens[0].startswith("-"):
                         # A command runs under the run; root --help and --version need none,
                         # so a home that doesn't resolve still lets them print.
                         stack.enter_context(run_scope(run()))
+                        _refresh_reference()
+                    else:
+                        _refresh_reference(run)
                     result = _dispatch_with_root_options(
                         app, command_tokens, root_options, applied_tokens
                     )

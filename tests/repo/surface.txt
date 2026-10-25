@@ -4212,7 +4212,7 @@ cli untaped setup --format choice=table
 cli untaped setup --format choice=yaml
 cli untaped setup --only VALUE... default=unset
 cli untaped setup plan
-cli untaped setup plan --check switch
+cli untaped setup plan --check switch default=unset
 cli untaped setup plan --columns VALUE... default=unset
 cli untaped setup plan --columns alias=-c
 cli untaped setup plan --format VALUE default=table
@@ -4222,8 +4222,21 @@ cli untaped setup plan --format choice=pipe
 cli untaped setup plan --format choice=raw
 cli untaped setup plan --format choice=table
 cli untaped setup plan --format choice=yaml
-cli untaped setup plan --online switch
+cli untaped setup plan --online switch default=unset
 cli untaped setup plan --only VALUE... default=unset
+cli untaped setup prune
+cli untaped setup prune --columns VALUE... default=unset
+cli untaped setup prune --columns alias=-c
+cli untaped setup prune --dry-run switch default=unset
+cli untaped setup prune --format VALUE default=table
+cli untaped setup prune --format alias=-f
+cli untaped setup prune --format choice=json
+cli untaped setup prune --format choice=pipe
+cli untaped setup prune --format choice=raw
+cli untaped setup prune --format choice=table
+cli untaped setup prune --format choice=yaml
+cli untaped setup prune --yes alias=-y
+cli untaped setup prune --yes switch default=unset
 cli untaped setup register
 cli untaped setup register --columns VALUE... default=unset
 cli untaped setup register --columns alias=-c
@@ -4234,7 +4247,7 @@ cli untaped setup register --format choice=pipe
 cli untaped setup register --format choice=raw
 cli untaped setup register --format choice=table
 cli untaped setup register --format choice=yaml
-cli untaped setup register --remove switch
+cli untaped setup register --remove switch default=unset
 cli untaped skills
 cli untaped skills install
 cli untaped skills install --all switch default=unset
@@ -4531,6 +4544,14 @@ record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
 record untaped.PickedProfile.source choice=flag
 record untaped.PickedProfile.source string
+record untaped.RegisteredHolder
+record untaped.RegisteredHolder.kind string
+record untaped.RegisteredHolder.name string
+record untaped.RegisteredTarget
+record untaped.RegisteredTarget.item string?
+record untaped.RegisteredTarget.layout integer?
+record untaped.RegisteredTarget.plugin string
+record untaped.RegisteredTarget.store string
 record untaped.auth_outcome  [deprecated, removed in 12.0]
 record untaped.auth_outcome.action string  [deprecated, removed in 12.0]
 record untaped.auth_outcome.detail string?  [deprecated, removed in 12.0]
@@ -4690,6 +4711,15 @@ record untaped.project_outcome.error Failure?  [experimental]
 record untaped.project_outcome.id string  [experimental]
 record untaped.project_outcome.name string  [experimental]
 record untaped.project_outcome.path string  [experimental]
+record untaped.prune_outcome
+record untaped.prune_outcome.action string
+record untaped.prune_outcome.bytes integer
+record untaped.prune_outcome.detail string
+record untaped.prune_outcome.error Failure?
+record untaped.prune_outcome.target_path string(format=path)
+record untaped.prune_outcome.what choice=folder
+record untaped.prune_outcome.what choice=reference
+record untaped.prune_outcome.what string
 record untaped.pruned
 record untaped.pruned.bytes integer
 record untaped.pruned.hint string?
@@ -4711,6 +4741,13 @@ record untaped.recorded_project.state choice=present  [experimental]
 record untaped.recorded_project.state choice=unknown  [experimental]
 record untaped.recorded_project.state choice=unreadable  [experimental]
 record untaped.recorded_project.state string  [experimental]
+record untaped.register_outcome
+record untaped.register_outcome.action string
+record untaped.register_outcome.environment string
+record untaped.register_outcome.error Failure?
+record untaped.register_outcome.holder RegisteredHolder?
+record untaped.register_outcome.targets RegisteredTarget[]
+record untaped.register_outcome.version string?
 record untaped.scaffold_outcome
 record untaped.scaffold_outcome.action string
 record untaped.scaffold_outcome.error Failure?
@@ -4733,6 +4770,19 @@ record untaped.setting_outcome.action string
 record untaped.setting_outcome.error Failure?
 record untaped.setting_outcome.key string
 record untaped.setting_outcome.profile string
+record untaped.setup_step
+record untaped.setup_step.by choice=agent
+record untaped.setup_step.by choice=user
+record untaped.setup_step.by string
+record untaped.setup_step.detail string
+record untaped.setup_step.plugin string
+record untaped.setup_step.run string[]
+record untaped.setup_step.state choice=done
+record untaped.setup_step.state choice=failed
+record untaped.setup_step.state choice=skipped
+record untaped.setup_step.state choice=todo
+record untaped.setup_step.state string
+record untaped.setup_step.step string
 record untaped.skill
 record untaped.skill.description string
 record untaped.skill.name string
@@ -7520,6 +7570,7 @@ sdk untaped.sdk.testing.write_reference(anchor_id=) default=None  [experimental]
 sdk untaped.sdk.testing.write_reference(holder, targets)  [experimental]
 sdk untaped.sdk.testing.write_reference(moved_from=) default=[]  [experimental]
 sdk untaped.sdk.testing.write_reference(plugin=) default=None  [experimental]
+sdk untaped.sdk.testing.write_reference(plugins=) default=None  [experimental]
 sdk untaped.sdk.testing.write_reference(version=) default=None  [experimental]
 sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]

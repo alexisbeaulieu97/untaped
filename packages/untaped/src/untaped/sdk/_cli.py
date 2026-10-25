@@ -91,10 +91,6 @@ TreeFormatOption = Annotated[
 
 #: Environment variable naming the default ``--format`` (wins over ``untaped.ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
-#: Root commands mounted through the 11.x seam that repair the setup: an
-#: invalid ``UNTAPED_FORMAT`` is ignored there instead of blocking them. A
-#: declared command says so with ``repairs = True``; this goes with setup's move.
-_FORMAT_ENV_LENIENT = frozenset({"setup"})
 
 
 def apply_default_format(
@@ -110,7 +106,7 @@ def apply_default_format(
     already and always wins. A ``ui`` section that fails to load is ignored
     here so ``config set`` can still repair it; ``doctor`` reports it. An
     invalid ``UNTAPED_FORMAT`` is a usage error, except under a command marked
-    ``repairs`` (``doctor``, ``skills``) and ``setup``, which ignore it.
+    ``repairs`` (``doctor``, ``setup``, ``skills``), which ignores it.
     A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
     ``untaped.ui.format``; not a command's own default) is recorded for the stderr
     diagnostics (:func:`untaped.runtime.output_policy.note_format`, phase 2), and,
@@ -118,7 +114,7 @@ def apply_default_format(
     (:func:`untaped.runtime.output_policy.note_theme`; a broken ``ui`` section
     degrades to the default theme).
     """
-    _default_format(_repairs(app, commands), arguments)
+    _default_format(_repairs(app), arguments)
     chosen = [
         str(argument.tokens[-1].value)
         for argument in arguments
@@ -137,15 +133,12 @@ def _user_theme() -> ThemeSpec:
     return resolve_theme_or_default(lambda: load_core_part("ui"), strict=False)
 
 
-def _repairs(app: App, commands: tuple[str, ...]) -> bool:
-    """Whether the command parsed (``app``, at ``commands``) repairs the setup."""
+def _repairs(app: App) -> bool:
+    """Whether the command parsed (``app``) is marked ``repairs``: it repairs the setup."""
     # Lazy: the mount imports this module.
     from untaped.runtime.mount import repairs_at  # noqa: PLC0415
 
-    repairs = repairs_at(app)
-    if repairs is not None:
-        return repairs
-    return bool(commands[:1]) and commands[0] in _FORMAT_ENV_LENIENT
+    return repairs_at(app) is True
 
 
 def _default_format(repairs: bool, arguments: ArgumentCollection) -> None:

@@ -249,7 +249,8 @@ def test_init_records_a_project_this_home_does_not_list(
     ]
     assert not refs.reference_file(holder_of(project)).exists()  # reading wrote nothing
     assert init(project.root).action == "recorded"
-    assert refs.reference_file(holder_of(project)).exists()
+    file = refs.reference_file(holder_of(project))
+    assert "plugins" not in json.loads(file.read_text())  # an install's key, not a project's
 
 
 @pytest.mark.parametrize(

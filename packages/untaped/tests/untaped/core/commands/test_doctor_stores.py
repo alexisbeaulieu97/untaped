@@ -12,7 +12,9 @@ import pytest
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
+from untaped.runtime.run import build_run
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.run import run_scope
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store
@@ -29,9 +31,10 @@ def _install(root: Path, version: str = "11.1.0") -> Path:
 def _row(*stores: Store, check: str = "stores") -> dict[str, object]:
     spec = PluginSpec(name="acme", stores=stores)
     result = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
-    [row] = [
-        row for row in collect_doctor_rows(bootstrap.SHELL_SPEC, result) if row["check"] == check
-    ]
+    # under the composition's run, as doctor runs, so a fix is spelled from its class
+    with run_scope(build_run(result.mount.declaration, result.mount.settings)):
+        rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+    [row] = [row for row in rows if row["check"] == check]
     return row
 
 
@@ -199,8 +202,9 @@ def test_every_holder_is_listed(tmp_path: Path) -> None:
     write_reference(RefHolder(kind="acme_job", name="pay"), [], anchor=job, version="1.0.0")
     row = _row(_store(tmp_path / "data.db"), check="references")
     detail = str(row["detail"])
-    assert row["status"] == "pass"  # a dead reference is information, not a warning
-    assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
+    assert row["status"] == "warn"  # a dead reference is a person's to remove
+    assert row["fix"] == ["--profile", "default", "setup", "prune"]
+    assert f"untaped 11.0.0 at {gone}: not reachable" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
     assert "workspace pay (plugin workspace)" in detail
     assert "acme_job pay" in detail and "acme_job pay (" not in detail

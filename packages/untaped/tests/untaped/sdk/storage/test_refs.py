@@ -1,10 +1,12 @@
-"""References: the install identity, one file per holder, liveness, and the per-run refresh."""
+"""References: the install identity, one file per holder, liveness, and the per-start refresh."""
 
 from __future__ import annotations
 
 import contextvars
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
@@ -87,7 +89,8 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
         [
             RefTarget(plugin="acme", store="data", layout=2),
             RefTarget(plugin="ansible", store="index", layout=4),
-        ]
+        ],
+        plugins=["acme", "ansible"],
     )
 
     holder = refs.install_holder(site)
@@ -98,6 +101,7 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
         "holder": {"kind": "install", "name": holder.name},
         "anchor": str(site),
         "version": "11.1.0",
+        "plugins": ["acme", "ansible"],
         "targets": [
             {"plugin": "acme", "store": "data", "layout": 2},
             {"plugin": "ansible", "store": "index", "layout": 4},
@@ -297,6 +301,21 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     ]
 
 
+def test_the_plugins_list_is_written_even_empty_and_a_file_without_it_does_not_say(
+    tmp_path: Path,
+) -> None:
+    holder = RefHolder(kind="install", name="aaaaaaaaaaaa")
+    file = write_reference(holder, [], anchor=tmp_path, plugins=[])
+    assert json.loads(file.read_text())["plugins"] == []
+    assert refs.read_reference(file).plugins == ()
+    write_reference(holder, [], anchor=tmp_path)  # left out, as a project's file
+    assert "plugins" not in json.loads(file.read_text())
+    assert refs.read_reference(file).plugins is None  # absent: it doesn't say, unlike empty
+    data = json.loads(file.read_text())
+    file.write_text(json.dumps({**data, "plugins": "jira"}))
+    assert refs.read_reference(file).opaque == "unreadable (plugins is malformed)"
+
+
 def test_only_an_install_is_ever_from_before_an_upgrade(tmp_path: Path) -> None:
     anchor = _install(tmp_path / "job", "9.0.0")
     write_reference(RefHolder(kind="acme_job", name="x"), [], anchor=anchor, version="1.0.0")
@@ -392,37 +411,54 @@ def test_a_missing_folder_has_no_references() -> None:
 
 
 @pytest.fixture
-def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
+def composed_names(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The plugins this run's composition has; a test edits it."""
+    names: list[str] = []
+    monkeypatch.setattr(refs, "composed_plugins", lambda: tuple(names))
+    return names
+
+
+@pytest.fixture
+def composed(monkeypatch: pytest.MonkeyPatch, composed_names: list[str]) -> list[RefTarget]:
     """What this run's composition declares; a test edits it."""
     targets = [RefTarget(plugin="acme", store="data", layout=1)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
     return targets
 
 
-def test_a_registered_install_refreshes_on_its_first_store_open(
+def test_a_refresh_follows_the_plugins_the_install_composes(
+    site: Path, composed: list[RefTarget], composed_names: list[str]
+) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)], plugins=["acme"])
+    composed_names[:] = ["acme", "jira"]  # jira installed beside acme
+
+    refs.refresh()
+
+    assert json.loads(ref.file.read_text())["plugins"] == ["acme", "jira"]
+    assert refs.this_install() is not None and refs.this_install().plugins == ("acme", "jira")
+
+
+def test_a_store_open_leaves_the_reference_to_the_start(
     site: Path, composed: list[RefTarget], tmp_path: Path
 ) -> None:
+    """A store opened under a narrower composition (a plugin check's) records nothing."""
     ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
-    composed[:] = [
-        RefTarget(plugin="acme", store="data", layout=2)
-    ]  # upgraded in place: same directory, new layout
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
 
     Store("acme", "data", base=lambda: tmp_path / "data.db", layout=2).open()
 
     assert json.loads(ref.file.read_text())["targets"] == [
-        {"plugin": "acme", "store": "data", "layout": 2}
+        {"plugin": "acme", "store": "data", "layout": 1}
     ]
 
 
-def test_the_refresh_runs_once_per_process(
-    site: Path, composed: list[RefTarget], tmp_path: Path
-) -> None:
+def test_every_refresh_compares_again(site: Path, composed: list[RefTarget]) -> None:
     ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     refs.refresh()
     composed[:] = [RefTarget(plugin="acme", store="data", layout=9)]
     refs.refresh()
     assert json.loads(ref.file.read_text())["targets"] == [
-        {"plugin": "acme", "store": "data", "layout": 1}
+        {"plugin": "acme", "store": "data", "layout": 9}
     ]
 
 
@@ -432,8 +468,31 @@ def test_an_unchanged_reference_is_not_rewritten(
     refs.register([RefTarget(plugin="acme", store="data", layout=1)])
     writes: list[object] = []
     monkeypatch.setattr(data_file, "atomic_write", lambda *args, **_kw: writes.append(args))
+    monkeypatch.setattr(refs.REFS, "try_locked", _unlocked)
     refs.refresh()
     assert writes == []
+
+
+def _unlocked(_name: str | None = None) -> object:
+    raise AssertionError("an unchanged reference took the references' lock")
+
+
+@contextmanager
+def _busy(_name: str | None = None) -> Iterator[bool]:
+    yield False  # another process holds the references' lock
+
+
+def test_a_busy_lock_leaves_the_refresh_to_the_next_start(
+    site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
+    with monkeypatch.context() as busy:
+        busy.setattr(refs.REFS, "try_locked", _busy)
+        refs.refresh()  # never waits
+    assert json.loads(ref.file.read_text())["targets"][0]["layout"] == 1
+    refs.refresh()
+    assert json.loads(ref.file.read_text())["targets"][0]["layout"] == 2
 
 
 def test_a_refresh_outside_a_run_never_raises(site: Path, composed: list[RefTarget]) -> None:
@@ -442,6 +501,10 @@ def test_a_refresh_outside_a_run_never_raises(site: Path, composed: list[RefTarg
     contextvars.Context().run(refs.refresh)  # a library call: no run, so nothing to place
     assert json.loads(ref.file.read_text())["targets"] == [
         {"plugin": "acme", "store": "data", "layout": 1}
+    ]
+    refs.refresh()  # the run's own start still refreshes
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 2}
     ]
 
 
@@ -461,16 +524,35 @@ def test_a_refresh_without_a_composition_keeps_the_file(
     ]
 
 
-def test_a_read_only_refs_folder_gives_no_error(
+def test_a_refresh_before_the_composition_exists_leaves_the_next_one_to_refresh(
     site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    refs.register([RefTarget(plugin="acme", store="data", layout=0)])
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)])
+    composed[:] = [RefTarget(plugin="acme", store="data", layout=2)]
+    with monkeypatch.context() as early:
+        early.setattr(refs, "composed_targets", lambda: None)  # nothing composed yet
+        refs.refresh()
+    refs.refresh()
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 2}
+    ]
+
+
+def test_a_failed_write_gives_no_error_and_the_next_start_retries(
+    site: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=0)])
 
     def refused(*_args: object, **_kwargs: object) -> None:
         raise PermissionError("read-only")
 
-    monkeypatch.setattr(data_file, "atomic_write", refused)
-    refs.refresh()  # never raises: the next run tries again
+    with monkeypatch.context() as read_only:
+        read_only.setattr(data_file, "atomic_write", refused)
+        refs.refresh()  # never raises: the next start tries again
+    refs.refresh()
+    assert json.loads(ref.file.read_text())["targets"] == [
+        {"plugin": "acme", "store": "data", "layout": 1}
+    ]
 
 
 def test_the_composition_names_every_declared_store() -> None:

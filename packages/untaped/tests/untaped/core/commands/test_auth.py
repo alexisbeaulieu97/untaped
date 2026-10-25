@@ -76,7 +76,7 @@ def _auth(*args: str, input: str | None = None, backend: Any = None) -> CliResul
 
 
 def _records(stderr: str) -> list[dict[str, Any]]:
-    """The JSON lines on ``stderr``: a deprecated command's own warning prints before them."""
+    """The JSON lines on ``stderr``."""
     return [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
 
 
@@ -747,6 +747,11 @@ def test_unset_leaves_an_inherited_command_alone(
     assert json.loads(result.stdout)["action"] == "unchanged"
     lines = _records(result.stderr)
     assert [(line["level"], line["message"]) for line in lines] == [
+        (
+            "warning",
+            "`untaped auth unset` is deprecated and will be removed in 12.0; "
+            "use `untaped auth forget`",
+        ),
         ("info", "svc.token_command is inherited from profile default; profile work is unchanged"),
         ("hint", "run `untaped --profile default auth unset svc`"),
     ]

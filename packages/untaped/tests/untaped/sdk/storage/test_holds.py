@@ -467,6 +467,15 @@ def test_a_reference_that_cannot_be_read_counts_as_another_holder(tmp_path: Path
     assert OWNER.deleted == []
 
 
+def test_rewriting_an_install_reference_keeps_the_plugins_it_lists(tmp_path: Path) -> None:
+    holder = RefHolder(kind="install", name="aaaaaaaaaaaa")
+    held = RefTarget(plugin="acme", store="repos", item="web")
+    file = write_reference(holder, [held], anchor=tmp_path, version="12.0.0", plugins=["acme"])
+    holds.drop_hold(holder, held)
+    data = json.loads(file.read_text())
+    assert (data["targets"], data["plugins"]) == ([], ["acme"])
+
+
 def test_an_uninstalled_owners_hold_is_forgotten_only_by_name(tmp_path: Path) -> None:
     first = make_project(tmp_path / "PROJ-500", holds={REPOS: ["pack:terraform"]})
     gone = _cli("project", "remove", str(first.root), "--dry-run", "-f", "json", specs=())

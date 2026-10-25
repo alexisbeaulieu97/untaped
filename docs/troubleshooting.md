@@ -15,6 +15,7 @@ explains them.
 | `config.yml` or `state.yml` is refused as newer | Written by a newer `untaped`: [File format](./configuration.md#file-format). |
 | A setting is ignored, or `doctor` shows `untaped.unknown-keys` | A section at the wrong level: [File and layout](./configuration.md#file-and-layout). |
 | After upgrading, ansible's index is empty or recipe lists no installed packs | 12.0 moves no older data: refresh each ansible source (`untaped ansible source refresh NAME`); for 10.x data run 11.1's `setup migrate-dirs` before upgrading, as the [changelog](../CHANGELOG.md)'s 12.0 Upgrading section says. |
+| `doctor` warns about an install that is not reachable or a folder of a plugin not installed here | `untaped setup prune --dry-run` lists what it would remove: [Who holds a layout, and cleanup](./caches.md#who-holds-a-layout-and-cleanup). |
 | A warning that a plugin is quarantined | `untaped plugin list` and `untaped doctor` name the reason: [How composition works](./composition.md). |
 | A warning that installed skills are out of date | [Keep installed skills up to date](./skills.md#keep-installed-skills-up-to-date). |
 | A script cannot parse an error | Use the JSON diagnostics on stderr: [stderr diagnostics](./scripting.md#stderr-diagnostics). |
