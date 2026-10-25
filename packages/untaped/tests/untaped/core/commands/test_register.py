@@ -104,7 +104,7 @@ def test_a_start_that_meets_a_busy_lock_leaves_the_refresh_to_the_next(
 def test_a_command_waits_for_the_references_lock_to_record_itself(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A prune elsewhere holds the lock: the command waits, so that prune can't miss it."""
+    """The command takes the waiting lock, so a prune elsewhere finishes first or sees it."""
     assert _cli().exit_code == 0
     waited: list[object] = []
     held = refs.REFS.locked
@@ -129,7 +129,8 @@ def test_a_command_still_runs_when_the_references_lock_stays_busy(
     assert _cli().exit_code == 0
     monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
     with FileLock(str(refs.REFS.lock_path())):
-        _start("doctor", "--help")  # busy past the wait: logged, never fails
+        result = _start("doctor", "--help")  # busy past the wait: warns, never fails
+    assert "could not record this install's plugins before the command" in result.stderr
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme",)
     _start("doctor", "--help")

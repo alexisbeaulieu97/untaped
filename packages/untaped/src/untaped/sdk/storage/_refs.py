@@ -45,9 +45,10 @@ from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
+from untaped.runtime.sink import Diagnostics
 from untaped.sdk._home import CORE
 from untaped.sdk.diagnostic import _is_none
-from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.marks import experimental
 from untaped.sdk.run import NoRunError
 from untaped.sdk.storage.data_file import Absent, DataFile, OtherVersion, Unreadable
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
     from untaped.sdk.storage.store import Store
 
 _LOG = logging.getLogger("untaped.refs")
+_diag = Diagnostics()
 
 #: The holder kind of a registered install.
 INSTALL = "install"
@@ -493,11 +495,19 @@ def refresh(*, wait: bool = False) -> None:
     elsewhere must not miss) it waits for a busy references lock like any
     writer; without it (root ``--help`` and ``--version``) it never waits.
     A lock still busy, like a write that fails, leaves the file to the next
-    start. Never raises.
+    start; a command's warns, since a prune elsewhere may then miss it.
+    Never raises.
     """
     try:
         _refresh(wait=wait)
     except (OSError, UntapedError, NoRunError) as exc:
+        if wait and isinstance(exc, UntapedError) and exc.category == ErrorCategory.UNAVAILABLE:
+            # A prune elsewhere outlasted the wait: it may not see what this command uses.
+            _diag.warning(
+                f"could not record this install's plugins before the command: {exc}",
+                hint="the next start records them",
+            )
+            return
         _LOG.debug("could not refresh this install's reference: %s", exc)
 
 
