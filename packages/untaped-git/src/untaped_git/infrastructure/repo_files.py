@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -134,27 +133,27 @@ def config_value(
     return value
 
 
-def list_repos(root: Path, *, skip: Collection[str] = ()) -> list[Path]:
+def list_repos(root: Path) -> list[Path]:
     """Every ``*.git`` directory under ``root``, sorted; never descends into one.
 
     Skips symlinks and, at the top level only, hidden directories (names
-    starting with ``.``, e.g. scratch dirs) and the names in ``skip``; below
-    it a repo may be hidden (``github.com/acme/.github.git``). A missing or
-    unreadable directory is skipped. No git runs.
+    starting with ``.``, e.g. scratch dirs); below it a repo may be hidden
+    (``github.com/acme/.github.git``). A missing or unreadable directory is
+    skipped. No git runs.
     """
     found: list[Path] = []
-    _collect(root, found, top=True, skip=skip)
+    _collect(root, found, top=True)
     return sorted(found)
 
 
-def _collect(directory: Path, found: list[Path], *, top: bool, skip: Collection[str] = ()) -> None:
+def _collect(directory: Path, found: list[Path], *, top: bool) -> None:
     try:
         with os.scandir(directory) as scan:
             entries = list(scan)
     except OSError:
         return
     for entry in entries:
-        if top and (entry.name.startswith(".") or entry.name in skip):
+        if top and entry.name.startswith("."):
             continue
         try:
             if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):

@@ -199,9 +199,3 @@ def test_a_layout_a_profile_points_index_path_at_is_never_pruned(
     open_index(AnsibleSettings())  # this run's own settings: the default path
     _fill_index()
     assert _mark(pinned) == "a profile's own index"
-
-
-def test_the_index_offers_its_leftover_layouts_to_migrate_dirs() -> None:
-    from untaped_ansible import SPEC
-
-    assert "ansible.index-layouts" in [migration.id for migration in SPEC.migrations]

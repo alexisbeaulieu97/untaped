@@ -2,10 +2,9 @@
 
 Each plugin's ``untaped-<plugin>.json`` holds that plugin's data, read and
 written through ``RepoStore.read_private``/``write_private`` with its own
-model. git decides when the file is created, copied (adopt) and deleted, never
-what is in it: adopt once dropped github's ``fetched_at``/``pushed_at`` by
-name, so a field github renamed would have kept its freshness through a copy.
-So untaped_git uses no key that is a field of a model another first-party
+model. git decides when the file is created and deleted, never what is in
+it: a field git named would break the day its owner renamed it. So
+untaped_git uses no key that is a field of a model another first-party
 plugin passes to ``read_private``, nor 11.0's ``fetched_at``.
 """
 
@@ -128,7 +127,7 @@ def test_git_names_no_field_of_another_plugins_private_file() -> None:
     ]
     assert named == [], (
         "git names another plugin's private-file field; a private file's content is its "
-        "owner's, and git copies it whole (copy_data_file):\n" + "\n".join(named)
+        "owner's:\n" + "\n".join(named)
     )
 
 

@@ -93,7 +93,7 @@ SLOW_TIMEOUT = 600.0
 MAINTENANCE_TIMEOUT = 600.0
 LOCK_TIMEOUT = 600.0
 ATTEMPTS = 3
-#: The layout mark; ``migrate-dirs`` sets it on moved repos.
+#: The layout mark the policy writes on every store repo.
 LAYOUT = "3"
 #: Every key the store relies on, at repo scope where it beats a user's globals,
 #: in the form git reads first. No ``fetch.prune``/``fetch.pruneTags``: every

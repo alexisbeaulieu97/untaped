@@ -164,7 +164,7 @@ def test_metadata_it_cannot_read_is_refetched_and_rewritten(
 def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
     corpus: Callable[..., _Corpus],
 ) -> None:
-    # What git's adopt leaves: github's data kept, its freshness cleared.
+    # github's data kept, its freshness cleared (an older release's copy).
     env = corpus({"README.md": "hello\n"})
     env.sync(repo=replace(env.repo, pushed_at="2026-07-01T00:00:00Z"))
     data = json.loads(env.store.private_file.read_text())
