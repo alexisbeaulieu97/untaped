@@ -139,7 +139,7 @@ def test_login_with_a_command_files_it_and_names_what_it_outranks(
 @pytest.mark.usefixtures("_server")
 @pytest.mark.parametrize(
     ("command", "message"),
-    [("", "--token-command requires an argument"), ("'open", "is not a valid command line")],
+    [("", "--token-command is empty"), ("'open", "is not a valid command line")],
 )
 def test_login_refuses_a_bad_token_command(command: str, message: str) -> None:
     result = _auth("login", "wiz", "--token-command", command)

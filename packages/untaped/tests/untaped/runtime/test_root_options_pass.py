@@ -11,14 +11,16 @@ from collections.abc import Iterator
 from typing import Annotated
 
 import pytest
+from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
 from untaped.runtime.output_policy import is_verbose
-from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
+from untaped.sdk._cli import create_app, echo
 from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
@@ -62,8 +64,9 @@ APPLY = _command(("hello", "apply"), _option("files", "list[str]", positional=Tr
 #: ``hello greet [--names N]... [--loud] [WHO]``, ``hello grep [-x] [-p PATTERN]
 #: [-e EXCLUDE] [-n COUNT] [FILE]`` (``-p`` takes a leading ``-``), ``hello run CMD...`` (a command
 #: line to run, leading ``-`` allowed), ``hello apply FILES...`` (``-`` reads
-#: stdin), ``hello jobs [ID]`` (a group with a command of its own) and ``hello
-#: jobs list``.
+#: stdin), ``hello exec [CMD]...`` (a group whose own command takes a command
+#: line) and ``hello exec sub``, ``hello jobs [ID]`` (a group with a command of
+#: its own) and ``hello jobs list``.
 DECLARATION = Declaration(
     plugins=(
         PluginDecl(
@@ -83,6 +86,18 @@ DECLARATION = Declaration(
                 GREP,
                 RUN,
                 APPLY,
+                GroupDecl(
+                    name="exec",
+                    path=("hello", "exec"),
+                    target="hello:Exec",
+                    summary=".",
+                    doc=".",
+                    commands=(_command(("hello", "exec", "sub")),),
+                    runs=_command(
+                        ("hello", "exec"),
+                        _option("cmd", "list[str]", positional=True, allow_hyphen=True),
+                    ),
+                ),
                 GroupDecl(
                     name="jobs",
                     path=("hello", "jobs"),
@@ -155,6 +170,7 @@ def test_a_value_taking_option_reads_its_value_and_a_flag_none() -> None:
         (["-xpfoo", "-v", "f"], True),
         (["-n5", "-v", "f"], True),
         (["-n=5", "-v", "f"], True),
+        # no option is spelled `-xn`: the cluster's `-n` reads `=5`, attached
         (["-xn=5", "-v", "f"], True),
         # a cluster of flags only
         (["-xx", "-v", "f"], True),
@@ -165,6 +181,59 @@ def test_a_short_cluster_is_read_letter_by_letter_as_cyclopts_reads_it(
 ) -> None:
     left = [token for token in tokens if not verbose or token != "-v"]
     assert _line("hello", "grep", *tokens) == (["hello", "grep", *left], True, verbose)
+
+
+@pytest.mark.usefixtures("read")
+@pytest.mark.parametrize(
+    ("tokens", "left", "verbose"),
+    [
+        # as cyclopts reads a cluster once `-v` and `-h` are letters in it
+        (["-xv", "f"], ["-x", "f"], True),
+        (["-vx", "f"], ["-x", "f"], True),
+        (["-xvn5"], ["-x", "-n5"], True),
+        (["-xvn", "5"], ["-x", "-n", "5"], True),
+        (["-vn=5"], ["-n", "=5"], True),  # `-n` reads `=5`, as in `-xn=5`
+        (["-xh"], ["-x", "-h"], False),
+        # `-n` reads the rest of the token, `v` included
+        (["-nv"], ["-nv"], False),
+        # cyclopts refuses the unknown letter: the cluster stays whole for it to
+        (["-zv"], ["-zv"], False),
+    ],
+)
+def test_a_root_letter_in_a_short_cluster_is_the_root_s(
+    tokens: list[str], left: list[str], verbose: bool
+) -> None:
+    assert _line("hello", "grep", *tokens) == (["hello", "grep", *left], True, verbose)
+
+
+@pytest.mark.usefixtures("read")
+def test_a_cluster_of_root_letters_is_the_root_s_unless_it_is_a_value() -> None:
+    assert _line("hello", "-v", "greet") == (["hello", "greet"], True, True)
+    assert _line("-vh") == (["-h"], True, True)
+    assert _line("hello", "run", "-vq") == (["hello", "run", "-vq"], True, False)
+    with pytest.raises(SystemExit) as exit_info, applied_root_options(["-vq"], _root_options()):
+        pass
+    assert exit_info.value.code == 2
+
+
+@pytest.mark.usefixtures("read")
+@pytest.mark.parametrize(
+    ("tokens", "left", "verbose"),
+    [
+        (["hello", "exec", "-v"], ["hello", "exec", "-v"], False),
+        (["hello", "exec", "-v", "x"], ["hello", "exec", "-v", "x"], False),
+        (["hello", "exec", "-q", "ls"], ["hello", "exec", "-q", "ls"], False),
+        (["hello", "exec", "--profile", "a"], ["hello", "exec", "--profile", "a"], False),
+        (["hello", "exec", "--profile"], ["hello", "exec", "--profile"], False),
+        # another command word follows: they are the root's
+        (["hello", "exec", "-v", "sub"], ["hello", "exec", "sub"], True),
+        (["hello", "-v", "exec", "-v"], ["hello", "exec", "-v"], True),
+    ],
+)
+def test_root_options_between_words_are_the_root_s_only_before_another_word(
+    tokens: list[str], left: list[str], verbose: bool
+) -> None:
+    assert _line(*tokens) == (left, True, verbose)
 
 
 @pytest.mark.usefixtures("read")
@@ -244,7 +313,7 @@ class Grep(Command):
     file: Positional[str | None] = Field(None, description="The file.")
 
     def run(self) -> str:
-        return f"p={self.pattern} n={self.count} file={self.file} verbose={is_verbose()}"
+        return f"x={self.x} p={self.pattern} n={self.count} file={self.file} verbose={is_verbose()}"
 
 
 class Hello(Plugin):
@@ -306,9 +375,9 @@ def _outcome(
 @pytest.mark.parametrize(
     ("argv", "out"),
     [
-        (["hello", "grep", "-xp", "-v", "f"], "p=-v n=None file=f verbose=False"),
-        (["hello", "grep", "-n5", "-v"], "p=None n=5 file=None verbose=True"),
-        (["hello", "grep", "-n=5", "f", "-v"], "p=None n=5 file=f verbose=True"),
+        (["hello", "grep", "-xp", "-v", "f"], "x=True p=-v n=None file=f verbose=False"),
+        (["hello", "grep", "-n5", "-v"], "x=False p=None n=5 file=None verbose=True"),
+        (["hello", "grep", "-n=5", "f", "-v"], "x=False p=None n=5 file=f verbose=True"),
         (["hello", "greet", "--names", "Ada", "-v", "-v"], "Ada verbose=True deprecated=False"),
         (
             ["hello", "greet", "-v", "--names", "Ada", "--deprecated"],
@@ -345,3 +414,80 @@ def test_a_value_taking_short_ending_a_cluster_reads_the_next_token_as_cyclopts_
 
     assert code == 2
     assert "parameter -c requires an argument" in err
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize(
+    ("argv", "out"),
+    [
+        (["hello", "grep", "-n5"], "x=False p=None n=5 file=None verbose=False"),
+        (["hello", "grep", "-px"], "x=False p=x n=None file=None verbose=False"),
+        (["hello", "grep", "-xn5"], "x=True p=None n=5 file=None verbose=False"),
+        (["hello", "grep", "-xv"], "x=True p=None n=None file=None verbose=True"),
+    ],
+)
+def test_the_root_driven_directly_reads_the_line_as_run_root_does(
+    argv: list[str],
+    out: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # the meta parse splits `-n5` into `-n -5`: the pass reads the tokens as given
+    result = CliInvoker().invoke(bootstrap.build_root_app(candidates=[HELLO]).meta, argv)
+    bootstrap._clear_for_tests()
+
+    assert (result.exit_code, result.stdout.strip()) == (0, out)
+    assert _outcome(argv, kept=True, monkeypatch=monkeypatch, capsys=capsys) == (0, out, "")
+
+
+def _old_app() -> App:
+    app = create_app(name="old", help="An 11.x plugin.")
+
+    @app.command(name="who")
+    def who(
+        *,
+        x: Annotated[bool, Parameter(name=["--x", "-x"])] = False,
+        name: Annotated[str | None, Parameter(name=["--name", "-n"])] = None,
+    ) -> None:
+        """Print what it was given, and whether the root went verbose."""
+        echo(f"x={x} name={name} verbose={is_verbose()}")
+
+    jobs = create_app(name="jobs", help="Jobs.")
+
+    @jobs.command(name="list")
+    def jobs_list() -> None:
+        """List nothing."""
+
+    app.command(jobs)
+    return app
+
+
+OLD = PluginCandidate(
+    distribution="untaped-old", name="old", target=PluginSpec(name="old", app_factory=_old_app)
+)
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize(
+    ("argv", "code", "out", "err"),
+    [
+        (["old", "who", "-xv"], 0, "x=True name=None verbose=True", ""),
+        (["old", "who", "-vx"], 0, "x=True name=None verbose=True", ""),
+        (["old", "who", "-vn", "a"], 0, "x=False name=a verbose=True", ""),
+        (["old", "who", "-vq"], 2, "", "--verbose and --quiet cannot be combined"),
+        (["old", "who", "-xh"], 0, "Usage: untaped old who", ""),
+        (["old", "--profile"], 2, "", "--profile expects a value"),
+        (["old", "jobs", "--profile"], 2, "", "--profile expects a value"),
+        (["old", "--verbose=x"], 2, "", "--verbose takes no value"),
+    ],
+)
+def test_an_11x_command_reads_root_letters_and_root_option_errors_as_before(
+    argv: list[str], code: int, out: str, err: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, candidates=[OLD])
+    captured = capsys.readouterr()
+
+    assert (exit_info.value.code or 0) == code
+    assert out in captured.out
+    assert err in captured.err

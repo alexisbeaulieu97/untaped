@@ -68,6 +68,7 @@ from untaped.runtime.sink import (
 from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import (
     apply_default_format,
+    given_tokens,
     note_requested_format,
     report_errors,
     run_cyclopts_app,
@@ -618,7 +619,14 @@ def _install_root_callback(
         # One diagnostics scope covers the command and the checks after it,
         # so their warnings follow the command's --format. One run covers the
         # invocation: root --help and --version, and any command it dispatches.
-        with diagnostics_scope(), dispatching() as ran, _invocation(tokens, result) as line:
+        # The pass reads the line as given: the meta parse split its short
+        # clusters (`-n5` into `-n -5`).
+        with (
+            given_tokens(app.meta) as given,
+            diagnostics_scope(),
+            dispatching() as ran,
+            _invocation(tokens if given is None else given, result) as line,
+        ):
             return _dispatch_root(ran, line)
 
     signature = _root_callback_signature(root_options)

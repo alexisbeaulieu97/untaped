@@ -329,10 +329,7 @@ def test_create_and_rename_refuse_a_name_profile_cannot_pick(
     renamed = CliInvoker().invoke(app, ["profile", "rename", "stage", name])
     for result in (created, renamed):
         assert result.exit_code == 2, result.output  # a usage error, as in a pick
-        # an empty argument is refused before the name rule reads it
-        assert ("requires an argument" if not name else f"invalid profile name {name!r}") in (
-            result.stderr
-        )
+        assert f"invalid profile name {name!r}" in result.stderr
     assert set(read_config_dict(_isolated_config)["profiles"]) == {"prod", "stage"}
 
 
