@@ -43,6 +43,7 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     assert "registered untaped " in result.stderr and "(acme.data layout 3)" in result.stderr
     ref = refs.this_install()
     assert ref is not None and ref.targets == (RefTarget(plugin="acme", store="data", layout=3),)
+    assert ref.plugins == ("acme",)  # the plugins it composes, whose folders it uses
 
 
 def test_registering_twice_changes_nothing() -> None:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk.diagnostic import _is_none, _Omitted
 from untaped.sdk.records import (
@@ -27,7 +27,6 @@ from untaped.sdk.records import (
     TargetRecord,
     _RowError,
 )
-from untaped.sdk.storage._refs import RefHolder, RefTarget
 
 
 class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
@@ -142,19 +141,40 @@ class FixOutcome(OutcomeRecord, kind="untaped.fix_outcome"):
     error: _RowError = None
 
 
+class RegisteredHolder(BaseModel):
+    """Who a registration is for, as ``setup register`` names it: ``install`` and its id."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: str
+    name: str
+
+
+class RegisteredTarget(BaseModel):
+    """What a registration keeps: one ``layout`` of a store, or one ``item`` in it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    plugin: str
+    store: str
+    layout: Annotated[int | None, Field(exclude_if=_is_none)] = None
+    item: Annotated[str | None, Field(exclude_if=_is_none)] = None
+
+
 class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
 
     ``environment`` is the directory holding untaped's distribution,
-    ``targets`` the store layouts the reference names.
+    ``targets`` the store layouts the reference names. Its own models, not
+    the references' (core's to change), so the record keeps its shape.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "targets")
 
-    holder: Annotated[RefHolder | None, Field(exclude_if=_is_none)] = None
+    holder: Annotated[RegisteredHolder | None, Field(exclude_if=_is_none)] = None
     environment: str
     version: str | None
-    targets: list[RefTarget]
+    targets: list[RegisteredTarget]
 
 
 PruneWhat = Literal["reference", "folder"]

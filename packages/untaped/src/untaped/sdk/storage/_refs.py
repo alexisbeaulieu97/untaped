@@ -149,6 +149,7 @@ class _Stored(BaseModel):
     moved_from: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
     plugin: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
     version: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
+    plugins: Annotated[JsonValue, Field(exclude_if=_is_none)] = None
     targets: JsonValue = None
 
 
@@ -160,7 +161,9 @@ class Reference:
     untaped): an opaque reference counts as live and pauses pruning.
     ``anchor_id`` is the anchor's filesystem identity when the holder records
     one (a project does); ``moved_from`` is where the holder was before each
-    move whose repairs haven't all succeeded yet, oldest first.
+    move whose repairs haven't all succeeded yet, oldest first. ``plugins``
+    names the plugins an install composes, whose ``plugins/<name>/`` folders
+    it uses (none when the file names none).
     """
 
     file: Path
@@ -170,6 +173,7 @@ class Reference:
     moved_from: tuple[Path, ...] = ()
     plugin: str | None = None
     version: str | None = None
+    plugins: tuple[str, ...] = ()
     targets: tuple[RefTarget, ...] = ()
     opaque: str | None = None
 
@@ -295,14 +299,13 @@ def read_reference(file: Path) -> Reference:
         return Reference(file, opaque=f"unreadable ({why})")
     anchor_id = None
     moved_from: tuple[Path, ...] = ()
+    plugins = _names(data.plugins)
     if holder.kind in _OWN_KINDS:
         # This untaped's own kinds: anything it cannot read pauses cleanup.
-        if not isinstance(targets, list):
-            return Reference(file, holder=holder, opaque="unreadable (no targets)")
-        try:
-            read = tuple(RefTarget.model_validate(target) for target in targets)
-        except ValidationError:
-            return Reference(file, holder=holder, opaque="unreadable (a target is malformed)")
+        own = _own_targets(targets, plugins)
+        if isinstance(own, str):
+            return Reference(file, holder=holder, opaque=f"unreadable ({own})")
+        read = own
         if holder.kind == PROJECT:
             if not isinstance(anchor, str) or not anchor:
                 return Reference(file, holder=holder, opaque="unreadable (no anchor)")
@@ -325,6 +328,7 @@ def read_reference(file: Path) -> Reference:
         moved_from=moved_from,
         plugin=_text(data.plugin) or None,
         version=_text(data.version) or None,
+        plugins=plugins or (),
         targets=read,
     )
 
@@ -392,6 +396,22 @@ def composed_targets() -> tuple[RefTarget, ...] | None:
     return tuple(sorted(targets, key=lambda target: (target.plugin, target.store)))
 
 
+def composed_plugins() -> tuple[str, ...] | None:
+    """The name of every plugin this run composes or quarantines, core's aside, sorted.
+
+    Each one's ``plugins/<name>/`` folder is this install's. ``None`` when
+    nothing is composed (a library call outside the CLI).
+    """
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415 - bootstrap is the root
+
+    try:
+        result = composition()
+    except RuntimeError:
+        return None
+    names = {registered.spec.name for registered in result.plugins}
+    return tuple(sorted(names | {record.name for record in result.quarantine}))
+
+
 def others_text() -> str:
     """The other live installs, as rows name them (``untaped 11.0.2 at ~/…``); ``""`` for none.
 
@@ -401,8 +421,11 @@ def others_text() -> str:
     return ", ".join(ref.describe() for ref in other_installs())
 
 
-def register(targets: Sequence[RefTarget]) -> Reference:
-    """Write this install's reference naming ``targets``; raise when it has no environment."""
+def register(targets: Sequence[RefTarget], *, plugins: Sequence[str] = ()) -> Reference:
+    """Write this install's reference naming ``targets`` and ``plugins``.
+
+    Raises when it has no environment.
+    """
     env = environment()
     if env is None:
         raise ConfigError(
@@ -412,7 +435,7 @@ def register(targets: Sequence[RefTarget]) -> Reference:
         )
     holder = install_holder(env)
     with locked():
-        _write(holder, env, targets)
+        _write(holder, env, targets, plugins)
     return read_reference(reference_file(holder))
 
 
@@ -428,11 +451,19 @@ def install_state() -> InstallState:
 
 
 def register_this_install() -> tuple[Reference, bool]:
-    """Register this install for every store this run composes; whether that changed the file."""
+    """Register this install for every store and plugin this run composes.
+
+    Returns the reference and whether that changed the file.
+    """
     before = this_install()
-    ref = register(composed_targets() or ())
-    same = before is not None and (before.version, before.targets) == (ref.version, ref.targets)
+    ref = register(composed_targets() or (), plugins=composed_plugins() or ())
+    same = before is not None and _recorded(before) == _recorded(ref)
     return ref, not same
+
+
+def _recorded(ref: Reference) -> tuple[object, ...]:
+    """What a refresh keeps current in an install's reference."""
+    return ref.version, ref.targets, ref.plugins
 
 
 def unregister() -> Reference | None:
@@ -455,8 +486,8 @@ def unregister() -> Reference | None:
 def refresh() -> None:
     """Keep a registered install's reference current, once per process.
 
-    Rewrites the file when this run's version or layouts differ from what
-    it records; writes nothing for an install nobody registered, nor
+    Rewrites the file when this run's version, layouts or plugins differ
+    from what it records; writes nothing for an install nobody registered, nor
     outside a run (a library call). Never raises: a reference that cannot
     be refreshed waits for the next run.
     """
@@ -479,15 +510,15 @@ def _refresh() -> None:
     file = reference_file(holder)  # outside a run (a library call): NoRunError, nothing written
     if not file.is_file():
         return
-    targets = composed_targets()
-    if targets is None:
+    targets, plugins = composed_targets(), composed_plugins()
+    if targets is None or plugins is None:
         return  # no composition to describe: keep what the file says
     current = read_reference(file)
-    if current.opaque is None and (current.version, current.targets) == (_version(), targets):
+    if current.opaque is None and _recorded(current) == (_version(), targets, plugins):
         return
     with locked():
         if file.is_file():
-            _write(holder, env, targets)
+            _write(holder, env, targets, plugins)
 
 
 @contextmanager
@@ -512,6 +543,7 @@ def write_reference(
     moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
+    plugins: Sequence[str] = (),
 ) -> Path:
     """Write one holder's reference file, ``refs/<kind>-<name>.json``; return its path.
 
@@ -519,7 +551,8 @@ def write_reference(
     home: an ``anchor`` is live while it holds an ``untaped-*.dist-info``
     folder, and a holder without one lives until its file is removed.
     ``anchor_id`` records the anchor's filesystem identity (a project's), and
-    ``moved_from`` where it was before each move not yet fully repaired.
+    ``moved_from`` where it was before each move not yet fully repaired;
+    ``plugins`` names the plugins an install composes.
     """
     data = _Stored(
         holder=holder.model_dump(),
@@ -528,6 +561,7 @@ def write_reference(
         moved_from=[str(path) for path in moved_from] or None,
         plugin=plugin,
         version=version,
+        plugins=list(plugins) or None,
         targets=[target.model_dump() for target in targets],
     )
     file = reference_file(holder)
@@ -535,8 +569,10 @@ def write_reference(
     return file
 
 
-def _write(holder: RefHolder, env: Path, targets: Sequence[RefTarget]) -> None:
-    write_reference(holder, targets, anchor=env, version=_version())
+def _write(
+    holder: RefHolder, env: Path, targets: Sequence[RefTarget], plugins: Sequence[str]
+) -> None:
+    write_reference(holder, targets, anchor=env, version=_version(), plugins=plugins)
 
 
 def _version() -> str | None:
@@ -585,6 +621,28 @@ def _holder(value: object) -> RefHolder | None:
         return RefHolder.model_validate(value)
     except ValidationError:
         return None
+
+
+def _own_targets(targets: object, plugins: object) -> tuple[RefTarget, ...] | str:
+    """The targets of this untaped's own kind of reference, or why the file can't be read."""
+    if not isinstance(targets, list):
+        return "no targets"
+    try:
+        read = tuple(RefTarget.model_validate(target) for target in targets)
+    except ValidationError:
+        return "a target is malformed"
+    if plugins is None:
+        return "plugins is malformed"
+    return read
+
+
+def _names(value: object) -> tuple[str, ...] | None:
+    """A stored ``plugins`` list: ``()`` when the file names none, ``None`` when it is malformed."""
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(name, str) and name for name in value):
+        return None
+    return tuple(str(name) for name in value)
 
 
 def _text(value: object) -> str:

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import shlex
 
-from untaped.core.commands.doctor import run_line, selected_check_rows
+from untaped.core.commands.doctor import run_line, selected_check_rows, spelled_argv
 from untaped.core.commands.records import SetupActor, SetupState, SetupStep
+from untaped.core.commands.register import Register
 from untaped.core.commands.setup_state import (
     ServiceState,
     profile_exists,
@@ -130,7 +131,7 @@ def _install_row(shell: ApplicationSpec, profile: str) -> Row:
         return _row("install", shell.name, "done", f"registered: {ref.describe()}")
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
     return _row(
-        "install", shell.name, "todo", detail, command_argv("setup register", profile=profile)
+        "install", shell.name, "todo", detail, spelled_argv(Register.spelled(), profile=profile)
     )
 
 

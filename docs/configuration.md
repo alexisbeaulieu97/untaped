@@ -53,6 +53,7 @@ on write (exit 4): upgrade untaped instead of letting an older release misread
 it. `config edit` refuses to open while `config.yml` or `state.yml` has a
 newer format, but opens a config with an invalid `format_version`, or one
 written by 11.x, so you can fix it; the edit is saved only as format 2.
+
 `config` and `profile` commands write only `config.yml`; plugin state
 writes touch only `state.yml`.
 
@@ -118,9 +119,10 @@ Things that surprise people:
   file. An empty entry (`prod:` with nothing under it) is an empty profile.
 
 Both files are written atomically, owner-only (`0600`) and under a lock (see
-`UNTAPED_CONFIG_LOCK_TIMEOUT` in [Environment variables](./reference/environment.md)).
-A symlinked file stays a symlink. Writes rewrite only the keys they change and
-keep your comments, key order, quoting and indentation.
+`UNTAPED_CONFIG_LOCK_TIMEOUT` in
+[Environment variables](./reference/environment.md)). A symlinked file stays a
+symlink. Writes rewrite only the keys they change and keep your comments, key
+order, quoting and indentation.
 
 A setting's value comes from the first of these that has it: its
 `UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_AWX__SERVER__URL`),
@@ -135,18 +137,16 @@ is kept per layout so no install opens a file another one wrote in a shape it
 cannot read (see [Stores](./caches.md#stores)).
 
 Run `untaped setup register` once from each install you keep. It records the
-install and the layouts it uses in `~/.untaped/plugins/untaped/refs/`, and
-from then on a registered install removes the layouts no registered install
-holds, after its next complete refresh, with an info line for each. `untaped
-setup plan` lists registration as its first step (`--check` does not count
-it), and the first row of the `untaped setup` screen registers this install.
-Before removing an install, run `untaped setup register --remove` from it, so
-the others may clean up after it; an install deleted without that is noticed
-(its folder no longer holds untaped), and its reference counts for nothing.
-`untaped doctor` lists every registered install and, for each store, the
-layouts on disk and what holds them. `untaped setup prune` removes, after a
-preview, the references of installs that are gone and the `plugins/<name>/`
-folders of plugins not installed here, which another install may still use.
+install and the layouts it uses in `~/.untaped/plugins/untaped/refs/`, and from
+then on a registered install removes the layouts no registered install holds,
+after its next complete refresh, with an info line for each. `untaped setup
+plan` lists registration as its first step (`--check` does not count it), and
+the first row of the `untaped setup` screen registers this install. Before
+removing an install, run `untaped setup register --remove` from it, so the
+others may clean up after it; the reference of one deleted without it, not
+reachable, counts for nothing, and `setup prune` removes it, with the folders
+of plugins nothing here uses. `untaped doctor` lists every registered install
+and, for each store, the layouts on disk and what holds them.
 
 `untaped config migrate` (with or without `--dry-run`) and `doctor`'s `untaped.unknown-keys`
 row name the other registered installs, since an older install may still read the keys a

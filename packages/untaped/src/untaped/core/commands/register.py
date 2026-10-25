@@ -11,18 +11,18 @@ registers an install.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from pydantic import Field
 
-from untaped.core.commands.records import RegisterOutcome
+from untaped.core.commands.records import RegisteredHolder, RegisteredTarget, RegisterOutcome
 from untaped.core.settings import CoreSettings
-from untaped.runtime.sink import Diagnostics
 from untaped.sdk.fields import Output
-from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._refs import Reference, register_this_install, unregister
 
-_diag = Diagnostics()
+if TYPE_CHECKING:
+    from untaped.sdk.run import Diag
 
 
 class Register(Command[CoreSettings]):
@@ -36,8 +36,6 @@ class Register(Command[CoreSettings]):
         $ untaped setup register --remove
     """
 
-    # its record names the experimental RefHolder and RefTarget
-    stability = experimental
     repairs = True
     remove: bool = Field(
         False,
@@ -47,35 +45,36 @@ class Register(Command[CoreSettings]):
 
     def run(self) -> Iterator[RegisterOutcome]:
         # a list of one row, as 11.x printed it
-        yield _remove() if self.remove else _register()
+        diag = self.ctx.diag
+        yield _remove(diag) if self.remove else _register(diag)
 
 
-def _register() -> RegisterOutcome:
+def _register(diag: Diag) -> RegisterOutcome:
     ref, changed = register_this_install()
     held = ", ".join(target.describe() for target in ref.targets) or "no stores"
     if changed:
-        _diag.success(f"registered {ref.describe()} ({held})")
+        diag.success(f"registered {ref.describe()} ({held})")
     else:
-        _diag.info(f"already registered: {ref.describe()} ({held})")
+        diag.info(f"already registered: {ref.describe()} ({held})")
     return _outcome(ref, "registered" if changed else "unchanged")
 
 
-def _remove() -> RegisterOutcome:
+def _remove(diag: Diag) -> RegisterOutcome:
     ref = unregister()
     if ref is None:
-        _diag.info("this install is not registered; nothing to remove")
+        diag.info("this install is not registered; nothing to remove")
         return RegisterOutcome(action="gone", environment="", version=None, targets=[])
-    _diag.success(f"unregistered {ref.describe()}: other installs may now remove its layouts")
+    diag.success(f"unregistered {ref.describe()}: other installs may now remove its layouts")
     return _outcome(ref, "removed")
 
 
 def _outcome(ref: Reference, action: str) -> RegisterOutcome:
     return RegisterOutcome(
         action=action,
-        holder=ref.holder,
+        holder=None if ref.holder is None else RegisteredHolder(**ref.holder.model_dump()),
         environment=str(ref.anchor or ""),
         version=ref.version,
-        targets=list(ref.targets),
+        targets=[RegisteredTarget(**target.model_dump()) for target in ref.targets],
     )
 
 

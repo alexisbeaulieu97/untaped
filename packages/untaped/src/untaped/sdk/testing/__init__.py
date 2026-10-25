@@ -620,13 +620,15 @@ def write_reference(
     moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
+    plugins: Sequence[str] = (),
 ) -> Path:
     """Write another holder's reference in the hermetic home, as that holder would; its path.
 
     An ``anchor`` is live while it holds an ``untaped-*.dist-info`` folder,
     and a holder without one lives until its file is removed. ``anchor_id``
     records the anchor's filesystem identity (a project's), and
-    ``moved_from`` where it was before each move not yet fully repaired.
+    ``moved_from`` where it was before each move not yet fully repaired;
+    ``plugins`` names the plugins an install composes.
     """
     with _in_a_run():
         return _write_reference(
@@ -637,6 +639,7 @@ def write_reference(
             moved_from=moved_from,
             plugin=plugin,
             version=version,
+            plugins=plugins,
         )
 
 

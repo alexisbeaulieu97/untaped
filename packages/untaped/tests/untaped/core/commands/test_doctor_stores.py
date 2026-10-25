@@ -204,7 +204,7 @@ def test_every_holder_is_listed(tmp_path: Path) -> None:
     detail = str(row["detail"])
     assert row["status"] == "warn"  # a dead reference is a person's to remove
     assert row["fix"] == ["--profile", "default", "setup", "prune"]
-    assert f"untaped 11.0.0 at {gone}: no untaped there any more" in detail
+    assert f"untaped 11.0.0 at {gone}: not reachable" in detail
     assert f"untaped 11.1.0 at {old}: reference from before an upgrade" in detail
     assert "workspace pay (plugin workspace)" in detail
     assert "acme_job pay" in detail and "acme_job pay (" not in detail

@@ -25,6 +25,7 @@ from pydantic import (
     model_serializer,
 )
 
+from untaped.core.commands.records import RegisteredHolder, RegisteredTarget
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
@@ -54,7 +55,6 @@ from untaped.sdk.records import (
     record_kinds,
     record_model,
 )
-from untaped.sdk.storage._refs import RefHolder, RefTarget
 
 
 class _Stamped(BaseModel):
@@ -598,10 +598,10 @@ def _samples() -> dict[str, WireModel]:
         ),
         RegisterOutcome(
             action="registered",
-            holder=RefHolder(kind="install", name="3f9a1c2e8b7d"),
+            holder=RegisteredHolder(kind="install", name="3f9a1c2e8b7d"),
             environment="/x/site-packages",
             version="11.1.0",
-            targets=[RefTarget(plugin="hello", store="shelf", layout=4)],
+            targets=[RegisteredTarget(plugin="hello", store="shelf", layout=4)],
         ),
         PruneOutcome(
             what="folder",

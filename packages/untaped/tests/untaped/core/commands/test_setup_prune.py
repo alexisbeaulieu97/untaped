@@ -53,7 +53,7 @@ def _dead(tmp_path: Path, name: str = "aaaaaaaaaaaa") -> Path:
     )
 
 
-def _live(tmp_path: Path, *targets: RefTarget) -> Path:
+def _live(tmp_path: Path, *targets: RefTarget, plugins: tuple[str, ...] = ()) -> Path:
     alive = tmp_path / "tool"
     (alive / "untaped-12.0.0.dist-info").mkdir(parents=True, exist_ok=True)
     return write_reference(
@@ -61,6 +61,7 @@ def _live(tmp_path: Path, *targets: RefTarget) -> Path:
         list(targets),
         anchor=alive,
         version="12.0.0",
+        plugins=plugins,
     )
 
 
@@ -74,7 +75,7 @@ def test_dry_run_lists_both_kinds_and_removes_nothing(tmp_path: Path) -> None:
         {
             "what": "reference",
             "action": "planned",
-            "detail": f"untaped 11.0.0 at {tmp_path / 'gone'}: no untaped there any more",
+            "detail": f"untaped 11.0.0 at {tmp_path / 'gone'}: not reachable",
             "bytes": dead.stat().st_size,
             "target_path": str(dead),
         },
@@ -82,8 +83,8 @@ def test_dry_run_lists_both_kinds_and_removes_nothing(tmp_path: Path) -> None:
             "what": "folder",
             "action": "planned",
             "detail": (
-                "plugin 'gone' isn't installed here (8 B); another install sharing this home "
-                "may use it"
+                "plugin 'gone' isn't installed here and no install sharing this home uses it: "
+                "the whole folder goes, its state included (8 B)"
             ),
             "bytes": 8,
             "target_path": str(gone),
@@ -160,8 +161,80 @@ def test_a_live_reference_is_kept_and_keeps_the_folder_it_names(tmp_path: Path) 
     [row] = _rows(_cli("--yes", "-f", "json"))
 
     assert row["what"] == "folder" and row["action"] == "kept"
-    assert row["detail"] == f"untaped 12.0.0 at {tmp_path / 'tool'} holds its data"
+    assert row["detail"] == f"untaped 12.0.0 at {tmp_path / 'tool'} uses it"
     assert live.exists() and gone.exists()
+
+
+def test_another_live_install_composing_the_plugin_keeps_its_folder(tmp_path: Path) -> None:
+    """Install B composes jira and names no jira target: its plugins/jira/ still stays."""
+    _live(tmp_path, RefTarget(plugin="acme", store="data", layout=4), plugins=("acme", "jira"))
+    jira = _folder("jira")
+
+    [row] = _rows(_cli("--yes", "-f", "json"))
+
+    assert (row["action"], row["detail"]) == (
+        "kept",
+        f"untaped 12.0.0 at {tmp_path / 'tool'} uses it",
+    )
+    assert (jira / "state.yml").exists()
+
+
+def test_a_folder_no_live_install_names_is_removed(tmp_path: Path) -> None:
+    _live(tmp_path, plugins=("acme", "github"))
+    _dead(tmp_path).unlink()
+    write_reference(  # an install that is not reachable composing jira names nothing
+        RefHolder(kind="install", name="cccccccccccc"),
+        [],
+        anchor=tmp_path / "unmounted",
+        version="12.0.0",
+        plugins=("jira",),
+    )
+    jira = _folder("jira")
+
+    rows = _rows(_cli("--yes", "-f", "json"))
+
+    assert [(row["what"], row["action"]) for row in rows] == [
+        ("reference", "removed"),
+        ("folder", "removed"),
+    ]
+    assert not jira.exists()
+
+
+def test_a_busy_references_lock_fails_every_item_and_removes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import timedelta
+
+    from filelock import FileLock
+
+    dead = _dead(tmp_path)
+    gone = _folder("gone")
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
+    with FileLock(str(refs.REFS.lock_path())):
+        result = _cli("--yes", "-f", "json")
+
+    assert result.exit_code == 5, result.output
+    assert [row["action"] for row in json.loads(result.stdout)] == ["failed", "failed"]
+    assert "untaped.refs is busy" in result.stderr
+    assert dead.exists() and gone.exists()
+
+
+def test_a_folder_whose_real_place_is_elsewhere_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A junction or bind mount: not a symlink, but its real place is not plugins/<name>."""
+    gone = _folder("gone")
+    real = setup_prune.os.path.realpath
+    elsewhere = str(tmp_path / "elsewhere")
+
+    def realpath(path: Any, *args: Any, **kwargs: Any) -> str:
+        return elsewhere if Path(path) == gone else real(path, *args, **kwargs)
+
+    monkeypatch.setattr(setup_prune.os.path, "realpath", realpath)
+    [row] = _rows(_cli("--yes", "-f", "json"))
+
+    assert row["action"] == "kept" and row["detail"].startswith("not in ")
+    assert gone.exists()
 
 
 def test_an_unreadable_reference_keeps_every_folder() -> None:
@@ -172,7 +245,9 @@ def test_an_unreadable_reference_keeps_every_folder() -> None:
 
     [row] = _rows(_cli("--yes", "-f", "json"))
 
-    assert row["action"] == "kept" and row["detail"].startswith("who uses it is unknown: ")
+    assert row["action"] == "kept" and row["detail"].startswith(
+        "another install sharing this home may use it: "
+    )
     assert gone.exists() and broken.exists()
 
 

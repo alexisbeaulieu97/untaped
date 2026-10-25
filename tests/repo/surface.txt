@@ -4237,17 +4237,17 @@ cli untaped setup prune --format choice=table
 cli untaped setup prune --format choice=yaml
 cli untaped setup prune --yes alias=-y
 cli untaped setup prune --yes switch default=unset
-cli untaped setup register  [experimental]
-cli untaped setup register --columns VALUE... default=unset  [experimental]
-cli untaped setup register --columns alias=-c  [experimental]
-cli untaped setup register --format VALUE default=table  [experimental]
-cli untaped setup register --format alias=-f  [experimental]
-cli untaped setup register --format choice=json  [experimental]
-cli untaped setup register --format choice=pipe  [experimental]
-cli untaped setup register --format choice=raw  [experimental]
-cli untaped setup register --format choice=table  [experimental]
-cli untaped setup register --format choice=yaml  [experimental]
-cli untaped setup register --remove switch default=unset  [experimental]
+cli untaped setup register
+cli untaped setup register --columns VALUE... default=unset
+cli untaped setup register --columns alias=-c
+cli untaped setup register --format VALUE default=table
+cli untaped setup register --format alias=-f
+cli untaped setup register --format choice=json
+cli untaped setup register --format choice=pipe
+cli untaped setup register --format choice=raw
+cli untaped setup register --format choice=table
+cli untaped setup register --format choice=yaml
+cli untaped setup register --remove switch default=unset
 cli untaped skills
 cli untaped skills install
 cli untaped skills install --all switch default=unset
@@ -4544,14 +4544,14 @@ record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
 record untaped.PickedProfile.source choice=flag
 record untaped.PickedProfile.source string
-record untaped.RefHolder  [experimental]
-record untaped.RefHolder.kind string(maxLength=32,pattern=^[a-z][a-z0-9_]*$)  [experimental]
-record untaped.RefHolder.name string(maxLength=128,pattern=^[a-z0-9][a-z0-9._-]*$)  [experimental]
-record untaped.RefTarget  [experimental]
-record untaped.RefTarget.item string?  [experimental]
-record untaped.RefTarget.layout integer(minimum=0)?  [experimental]
-record untaped.RefTarget.plugin string(minLength=1)  [experimental]
-record untaped.RefTarget.store string(minLength=1)  [experimental]
+record untaped.RegisteredHolder
+record untaped.RegisteredHolder.kind string
+record untaped.RegisteredHolder.name string
+record untaped.RegisteredTarget
+record untaped.RegisteredTarget.item string?
+record untaped.RegisteredTarget.layout integer?
+record untaped.RegisteredTarget.plugin string
+record untaped.RegisteredTarget.store string
 record untaped.auth_outcome  [deprecated, removed in 12.0]
 record untaped.auth_outcome.action string  [deprecated, removed in 12.0]
 record untaped.auth_outcome.detail string?  [deprecated, removed in 12.0]
@@ -4741,13 +4741,13 @@ record untaped.recorded_project.state choice=present  [experimental]
 record untaped.recorded_project.state choice=unknown  [experimental]
 record untaped.recorded_project.state choice=unreadable  [experimental]
 record untaped.recorded_project.state string  [experimental]
-record untaped.register_outcome  [experimental]
-record untaped.register_outcome.action string  [experimental]
-record untaped.register_outcome.environment string  [experimental]
-record untaped.register_outcome.error Failure?  [experimental]
-record untaped.register_outcome.holder RefHolder?  [experimental]
-record untaped.register_outcome.targets RefTarget[]  [experimental]
-record untaped.register_outcome.version string?  [experimental]
+record untaped.register_outcome
+record untaped.register_outcome.action string
+record untaped.register_outcome.environment string
+record untaped.register_outcome.error Failure?
+record untaped.register_outcome.holder RegisteredHolder?
+record untaped.register_outcome.targets RegisteredTarget[]
+record untaped.register_outcome.version string?
 record untaped.scaffold_outcome
 record untaped.scaffold_outcome.action string
 record untaped.scaffold_outcome.error Failure?
@@ -7570,6 +7570,7 @@ sdk untaped.sdk.testing.write_reference(anchor_id=) default=None  [experimental]
 sdk untaped.sdk.testing.write_reference(holder, targets)  [experimental]
 sdk untaped.sdk.testing.write_reference(moved_from=) default=[]  [experimental]
 sdk untaped.sdk.testing.write_reference(plugin=) default=None  [experimental]
+sdk untaped.sdk.testing.write_reference(plugins=) default=[]  [experimental]
 sdk untaped.sdk.testing.write_reference(version=) default=None  [experimental]
 sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]

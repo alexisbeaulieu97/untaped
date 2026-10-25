@@ -97,6 +97,7 @@ from untaped.sdk.words import (
 )
 
 if TYPE_CHECKING:
+    from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.projects import Project
     from untaped.sdk.storage._refs import Reference, RefHolder
     from untaped.sdk.storage.store import Layout, Store
@@ -642,9 +643,10 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
     """Each ``plugins/<name>/`` folder of a plugin not installed here, offered to ``setup prune``.
 
-    It warns while one could go: another install sharing this home may still
-    use it, so only a person removes it. One that stays (a symlink, data a
-    reference names) is listed with why.
+    It warns while one could go (no live reference names its plugin): it
+    goes whole, state included, so only a person removes it. One that stays
+    (a symlink, a plugin a live reference names, any reference unreadable)
+    is listed with why.
     """
     from untaped.core.commands.setup_prune import leftover_folders  # noqa: PLC0415
     from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
@@ -661,7 +663,7 @@ def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> di
             parts.append(f"{text}; kept: {leftover.kept}")
         else:
             size = size_text(dir_bytes(leftover.path))
-            parts.append(f"{text} ({size}); another install sharing this home may use it")
+            parts.append(f"{text} and nothing here uses it ({size}); it goes whole, state included")
     if all(leftover.kept is not None for leftover in leftovers):
         return _row("plugin-folders", shell.name, _PASS, title, "; ".join(parts))
     return _row("plugin-folders", shell.name, _WARN, title, "; ".join(parts), _prune_fix())
@@ -670,13 +672,26 @@ def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> di
 def _prune_fix() -> list[str]:
     """``setup prune``'s argv, spelled from its class.
 
-    Never automatic: what it removes may still be another install's, so a
-    person decides.
+    Never automatic: what it removes may be a disk not mounted now, or a
+    plugin's state, so a person decides.
     """
     from untaped.core.commands.setup_prune import Prune  # noqa: PLC0415 - setup imports doctor
+
+    return spelled_argv(Prune.spelled(), profile=fix_target())
+
+
+def _register_fix() -> list[str]:
+    """``setup register``'s argv, spelled from its class; never automatic (a deliberate step)."""
+    from untaped.core.commands.register import Register  # noqa: PLC0415 - setup imports doctor
+
+    return spelled_argv(Register.spelled(), profile=fix_target())
+
+
+def spelled_argv(spelled: SpelledCommand, *, profile: str) -> list[str]:
+    """The argv after ``untaped`` for a command named by its class, as this run spells it."""
     from untaped.sdk.run import current_run  # noqa: PLC0415
 
-    return command_argv(current_run().composition.spell(Prune.spelled()), profile=fix_target())
+    return command_argv(current_run().composition.spell(spelled), profile=profile)
 
 
 def _layout_text(
@@ -721,7 +736,7 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
     Never automatic: registering is a deliberate step.
     """
     if "unregistered" in reasons:
-        return command_argv("setup register", profile=fix_target())
+        return _register_fix()
     return None
 
 
@@ -730,9 +745,10 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
 
     Installs hold store layouts; projects hold items. A missing project
     warns; an unreadable one (its drive or share away) is listed, not warned.
-    An install that is gone warns, its fix ``setup prune``, unless this
-    install needs registering first.
+    An install that is not reachable warns, its fix ``setup prune``, unless
+    this install needs registering first.
     """
+    from untaped.core.commands.setup_prune import dead_references  # noqa: PLC0415
     from untaped.sdk.storage._refs import (  # noqa: PLC0415 - runs only in doctor
         REFS,
         environment,
@@ -749,14 +765,14 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     warn = any(warns for _, warns in described)
     registered = any(ref.opaque is None and ref.holder == mine for ref in references)
     # a dead reference is removed by a person: another install's registration is never a run's
-    fix = _prune_fix() if any(ref.opaque is None and not ref.live for ref in references) else None
+    fix = _prune_fix() if dead_references(references) else None
     if env is None:
         parts.append("this run is from a source tree: it cannot be registered")
     elif not registered and not any(ref.file == REFS.place for ref in references):
         if _other_layouts(result, references):
             warn = True
             parts.insert(0, "this install is not registered: nothing cleans up old store layouts")
-            fix = command_argv("setup register", profile=fix_target())
+            fix = _register_fix()
         else:
             parts.insert(0, "this install: not registered")
     detail = "; ".join(parts) or "no install is registered"
@@ -789,7 +805,7 @@ def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
     if ref.holder == mine:
         text += " (this install)"
     if not ref.live:
-        return f"{text}: no untaped there any more", True
+        return f"{text}: not reachable", True
     if ref.pre_upgrade:
         text += ": reference from before an upgrade; run any command from that install"
         text += " to refresh it"

@@ -87,7 +87,8 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
         [
             RefTarget(plugin="acme", store="data", layout=2),
             RefTarget(plugin="ansible", store="index", layout=4),
-        ]
+        ],
+        plugins=["acme", "ansible"],
     )
 
     holder = refs.install_holder(site)
@@ -98,6 +99,7 @@ def test_register_writes_one_file_for_this_install(site: Path) -> None:
         "holder": {"kind": "install", "name": holder.name},
         "anchor": str(site),
         "version": "11.1.0",
+        "plugins": ["acme", "ansible"],
         "targets": [
             {"plugin": "acme", "store": "data", "layout": 2},
             {"plugin": "ansible", "store": "index", "layout": 4},
@@ -297,6 +299,17 @@ def test_a_reference_of_an_unknown_kind_is_live_and_holds_what_it_can_read(
     ]
 
 
+def test_an_install_reference_without_plugins_names_none_and_a_malformed_list_is_opaque(
+    tmp_path: Path,
+) -> None:
+    file = write_reference(RefHolder(kind="install", name="aaaaaaaaaaaa"), [], anchor=tmp_path)
+    assert "plugins" not in json.loads(file.read_text())
+    assert refs.read_reference(file).plugins == ()
+    data = json.loads(file.read_text())
+    file.write_text(json.dumps({**data, "plugins": "jira"}))
+    assert refs.read_reference(file).opaque == "unreadable (plugins is malformed)"
+
+
 def test_only_an_install_is_ever_from_before_an_upgrade(tmp_path: Path) -> None:
     anchor = _install(tmp_path / "job", "9.0.0")
     write_reference(RefHolder(kind="acme_job", name="x"), [], anchor=anchor, version="1.0.0")
@@ -392,11 +405,31 @@ def test_a_missing_folder_has_no_references() -> None:
 
 
 @pytest.fixture
-def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
+def composed_names(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The plugins this run's composition has; a test edits it."""
+    names: list[str] = []
+    monkeypatch.setattr(refs, "composed_plugins", lambda: tuple(names))
+    return names
+
+
+@pytest.fixture
+def composed(monkeypatch: pytest.MonkeyPatch, composed_names: list[str]) -> list[RefTarget]:
     """What this run's composition declares; a test edits it."""
     targets = [RefTarget(plugin="acme", store="data", layout=1)]
     monkeypatch.setattr(refs, "composed_targets", lambda: tuple(targets))
     return targets
+
+
+def test_a_refresh_follows_the_plugins_the_install_composes(
+    site: Path, composed: list[RefTarget], composed_names: list[str]
+) -> None:
+    ref = refs.register([RefTarget(plugin="acme", store="data", layout=1)], plugins=["acme"])
+    composed_names[:] = ["acme", "jira"]  # jira installed beside acme
+
+    refs.refresh()
+
+    assert json.loads(ref.file.read_text())["plugins"] == ["acme", "jira"]
+    assert refs.this_install() is not None and refs.this_install().plugins == ("acme", "jira")
 
 
 def test_a_registered_install_refreshes_on_its_first_store_open(

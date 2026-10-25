@@ -722,8 +722,8 @@ def test_an_uninstalled_plugins_folder_warns_with_setup_prune_as_its_fix() -> No
     row = _folders_row(rows)
     assert row["status"] == "warn"
     assert row["detail"] == (
-        f"{named_plugin_dir('gone')}: plugin 'gone' isn't installed here (2.0 KiB); "
-        "another install sharing this home may use it"
+        f"{named_plugin_dir('gone')}: plugin 'gone' isn't installed here and nothing here "
+        "uses it (2.0 KiB); it goes whole, state included"
     )
     assert row["fix"] == ["--profile", "default", "setup", "prune"]
     assert row["automatic"] is False

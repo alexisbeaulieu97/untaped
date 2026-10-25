@@ -23,7 +23,7 @@ service state through :mod:`untaped.core.commands.setup_state`. ``setup
 register`` (:class:`~untaped.core.commands.register.Register`) registers this
 install, so the cleanup of store layouts keeps what it uses, and ``setup
 prune`` (:class:`~untaped.core.commands.setup_prune.Prune`) removes what
-installs and plugins that are gone left in the home. Each is marked
+unreachable installs and uninstalled plugins left in the home. Each is marked
 ``repairs``: it runs under a bad ``UNTAPED_FORMAT`` and the per-run skills
 check skips it.
 """

@@ -277,9 +277,11 @@ one per item, `{"plugin": "git", "store": "store", "item":
 "github.com/acme/pay"}`. Who the reference is for is a `RefHolder`
 (experimental), written as `{"kind": "install", "name": "3f9a1c2e8b7d"}` in
 `refs/install-3f9a1c2e8b7d.json`; the install is the only holder in 11.1, and
-it holds layouts. An install refreshes its own reference whenever a command
-opens a store after its plugins or their layouts changed, so an upgrade needs
-nothing more. `holders(target)` (experimental) returns the `RefHolder` of each
+it holds layouts. An install's reference also lists the plugins it composes,
+`"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses (a file
+without the list names none). An install refreshes its own reference whenever
+a command opens a store after its plugins or their layouts changed, so an
+upgrade needs nothing more. `holders(target)` (experimental) returns the `RefHolder` of each
 live reference that keeps a target, and raises while a reference cannot be
 read (who holds it is unknown then, never nobody). A reference is *live* while
 its folder still holds an untaped install; one written by a newer untaped, or
@@ -308,16 +310,19 @@ a `keep` that raises keeps the path too.
 What the cleanup will not remove on its own (no registered install keeps the
 store, a running untaped has it open, a damaged in-use lock, a reference it
 cannot read) the `stores` row names with its reason, and `untaped doctor`'s
-`references` row lists every reference. A dead one (an install deleted without
-`setup register --remove`) warns, and so does `doctor`'s `plugin-folders` row
-for the `plugins/<name>/` folder a plugin uninstalled here leaves, with its
-data, caches and state, since another install sharing the home may still use
-it. Neither is removed by a run: `untaped setup prune` lists both, then
-removes them once you confirm (`--dry-run` previews, `--yes` skips the
-question). It keeps a symlinked folder and one whose plugin's data a reference
-still names (a project or another install holds it), never touches anything
-outside `plugins/`, and checks each item again before removing it. In tests,
-`untaped.sdk.testing.write_reference` writes another install's reference.
+`references` row lists every reference. One that is not reachable (an install
+deleted without `setup register --remove`, or on a disk not mounted now)
+warns, and so does `doctor`'s `plugin-folders` row for the `plugins/<name>/`
+folder of a plugin not installed here that no live reference names. Neither
+is removed by a run: `untaped setup prune` lists both, then removes them once
+you confirm (`--dry-run` previews, `--yes` skips the question). A folder goes
+whole, its data, caches and state included. It stays while a live reference
+names its plugin (another install sharing the home composes it, or a project
+or install holds its items or layouts), while any reference cannot be read,
+or when it is a symlink. Prune never touches anything outside `plugins/`, and
+checks each item again under the references' lock before removing it. In
+tests, `untaped.sdk.testing.write_reference` writes another install's
+reference, `plugins=` the plugins it composes.
 
 ## Other files your plugin keeps
 

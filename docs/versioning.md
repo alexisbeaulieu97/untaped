@@ -92,8 +92,6 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `LetGo`, `Refused`, `HolderView`, `UnknownHolder` and `HolderState` in
   `untaped.sdk`, and `make_project`, `release_ask`, `move_ask` and
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
-- `setup register`: its `untaped.register_outcome` record, whose `holder` and
-  `targets` are the experimental `RefHolder` and `RefTarget`.
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
