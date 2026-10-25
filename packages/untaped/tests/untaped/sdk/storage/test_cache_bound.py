@@ -1,4 +1,4 @@
-"""A plugin class's cache: named by its attribute, its plugin read from the run."""
+"""A plugin class's cache: named by its attribute; its plugin from the run, or bound."""
 
 from __future__ import annotations
 

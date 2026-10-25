@@ -120,7 +120,10 @@ class Dir(OwnedBlock):
     @classmethod
     def name_problem(cls, name: str) -> str | None:
         if name in RESERVED:
-            return f"a Dir cannot be named {name!r}: core keeps plugins/<plugin>/{name} itself"
+            return (
+                f"a Dir cannot be named {name!r}: "
+                f"core keeps {PLUGINS_FOLDER}/<plugin>/{name} itself"
+            )
         return None
 
     def problems(self) -> tuple[str, ...]:
