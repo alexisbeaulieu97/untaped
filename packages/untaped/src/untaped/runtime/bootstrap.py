@@ -560,7 +560,8 @@ def _install_root_callback(
                     command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
                 # What dispatch reports before the command parses (the reference
-                # refresh's warning) follows the --format the tokens ask for.
+                # refresh's warning, deprecated command and option notices)
+                # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
                 with ExitStack() as stack:
                     if command_tokens and not command_tokens[0].startswith("-"):
