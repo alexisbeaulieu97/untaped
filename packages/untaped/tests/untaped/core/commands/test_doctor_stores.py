@@ -115,7 +115,7 @@ def test_a_layout_whose_lock_the_filesystem_refuses_says_to_delete_it(
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "warn"
     assert "refuses its in-use lock" in str(row["detail"])
-    assert "delete it by hand while no untaped runs" in str(row["detail"])
+    assert "delete it and its in-use lock by hand while no untaped runs" in str(row["detail"])
     assert row["fix"] is None
 
 

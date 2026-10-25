@@ -372,7 +372,7 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     if any(ref.opaque is not None for ref in references):
         return Kept("opaque", "a reference this untaped cannot read pauses cleanup")
     kept, failed = store._keep_check(layout.path)
-    if kept is not None:  # before the damaged lock: what keep names is never offered for removal
+    if kept is not None:  # before the damaged lock: what keep names is never removed
         return Kept("keep-failed" if failed else "kept", kept)
     if damaged is not None:
         return damaged
@@ -385,7 +385,7 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
         return Kept(
             "refused",
             "this filesystem refuses its in-use lock, so cleanup skips it; "
-            "delete it by hand while no untaped runs",
+            "delete it and its in-use lock by hand while no untaped runs",
         )
     if layout.lock == "busy":
         return Kept("busy", "a running untaped has it open")
