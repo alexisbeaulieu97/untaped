@@ -382,7 +382,11 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
     ):
         return Kept("unregistered", "no registered install keeps this store, so nothing cleans up")
     if layout.lock == "refused":
-        return Kept("refused", "this filesystem refuses its in-use lock, so cleanup skips it")
+        return Kept(
+            "refused",
+            "this filesystem refuses its in-use lock, so cleanup skips it; "
+            "delete it by hand while no untaped runs",
+        )
     if layout.lock == "busy":
         return Kept("busy", "a running untaped has it open")
     return None

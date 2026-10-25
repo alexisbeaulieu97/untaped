@@ -103,6 +103,22 @@ def test_a_layout_a_running_process_has_open_warns(tmp_path: Path) -> None:
     assert row["fix"] is None
 
 
+def test_a_layout_whose_lock_the_filesystem_refuses_says_to_delete_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.sdk.storage import store as store_module
+
+    old = tmp_path / "data.v3.db"
+    old.write_bytes(b"xyz")
+    refs.register([RefTarget(plugin="acme", store="data", layout=4)])
+    monkeypatch.setattr(store_module, "_probe", lambda _path: "refused")
+    row = _row(_store(tmp_path / "data.db"))
+    assert row["status"] == "warn"
+    assert "refuses its in-use lock" in str(row["detail"])
+    assert "delete it by hand while no untaped runs" in str(row["detail"])
+    assert row["fix"] is None
+
+
 def test_a_damaged_lock_is_named_with_what_to_delete(tmp_path: Path) -> None:
     own = tmp_path / "data.v4.db"
     own.write_bytes(b"x")

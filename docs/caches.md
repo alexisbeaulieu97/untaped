@@ -286,7 +286,7 @@ its folder still holds an untaped install; one written by a newer untaped, or
 one this untaped cannot read, is kept as if live and pauses all cleanup until
 this install is upgraded. A reference of a kind this untaped does not know,
 written by a later untaped, is always live and keeps the targets it can read;
-in this file format it never pauses cleanup and is never offered for removal.
+in this file format it never pauses cleanup and is never removed.
 
 Cleanup is automatic. After a fill completes (a cache that follows the store
 refreshed with no error, nothing partial), a registered install removes every

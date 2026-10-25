@@ -153,9 +153,6 @@ command) is marked with `@experimental` in the code and listed here, not in a
   release: a changed default, a removed command or flag, a changed positional
   argument, a removed setting, and a renamed or removed environment variable,
   record kind or record field.
-  A file a setting's default names may still move in a minor when the
-  default's value is unchanged and the move is a lossless rename (a file
-  renamed to a store layout's name), with a changelog entry.
 - Breaking changes are collected into the next major release, whose changelog
   opens with an upgrade section listing them.
 
