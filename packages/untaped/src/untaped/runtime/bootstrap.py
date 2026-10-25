@@ -82,6 +82,7 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.run import Run, run_scope
+from untaped.sdk.storage._refs import refresh
 from untaped.sdk.storage.cache import current_call
 
 
@@ -508,19 +509,16 @@ def _invocation_run(mount: Mount) -> Run:
     return build_run(mount.declaration, mount.settings)
 
 
-def _follow_composition(run: Callable[[], Run] | None = None) -> None:
-    """After a fresh composition, keep this install's registered reference current.
+def _refresh_reference(run: Callable[[], Run] | None = None) -> None:
+    """Keep this install's registered reference in step with the root composition.
 
-    A composition replayed from the kept declaration composes what the last
-    fresh one did, so only a fresh one (the first start after an install
-    change) refreshes; each store open refreshes too. Called inside the
-    command's run, or with ``run`` to open one for root ``--help`` and
-    ``--version``, which then print even when the home doesn't resolve.
+    Every start compares, so a write that failed or met a busy lock is
+    tried again by the next; one where nothing changed only reads the file.
+    It runs here, under the composition the root mounted, never a narrower
+    one a command composes. Called inside the command's run, or with
+    ``run`` to open one for root ``--help`` and ``--version``, which then
+    print even when the home doesn't resolve.
     """
-    if _COMPOSED_RESULT is None or not _COMPOSED_RESULT.fresh:
-        return
-    from untaped.sdk.storage._refs import refresh  # noqa: PLC0415 - only after a fresh start
-
     if run is None:
         refresh()
         return
@@ -566,9 +564,9 @@ def _install_root_callback(
                         # A command runs under the run; root --help and --version need none,
                         # so a home that doesn't resolve still lets them print.
                         stack.enter_context(run_scope(run()))
-                        _follow_composition()
+                        _refresh_reference()
                     else:
-                        _follow_composition(run)
+                        _refresh_reference(run)
                     result = _dispatch_with_root_options(
                         app, command_tokens, root_options, applied_tokens
                     )

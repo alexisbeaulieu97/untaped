@@ -620,7 +620,7 @@ def write_reference(
     moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
-    plugins: Sequence[str] | None = (),
+    plugins: Sequence[str] | None = None,
 ) -> Path:
     """Write another holder's reference in the hermetic home, as that holder would; its path.
 
@@ -628,8 +628,9 @@ def write_reference(
     and a holder without one lives until its file is removed. ``anchor_id``
     records the anchor's filesystem identity (a project's), and
     ``moved_from`` where it was before each move not yet fully repaired;
-    ``plugins`` names the plugins an install composes; ``None`` leaves the
-    key out, as a file that doesn't say (prune then keeps every folder).
+    ``plugins`` names the plugins an install composes, as an install writes
+    it (empty included); without it the key is left out, as a project's
+    file, or an install's that doesn't say (prune then keeps every folder).
     """
     with _in_a_run():
         return _write_reference(

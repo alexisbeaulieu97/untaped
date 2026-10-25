@@ -280,8 +280,9 @@ def test_this_installs_own_older_layout_goes_once_its_reference_moved(
     _registered(composed)  # registered while at layout 4
     composed[:] = [RefTarget(plugin="acme", store="data", layout=5)]  # upgraded in place
     old = _layout(base, 4)
+    refs.refresh()  # the start refreshes the reference to 5
     store = _store(base)
-    store.open()  # the first open refreshes the reference to 5
+    store.open()
     [line] = _prune(store)
     assert line.layout == 4 and not old.exists()
 

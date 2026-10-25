@@ -96,7 +96,8 @@ def _kept(folder: Path, references: Sequence[Reference]) -> str | None:
     if silent is not None:
         return (
             f"{silent.describe()} may use it: {shown_path(silent.file)} doesn't list "
-            "the plugins it composes"
+            "the plugins it composes; upgrade that install, or delete that file if "
+            "the install is gone"
         )
     return None
 

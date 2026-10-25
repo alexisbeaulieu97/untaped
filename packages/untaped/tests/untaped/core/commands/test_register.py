@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 
@@ -46,26 +48,66 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     assert ref.plugins == ("acme",)  # the plugins it composes, whose folders it uses
 
 
+def _start(*command: str, plugins: tuple[str, ...] = ("acme", "jira")) -> CliResult:
+    """One start of the registered install, composing ``plugins`` (acme holds STORE)."""
+    specs = [PluginSpec(name=name, stores=(STORE,) if name == "acme" else ()) for name in plugins]
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+    result = invoke_cli(root.meta, list(command))
+    assert result.exit_code == 0, result.output
+    return result
+
+
 @pytest.mark.parametrize("command", [["doctor", "--help"], ["--version"]])
-def test_a_start_that_composes_afresh_records_a_plugin_added_since(
+def test_a_start_records_a_plugin_added_since(
     command: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A registered install gains jira and runs no command that opens a store."""
     assert _cli().exit_code == 0
-    refs._forget()  # the next start is a new process
     opened: list[object] = []
     monkeypatch.setattr(Store, "open", lambda self: opened.append(self))
-    acme = PluginSpec(name="acme", stores=(STORE,))
-    root = bootstrap.build_root_app(
-        candidates=[plugin_candidate(acme), plugin_candidate(PluginSpec(name="jira"))]
-    )
-    assert bootstrap.composition().fresh  # candidates given as objects always compose afresh
-    result = invoke_cli(root.meta, command)
 
-    assert result.exit_code == 0, result.output
+    _start(*command)
+
     assert opened == []
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme", "jira")
+
+
+def test_a_start_where_nothing_changed_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _cli().exit_code == 0
+    ref = refs.this_install()
+    assert ref is not None
+    before = (ref.file.read_bytes(), ref.file.stat().st_mtime_ns)
+    monkeypatch.setattr(refs.REFS, "try_locked", _no_lock)  # no lock taken either
+
+    _start("--version", plugins=("acme",))
+
+    assert (ref.file.read_bytes(), ref.file.stat().st_mtime_ns) == before
+
+
+def test_a_start_that_meets_a_busy_lock_leaves_the_refresh_to_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _cli().exit_code == 0
+    with monkeypatch.context() as busy:
+        busy.setattr(refs.REFS, "try_locked", _busy)
+        _start("--version")  # never waits, never fails
+    ref = refs.this_install()
+    assert ref is not None and ref.plugins == ("acme",)
+
+    _start("--version")
+
+    ref = refs.this_install()
+    assert ref is not None and ref.plugins == ("acme", "jira")
+
+
+@contextmanager
+def _busy(_name: str | None = None) -> Iterator[bool]:
+    yield False  # another process holds the references' lock
+
+
+def _no_lock(_name: str | None = None) -> object:
+    raise AssertionError("a start where nothing changed took the references' lock")
 
 
 def test_registering_twice_changes_nothing() -> None:

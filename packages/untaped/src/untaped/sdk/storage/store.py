@@ -197,9 +197,6 @@ class Store:
             target.parent.mkdir(parents=True, exist_ok=True)
             _in_use(target).hold()
             _OPENED.add(target)
-        from untaped.sdk.storage._refs import refresh  # noqa: PLC0415 - refs imports the registry
-
-        refresh()  # a registered install's reference follows its code: after the lock, once
         return target
 
     def prune(self) -> None:
@@ -785,9 +782,6 @@ def _in_use(target: Path) -> _InUse:
 
 def _forget_opened() -> None:
     """Release every layout this process holds and forget it (``untaped.sdk.testing.plugin``)."""
-    from untaped.sdk.storage._refs import _forget  # noqa: PLC0415 - refs imports the registry
-
-    _forget()
     with _REGISTRY_LOCK:
         for lock in _LOCKS.values():
             lock.release()

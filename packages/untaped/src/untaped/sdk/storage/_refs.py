@@ -5,19 +5,19 @@ A holder declares what it uses; the store decides when an unheld layout goes
 registered install: ``untaped setup register`` writes
 ``refs/install-<id>.json`` naming the install's environment (the directory
 holding untaped's own distribution, whatever installed it), its version and
-the layout of every store its composition declares, and each later run of
-that install refreshes the file on its first store open. A reference is live
-while its anchor still holds an ``untaped-*.dist-info``, or, with no anchor,
-until its holder removes it. A project (:mod:`untaped.sdk.projects`) writes
-``refs/project-<id>.json`` naming its folder and the folder's filesystem
-identity (``anchor_id``); it is always live here, since only its own service
-decides when a project is gone. Install and project references are read
-strictly: a target this untaped cannot read makes the file opaque, never
-silently shorter. A reference of a kind this untaped does not know (a later
-untaped's) is always live and holds the targets it can read, and nothing in
-it pauses cleanup (a newer file format still does). A dead
-reference counts for nothing, but its file is never another process's to
-delete on its own.
+the layout of every store its composition declares and the plugins it
+composes, and each later start of that install rewrites the file when one
+of those changed. A reference is live while its anchor still holds an
+``untaped-*.dist-info``, or, with no anchor, until its holder removes it.
+A project (:mod:`untaped.sdk.projects`) writes ``refs/project-<id>.json``
+naming its folder and the folder's filesystem identity (``anchor_id``); it
+is always live here, since only its own service decides when a project is
+gone. Install and project references are read strictly: a target this
+untaped cannot read makes the file opaque, never silently shorter. A
+reference of a kind this untaped does not know (a later untaped's) is always
+live and holds the targets it can read, and nothing in it pauses cleanup (a
+newer file format still does). A dead reference counts for nothing, but its
+file is never another process's to delete on its own.
 
 Each target is a :class:`RefTarget`, written as a JSON object: a layout of a
 store, or one item of a store that keeps one per item. No clock is read
@@ -35,7 +35,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -65,8 +64,6 @@ INSTALL = "install"
 PROJECT = "project"
 #: The kinds this untaped writes, read strictly.
 _OWN_KINDS = frozenset({INSTALL, PROJECT})
-_STATE = threading.Lock()
-_refreshed = False
 
 #: Core's ``refs``: the folder of reference files, and the lock every writer and pruner
 #: holds, waiting up to ten seconds. ``Core.refs`` holds it.
@@ -484,53 +481,47 @@ def unregister() -> Reference | None:
 
 
 def refresh() -> None:
-    """Keep a registered install's reference current, once per process.
+    """Keep a registered install's reference current: the CLI calls it on every start.
 
-    Rewrites the file when this run's version, layouts or plugins differ
-    from what it records; writes nothing for an install nobody registered.
-    The CLI calls it when a start composes afresh rather than from its kept
-    declaration (the first start after an install change) and each store
-    open calls it. Outside a run (a library call) or before anything is
-    composed it writes nothing and a later call tries again. Never raises:
-    a reference that cannot be refreshed waits for the next run.
+    Reads the file and rewrites it only when this run's version, layouts or
+    plugins differ from what it records, so a start where nothing changed
+    takes no lock and writes nothing; writes nothing for an install nobody
+    registered. The CLI calls it at dispatch, under the root composition,
+    so a store opened under a narrower one (a plugin check's) never records
+    that. Outside a run (a library call) or before anything is composed it
+    writes nothing. It never waits: a busy references lock, like a write
+    that fails, leaves the file to the next start. Never raises.
     """
-    global _refreshed
-    with _STATE:
-        if _refreshed:
-            return
-        _refreshed = True
-    done = False
     try:
-        done = _refresh()
-    except NoRunError:
-        pass
-    except (OSError, UntapedError) as exc:
-        done = True
+        _refresh()
+    except (OSError, UntapedError, NoRunError) as exc:
         _LOG.debug("could not refresh this install's reference: %s", exc)
-    if not done:
-        with _STATE:
-            _refreshed = False  # nothing to compare with yet: a later call refreshes
 
 
-def _refresh() -> bool:
-    """Refresh the reference; ``False`` when there is no composition to describe yet."""
+def _refresh() -> None:
     env = environment()
     if env is None:
-        return True
+        return
     holder = install_holder(env)
     file = reference_file(holder)  # outside a run (a library call): NoRunError, nothing written
     if not file.is_file():
-        return True
+        return
     targets, plugins = composed_targets(), composed_plugins()
     if targets is None or plugins is None:
-        return False  # no composition to describe: keep what the file says
-    current = read_reference(file)
-    if current.opaque is None and _recorded(current) == (_version(), targets, plugins):
-        return True
-    with locked():
-        if file.is_file():
+        return  # no composition to describe: keep what the file says
+    if _current(file, targets, plugins):
+        return
+    REFS.open()
+    with REFS.try_locked() as held:
+        # Busy: another process writes or prunes, and the next start compares again.
+        if held and file.is_file() and not _current(file, targets, plugins):
             _write(holder, env, targets, plugins)
-    return True
+
+
+def _current(file: Path, targets: Sequence[RefTarget], plugins: Sequence[str]) -> bool:
+    """Whether ``file`` already records this run's version, ``targets`` and ``plugins``."""
+    found = read_reference(file)
+    return found.opaque is None and _recorded(found) == (_version(), tuple(targets), tuple(plugins))
 
 
 @contextmanager
@@ -555,7 +546,7 @@ def write_reference(
     moved_from: Sequence[Path] = (),
     plugin: str | None = None,
     version: str | None = None,
-    plugins: Sequence[str] | None = (),
+    plugins: Sequence[str] | None = None,
 ) -> Path:
     """Write one holder's reference file, ``refs/<kind>-<name>.json``; return its path.
 
@@ -565,7 +556,8 @@ def write_reference(
     ``anchor_id`` records the anchor's filesystem identity (a project's), and
     ``moved_from`` where it was before each move not yet fully repaired;
     ``plugins`` names the plugins an install composes, written even when
-    empty; ``None`` leaves the key out, as a file that doesn't say.
+    empty (an install always writes it); ``None``, the default, leaves the
+    key out (a project's file has none).
     """
     data = _Stored(
         holder=holder.model_dump(),
@@ -660,13 +652,6 @@ def _names(value: object) -> tuple[str, ...] | Literal[False] | None:
 
 def _text(value: object) -> str:
     return value if isinstance(value, str) else ""
-
-
-def _forget() -> None:
-    """Let the next store open refresh again (``untaped.sdk.testing.plugin``)."""
-    global _refreshed
-    with _STATE:
-        _refreshed = False
 
 
 __all__ = ["RefHolder", "RefTarget", "holders"]

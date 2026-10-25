@@ -192,7 +192,8 @@ def test_a_live_install_that_does_not_list_its_plugins_keeps_every_folder(
     assert (row["action"], row["detail"]) == (
         "kept",
         f"untaped 12.0.0 at {tmp_path / 'tool'} may use it: {shown_path(file)} doesn't list "
-        "the plugins it composes",
+        "the plugins it composes; upgrade that install, or delete that file if the install "
+        "is gone",
     )
     assert (jira / "state.yml").exists()
 

@@ -141,14 +141,6 @@ def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> 
     assert "toyplug.plugin" in sys.modules
 
 
-def test_only_a_start_that_composes_afresh_says_so(toys: Path) -> None:
-    """The first start after an install change is fresh; one replaying the declaration isn't."""
-    toy = _package(toys, "toyplug")
-    assert compose_root(candidates=[toy]).fresh
-    _unload("toyplug")
-    assert not compose_root(candidates=[toy]).fresh
-
-
 def test_a_replayed_plugin_has_its_setting_ids_and_runs(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     compose_root(candidates=[toy])

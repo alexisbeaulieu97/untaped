@@ -280,9 +280,10 @@ one per item, `{"plugin": "git", "store": "store", "item":
 it holds layouts. An install's reference also lists the plugins it composes,
 `"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses; the
 list is always written, empty included, and a file without it doesn't say, so
-`setup prune` keeps every folder. An install refreshes its own reference on
-the first start after an install change and whenever a command opens a store,
-so an upgrade needs nothing more. Every install sharing a 12.0 home is a 12.0
+`setup prune` keeps every folder. Each start of an install compares its own
+reference with what it composes and rewrites it when they differ; when it
+can't (the references' lock is busy, say), the next start tries again. So an
+upgrade needs nothing more. Every install sharing a 12.0 home is a 12.0
 one: 11.1 refuses its config as newer, so it cannot run there.
 `holders(target)` (experimental) returns the `RefHolder` of each live
 reference that keeps a target, and raises while a reference cannot be read
@@ -322,10 +323,11 @@ you confirm (`--dry-run` previews, `--yes` skips the question). A folder goes
 whole, its data, caches and state included. It stays while a live reference
 names its plugin (another install sharing the home composes it, or a project
 or install holds its items or layouts), while any reference cannot be read or
-a live install's doesn't list its plugins, or when it is a symlink. Prune never touches anything outside `plugins/`, and
-checks each item again under the references' lock before removing it. In
-tests, `untaped.sdk.testing.write_reference` writes another install's
-reference, `plugins=` the plugins it composes.
+a live install's doesn't list its plugins, or when it is a symlink. Prune
+never touches anything outside `plugins/`, and checks each item again under
+the references' lock before removing it. In tests,
+`untaped.sdk.testing.write_reference` writes another install's reference,
+`plugins=` the plugins it composes.
 
 ## Other files your plugin keeps
 
