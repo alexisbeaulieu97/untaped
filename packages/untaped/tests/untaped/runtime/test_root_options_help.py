@@ -16,11 +16,7 @@ from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.root_options import (
-    _root_options,
-    _take_help_root_options,
-    applied_root_options,
-)
+from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk.marks import deprecated, show_deprecated
@@ -82,11 +78,6 @@ def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
     assert "Old." not in _help("svc", "--help")
 
 
-def _strip(tokens: list[str]) -> list[str]:
-    with applied_root_options(tokens, _root_options()) as line:
-        return _take_help_root_options(line.tokens, _root_options(), line)
-
-
 def test_the_pass_applies_a_root_option_after_the_root_s_help_for_the_block() -> None:
     with applied_root_options(["--help", "--verbose"], _root_options()) as line:
         assert is_verbose()
@@ -94,32 +85,11 @@ def test_the_pass_applies_a_root_option_after_the_root_s_help_for_the_block() ->
     assert not is_verbose()
 
 
-def test_help_strips_an_11x_command_s_root_options_around_it() -> None:
-    assert _strip(["svc", "--help", "--verbose"]) == ["svc", "--help"]
-    assert _strip(["svc", "--profile", "x", "--help"]) == ["svc", "--help"]
-    assert _strip(["--help", "svc", "--profile=x"]) == ["--help", "svc"]
-
-
 def test_conflicting_options_around_help_are_still_a_usage_error() -> None:
     result = CliInvoker().invoke(_root().meta, ["--verbose", "--help", "--quiet"])
 
     assert result.exit_code == 2
     assert "--verbose and --quiet cannot be combined" in result.stderr
-
-
-def test_tokens_after_the_separator_are_never_root_options() -> None:
-    tokens = ["svc", "--help", "--", "--verbose", "--deprecated"]
-
-    with applied_root_options(tokens, _root_options()) as line:
-        assert _take_help_root_options(line.tokens, _root_options(), line) == tokens
-        assert not is_verbose()
-        assert not show_deprecated()
-
-
-def test_without_help_the_tokens_are_left_to_the_normal_dispatch() -> None:
-    tokens = ["svc", "own", "--deprecated"]
-
-    assert _strip(tokens) == tokens
 
 
 def test_an_11x_command_s_homonymous_option_is_its_own() -> None:

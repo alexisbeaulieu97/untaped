@@ -284,8 +284,11 @@ def build_root_app(
     declaration, the others through the 11.x seam) and each validated
     plugin's sub-app under its plugin name, wires ``--version`` to installed-distribution
     metadata, installs position-independent root options, and registers shell
-    completion. Drive ``app.meta`` directly in tests; run via
-    :func:`run_root` in production.
+    completion. In tests, drive ``app.meta`` through
+    :class:`~untaped.sdk.testing.CliInvoker` (or
+    :func:`~untaped.sdk._cli.run_cyclopts_app`), never by calling it directly:
+    the root reads the tokens as given only there. Run via :func:`run_root`
+    in production.
     """
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
