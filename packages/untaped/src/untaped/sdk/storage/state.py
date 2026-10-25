@@ -37,6 +37,7 @@ from untaped.runtime.config_file import (
 )
 from untaped.runtime.settings import CORE_STATE_SECTIONS, RESERVED_SECTIONS, resolve_state_path
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import locked_write
@@ -702,7 +703,7 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
             None,
             self.omit_none,
             None,
-            project.root / DIRECTORY / "plugins" / plugin / _STATE_FILE,
+            project.root / DIRECTORY / PLUGINS_FOLDER / plugin / _STATE_FILE,
             own=True,
             remove=self.remove,
         )
@@ -861,7 +862,7 @@ def _plugin_state_path(plugin: str) -> Path:
     """``~/.untaped/plugins/<plugin>/state.yml``: the plugin's own rows."""
     from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
 
-    return current_run().home / "plugins" / plugin / _STATE_FILE
+    return current_run().home / PLUGINS_FOLDER / plugin / _STATE_FILE
 
 
 #: The key a state file keeps its stamp under (the data file format's).

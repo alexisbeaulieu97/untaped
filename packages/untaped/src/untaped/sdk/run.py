@@ -206,7 +206,9 @@ class PluginHandle:
     @property
     def dir(self) -> Path:
         """``~/.untaped/plugins/<name>/``: the plugin's own data. Not created here."""
-        return self.home / "plugins" / self.name
+        from untaped.sdk._home import PLUGINS_FOLDER  # noqa: PLC0415 - errors imports the run
+
+        return self.home / PLUGINS_FOLDER / self.name
 
     def committed(self, name: str, *, root: Path | None = None) -> Path:
         """``<root>/.untaped/<name>``: the plugin's files people write and may commit.

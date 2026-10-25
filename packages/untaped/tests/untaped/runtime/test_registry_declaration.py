@@ -22,6 +22,7 @@ from untaped.runtime.registry import (
     PluginSpec,
     named_plugin_dir,
 )
+from untaped.sdk._home import home
 from untaped.sdk.testing import CliInvoker
 
 PLUGIN = '''
@@ -120,6 +121,16 @@ def _unload(package: str) -> None:
 def _declarations() -> list[Path]:
     folder = named_plugin_dir("untaped") / "cached" / "declaration"
     return sorted(folder.glob("*.json")) if folder.is_dir() else []
+
+
+def test_cores_declaration_is_bound_where_it_is_declared() -> None:
+    from untaped.core.plugin import Core
+    from untaped.core.settings import DECLARATION
+
+    assert Core.declaration is DECLARATION
+    assert (DECLARATION.plugin, DECLARATION.name) == ("untaped", "declaration")
+    # read with no run, in the folder it always had
+    assert DECLARATION._folder() == home().expanduser() / "plugins/untaped/cached/declaration"
 
 
 def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> None:

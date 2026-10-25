@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._home import DEFAULT_HOME, home
+from untaped.sdk._home import DEFAULT_HOME, PLUGINS_FOLDER, home
 from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import atomic_write
@@ -89,11 +89,14 @@ CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
 #: What ``init`` keeps out of version control: the id and machine records, never config.
 #: Each is anchored at ``.untaped/``'s top level and named (core's lock files too), so a
 #: plugin's committed files (``recipe.lock``, ``awx/plugins/``) stay tracked.
-GITIGNORE = ("/project.json", "/state.yml", "/plugins/", *(f"/{name}" for name in CORE_LOCKS))
+GITIGNORE = (
+    "/project.json",
+    "/state.yml",
+    f"/{PLUGINS_FOLDER}/",
+    *(f"/{name}" for name in CORE_LOCKS),
+)
 #: The whole ``.gitignore`` ``init`` creates: those lines and itself.
 GITIGNORE_TEXT = "\n".join(("/.gitignore", *GITIGNORE)) + "\n"
-#: Folders under ``~/.untaped`` that are core's own, never a project.
-_CORE_FOLDERS = ("plugins",)
 
 _diag = Diagnostics()
 _SEEN: dict[str, Project] = {}
@@ -127,7 +130,7 @@ class Project(BaseModel):
 
     def plugin_dir(self, spec: PluginSpec) -> Path:
         """``<root>/.untaped/plugins/<name>/``: a plugin's machine files in this project."""
-        return self.root / DIRECTORY / "plugins" / spec.name
+        return self.root / DIRECTORY / PLUGINS_FOLDER / spec.name
 
     def hold(self, store: ItemStore[Any], item: object) -> None:
         """Hold ``item`` of ``store`` (an item store a composed plugin lists); idempotent.
@@ -793,9 +796,8 @@ def _reserved(folder: Path) -> str | None:
     for untaped in dict.fromkeys((current, default)):
         if folder == untaped:
             return f"it is {shown_path(untaped)}, untaped's own folder"
-        for name in _CORE_FOLDERS:
-            if folder.is_relative_to(untaped / name):
-                return f"{shown_path(untaped / name)} is untaped's own"
+        if folder.is_relative_to(untaped / PLUGINS_FOLDER):
+            return f"{shown_path(untaped / PLUGINS_FOLDER)} is untaped's own"
     if default.is_relative_to(folder):
         return f"it holds {shown_path(default)}, untaped's own folder"
     return None

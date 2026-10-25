@@ -46,7 +46,7 @@ from untaped.runtime.profile_resolver import (
 )
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
-from untaped.sdk._home import config_path, home
+from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
@@ -67,7 +67,7 @@ STATE_FILE_NAME = "state.yml"
 
 def plugins_root() -> Path:
     """The home's ``plugins/``: every plugin's folder, installed here or not."""
-    return home().expanduser() / "plugins"
+    return home().expanduser() / PLUGINS_FOLDER
 
 
 #: On-disk format of ``config.yml``: format 2 holds the base at the top level
