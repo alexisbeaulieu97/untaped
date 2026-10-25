@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
@@ -33,6 +33,7 @@ class Atlas(Plugin):
 
     settings = Settings
     maps = Dir(layout=3)
+    index = Dir(layout=2, file="index.sqlite3")
     notes = Dir()
     repos = Dir(items=str, release=let_go, moved=None)
 
@@ -63,6 +64,17 @@ def test_a_registered_install_prunes_the_layouts_nothing_holds(atlas: Install) -
         Atlas.maps.prune()
         assert not old.exists()
         assert Atlas.maps.path.is_dir()
+
+
+def test_a_numbered_file_prunes_its_other_layouts(atlas: Install) -> None:
+    with atlas.running():
+        Atlas.index.place.mkdir(parents=True)
+        old = Atlas.index.place / "index.v1.sqlite3"
+        old.write_text("old")
+        refs.register(refs.composed_targets() or ())
+        Atlas.index.open()
+        Atlas.index.prune()
+        assert not old.exists()
 
 
 def test_an_unregistered_install_keeps_them(atlas: Install) -> None:
@@ -111,6 +123,8 @@ def test_items_need_a_release_and_a_say_on_moves() -> None:
         Dir(items=str, release=let_go)
     with pytest.raises(TypeError, match="go with items="):
         Dir(moved=None)
+    with pytest.raises(TypeError, match="layout= and items= don't go together"):
+        Dir(layout=2, items=str, release=let_go, moved=None)
     with pytest.raises(TypeError, match="items takes str or a RootModel"):
         Dir(items=int, release=let_go, moved=None)  # type: ignore[arg-type]
 
@@ -118,3 +132,13 @@ def test_items_need_a_release_and_a_say_on_moves() -> None:
 def test_a_place_without_items_holds_nothing(atlas: Install) -> None:
     with atlas.running(), pytest.raises(Exception, match="declares no items="):
         Atlas.maps.items()
+
+
+class RepoKey(RootModel[str]):
+    """A repo, as its owner names it."""
+
+
+def test_items_can_be_a_root_model(atlas: Install) -> None:
+    keys = Dir(items=RepoKey, release=let_go, moved=None)._spelled_as("atlas", "keys")
+    with atlas.running():
+        assert keys.items().item is RepoKey

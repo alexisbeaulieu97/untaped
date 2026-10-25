@@ -282,19 +282,13 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
             if block.block in kinds and (block.block != "dir" or block.layout or block.items)
         ]
         blocks = DeclaredBlocks(
-            # a Dir both numbered and holding items lists two stores: its layouts, its items
-            tuple(f"{name}.{block.name}" for block in declared for _ in range(_listed(block))),
+            tuple(f"{name}.{block.name}" for block in declared),
             partial(lambda field: loaded()[field], field_name),
             timed=_timed_caches(name, declared) if field_name == "caches" else (),
         )
         # the spec's own checks read every block, so the lazy ones go in after them
         object.__setattr__(spec, field_name, blocks)
     return spec
-
-
-def _listed(block: BlockDecl) -> int:
-    """How many spec entries a declared block makes: two for a numbered Dir holding items."""
-    return (block.layout is not None) + block.items if block.block == "dir" else 1
 
 
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:
@@ -343,10 +337,10 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
         field = _SPEC_FIELDS.get(decl.block)
         if isinstance(block, Dir):
             spelled = block._spelled_as(name, decl.name)
-            if block.layout is not None:
-                blocks["stores"].append(spelled._layouts())
-            if block.item_type is not None:
-                blocks["stores"].append(spelled.items())
+            if block.layout is not None or block.item_type is not None:
+                blocks["stores"].append(
+                    spelled._layouts() if block.layout is not None else spelled.items()
+                )
         elif isinstance(block, OwnedBlock) and field is not None:
             blocks[field].append(block._spelled_as(name, decl.name))
     return {field: tuple(each) for field, each in blocks.items()}

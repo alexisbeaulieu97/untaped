@@ -11,7 +11,7 @@ different layouts never open each other's data and nothing numbered lands
 beside the user's folder (a numbered ``at=`` place keeps its in-use files
 there too). References name a numbered place's layout, and ``prune()`` removes
 the layouts nothing holds once the plugin has refreshed its own. ``items=``
-lets other installs' holders hold things in the place (a ``str`` or
+lets holders (projects) hold things in an unnumbered place (a ``str`` or
 ``RootModel[str]`` type, with ``release=`` and ``moved=`` as an
 :class:`~untaped.sdk.storage.holds.ItemStore` takes them); ``items()`` is that
 item store. ``open()`` gives the path, and ``locked(name)`` holds the operation
@@ -79,6 +79,11 @@ class Dir(OwnedBlock):
             raise TypeError(f"Dir: file takes one file name, not {file!r}")
         if wait is not None and (not isinstance(wait, timedelta) or wait < timedelta(0)):
             raise TypeError(f"Dir: wait takes a timedelta of zero or more, not {wait!r}")
+        if items is not None and layout is not None:
+            raise TypeError(
+                "Dir: layout= and items= don't go together: holders hold things by name, "
+                "so the things in an items= place are not numbered"
+            )
         if items is None and (release is not None or moved is not _UNSET):
             raise TypeError("Dir: release= and moved= go with items=, the type others hold")
         if items is not None and (release is None or moved is _UNSET):
@@ -119,12 +124,12 @@ class Dir(OwnedBlock):
         return None
 
     def problems(self) -> tuple[str, ...]:
-        if self.layout is None:
+        if self.layout is None and self.item_type is None:
             return ()
-        from untaped.sdk.storage.store import valid_store_name  # noqa: PLC0415 - numbered only
+        from untaped.sdk.storage.store import valid_store_name  # noqa: PLC0415 - stores only
 
         return tuple(
-            f"a numbered Dir is named [a-z][a-z0-9_]*, not {name!r}"
+            f"a Dir with layout= or items= is named [a-z][a-z0-9_]*, not {name!r}"
             for name in (self.derived_name(binding.attribute) for binding in self.bindings)
             if not valid_store_name(name)
         )
@@ -188,14 +193,14 @@ class Dir(OwnedBlock):
         A numbered place only, as a store prunes (:meth:`Store.prune`): only a
         registered install prunes, only after this process opened the place,
         and never a layout a reference names or another process has open.
-        Never raises.
+        Never raises for a numbered place.
         """
         if self.layout is None:
             raise ConfigError(f"{self._label} is not numbered, so it has no other layouts")
         self._store().prune()
 
     def items(self) -> ItemStore[Any]:
-        """The things other installs' holders hold here, as an item store (``items=`` only)."""
+        """The things holders (projects) hold here, as an item store (``items=`` only)."""
         from untaped.sdk.storage.holds import ItemStore  # noqa: PLC0415 - holds imports refs
 
         if self.item_type is None or self.release is None:
@@ -240,7 +245,8 @@ class Dir(OwnedBlock):
         Waits up to the declared ``wait=`` for another process, then fails
         with ``<plugin>.<dir> '<name>' is busy (another untaped process)``.
         Taking it again in one thread only counts. The place's own lock and
-        its things' locks are separate: a plugin uses one or the other.
+        its things' locks are separate locks, so holding one never waits on
+        the other.
         """
         if self.wait is None:
             raise ConfigError(

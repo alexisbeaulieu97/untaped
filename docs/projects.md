@@ -127,8 +127,10 @@ the project root, as `uv` finds a project from a worktree inside it.
 ## Holding a plugin's items
 
 A plugin that keeps items for projects (workspace keeps their repos) is
-their owner: it declares an `ItemStore` on `PluginSpec.stores` and says how
-a project lets go of an item, and whether a moved project needs repair.
+their owner: it declares an `ItemStore` on `PluginSpec.stores` (a 12.0
+plugin class declares `repos = Dir(items=RepoKey, release=..., moved=...)`,
+and `items()` is the store) and says how a project lets go of an item, and
+whether a moved project needs repair.
 
 ```python
 from untaped.sdk import ItemStore, LetGo, MoveAsk, Refused, ReleaseAsk

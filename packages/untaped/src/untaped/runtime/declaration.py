@@ -146,7 +146,7 @@ class BlockDecl(_Frozen):
     cache: CacheDecl | None = None
     #: A numbered ``Dir``'s layout (the oldest its code opens): what references name.
     layout: int | None = None
-    #: Whether a ``Dir`` declares ``items=``: things other installs' holders hold.
+    #: Whether a ``Dir`` declares ``items=``: things holders (projects) hold.
     items: bool = False
 
 
