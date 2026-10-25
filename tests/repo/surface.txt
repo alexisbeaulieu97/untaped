@@ -4211,20 +4211,6 @@ cli untaped setup --format choice=raw
 cli untaped setup --format choice=table
 cli untaped setup --format choice=yaml
 cli untaped setup --only VALUE... default=unset
-cli untaped setup migrate-dirs
-cli untaped setup migrate-dirs --columns VALUE... default=unset
-cli untaped setup migrate-dirs --columns alias=-c
-cli untaped setup migrate-dirs --dissociate switch
-cli untaped setup migrate-dirs --dry-run switch
-cli untaped setup migrate-dirs --format VALUE default=table
-cli untaped setup migrate-dirs --format alias=-f
-cli untaped setup migrate-dirs --format choice=json
-cli untaped setup migrate-dirs --format choice=pipe
-cli untaped setup migrate-dirs --format choice=raw
-cli untaped setup migrate-dirs --format choice=table
-cli untaped setup migrate-dirs --format choice=yaml
-cli untaped setup migrate-dirs --yes alias=-y
-cli untaped setup migrate-dirs --yes switch
 cli untaped setup plan
 cli untaped setup plan --check switch
 cli untaped setup plan --columns VALUE... default=unset
@@ -4707,12 +4693,12 @@ record untaped.project_outcome.path string  [experimental]
 record untaped.pruned
 record untaped.pruned.bytes integer
 record untaped.pruned.hint string?
-record untaped.pruned.layout integer?
+record untaped.pruned.layout integer
 record untaped.pruned.level choice=info
 record untaped.pruned.message string
 record untaped.pruned.path string
 record untaped.pruned.plugin string
-record untaped.pruned.store string?
+record untaped.pruned.store string
 record untaped.recorded_project  [experimental]
 record untaped.recorded_project.current boolean  [experimental]
 record untaped.recorded_project.detail string?  [experimental]
@@ -5105,24 +5091,6 @@ sdk untaped.sdk.Dir.spelled  [experimental]
 sdk untaped.sdk.Dir.try_locked()  [experimental]
 sdk untaped.sdk.Dir.try_locked(name@1=) default=None  [experimental]
 sdk untaped.sdk.Dir.where  [experimental]
-sdk untaped.sdk.DirMigration(*, title, preview, apply) callback(preview, 2) callback(apply, 2)
-sdk untaped.sdk.DirMigration(id@1=) default=None
-sdk untaped.sdk.DirMigration.apply
-sdk untaped.sdk.DirMigration.binding
-sdk untaped.sdk.DirMigration.bindings
-sdk untaped.sdk.DirMigration.block_kind class
-sdk untaped.sdk.DirMigration.derived_name(attribute)
-sdk untaped.sdk.DirMigration.id
-sdk untaped.sdk.DirMigration.module
-sdk untaped.sdk.DirMigration.name
-sdk untaped.sdk.DirMigration.name_problem(name)
-sdk untaped.sdk.DirMigration.name_style class
-sdk untaped.sdk.DirMigration.plugin
-sdk untaped.sdk.DirMigration.preview
-sdk untaped.sdk.DirMigration.problems()
-sdk untaped.sdk.DirMigration.spelled
-sdk untaped.sdk.DirMigration.title
-sdk untaped.sdk.DirMigration.where
 sdk untaped.sdk.DoctorCheck(*, title, run) callback(run, 1)
 sdk untaped.sdk.DoctorCheck(id@1=) default=None
 sdk untaped.sdk.DoctorCheck(online=) default=false
@@ -5537,34 +5505,6 @@ sdk untaped.sdk.Message.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Message.hint
 sdk untaped.sdk.Message.level
 sdk untaped.sdk.Message.message
-sdk untaped.sdk.MigrationOptions()
-sdk untaped.sdk.MigrationOptions(dissociate=) default=false
-sdk untaped.sdk.MigrationOptions(dry_run=) default=false
-sdk untaped.sdk.MigrationOptions(measure=) default=true
-sdk untaped.sdk.MigrationOptions.dissociate
-sdk untaped.sdk.MigrationOptions.dry_run
-sdk untaped.sdk.MigrationOptions.measure
-sdk untaped.sdk.MigrationOutcome(*, action)
-sdk untaped.sdk.MigrationOutcome(detail=) default=""
-sdk untaped.sdk.MigrationOutcome(error=) default=None
-sdk untaped.sdk.MigrationOutcome(id=) default=""
-sdk untaped.sdk.MigrationOutcome.__init_subclass__(kind=) default=None
-sdk untaped.sdk.MigrationOutcome.action
-sdk untaped.sdk.MigrationOutcome.detail
-sdk untaped.sdk.MigrationOutcome.error
-sdk untaped.sdk.MigrationOutcome.failed
-sdk untaped.sdk.MigrationOutcome.id
-sdk untaped.sdk.MigrationOutcome.table_columns class
-sdk untaped.sdk.MigrationRow(*, action)
-sdk untaped.sdk.MigrationRow(bytes=) default=0
-sdk untaped.sdk.MigrationRow(destination=) default=""
-sdk untaped.sdk.MigrationRow(detail=) default=""
-sdk untaped.sdk.MigrationRow(source=) default=""
-sdk untaped.sdk.MigrationRow.action
-sdk untaped.sdk.MigrationRow.bytes
-sdk untaped.sdk.MigrationRow.destination
-sdk untaped.sdk.MigrationRow.detail
-sdk untaped.sdk.MigrationRow.source
 sdk untaped.sdk.MoveAsk(*, item, holder, others, moved_from)  [experimental]
 sdk untaped.sdk.MoveAsk.holder  [experimental]
 sdk untaped.sdk.MoveAsk.item  [experimental]
@@ -5851,21 +5791,20 @@ sdk untaped.sdk.PluginContext.owner
 sdk untaped.sdk.PluginContext.plugin
 sdk untaped.sdk.PluginContext.settings
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
-sdk untaped.sdk.PluginSpec(caches@12=) default=[]
+sdk untaped.sdk.PluginSpec(caches@11=) default=[]
 sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(credentials@14=) default=[]
-sdk untaped.sdk.PluginSpec(deprecations@15=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(credentials@13=) default=[]
+sdk untaped.sdk.PluginSpec(deprecations@14=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(doctor_checks@6=) default=[]
-sdk untaped.sdk.PluginSpec(guides@16=) default=None
+sdk untaped.sdk.PluginSpec(guides@15=) default=None
 sdk untaped.sdk.PluginSpec(help@7=) default=None
-sdk untaped.sdk.PluginSpec(migrations@11=) default=[]
 sdk untaped.sdk.PluginSpec(name)
 sdk untaped.sdk.PluginSpec(provides@10=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(settings@3=) default=None
 sdk untaped.sdk.PluginSpec(skills@5=) default=[]
 sdk untaped.sdk.PluginSpec(stability@8=) default=None
 sdk untaped.sdk.PluginSpec(state@4=) default=None
-sdk untaped.sdk.PluginSpec(stores@13=) default=[]
+sdk untaped.sdk.PluginSpec(stores@12=) default=[]
 sdk untaped.sdk.PluginSpec.app_factory
 sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
@@ -5874,7 +5813,6 @@ sdk untaped.sdk.PluginSpec.deprecations()
 sdk untaped.sdk.PluginSpec.doctor_checks
 sdk untaped.sdk.PluginSpec.guides
 sdk untaped.sdk.PluginSpec.help
-sdk untaped.sdk.PluginSpec.migrations
 sdk untaped.sdk.PluginSpec.name
 sdk untaped.sdk.PluginSpec.provides
 sdk untaped.sdk.PluginSpec.settings
@@ -6265,12 +6203,9 @@ sdk untaped.sdk.StdinInput(values, records)
 sdk untaped.sdk.StdinInput.records
 sdk untaped.sdk.StdinInput.values
 sdk untaped.sdk.StdinOption
-sdk untaped.sdk.Store(bare=) default=None  [experimental]
 sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Store(layout=) default=1  [experimental]
 sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
-sdk untaped.sdk.Store.adopts  [experimental]
-sdk untaped.sdk.Store.bare  [experimental]
 sdk untaped.sdk.Store.base  [experimental]
 sdk untaped.sdk.Store.keep  [experimental]
 sdk untaped.sdk.Store.kept(path)  [experimental]
@@ -6707,14 +6642,10 @@ sdk untaped.sdk.contracts.listing(fn, /)
 sdk untaped.sdk.contracts.providing(candidates=) default=None
 sdk untaped.sdk.contracts.providing(owner, offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
-sdk untaped.sdk.copy_data_file(source, target)  [experimental]
 sdk untaped.sdk.create_app(*, name)
 sdk untaped.sdk.create_app(help=) default=""
 sdk untaped.sdk.create_app(stability=) default=None
 sdk untaped.sdk.current_project()  [experimental]
-sdk untaped.sdk.delete_migration(detail=) default=""
-sdk untaped.sdk.delete_migration(guard=) default=None callback(1)
-sdk untaped.sdk.delete_migration(id, title, paths) callback(paths, 0)
 sdk untaped.sdk.deprecated()
 sdk untaped.sdk.deprecated(removed_in=) default=None
 sdk untaped.sdk.deprecated(replacement=) default=None callback(*)
@@ -6790,24 +6721,6 @@ sdk untaped.sdk.git.safe_path_segment(value)
 sdk untaped.sdk.git_toplevel(git=) default=git
 sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
-sdk untaped.sdk.health.DirMigration(*, title, preview, apply) callback(preview, 2) callback(apply, 2)
-sdk untaped.sdk.health.DirMigration(id@1=) default=None
-sdk untaped.sdk.health.DirMigration.apply
-sdk untaped.sdk.health.DirMigration.binding
-sdk untaped.sdk.health.DirMigration.bindings
-sdk untaped.sdk.health.DirMigration.block_kind class
-sdk untaped.sdk.health.DirMigration.derived_name(attribute)
-sdk untaped.sdk.health.DirMigration.id
-sdk untaped.sdk.health.DirMigration.module
-sdk untaped.sdk.health.DirMigration.name
-sdk untaped.sdk.health.DirMigration.name_problem(name)
-sdk untaped.sdk.health.DirMigration.name_style class
-sdk untaped.sdk.health.DirMigration.plugin
-sdk untaped.sdk.health.DirMigration.preview
-sdk untaped.sdk.health.DirMigration.problems()
-sdk untaped.sdk.health.DirMigration.spelled
-sdk untaped.sdk.health.DirMigration.title
-sdk untaped.sdk.health.DirMigration.where
 sdk untaped.sdk.health.DoctorCheck(*, title, run) callback(run, 1)
 sdk untaped.sdk.health.DoctorCheck(id@1=) default=None
 sdk untaped.sdk.health.DoctorCheck(online=) default=false
@@ -6902,11 +6815,6 @@ sdk untaped.sdk.key(model)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.known_projects()  [experimental]
 sdk untaped.sdk.most_severe(errors)
-sdk untaped.sdk.move_migration(detail=) default=""
-sdk untaped.sdk.move_migration(guard=) default=None callback(1)
-sdk untaped.sdk.move_migration(id, title, moves) callback(moves, 0)
-sdk untaped.sdk.move_migration(replaceable=) default=None callback(1)
-sdk untaped.sdk.move_migration(sidecars=) default=[]
 sdk untaped.sdk.nearest_pyproject(start)
 sdk untaped.sdk.network.Credential(*, key)
 sdk untaped.sdk.network.Credential(env=) default=[]
@@ -7026,10 +6934,8 @@ sdk untaped.sdk.network.rejected_token_error(field=) default=token
 sdk untaped.sdk.network.rejected_token_error(section, message)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
-sdk untaped.sdk.old_dirs(default, section, key)
 sdk untaped.sdk.online_check(check_id, *, section, probe) callback(probe, 0)
 sdk untaped.sdk.online_check(title=) default=None
-sdk untaped.sdk.other_layouts_migration(store)  [experimental]
 sdk untaped.sdk.paginate_link(http, path)
 sdk untaped.sdk.paginate_link(item_key=) default=None
 sdk untaped.sdk.paginate_link(limit=) default=None
@@ -7625,7 +7531,6 @@ sdk untaped.sdk.ui_context(stdout=) default=None
 sdk untaped.sdk.ui_context(strict=) default=true
 sdk untaped.sdk.ui_context(theme=) default=None
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
-sdk untaped.sdk.unsafe_dir(path)
 sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
 sdk untaped.sdk.write_data_file(path, value)  [experimental]
 sdk untaped.sdk.write_data_file(refreshed_at=) default=None  [experimental]

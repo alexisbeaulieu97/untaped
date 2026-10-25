@@ -1,4 +1,4 @@
-"""A plugin class's doctor checks and migrations: their ids come from the attribute and the run."""
+"""A plugin class's doctor checks: their ids come from the attribute and the run."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
-from untaped.sdk import DirMigration, DoctorCheck, DoctorResult, Plugin
+from untaped.sdk import DoctorCheck, DoctorResult, Plugin
 from untaped.sdk.health.doctor import executable_check
 from untaped.sdk.run import run_scope
 
@@ -25,19 +25,16 @@ class Demo(Plugin):
 
     settings = DemoSettings
     repo_store = DoctorCheck(title="repo store", run=_fine)
-    greetings = DirMigration(title="greetings", preview=lambda *_: [], apply=lambda *_: [])
 
 
-def test_a_plugin_classs_check_and_migration_take_kebab_ids(tmp_path: Path) -> None:
+def test_a_plugin_classs_check_takes_a_kebab_id(tmp_path: Path) -> None:
     with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
         assert Demo.repo_store.id == "demo.repo-store"
-        assert Demo.greetings.id == "demo.greetings"
         assert repr(Demo.repo_store).startswith("DoctorCheck('DoctorCheck created in ")
 
 
-def test_a_check_and_a_migration_record_the_module_creating_them() -> None:
+def test_a_check_records_the_module_creating_it() -> None:
     assert Demo.repo_store.module == __name__
-    assert Demo.greetings.module == __name__
     assert executable_check("demo.git", "git", purpose="cloning").module == __name__
 
 
@@ -46,11 +43,3 @@ def test_the_11x_spelling_keeps_its_id() -> None:
     shell = DoctorCheck("config", title="config", run=_fine)
     assert (shell.id, repr(shell)) == ("config", "DoctorCheck('config', title='config')")
     assert DoctorCheck("a.", title="t", run=_fine).id == "a."
-    migration = DirMigration(
-        "hello.greetings", title="t", preview=lambda *_: [], apply=lambda *_: []
-    )
-    assert (migration.plugin, migration.name, migration.id) == (
-        "hello",
-        "greetings",
-        "hello.greetings",
-    )

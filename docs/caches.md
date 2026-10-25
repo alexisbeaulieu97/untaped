@@ -256,16 +256,6 @@ A cache that describes a store follows it, `Cache(..., store=CATALOGUE)`: its
 files live in `cached/<name>.v<layout>/`, so a key is never fresh over
 another layout's file. An answer cache (`@cached`) follows no store.
 
-A store that predates 11.1 declares what its bare file holds: `bare=4` says a
-file at `base` itself, with no layout in its name, was written at layout 4.
-The first `open()` at that layout renames it to the layout's name, same
-bytes, no rebuild, and removes the folders untaped 11.0 kept for the caches
-that follow the store: an 11.0 run would call the file it rebuilds fresh.
-Reseed what you can from the data itself (`seed()`). While
-another process has it open, or a SQLite `-journal`, `-wal` or `-shm` sits
-beside it, `open()` returns the bare path and a later open renames it. A
-store born in 11.1 or later leaves `bare` unset.
-
 A SQLite store whose schema grows inside one layout pins its history with
 `untaped.sdk.testing.assert_schema_pinned(ddl, version=, additive_since=,
 pins=)`: a folder of `v<N>.sql` files, one per released schema, and a
@@ -296,7 +286,7 @@ its folder still holds an untaped install; one written by a newer untaped, or
 one this untaped cannot read, is kept as if live and pauses all cleanup until
 this install is upgraded. A reference of a kind this untaped does not know,
 written by a later untaped, is always live and keeps the targets it can read;
-in this file format it never pauses cleanup and is never offered for removal.
+in this file format it never pauses cleanup and is never removed.
 
 Cleanup is automatic. After a fill completes (a cache that follows the store
 refreshed with no error, nothing partial), a registered install removes every
@@ -308,11 +298,6 @@ lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
 unregistered install, or one run from a source tree, never removes anything,
 and neither does any install while `refs/` cannot be read.
 
-The same goes for the `caches/` folder untaped 11.0 kept in each plugin's
-folder, which no later release reads: after any of the plugin's caches
-completes a fill, a registered install removes it, with one `untaped.pruned`
-line whose `store` and `layout` are `null`.
-
 A layout a setting may point at, such as an index path a profile sets to an
 older layout's file, is that profile's data. `Store(..., keep=…)` says so: a
 function of a layout's path returning why it stays, or `None`;
@@ -322,17 +307,10 @@ a `keep` that raises keeps the path too.
 
 What the cleanup will not remove on its own (no registered install keeps the
 store, a running untaped has it open, a damaged in-use lock, a reference it
-cannot read) the `stores` row names with its reason. For the layouts nobody
-holds, a store's plugin adds `other_layouts_migration(STORE)` (experimental)
-to its `migrations`: `untaped setup migrate-dirs` then offers each one as a
-`<plugin>.<store>-layouts` delete row with that reason. It keeps a symlink,
-anything `keep` names, and every layout while `refs/` or a reference cannot
-be read, since who holds it is unknown then. The references of installs that
-are gone are core's `untaped.references` row, and `untaped doctor`'s
-`references` row lists every reference. A plugin uninstalled here leaves its
-`cached/` folder, since another install sharing the home may still use it:
-`doctor`'s `caches` row notes it, and core's `untaped.uninstalled-caches`
-row offers to delete it. In tests,
+cannot read) the `stores` row names with its reason, and `untaped doctor`'s
+`references` row lists every reference, a dead one included. A plugin
+uninstalled here leaves its `cached/` folder, since another install sharing
+the home may still use it: `doctor`'s `caches` row notes it. In tests,
 `untaped.sdk.testing.write_reference` writes another install's reference.
 
 ## Other files your plugin keeps
@@ -350,8 +328,7 @@ untaped version that wrote it), `Absent()`,
 `Unreadable(reason)` or `OtherVersion(file, by)` when a newer untaped wrote
 it, so a damaged file is never mistaken for a missing one. A file an earlier
 release of yours wrote without the stamp reads with `unstamped="accept"`, in
-the model's shape. `copy_data_file(source, target)` copies one with its
-freshness cleared. A model may not name a field `untaped`: that key is the
+the model's shape. A model may not name a field `untaped`: that key is the
 stamp's.
 
 A 12.0 plugin names the file and its model once: `DataFile[Mark].at(path)`

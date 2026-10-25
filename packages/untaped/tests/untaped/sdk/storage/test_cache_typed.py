@@ -19,10 +19,9 @@ from pydantic import BaseModel
 from untaped.runtime.registry import named_plugin_dir
 from untaped.runtime.sink import diagnostics_scope, recording
 from untaped.sdk.contracts import cached
-from untaped.sdk.diagnostic import Diagnostic, Pruned, StaleData
+from untaped.sdk.diagnostic import Diagnostic, StaleData
 from untaped.sdk.errors import ConfigError, HttpTransportError
 from untaped.sdk.progress import ProgressHandle
-from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage import data_file
 from untaped.sdk.storage._digest import settings_digest
 from untaped.sdk.storage.cache import Cache, Filled, Freshness, NeverRefreshed
@@ -507,42 +506,3 @@ def test_forget_leaves_a_key_whose_name_reads_like_a_version_of_another(
     assert plain.seed("x.vdeadbeef", refreshed_at=START)
     plain.forget("x")
     assert plain.freshness("x.vdeadbeef").refreshed_at == START
-
-
-# --- 11.0's caches/ ------------------------------------------------------------------
-
-
-def _legacy() -> Path:
-    folder = named_plugin_dir("toy") / "caches" / "snapshots" / "default"
-    folder.mkdir(parents=True)
-    (folder / "https___c.example.json").write_text('{"untaped": "1"}', encoding="utf-8")
-    return folder.parent.parent
-
-
-def test_a_registered_install_removes_11_0s_caches_folder_after_a_complete_fill(
-    clock: CacheClock, up: Controller
-) -> None:
-    legacy = _legacy()
-    refs.register([])
-
-    _, emitted = _serve(up)
-
-    assert not legacy.exists()
-    [line] = [each for each in emitted if isinstance(each, Pruned)]
-    assert (line.plugin, line.store, line.layout, line.path) == ("toy", None, None, str(legacy))
-    assert line.bytes == len('{"untaped": "1"}')
-    assert "left by untaped 11.0" in line.message
-
-
-def test_an_unregistered_install_or_a_failed_fill_keeps_it(
-    clock: CacheClock, up: Controller
-) -> None:
-    legacy = _legacy()
-    _serve(up)
-    assert legacy.is_dir()
-
-    refs.register([])
-    clock.advance(timedelta(hours=2))
-    up.error = HttpTransportError("connection refused", system="toy")
-    _serve(up)
-    assert legacy.is_dir()

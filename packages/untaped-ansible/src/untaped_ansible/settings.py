@@ -150,13 +150,10 @@ def default_index_path() -> Path:
 #: (``index.v4.sqlite3``). The layout is ``sqlite_schema.ADDITIVE_SINCE``
 #: (a test holds them equal; importing the schema here would load the
 #: plugin's infrastructure at startup), not the schema version: an additive
-#: schema change keeps sharing the layout's file. ``bare=4``: 11.0 kept
-#: layout 4 at ``index.sqlite3``, renamed on first open. A layout any
-#: profile points ``ansible.index_path`` at is that profile's index: it stays.
+#: schema change keeps sharing the layout's file. A layout any profile
+#: points ``ansible.index_path`` at is that profile's index: it stays.
 INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
-INDEX_STORE = Store(
-    "ansible", "index", base=default_index_path, layout=4, bare=4, keep=INDEX_PATH_GUARD
-)
+INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, keep=INDEX_PATH_GUARD)
 
 
 def parser_version() -> str:

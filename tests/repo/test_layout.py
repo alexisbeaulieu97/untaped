@@ -47,7 +47,6 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk.health._setup_status",
         "untaped.sdk.health.deprecated_keys",
         "untaped.sdk.health.doctor",
-        "untaped.sdk.health.migrations",
         "untaped.sdk.marks",
         "untaped.sdk.network._credential_store",
         "untaped.sdk.network.auth",

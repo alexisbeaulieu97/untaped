@@ -557,11 +557,11 @@ def profile_sections(
 def retired_values(section: str, key: str) -> tuple[object, ...]:
     """The values config.yml still sets for ``<section>.<key>``, distinct, ``default``'s first.
 
-    For a deleted key (a :class:`Retired` entry): no settings model reads
-    it, but a plugin may need the old value once, as ``setup migrate-dirs``
-    needs a custom root a deleted ``cache_dir`` named. ``key`` may be dotted.
-    Read from the file as written, every profile, never validated; empty
-    once ``config migrate`` has deleted the key.
+    Every profile's value, not only the active one's, and a deleted key's
+    too (a :class:`Retired` entry no settings model reads), as a store's
+    ``keep`` needs them (:func:`~untaped.sdk.storage.store.setting_guard`).
+    ``key`` may be dotted. Read from the file as written, every profile,
+    never validated; empty once ``config migrate`` has deleted the key.
     """
     from untaped.runtime.config_file import (  # noqa: PLC0415 - config_file imports settings
         read_config_dict,

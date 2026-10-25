@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import write_config
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import (
     DeletedKey,
@@ -19,6 +21,7 @@ from untaped.sdk.health.deprecated_keys import (
     mapping_errors,
     migration_moves,
     rename_keys,
+    retired_values,
     scan_keys,
 )
 from untaped.sdk.marks import deprecated
@@ -282,3 +285,14 @@ def test_scan_reports_deleted_keys_with_their_note() -> None:
 
     assert (found.old, found.new, found.kind) == ("older_path", None, "deleted")
     assert found.message == "deleted in 11.0 (via store_path); the store lives elsewhere"
+
+
+def test_a_deleted_keys_values_are_still_found_in_every_profile(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nalpha:\n  cache_dir: ~/one\n"
+        "profiles:\n  work:\n    alpha:\n      cache_dir: ~/two\n"
+        "  home:\n    alpha:\n      cache_dir: ~/one\n",
+    )
+
+    assert retired_values("alpha", "cache_dir") == ("~/one", "~/two")

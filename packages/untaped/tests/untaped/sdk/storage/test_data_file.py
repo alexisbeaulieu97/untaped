@@ -22,7 +22,6 @@ from untaped.sdk.storage.data_file import (
     Lines,
     OtherVersion,
     Unreadable,
-    copy_data_file,
     read_data_file,
     read_lines,
     type_hash,
@@ -163,45 +162,12 @@ def test_without_hard_links_an_exclusive_create_stands_in(
     assert _mode(file) == 0o600
 
 
-def test_a_copy_keeps_the_data_and_clears_its_freshness(tmp_path: Path) -> None:
-    source, target = tmp_path / "a.json", tmp_path / "b" / "a.json"
-    write_data_file(source, Mark(history="complete"), refreshed_at=WHEN)
-    copy_data_file(source, target)
-    assert read_data_file(target, Mark) == Found(Mark(history="complete"), by=written_by())
-    assert _mode(target) == 0o600
-
-
 def test_found_names_the_untaped_its_stamp_names(tmp_path: Path) -> None:
     file = tmp_path / "mark.json"
     file.write_text('{"untaped": {"file": 1, "by": "11.3.0"}}', encoding="utf-8")
     assert read_data_file(file, Mark) == Found(Mark(), by="11.3.0")
     file.write_text('{"untaped": {"file": 1}}', encoding="utf-8")
     assert read_data_file(file, Mark) == Found(Mark())  # a stamp that names none
-
-
-def test_a_copy_of_an_unstamped_file_gets_this_releases_stamp(tmp_path: Path) -> None:
-    source, target = tmp_path / "a.json", tmp_path / "b.json"
-    source.write_text('{"history": "complete", "fetched": 1}', encoding="utf-8")
-    copy_data_file(source, target)
-    assert json.loads(target.read_text()) == {
-        "untaped": {"file": 1, "by": written_by()},
-        "history": "complete",
-        "fetched": 1,
-    }
-    source.write_text("[]", encoding="utf-8")
-    with pytest.raises(ValueError, match="is not a JSON object"):
-        copy_data_file(source, target)
-
-
-def test_a_copy_refuses_a_newer_or_a_broken_stamp(tmp_path: Path) -> None:
-    source, target = tmp_path / "a.json", tmp_path / "b.json"
-    source.write_text('{"untaped": {"file": 2, "by": "12.0.0"}, "x": 1}', encoding="utf-8")
-    with pytest.raises(ValueError, match=r"newer untaped \(12\.0\.0\)"):
-        copy_data_file(source, target)
-    source.write_text('{"untaped": {"file": "one"}, "x": 1}', encoding="utf-8")
-    with pytest.raises(ValueError, match="names no format"):
-        copy_data_file(source, target)
-    assert not target.exists()
 
 
 def test_a_filesystem_that_refuses_modes_still_gets_the_file(

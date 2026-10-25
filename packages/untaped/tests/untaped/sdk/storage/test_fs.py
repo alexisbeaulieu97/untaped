@@ -12,6 +12,7 @@ import untaped.sdk.storage._fs as fs_module
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage._fs import (
     atomic_write,
+    dir_bytes,
     file_lock,
     is_write_temp,
     read_structured_file,
@@ -335,3 +336,13 @@ def test_a_write_in_flight_is_told_from_data(
     assert [is_write_temp(name) for name in seen] == [True]
     assert not is_write_temp("SKILL.md")
     assert not is_write_temp(".SKILL.md.untaped.tmp")
+
+
+def test_dir_bytes_counts_files_and_tolerates_what_is_missing(tmp_path: Path) -> None:
+    (tmp_path / "d" / "sub").mkdir(parents=True)
+    (tmp_path / "d" / "sub" / "f").write_text("abcd", encoding="utf-8")
+    (tmp_path / "file").write_text("ab", encoding="utf-8")
+
+    assert dir_bytes(tmp_path / "d") == 4
+    assert dir_bytes(tmp_path / "file") == 2
+    assert dir_bytes(tmp_path / "missing") == 0

@@ -1,9 +1,8 @@
-"""A 12.0 plugin class's blocks and kinds reach core's 11.x commands: config, setup, doctor."""
+"""A 12.0 plugin class's blocks and kinds reach core's 11.x commands: config and doctor."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
@@ -18,14 +17,10 @@ from untaped.sdk import (
     Credential,
     CredentialKey,
     DeprecatedBehaviour,
-    DirMigration,
     DoctorCheck,
     DoctorResult,
     Filled,
     Key,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
     Output,
     Plugin,
     PluginContext,
@@ -76,14 +71,6 @@ class Show(Command[KeeperSettings]):
         return Note(title="first")
 
 
-def _preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
-    return [MigrationRow(action="move", source="/old", destination="/new", bytes=0)]
-
-
-def _apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-    return [MigrationOutcome(id="keeper.old-notes", action="unchanged")]
-
-
 def _healthy(_ctx: PluginContext) -> DoctorResult:
     return DoctorResult(id="keeper.readable", ok=True, detail="the notes are readable")
 
@@ -94,7 +81,6 @@ class Keeper(Plugin):
     settings = KeeperSettings
     commands = (Read, Show)
     notes = NOTES
-    old_notes = DirMigration(title="notes into the plugin's folder", preview=_preview, apply=_apply)
     readable = DoctorCheck(title="notes are readable", run=_healthy)
     token = Credential(key=KeeperServer, env=("KEEPER_TOKEN",))
     plain_notes = DeprecatedBehaviour(removed_in=13, replacement="untaped keeper read")
@@ -118,14 +104,6 @@ def test_a_cache_on_the_class_has_its_setting_and_serves_under_the_plugin() -> N
     assert _run("keeper", "read").stdout == "filled 1\n"
     assert _run("keeper", "read").stdout == "filled 1\n"
     assert (Path.home() / ".untaped" / "plugins" / "keeper").is_dir()
-
-
-def test_a_migration_on_the_class_is_listed_by_setup() -> None:
-    preview = _run("setup", "migrate-dirs", "--dry-run", "--format", "json")
-    assert preview.exit_code == 0, preview.stderr
-    assert [(row["id"], row["action"]) for row in json.loads(preview.stdout)] == [
-        ("keeper.old-notes", "move")
-    ]
 
 
 def test_a_doctor_check_on_the_class_runs_under_its_id() -> None:

@@ -60,7 +60,6 @@ from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
 from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
-from untaped.sdk.health.migrations import DirMigration
 from untaped.sdk.marks import (
     Deprecated,
     DeprecatedBehaviour,
@@ -249,7 +248,6 @@ class PluginSpec:
     provides: Mapping[str, Callable[[], Sequence[Contract]]] = field(
         default_factory=lambda: MappingProxyType({}), hash=False
     )
-    migrations: tuple[DirMigration, ...] = ()
     caches: tuple[Cache[Any], ...] = ()
     stores: tuple[Store | ItemStore[Any] | StateDeclaration, ...] = ()
     credentials: tuple[Credential[Any], ...] = ()
@@ -280,7 +278,6 @@ class PluginSpec:
         _check_listings(self)
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
-        object.__setattr__(self, "migrations", tuple(self.migrations))
         object.__setattr__(self, "caches", tuple(self.caches))
         for cache in self.caches:
             if not isinstance(cache, Cache):
@@ -458,8 +455,6 @@ VALID_REASONS = frozenset(
         "bad-skill-asset",
         "duplicate-doctor-check",
         "doctor-check-failed",
-        "duplicate-migration",
-        "bad-migration",
         "malformed-entry-point",
         "not-a-spec",
         "bad-app-factory",
@@ -792,7 +787,6 @@ class _CompositionState:
         # Core's own stub skill is named after it.
         self.skill_names: set[str] = {shell.name}
         self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
-        self.migration_ids: set[str] = set()
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
@@ -894,30 +888,6 @@ def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
         if check.id in state.doctor_ids or check.id in seen_checks:
             raise _Quarantine("duplicate-doctor-check", f"duplicate doctor id: {check.id!r}")
         seen_checks.add(check.id)
-
-
-def _check_migrations(spec: PluginSpec, state: _CompositionState) -> None:
-    seen: set[str] = set()
-    for migration in spec.migrations:
-        if (
-            not isinstance(migration, DirMigration)
-            or not migration.title.strip()
-            or not callable(migration.preview)
-            or not callable(migration.apply)
-        ):
-            raise _Quarantine(
-                "bad-migration", f"malformed migration of plugin {spec.name!r}: {migration!r}"
-            )
-        prefix, dot, noun = migration.id.partition(".")
-        if prefix != spec.name or not dot or not noun.strip():
-            raise _Quarantine(
-                "bad-migration",
-                f"migration id {migration.id!r} of plugin {spec.name!r} is not "
-                f"'{spec.name}.<noun>'",
-            )
-        if migration.id in state.migration_ids or migration.id in seen:
-            raise _Quarantine("duplicate-migration", f"duplicate migration id: {migration.id!r}")
-        seen.add(migration.id)
 
 
 def _check_setup_marks(spec: PluginSpec) -> None:
@@ -1191,7 +1161,6 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_state_model(spec)
     _check_skills(spec, state)
     _check_doctor_checks(spec, state)
-    _check_migrations(spec, state)
 
 
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
@@ -1246,11 +1215,10 @@ def _commit(
     for skill in registered.skills:
         state.skill_names.add(skill.name)
     state.doctor_ids.update(_ids(spec.doctor_checks))
-    state.migration_ids.update(_ids(spec.migrations))
     return registered
 
 
-def _ids(blocks: Sequence[DoctorCheck] | Sequence[DirMigration]) -> tuple[str, ...]:
+def _ids(blocks: Sequence[DoctorCheck]) -> tuple[str, ...]:
     """Each block's id; a 12.0 plugin's from its declaration, so its class stays unimported."""
     if isinstance(blocks, DeclaredBlocks):
         return blocks.ids
@@ -1432,7 +1400,6 @@ def _compose(
         try:
             if index not in replayed:  # a replayed plugin passed these when it was composed
                 _check_doctor_checks(spec, state)
-                _check_migrations(spec, state)
             _check_skills(spec, state)
             factory = spec.app_factory
             staged = (

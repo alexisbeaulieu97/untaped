@@ -17,8 +17,7 @@ silently shorter. A reference of a kind this untaped does not know (a later
 untaped's) is always live and holds the targets it can read, and nothing in
 it pauses cleanup (a newer file format still does). A dead
 reference counts for nothing, but its file is never another process's to
-delete: ``setup register --remove`` or the previewed ``setup migrate-dirs``
-row removes it.
+delete on its own.
 
 Each target is a :class:`RefTarget`, written as a JSON object: a layout of a
 store, or one item of a store that keeps one per item. No clock is read

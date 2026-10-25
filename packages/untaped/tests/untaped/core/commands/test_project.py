@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from untaped.runtime import bootstrap
-from untaped.sdk.projects import holder_of
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import CliResult, invoke_cli, make_project
 
@@ -112,12 +111,3 @@ def test_list_never_repairs_a_moved_project(
     assert f"project moved ({moved}) moved from {project.root}" in result.stderr  # kept under -q
     [row] = json.loads(result.stdout)
     assert (row["path"], row["state"]) == (str(project.root), "missing")
-
-
-def test_migrate_dirs_never_offers_a_missing_projects_reference(tmp_path: Path) -> None:
-    project = make_project(tmp_path / "PROJ")
-    shutil.rmtree(project.root)
-    result = _cli("setup", "migrate-dirs", "--dry-run", "--format", "json")
-    assert result.exit_code == 0, result.output
-    assert "untaped.references" not in result.stdout
-    assert refs.reference_file(holder_of(project)).exists()

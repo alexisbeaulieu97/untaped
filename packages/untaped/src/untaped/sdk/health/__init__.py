@@ -1,4 +1,4 @@
-"""Health and moves (``untaped.sdk.health``): doctor checks, setup marks, keys, migrations."""
+"""Health (``untaped.sdk.health``): doctor checks, setup marks and renamed keys."""
 
 from __future__ import annotations
 
@@ -16,10 +16,8 @@ if TYPE_CHECKING:
         PluginContext,
     )
     from untaped.sdk.health.marks import NeedsSetup, Suggest
-    from untaped.sdk.health.migrations import DirMigration
 
 __all__ = [
-    "DirMigration",
     "DoctorCheck",
     "DoctorResult",
     "ExecutableCheck",
@@ -44,6 +42,5 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "PluginContext",
             ),
             "marks": ("NeedsSetup", "Suggest"),
-            "migrations": ("DirMigration",),
         },
     )

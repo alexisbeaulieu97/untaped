@@ -30,7 +30,6 @@ command runs and needs at least one row, so use it on a read command or add
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
 | `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`) |
-| `setup migrate-dirs` | `untaped.migration` (`id` of the migration, core's `untaped.references` or `untaped.uninstalled-caches`, or a plugin's, `action` such as `moved`, `deleted`, `unchanged`, `partial` or `failed`, `detail`, and `error` on a failed row); with `--dry-run`, or when no row would move or delete anything, `untaped.migration_row` (`id`, `action` `move`, `delete`, `keep`, `then` or `failed`, `source`, `destination`, `detail`, `bytes`, and `error` on a failed row) |
 | `plugin list` | `untaped.installed_plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions it requires, canonical, including an extra named after an owner it fills) and `fills` (those owners)) |
 | `plugin contracts` | `untaped.contract_method` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |

@@ -142,24 +142,6 @@ class FixOutcome(OutcomeRecord, kind="untaped.fix_outcome"):
     error: _RowError = None
 
 
-class MigrationPreviewRow(Record, kind="untaped.migration_row"):
-    """One line of ``setup migrate-dirs``' preview, under its migration's ``id``.
-
-    A migration that cannot run is one ``failed`` row with ``error`` and no
-    paths.
-    """
-
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "action", "source", "destination", "detail")
-
-    id: str
-    action: str
-    source: _Omitted = None
-    destination: _Omitted = None
-    detail: str = ""
-    bytes: Annotated[int | None, Field(exclude_if=_is_none)] = None
-    error: _RowError = None
-
-
 class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
 
@@ -248,8 +230,8 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
     plugin: str
     check: str = Field(
         description=(
-            "`conventions`, `registration`, `conformance`, `live`, `fills`, `schema`, `contracts` "
-            "or `migrations`."
+            "`conventions`, `registration`, `conformance`, `live`, `fills`, `schema` or "
+            "`contracts`."
         )
     )
     title: str = Field(

@@ -145,19 +145,6 @@ from untaped.sdk.health.doctor import (
     online_check,
 )
 from untaped.sdk.health.marks import NeedsSetup, Suggest
-from untaped.sdk.health.migrations import (
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    delete_migration,
-    dir_bytes,
-    move_migration,
-    old_dirs,
-    other_layouts_migration,
-    setting_guard,
-    unsafe_dir,
-)
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -221,7 +208,7 @@ from untaped.sdk.records import (
     record_model,
 )
 from untaped.sdk.run import plugin_of, settings_of
-from untaped.sdk.storage._fs import atomic_write, file_lock, read_structured_file
+from untaped.sdk.storage._fs import atomic_write, dir_bytes, file_lock, read_structured_file
 from untaped.sdk.storage._refs import RefHolder, RefTarget, holders
 from untaped.sdk.storage.cache import (
     Cache,
@@ -250,7 +237,7 @@ from untaped.sdk.storage.state import (
     StateMap,
     StateRows,
 )
-from untaped.sdk.storage.store import Store
+from untaped.sdk.storage.store import Store, setting_guard
 from untaped.sdk.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, print_tree, tree_text
 from untaped.sdk.words import (
     hint,
@@ -305,7 +292,6 @@ if _typing.TYPE_CHECKING:
         Found,
         OtherVersion,
         Unreadable,
-        copy_data_file,
         read_data_file,
         write_data_file,
     )
@@ -328,7 +314,6 @@ _LAZY_MODULES: dict[str, tuple[str, ...]] = {
         "Found",
         "OtherVersion",
         "Unreadable",
-        "copy_data_file",
         "read_data_file",
         "write_data_file",
     ),
@@ -414,20 +399,9 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "ExecutableCheck",
     "OnlineCheck",
     "DoctorResult",
-    "DirMigration",
-    "MigrationOptions",
-    "MigrationOutcome",
-    "MigrationRow",
     "SkillAsset",
     "create_app",
-    "delete_migration",
-    "dir_bytes",
-    "move_migration",
-    "old_dirs",
-    "other_layouts_migration",
     "plugin_dir",
-    "setting_guard",
-    "unsafe_dir",
     # settings and state
     "AppContext",
     "ProjectStateRows",
@@ -585,9 +559,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Served",
     "Store",
     "code_version",
+    "dir_bytes",
     "holders",
     "installed_code",
     "refresh_option",
+    "setting_guard",
     # data files
     "Absent",
     "DataFile",
@@ -595,7 +571,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Found",
     "OtherVersion",
     "Unreadable",
-    "copy_data_file",
     "read_data_file",
     "write_data_file",
     # prompts and ui
