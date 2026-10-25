@@ -125,7 +125,7 @@ def _retake(
     """Take the root option cyclopts found unknown out of ``tokens``, in place, if it is one.
 
     The tokens are read by the options cyclopts parsed them by, so an
-    option's value is none: the last spelling of it before a ``--``, applied
+    option's value is none: the first spelling of it before a ``--``, applied
     to ``line``; or else the first short cluster holding its letter (or help's),
     whose root letters are applied and help letter its own token, as cyclopts
     would read them if they were in scope (``-xv`` is ``-x`` then ``-v``).
@@ -140,11 +140,12 @@ def _retake(
     names = () if spec is None else (spec.name, *spec.aliases)
     spelled = [index for index, _ in spots if tokens[index].partition("=")[0] in names]
     if spec is not None and spelled:
-        value, width, problem = _root_value(tokens, spelled[-1], spec)
+        # The first, so repeats apply in line order (a later --profile wins).
+        value, width, problem = _root_value(tokens, spelled[0], spec)
         if problem is not None:
             raise_usage(problem)
         line.apply(spec, value)
-        del tokens[spelled[-1] : spelled[-1] + width]
+        del tokens[spelled[0] : spelled[0] + width]
         return True
     for index, cluster in spots:
         if cluster is not None and (spec in cluster.roots or keyword in cluster.kept):

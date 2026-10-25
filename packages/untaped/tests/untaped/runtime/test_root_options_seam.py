@@ -13,6 +13,7 @@ from cyclopts import App, Parameter
 
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_verbose
+from untaped.runtime.profile_resolver import profile_override
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.runtime.root_options_seam import _take_help_root_options
@@ -61,6 +62,11 @@ def _old_app() -> App:
     ) -> None:
         """Print what it was given, and whether the root went verbose."""
         echo(f"x={x} name={name} p={pattern} verbose={is_verbose()}")
+
+    @app.command(name="picks")
+    def picks(*, x: Annotated[bool, Parameter(name=["--x", "-x"])] = False) -> None:
+        """Print the root ``--profile`` names, in the order they stack."""
+        echo(",".join(profile_override()))
 
     @app.command(name="own")
     def own(
@@ -165,3 +171,24 @@ def test_the_retry_takes_each_repeat_of_a_root_option(
     captured = capsys.readouterr()
 
     assert (exit_info.value.code or 0, captured.out.strip()) == (0, out), captured.err
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["old", "picks", "--profile", "a", "--profile", "b", "-x"],
+        ["old", "picks", "-x", "--profile", "a", "--profile", "b"],
+        ["--profile", "a", "old", "picks", "--profile", "b"],
+        ["old", "picks", "--profile", "a,b"],
+    ],
+)
+def test_repeated_profiles_stack_in_line_order(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A later ``--profile`` wins, as in ``--profile a,b``."""
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, candidates=[OLD])
+    captured = capsys.readouterr()
+
+    assert (exit_info.value.code or 0, captured.out.strip()) == (0, "a,b"), captured.err
