@@ -7859,9 +7859,6 @@ sdk untaped_awx.api.unknown_field(resources)  [experimental]
 sdk untaped_awx.api.unresolved_reference(resources)  [experimental]
 sdk untaped_awx.testing.resources()  [experimental]
 sdk untaped_awx.testing.resources(*yaml_texts)  [experimental]
-sdk untaped_git.api.Adopted(repo, action)
-sdk untaped_git.api.Adopted.action
-sdk untaped_git.api.Adopted.repo
 sdk untaped_git.api.Credential(*, username, password)
 sdk untaped_git.api.Credential(verify_tls=) default=true
 sdk untaped_git.api.Credential.password
@@ -7970,24 +7967,13 @@ sdk untaped_git.api.TreeEntry.oid
 sdk untaped_git.api.TreeEntry.path
 sdk untaped_git.api.TreeEntry.table_columns class
 sdk untaped_git.api.TreeEntry.type
-sdk untaped_git.api.adopt(owned=) default=[]
-sdk untaped_git.api.adopt(source, *, plugin, error)
-sdk untaped_git.api.adopt(worktrees=) default=None
-sdk untaped_git.api.bare_repos(root)
-sdk untaped_git.api.bare_repos(skip=) default=[]
-sdk untaped_git.api.bare_repos(workspace_layout=) default=None
 sdk untaped_git.api.check_names(names)
 sdk untaped_git.api.default_branch(url)
 sdk untaped_git.api.ls_remote(patterns@2=) default=[]
 sdk untaped_git.api.ls_remote(url)
-sdk untaped_git.api.overlaps_store(path)
-sdk untaped_git.api.remove_if_emptied(root)
-sdk untaped_git.api.repo_origin(repo)
 sdk untaped_git.api.repo_url_parts(url)
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
-sdk untaped_git.api.unfinished_removals(root, options)
-sdk untaped_git.api.unfinished_removals(skip=) default=[]
 sdk untaped_git.api.validate_git_url(value)
 sdk untaped_github.api.BatchRepoRefsFailure(*, full_name, reason, kind)
 sdk untaped_github.api.BatchRepoRefsFailure(status_code=) default=None

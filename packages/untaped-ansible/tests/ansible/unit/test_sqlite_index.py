@@ -22,11 +22,7 @@ from untaped_ansible.domain.payloads import (
 from untaped_ansible.domain.variable_models import CommitListing
 from untaped_ansible.errors import DependencyIndexError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
-from untaped_ansible.infrastructure.sqlite_schema import (
-    ADDITIVE_SINCE,
-    SCHEMA_VERSION,
-    holds_no_source,
-)
+from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_VERSION
 
 
 def _edge(
@@ -806,17 +802,6 @@ def test_repo_joins_search_the_repo_key_indexes(tmp_path, monkeypatch) -> None:
         detail.startswith("SEARCH scans USING") and "source_repo_key=?" in detail
         for detail in dependencies
     ), dependencies
-
-
-def test_only_an_index_nothing_was_refreshed_into_holds_no_source(tmp_path) -> None:
-    empty, full, junk = tmp_path / "empty.db", tmp_path / "full.db", tmp_path / "junk.db"
-    SqliteDependencyIndex(empty).status("source:prod")
-    _commit(SqliteDependencyIndex(full), scans=(_scan(),))
-    junk.write_text("not sqlite", encoding="utf-8")
-
-    assert holds_no_source(empty)
-    assert not holds_no_source(full) and not holds_no_source(junk)
-    assert not holds_no_source(tmp_path / "missing.db")
 
 
 def test_a_listing_naming_a_file_no_refresh_analysed_is_an_index_error(tmp_path: Path) -> None:

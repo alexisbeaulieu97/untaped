@@ -9,23 +9,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 # Composing the plugin registers its record kinds, so ``plugin schema`` and a
 # piped github row find their models before any github command runs.
 import untaped_github.records  # noqa: F401
 from untaped.sdk import (
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
     PluginSpec,
     SkillAsset,
-    delete_migration,
     executable_check,
-    old_dirs,
     online_check,
 )
 from untaped_github.settings import BASE_URL_ALIAS, GH, SWEEP, GithubSettings
@@ -66,32 +58,6 @@ def _workspace() -> Sequence[Contract]:
     return (GithubRepos(),)
 
 
-def _cache_preview(_ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
-    """The 10.x sweep cache's move into the repo store (imports lazily)."""
-    from untaped_github.infrastructure.migrations import preview_cache  # noqa: PLC0415
-
-    return preview_cache(options)
-
-
-def _cache_apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-    from untaped_github.infrastructure.migrations import apply_cache  # noqa: PLC0415
-
-    return apply_cache()
-
-
-def _corpus_9x() -> Sequence[Path]:
-    return [Path("~/.untaped/github-corpus").expanduser()]
-
-
-def _inventory_10x() -> Sequence[Path]:
-    """10.x's repository inventory file, with any custom path config.yml still names."""
-    return old_dirs("~/.untaped/github-inventory.json", "github", "inventory.path")
-
-
-def _a_file(path: Path) -> str | None:
-    return None if path.is_file() else "not a file, so not the inventory"
-
-
 SPEC = PluginSpec(
     name="github",
     app_factory=build_app,
@@ -118,25 +84,4 @@ SPEC = PluginSpec(
         executable_check("github.git", "git", purpose="`untaped github sweep`"),
     ),
     provides={"git": _git_host, "workspace": _workspace},
-    migrations=(
-        DirMigration(
-            id="github.cache",
-            title="10.x sweep cache into the repo store",
-            preview=_cache_preview,
-            apply=_cache_apply,
-        ),
-        delete_migration(
-            "github.corpus",
-            "9.x sweep corpus",
-            _corpus_9x,
-            detail="9.x layout, its worktrees inside it",
-        ),
-        delete_migration(
-            "github.inventory",
-            "10.x repository inventory",
-            _inventory_10x,
-            detail="workspace caches the repos it lists itself",
-            guard=_a_file,
-        ),
-    ),
 )

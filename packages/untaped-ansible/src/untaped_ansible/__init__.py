@@ -6,29 +6,12 @@ GitHub behavior is consumed through the closed API in
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from importlib.resources import files
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import (
-    PluginSpec,
-    SkillAsset,
-    delete_migration,
-    move_migration,
-    old_dirs,
-    other_layouts_migration,
-    shown_path,
-)
+from untaped.sdk import PluginSpec, SkillAsset
 from untaped_ansible.doctor import DOCTOR_CHECKS
-from untaped_ansible.settings import (
-    INDEX,
-    INDEX_PATH_GUARD,
-    INDEX_STORE,
-    AnsibleSettings,
-    AnsibleState,
-    default_index_path,
-)
+from untaped_ansible.settings import INDEX, INDEX_STORE, AnsibleSettings, AnsibleState
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -41,48 +24,6 @@ def build_app() -> App:
     from untaped_ansible.cli import app  # noqa: PLC0415
 
     return app
-
-
-def _index_moves() -> Sequence[tuple[Path, Path]]:
-    """10.x's index into ``plugin_dir``, as the index store's layout beside the default path."""
-    return [(Path("~/.untaped/ansible-index.sqlite3").expanduser(), INDEX_STORE.path())]
-
-
-def _index_guard(path: Path) -> str | None:
-    """Keep the 10.x index while a profile names it, or while 11.0's index awaits its rename."""
-    bare = default_index_path()
-    if bare.exists() and not INDEX_STORE.path().exists():
-        return (
-            f"11.0's newer index at {shown_path(bare)} becomes "
-            f"{shown_path(INDEX_STORE.path())} at the next ansible command"
-        )
-    return INDEX_PATH_GUARD(path)
-
-
-def _empty_index(path: Path) -> bool:
-    """Whether the index at ``path`` holds no refreshed source (a command opened it, no more)."""
-    from untaped_ansible.infrastructure.sqlite_schema import holds_no_source  # noqa: PLC0415
-
-    return holds_no_source(path)
-
-
-def _git_cache_10x() -> Sequence[Path]:
-    """10.x's git cache, with any custom root config.yml still names (9.x's key included)."""
-    roots = old_dirs("~/.untaped/ansible-cache", "ansible", "cache_dir")
-    return [*roots, *old_dirs("~/.untaped/ansible-cache", "ansible", "repo_cache_path")]
-
-
-def _not_the_store(path: Path) -> str | None:
-    """A custom root configured to ``git.store_dir``'s place is the store now: it stays."""
-    from untaped_git.api import overlaps_store, store_root  # noqa: PLC0415
-
-    if overlaps_store(path):
-        return f"it overlaps the repo store ({shown_path(store_root())})"
-    return None
-
-
-def _git_cache_9x() -> Sequence[Path]:
-    return [Path("~/.untaped/ansible-repositories").expanduser()]
 
 
 SPEC = PluginSpec(
@@ -107,30 +48,4 @@ SPEC = PluginSpec(
     doctor_checks=DOCTOR_CHECKS,
     caches=(INDEX,),
     stores=(INDEX_STORE,),
-    migrations=(
-        move_migration(
-            "ansible.index",
-            "10.x dependency index",
-            _index_moves,
-            detail="saved sources keep their refreshed data",
-            sidecars=("-journal", "-wal", "-shm"),  # a hot journal travels with its database
-            guard=_index_guard,
-            replaceable=_empty_index,
-        ),
-        other_layouts_migration(INDEX_STORE),
-        delete_migration(
-            "ansible.cache",
-            "10.x git cache",
-            _git_cache_10x,
-            detail="the index keeps each ref's commit: the next refresh fetches only what changed",
-            guard=_not_the_store,
-        ),
-        delete_migration(
-            "ansible.repositories",
-            "9.x git cache",
-            _git_cache_9x,
-            detail="9.x layout",
-            guard=_not_the_store,
-        ),
-    ),
 )

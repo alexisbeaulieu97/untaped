@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from contextlib import closing
 from pathlib import Path
 
 from untaped_ansible.errors import DependencyIndexError
@@ -239,22 +238,6 @@ def _additive_since(db: sqlite3.Connection) -> int | None:
             raise  # locked or unreadable: not the same as written before the stamp
         return None
     return None if row is None else int(row[0])
-
-
-def holds_no_source(path: Path) -> bool:
-    """Whether the index at ``path`` has no source refreshed into it (read-only, never raises).
-
-    What ``setup migrate-dirs`` replaces with the 10.x index: a command that
-    only opened the new one created its tables and nothing else.
-    """
-    try:
-        with closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)) as db:
-            return not any(
-                db.execute(f"select 1 from {table} limit 1").fetchone()
-                for table in ("source_runs", "source_ref_scans", "source_refresh_progress")
-            )
-    except sqlite3.Error, OSError, ValueError:
-        return False
 
 
 def _drop_tables(db: sqlite3.Connection) -> None:

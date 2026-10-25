@@ -8,11 +8,6 @@ from typing import TYPE_CHECKING
 
 import untaped_workspace.records  # noqa: F401  # registers the record kinds before any command runs
 from untaped.sdk import (
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    PluginContext,
     PluginSpec,
     SkillAsset,
     executable_check,
@@ -47,35 +42,6 @@ def _contracts() -> Sequence[type[Contract]]:
     return (RepoSource,)
 
 
-# The migration rows import lazily: CLI startup never loads git or the scans.
-def _cache_preview(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
-    """The 10.x clones' move into the repo store."""
-    from untaped_workspace import migrations  # noqa: PLC0415
-
-    return migrations.preview_cache(ctx, options)
-
-
-def _cache_apply(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationOutcome]:
-    from untaped_workspace import migrations  # noqa: PLC0415
-
-    return migrations.apply_cache(ctx, options)
-
-
-def _repositories_preview(ctx: PluginContext, options: MigrationOptions) -> Sequence[MigrationRow]:
-    """The 9.x ``repositories`` cache: kept for its borrowers, or deleted with ``--dissociate``."""
-    from untaped_workspace import migrations  # noqa: PLC0415
-
-    return migrations.preview_repositories(ctx, options)
-
-
-def _repositories_apply(
-    ctx: PluginContext, options: MigrationOptions
-) -> Sequence[MigrationOutcome]:
-    from untaped_workspace import migrations  # noqa: PLC0415
-
-    return migrations.apply_repositories(ctx, options)
-
-
 SPEC = PluginSpec(
     name="workspace",
     app_factory=build_app,
@@ -99,18 +65,4 @@ SPEC = PluginSpec(
     guides=files("untaped_workspace") / "guides",
     doctor_checks=(executable_check("workspace.git", "git", purpose="workspace commands"),),
     contracts=_contracts,
-    migrations=(
-        DirMigration(
-            id="workspace.cache",
-            title="10.x clones into the repo store",
-            preview=_cache_preview,
-            apply=_cache_apply,
-        ),
-        DirMigration(
-            id="workspace.repositories",
-            title="9.x cache clones made before 7.0 borrow from",
-            preview=_repositories_preview,
-            apply=_repositories_apply,
-        ),
-    ),
 )
