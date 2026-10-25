@@ -14,7 +14,7 @@ explains them.
 | A certificate error on a self-hosted service | A CA bundle rather than disabling checks: [TLS](./configuration.md#tls-and-shared-ui-settings). |
 | `config.yml` or `state.yml` is refused as newer | Written by a newer `untaped`: [File format](./configuration.md#file-format). |
 | A setting is ignored, or `doctor` shows `untaped.unknown-keys` | A section at the wrong level: [File and layout](./configuration.md#file-and-layout). |
-| After upgrading from 10.x, ansible's index is empty, recipe lists no installed packs, or `doctor` warns on `migrate-dirs` | The 10.x data has not moved yet: follow the upgrade order in the [changelog](../CHANGELOG.md)'s 11.0 Upgrading section. |
+| After upgrading from 10.x or 11.x, ansible's index is empty or recipe lists no installed packs | 12.0 moves no older data: run `untaped setup migrate-dirs` with 11.1 first, as the [changelog](../CHANGELOG.md)'s 12.0 Upgrading section says. |
 | A warning that a plugin is quarantined | `untaped plugin list` and `untaped doctor` name the reason: [How composition works](./composition.md). |
 | A warning that installed skills are out of date | [Keep installed skills up to date](./skills.md#keep-installed-skills-up-to-date). |
 | A script cannot parse an error | Use the JSON diagnostics on stderr: [stderr diagnostics](./scripting.md#stderr-diagnostics). |

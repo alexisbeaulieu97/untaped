@@ -140,7 +140,7 @@ class GitCorpusCache:
         """``repo``'s stored copy and when github fetched it.
 
         ``None`` when there is none, or this release never fetched it (an
-        11.0 copy, one adopt made, or one whose metadata can't be read), so
+        11.0 copy, or one whose metadata can't be read), so
         the sweep refetches it.
         """
         read = self._read(self._store(self._remote_url(repo)))
