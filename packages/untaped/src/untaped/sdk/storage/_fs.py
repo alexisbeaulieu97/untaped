@@ -1,4 +1,4 @@
-"""Filesystem helpers for SDK commands: structured reads, atomic writes and file locks."""
+"""Filesystem helpers for SDK commands: structured reads, atomic writes, file locks and sizes."""
 
 from __future__ import annotations
 
@@ -281,3 +281,20 @@ def locked_write(
             yield
         finally:
             _WRITING.paths = writing
+
+
+def dir_bytes(path: Path) -> int:
+    """Bytes of every file under ``path`` (a file's own size; symlinks not followed)."""
+    try:
+        if not path.is_dir() or path.is_symlink():
+            return path.lstat().st_size
+    except OSError:
+        return 0
+    total = 0
+    for directory, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(directory, name)).st_size
+            except OSError:
+                continue
+    return total

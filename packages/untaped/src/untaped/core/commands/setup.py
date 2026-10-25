@@ -20,9 +20,7 @@ naming ``setup plan``, before it reads the config or the password store.
 non-interactive face for agents and scripts; both read service state
 through :mod:`untaped.core.commands.setup_state`. ``setup register``
 (:mod:`untaped.core.commands.register`) registers this install, so the
-cleanup of store layouts keeps what it uses. ``setup migrate-dirs``
-(:mod:`untaped.core.commands.migrate_dirs`) moves or deletes what older
-versions left, from every plugin's ``migrations``.
+cleanup of store layouts keeps what it uses.
 """
 
 from __future__ import annotations
@@ -50,9 +48,7 @@ from untaped.runtime.theme import OutputFormat
 from untaped.sdk._batch import finish
 from untaped.sdk._cli import (
     ColumnsOption,
-    DryRunOption,
     FormatOption,
-    YesOption,
     create_app,
     report_errors,
     writes,
@@ -76,14 +72,6 @@ OnlyOption = Annotated[
 OnlineOption = Annotated[
     bool,
     Parameter(name="--online", negative="", help="Also run each ready service's online check."),
-]
-DissociateOption = Annotated[
-    bool,
-    Parameter(
-        name="--dissociate",
-        negative="",
-        help="Repack the clones that borrow objects from an old directory, so it can go too.",
-    ),
 ]
 CheckOption = Annotated[
     bool,
@@ -171,32 +159,6 @@ def build_root_setup_app(*, shell: ApplicationSpec, result: CompositionResult) -
 
         with report_errors():
             run_register(remove=remove, fmt=fmt, columns=columns)
-
-    @app.command(name="migrate-dirs")
-    @writes(destructive=True)
-    def migrate_dirs_command(
-        *,
-        dissociate: DissociateOption = False,
-        yes: YesOption = False,
-        dry_run: DryRunOption = False,
-        fmt: FormatOption = "table",
-        columns: ColumnsOption = None,
-    ) -> None:
-        """Move or delete the directories older untaped versions left, with a preview.
-
-        Each plugin moves its own: repositories into the repo store, old
-        caches deleted. Run it before `config migrate`, which forgets the
-        custom directories older settings named. To keep the repo store
-        outside its default, set `git.store_dir` to a new directory first.
-        """
-        # Imported here: the migrations and their plugins' code stay off the startup path.
-        from untaped.core.commands.migrate_dirs import migrate_dirs  # noqa: PLC0415
-
-        with report_errors():
-            failed = migrate_dirs(
-                result, dissociate=dissociate, yes=yes, dry_run=dry_run, fmt=fmt, columns=columns
-            )
-        finish(failed)
 
     return app
 

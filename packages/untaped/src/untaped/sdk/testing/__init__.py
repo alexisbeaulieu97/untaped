@@ -760,8 +760,8 @@ def check_plugin(
     the composed root (names, provides requirements, the help tree, guides
     and map lines, stability marks, structure's class checks, the import
     boundary), then ``contracts``,
-    ``registration``, ``conformance``, ``live``, ``fills``, ``schema`` and
-    ``migrations``, each where the plugin has something for it to read. Rows
+    ``registration``, ``conformance``, ``live``, ``fills`` and ``schema``,
+    each where the plugin has something for it to read. Rows
     carry a check name and a ``status``, never a severity: a linter decides
     what each means. The conventions that read only the plugin's files are
     not run.

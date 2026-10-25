@@ -174,8 +174,8 @@ class ItemStore[T: str | RootModel[str]]:
     that lets others hold its items says how they're released); ``moved``
     repairs what points into a holder that moved, or is ``None`` when
     nothing does (a required keyword: ``None`` is a choice). Both are module
-    functions with a local import, as a migration's are. Two declarations
-    with the same values are equal.
+    functions with a local import, as ``PluginSpec.contracts`` is. Two
+    declarations with the same values are equal.
     """
 
     __slots__ = ("item", "moved", "name", "plugin", "release")

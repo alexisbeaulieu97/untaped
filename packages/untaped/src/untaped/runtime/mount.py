@@ -274,7 +274,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         skills=skills,
         deprecations=lambda: loaded()["deprecations"],
     )
-    for field_name in ("caches", "migrations", "doctor_checks", "credentials", "stores"):
+    for field_name in ("caches", "doctor_checks", "credentials", "stores"):
         kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
         declared = [
             block
@@ -314,7 +314,6 @@ def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any
 #: name and doctor lists) or holds ``items=`` (its item store, which holds use).
 _SPEC_FIELDS: dict[str, str | None] = {
     "cache": "caches",
-    "dir-migration": "migrations",
     "doctor-check": "doctor_checks",
     "credential": "credentials",
     "deprecated-behaviour": "deprecations",

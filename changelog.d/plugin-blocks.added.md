@@ -1,5 +1,5 @@
-A 12.0 plugin class names its `Cache`, `Credential`, `DoctorCheck`,
-`DirMigration` and `DeprecatedBehaviour` by the attribute holding it:
+A 12.0 plugin class names its `Cache`, `Credential`, `DoctorCheck` and
+`DeprecatedBehaviour` by the attribute holding it:
 `motd = Cache(label=..., max_age=...)` is the plugin's cache `motd`, and
 `repo_store = DoctorCheck(title=..., run=...)` is the check
 `<plugin>.repo-store`. `ExecutableCheck("git", purpose=...)` and

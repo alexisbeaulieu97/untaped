@@ -716,7 +716,16 @@ def test_an_uninstalled_plugins_caches_pass_with_a_note_and_warn_nowhere() -> No
     row = _caches_row(rows)
     assert row["status"] == _PASS
     assert row["detail"].endswith(
-        "cached: 2.0 KiB of a plugin not installed here (another install may use it, "
-        "so only `untaped setup migrate-dirs` removes it)"
+        "cached: 2.0 KiB of a plugin not installed here (another install sharing this "
+        "home may use it)"
     )
     assert [row for row in rows if row["status"] == "warn"] == []
+
+
+def test_a_quarantined_plugins_caches_and_a_folder_no_plugin_could_own_are_not_noted() -> None:
+    for plugin in ("ghost", ".trash"):
+        (named_plugin_dir("acme").parent / plugin / "cached" / "items").mkdir(parents=True)
+
+    _, rows = _rows(_doctor_app(make_spec("acme"), ghost=True))
+
+    assert "of a plugin not installed here" not in _caches_row(rows)["detail"]

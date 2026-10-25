@@ -6,9 +6,9 @@ go stale, when it was last refreshed. Two layouts share the stamp:
 
 - the *object* layout, ``{"untaped": {...}, <the model's fields>}``: one JSON
   object whose other keys are a model's fields, at the top level, where a
-  reader from before the stamp (11.0) finds them. :func:`read_data_file`,
-  :func:`write_data_file` and :func:`copy_data_file` read and write it, for
-  a file whose place its owner decides (a repo store, a backup folder, a
+  reader from before the stamp (11.0) finds them. :func:`read_data_file`
+  and :func:`write_data_file` read and write it, for a file whose place its
+  owner decides (a repo store, a backup folder, a
   project's ``.untaped/``).
 - the *line* layout, core's caches: line 1 ``{"untaped": {...}}`` with a key's
   freshness, line 2 the value, any JSON. Freshness is read without parsing
@@ -205,31 +205,6 @@ def write_data_file(
         return _create(path, text)
     atomic_write(path, text, mode=MODE)
     return True
-
-
-@experimental
-def copy_data_file(source: Path, target: Path) -> None:
-    """Copy ``source``'s data to ``target``, stamped by this release, with its freshness cleared.
-
-    For a file whose place another owner decides: the copy holds the same
-    data, never claims to have been refreshed, and is written atomically,
-    owner-only. Raises :class:`OSError` when ``source`` can't be read or
-    ``target`` written, and :class:`ValueError` when ``source`` is not a JSON
-    object or a format this release can't read (a newer untaped's).
-    """
-    data = json.loads(source.read_bytes())
-    if not isinstance(data, dict):
-        raise ValueError(f"{source} is not a JSON object")
-    stamp = data.get(STAMP)
-    if isinstance(stamp, dict):
-        checked = check_stamp(stamp)
-        if isinstance(checked, OtherVersion):
-            raise ValueError(f"{source} was written by a newer untaped ({checked.by})")
-        if isinstance(checked, Unreadable):
-            raise ValueError(f"{source} {checked.reason}")
-    kept = {"file": FILE, "by": written_by()}
-    copied = {STAMP: kept, **{key: value for key, value in data.items() if key != STAMP}}
-    atomic_write(target, json.dumps(copied, ensure_ascii=False) + "\n", mode=MODE)
 
 
 def _create(path: Path, text: str) -> bool:
@@ -605,7 +580,6 @@ __all__ = [
     "Found",
     "OtherVersion",
     "Unreadable",
-    "copy_data_file",
     "read_data_file",
     "write_data_file",
 ]

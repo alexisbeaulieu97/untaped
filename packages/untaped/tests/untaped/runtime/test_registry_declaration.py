@@ -29,7 +29,7 @@ from datetime import timedelta
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Cache, Command, DirMigration, Plugin
+from untaped.sdk import Cache, Command, Plugin
 
 from {package}.settings import ToySettings
 
@@ -49,7 +49,6 @@ class Toy(Plugin):
     settings = ToySettings
     commands = (Greet,)
     motd = MOTD
-    moves = DirMigration(title="nothing", preview=lambda ctx, opts: [], apply=lambda ctx, opts: [])
 '''
 
 SETTINGS = """
@@ -155,7 +154,7 @@ def test_a_replayed_plugin_has_its_setting_ids_and_runs(toys: Path) -> None:
     assert keys["toy.caches.motd.max_age_seconds"]["value"] == 7200
     assert "toyplug.plugin" not in sys.modules
     result = compose_root(candidates=[toy])
-    assert result.plugins[0].spec.migrations.ids == ("toy.moves",)  # type: ignore[attr-defined]
+    assert result.plugins[0].spec.caches.ids == ("toy.motd",)  # type: ignore[attr-defined]
 
     greeted = invoke.invoke(root.meta, ["toy", "greet"])
     assert (greeted.exit_code, greeted.stdout) == (0, "hello from toy\n")

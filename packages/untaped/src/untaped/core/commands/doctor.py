@@ -61,9 +61,11 @@ from untaped.runtime.registry import (
     state_model,
 )
 from untaped.runtime.settings import (
+    PLUGIN_NAME_PATTERN,
     HttpSettings,
     active_settings_layout,
     check_settings_field,
+    plugins_root,
     profile_section_models,
     resolve_config_path,
     resolve_state_path,
@@ -80,7 +82,6 @@ from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup
 from untaped.sdk.health.deprecated_keys import scan_keys
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.health.marks import section_marks
-from untaped.sdk.health.migrations import MigrationOptions
 from untaped.sdk.marks import owner, removal_text
 from untaped.sdk.network.http import resolve_verify
 from untaped.sdk.plugin import Command, Group
@@ -418,7 +419,6 @@ def collect_doctor_rows(
         rows.append(_references_row(shell, result))
         rows.append(_stores_row(shell, result))
         rows.append(_caches_row(shell, result))
-        rows.append(_migrations_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     for registered in result.plugins:
@@ -625,13 +625,9 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
     A cache's keys holding only another version's value, and the
     ``cached/`` folder of a plugin not installed here (another install
-    sharing this home may use it; ``setup migrate-dirs`` offers to remove it).
+    sharing this home may use it).
     """
-    from untaped.core.commands.migrate_dirs import (  # noqa: PLC0415
-        MIGRATE_COMMAND,
-        installed_names,
-    )
-    from untaped.sdk.health.migrations import dir_bytes, uninstalled_caches  # noqa: PLC0415
+    from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.sdk.storage.cache import outdated_keys  # noqa: PLC0415 - runs only in doctor
 
     title = "no caches of another version or of a plugin not installed here"
@@ -648,13 +644,35 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
                 parts.append(
                     f"{cache.qualified}: {keys} filled by another version, refilled when due"
                 )
-    for folder in uninstalled_caches(installed_names(result)):
+    for folder in _uninstalled_caches(result):
         parts.append(
             f"{shown_path(folder)}: {size_text(dir_bytes(folder))} of a plugin not installed"
-            f" here (another install may use it, so only `untaped {MIGRATE_COMMAND}`"
-            " removes it)"
+            " here (another install sharing this home may use it)"
         )
     return _row("caches", shell.name, _PASS, title, "; ".join(parts) or "nothing to note")
+
+
+def _uninstalled_caches(result: CompositionResult) -> list[Path]:
+    """Each ``plugins/<name>/cached`` folder whose plugin is not installed here.
+
+    Installed is core and every plugin composed or quarantined (its data is
+    still its own).
+    """
+    installed = {
+        NAME,
+        *(registered.spec.name for registered in result.plugins),
+        *(record.name for record in result.quarantine),
+    }
+    try:
+        folders = sorted(plugins_root().iterdir())
+    except OSError:
+        return []
+    return [
+        cached
+        for folder in folders
+        if PLUGIN_NAME_PATTERN.fullmatch(folder.name) and folder.name not in installed
+        if (cached := folder / "cached").exists() or cached.is_symlink()
+    ]
 
 
 def _layout_text(
@@ -665,15 +683,12 @@ def _layout_text(
     A damaged in-use lock is said even when ``keep`` or unknown holders are
     the reason the cleanup keeps the layout.
     """
-    from untaped.sdk.health.migrations import dir_bytes  # noqa: PLC0415 - runs only in doctor
+    from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.sdk.storage._refs import this_install  # noqa: PLC0415
     from untaped.sdk.storage.store import _damaged, kept_reason  # noqa: PLC0415
 
     size = size_text(dir_bytes(layout.path))
     text = f"layout {layout.layout} at {shown_path(layout.path)} ({size})"
-    if layout.awaiting:
-        text = f"{shown_path(layout.path)} ({size}) is renamed to layout {layout.layout}"
-        text += " on its next open"
     reason = kept_reason(store, layout, references)
     me = this_install()
     if layout.holders:
@@ -697,14 +712,12 @@ def _layout_text(
 
 
 def _stores_fix(reasons: set[str]) -> list[str] | None:
-    """The ``stores`` row's fix for what keeps its layouts: register, migrate-dirs, or none.
+    """The ``stores`` row's fix for what keeps its layouts: register, or none.
 
-    Never automatic: registering is a deliberate step, and migrate-dirs asks.
+    Never automatic: registering is a deliberate step.
     """
     if "unregistered" in reasons:
         return command_argv("setup register", profile=fix_target())
-    if reasons & {"refused", "busy"}:
-        return command_argv("setup migrate-dirs", profile=fix_target())
     return None
 
 
@@ -769,10 +782,7 @@ def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
     if ref.holder == mine:
         text += " (this install)"
     if not ref.live:
-        text += (
-            f": no untaped there any more; `untaped setup migrate-dirs` "
-            f"removes {shown_path(ref.file)}"
-        )
+        text += ": no untaped there any more"
     elif ref.pre_upgrade:
         text += ": reference from before an upgrade; run any command from that install"
         text += " to refresh it"
@@ -814,33 +824,6 @@ def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -
             if any(not layout.own for layout in layouts):
                 return True
     return False
-
-
-def _migrations_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
-    """Warn while a plugin's migration would still move or delete an old directory."""
-    from untaped.core.commands.migrate_dirs import (  # noqa: PLC0415 - runs only in doctor
-        MIGRATE_COMMAND,
-        plan,
-        summary_text,
-    )
-    from untaped.sdk.health.migrations import UNINSTALLED_CACHES  # noqa: PLC0415
-
-    title = "no directories left by older versions"
-    # An uninstalled plugin's caches are only noted, in the ``caches`` row.
-    planned = [
-        item
-        for item in plan(result, MigrationOptions(measure=False))
-        if item.migration.id != UNINSTALLED_CACHES
-    ]
-    failed = [
-        f"{item.migration.id}: {item.error.message}" for item in planned if item.error is not None
-    ]
-    if failed:
-        return _row("migrate-dirs", shell.name, _WARN, title, "; ".join(failed))
-    if not any(item.changes for item in planned):
-        return _row("migrate-dirs", shell.name, _PASS, title, "nothing to migrate")
-    fix = command_argv(MIGRATE_COMMAND, profile=fix_target())
-    return _row("migrate-dirs", shell.name, _WARN, title, summary_text(planned), fix)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:

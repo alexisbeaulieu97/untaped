@@ -20,8 +20,7 @@ Each plugin is checked against:
   and settings classes, and each contract it fills,
   called live
   (`lint.registration`, `lint.conformance`, `lint.live`, `lint.fills`,
-  `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`,
-  `lint.migrations`), and a deprecation warning for settings that leave
+  `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`), and a deprecation warning for settings that leave
   `untaped` to guess what needs setting up from the names `base_url` and
   `token` instead of a marked server and a declared credential
   (`lint.unmarked-service`);

@@ -540,7 +540,6 @@ def _samples() -> dict[str, WireModel]:
         DoctorCheck,
         FixOutcome,
         InstalledSkill,
-        MigrationPreviewRow,
         PluginCheckRow,
         ProjectOutcome,
         RecordedProject,
@@ -560,7 +559,6 @@ def _samples() -> dict[str, WireModel]:
         ProfilePick,
         ProfileView,
     )
-    from untaped.sdk.health.migrations import MigrationOutcome
     from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.storage.holds import HoldOutcome
 
@@ -659,7 +657,6 @@ def _samples() -> dict[str, WireModel]:
             plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
-        MigrationOutcome(id="github.cache", action="moved", detail="3 repos"),
         AuthOutcome(
             section="github",
             profile="default",
@@ -698,7 +695,6 @@ def _samples() -> dict[str, WireModel]:
             automatic=True,
         ),
         FixOutcome(fix=["config", "migrate"], checks=["config"], action="fixed", detail="d"),
-        MigrationPreviewRow(id="github.cache", action="move", source="/a", destination="/b"),
         SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], by="agent"),
         Skill(name="untaped-hello", description="d"),
         InstalledSkill(
@@ -1309,7 +1305,6 @@ _ROW_KEYS = {
     "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],
     "untaped.doctor_check": ["check", "plugin", "status", "title", "detail", "fix", "automatic"],
     "untaped.fix_outcome": ["fix", "checks", "action", "detail"],
-    "untaped.migration_row": ["id", "action", "source", "destination", "detail"],
     "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "by"],
     "untaped.skill": ["name", "description"],
     "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],

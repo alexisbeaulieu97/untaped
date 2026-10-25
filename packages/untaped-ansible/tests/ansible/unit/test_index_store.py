@@ -79,20 +79,16 @@ def test_the_default_index_is_its_layout_file_beside_the_setting() -> None:
     assert INDEX_STORE.path() == _plugin() / "index.v4.sqlite3"
 
 
-def test_the_first_open_adopts_the_11_0_index_and_drops_its_sidecars() -> None:
-    bare = _plugin() / "index.sqlite3"
-    _sqlite(bare, "11.0")
-    sidecars = _plugin() / "caches" / "index" / "default"
-    sidecars.mkdir(parents=True)
-    (sidecars / "source_prod.json").write_text("{}", encoding="utf-8")
+def test_a_file_at_the_settings_default_is_never_the_index() -> None:
+    plain = _plugin() / "index.sqlite3"
+    _sqlite(plain, "someone's file")
 
     index = open_index(AnsibleSettings())
 
     layout = _plugin() / "index.v4.sqlite3"
     assert index._path == layout
-    assert _mark(layout) == "11.0"
-    assert not bare.exists()
-    assert not (_plugin() / "caches" / "index").exists()  # the freshness reseeds from the rows
+    assert index.status("source:prod") is None  # builds its own layout
+    assert _mark(plain) == "someone's file"
     assert (_plugin() / "index.v4.sqlite3.inuse").exists()
 
 
@@ -110,15 +106,12 @@ def test_a_newer_layout_beside_it_is_never_opened() -> None:
 
 def test_a_path_the_user_set_is_used_as_it_is(tmp_path: Path) -> None:
     mine = tmp_path / "idx.sqlite3"
-    bare = _plugin() / "index.sqlite3"
-    _sqlite(bare, "11.0")
 
     index = open_index(AnsibleSettings(index_path=mine))
     index.status("source:prod")
 
     assert index._path == mine and mine.is_file()
     assert not Path(f"{mine}.inuse").exists()
-    assert _mark(bare) == "11.0"  # the default's bare file is not this run's business
     assert not (_plugin() / "index.v4.sqlite3").exists()
 
 
@@ -156,7 +149,6 @@ def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() ->
     newer = _plugin() / "index.v5.sqlite3"
     _sqlite(newer, "a one-off's layout 5")
     (_plugin() / "cached" / "index.v5" / "default").mkdir(parents=True)
-    (_plugin() / "caches" / "index.v4" / "default").mkdir(parents=True)  # a development build's
 
     open_index(AnsibleSettings())
     _fill_index()
@@ -164,7 +156,6 @@ def test_a_registered_install_removes_the_layout_nothing_holds_after_a_fill() ->
     assert not newer.exists()
     assert not (_plugin() / "cached" / "index.v5").exists()
     assert (_plugin() / "cached" / "index.v4").is_dir()
-    assert not (_plugin() / "caches").exists()
 
 
 def test_an_unregistered_install_keeps_both_layouts() -> None:

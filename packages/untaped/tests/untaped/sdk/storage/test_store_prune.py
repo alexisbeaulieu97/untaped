@@ -50,8 +50,8 @@ def composed(monkeypatch: pytest.MonkeyPatch) -> list[RefTarget]:
     return targets
 
 
-def _store(base: Path, layout: int = 5, bare: int | None = None) -> Store:
-    return Store("acme", "data", base=lambda: base, layout=layout, bare=bare)
+def _store(base: Path, layout: int = 5) -> Store:
+    return Store("acme", "data", base=lambda: base, layout=layout)
 
 
 def _layout(base: Path, layout: int, content: bytes = b"data") -> Path:
@@ -503,88 +503,6 @@ def test_an_anchor_that_cannot_be_listed_counts_as_live(
     monkeypatch.setattr(os, "scandir", scandir)
     assert _prune(store) == []
     assert held.exists()
-
-
-# --- the bare file -----------------------------------------------------------------
-
-
-def test_a_bare_file_rebuilt_after_the_adoption_goes(base: Path, composed: list[RefTarget]) -> None:
-    composed[:] = [RefTarget(plugin="acme", store="data", layout=4)]
-    _registered(composed)
-    adopted = _layout(base, 4, b"adopted")
-    base.write_bytes(b"rebuilt by 11.0")
-    bare_folder = named_plugin_dir("acme") / "caches" / "items"
-    bare_folder.mkdir(parents=True)
-    store = _store(base, layout=4, bare=4)
-    Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)
-    store.open()
-
-    [line] = _prune(store)
-
-    assert "(pre-11.1 name)" in line.message and line.layout == 4
-    assert not base.exists() and not bare_folder.exists()
-    assert adopted.read_bytes() == b"adopted"
-
-
-def test_a_bare_file_awaiting_this_codes_adoption_stays(
-    base: Path, composed: list[RefTarget], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    composed[:] = [RefTarget(plugin="acme", store="data", layout=4)]
-    _registered(composed)
-    base.parent.mkdir(parents=True)
-    base.write_bytes(b"layout 4")
-    monkeypatch.setattr(store_module, "_adopt", lambda *_args: False)  # busy
-    store = _store(base, layout=4, bare=4)
-    assert store.open() == base
-    assert _prune(store) == []
-    assert base.exists()
-
-
-def test_another_installs_bare_file_is_kept_while_its_layout_is_held(
-    base: Path, composed: list[RefTarget], tmp_path: Path
-) -> None:
-    _registered(composed)
-    other = _install(tmp_path / "tool")
-    write_reference(
-        RefHolder(kind="install", name="aaaaaaaaaaaa"),
-        [RefTarget(plugin="acme", store="data", layout=4)],
-        anchor=other,
-        version="11.1.0",
-    )
-    base.parent.mkdir(parents=True)
-    base.write_bytes(b"its data, awaiting its rename")
-    store = _store(base, layout=5, bare=4)
-    store.open()
-    assert _prune(store) == []
-    assert base.exists()
-
-
-def test_an_unheld_bare_file_of_an_older_layout_goes(base: Path, composed: list[RefTarget]) -> None:
-    _registered(composed)
-    base.parent.mkdir(parents=True)
-    base.write_bytes(b"11.0")
-    store = _store(base, layout=5, bare=4)
-    store.open()
-    [line] = _prune(store)
-    assert line.layout == 4 and not base.exists()
-
-
-def test_the_adoption_drops_11_0s_cache_folder_and_keeps_the_layouts(base: Path) -> None:
-    base.parent.mkdir(parents=True)
-    base.write_bytes(b"layout 4")
-    legacy = named_plugin_dir("acme") / "caches" / "items"
-    (legacy / "default").mkdir(parents=True)
-    (legacy / "default" / "k.json").write_text('{"old": true}')
-    cached = named_plugin_dir("acme") / "cached" / "items.v4"
-    (cached / "default").mkdir(parents=True)
-    (cached / "default" / "k.json").write_text('{"new": true}')
-    store = _store(base, layout=4, bare=4)
-    Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)
-
-    store.open()
-
-    assert not legacy.exists()
-    assert (cached / "default" / "k.json").read_text() == '{"new": true}'
 
 
 # --- the cache link -----------------------------------------------------------------

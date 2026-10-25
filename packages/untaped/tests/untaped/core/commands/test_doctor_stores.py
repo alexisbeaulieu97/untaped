@@ -35,8 +35,8 @@ def _row(*stores: Store, check: str = "stores") -> dict[str, object]:
     return row
 
 
-def _store(base: Path, *, layout: int = 4, bare: int | None = None) -> Store:
-    return Store("acme", "data", base=lambda: base, layout=layout, bare=bare)
+def _store(base: Path, *, layout: int = 4) -> Store:
+    return Store("acme", "data", base=lambda: base, layout=layout)
 
 
 def test_a_store_not_created_yet_passes(tmp_path: Path) -> None:
@@ -50,13 +50,6 @@ def test_one_layout_on_disk_passes_with_its_size(tmp_path: Path) -> None:
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "pass"
     assert row["detail"] == f"acme.data: layout 4 at {tmp_path / 'data.v4.db'} (2.0 KiB)"
-
-
-def test_a_bare_file_awaiting_its_rename_passes(tmp_path: Path) -> None:
-    (tmp_path / "data.db").write_bytes(b"x")
-    row = _row(_store(tmp_path / "data.db", bare=4))
-    assert row["status"] == "pass"
-    assert "data.db (1 B) is renamed to layout 4 on its next open" in str(row["detail"])
 
 
 def test_another_layout_nobody_holds_on_an_unregistered_machine_warns(tmp_path: Path) -> None:
@@ -107,8 +100,7 @@ def test_a_layout_a_running_process_has_open_warns(tmp_path: Path) -> None:
     row = _row(_store(tmp_path / "data.db"))
     assert row["status"] == "warn"
     assert "held by nobody: a running untaped has it open" in str(row["detail"])
-    assert row["fix"] == ["--profile", "default", "setup", "migrate-dirs"]
-    assert row["automatic"] is False
+    assert row["fix"] is None
 
 
 def test_a_damaged_lock_is_named_with_what_to_delete(tmp_path: Path) -> None:
@@ -289,7 +281,7 @@ def test_an_unlistable_refs_folder_warns_in_both_rows(
     assert stores["status"] == "warn"
     detail = str(stores["detail"])
     assert "layout 3 at" in detail and "holders unknown: the install references in" in detail
-    assert stores["fix"] is None  # neither register nor migrate-dirs: check the folder
+    assert stores["fix"] is None  # registering would not help: check the folder
     assert "not registered" not in str(references["detail"])
 
 

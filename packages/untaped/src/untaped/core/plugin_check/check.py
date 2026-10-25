@@ -16,8 +16,6 @@ verdict:
 - ``schema``: the owner schema hash the provider recorded (``fills.json``)
   against the installed owner's; a difference is ``owner-schema-drift``,
   reported, never failed;
-- ``migrations``: each ``setup migrate-dirs`` preview runs against an empty
-  HOME and returns ``MigrationRow`` rows;
 - ``unmarked-service``: a ``warn`` row when the settings say what needs
   setting up only through the legacy ``base_url``/``token`` names, so a
   plugin's ``assert_clean`` still passes.
@@ -28,8 +26,6 @@ An owner gets a ``contracts`` row: its ``contracts`` function loads.
 from __future__ import annotations
 
 import inspect
-import os
-import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from importlib import import_module
 from importlib.util import find_spec
@@ -40,12 +36,8 @@ from pydantic import BaseModel, ValidationError
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
-from untaped.runtime.settings import get_settings
-from untaped.sdk._home import HOME_ENV
 from untaped.sdk.errors import UsageError, first_validation_error
-from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
-from untaped.sdk.health.migrations import MigrationOptions, MigrationRow
 from untaped.sdk.words import not_found, plural
 
 if TYPE_CHECKING:
@@ -103,8 +95,6 @@ def _check(
         rows += _contracts(name, candidates, row)
     if spec.provides:
         rows += _offers(spec, candidates, row)
-    if spec.migrations:
-        rows += _migrations(spec, row)
     return rows
 
 
@@ -137,43 +127,6 @@ def _setup_marks(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
     if marks is not None and marks.legacy:
         detail = UNMARKED_SERVICE.sentence(unmarked_subject(spec.name))
         rows.append(row("unmarked-service", model.__name__, "warn", detail))
-    return rows
-
-
-_EMPTY_HOME = "preview runs on an empty HOME"
-
-
-def _migrations(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
-    """Each migration's preview, run against an empty HOME: it must read only and return rows."""
-    rows: list[PluginCheckRow] = []
-    saved = {key: os.environ.get(key) for key in ("HOME", HOME_ENV)}
-    with tempfile.TemporaryDirectory(prefix="untaped-plugin-check-") as home:
-        os.environ["HOME"] = home
-        os.environ[HOME_ENV] = os.path.join(home, ".untaped")
-        get_settings.cache_clear()
-        try:
-            for migration in spec.migrations:
-                try:
-                    found = migration.preview(
-                        PluginContext(settings=None, owner=spec.name), MigrationOptions()
-                    )
-                except Exception as exc:  # the row reports a plugin's failure
-                    rows.append(row("migrations", migration.id, "fail", _message(exc)))
-                    continue
-                if not isinstance(found, Sequence) or not all(
-                    isinstance(each, MigrationRow) for each in found
-                ):
-                    detail = f"preview returned {type(found).__name__}, expected MigrationRow rows"
-                    rows.append(row("migrations", migration.id, "fail", detail))
-                    continue
-                rows.append(row("migrations", migration.id, "pass", _EMPTY_HOME))
-        finally:
-            for key, value in saved.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
-            get_settings.cache_clear()
     return rows
 
 

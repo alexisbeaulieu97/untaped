@@ -2,21 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, Field
 
-from untaped.sdk import (
-    Command,
-    DirMigration,
-    MigrationOptions,
-    MigrationOutcome,
-    MigrationRow,
-    Plugin,
-    PluginContext,
-)
+from untaped.sdk import Command, Plugin
 from untaped.sdk.testing import Install, assert_surface, check
 
 Installer = Callable[..., Install]
@@ -33,14 +25,6 @@ class Glow(Command[LampSettings]):
         return "on"
 
 
-def _preview(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationRow]:
-    raise OSError("the old bulbs are unreadable")
-
-
-def _apply(_ctx: PluginContext, _options: MigrationOptions) -> Sequence[MigrationOutcome]:
-    return []
-
-
 class Lamp(Plugin):
     """Light things (a test's plugin)."""
 
@@ -49,11 +33,10 @@ class Lamp(Plugin):
 
 
 class Broken(Plugin):
-    """Light things, with a move that cannot preview (a test's plugin)."""
+    """Light things, with settings that are not frozen (a test's plugin)."""
 
     settings = LampSettings
     commands = (Glow,)
-    old_bulbs = DirMigration(title="old bulbs", preview=_preview, apply=_apply)
 
 
 def test_check_fails_with_every_failing_row(install: Installer) -> None:
@@ -61,7 +44,7 @@ def test_check_fails_with_every_failing_row(install: Installer) -> None:
     with pytest.raises(AssertionError) as failed:
         check(install(Broken))
     message = str(failed.value)
-    assert "broken migrations broken.old-bulbs" in message
+    assert "broken conventions settings-not-frozen" in message
     assert "broken conventions plugin-name" in message
 
 

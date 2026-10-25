@@ -10,7 +10,6 @@ from untaped.runtime.settings import plugins_root, resolve_state_path
 from untaped.sdk import home, plugin_path
 from untaped.sdk._home import config_path
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.health.migrations import unsafe_dir
 from untaped.sdk.projects import _reserved
 
 
@@ -63,17 +62,6 @@ def test_a_retired_variable_still_set_is_refused(
     with pytest.raises(ConfigError, match=f"{name} is no longer read") as caught:
         config_path()
     assert "UNTAPED_HOME" in (caught.value.hint or "")
-
-
-def test_the_real_dot_untaped_stays_safe_when_the_home_moves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "moved"))
-    real = Path.home() / ".untaped"
-    for path in (real, real / "refs", real / "plugins" / "acme", tmp_path / "moved" / "plugins"):
-        path.mkdir(parents=True, exist_ok=True)
-        assert unsafe_dir(path) is not None, path
-    assert unsafe_dir(tmp_path / "elsewhere") is None
 
 
 def test_a_checkout_holding_a_moved_home_can_be_a_project(

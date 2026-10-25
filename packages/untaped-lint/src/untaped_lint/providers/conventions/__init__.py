@@ -114,7 +114,6 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("fills", "error", "A provider's live items pass assert_fills."),
     ("schema", "warning", "A provider records the owner schema hash it was tested against."),
     ("owner-schema-drift", "warning", "A provider was tested against the installed owner."),
-    ("migrations", "error", "Each directory migration previews on an empty HOME."),
     (
         "unmarked-service",
         "warning",

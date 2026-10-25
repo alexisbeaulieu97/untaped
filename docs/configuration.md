@@ -144,8 +144,8 @@ setup plan` lists registration as its first step (`--check` does not count
 it), and the first row of the `untaped setup` screen registers this install.
 Before removing an install, run `untaped setup register --remove` from it, so
 the others may clean up after it; an install deleted without that is noticed
-(its folder no longer holds untaped), and `untaped setup migrate-dirs` removes
-its reference. `untaped doctor` lists every registered install and, for each
+(its folder no longer holds untaped), and its reference counts for nothing.
+`untaped doctor` lists every registered install and, for each
 store, the layouts on disk and what holds them.
 
 `untaped config migrate` (with or without `--dry-run`) and `doctor`'s `untaped.unknown-keys`

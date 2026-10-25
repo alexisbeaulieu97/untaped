@@ -50,10 +50,7 @@ import hashlib
 import importlib.metadata
 import importlib.util
 import logging
-import os
 import re
-import shutil
-import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -815,11 +812,9 @@ class Cache[M = None](OwnedBlock):
                 saved, kept_it = self._filled(
                     paths, own, key, label, result, version, typing, max_age
                 )
-            if saved.error is None and kept_it:
-                if self.store is not None:
-                    # a complete fill: this layout has data, so the ones nothing holds may go
-                    self.store.prune()
-                _remove_legacy(self.plugin)
+            if saved.error is None and kept_it and self.store is not None:
+                # a complete fill: this layout has data, so the ones nothing holds may go
+                self.store.prune()
             return _Kept(saved, value=None if typing is None else result.value)
         except UntapedError as exc:
             # the task closed `failed` on the way out, before the warning _serve emits
@@ -1156,12 +1151,6 @@ class Cache[M = None](OwnedBlock):
 
         folder = self.name if layout is None else f"{self.name}.v{layout}"
         return named_plugin_dir(self.plugin) / "cached" / folder
-
-    def _legacy_root(self) -> Path:
-        """``plugins/<plugin>/caches/<name>``: where untaped 11.0 kept this cache's sidecars."""
-        from untaped.runtime.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
-
-        return named_plugin_dir(self.plugin) / "caches" / self.name
 
     def _folder(self) -> Path:
         """The folder this cache's files are in for the active settings: computed here only.
@@ -1832,44 +1821,6 @@ def outdated_keys(cache: Cache[Any]) -> int:
         else:
             current.add(key)
     return len(other - current)
-
-
-def _remove_legacy(plugin: str) -> None:
-    """Remove ``plugin``'s ``caches/`` folder, untaped 11.0's, after a complete fill. Never raises.
-
-    No release since reads it: each cache keeps its files under ``cached/``.
-    Only a registered install removes it (``untaped setup register``), as
-    :meth:`Store.prune <untaped.sdk.storage.store.Store.prune>` does: renamed aside, then
-    deleted, with one ``untaped.pruned`` line, even under ``--quiet``.
-    """
-    from untaped.runtime.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
-    from untaped.sdk.storage import _refs as refs  # noqa: PLC0415 - refs imports the registry
-
-    folder = named_plugin_dir(plugin) / "caches"
-    try:
-        if not folder.is_dir() or folder.is_symlink() or refs.this_install() is None:
-            return
-        aside = folder.with_name(f"caches.removing-{uuid.uuid4().hex[:8]}")
-        os.rename(folder, aside)
-    except (OSError, ConfigError) as exc:
-        _LOG.debug("could not remove %s: %s", folder, exc)
-        return
-    from untaped.sdk.diagnostic import Pruned  # noqa: PLC0415 - no cycle
-    from untaped.sdk.health.migrations import (  # noqa: PLC0415 - migrations imports the registry
-        dir_bytes,
-    )
-    from untaped.sdk.words import shown_path, size_text  # noqa: PLC0415 - no cycle
-
-    size = dir_bytes(aside)
-    shutil.rmtree(aside, ignore_errors=True)
-    line = Pruned(
-        message=f"removed {shown_path(folder)} ({size_text(size)}): left by untaped 11.0, "
-        "which kept caches there; this release keeps them in cached/",
-        plugin=plugin,
-        path=str(folder),
-        bytes=size,
-    )
-    current_sink().emit(line, unmuted=True)
 
 
 # --------------------------------------------------------------------------- #

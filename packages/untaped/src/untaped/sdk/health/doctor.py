@@ -113,7 +113,7 @@ class DoctorResult:
 
 @dataclass(frozen=True)
 class PluginContext:
-    """Frozen per-invocation snapshot handed to a doctor-check or migration body.
+    """Frozen per-invocation snapshot handed to a doctor check's body.
 
     ``owner`` names the plugin the body runs for, which core sets; the body
     reaches its folder as ``ctx.plugin.dir``, as a command does.

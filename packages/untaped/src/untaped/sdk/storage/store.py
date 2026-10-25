@@ -12,9 +12,7 @@ data only: the worst that can happen to one is a rebuild.
 
 :meth:`Store.open` holds the layout's in-use lock, ``<layout path>.inuse``,
 for the rest of the process: shared by every process reading the layout,
-exclusive only for whoever moves it. A store from before 11.1 declares what
-its bare file holds (``bare=4``); the first :meth:`~Store.open` at that
-layout renames the bare file to the layout's name, same bytes, no rebuild.
+exclusive only for whoever moves it.
 
 :meth:`Store.prune`, called after a complete fill, removes every other layout
 no registered install holds (:mod:`untaped.sdk.storage._refs`) and no running process has
@@ -35,9 +33,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from untaped.runtime.settings import env_var_name
 from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.health.deprecated_keys import retired_values
 from untaped.sdk.marks import experimental
 from untaped.sdk.run import NoRunError
+from untaped.sdk.storage._fs import dir_bytes
 
 if TYPE_CHECKING:
     from filelock import FileLock, ReadWriteLock
@@ -48,13 +49,12 @@ if TYPE_CHECKING:
 _LOG = logging.getLogger("untaped.store")
 
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
-#: A SQLite file's journals: beside a bare file, a writer is (or was) mid-transaction.
+#: A SQLite file's journals, which travel with its layout when it is removed.
 SQLITE_SIDECARS = ("-journal", "-wal", "-shm")
 #: Seconds :meth:`Store.open` waits while another process moves the layout.
 _WAIT = 60.0
 #: How often :meth:`Store.open` retakes a lock whose file was moved aside while it waited.
 _RETRIES = 10
-_REFUSED = "has an in-use lock this filesystem refuses"
 #: The first bytes of a SQLite database: an ``.inuse`` file without them is damaged.
 _SQLITE_HEADER = b"SQLite format 3\x00"
 
@@ -66,16 +66,14 @@ class Store:
     ``name`` is one settings segment (``[a-z][a-z0-9_]*``). ``base`` returns
     the path the layouts are named beside (``~`` is expanded); it is read
     each time it is needed, never at import. ``layout`` is the oldest layout
-    this code's reader still opens (an integer from 1). ``bare`` is set only
-    by a store that predates 11.1: the layout a file at ``base`` itself, with
-    no layout in its name, was written at. ``keep`` says why another
-    layout's path must stay whatever holds it (a setting that points there,
-    such as :func:`~untaped.sdk.health.migrations.setting_guard`), or ``None``; the
-    cleanup, ``doctor`` and ``setup migrate-dirs`` all ask it. Two
-    declarations with the same values (the same callables) are equal.
+    this code's reader still opens (an integer from 1). ``keep`` says why
+    another layout's path must stay whatever holds it (a setting that points
+    there, such as :func:`setting_guard`), or ``None``; the cleanup and
+    ``doctor`` both ask it. Two declarations with the same values (the same
+    callables) are equal.
     """
 
-    __slots__ = ("_caches", "bare", "base", "keep", "layout", "name", "plugin")
+    __slots__ = ("_caches", "base", "keep", "layout", "name", "plugin")
 
     def __init__(
         self,
@@ -84,7 +82,6 @@ class Store:
         *,
         base: Callable[[], Path],
         layout: int = 1,
-        bare: int | None = None,
         keep: Callable[[Path], str | None] | None = None,
     ) -> None:
         from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415 - no cycle
@@ -98,15 +95,12 @@ class Store:
             raise ConfigError(f"store {plugin}.{name}: base must be a function returning a path")
         if not _positive(layout):
             raise ConfigError(f"store {plugin}.{name}: layout must be an integer from 1")
-        if bare is not None and not _positive(bare):
-            raise ConfigError(f"store {plugin}.{name}: bare must be an integer from 1")
         if keep is not None and not callable(keep):
             raise ConfigError(f"store {plugin}.{name}: keep must be a function of a path")
         self.plugin = plugin
         self.name = name
         self.base = base
         self.layout = layout
-        self.bare = bare
         self.keep = keep
         self._caches: set[Cache[Any]] = set()
 
@@ -114,16 +108,16 @@ class Store:
         """Record that ``cache`` (of this plugin) follows the store (``Cache(store=)``)."""
         self._caches.add(cache)
 
-    def _layout_folders(self, layout: int | None) -> list[Path]:
-        """Every following cache's folder at ``layout``; ``None``: 11.0's, beside the bare file.
+    def _layout_folders(self, layout: int) -> list[Path]:
+        """Every following cache's folder at ``layout``.
 
         The caches say where their folders are; the store only moves them.
         """
         caches = sorted(self._caches, key=lambda cache: cache.name)
-        return [cache._legacy_root() if layout is None else cache._root(layout) for cache in caches]
+        return [cache._root(layout) for cache in caches]
 
     def _identity(self) -> tuple[object, ...]:
-        return (self.plugin, self.name, self.base, self.layout, self.bare, self.keep)
+        return (self.plugin, self.name, self.base, self.layout, self.keep)
 
     def kept(self, path: Path) -> str | None:
         """Why the layout at ``path`` stays whatever holds it (``keep``), or ``None``.
@@ -165,11 +159,6 @@ class Store:
 
         return RefTarget(plugin=self.plugin, store=self.name, layout=self.layout)
 
-    @property
-    def adopts(self) -> bool:
-        """Whether a bare file at the base is this code's own layout, renamed on open."""
-        return self.bare == self.layout
-
     def _base_path(self) -> Path:
         """The declared base, ``~`` expanded."""
         return Path(self.base()).expanduser()
@@ -181,14 +170,11 @@ class Store:
     def other_paths(self) -> list[tuple[int, Path]]:
         """Every other layout on disk beside the base, with its number, oldest first.
 
-        A bare file at the base counts when the store declares ``bare``,
-        numbered by it. Reads the directory, writes nothing.
+        Reads the directory, writes nothing.
         """
         base = self._base_path()
         pattern = re.compile(rf"{re.escape(_stem(base))}\.v([1-9][0-9]*){re.escape(base.suffix)}")
         found: list[tuple[int, Path]] = []
-        if self.bare is not None and _there(base):
-            found.append((self.bare, base))
         try:
             entries = list(base.parent.iterdir())
         except OSError:
@@ -202,36 +188,19 @@ class Store:
     def open(self) -> Path:
         """This layout's path, with its in-use lock held for the rest of the process.
 
-        Creates the base's directory. When a bare file is this layout
-        (``bare == layout``) and the layout's own path does not exist yet,
-        the bare file is renamed to it under the layout's exclusive lock, and
-        the folders untaped 11.0 kept for the caches that follow the store
-        are removed (their files say nothing of the renamed one); when another
-        process holds the lock, a writer is mid-transaction or the rename
-        fails, the bare file is opened as it is and its path returned, and
-        the rename waits for a later open. Calling it again returns the same
-        path.
+        Creates the base's directory. Calling it again returns the same path.
         """
         target = self.path()
         with _REGISTRY_LOCK:
-            opened = _OPENED.get(target)
-            if opened is not None:
-                return opened
+            if target in _OPENED:
+                return target
             target.parent.mkdir(parents=True, exist_ok=True)
-            in_use = _in_use(target)
-            opened = target
-            base = self._base_path()
-            if self.adopts and not _there(target) and _there(base):
-                opened = target if _adopt(self, in_use, base, target) else base
-            in_use.hold()
-            if opened == base and not _there(base):
-                # another process adopted it meanwhile; with the read side held, none can now
-                opened = target
-            _OPENED[target] = opened
+            _in_use(target).hold()
+            _OPENED.add(target)
         from untaped.sdk.storage._refs import refresh  # noqa: PLC0415 - refs imports the registry
 
         refresh()  # a registered install's reference follows its code: after the lock, once
-        return opened
+        return target
 
     def prune(self) -> None:
         """Remove every other layout nothing holds: call it after a complete fill or write.
@@ -240,12 +209,11 @@ class Store:
         only after this process opened this layout through :meth:`open`, so
         its own data is in place first. Under the references' lock it reads
         every reference (one written by a newer untaped, or unreadable, stops
-        it) and, for each other layout on disk that no live reference names
-        (a bare file too, once its layout's named file exists), takes that
-        layout's exclusive lock without waiting: a busy or refused lock, or a
-        rename that fails, skips the layout until the next fill. The layout,
-        its SQLite sidecars, its caches' folders and its ``.inuse``
-        are renamed aside under that lock and deleted outside it. Each
+        it) and, for each other layout on disk that no live reference names,
+        takes that layout's exclusive lock without waiting: a busy or refused
+        lock, or a rename that fails, skips the layout until the next fill.
+        The layout, its SQLite sidecars, its caches' folders and its
+        ``.inuse`` are renamed aside under that lock and deleted outside it. Each
         removal prints one ``untaped.pruned`` line, even under ``--quiet``.
         Never raises.
         """
@@ -265,7 +233,7 @@ class Store:
                 removed = [
                     aside
                     for layout, path in self._candidates(held)
-                    if isinstance(aside := self._set_aside(layout, path), _Aside)
+                    if (aside := self._set_aside(layout, path)) is not None
                 ]
         except (OSError, UntapedError, NoRunError) as exc:  # a busy refs lock, no run
             _LOG.debug("could not prune %s: %s", self.qualified, exc)
@@ -274,65 +242,37 @@ class Store:
             aside.finish()
 
     def _candidates(self, held: set[int]) -> list[tuple[int, Path]]:
-        """The other layouts on disk no live holder names, oldest first.
+        """The other layouts on disk no live holder names and ``keep`` does not, oldest first."""
+        return [
+            (layout, path)
+            for layout, path in self.other_paths()
+            if layout not in held and self.kept(path) is None
+        ]
 
-        A bare file is one once its layout's named file exists (a pre-11.1
-        run rebuilt it after the adoption) or when nothing holds its layout;
-        while it awaits this code's own adoption, never. A path ``keep``
-        names never is.
+    def _set_aside(self, layout: int, path: Path) -> _Aside | None:
+        """Rename the layout at ``path`` and what travels with it aside; ``None`` when it stays.
+
+        It stays while its in-use lock is busy or refused, or when the rename fails.
         """
-        base = self._base_path()
-        found: list[tuple[int, Path]] = []
-        for layout, path in self.other_paths():
-            if self.kept(path) is not None:
-                continue
-            if path == base:
-                adopted = _there(layout_path(base, layout))
-                if adopted or (layout != self.layout and layout not in held):
-                    found.append((layout, path))
-            elif layout not in held:
-                found.append((layout, path))
-        return found
-
-    def _set_aside(self, layout: int, path: Path, *, unlocked: bool = False) -> _Aside | str:
-        """Rename the layout at ``path`` and what travels with it aside, or say why it stays.
-
-        ``unlocked``: a person chose to remove it after a preview, so a lock
-        this filesystem refuses (or a damaged one) does not stop it; a busy
-        lock still does.
-        """
-        bare = path == self._base_path()
-        lock_path = _lock_path(path, layout, bare=bare)
-        lock = _in_use(lock_path)
+        lock = _in_use(path)
         with lock.exclusive() as owned:
-            if not owned and not (unlocked and (lock.refused or damaged_lock(lock_path))):
-                return "is open in a running untaped" if not lock.refused else _REFUSED
+            if not owned:
+                return None
             companions = [
                 *(Path(f"{path}{end}") for end in SQLITE_SIDECARS),
-                *self._layout_folders(None if bare else layout),
-                _inuse_file(lock_path),
-                _inuse_dir(lock_path),
+                *self._layout_folders(layout),
+                _inuse_file(path),
+                _inuse_dir(path),
             ]
-            aside = _Aside(self, layout, path, bare=bare)
+            aside = _Aside(self, layout, path)
             if not aside.move(path):
-                return "could not be moved aside (open elsewhere, or not writable)"
+                return None
             for companion in companions:
                 if _there(companion):
                     aside.move(companion)
         with _REGISTRY_LOCK:
-            _LOCKS.pop(lock_path, None)
+            _LOCKS.pop(path, None)
         return aside
-
-
-def _lock_path(path: Path, layout: int, *, bare: bool) -> Path:
-    """The path whose in-use lock guards the layout at ``path``.
-
-    An 11.1 run reads a bare file awaiting its rename under that layout's own
-    lock; once renamed, only a pre-11.1 run (which takes no lock) reads the
-    bare path, whose own lock nobody holds.
-    """
-    named = layout_path(path, layout)
-    return named if bare and not _there(named) else path
 
 
 LockState = Literal["free", "busy", "refused", "damaged"]
@@ -346,18 +286,15 @@ KeptCode = Literal[
 
 @dataclass(frozen=True)
 class Layout:
-    """One layout of a store on disk, as ``doctor`` and ``setup migrate-dirs`` describe it.
+    """One layout of a store on disk, as ``doctor`` describes it.
 
-    ``own``: this code's layout, or the bare file it adopts on its next open
-    (``awaiting``). ``holders``: the live references that name it. ``lock``:
-    its in-use lock's state now.
+    ``own``: this code's layout. ``holders``: the live references that name
+    it. ``lock``: its in-use lock's state now.
     """
 
     layout: int
     path: Path
     own: bool
-    awaiting: bool
-    bare: bool
     holders: tuple[Reference, ...]
     lock: LockState
 
@@ -390,45 +327,24 @@ def survey(store: Store, references: Sequence[Reference]) -> list[Layout]:
     Reads only: a lock is tried without waiting and only when its file
     exists (a missing one is free).
     """
-    base = store._base_path()
     own = store.path()
     found: list[Layout] = []
     if _there(own):
         found.append(_layout_state(store, store.layout, own, references, own=True))
     for layout, path in store.other_paths():
-        awaiting = path == base and store.adopts and layout == store.layout and not _there(own)
-        found.append(
-            _layout_state(store, layout, path, references, own=awaiting, awaiting=awaiting)
-        )
+        found.append(_layout_state(store, layout, path, references, own=False))
     return found
 
 
 def _layout_state(
-    store: Store,
-    layout: int,
-    path: Path,
-    references: Sequence[Reference],
-    *,
-    own: bool,
-    awaiting: bool = False,
+    store: Store, layout: int, path: Path, references: Sequence[Reference], *, own: bool
 ) -> Layout:
-    bare = path == store._base_path()
     holders = tuple(
         ref
         for ref in references
         if ref.opaque is None and ref.live and layout in ref.layouts(store)
     )
-    if bare and _there(layout_path(path, layout)):
-        holders = ()  # a pre-11.1 rebuild beside the adopted file: no reference names this file
-    return Layout(
-        layout=layout,
-        path=path,
-        own=own,
-        awaiting=awaiting,
-        bare=bare,
-        holders=holders,
-        lock=_probe(_lock_path(path, layout, bare=bare)),
-    )
+    return Layout(layout=layout, path=path, own=own, holders=holders, lock=_probe(path))
 
 
 def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -> Kept | None:
@@ -478,11 +394,11 @@ def _damaged(layout: Layout) -> Kept | None:
 
     if layout.lock != "damaged":
         return None
-    lock = _inuse_file(_lock_path(layout.path, layout.layout, bare=layout.bare))
+    lock = _inuse_file(layout.path)
     return Kept(
         "damaged",
         f"its in-use lock {shown_path(lock)} is damaged, so the layout is neither protected "
-        "nor ever adopted or removed; delete that file while no untaped runs",
+        "nor ever removed; delete that file while no untaped runs",
     )
 
 
@@ -511,8 +427,8 @@ def _held(store: Store, references: Sequence[Reference]) -> set[int]:
 class _Aside:
     """One layout being removed: its paths renamed aside, deleted once every lock is released."""
 
-    def __init__(self, store: Store, layout: int, path: Path, *, bare: bool) -> None:
-        self.store, self.layout, self.path, self.bare = store, layout, path, bare
+    def __init__(self, store: Store, layout: int, path: Path) -> None:
+        self.store, self.layout, self.path = store, layout, path
         self.bytes = 0
         self.moved: list[Path] = []
 
@@ -529,9 +445,6 @@ class _Aside:
 
     def delete(self) -> list[str]:
         """Measure, then delete the renamed paths, outside every lock; why each that stayed."""
-        from untaped.sdk.health.migrations import (  # noqa: PLC0415 - migrations imports the registry
-            dir_bytes,
-        )
         from untaped.sdk.words import shown_path  # noqa: PLC0415 - no cycle
 
         failed: list[str] = []
@@ -560,9 +473,8 @@ def _report_pruned(aside: _Aside) -> None:
     from untaped.sdk.diagnostic import Pruned  # noqa: PLC0415 - no cycle
     from untaped.sdk.words import shown_path, size_text  # noqa: PLC0415 - no cycle
 
-    named = " (pre-11.1 name)" if aside.bare else ""
     message = (
-        f"removed layout {aside.layout}{named} of store {aside.store.qualified} at "
+        f"removed layout {aside.layout} of store {aside.store.qualified} at "
         f"{shown_path(aside.path)} ({size_text(aside.bytes)}): nothing holds it"
     )
     line = Pruned(
@@ -598,49 +510,47 @@ def _there(path: Path) -> bool:
     return path.exists() or path.is_symlink()
 
 
-def _adopt(store: Store, in_use: _InUse, base: Path, target: Path) -> bool:
-    """Rename the bare file to ``target`` under the exclusive lock; whether it is there now.
+def setting_guard(section: str, *keys: str) -> Callable[[Path], str | None]:
+    """A store's ``keep`` for a path any profile still sets one of ``<section>.<keys>`` into.
 
-    A SQLite ``-journal``, ``-wal`` or ``-shm`` beside the bare file means a writer is
-    in a transaction (or crashed in one): the file is read where it is, and
-    reading it settles the journal, so a later open renames it. The folders
-    11.0 kept for the caches that follow the store are removed under the
-    same lock, only after the rename.
+    A profile that names a layout's path (or a directory inside it, or one
+    holding it) keeps using it, so it stays, whatever the active profile
+    says. Each key is read from every profile in config.yml, as written, and
+    from its ``UNTAPED_*`` variable (a dotted key nests:
+    ``inventory.path`` is ``…__INVENTORY__PATH``); a relative path is
+    skipped (it would name a different directory wherever the command runs).
     """
-    from untaped.sdk.health.migrations import (  # noqa: PLC0415 - migrations imports the registry
-        move_group,
-    )
 
-    with in_use.exclusive() as owned:
-        if not owned:
-            return False
-        if _there(target) or not _there(base):
-            return True  # another process adopted it before this one got the lock
-        if any(_there(Path(f"{base}{end}")) for end in SQLITE_SIDECARS):
-            return False
-        try:
-            move_group(base, target, rename=os.rename)
-        except OSError:
-            # Open elsewhere (Windows), or on another filesystem: read it where it is.
-            _LOG.debug("could not rename %s to %s", base, target, exc_info=True)
-            return False
-        for legacy in store._layout_folders(None):
-            if not legacy.is_dir() or legacy.is_symlink():
-                continue
-            try:
-                # 11.0's freshness for the bare file, which an 11.0 run would call fresh
-                # over the file it rebuilds; this release keeps its own, in cached/
-                _discard(legacy)
-            except OSError:  # the 11.0 run refills its keys: time, never data
-                _LOG.debug("could not remove %s", legacy, exc_info=True)
-        return True
+    def guard(path: Path) -> str | None:
+        for key in keys:
+            if any(_overlapping(path, used) for used in _configured_paths(section, key)):
+                return f"config.yml or the environment still sets {section}.{key} there"
+        return None
+
+    return guard
 
 
-def _discard(path: Path) -> None:
-    """Rename a folder aside, then delete it: no reader ever sees half of it."""
-    aside = path.with_name(f"{path.name}.removing-{uuid.uuid4().hex[:8]}")
-    os.rename(path, aside)
-    shutil.rmtree(aside, ignore_errors=True)
+def _configured_paths(section: str, key: str) -> list[Path]:
+    """Every absolute path ``<section>.<key>`` is set to: config.yml's profiles, then the env."""
+    env = os.environ.get(env_var_name([section, *key.split(".")]))
+    found: list[Path] = []
+    for value in (*retired_values(section, key), env):
+        if not isinstance(value, str) or not value.strip():
+            continue
+        path = Path(value).expanduser()
+        if path.is_absolute() and path not in found:
+            found.append(path)
+    return found
+
+
+def _overlapping(left: Path, right: Path) -> bool:
+    """Whether one of the two paths is the other or lies inside it (symlinks resolved)."""
+    a, b = _real(left), _real(right)
+    return a == b or a.is_relative_to(b) or b.is_relative_to(a)
+
+
+def _real(path: Path) -> Path:
+    return Path(os.path.realpath(path.expanduser()))
 
 
 # --------------------------------------------------------------------------- #
@@ -679,7 +589,7 @@ def damaged_lock(path: Path) -> Path | None:
     """The layout at ``path``'s ``.inuse`` file when it is not a SQLite database, else ``None``.
 
     Such a lock is refused to every process, so the layout is neither
-    protected while it runs nor ever adopted or removed.
+    protected while it runs nor ever removed.
     """
     lock = _inuse_file(path)
     try:
@@ -855,8 +765,8 @@ def _sqlite_available() -> bool:
 #: Which in-use lock this process uses (tests run both).
 _FACTORY: Callable[[Path], _InUse] = _SqliteInUse
 _REGISTRY_LOCK = threading.RLock()
-#: Every layout this process opened → the path it opened; the locks live on in ``_LOCKS``.
-_OPENED: dict[Path, Path] = {}
+#: Every layout this process opened; the locks live on in ``_LOCKS``.
+_OPENED: set[Path] = set()
 _LOCKS: dict[Path, _InUse] = {}
 
 
@@ -881,4 +791,4 @@ def _forget_opened() -> None:
         _OPENED.clear()
 
 
-__all__ = ["Store"]
+__all__ = ["Store", "setting_guard"]

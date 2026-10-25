@@ -18,7 +18,7 @@ def check(install: Install) -> None:
     """Fail with every failing plugin check row (:func:`check_plugin`) of the plugins installed.
 
     The rows are those only a composed install can answer (registration,
-    setup marks, migrations, contracts, conformance, live); all of them run
+    setup marks, contracts, conformance, live); all of them run
     and every failure is listed, so an author fixes them in one pass. The
     rules that read only a plugin's files are ``untaped-lint``'s.
     """

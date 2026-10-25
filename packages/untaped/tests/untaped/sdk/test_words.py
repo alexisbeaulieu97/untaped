@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.words import hint, not_found, plural, q, run_hint, split_profile, summary
+from untaped.sdk.words import (
+    hint,
+    not_found,
+    plural,
+    q,
+    run_hint,
+    shown_path,
+    split_profile,
+    summary,
+)
 
 
 def test_plural_picks_the_noun_form_from_the_count() -> None:
@@ -64,3 +73,9 @@ def test_split_profile_reads_past_either_spelling(
     argv: tuple[str, ...], profile: str | None
 ) -> None:
     assert split_profile(argv) == (profile, ["skills", "update"])
+
+
+def test_shown_path_writes_home_as_a_tilde() -> None:
+    assert shown_path(Path.home()) == "~"
+    assert shown_path(Path.home() / "x") == "~/x"
+    assert shown_path("/elsewhere") == "/elsewhere"

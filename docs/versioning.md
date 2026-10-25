@@ -100,8 +100,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo store.
 - `untaped.sdk.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
-- Stores: `Store`, `holders`, `RefHolder`, `RefTarget` and
-  `other_layouts_migration` in `untaped.sdk`, `Cache(store=)`, and
+- Stores: `Store`, `holders`, `RefHolder` and `RefTarget` in
+  `untaped.sdk`, `Cache(store=)`, and
   `assert_schema_pinned` and `write_reference` in `untaped.sdk.testing`. The
   files a store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
@@ -116,8 +116,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
   and `untaped.sdk.testing.drive_screen` with `untaped.sdk.testing.ScreenKeys` and
   `untaped.sdk.testing.ScreenRun`. See [Screens](./screens.md).
-- Data files: `DataFile`, `read_data_file`, `write_data_file`,
-  `copy_data_file` and what a read answers (`Found`, `Absent`, `Unreadable`
+- Data files: `DataFile`, `read_data_file`, `write_data_file` and what a
+  read answers (`Found`, `Absent`, `Unreadable`
   and `OtherVersion`) in `untaped.sdk`, and `keep_value` and `damage` in
   `untaped.sdk.testing`. The files they write are stable from the start:
   users keep them. See
@@ -154,8 +154,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   argument, a removed setting, and a renamed or removed environment variable,
   record kind or record field.
   A file a setting's default names may still move in a minor when the
-  default's value is unchanged and the move is a lossless rename (a store's
-  bare file renamed to its layout's name), with a changelog entry.
+  default's value is unchanged and the move is a lossless rename (a file
+  renamed to a store layout's name), with a changelog entry.
 - Breaking changes are collected into the next major release, whose changelog
   opens with an upgrade section listing them.
 
