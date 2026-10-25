@@ -65,6 +65,7 @@ from untaped.sdk.plugin import Command, Plugin, field_block
 from untaped.sdk.plugin import Group as CommandGroup
 from untaped.sdk.run import Run, run_scope
 from untaped.sdk.storage.cache import Cache
+from untaped.sdk.storage.dir import Dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -273,9 +274,13 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         skills=skills,
         deprecations=lambda: loaded()["deprecations"],
     )
-    for field_name in ("caches", "migrations", "doctor_checks", "credentials"):
+    for field_name in ("caches", "migrations", "doctor_checks", "credentials", "stores"):
         kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
-        declared = [block for block in plugin.blocks if block.block in kinds]
+        declared = [
+            block
+            for block in plugin.blocks
+            if block.block in kinds and (block.block != "dir" or block.layout or block.items)
+        ]
         blocks = DeclaredBlocks(
             tuple(f"{name}.{block.name}" for block in declared),
             partial(lambda field: loaded()[field], field_name),
@@ -304,7 +309,9 @@ def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any
 
 #: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind
 #: no 11.x reader may see (a plugin class's state rows live in its own file,
-#: not the shared one ``PluginSpec.stores`` describes) or needs (a lock, a place).
+#: not the shared one ``PluginSpec.stores`` describes) or needs (a lock). A
+#: ``Dir`` goes to ``stores`` when it is numbered (its layouts, which references
+#: name and doctor lists) or holds ``items=`` (its item store, which holds use).
 _SPEC_FIELDS: dict[str, str | None] = {
     "cache": "caches",
     "dir-migration": "migrations",
@@ -313,7 +320,7 @@ _SPEC_FIELDS: dict[str, str | None] = {
     "deprecated-behaviour": "deprecations",
     "state-rows": None,
     "lock": None,
-    "dir": None,
+    "dir": "stores",
 }
 
 
@@ -328,7 +335,13 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
         # every owned block core ships has an entry (tested); one of a kind core
         # doesn't know has no 11.x reader to reach
         field = _SPEC_FIELDS.get(decl.block)
-        if isinstance(block, OwnedBlock) and field is not None:
+        if isinstance(block, Dir):
+            spelled = block._spelled_as(name, decl.name)
+            if block.layout is not None or block.item_type is not None:
+                blocks["stores"].append(
+                    spelled._layouts() if block.layout is not None else spelled.items()
+                )
+        elif isinstance(block, OwnedBlock) and field is not None:
             blocks[field].append(block._spelled_as(name, decl.name))
     return {field: tuple(each) for field, each in blocks.items()}
 

@@ -8,9 +8,15 @@ what it holds as a store numbers its layouts (N is the oldest layout this code
 still opens), inside the place: ``<place>/<attribute>.v4/``, or
 ``<place>/index.v4.sqlite3`` with ``file="index.sqlite3"``, so two installs at
 different layouts never open each other's data and nothing numbered lands
-beside the user's folder. ``open()`` gives the path, and ``locked(name)``
-holds the operation lock of one thing in the place (``locked()`` the place's
-own lock), waiting the declared ``wait=``.
+beside the user's folder (a numbered ``at=`` place keeps its in-use files
+there too). References name a numbered place's layout, and ``prune()`` removes
+the layouts nothing holds once the plugin has refreshed its own. ``items=``
+lets holders (projects) hold things in an unnumbered place (a ``str`` or
+``RootModel[str]`` type, with ``release=`` and ``moved=`` as an
+:class:`~untaped.sdk.storage.holds.ItemStore` takes them); ``items()`` is that
+item store. ``open()`` gives the path, and ``locked(name)`` holds the operation
+lock of one thing in the place (``locked()`` the place's own lock), waiting the
+declared ``wait=``.
 """
 
 from __future__ import annotations
@@ -20,7 +26,9 @@ from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
+
+from pydantic import RootModel as PydanticRootModel
 
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._home import CORE
@@ -30,7 +38,13 @@ from untaped.sdk.marks import experimental
 from untaped.sdk.storage.lock import operation_lock
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from untaped.sdk.storage.holds import ItemStore, LetGo, MoveAsk, Refused, ReleaseAsk
     from untaped.sdk.storage.store import Store
+
+#: ``moved=`` left out: an ``items=`` place must say whether a holder's move needs repair.
+_UNSET: object = object()
 
 #: Names core keeps under ``plugins/<plugin>/`` itself: no Dir may take them.
 RESERVED = frozenset({"cached", "state", CORE})
@@ -49,6 +63,9 @@ class Dir(OwnedBlock):
         layout: int | None = None,
         file: str | None = None,
         wait: timedelta | None = None,
+        items: type[str] | type[PydanticRootModel[str]] | None = None,
+        release: Callable[[ReleaseAsk[Any]], LetGo[Any] | Refused] | None = None,
+        moved: Callable[[MoveAsk[Any]], str | None] | None | object = _UNSET,
     ) -> None:
         if at is not None and not isinstance(at, SettingKey):
             raise TypeError(f"Dir: at takes a path setting, as in key(Settings).path, not {at!r}")
@@ -62,11 +79,34 @@ class Dir(OwnedBlock):
             raise TypeError(f"Dir: file takes one file name, not {file!r}")
         if wait is not None and (not isinstance(wait, timedelta) or wait < timedelta(0)):
             raise TypeError(f"Dir: wait takes a timedelta of zero or more, not {wait!r}")
+        if items is not None and layout is not None:
+            raise TypeError(
+                "Dir: layout= and items= don't go together: holders hold things by name, "
+                "so the things in an items= place are not numbered"
+            )
+        if items is None and (release is not None or moved is not _UNSET):
+            raise TypeError("Dir: release= and moved= go with items=, the type others hold")
+        if items is not None and (release is None or moved is _UNSET):
+            raise TypeError(
+                "Dir: items= needs release= (how a holder lets go) and moved= (a repair, "
+                "or None when nothing points into a holder)"
+            )
+        if items is not None and not (
+            items is str or (isinstance(items, type) and issubclass(items, PydanticRootModel))
+        ):
+            raise TypeError(f"Dir: items takes str or a RootModel[str], not {items!r}")
+        if (release is not None and not callable(release)) or not (
+            moved is _UNSET or moved is None or callable(moved)
+        ):
+            raise TypeError("Dir: release= and moved= take functions (moved= may be None)")
         super().__init__()
         self.at = at
         self.layout = layout
         self.file = file
         self.wait = wait
+        self.item_type = items
+        self.release = release
+        self.moved = None if moved is _UNSET else moved
         self._stores: dict[tuple[str, str, Path], Store] = {}
 
     def __repr__(self) -> str:
@@ -84,12 +124,12 @@ class Dir(OwnedBlock):
         return None
 
     def problems(self) -> tuple[str, ...]:
-        if self.layout is None:
+        if self.layout is None and self.item_type is None:
             return ()
-        from untaped.sdk.storage.store import valid_store_name  # noqa: PLC0415 - numbered only
+        from untaped.sdk.storage.store import valid_store_name  # noqa: PLC0415 - stores only
 
         return tuple(
-            f"a numbered Dir is named [a-z][a-z0-9_]*, not {name!r}"
+            f"a Dir with layout= or items= is named [a-z][a-z0-9_]*, not {name!r}"
             for name in (self.derived_name(binding.attribute) for binding in self.bindings)
             if not valid_store_name(name)
         )
@@ -147,6 +187,43 @@ class Dir(OwnedBlock):
             ) from exc
         return path
 
+    def prune(self) -> None:
+        """Remove this place's other layouts nothing holds, after a complete refresh of it.
+
+        A numbered place only, as a store prunes (:meth:`Store.prune`): only a
+        registered install prunes, only after this process opened the place,
+        and never a layout a reference names or another process has open.
+        Never raises for a numbered place.
+        """
+        if self.layout is None:
+            raise ConfigError(f"{self._label} is not numbered, so it has no other layouts")
+        self._store().prune()
+
+    def items(self) -> ItemStore[Any]:
+        """The things holders (projects) hold here, as an item store (``items=`` only)."""
+        from untaped.sdk.storage.holds import ItemStore  # noqa: PLC0415 - holds imports refs
+
+        if self.item_type is None or self.release is None:
+            raise ConfigError(f"{self._label} declares no items=, so nothing in it is held")
+        return ItemStore(
+            self.plugin,
+            self.name,
+            item=self.item_type,
+            release=self.release,
+            moved=cast("Callable[[MoveAsk[Any]], str | None] | None", self.moved),
+        )
+
+    def _layouts(self) -> Store:
+        """The layouts as composition lists them for references and doctor, read on each use."""
+        from untaped.sdk.storage.store import Store  # noqa: PLC0415 - numbered places only
+
+        return Store(
+            self.plugin,
+            self.name,
+            base=lambda: self.place / (self.file or self.name),
+            layout=self.layout or 1,
+        )
+
     def _store(self) -> Store:
         """The store machinery behind a numbered place, one per plugin, name and folder."""
         from untaped.sdk.storage.store import Store  # noqa: PLC0415 - numbered places only
@@ -168,7 +245,8 @@ class Dir(OwnedBlock):
         Waits up to the declared ``wait=`` for another process, then fails
         with ``<plugin>.<dir> '<name>' is busy (another untaped process)``.
         Taking it again in one thread only counts. The place's own lock and
-        its things' locks are separate: a plugin uses one or the other.
+        its things' locks are separate locks, so holding one never waits on
+        the other.
         """
         if self.wait is None:
             raise ConfigError(

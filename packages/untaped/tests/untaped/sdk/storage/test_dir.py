@@ -17,6 +17,7 @@ from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import ConfigError, Dir, ErrorCategory, Lock, Plugin, UntapedError, key
 from untaped.sdk.plugin_records import InstalledPlugin
 from untaped.sdk.run import Composition, Run, run_scope
+from untaped.sdk.storage.holds import Refused
 
 
 class Settings(BaseModel):
@@ -120,17 +121,22 @@ def test_an_unnumbered_file_is_the_file_in_the_place(tmp_path: Path) -> None:
     assert not Single.log.path.exists()
 
 
-def test_composition_refuses_a_numbered_place_a_store_cannot_name() -> None:
+@pytest.mark.parametrize(
+    "place",
+    [Dir(layout=2), Dir(items=str, release=lambda ask: Refused(reason="no"), moved=None)],
+    ids=["numbered", "items"],
+)
+def test_composition_refuses_a_store_place_a_store_cannot_name(place: Dir) -> None:
     class Shouty(Plugin):
         """Shouty."""
 
         settings = Settings
-        Index = Dir(layout=2)
+        Index = place
 
     declaration = compose([PluginEntry("demo", f"{__name__}:Shouty", Shouty)])
     [quarantined] = declaration.quarantined
     assert [(p.rule, p.detail) for p in quarantined.problems] == [
-        ("block-shape", "a numbered Dir is named [a-z][a-z0-9_]*, not 'Index'")
+        ("block-shape", "a Dir with layout= or items= is named [a-z][a-z0-9_]*, not 'Index'")
     ]
 
 

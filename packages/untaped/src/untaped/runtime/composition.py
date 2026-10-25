@@ -67,6 +67,7 @@ from untaped.sdk.plugin import (
     settings_model,
 )
 from untaped.sdk.storage.cache import Cache
+from untaped.sdk.storage.dir import Dir
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -455,6 +456,8 @@ class _PluginWalk:
                     name=name,
                     module=value.module,
                     cache=_cache_setting(value) if isinstance(value, Cache) else None,
+                    layout=value.layout if isinstance(value, Dir) else None,
+                    items=isinstance(value, Dir) and value.item_type is not None,
                 )
             )
         return tuple(blocks)
