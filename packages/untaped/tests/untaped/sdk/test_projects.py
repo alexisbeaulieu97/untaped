@@ -16,6 +16,7 @@ import stat
 import subprocess
 import threading
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ import pytest
 from untaped.core.project_lifecycle import preview_check
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import projects
-from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
+from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
 from untaped.sdk.projects import (
     Project,
     anchor_state,
@@ -381,6 +382,18 @@ def test_a_failed_record_keeps_the_marker_and_exits_4(tmp_path: Path) -> None:
     assert caught.value.hint == "the next command that changes the project records it"
     assert (tmp_path / "PROJ" / ".untaped" / "project.json").is_file()
     assert init(tmp_path / "PROJ").action == "recorded"
+
+
+def test_a_busy_refs_lock_says_so_and_stays_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from filelock import FileLock
+
+    monkeypatch.setattr(refs.REFS, "wait", timedelta(0))
+    with FileLock(str(refs.REFS.lock_path())), pytest.raises(UntapedError) as caught:
+        init(tmp_path / "PROJ")
+    assert str(caught.value) == "untaped.refs is busy (another untaped process)"
+    assert caught.value.category is ErrorCategory.UNAVAILABLE
 
 
 def test_an_unwritable_home_makes_nothing_and_exits_4(tmp_path: Path) -> None:

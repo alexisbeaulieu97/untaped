@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._home import DEFAULT_HOME, home
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
+from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import atomic_write
 from untaped.sdk.storage._refs import (
@@ -666,12 +666,14 @@ def _record(
                 anchor_id=AnchorId.of(root),
                 moved_from=moved_from,
             )
-    except (OSError, UntapedError) as exc:  # the reference's write, or the refs lock
-        cause = exc.__cause__ if isinstance(exc.__cause__, OSError) else exc
-        why = (cause.strerror or str(cause)) if isinstance(cause, OSError) else str(cause)
+    except (OSError, ConfigError) as exc:
+        # The write's own failure, raised as is or through DataFile; a busy lock says so itself.
+        cause = exc if isinstance(exc, OSError) else exc.__cause__
+        if not isinstance(cause, OSError) or isinstance(cause, TimeoutError):
+            raise
         raise ConfigError(
             f"{shown_path(root)} is a project, but recording it in {shown_path(REFS.place)} "
-            f"failed: {why}",
+            f"failed: {cause.strerror or cause}",
             hint="the next command that changes the project records it",
         ) from exc
 

@@ -243,6 +243,12 @@ def test_the_asks_check_their_fields() -> None:
     assert "apply" not in repr(plan)
 
 
+def test_plan_release_opens_a_run_when_a_plugin_test_has_none(tmp_path: Path) -> None:
+    first, _ = _two(tmp_path)
+    plans = contextvars.Context().run(plan_release, first, REPOS)  # no run in this context
+    assert len(plans) == 2
+
+
 def test_testing_helpers_plan_without_applying(tmp_path: Path) -> None:
     first, _ = _two(tmp_path)
     plans = plan_release(first, REPOS)
