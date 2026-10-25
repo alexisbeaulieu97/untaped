@@ -26,6 +26,7 @@ from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import PackagedSkill
+from untaped.runtime.declaration import Declaration
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
@@ -39,18 +40,19 @@ from untaped.runtime.registry import (
     RegisteredPlugin,
     compose,
     discover_candidates,
+    kept_declaration,
     run_deferred_factory,
     section_settings,
     spliced_state,
 )
 from untaped.runtime.root_options import (
+    RootLine,
     _before_separator,
-    _consume_leading_root_options,
-    _dispatch_with_root_options,
     _root_callback_signature,
     _root_options,
     _RootOption,
     applied_root_options,
+    dispatch_line,
     resolve_command,
 )
 from untaped.runtime.settings import (
@@ -114,10 +116,10 @@ _COMPOSED_RESULT: CompositionResult | None = None
 #: The root :func:`build_root_app` last built, which :func:`root_command` reads.
 _BUILT_ROOT: App | None = None
 
-#: The run :func:`run_root` started, its root options applied, until the root
-#: callback takes it over (dispatcher state: an invocation nested in a command
-#: starts its own).
-_STARTED: ContextVar[Run | None] = ContextVar("untaped_started_run", default=None)
+#: The run :func:`run_root` started and the line its token pass left, until the
+#: root callback takes them over (dispatcher state: an invocation nested in a
+#: command starts its own).
+_STARTED: ContextVar[tuple[Run, RootLine] | None] = ContextVar("untaped_started_run", default=None)
 
 
 def _register_shell_and_plugins(result: CompositionResult) -> None:
@@ -522,43 +524,51 @@ def _refresh_reference(command_tokens: Sequence[str]) -> None:
 
 
 @contextmanager
-def _started(tokens: Sequence[str]) -> Iterator[Run]:
+def _started(
+    tokens: Sequence[str], declaration: Declaration | None
+) -> Iterator[tuple[Run, RootLine]]:
     """Start the invocation of ``tokens``: its root options applied, then its one run.
 
-    The run is current for the block; the root attaches the composition to
-    it once built (:func:`_attach`). Its home resolves on first read, so a
-    home that doesn't resolve fails only what reads it, through the run's
-    sink, and root ``--help`` and ``--version`` still print.
+    The token pass reads the line by ``declaration``'s token shapes (none:
+    a command the pass can't place takes its root options at dispatch). The
+    run is current for the block; the root attaches the composition to it
+    once built (:func:`_attach`). Its home resolves on first read, so a home
+    that doesn't resolve fails only what reads it, through the run's sink,
+    and a command that never reads it (root ``--help``, ``--version``, a
+    group's help) still runs.
     """
     from untaped.runtime.run import start_run  # noqa: PLC0415 - a start runs no command
 
     note_requested_format(tokens)  # a bad root option reports in the format asked for
-    with applied_root_options(tokens, _root_options()), run_scope(start_run()) as run:
-        marker = _STARTED.set(run)
+    with (
+        applied_root_options(tokens, _root_options(), declaration) as line,
+        run_scope(start_run()) as run,
+    ):
+        marker = _STARTED.set((run, line))
         try:
-            yield run
+            yield run, line
         finally:
             _STARTED.reset(marker)
 
 
 @contextmanager
-def _invocation(tokens: Sequence[str], result: CompositionResult) -> Iterator[None]:
-    """The block under the run :func:`run_root` started, or one started here for ``tokens``.
+def _invocation(tokens: Sequence[str], result: CompositionResult) -> Iterator[RootLine]:
+    """The line under the run :func:`run_root` started, or a run started here for ``tokens``.
 
     The root app driven directly (a test's ``app.meta``) starts its own run
-    over the composition it mounted.
+    over the composition it mounted, reading the line by its declaration.
     """
     started = _STARTED.get()
-    if started is not None and current_run() is started:
+    if started is not None and current_run() is started[0]:
         marker = _STARTED.set(None)  # an invocation nested in the command starts its own
         try:
-            yield
+            yield started[1]
         finally:
             _STARTED.reset(marker)
         return
-    with _started(tokens) as run:
+    with _started(tokens, result.mount.declaration) as (run, line):
         _attach(run, result)
-        yield
+        yield line
 
 
 def _install_root_callback(
@@ -577,22 +587,19 @@ def _install_root_callback(
     # so the command sees it and root options never match past it.
     app.meta.end_of_options_delimiter = ""
 
-    def _dispatch_root(ran: Sequence[Dispatched], *tokens: str) -> object:
+    def _dispatch_root(ran: Sequence[Dispatched], line: RootLine) -> object:
         dispatched = False
-        command_tokens: list[str] = []
+        command_tokens = line.tokens
         failed = True
         try:
             with report_errors():
-                command_tokens = _consume_leading_root_options(list(tokens), root_options)
-                if command_tokens[:1] == ["--"]:
-                    command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
                 # What dispatch reports before the command parses (the reference
                 # refresh's warning, deprecated command and option notices)
                 # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
                 _refresh_reference(command_tokens)
-                outcome = _dispatch_with_root_options(app, command_tokens, root_options)
+                outcome = dispatch_line(app, line, root_options)
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
@@ -610,8 +617,8 @@ def _install_root_callback(
         # One diagnostics scope covers the command and the checks after it,
         # so their warnings follow the command's --format. One run covers the
         # invocation: root --help and --version, and any command it dispatches.
-        with diagnostics_scope(), dispatching() as ran, _invocation(tokens, result):
-            return _dispatch_root(ran, *tokens)
+        with diagnostics_scope(), dispatching() as ran, _invocation(tokens, result) as line:
+            return _dispatch_root(ran, line)
 
     signature = _root_callback_signature(root_options)
     _root_callback.__signature__ = signature  # type: ignore[attr-defined]
@@ -632,16 +639,17 @@ def run_root(
 ) -> object:
     """Start the invocation's run, compose the root app into it and run it: the ``main()``.
 
-    Before anything else, one pass over the tokens applies every root
-    option, wherever it sits before a ``--``, and starts the run; then the
-    root is composed and its composition attached to the run, then the
-    tokens are dispatched under it. One diagnostics scope spans all of it,
+    Before anything else, one pass over the tokens applies the root options,
+    reading the line by the kept declaration's token shapes, and starts the
+    run; then the root is composed and its composition attached to the run,
+    then the tokens are dispatched under it. One diagnostics scope spans all of it,
     so composition warnings (a quarantined plugin) follow the ``--format``
     the tokens ask for, like an error found before parsing.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
-    with diagnostics_scope(), _started(argv) as run:
-        root = build_root_app(candidates=candidates)
+    found = list(discover_candidates()) if candidates is None else list(candidates)
+    with diagnostics_scope(), _started(argv, kept_declaration(found)) as (run, _line):
+        root = build_root_app(candidates=found)
         _attach(run, composition())
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 

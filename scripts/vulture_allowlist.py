@@ -141,8 +141,6 @@ GithubSettings.token_command  # declared until 12.0; core adds it for other plug
 BackupEntry.before_hash
 
 # The 12.0 declaration and run: read by the mount and help, which later delivery steps add.
-build_run  # the mount builds a run per invocation
-run_scope  # and sets it
 System.LOCAL  # error systems the plugins' move PRs use
 System.GIT
 System.HTTP

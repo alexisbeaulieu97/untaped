@@ -1,4 +1,8 @@
-"""Root options apply wherever they sit, around ``--help`` too; ``--deprecated`` shows more."""
+"""Root options apply wherever they sit, around ``--help`` too; ``--deprecated`` shows more.
+
+``svc`` is mounted through the 11.x seam: the token pass takes only its
+leading root options, and dispatch takes the rest as before.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +10,18 @@ from typing import Annotated
 
 import pytest
 from cyclopts import App, Parameter
+from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_verbose
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import (
     _root_options,
-    _strip_help_root_options,
+    _take_help_root_options,
     applied_root_options,
 )
+from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk.marks import deprecated, show_deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
@@ -76,16 +83,18 @@ def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
 
 
 def _strip(tokens: list[str]) -> list[str]:
-    return _strip_help_root_options(tokens, _root_options())
+    with applied_root_options(tokens, _root_options()) as line:
+        return _take_help_root_options(line.tokens, _root_options(), line)
 
 
-def test_one_pass_applies_a_root_option_wherever_it_sits_for_the_block() -> None:
-    with applied_root_options(["svc", "--help", "--verbose"], _root_options()):
+def test_the_pass_applies_a_root_option_after_the_root_s_help_for_the_block() -> None:
+    with applied_root_options(["--help", "--verbose"], _root_options()) as line:
         assert is_verbose()
+        assert line.tokens == ["--help"]
     assert not is_verbose()
 
 
-def test_help_strips_the_root_options_around_it() -> None:
+def test_help_strips_an_11x_command_s_root_options_around_it() -> None:
     assert _strip(["svc", "--help", "--verbose"]) == ["svc", "--help"]
     assert _strip(["svc", "--profile", "x", "--help"]) == ["svc", "--help"]
     assert _strip(["--help", "svc", "--profile=x"]) == ["--help", "svc"]
@@ -101,8 +110,8 @@ def test_conflicting_options_around_help_are_still_a_usage_error() -> None:
 def test_tokens_after_the_separator_are_never_root_options() -> None:
     tokens = ["svc", "--help", "--", "--verbose", "--deprecated"]
 
-    assert _strip(tokens) == tokens
-    with applied_root_options(tokens, _root_options()):
+    with applied_root_options(tokens, _root_options()) as line:
+        assert _take_help_root_options(line.tokens, _root_options(), line) == tokens
         assert not is_verbose()
         assert not show_deprecated()
 
@@ -113,12 +122,45 @@ def test_without_help_the_tokens_are_left_to_the_normal_dispatch() -> None:
     assert _strip(tokens) == tokens
 
 
-def test_a_command_s_homonymous_option_is_its_own_and_the_root_s_too() -> None:
-    # The token pass decides the root options before any command is known.
+def test_an_11x_command_s_homonymous_option_is_its_own() -> None:
+    # As before the token pass: the seam command parses it, so the root never sees it.
     result = CliInvoker().invoke(_root().meta, ["svc", "own", "--deprecated"])
 
     assert result.exit_code == 0, result.output
-    assert "own=True root=True" in result.stdout
+    assert "own=True root=False" in result.stdout
+
+
+class OwningSettings(BaseModel):
+    """Nothing to configure."""
+
+
+class Own(Command):
+    """Declare a root option of its own."""
+
+    deprecated: bool = Field(False, description="Own flag.")
+
+    def run(self) -> None:
+        return None
+
+
+class Owning(Plugin):
+    """A 12.0 plugin whose command declares `--deprecated`."""
+
+    settings = OwningSettings
+    commands = (Own,)
+
+
+def test_a_declared_command_naming_a_root_option_is_quarantined() -> None:
+    candidate = PluginCandidate(distribution="untaped-owning", name="owning", target=Owning)
+
+    bootstrap.build_root_app(candidates=[candidate])
+
+    (record,) = bootstrap.composition().quarantine
+    assert record.name == "owning"
+    assert record.detail == (
+        "Own.deprecated: --deprecated is a root option, which every command takes "
+        "(`untaped --deprecated`) [root-option]"
+    )
 
 
 def test_the_flag_resets_after_the_run() -> None:
@@ -136,8 +178,10 @@ def test_the_flag_is_a_root_parameter_beside_the_others() -> None:
     assert text.index("--profile") < text.index("--deprecated")
 
 
-def test_a_separator_closing_the_leading_root_options_leaves_the_rest_to_the_pass() -> None:
-    with applied_root_options(["--profile", "x", "--", "svc", "--verbose"], _root_options()):
-        assert is_verbose()
-    with applied_root_options(["svc", "--", "--verbose"], _root_options()):
+def test_a_separator_closing_the_leading_root_options_is_dropped() -> None:
+    tokens = ["--profile", "x", "--", "svc", "--verbose"]
+    with applied_root_options(tokens, _root_options()) as line:
+        assert line.tokens == ["svc", "--verbose"]  # dispatch takes the 11.x command's -v
+    with applied_root_options(["svc", "--", "--verbose"], _root_options()) as line:
+        assert line.tokens == ["svc", "--", "--verbose"]
         assert not is_verbose()

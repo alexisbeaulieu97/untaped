@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -12,12 +13,14 @@ from pydantic import BaseModel, Field
 
 from untaped.core.surface import generate
 from untaped.runtime import bootstrap
-from untaped.runtime import run as runtime_run
+from untaped.runtime.declaration import Declaration
 from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.root_options import RootLine
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk.run import Run, current_run
+from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -44,6 +47,23 @@ class Chime(Plugin):
     commands = (Ring,)
 
 
+class Nest(Command[ChimeSettings]):
+    """Call the root again from inside the command, then note the run once it returns."""
+
+    def run(self) -> None:
+        seen.append(current_run())
+        with bootstrap.kept_composition(), pytest.raises(SystemExit):
+            bootstrap.run_root(["chime", "ring"], candidates=[NESTED])
+        seen.append(current_run())
+
+
+class Nesting(Plugin):
+    """Ring, and ring again from inside a command."""
+
+    settings = ChimeSettings
+    commands = (Ring, Nest)
+
+
 def _old_app() -> App:
     app = create_app(name="old", help="An 11.x plugin.")
 
@@ -60,24 +80,22 @@ CHIME = PluginCandidate(distribution="untaped-chime", name="chime", target=Chime
 OLD = PluginCandidate(
     distribution="untaped-old", name="old", target=PluginSpec(name="old", app_factory=_old_app)
 )
+NESTED = PluginCandidate(distribution="untaped-chime", name="chime", target=Nesting)
 BROKEN = PluginCandidate(distribution="broken-dist", name="broken", target="no_such_mod:SPEC")
 
 
 @pytest.fixture
 def started(monkeypatch: pytest.MonkeyPatch) -> list[Run]:
-    """Every run started or built during the test, in order."""
+    """Every run made during the test, however it was made, in order."""
     seen.clear()
     runs: list[Run] = []
+    make = Run.__init__
 
-    def counting(make: Callable[..., Run]) -> Callable[..., Run]:
-        def wrapped(*args: Any, **kwargs: Any) -> Run:
-            runs.append(make(*args, **kwargs))
-            return runs[-1]
+    def counting(self: Run, *args: Any, **kwargs: Any) -> None:
+        make(self, *args, **kwargs)
+        runs.append(self)
 
-        return wrapped
-
-    monkeypatch.setattr(runtime_run, "start_run", counting(runtime_run.start_run))
-    monkeypatch.setattr(runtime_run, "build_run", counting(runtime_run.build_run))
+    monkeypatch.setattr(Run, "__init__", counting)
     return runs
 
 
@@ -112,16 +130,60 @@ def test_a_trailing_profile_is_the_run_s_pick_for_a_declared_command(
     assert _run_root(["chime", "ring", "--profile", "loud"], CHIME) in (0, None)
 
     assert capsys.readouterr().out.strip() == "HEY"
-    assert seen == started  # the one run picked it from the start
+    assert seen == started  # the command ran under the invocation's one run
+    # which keeps its pick after the invocation, the trailing --profile undone
+    assert started[0].picks("chime", ChimeSettings) == ChimeSettings(greeting="HEY")
+
+
+@pytest.mark.usefixtures("_isolated_config")
+def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines: list[tuple[Declaration | None, RootLine]] = []
+    read = bootstrap.applied_root_options
+
+    @contextmanager
+    def reading(
+        tokens: Sequence[str], options: dict[str, Any], declaration: Declaration | None = None
+    ) -> Iterator[RootLine]:
+        with read(tokens, options, declaration) as line:
+            lines.append((declaration, line))
+            yield line
+
+    monkeypatch.setattr(bootstrap, "applied_root_options", reading)
+
+    assert _run_root(["plugin", "list", "-q"]) in (0, None)  # nothing kept yet
+    assert _run_root(["plugin", "list", "-q"]) in (0, None)
+
+    (cold, first), (kept, second) = lines
+    assert cold is None
+    assert (first.tokens, first.placed) == (["plugin", "list", "-q"], False)  # dispatch takes -q
+    assert kept is not None
+    assert (second.tokens, second.placed) == (["plugin", "list"], True)
+
+
+@pytest.mark.usefixtures("_isolated_config")
+def test_a_root_called_inside_a_command_starts_its_own_run_and_hands_back_the_outer(
+    started: list[Run], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert _run_root(["chime", "nest"], NESTED) in (0, None)
+
+    outer, inner = started
+    assert seen == [outer, inner, outer]  # nest, the inner ring, nest again after it
+    assert capsys.readouterr().out.strip() == "hello"
 
 
 @pytest.mark.usefixtures("_isolated_config")
 def test_the_root_warns_once_about_a_quarantined_plugin_and_plugin_check_never(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _run_root(["plugin", "check", "chime"], CHIME, BROKEN)
+    root = bootstrap.build_root_app(candidates=[CHIME, BROKEN])
+    assert "quarantined" not in capsys.readouterr().err  # composing is not the root's run
 
-    assert capsys.readouterr().err.count("quarantined") == 1
+    result = CliInvoker().invoke(root.meta, ["plugin", "check", "chime"])
+
+    assert result.stderr.count("quarantined") == 1
+    assert "broken" in result.stderr
 
 
 def test_the_surface_walk_never_warns_about_a_quarantined_plugin(
@@ -142,6 +204,16 @@ def test_root_flags_print_when_the_home_does_not_resolve(
 
     assert _run_root(argv, CHIME) in (0, None)
     assert capsys.readouterr().out
+
+
+@pytest.mark.parametrize("argv", [["config", "--help"], ["chime", "--help"]])
+def test_a_command_that_never_reads_the_home_runs_when_it_does_not_resolve(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("UNTAPED_HOME", "relative/home")
+
+    assert _run_root(argv, CHIME) in (0, None)
+    assert "UNTAPED_HOME" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("argv", [["chime", "ring"], ["plugin", "list"]])

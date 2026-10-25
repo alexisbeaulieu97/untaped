@@ -16,10 +16,10 @@ their tokens live outside the file ([Tokens](#tokens)).
 ```
 
 untaped keeps everything in one folder, the home: `~/.untaped`, or the
-absolute path in `UNTAPED_HOME` (`~` is expanded; a relative path exits 4).
-Moving the home moves config, state, logins and core's files, so a second home
-shares none of them. A folder setting whose default is spelled under
-`~/.untaped` (`git.store_dir`, …) does not follow `UNTAPED_HOME` yet.
+absolute path in `UNTAPED_HOME` (`~` is expanded; with a relative one, a command
+reading the home exits 4, `--help` still prints). Moving the home moves config,
+state, logins and core's files, so a second home shares none of them. A folder
+setting defaulting under `~/.untaped` (`git.store_dir`, …) doesn't follow it yet.
 
 ### Renamed settings
 

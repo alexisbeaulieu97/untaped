@@ -10,4 +10,6 @@ arguments or `--stdin`, refusing rows of a kind `Stdin[R]` does not accept.
 A plugin class that composition refuses is quarantined (`bad-plugin-class`)
 with every problem it names; arguments that cannot be filled in field order
 (one after a list argument, a required one after an optional one) are one of
-those problems (`positional-order`).
+those problems (`positional-order`), and so is an option spelled as a root
+option: `--profile`, `--verbose`/`-v`, `--quiet`/`-q` or `--deprecated`
+(`root-option`).
