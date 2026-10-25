@@ -70,7 +70,7 @@ def check_plugins(
         raise UsageError(not_found("plugin", name, known=installed))
     violations = core_plugin_violations if core_only else plugin_violations
     rows: list[PluginCheckRow] = []
-    with kept_composition(quiet=True):
+    with kept_composition():
         for each in [name] if name is not None else installed:
             rows += _check(each, result, candidates, violations)
     return rows
@@ -141,7 +141,7 @@ def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> l
         unreadable_owners,
     )
 
-    with composed_with(_hermetic([name], candidates), quiet=True):
+    with composed_with(_hermetic([name], candidates)):
         if name in unreadable_owners():
             return [row("contracts", name, "fail", "its contracts function fails; see doctor")]
         names = sorted(info.name for info in owned_contracts().get(name, []))
@@ -157,7 +157,7 @@ def _offers(
     installed = {candidate.name for candidate in candidates}
     owners = [owner for owner in spec.provides if owner in installed]
     rows: list[PluginCheckRow] = []
-    with composed_with(_hermetic([spec.name, *owners], candidates), quiet=True) as composed:
+    with composed_with(_hermetic([spec.name, *owners], candidates)) as composed:
         unusable = _unusable_owners(owners, composed)
         rows += [row("registration", owner, "fail", why) for owner, why in unusable.items()]
         for entry in every_offer():

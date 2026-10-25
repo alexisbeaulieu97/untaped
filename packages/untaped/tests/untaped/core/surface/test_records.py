@@ -159,7 +159,7 @@ class Main(Command):
 
 def _lines(target: type[Plugin] = Shop, *, owner: str | None = None) -> list[Line]:
     candidate = PluginCandidate(distribution="untaped-shop", name="shop", target=target)
-    with kept_composition(quiet=True):
+    with kept_composition():
         result = compose_root(candidates=[candidate])
         assert not result.quarantine
         return record_lines(result, {}, owner=owner)

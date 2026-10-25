@@ -1,4 +1,4 @@
-"""Root options placed around ``--help`` apply, and ``--deprecated`` shows deprecated commands."""
+"""Root options apply wherever they sit, around ``--help`` too; ``--deprecated`` shows more."""
 
 from __future__ import annotations
 
@@ -10,7 +10,11 @@ from cyclopts import App, Parameter
 from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.output_policy import is_verbose
-from untaped.runtime.root_options import _apply_help_root_options, _root_options, _RootOption
+from untaped.runtime.root_options import (
+    _root_options,
+    _strip_help_root_options,
+    applied_root_options,
+)
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk.marks import deprecated, show_deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
@@ -71,34 +75,20 @@ def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
     assert "Old." not in _help("svc", "--help")
 
 
-def _apply(tokens: list[str]) -> tuple[list[str], list[str]]:
-    """``(remaining tokens, applied option names)``, with the options reset afterwards."""
-    applied: list[tuple[_RootOption, object]] = []
-    try:
-        remaining = _apply_help_root_options(tokens, _root_options(), applied)
-        return remaining, [spec.name for spec, _ in applied]
-    finally:
-        for spec, token in reversed(applied):
-            spec.resetter(token)
+def _strip(tokens: list[str]) -> list[str]:
+    return _strip_help_root_options(tokens, _root_options())
 
 
-def test_a_root_option_after_help_takes_effect() -> None:
-    applied: list[tuple[_RootOption, object]] = []
-    try:
-        remaining = _apply_help_root_options(
-            ["svc", "--help", "--verbose"], _root_options(), applied
-        )
-        assert remaining == ["svc", "--help"]
+def test_one_pass_applies_a_root_option_wherever_it_sits_for_the_block() -> None:
+    with applied_root_options(["svc", "--help", "--verbose"], _root_options()):
         assert is_verbose()
-    finally:
-        for spec, token in reversed(applied):
-            spec.resetter(token)
     assert not is_verbose()
 
 
-def test_a_value_option_around_help_takes_its_value_from_the_next_token() -> None:
-    assert _apply(["svc", "--profile", "x", "--help"]) == (["svc", "--help"], ["--profile"])
-    assert _apply(["--help", "svc", "--profile=x"]) == (["--help", "svc"], ["--profile"])
+def test_help_strips_the_root_options_around_it() -> None:
+    assert _strip(["svc", "--help", "--verbose"]) == ["svc", "--help"]
+    assert _strip(["svc", "--profile", "x", "--help"]) == ["svc", "--help"]
+    assert _strip(["--help", "svc", "--profile=x"]) == ["--help", "svc"]
 
 
 def test_conflicting_options_around_help_are_still_a_usage_error() -> None:
@@ -111,20 +101,24 @@ def test_conflicting_options_around_help_are_still_a_usage_error() -> None:
 def test_tokens_after_the_separator_are_never_root_options() -> None:
     tokens = ["svc", "--help", "--", "--verbose", "--deprecated"]
 
-    assert _apply(tokens) == (tokens, [])
+    assert _strip(tokens) == tokens
+    with applied_root_options(tokens, _root_options()):
+        assert not is_verbose()
+        assert not show_deprecated()
 
 
 def test_without_help_the_tokens_are_left_to_the_normal_dispatch() -> None:
     tokens = ["svc", "own", "--deprecated"]
 
-    assert _apply(tokens) == (tokens, [])
+    assert _strip(tokens) == tokens
 
 
-def test_a_command_with_its_own_homonymous_option_keeps_it_on_a_normal_run() -> None:
+def test_a_command_s_homonymous_option_is_its_own_and_the_root_s_too() -> None:
+    # The token pass decides the root options before any command is known.
     result = CliInvoker().invoke(_root().meta, ["svc", "own", "--deprecated"])
 
     assert result.exit_code == 0, result.output
-    assert "own=True root=False" in result.stdout
+    assert "own=True root=True" in result.stdout
 
 
 def test_the_flag_resets_after_the_run() -> None:
@@ -140,3 +134,10 @@ def test_the_flag_is_a_root_parameter_beside_the_others() -> None:
 
     assert "--deprecated" in text
     assert text.index("--profile") < text.index("--deprecated")
+
+
+def test_a_separator_closing_the_leading_root_options_leaves_the_rest_to_the_pass() -> None:
+    with applied_root_options(["--profile", "x", "--", "svc", "--verbose"], _root_options()):
+        assert is_verbose()
+    with applied_root_options(["svc", "--", "--verbose"], _root_options()):
+        assert not is_verbose()

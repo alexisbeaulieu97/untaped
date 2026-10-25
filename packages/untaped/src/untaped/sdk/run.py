@@ -118,12 +118,24 @@ class RunNotes:
     preview: bool = False
 
 
+#: What a run reads before its composition is attached: no plugin owns anything.
+_UNCOMPOSED = Composition()
+
+
 @dataclass(frozen=True, kw_only=True)
 class Run:
-    """One invocation's state, built by the runtime and read by the blocks."""
+    """One invocation's state, built by the runtime and read by the blocks.
 
-    home: Path
-    composition: Composition
+    The runtime starts it before anything else and attaches the composition
+    once it is built (:meth:`attach`); until then no plugin owns anything.
+    """
+
+    #: Where the home is, asked on each read of :attr:`home` (the runtime caches it):
+    #: a home that doesn't resolve fails the read, never the start of the run.
+    locate_home: Callable[[], Path]
+    #: Who owns what among the composed plugins: no plugin owns anything until
+    #: the runtime attaches the composition (:meth:`attach`).
+    composition: Composition = _UNCOMPOSED
     #: The settings the run picked: a plugin's section, typed, by section name.
     picks: Callable[[str, type[BaseModel]], BaseModel]
     diag: Diag
@@ -133,6 +145,18 @@ class Run:
     clock: Clock = field(default_factory=Clock)
     #: What blocks noted during ``run``, for core to read after it.
     notes: RunNotes = field(default_factory=RunNotes)
+
+    @property
+    def home(self) -> Path:
+        """The home folder; raises the error that keeps it from resolving."""
+        return self.locate_home()
+
+    def attach(self, composition: Composition) -> Run:
+        """Attach the run's one composition once it is built (it is frozen after); the run."""
+        if self.composition is not _UNCOMPOSED:
+            raise RuntimeError("a run's composition is attached once")
+        object.__setattr__(self, "composition", composition)  # frozen to every other writer
+        return self
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)

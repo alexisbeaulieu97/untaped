@@ -1,17 +1,19 @@
 """How the root app reads a command line before dispatch.
 
 The root options (``--profile``, ``--verbose``, ``--quiet``, ``--deprecated``),
-accepted anywhere before the command's own arguments; the rewriting of a
-command's loose or deprecated spelling to its registered name, with the
-deprecation warnings.
+accepted anywhere before a ``--``: one token pass applies them all before the
+run starts (:func:`applied_root_options`), and dispatch then only strips them
+from the command's tokens, so where an option sits never changes what the run
+picked. Also the rewriting of a command's loose or deprecated spelling to its
+registered name, with the deprecation warnings.
 The bootstrap composition root uses this one implementation.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -176,19 +178,49 @@ def _root_callback_signature(root_options: dict[str, _RootOption]) -> inspect.Si
     return inspect.Signature(parameters)
 
 
+@contextmanager
+def applied_root_options(
+    tokens: Sequence[str], root_options: dict[str, _RootOption]
+) -> Iterator[None]:
+    """Apply every root option ``tokens`` hold before a ``--``, wherever it sits, for the block.
+
+    The one pass that decides them: dispatch only strips them afterwards. A
+    ``--`` right after the leading root options only ends them
+    (``untaped --profile x -- cmd …``), as dispatch reads it. Each is undone
+    when the block ends, the last applied first.
+    """
+    applied: list[tuple[_RootOption, object]] = []
+    try:
+        remaining = list(tokens)
+        rest = _consume_leading_root_options(list(tokens), root_options)
+        if rest[:1] == ["--"]:
+            del remaining[len(tokens) - len(rest)]
+        remaining = list(_before_separator(remaining))
+        index = 0
+        while index < len(remaining):
+            name = remaining[index].partition("=")[0]
+            spec = _match_option(name, root_options)
+            if spec is None:
+                index += 1
+                continue
+            value, remaining = _consume_option_at(remaining, index, spec, name)
+            _apply_root_option(spec, value, applied)
+        yield
+    finally:
+        for option, token in reversed(applied):
+            option.resetter(token)
+
+
 def _consume_leading_root_options(
-    tokens: list[str],
-    root_options: dict[str, _RootOption],
-    applied_tokens: list[tuple[_RootOption, object]],
+    tokens: list[str], root_options: dict[str, _RootOption]
 ) -> list[str]:
-    """Apply and strip root options preceding the command, returning the rest."""
+    """Strip the root options preceding the command, returning the rest."""
     while tokens:
         name = tokens[0].partition("=")[0]
         spec = _match_option(name, root_options)
         if spec is None:
             break
-        value, tokens = _consume_option_at(tokens, 0, spec, name)
-        _apply_root_option(spec, value, applied_tokens)
+        _, tokens = _consume_option_at(tokens, 0, spec, name)
     return tokens
 
 
@@ -197,18 +229,13 @@ def _before_separator(tokens: Sequence[str]) -> Sequence[str]:
     return tokens[: tokens.index("--")] if "--" in tokens else tokens
 
 
-def _apply_help_root_options(
-    tokens: list[str],
-    root_options: dict[str, _RootOption],
-    applied_tokens: list[tuple[_RootOption, object]],
-) -> list[str]:
-    """Apply and strip every root option wherever it sits when the run prints help.
+def _strip_help_root_options(tokens: list[str], root_options: dict[str, _RootOption]) -> list[str]:
+    """Strip every root option wherever it sits when the run prints help.
 
-    Cyclopts prints help and ignores the tokens after ``--help``, and
-    :func:`_consume_path_root_options` leaves an option between the command path
-    and ``--help``; either way ``untaped awx --deprecated --help`` and
-    ``untaped --help --deprecated`` would drop the option. Tokens after ``--``
-    are never touched.
+    :func:`_consume_path_root_options` leaves an option between the command
+    path and ``--help`` (``untaped awx --deprecated --help``), where the
+    help would be parsed with it; the token pass already applied it. Tokens
+    after ``--`` are never touched.
     """
     if not any(token in _HELP_FLAGS for token in _before_separator(tokens)):
         return tokens
@@ -220,38 +247,31 @@ def _apply_help_root_options(
         if spec is None:
             index += 1
             continue
-        value, remaining = _consume_option_at(remaining, index, spec, name)
-        _apply_root_option(spec, value, applied_tokens)
+        _, remaining = _consume_option_at(remaining, index, spec, name)
     return remaining
 
 
 def _dispatch_with_root_options(
-    app: App,
-    command_tokens: list[str],
-    root_options: dict[str, _RootOption],
-    applied_tokens: list[tuple[_RootOption, object]],
+    app: App, command_tokens: list[str], root_options: dict[str, _RootOption]
 ) -> object:
-    """Dispatch optimistically; on unknown root option, strip, apply, retry.
+    """Dispatch optimistically; on an unknown root option, strip it and parse again.
 
-    Passthrough commands parse successfully (their ``*args`` absorb every
-    token), so their ``--profile``-looking tokens are never stolen; commands
-    declaring their own homonymous option win for the same reason. Parse
-    errors surface before the command body runs, so a retry never repeats
-    side effects.
+    The root options were applied before the run started
+    (:func:`applied_root_options`); this only takes them out of the
+    command's tokens, so a retry re-parses the command's own tokens and never
+    changes what the run picked. A passthrough command (its ``*args`` absorb
+    every token) and a command declaring its own homonymous option parse
+    successfully, so they keep the token. Parse errors surface before the
+    command body runs, so a retry never repeats side effects.
     """
     with command_selection():
-        return _dispatch(app, command_tokens, root_options, applied_tokens)
+        return _dispatch(app, command_tokens, root_options)
 
 
-def _dispatch(
-    app: App,
-    command_tokens: list[str],
-    root_options: dict[str, _RootOption],
-    applied_tokens: list[tuple[_RootOption, object]],
-) -> object:
-    command_tokens = _apply_help_root_options(command_tokens, root_options, applied_tokens)
+def _dispatch(app: App, command_tokens: list[str], root_options: dict[str, _RootOption]) -> object:
+    command_tokens = _strip_help_root_options(command_tokens, root_options)
     remaining = canonical_command_tokens(
-        app, _consume_path_root_options(app, command_tokens, root_options, applied_tokens)
+        app, _consume_path_root_options(app, command_tokens, root_options)
     )
     applied: set[str] = set()
     while True:
@@ -273,11 +293,9 @@ def _dispatch(
                 note_requested_format(remaining)
                 raise_usage(str(exc))
             applied.add(name)
-            spec = root_options[name]
-            value, remaining = _consume_option_at(
-                remaining, index, spec, remaining[index].partition("=")[0]
+            _, remaining = _consume_option_at(
+                remaining, index, root_options[name], remaining[index].partition("=")[0]
             )
-            _apply_root_option(spec, value, applied_tokens)
         except CycloptsError as exc:
             note_requested_format(remaining)
             raise_usage(str(exc))
@@ -432,21 +450,18 @@ def _command_name(app: App, token: str) -> str | None:
 
 
 def _consume_path_root_options(
-    app: App,
-    tokens: list[str],
-    root_options: dict[str, _RootOption],
-    applied_tokens: list[tuple[_RootOption, object]],
+    app: App, tokens: list[str], root_options: dict[str, _RootOption]
 ) -> list[str]:
-    """Apply and strip root options sitting between command names.
+    """Strip root options sitting between command names.
 
     ``untaped awx --profile x jobs list`` places a root option after a
     plugin (or group) name but before the next command name, where
     cyclopts would read it as an unknown command. Walking the command path
     (resolving lazy plugins only along the chain dispatch would
     resolve anyway), each run of root options followed by another command
-    name is applied and removed. Options after the last command name stay
-    in place for the leaf to parse, so a leaf's homonymous option still wins
-    and trailing root options go through the retry in
+    name is removed. Options after the last command name stay
+    in place for the leaf to parse, so a leaf's homonymous option still
+    reaches it, and trailing root options are stripped by the retry in
     :func:`_dispatch_with_root_options`.
     """
     remaining = list(tokens)
@@ -454,21 +469,17 @@ def _consume_path_root_options(
     index = 0
     while index < len(remaining):
         probe = remaining
-        pending: list[tuple[_RootOption, str]] = []
         while index < len(probe):
             head = probe[index].partition("=")[0]
             spec = _match_option(head, root_options)
             if spec is None:
                 break
-            value, probe = _consume_option_at(probe, index, spec, head)
-            pending.append((spec, value))
+            _, probe = _consume_option_at(probe, index, spec, head)
         if index >= len(probe) or probe[index].startswith("-"):
             break
         name = _command_name(current, probe[index])
         if name is None:
             break
-        for spec, value in pending:
-            _apply_root_option(spec, value, applied_tokens)
         remaining = probe
         current = current[name]
         index += 1

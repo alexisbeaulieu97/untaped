@@ -12,7 +12,7 @@ from untaped.sdk.run import Composition, Run
 def run_owning(home: Path, package: str, plugin: str) -> Run:
     """A run whose composition gives ``package``'s classes to ``plugin``; no settings, no sink."""
     return Run(
-        home=home,
+        locate_home=lambda: home,
         composition=Composition(packages={package: plugin}),
         picks=lambda _section, model: model(),
         diag=None,  # type: ignore[arg-type]  # these tests write nothing to stderr

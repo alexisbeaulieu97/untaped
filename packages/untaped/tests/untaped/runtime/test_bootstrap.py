@@ -468,15 +468,9 @@ def test_quarantined_providers_warn_and_the_root_boots(
     for section in ("rival", "rival2"):
         with pytest.raises(ConfigError):
             app_context().section(section, _ExtProfile)
-    err = capsys.readouterr().err
-    assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in err
-    assert (
-        "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate plugin "
-        "name: 'rival' (claimed by 'acme-dist', 'example-dist')"
-    ) in err
+    assert capsys.readouterr().err == ""  # composing warns about nothing; the root does
 
     root = bootstrap.build_root_app(candidates=candidates)
-    capsys.readouterr()
     assert "good" in root
     assert "awx" not in root
     assert "rival" not in root
@@ -484,6 +478,11 @@ def test_quarantined_providers_warn_and_the_root_boots(
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
+    assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in result.stderr
+    assert (
+        "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate plugin "
+        "name: 'rival' (claimed by 'acme-dist', 'example-dist')"
+    ) in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -527,7 +526,9 @@ def test_each_quarantined_plugin_warns_once_by_name(
     broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    bootstrap.compose_root(candidates=broken_first_party_candidates())
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(["--version"], candidates=broken_first_party_candidates())
+    assert exit_info.value.code in (0, None)
     assert capsys.readouterr().err.splitlines() == [
         f"warning: plugin {name!r} from 'untaped' quarantined [malformed-entry-point]: "
         f"could not resolve entry point 'untaped_missing_{name}:p' of distribution 'untaped': "

@@ -109,7 +109,7 @@ def _package(root: Path, package: str, plugin: str = PLUGIN) -> PluginCandidate:
 
 def compose_root(*, candidates: list[PluginCandidate]) -> CompositionResult:
     """One start's composition, its settings registrations undone afterwards."""
-    with composed_with(candidates, quiet=True) as result:
+    with composed_with(candidates) as result:
         return result
 
 

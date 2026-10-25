@@ -53,7 +53,7 @@ def providing(
         if key in held:
             raise ConfigError(f"{key!r} is the name of an installed plugin; pick another name")
     built = offering_candidates(offered, base, owner=owner)
-    with bootstrap.composed_with([*base, *built], quiet=True) as result:
+    with bootstrap.composed_with([*base, *built]) as result:
         refused = [record for record in result.quarantine if record.name in offered]
         if refused:
             raise ConfigError(

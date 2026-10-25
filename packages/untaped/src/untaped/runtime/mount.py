@@ -6,7 +6,8 @@ declaration a command line. Each command's options become the parameters of
 one generated Cyclopts command, whose call turns the tokens given into the
 command's data, validates it as the command class, has each field core owns
 fill itself from its flags (:meth:`~untaped.sdk._block.FieldBlock._fill`), runs
-``run`` under the invocation's run (:func:`untaped.runtime.run.build_run`) and
+``run`` under the invocation's run (one the mount builds only when no
+invocation opened one: :func:`untaped.runtime.run.current_or_built`) and
 prints what it returns.
 
 Until core reads the declaration itself (12.0 delivery step 4), a composed
@@ -63,7 +64,7 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.plugin import Command, Plugin, field_block
 from untaped.sdk.plugin import Group as CommandGroup
-from untaped.sdk.run import Run, run_scope
+from untaped.sdk.run import Run
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.dir import Dir
 
@@ -512,11 +513,11 @@ def _mark(stability: StabilityDecl | None) -> Stability | None:
 
 def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl, object]]) -> None:
     """Build the command from the tokens given, run it under the run, print what it returns."""
-    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+    from untaped.runtime.run import current_or_built  # noqa: PLC0415 - a start runs no command
 
     with report_errors():
         cls = mount.command(decl)
-        with run_scope(build_run(mount.declaration, mount.settings)) as run:
+        with current_or_built(mount.declaration, mount.settings) as run:
             command = _instance(mount, decl, cls, given)
             dispatched_now = _DISPATCHED.get()
             if dispatched_now is not None:
@@ -610,11 +611,11 @@ def run_built(
     ``flags`` gives each core field's flags by field path (``{"output":
     {"--format": "json"}}``); an optional bundle holding a core field is
     built around it, as the parser builds it. Errors propagate: the
-    caller reports them.
+    caller reports them. It runs under the current run, or one built for it.
     """
-    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
+    from untaped.runtime.run import current_or_built  # noqa: PLC0415 - a start runs no command
 
-    with run_scope(build_run(mount.declaration, mount.settings)):
+    with current_or_built(mount.declaration, mount.settings):
         return _ran(mount, decl, _refilled(mount, decl, command, flags))
 
 

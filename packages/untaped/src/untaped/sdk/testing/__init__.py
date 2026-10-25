@@ -592,7 +592,7 @@ def _bare_run() -> Run:
     from untaped.sdk._app_context import app_context  # noqa: PLC0415
 
     return Run(
-        home=untaped_home().expanduser(),
+        locate_home=lambda: untaped_home().expanduser(),
         composition=Composition(),
         picks=get_config_section,
         diag=Diagnostics(),
@@ -780,7 +780,7 @@ def check_plugin(
     from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
 
     found = list(discover_candidates()) if candidates is None else list(candidates)
-    with bootstrap.composed_with(found, quiet=True) as result:
+    with bootstrap.composed_with(found) as result:
         return check_plugins(result, found, name, core_only=True)
 
 
@@ -823,7 +823,7 @@ def check_conventions(
     if not file_rules_installed():
         warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=3)  # past the deprecated wrapper
 
-    with bootstrap.kept_composition(quiet=True):
+    with bootstrap.kept_composition():
         found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
     assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
 

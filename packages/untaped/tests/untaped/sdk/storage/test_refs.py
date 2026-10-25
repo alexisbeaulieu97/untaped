@@ -563,7 +563,7 @@ def test_the_composition_names_every_declared_store() -> None:
     data = Store("acme", "data", base=lambda: Path("/x/data.db"), layout=3)
     other = Store("acme", "catalogue", base=lambda: Path("/x/catalogue"), layout=1)
     spec = PluginSpec(name="acme", stores=(data, other))
-    with kept_composition(quiet=True):
+    with kept_composition():
         compose_root(candidates=[plugin_candidate(spec)])
         assert refs.composed_targets() == (
             RefTarget(plugin="acme", store="catalogue", layout=1),

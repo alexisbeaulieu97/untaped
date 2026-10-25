@@ -141,7 +141,7 @@ API, WEB = "github.com/acme/api", "github.com/acme/web"
 def _owner() -> Iterator[None]:
     global OWNER
     OWNER = Owner()
-    with bootstrap.kept_composition(quiet=True):
+    with bootstrap.kept_composition():
         bootstrap.compose_root(candidates=[plugin_candidate(SPEC)])
         yield
 
@@ -204,7 +204,7 @@ def test_holding_an_item_store_no_composed_plugin_lists_is_refused(tmp_path: Pat
 def test_item_stores_share_the_stores_listing_and_its_checks() -> None:
     twice = PluginSpec(name="acme", stores=(REPOS, REPOS))
     foreign = PluginSpec(name="other", stores=(REPOS,))
-    with bootstrap.kept_composition(quiet=True):
+    with bootstrap.kept_composition():
         result = bootstrap.compose_root(
             candidates=[plugin_candidate(twice), plugin_candidate(foreign)]
         )
@@ -1306,7 +1306,7 @@ def test_one_item_held_in_two_stores_gets_a_row_from_each(tmp_path: Path) -> Non
 
     mirrors = ItemStore("acme", "mirrors", item=RepoKey, release=_release, moved=mirrored)
     spec = PluginSpec(name="acme", stores=(REPOS, mirrors))
-    with bootstrap.kept_composition(quiet=True):
+    with bootstrap.kept_composition():
         bootstrap.compose_root(candidates=[plugin_candidate(spec)])
         first = make_project(tmp_path / "A", holds={REPOS: [API], mirrors: [API]})
     OWNER.raise_moved = 1
