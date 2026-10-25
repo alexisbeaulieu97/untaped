@@ -159,7 +159,7 @@ def test_a_declared_command_naming_a_root_option_is_quarantined() -> None:
     assert record.name == "owning"
     assert record.detail == (
         "Own.deprecated: --deprecated is a root option, which every command takes "
-        "(`untaped --deprecated`) [root-option]"
+        "(`untaped --deprecated`); rename the field [root-option]"
     )
 
 

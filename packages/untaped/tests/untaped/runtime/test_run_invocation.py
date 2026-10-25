@@ -135,11 +135,29 @@ def test_a_trailing_profile_is_the_run_s_pick_for_a_declared_command(
     assert started[0].picks("chime", ChimeSettings) == ChimeSettings(greeting="HEY")
 
 
+def test_profiles_repeated_among_a_declared_command_s_options_stack_in_order(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _isolated_config.write_text(
+        "format_version: 2\nprofiles:\n"
+        "  a:\n    chime:\n      greeting: A\n"
+        "  b:\n    chime:\n      greeting: B\n",
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
+
+    argv = ["chime", "ring", "--profile", "a", "-v", "-v", "--profile", "b"]
+    assert _run_root(argv, CHIME) in (0, None)
+
+    assert capsys.readouterr().out.strip() == "B"  # b layered over a, as `--profile a,b`
+
+
 @pytest.mark.usefixtures("_isolated_config")
 def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lines: list[tuple[Declaration | None, RootLine]] = []
+    #: Each pass's declaration, and the line as the pass left it.
+    lines: list[tuple[Declaration | None, list[str], bool]] = []
     read = bootstrap.applied_root_options
 
     @contextmanager
@@ -147,7 +165,7 @@ def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
         tokens: Sequence[str], options: dict[str, Any], declaration: Declaration | None = None
     ) -> Iterator[RootLine]:
         with read(tokens, options, declaration) as line:
-            lines.append((declaration, line))
+            lines.append((declaration, list(line.tokens), line.placed))
             yield line
 
     monkeypatch.setattr(bootstrap, "applied_root_options", reading)
@@ -155,11 +173,11 @@ def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
     assert _run_root(["plugin", "list", "-q"]) in (0, None)  # nothing kept yet
     assert _run_root(["plugin", "list", "-q"]) in (0, None)
 
-    (cold, first), (kept, second) = lines
+    (cold, *first), (kept, *second) = lines
     assert cold is None
-    assert (first.tokens, first.placed) == (["plugin", "list", "-q"], False)  # dispatch takes -q
+    assert first == [["plugin", "list", "-q"], False]  # dispatch reads the line, -q with it
     assert kept is not None
-    assert (second.tokens, second.placed) == (["plugin", "list"], True)
+    assert second == [["plugin", "list"], True]
 
 
 @pytest.mark.usefixtures("_isolated_config")

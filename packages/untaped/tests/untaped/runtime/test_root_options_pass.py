@@ -8,6 +8,7 @@ gets only its leading root options taken here.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
-from untaped.sdk.fields import AllowHyphen, Positional
+from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
 
@@ -47,10 +48,19 @@ def _command(path: tuple[str, ...], *options: OptionDecl) -> CommandDecl:
     )
 
 
+GREP = _command(
+    ("hello", "grep"),
+    _option("x", "bool", short="-x"),
+    _option("pattern", short="-p", allow_hyphen=True),
+    _option("exclude", short="-e"),
+    _option("count", "int", short="-n"),
+    _option("file", positional=True),
+)
 RUN = _command(("hello", "run"), _option("cmd", "list[str]", positional=True, allow_hyphen=True))
 APPLY = _command(("hello", "apply"), _option("files", "list[str]", positional=True, or_stdin=True))
 
-#: ``hello greet [--names N]... [--loud] [WHO]``, ``hello run CMD...`` (a command
+#: ``hello greet [--names N]... [--loud] [WHO]``, ``hello grep [-x] [-p PATTERN]
+#: [-e EXCLUDE] [-n COUNT] [FILE]`` (``-p`` takes a leading ``-``), ``hello run CMD...`` (a command
 #: line to run, leading ``-`` allowed), ``hello apply FILES...`` (``-`` reads
 #: stdin), ``hello jobs [ID]`` (a group with a command of its own) and ``hello
 #: jobs list``.
@@ -70,6 +80,7 @@ DECLARATION = Declaration(
                     _option("loud", "bool"),
                     _option("who", positional=True),
                 ),
+                GREP,
                 RUN,
                 APPLY,
                 GroupDecl(
@@ -123,8 +134,37 @@ def test_a_value_taking_option_reads_its_value_and_a_flag_none() -> None:
         True,
         True,
     )
-    # an option's value never starts with `-` unless it takes one: -v is the root's
-    assert _line("hello", "greet", "--names", "-v") == (["hello", "greet", "--names"], True, True)
+    # an option taking a value reads the next token, whatever it looks like:
+    # cyclopts refuses `-v` as the value, so the line stays as cyclopts reads it
+    assert _line("hello", "greet", "--names", "-v") == (
+        ["hello", "greet", "--names", "-v"],
+        True,
+        False,
+    )
+
+
+@pytest.mark.usefixtures("read")
+@pytest.mark.parametrize(
+    ("tokens", "verbose"),
+    [
+        # -x, then -p reading the next token (it takes a leading `-`)
+        (["-xp", "-v", "f"], False),
+        # -e takes no leading `-`: cyclopts refuses `-v` as its value, so it stays
+        (["-xe", "-v", "f"], False),
+        # a value attached to the cluster's last letter: the next token is free
+        (["-xpfoo", "-v", "f"], True),
+        (["-n5", "-v", "f"], True),
+        (["-n=5", "-v", "f"], True),
+        (["-xn=5", "-v", "f"], True),
+        # a cluster of flags only
+        (["-xx", "-v", "f"], True),
+    ],
+)
+def test_a_short_cluster_is_read_letter_by_letter_as_cyclopts_reads_it(
+    tokens: list[str], verbose: bool
+) -> None:
+    left = [token for token in tokens if not verbose or token != "-v"]
+    assert _line("hello", "grep", *tokens) == (["hello", "grep", *left], True, verbose)
 
 
 @pytest.mark.usefixtures("read")
@@ -195,11 +235,23 @@ class Run(Command):
         return " ".join(self.cmd)
 
 
+class Grep(Command):
+    """Print what it was given, and whether the root went verbose."""
+
+    x: Annotated[bool, Short("-x")] = Field(False, description="A flag.")
+    pattern: Annotated[str | None, Short("-p"), AllowHyphen] = Field(None, description="Any.")
+    count: Annotated[int | None, Short("-n")] = Field(None, description="How many.")
+    file: Positional[str | None] = Field(None, description="The file.")
+
+    def run(self) -> str:
+        return f"p={self.pattern} n={self.count} file={self.file} verbose={is_verbose()}"
+
+
 class Hello(Plugin):
     """Greet (a 12.0 plugin)."""
 
     settings = HelloSettings
-    commands = (Greet, Run)
+    commands = (Greet, Grep, Run)
 
 
 HELLO = PluginCandidate(distribution="untaped-hello", name="hello", target=Hello)
@@ -228,3 +280,68 @@ def test_a_declared_command_line_to_run_keeps_its_root_option_spellings() -> Non
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "ls -v -q"
+
+
+def _outcome(
+    argv: list[str],
+    *,
+    kept: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[object, str, str]:
+    """Run ``argv`` from the start, the line read with or without a kept declaration.
+
+    Without one (a first start, changed candidates, candidates given as
+    objects), dispatch reads the line by the composition's declaration.
+    """
+    declaration = bootstrap.compose_root(candidates=[HELLO]).mount.declaration if kept else None
+    monkeypatch.setattr(bootstrap, "kept_declaration", lambda _candidates: declaration)
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, candidates=[HELLO])
+    captured = capsys.readouterr()
+    return exit_info.value.code or 0, captured.out.strip(), captured.err.strip()
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize(
+    ("argv", "out"),
+    [
+        (["hello", "grep", "-xp", "-v", "f"], "p=-v n=None file=f verbose=False"),
+        (["hello", "grep", "-n5", "-v"], "p=None n=5 file=None verbose=True"),
+        (["hello", "grep", "-n=5", "f", "-v"], "p=None n=5 file=f verbose=True"),
+        (["hello", "greet", "--names", "Ada", "-v", "-v"], "Ada verbose=True deprecated=False"),
+        (
+            ["hello", "greet", "-v", "--names", "Ada", "--deprecated"],
+            "Ada verbose=True deprecated=True",
+        ),
+        (["hello", "run", "ls", "-v"], "ls -v"),
+        (["hello", "greet", "--help", "--deprecated"], None),
+        (["hello", "grep", "-p"], None),
+    ],
+)
+def test_a_line_means_the_same_with_or_without_a_kept_declaration(
+    argv: list[str],
+    out: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    kept = _outcome(argv, kept=True, monkeypatch=monkeypatch, capsys=capsys)
+    cold = _outcome(argv, kept=False, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert cold == kept
+    if out is not None:
+        assert kept == (0, out, "")
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+@pytest.mark.parametrize("kept", [True, False], ids=["kept", "cold"])
+def test_a_value_taking_short_ending_a_cluster_reads_the_next_token_as_cyclopts_does(
+    kept: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # -y, then -c reading `-v`: cyclopts refuses it as a value, so the line fails
+    argv = ["doctor", "fix", "-yc", "-v", "name"]
+
+    code, _, err = _outcome(argv, kept=kept, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert code == 2
+    assert "parameter -c requires an argument" in err

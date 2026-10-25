@@ -802,10 +802,12 @@ class _CommandWalk:
         flag = None if positional else f"--{name.replace('_', '-')}"
         for spelled in (flag, negative, *shorts):
             if spelled in ROOT_FLAGS:
+                fix = "give it another Short" if spelled in shorts else "rename the field"
                 self.problem(
                     "root-option",
                     where,
-                    f"{spelled} is a root option, which every command takes (`untaped {spelled}`)",
+                    f"{spelled} is a root option, which every command takes "
+                    f"(`untaped {spelled}`); {fix}",
                 )
         self.seen.options.append(
             OptionDecl(

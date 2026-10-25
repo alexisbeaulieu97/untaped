@@ -5,17 +5,19 @@ accepted anywhere before a ``--``. One token pass applies them before the run
 starts (:func:`applied_root_options`): it reads the selected command's token
 shapes from the declaration, so it takes a root option wherever it sits among
 a declared command's own options and never one the command reads as a value.
-For a command still mounted through the 11.x seam, it takes only the leading
-ones, and dispatch takes the rest as before (between command words, around
-``--help``, and in the parse retry). Also the rewriting of a command's loose or
-deprecated spelling to its registered name, with the deprecation warnings.
-The bootstrap composition root uses this one implementation.
+With no declaration kept, dispatch reads the line the same way by the
+composition's. For a command still mounted through the 11.x seam, the pass
+takes only the leading ones, and dispatch takes the rest as before (between
+command words, around ``--help``, and in the parse retry). Also the rewriting
+of a command's loose or deprecated spelling to its registered name, with the
+deprecation warnings. The bootstrap composition root uses this one
+implementation.
 """
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from itertools import chain
@@ -157,27 +159,39 @@ class RootLine:
     #: The command's tokens: the line without the root options the pass took
     #: (nor a ``--`` that only closed the leading ones).
     tokens: list[str]
-    #: The pass read the line by a declared command's shape, so every root option
-    #: in it is taken and dispatch takes none. ``False`` for a command mounted
-    #: through the 11.x seam (or with no declaration to read): dispatch takes the
-    #: ones after the leading root options as before.
+    #: The line was read by a declared command's shape, so every root option in
+    #: it is taken and dispatch takes none. ``False`` for a command mounted
+    #: through the 11.x seam, or until dispatch reads a line the pass had no
+    #: declaration for.
     placed: bool = False
-    _applied: list[tuple[_RootOption, object]] = field(default_factory=list)
+    #: Each root option applied, with what undoes it.
+    applied: list[tuple[_RootOption, object]] = field(default_factory=list, init=False)
+
+    def read(
+        self,
+        tokens: Sequence[str],
+        root_options: dict[str, _RootOption],
+        declaration: Declaration | None,
+    ) -> None:
+        """Read ``tokens`` by ``declaration``'s shapes, applying the root options taken."""
+        self.tokens, taken, self.placed = _read_line(tokens, root_options, declaration)
+        for spec, value in taken:
+            self.apply(spec, value)
 
     def apply(self, spec: _RootOption, value: str) -> None:
         """Apply root option ``spec`` with ``value`` for the rest of the invocation."""
         if spec.name in _CONFLICTING_OPTIONS and any(
             applied.name in _CONFLICTING_OPTIONS and applied.name != spec.name
-            for applied, _ in self._applied
+            for applied, _ in self.applied
         ):
             raise_usage("--verbose and --quiet cannot be combined")
-        self._applied.append((spec, spec.handler(value)))
+        self.applied.append((spec, spec.handler(value)))
 
     def _reset(self) -> None:
         """Undo every root option applied, the last applied first."""
-        for option, token in reversed(self._applied):
+        for option, token in reversed(self.applied):
             option.resetter(token)
-        self._applied.clear()
+        self.applied.clear()
 
 
 @contextmanager
@@ -188,134 +202,150 @@ def applied_root_options(
 ) -> Iterator[RootLine]:
     """Apply the root options of ``tokens`` for the block; the line they leave.
 
-    The pass reads the line before any ``--`` by ``declaration``'s token
-    shapes, without importing a command: the root options before the command
-    words and between them, then, among the selected command's own options,
-    every one that is not a value by the command's shape (an option's value,
-    or an argument that takes a leading ``-``, such as a command line to run).
-    A ``--`` right after the leading root options only closes them
-    (``untaped --profile x -- cmd -v`` turns on ``-v``). A command the
-    declaration doesn't hold (one mounted through the 11.x seam) gets only its
-    leading root options taken here: dispatch takes the rest
-    (:func:`dispatch_line`). Each is undone when the block ends.
+    The pass reads the line by ``declaration``'s token shapes, without
+    importing a command (:func:`_read_line`). With no declaration to read it
+    by, it takes the leading root options only, and dispatch reads the rest
+    by the composition's own (:func:`dispatch_line`): only when they apply
+    differs, never what the tokens mean. Each is undone when the block ends.
     """
     line = RootLine(tokens=[])
     try:
-        rest = list(tokens)
-        start = _leading_end(rest, root_options)
-        if rest[start : start + 1] == ["--"]:
-            del rest[start]  # it closed the leading root options, nothing more
-        end = _separator_index(rest)
-        values = _declared_values(rest, start, end, root_options, declaration)
-        line.tokens, taken = _take_root_options(
-            rest, root_options, upto=start if values is None else end, values=values or ()
-        )
-        line.placed = values is not None
-        for spec, value in taken:
-            line.apply(spec, value)
+        line.read(tokens, root_options, declaration)
         yield line
     finally:
         line._reset()
 
 
-def _separator_index(tokens: Sequence[str]) -> int:
-    """Where the first ``--`` is (``len(tokens)`` when there is none)."""
-    return tokens.index("--") if "--" in tokens else len(tokens)
-
-
-def _width(tokens: Sequence[str], index: int, spec: _RootOption) -> int:
-    """How many tokens root option ``spec`` at ``index`` spans: itself, and its value apart."""
-    return 2 if spec.takes_value and "=" not in tokens[index] else 1
-
-
-def _leading_end(tokens: Sequence[str], root_options: dict[str, _RootOption]) -> int:
-    """The index of the first token after the leading root options."""
-    index = 0
-    while index < len(tokens):
-        spec = _match_option(tokens[index].partition("=")[0], root_options)
-        if spec is None:
-            break
-        index += _width(tokens, index, spec)
-    return min(index, len(tokens))
-
-
-def _take_root_options(
-    tokens: Sequence[str],
-    root_options: dict[str, _RootOption],
-    *,
-    upto: int,
-    values: Collection[int] = (),
-) -> tuple[list[str], list[tuple[_RootOption, str]]]:
-    """Split ``tokens`` into what is left and the root options taken from before ``upto``.
-
-    The one scan every pass over a line uses: a token at an index in
-    ``values`` is the command's own value, never a root option. A root
-    option's malformed value is a usage error.
-    """
-    left: list[str] = []
-    taken: list[tuple[_RootOption, str]] = []
-    index = 0
-    while index < len(tokens):
-        name = tokens[index].partition("=")[0]
-        spec = None if index >= upto or index in values else _match_option(name, root_options)
-        if spec is None:
-            left.append(tokens[index])
-            index += 1
-            continue
-        value, rest = _consume_option_at(list(tokens[index:]), 0, spec, name)
-        taken.append((spec, value))
-        index = len(tokens) - len(rest)
-    return left, taken
+def _separator_index(tokens: Sequence[str], start: int = 0) -> int:
+    """Where the first ``--`` from ``start`` is (``len(tokens)`` when there is none)."""
+    return tokens.index("--", start) if "--" in tokens[start:] else len(tokens)
 
 
 type _Node = CommandDecl | GroupDecl | PluginDecl
+type _Taken = list[tuple[_RootOption, str]]
 
 
-def _declared_values(
-    tokens: Sequence[str],
-    start: int,
-    end: int,
-    root_options: dict[str, _RootOption],
-    declaration: Declaration | None,
-) -> frozenset[int] | None:
-    """The indices of ``tokens`` the selected declared command reads as its own values.
+def _read_line(
+    tokens: Sequence[str], root_options: dict[str, _RootOption], declaration: Declaration | None
+) -> tuple[list[str], _Taken, bool]:
+    """What ``tokens`` leave once their root options are taken, those taken, and if all were.
 
-    Walks the command words from ``start``, stepping over root options
-    between them, to the command they select, then its own tokens up to
-    ``end`` by its declared shape. ``None`` when the words select no
-    command the declaration holds (an 11.x seam command), or there is no
-    declaration to read them by; a line selecting no command at all
-    (``untaped --help -v``) or a group without a command of its own has no
-    values.
+    One walk up to a ``--``: the root options before the command words and
+    between them (a ``--`` right after the leading ones only closes them, so
+    ``untaped --profile x -- cmd -v`` turns on ``-v``), the words to the
+    command ``declaration`` holds for them, then, among that command's own
+    options, every root option that is not a value by the command's shape
+    (an option's value, or an argument that takes a leading ``-``, such as a
+    command line to run). A first word ``declaration`` doesn't hold (an 11.x
+    seam command, or any word with no declaration) ends the walk there, with
+    only the leading root options taken. A line selecting no command at all
+    (``untaped --help -v``) or a group without a command of its own has every
+    root option taken.
     """
-    index = start
-    nodes: Sequence[_Node] = () if declaration is None else _root_nodes(declaration)
-    group: GroupDecl | PluginDecl | None = None
-    command: CommandDecl | None = None
-    while index < end:
-        token = tokens[index]
-        spec = _match_option(token.partition("=")[0], root_options)
-        if spec is not None:
-            index += _width(tokens, index, spec)
-            continue
-        if token.startswith("-"):
-            break
-        node = _declared_node(nodes, token)
-        if node is None:
-            if group is None:
-                return None  # a word the declaration doesn't hold: dispatch reads it
-            break  # an argument of the group's own command
-        index += 1
-        if isinstance(node, CommandDecl):
-            command = node
-            break
-        group = node
-        nodes = node.commands
-    if command is None and group is not None:
-        command = group.runs
-    if command is None:
-        return frozenset()
-    return _option_values(tokens, index, end, command, root_options)
+    walk = _LineWalk(tokens, root_options)
+    read, command = walk.command(declaration)
+    if not read:
+        return list(tokens[walk.index :]), walk.taken, False  # dispatch reads it
+    walk.options(command)
+    walk.keep(len(tokens) - walk.index)
+    return walk.left, walk.taken, True
+
+
+@dataclass
+class _LineWalk:
+    """One walk over a line: the tokens it keeps and the root options it takes."""
+
+    tokens: Sequence[str]
+    root_options: dict[str, _RootOption]
+    index: int = 0
+    left: list[str] = field(default_factory=list)
+    taken: _Taken = field(default_factory=list)
+    #: Where the walk stops: the ``--`` that ends the options.
+    end: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.end = _separator_index(self.tokens)
+
+    def take(self) -> bool:
+        """Take the root option at the index, if one is there."""
+        found = _root_option_at(self.tokens, self.index, self.root_options)
+        if found is not None:
+            self.taken.append(found[:2])
+            self.index += found[2]
+        return found is not None
+
+    def keep(self, count: int) -> None:
+        """Keep the next ``count`` tokens for the command."""
+        self.left.extend(self.tokens[self.index : self.index + count])
+        self.index += count
+
+    def command(self, declaration: Declaration | None) -> tuple[bool, CommandDecl | None]:
+        """Walk the command words: whether ``declaration`` holds them, and their command."""
+        nodes: Sequence[_Node] = () if declaration is None else _root_nodes(declaration)
+        group: GroupDecl | PluginDecl | None = None
+        while self.index < self.end and self.take():
+            pass  # the leading root options
+        if self.index == self.end < len(self.tokens):  # a `--` that only closes them
+            self.index += 1
+            self.end = _separator_index(self.tokens, self.index)
+        while self.index < self.end:
+            if self.take():
+                continue
+            token = self.tokens[self.index]
+            node = None if token.startswith("-") else _declared_node(nodes, token)
+            if node is None and group is None and not token.startswith("-"):
+                return False, None  # a word the declaration doesn't hold
+            if node is None:
+                break  # an option, or an argument of the group's own command
+            self.keep(1)
+            if isinstance(node, CommandDecl):
+                return True, node
+            group, nodes = node, node.commands
+        return True, None if group is None else group.runs
+
+    def options(self, command: CommandDecl | None) -> None:
+        """Walk ``command``'s own tokens, taking each root option that is none of its values."""
+        shapes = _option_shapes(command)
+        arguments = [] if command is None else [opt for opt in command.options if opt.positional]
+        slot = 0
+        while self.index < self.end:
+            width = _option_width(self.tokens, self.index, self.end, shapes)
+            argument = arguments[slot] if slot < len(arguments) else None
+            if not width:
+                if (argument is None or not _takes_hyphen(argument)) and self.take():
+                    continue
+                if argument is not None and not argument.token.startswith("list["):
+                    # the next token fills the next argument
+                    slot += self.tokens[self.index] not in _HELP_OR_VERSION
+                width = 1
+            self.keep(width)
+
+
+def _root_option_at(
+    tokens: Sequence[str], index: int, root_options: dict[str, _RootOption]
+) -> tuple[_RootOption, str, int] | None:
+    """The root option at ``tokens[index]``, its value and how many tokens it spans, if one is.
+
+    A root option's malformed value is a usage error.
+    """
+    spec = _match_option(tokens[index].partition("=")[0], root_options)
+    return None if spec is None else (spec, *_root_value(tokens, index, spec))
+
+
+def _root_value(tokens: Sequence[str], index: int, spec: _RootOption) -> tuple[str, int]:
+    """The value of root option ``spec`` at ``tokens[index]``, and how many tokens it spans."""
+    name, separator, inline = tokens[index].partition("=")
+    if not spec.takes_value:
+        if separator:
+            raise_usage(f"{name} takes no value")
+        return _FLAG_PRESENT, 1
+    if separator:
+        if not inline:
+            raise_usage(f"{name} expects a value")
+        return inline, 1
+    if index + 1 >= len(tokens) or tokens[index + 1].startswith("-"):
+        raise_usage(f"{name} expects a value")
+    return tokens[index + 1], 2
 
 
 def _root_nodes(declaration: Declaration) -> list[_Node]:
@@ -330,85 +360,77 @@ def _root_nodes(declaration: Declaration) -> list[_Node]:
 
 
 def _declared_node(nodes: Sequence[_Node], token: str) -> _Node | None:
-    """The node ``token`` selects, as dispatch picks a command: exact, alias, one loose match."""
-    for node in nodes:
-        if node.name == token:
-            return node
-    for node in nodes:
-        if isinstance(node, CommandDecl) and any(alias.name == token for alias in node.aliases):
-            return node
-    wanted = _loose_command_key(token)
-    matches = [node for node in nodes if _loose_command_key(node.name) == wanted]
-    return matches[0] if len(matches) == 1 else None
+    """The node ``token`` selects, by the rule dispatch picks a command by (:func:`_select`)."""
+    named = {node.name: node for node in nodes}
+    aliases = {
+        alias.name: node.name
+        for node in nodes
+        if isinstance(node, CommandDecl)
+        for alias in node.aliases
+    }
+    name = _select(token, named, aliases)
+    return None if name is None else named[name]
 
 
-def _option_values(
-    tokens: Sequence[str],
-    index: int,
-    end: int,
-    command: CommandDecl,
-    root_options: dict[str, _RootOption],
-) -> frozenset[int]:
-    """The indices from ``index`` to ``end`` that ``command`` reads as values, as its parser does.
+def _option_shapes(command: CommandDecl | None) -> dict[str, OptionDecl]:
+    """Each spelling of ``command``'s options (flag, short, negative), with its option."""
+    if command is None:
+        return {}
+    return {
+        name: option
+        for option in command.options
+        if not option.positional
+        for name in (option.flag, option.short, option.negative)
+        if name
+    }
 
-    An option taking a value reads the next token (one that looks like an
-    option only when it takes a leading ``-``); the rest fill the arguments
-    in order, a list argument taking every one left. A root option is a
-    value only where the argument it would fill takes a leading ``-``.
+
+def _option_width(
+    tokens: Sequence[str], index: int, end: int, shapes: dict[str, OptionDecl]
+) -> int:
+    """How many tokens up to ``end`` the command's own option at ``index`` spans (0: none).
+
+    Read as cyclopts reads it: ``--name=value`` (or ``-n=5``) is one token; a
+    whole spelling is one for a flag and two for an option taking a value,
+    whatever the next token looks like (cyclopts refuses one that looks like an
+    option unless it takes a leading ``-``); and an unknown short cluster
+    (``-xp``) is its letters left to right, a letter taking a value reading
+    the rest of the token (``-n5``) or, ending it, the next token.
     """
-    flags: dict[str, OptionDecl] = {}
-    for option in command.options:
-        if not option.positional:
-            flags.update((name, option) for name in (option.flag, option.short) if name)
-    negatives = {option.negative for option in command.options if option.negative}
-    arguments = [option for option in command.options if option.positional]
-    values: set[int] = set()
-    slot = 0
-    while index < end:
-        token = tokens[index]
-        name = token.partition("=")[0]
-        flagged = flags.get(name)
-        if flagged is not None or name in negatives:
-            index += 1
-            if flagged is not None and _takes_next(flagged, token, tokens, index, end):
-                values.add(index)
-                index += 1
-            continue
-        argument = arguments[slot] if slot < len(arguments) else None
-        spec = _match_option(name, root_options)
-        if spec is not None and (argument is None or not _takes_hyphen(argument)):
-            index += _width(tokens, index, spec)
-            continue
-        if token not in _HELP_OR_VERSION:
-            values.add(index)
-            if argument is not None and not argument.token.startswith("list["):
-                slot += 1
-        index += 1
-    return frozenset(values)
+    token = tokens[index]
+    name, separator, _ = token.partition("=")
+    if separator and name in shapes:
+        return 1
+    if token in shapes:
+        takes_next: bool | None = shapes[token].token != "bool"
+    elif not token.startswith("--") and len(token) > 2 and is_option_like(token):
+        takes_next = _cluster_takes_next(token[1:], shapes)
+    else:
+        takes_next = None
+    if takes_next is None:
+        return 0
+    return min(2, end - index) if takes_next else 1
+
+
+def _cluster_takes_next(letters: str, shapes: dict[str, OptionDecl]) -> bool | None:
+    """Whether short cluster ``letters`` ends in a letter reading the next token.
+
+    Cyclopts reads the letters left to right: a flag's letter is the flag, an
+    unknown one an unknown option, and a letter taking a value reads the rest
+    of the token as it. ``None`` when no letter is the command's.
+    """
+    known = False
+    for position, letter in enumerate(letters, 1):
+        option = shapes.get(f"-{letter}")
+        if option is not None and option.token != "bool":
+            return position == len(letters)
+        known = known or option is not None
+    return False if known else None
 
 
 def _takes_hyphen(option: OptionDecl) -> bool:
     """Whether ``option``'s value may start with ``-`` (as the mount declares it)."""
     return option.allow_hyphen or option.or_stdin
-
-
-def _takes_next(
-    option: OptionDecl, token: str, tokens: Sequence[str], index: int, end: int
-) -> bool:
-    """Whether flag ``option``, given as ``token``, reads ``tokens[index]`` as its value."""
-    if option.token == "bool" or "=" in token or index >= end:
-        return False
-    return _takes_hyphen(option) or not is_option_like(tokens[index])
-
-
-def _consume_option_at(
-    tokens: list[str], index: int, spec: _RootOption, name: str
-) -> tuple[str, list[str]]:
-    if not spec.takes_value:
-        if "=" in tokens[index]:
-            raise_usage(f"{name} takes no value")
-        return _FLAG_PRESENT, tokens[:index] + tokens[index + 1 :]
-    return _extract_root_option_value(tokens, index, name)
 
 
 def _root_callback_signature(root_options: dict[str, _RootOption]) -> inspect.Signature:
@@ -458,9 +480,24 @@ def _take_help_root_options(
     """
     if not any(token in _HELP_FLAGS for token in _before_separator(tokens)):
         return tokens
-    left, taken = _take_root_options(tokens, root_options, upto=_separator_index(tokens))
-    for spec, value in taken:
+    return _take_root_options(tokens, root_options, line, upto=_separator_index(tokens))
+
+
+def _take_root_options(
+    tokens: Sequence[str], root_options: dict[str, _RootOption], line: RootLine, *, upto: int
+) -> list[str]:
+    """Apply the root options of ``tokens`` before ``upto`` to ``line``; the tokens left."""
+    left: list[str] = []
+    index = 0
+    while index < len(tokens):
+        found = _root_option_at(tokens, index, root_options) if index < upto else None
+        if found is None:
+            left.append(tokens[index])
+            index += 1
+            continue
+        spec, value, width = found
         line.apply(spec, value)
+        index += width
     return left
 
 
@@ -469,12 +506,16 @@ def _before_separator(tokens: Sequence[str]) -> Sequence[str]:
     return tokens[: _separator_index(tokens)]
 
 
-def dispatch_line(app: App, line: RootLine, root_options: dict[str, _RootOption]) -> object:
-    """Dispatch the command ``line`` holds.
+def dispatch_line(
+    app: App, line: RootLine, root_options: dict[str, _RootOption], declaration: Declaration
+) -> object:
+    """Dispatch the command ``line`` holds; ``declaration`` is the composition's.
 
-    A line the token pass placed holds no root option any more, so it
-    parses once. Otherwise (an 11.x seam command) dispatch takes the root
-    options the pass left, as before the pass: between command words, around
+    A line the token pass had no declaration for is read now by
+    ``declaration``, as the pass reads one (:meth:`RootLine.read`). A placed
+    line holds no root option any more, so it parses once. Otherwise (an 11.x
+    seam command) dispatch takes the root options the pass left, as before
+    the pass: between command words, around
     ``--help``, then optimistically, stripping and applying an unknown root
     option and parsing again. A passthrough command (its ``*args`` absorb
     every token) and a command declaring its own homonymous option parse
@@ -482,6 +523,8 @@ def dispatch_line(app: App, line: RootLine, root_options: dict[str, _RootOption]
     command body runs, so a retry never repeats side effects.
     """
     with command_selection():
+        if not line.placed:
+            line.read(line.tokens, root_options, declaration)
         if line.placed:
             return _parsed(app, canonical_command_tokens(app, line.tokens))
         return _dispatch_seam(app, line, root_options)
@@ -520,10 +563,9 @@ def _dispatch_seam(app: App, line: RootLine, root_options: dict[str, _RootOption
                 raise_usage(str(exc))
             retried.add(name)
             spec = root_options[name]
-            value, remaining = _consume_option_at(
-                remaining, index, spec, remaining[index].partition("=")[0]
-            )
+            value, width = _root_value(remaining, index, spec)
             line.apply(spec, value)
+            del remaining[index : index + width]
         except CycloptsError as exc:
             note_requested_format(remaining)
             raise_usage(str(exc))
@@ -662,17 +704,26 @@ def resolve_command(app: App, token: str) -> str | None:
 def _command_name(app: App, token: str) -> str | None:
     """The registered subcommand of ``app`` that ``token`` selects, if any.
 
-    Exact names win, then deprecated aliases, then the one loose
-    (case/``-``/``_``-insensitive) match; ambiguity selects nothing.
+    By :func:`_select`'s rule, over its commands and deprecated aliases.
     """
-    if token in app:
+    aliases = {old: alias.new for old, alias in deprecated_aliases(app).items()}
+    return _select(token, app, aliases)
+
+
+def _select(token: str, names: Iterable[str], aliases: Mapping[str, str]) -> str | None:
+    """The one of ``names`` that ``token`` selects, as dispatch picks a command.
+
+    The exact name wins, then an alias (``aliases`` maps it to its name), then
+    the one loose (case/``-``/``_``-insensitive) match; ambiguity selects
+    nothing.
+    """
+    if token in names:
         return token
-    aliases = deprecated_aliases(app)
     if token in aliases:
-        return aliases[token].new
+        return aliases[token]
     wanted = _loose_command_key(token)
     matches = [
-        name for name in app if not name.startswith("-") and _loose_command_key(name) == wanted
+        name for name in names if not name.startswith("-") and _loose_command_key(name) == wanted
     ]
     return matches[0] if len(matches) == 1 else None
 
@@ -701,12 +752,21 @@ def _consume_path_root_options(
         name = _command_name(current, remaining[after])
         if name is None:
             break
-        remaining, taken = _take_root_options(remaining, root_options, upto=after)
-        for spec, value in taken:
-            line.apply(spec, value)
+        remaining = _take_root_options(remaining, root_options, line, upto=after)
         current = current[name]
         index += 1
     return remaining
+
+
+def _leading_end(tokens: Sequence[str], root_options: dict[str, _RootOption]) -> int:
+    """The index of the first token after the leading root options."""
+    index = 0
+    while index < len(tokens):
+        spec = _match_option(tokens[index].partition("=")[0], root_options)
+        if spec is None:
+            break
+        index += 2 if spec.takes_value and "=" not in tokens[index] else 1
+    return min(index, len(tokens))
 
 
 def _loose_command_key(name: str) -> str:
@@ -737,18 +797,6 @@ def _last_root_option_index(tokens: list[str], spec: _RootOption) -> int | None:
         if tokens[index].partition("=")[0] in accepted:
             return index
     return None
-
-
-def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tuple[str, list[str]]:
-    """Pull the value for the root option at ``tokens[index]`` (``--n v`` or ``--n=v``)."""
-    _, separator, inline = tokens[index].partition("=")
-    if separator:
-        if not inline:
-            raise_usage(f"{name} expects a value")
-        return inline, tokens[:index] + tokens[index + 1 :]
-    if index + 1 >= len(tokens) or tokens[index + 1].startswith("-"):
-        raise_usage(f"{name} expects a value")
-    return tokens[index + 1], tokens[:index] + tokens[index + 2 :]
 
 
 #: Root flags that contradict each other; combining them is a usage error.

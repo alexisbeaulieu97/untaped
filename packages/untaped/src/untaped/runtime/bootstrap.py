@@ -529,8 +529,9 @@ def _started(
 ) -> Iterator[tuple[Run, RootLine]]:
     """Start the invocation of ``tokens``: its root options applied, then its one run.
 
-    The token pass reads the line by ``declaration``'s token shapes (none:
-    a command the pass can't place takes its root options at dispatch). The
+    The token pass reads the line by ``declaration``'s token shapes (with
+    none, dispatch reads it by the composition's, so only when the root
+    options apply differs, never what the tokens mean). The
     run is current for the block; the root attaches the composition to it
     once built (:func:`_attach`). Its home resolves on first read, so a home
     that doesn't resolve fails only what reads it, through the run's sink,
@@ -599,7 +600,7 @@ def _install_root_callback(
                 # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
                 _refresh_reference(command_tokens)
-                outcome = dispatch_line(app, line, root_options)
+                outcome = dispatch_line(app, line, root_options, result.mount.declaration)
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
