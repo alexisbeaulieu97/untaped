@@ -68,8 +68,9 @@ class Library(Plugin):
   owner, named `<contract>_<method>` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
   returns a secret, and a `Cache` passed to `@cached` caches that one method.
-  A contract has one owner: the first composed plugin that offers it, and a
-  later one offering it too is quarantined (`duplicate-offer`).
+  A contract has one owner, the plugin whose `offers` lists it: two plugins
+  listing it are both quarantined (`duplicate-offer`), and so is a plugin
+  refreshing a cache of a contract no composed plugin owns (`unowned-cache`).
 - **The owner's model** is the item type parameter's default, an `Issued`
   record with a kind (`Issued` and its `Source` are also in `untaped.sdk`, so
   an owner's state model can hold issued records without loading contracts). A provider issuing its own record type passes it

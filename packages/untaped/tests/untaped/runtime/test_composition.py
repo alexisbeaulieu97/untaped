@@ -1205,7 +1205,7 @@ def test_an_answer_cache_held_under_another_name_too_is_refused() -> None:
     assert (problem.rule, problem.detail) == ("duplicate-block", "is the same cache as wrong_name")
 
 
-def test_a_second_class_offering_the_contract_changes_nothing_for_the_first() -> None:
+def test_two_classes_offering_one_contract_are_both_refused() -> None:
     @experimental
     class Shared(Contract):
         """Offered by two classes, which is one too many."""
@@ -1230,15 +1230,28 @@ def test_a_second_class_offering_the_contract_changes_nothing_for_the_first() ->
     for plugin, name in ((First, "first"), (Second, "second"), (First, "renamed")):
         [decl] = compose([_entry(plugin, name)]).plugins
         assert [block.name for block in decl.blocks] == ["shared_pages"]
-    # composed together, the first owns the contract and the second is refused
-    both = compose([_entry(First, "first"), _entry(Second, "second")])
-    assert [plugin.name for plugin in both.plugins] == ["first"]
-    [refused] = both.quarantined
-    [problem] = refused.problems
-    assert (
-        problem.rule,
-        problem.detail.endswith("is offered by first too; a contract has one owner"),
-    ) == ("duplicate-offer", True)
+    # composed together, a contract has one owner: the fault names both, in either order
+    for entries in (
+        [_entry(First, "first"), _entry(Second, "second")],
+        [_entry(Second, "second"), _entry(First, "first")],
+    ):
+        both = compose(entries)
+        assert both.plugins == ()
+        details = {q.name: [(p.rule, p.detail) for p in q.problems] for q in both.quarantined}
+        assert details == {
+            "first": [
+                (
+                    "duplicate-offer",
+                    f"{Shared.__qualname__} is offered by second too; a contract has one owner",
+                )
+            ],
+            "second": [
+                (
+                    "duplicate-offer",
+                    f"{Shared.__qualname__} is offered by first too; a contract has one owner",
+                )
+            ],
+        }
 
 
 def test_a_later_offerer_owns_the_contract_when_the_first_is_quarantined() -> None:
@@ -1377,7 +1390,7 @@ def test_the_next_entry_point_of_a_package_owns_it_when_the_first_is_quarantined
     assert {c.output for c in declaration.commands() if c.name == "say"} == {"second.salutation"}
 
 
-def test_a_later_offerer_owns_no_contract_it_lists_first() -> None:
+def test_offering_a_contract_another_plugin_lists_refuses_both() -> None:
     @experimental
     class Pages(Contract):
         """Offered by a plugin refused as a later offerer of Notes, then by a sound one."""
@@ -1407,9 +1420,14 @@ def test_a_later_offerer_owns_no_contract_it_lists_first() -> None:
         _entry(offering(Pages, Notes), "both", module="untaped_both.plugin"),
         _entry(offering(Pages), "pages", module="untaped_pages.plugin"),
     ]
+    # each contract two plugins list refuses both: no order picks an owner
     declaration = compose(entries)
-    assert [plugin.name for plugin in declaration.plugins] == ["first", "pages"]
-    assert [q.name for q in declaration.quarantined] == ["both"]
+    assert declaration.plugins == ()
+    assert {q.name: len(q.problems) for q in declaration.quarantined} == {
+        "first": 1,
+        "both": 2,
+        "pages": 1,
+    }
 
 
 def test_a_later_offerer_refreshes_a_contract_only_it_lists() -> None:
@@ -1471,12 +1489,12 @@ def test_a_later_offerer_holding_its_answer_cache_has_its_own_problems_only() ->
     shelf.offers = (Held, Notes)
     shelf.held_pages = held  # type: ignore[attr-defined]
     entries = [_entry(Earlier, "earlier", module="untaped_earlier.plugin"), _entry(shelf, "shelf")]
-    [refused] = compose(entries).quarantined
-    assert [problem.rule for problem in refused.problems] == ["duplicate-offer"]
+    rules = {q.name: [p.rule for p in q.problems] for q in compose(entries).quarantined}
+    assert rules == {"earlier": ["duplicate-offer"], "shelf": ["duplicate-offer"]}
     # a misheld cache is a problem of its own, as when composed alone
     shelf.held_pages = 5  # type: ignore[attr-defined]
-    [refused] = compose(entries).quarantined
-    assert [problem.rule for problem in refused.problems] == ["answer-cache", "duplicate-offer"]
+    rules = {q.name: [p.rule for p in q.problems] for q in compose(entries).quarantined}
+    assert rules["shelf"] == ["answer-cache", "duplicate-offer"]
     shelf.held_pages = held  # type: ignore[attr-defined]
     # with the earlier one broken, the later offerer composes, as it does alone
     Earlier.runs = 5  # type: ignore[assignment]

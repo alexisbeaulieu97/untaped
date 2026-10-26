@@ -153,49 +153,41 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     returns, is ``shelf.book``); a class no composed plugin's package defines
     belongs to the plugin that reaches it. Two entry points in one top-level
     package share it, the first not quarantined owning its classes, as
-    :meth:`Declaration.owner_of` reads it. A contract belongs to the first
-    plugin not quarantined that offers it; a later one is refused
-    (``duplicate-offer``). A plugin refused for a problem of its own stays
-    quarantined while the others recompose without it: first every plugin
-    broken whatever the others are (a name ``taken`` holds included), then,
-    one at a time in entry order, a plugin whose problem is about the others
-    (a name or kind another plugin has, a cache no composed plugin owns).
+    :meth:`Declaration.owner_of` reads it. A contract belongs to the one
+    plugin whose ``offers`` lists it; two plugins listing it are both
+    refused (``duplicate-offer``), as a fill or refresh of a contract no
+    composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
+    plugin broken whatever the others are (a name ``taken`` holds included)
+    is withdrawn first, then one refused because its owner is out, then the
+    rest, and the others recompose without them until nothing changes.
     """
     reserved = frozenset(taken)
-    # Refused for a problem of its own, by index: quarantined for good, as it was refused.
     # Each pass that does not return withdraws one more, so there are at most n + 1.
     withdrawn: dict[int, tuple[Problem, ...]] = {}
     while True:
-        standing = [i for i in range(len(entries)) if i not in withdrawn]
-        offering, late = _offering([entries[i] for i in standing])
-        # A later offerer is refused, so it owns no package; it may own the contract next pass.
-        later = {standing[place] for place in late}
+        standing = [entries[i] for i in range(len(entries)) if i not in withdrawn]
         owners: dict[str, str] = {}
-        for i in standing:
-            if i not in later:
-                owners.setdefault(_package(entries[i].target), entries[i].name)
+        for entry in standing:
+            owners.setdefault(_package(entry.target), entry.name)
+        offering = _offering(standing)
         declaration, refused = _compose(entries, reserved, owners, offering, withdrawn)
-        own = {i: problems for i, problems in refused.items() if _refused_for_itself(problems)}
-        if not own:
+        if not refused.keys() - withdrawn.keys():
             return declaration
-        # A problem about the others may go once the plugins broken on their own are out:
-        # withdraw those first, then the first plugin left with one, a pass at a time.
-        alone = {
-            i: problems
-            for i, problems in own.items()
-            if _broken_alone(problems) or entries[i].name in reserved  # taken for good
-        }
-        first = min(own)
-        withdrawn |= alone or {first: own[first]}
+        refused = {i: problems for i, problems in refused.items() if i not in withdrawn}
+        # A problem about the others may go once those it is about are out.
+        withdrawn |= (
+            {
+                i: problems
+                for i, problems in refused.items()
+                if _broken_alone(problems) or entries[i].name in reserved  # taken for good
+            }
+            or {i: p for i, p in refused.items() if any(x.rule == "unowned-cache" for x in p)}
+            or refused
+        )
 
 
 #: Problems a plugin has because of the others composed beside it, in this pass.
 _RELATIONAL = frozenset({"duplicate-name", "duplicate-kind", "duplicate-offer", "unowned-cache"})
-
-
-def _refused_for_itself(problems: Sequence[Problem]) -> bool:
-    """Whether a plugin has a problem other than a contract an earlier plugin offers."""
-    return any(problem.rule != "duplicate-offer" for problem in problems)
 
 
 def _broken_alone(problems: Sequence[Problem]) -> bool:
@@ -213,22 +205,30 @@ def _offered(entry: PluginEntry) -> tuple[type, ...]:
     )
 
 
-def _offering(entries: Sequence[PluginEntry]) -> tuple[dict[type, str], set[int]]:
-    """The plugin owning each contract class, and the later offerers' places in ``entries``.
+def _offering(entries: Sequence[PluginEntry]) -> dict[type, tuple[str, ...]]:
+    """The plugins listing each contract class: its owner, when it is one."""
+    found: dict[type, list[str]] = {}
+    for entry in entries:
+        for each in dict.fromkeys(_offered(entry)):
+            found.setdefault(each, []).append(entry.name)
+    return {contract: tuple(names) for contract, names in found.items()}
 
-    In order, a plugin offering a contract an earlier owner holds is a later
-    offerer: it is refused, so it owns none of the contracts it lists.
+
+def _view(entry: PluginEntry, offering: dict[type, tuple[str, ...]]) -> dict[type, str]:
+    """The owner of each contract as ``entry`` reads it, its own offers as when composed alone.
+
+    A contract another plugin lists too reads as that one's (``duplicate-offer``);
+    one no other plugin lists is ``entry``'s own, or nobody's when it is two
+    others' (``unowned-cache``).
     """
-    found: dict[type, str] = {}
-    later: set[int] = set()
-    for place, entry in enumerate(entries):
-        offered = _offered(entry)
-        if any(found.get(each, entry.name) != entry.name for each in offered):
-            later.add(place)
-            continue
-        for each in offered:
-            found.setdefault(each, entry.name)
-    return found, later
+    view: dict[type, str] = {}
+    for contract, names in offering.items():
+        others = [name for name in names if name != entry.name]
+        if entry.name in names:
+            view[contract] = " and ".join(others) if others else entry.name
+        elif len(names) == 1:
+            view[contract] = names[0]
+    return view
 
 
 def _cache_setting(cache: Cache[Any]) -> CacheDecl:
@@ -245,7 +245,7 @@ def _compose(
     entries: Sequence[PluginEntry],
     taken: frozenset[str],
     owners: dict[str, str],
-    offering: dict[type, str],
+    offering: dict[type, tuple[str, ...]],
     withdrawn: dict[int, tuple[Problem, ...]],
 ) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
     """One pass over ``entries``: the declaration and each refused entry's problems, by index.
@@ -263,13 +263,7 @@ def _compose(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        # A later offerer, which owns nothing, reads its package and the contracts only it
-        # lists as its own: its problems are those it has composed alone, and duplicate-offer.
-        walk = _PluginWalk(
-            entry,
-            {_package(entry.target): entry.name, **owners},
-            {**dict.fromkeys(_offered(entry), entry.name), **offering},
-        )
+        walk = _PluginWalk(entry, owners, _view(entry, offering))
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(
