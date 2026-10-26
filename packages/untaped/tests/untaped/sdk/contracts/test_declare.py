@@ -23,7 +23,7 @@ from core_test_support.contracts.support import (
     write_config,
 )
 from untaped.runtime.registry import PluginSpec
-from untaped.sdk.contracts import Contract, Ok, Record, bridge, cached, gather
+from untaped.sdk.contracts import Contract, Ok, Record, cached, gather
 from untaped.sdk.contracts._declare import ContractError, contract_of, item_type
 from untaped.sdk.marks import Experimental, deprecated, function_mark
 from untaped.sdk.storage.cache import Cache
@@ -42,8 +42,8 @@ def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
     assert info.methods["to_book"].bridge
     assert info.methods["books"].cache is BOOKS
     assert info.methods["books"].listing
-    assert not info.methods["lookup"].listing
-    assert not info.methods["by_author"].listing
+    assert not info.methods["lookup"].bridge  # it takes a str, not T
+    assert not info.methods["first"].listing
     assert isinstance(function_mark(BookSource), Experimental)
 
 
@@ -199,7 +199,6 @@ def test_a_bridge_used_outside_the_registry_says_how_to_get_a_provider() -> None
 
 def test_bridge_and_cached_keep_the_method_signature() -> None:
     class Direct(Contract):
-        @bridge
         def make(self, item: Volume) -> Book:
             raise NotImplementedError
 
@@ -214,8 +213,8 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
 
 
 def test_cached_takes_a_cache_named_after_the_contract_and_method() -> None:
-    with pytest.raises(TypeError, match=r"@cached takes a Cache: declare X = Cache"):
-        cached(lambda self: [])  # type: ignore[arg-type]  # written bare, without its cache
+    with pytest.raises(TypeError, match=r"@cached takes max_age= and label="):
+        cached(lambda self: [])  # type: ignore[call-overload]  # written bare, without its cache
     with pytest.raises(TypeError, match=r"Rows\.rows: @cached takes the cache named 'rows_rows'"):
 
         class Rows(Contract):
@@ -326,45 +325,60 @@ def test_a_provider_filling_a_method_with_a_base_helper_is_rewrapped() -> None:
                 return []
 
 
-def test_a_listing_is_declared_and_returns_a_list() -> None:
-    from untaped.sdk.contracts import listing
-
+def test_a_method_returning_a_list_is_a_listing() -> None:
     class Shelves(Contract):
-        @listing
         def shelves(self, floor: int) -> list[Book]:
             raise NotImplementedError
 
-        def everything(self) -> list[Book]:
+        def one(self) -> Book:
             raise NotImplementedError
 
     info = contract_of(Shelves)
     assert info is not None
     assert info.methods["shelves"].listing
-    assert not info.methods["everything"].listing
-    with pytest.raises(TypeError, match=r"Single\.one: a @listing method returns a list"):
+    assert not info.methods["one"].listing
 
-        class Single(Contract):
-            @listing
-            def one(self) -> Book:
+
+def test_the_bridge_is_the_method_taking_t_and_returning_the_owner_s_model() -> None:
+    class Ledger[T: Record = Book](Contract):
+        def to_book(self, item: T) -> Book:
+            raise NotImplementedError
+
+        def lend(self, item: T, days: int) -> Book:
+            raise NotImplementedError
+
+        def titles(self) -> list[Book]:
+            raise NotImplementedError
+
+    info = contract_of(Ledger)
+    assert info is not None
+    assert [name for name, method in info.methods.items() if method.bridge] == ["to_book"]
+    with pytest.raises(TypeError, match=r"Twice: to_book and as_book both take T"):
+
+        class Twice[T: Record = Book](Contract):
+            def to_book(self, item: T) -> Book:
+                raise NotImplementedError
+
+            def as_book(self, item: T) -> Book:
                 raise NotImplementedError
 
 
-def test_a_listing_is_the_contracts_call_and_composes_with_cached() -> None:
-    from untaped.sdk.contracts import listing
-
+def test_cached_makes_the_answer_cache_from_its_max_age_and_label() -> None:
     class Rows(Contract):
-        @cached(_cache("rows_rows"))
-        @listing
+        @cached(max_age=timedelta(minutes=5), label="rows")
         def rows(self) -> list[Book]:
             raise NotImplementedError
 
     info = contract_of(Rows)
     assert info is not None
-    assert info.methods["rows"].listing
-    assert info.methods["rows"].cache == _cache("rows_rows")
-    with pytest.raises(TypeError, match=r"Eager\.lookup: only the contract decides"):
-
-        class Eager(Shop):
-            @listing
-            def lookup(self, title: str) -> list[Book]:
-                return []
+    cache = info.methods["rows"].cache
+    assert cache is not None
+    assert (cache.label, cache.default_max_age, cache.spelled) == (
+        "rows",
+        timedelta(minutes=5),
+        False,
+    )
+    with pytest.raises(TypeError, match="takes max_age= and label="):
+        cached(label="rows")  # type: ignore[call-overload]
+    with pytest.raises(TypeError, match="not both"):
+        cached(_cache("rows_rows"), label="rows")  # type: ignore[call-overload]

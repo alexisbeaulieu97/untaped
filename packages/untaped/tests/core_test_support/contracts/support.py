@@ -16,7 +16,7 @@ from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.settings import get_settings
 from untaped.sdk import experimental
 from untaped.sdk._home import config_path
-from untaped.sdk.contracts import Contract, Issued, Provider, Record, bridge, cached, listing
+from untaped.sdk.contracts import Contract, Issued, Provider, Record, cached
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.testing import plugin_candidate
 
@@ -33,11 +33,9 @@ class Book(Issued, kind="shelf.book"):
 class BookSource[T: Record = Book](Contract):
     """Where books come from."""
 
-    @bridge
     def to_book(self, item: T) -> Book:
         raise NotImplementedError
 
-    @listing
     @cached(BOOKS)
     @abstractmethod
     def books(self) -> list[Book]: ...

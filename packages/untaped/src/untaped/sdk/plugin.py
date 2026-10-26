@@ -156,10 +156,39 @@ class Plugin:
     skill: ClassVar[StubSkill | None] = None
     runs: ClassVar[type[Command[Any]] | None] = None
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if isinstance(cls.offers, tuple) and cls.offers:
+            _hold_answer_caches(cls)
+
     def __init__(self) -> NoReturn:
         raise TypeError(
             f"{type(self).__name__} is a plugin; core reads the class, never an instance"
         )
+
+
+def _hold_answer_caches(cls: type[Plugin]) -> None:
+    """Hold each answer cache ``@cached`` made on a contract ``cls`` offers.
+
+    The owner's plugin class holds it as ``<contract>_<method>``, as if the
+    class named it so, when the class is created: its setting is
+    ``<plugin>.caches.<contract>_<method>.max_age_seconds``. A cache an 11.x
+    owner spelled (``Cache(owner, name, ...)``) stays its own, and a name the
+    class already has is left to composition.
+    """
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - already imported
+
+    for offered in cls.offers:
+        info = contract_of(offered) if isinstance(offered, type) else None
+        if info is None or info.cls is not offered:
+            continue  # composition says what offers may hold
+        for method in info.methods.values():
+            cache = method.cache
+            name = f"{info.name}_{method.name}"
+            if cache is None or cache.spelled or hasattr(cls, name):
+                continue
+            setattr(cls, name, cache)
+            cache.__set_name__(cls, name)
 
 
 #: The attribute names a plugin class reserves, each holding one thing.

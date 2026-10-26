@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import abstractmethod
 
 from untaped.sdk import experimental
-from untaped.sdk.contracts import Contract, Record, bridge, cached, listing
+from untaped.sdk.contracts import Contract, Record, cached
 from untaped_workspace.domain.repo import Repo, RepoName
 from untaped_workspace.settings import REPOS
 
@@ -26,12 +26,10 @@ class RepoSource[T: Record = Repo](Contract):
     ``T`` is the provider's own record type; it defaults to Repo.
     """
 
-    @bridge
     def to_repo(self, item: T) -> Repo:
         """Turn the provider's own record into a Repo (only when ``T`` is not Repo)."""
         raise NotImplementedError
 
-    @listing
     @cached(REPOS)
     @abstractmethod
     def repos(self) -> list[Repo]:

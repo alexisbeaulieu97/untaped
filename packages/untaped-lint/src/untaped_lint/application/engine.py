@@ -284,6 +284,8 @@ def _load(report: Report) -> _Providers:
     for answer in answers:
         if isinstance(answer, Ok):
             _declare(answer.plugin, answer.value, providers, report)
+            for row in answer.invalid:  # a malformed rule is dropped, its plugin's others kept
+                report.failures.append(_failure(answer.plugin, "invalid-item", row))
         else:
             _not_checked(answer, report, rules=None)
     return providers

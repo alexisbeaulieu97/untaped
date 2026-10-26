@@ -86,8 +86,9 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     """Fail unless ``provider`` fills its contract for every sample of its record type ``T``.
 
     Each sample (a ``T`` or a mapping of one) must survive a JSON round trip
-    through ``T`` and, through each ``@bridge`` method, become a valid owner
-    record whose ``source`` names the provider and gives the sample back.
+    through ``T`` and, through the bridge (the method taking ``T`` and
+    returning the owner's model), become a valid owner record whose
+    ``source`` names the provider and gives the sample back.
     ``samples=`` is required when ``T`` isn't the owner's model. The provider
     is the one an enclosing :func:`compose_with` offers, else the installed
     plugin's. Records the owner's schema hash in the plugin package's

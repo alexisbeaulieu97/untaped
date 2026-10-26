@@ -316,7 +316,7 @@ def _contract_fields(
     """
     fields: dict[str, Any] = {}
     if plugin.offers:
-        fields["contracts"] = partial(_resolved, plugin.offers)
+        fields["contracts"] = partial(_offered, plugin.name, plugin.offers)
     owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
     grouped: dict[str, list[str]] = defaultdict(list)
     for fill in plugin.fills:
@@ -329,6 +329,27 @@ def _contract_fields(
             owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
         }
     return fields
+
+
+def _offered(plugin: str, targets: Sequence[str]) -> tuple[Any, ...]:
+    """The contracts ``plugin`` offers, each answer cache bound to it where declared.
+
+    A start served from the declaration cache imports the contract to ask it
+    but not necessarily the owner's plugin class, which holds the cache when
+    created; so the cache learns its owner and name from the declaration.
+    """
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - only when asked
+
+    contracts = _resolved(targets)
+    for each in contracts:
+        info = contract_of(each)
+        if info is None:
+            continue
+        for method in info.methods.values():
+            cache = method.cache
+            if cache is not None and not cache.spelled:
+                cache._bound_to(plugin, f"{info.name}_{method.name}")
+    return contracts
 
 
 def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:

@@ -2,8 +2,9 @@
 
 For each sample of the provider's own record type ``T``: it survives a JSON
 round trip through ``T``; it issues as the owner's model the way the SDK
-issues every answer; and each ``@bridge`` method turns it into a valid owner
-record whose ``source`` names the provider and carries the sample back.
+issues every answer; and each bridge (the method taking ``T`` and returning
+the owner's model) turns it into a valid owner record whose ``source`` names
+the provider and carries the sample back.
 
 The owner's schema hash the provider was checked against lives in the
 plugin package's ``fills.json`` (``{"untaped": "1", "fills": {"<owner>.<contract>":

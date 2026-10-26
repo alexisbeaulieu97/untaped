@@ -52,7 +52,7 @@ RACK = {
         from abc import abstractmethod
         from datetime import date
 
-        from untaped.sdk.contracts import Contract, Issued, Record, bridge
+        from untaped.sdk.contracts import Contract, Issued, Record
 
 
         class Item(Issued, kind="rack.item"):
@@ -62,7 +62,6 @@ RACK = {
         class ItemSource[T: Record = Item](Contract):
             """Where items come from."""
 
-            @bridge
             def to_item(self, item: T) -> Item:
                 raise NotImplementedError
 

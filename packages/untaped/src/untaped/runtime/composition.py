@@ -78,6 +78,7 @@ if TYPE_CHECKING:
 
     from untaped.sdk.contracts._declare import ContractInfo
 
+
 #: Field names core or pydantic reserves on a command; ``run_`` still spells ``--run``.
 RESERVED_FIELDS: frozenset[str] = frozenset(
     {

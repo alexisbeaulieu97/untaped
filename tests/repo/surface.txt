@@ -6683,8 +6683,10 @@ sdk untaped.sdk.contracts.Source(record=) default={}
 sdk untaped.sdk.contracts.Source.kind
 sdk untaped.sdk.contracts.Source.plugin
 sdk untaped.sdk.contracts.Source.record
-sdk untaped.sdk.contracts.bridge(fn, /)
-sdk untaped.sdk.contracts.cached(cache, /)
+sdk untaped.sdk.contracts.cached()
+sdk untaped.sdk.contracts.cached(cache@1/=) default=None
+sdk untaped.sdk.contracts.cached(label=) default=None
+sdk untaped.sdk.contracts.cached(max_age=) default=None
 sdk untaped.sdk.contracts.convert(bridge, envelope) callback(bridge, *)
 sdk untaped.sdk.contracts.gather(deadline=) default=None
 sdk untaped.sdk.contracts.gather(method, /) callback(method, P)
@@ -6692,7 +6694,6 @@ sdk untaped.sdk.contracts.gather(needs=) default=[] callback(*)
 sdk untaped.sdk.contracts.gather(plugins=) default=None
 sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
 sdk untaped.sdk.contracts.gather(refresh=) default=None
-sdk untaped.sdk.contracts.listing(fn, /)
 sdk untaped.sdk.contracts.providing(candidates=) default=None
 sdk untaped.sdk.contracts.providing(owner, offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
