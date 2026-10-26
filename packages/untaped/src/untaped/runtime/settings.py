@@ -998,8 +998,9 @@ class _SettingsGetter:
     so runs that pick differently (a child run, a thread in one, an asyncio task
     in another) each read their own entry and none ever clears another's. Under
     a run carrying an overlay the settings are built fresh and never stored, so
-    candidate values reach no cache. Keeps ``cache_clear`` and ``cache_info`` of
-    the ``lru_cache`` it wraps (a config write drops every pick's entry).
+    candidate values reach no cache. The key is the pick alone, not the home or
+    the environment: a config write, registration or reset drops every pick's
+    entry through ``cache_clear`` (``cache_info`` is the wrapped ``lru_cache``'s).
     """
 
     def __init__(self) -> None:

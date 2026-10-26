@@ -134,7 +134,9 @@ def child_run(
     """
     names = None if profiles is None else pick_names(profiles)
     if names == ():
-        raise ValueError("a child run's pick names a profile; pass `default` for the base alone")
+        raise ValueError(
+            "a child run's pick names a profile; leave `profiles` out to keep the parent's"
+        )
     parent = current_run()
     child = replace(
         parent,

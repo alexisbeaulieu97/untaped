@@ -141,7 +141,7 @@ def test_a_child_run_refuses_an_empty_pick(tmp_path: Path) -> None:
     declaration, settings = _composed()
     with (
         run_scope(build_run(declaration, settings, home=tmp_path)),
-        pytest.raises(ValueError, match="default"),
+        pytest.raises(ValueError, match="names a profile"),
         child_run(profiles=()),
     ):
         pass
@@ -180,15 +180,17 @@ def test_a_thread_started_in_a_child_run_reads_its_pick_after_the_block() -> Non
     seen: list[tuple[str, str, str]] = []
 
     def later() -> None:
-        go.wait()
+        assert go.wait(timeout=10)
         seen.append(_read())
 
     with child_run(profiles="work"):
-        thread = threading.Thread(target=contextvars.copy_context().run, args=(later,))
+        thread = threading.Thread(target=contextvars.copy_context().run, args=(later,), daemon=True)
         thread.start()
-    assert _read() == ("base", "base", "default")  # the parent fills its own entry
-    go.set()
-    thread.join()
+    try:
+        assert _read() == ("base", "base", "default")  # the parent fills its own entry
+    finally:
+        go.set()
+        thread.join(timeout=10)
     assert seen == [("work", "work", "work")]
 
 
@@ -215,16 +217,20 @@ def test_the_main_thread_reads_its_own_pick_while_a_worker_is_in_a_child_run() -
 
     def worker() -> None:
         with child_run(profiles="work"):
-            seen.append(_read())
-            inside.set()
-            read.wait()
+            try:
+                seen.append(_read())
+            finally:
+                inside.set()
+            assert read.wait(timeout=10)
             seen.append(_read())
 
-    thread = threading.Thread(target=contextvars.copy_context().run, args=(worker,))
+    thread = threading.Thread(target=contextvars.copy_context().run, args=(worker,), daemon=True)
     thread.start()
-    inside.wait()
-    main = _read()
-    read.set()
-    thread.join()
+    try:
+        assert inside.wait(timeout=10)
+        main = _read()
+    finally:
+        read.set()
+        thread.join(timeout=10)
     assert main == ("base", "base", "default")
     assert seen == [("work", "work", "work")] * 2
