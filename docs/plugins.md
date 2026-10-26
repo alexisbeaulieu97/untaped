@@ -338,7 +338,8 @@ into the test's home; `.run(Greet())` and `.cli("hello say ada")` return a
 `Ran`; `with hello.running() as run:` runs a block as a command of that
 install runs, and `run.diagnostics` are the typed lines the block itself
 shows, as `Ran.diagnostics` are a command's (a command run inside reports on
-its own `Ran`); `clock`, `terminal` (absent until
+its own `Ran`), and `run.http` is the factory a client class takes
+(`JiraClient(settings, http=run.http)`); `clock`, `terminal` (absent until
 scripted) and `credentials` are the clock, terminal and password store
 commands meet; `check(install(Hello))`
 and `assert_surface(Hello)` guard its composition checks and surface.

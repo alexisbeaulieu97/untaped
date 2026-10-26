@@ -99,3 +99,12 @@ def test_a_client_is_the_plugin_s_when_its_settings_are_core_s_subclass(
     # a plugin with a credential has its settings loaded as core's subclass of its model
     ran = install(Locked, settings=LockedSettings(url=_URL)).cli("locked ask")
     assert (ran.exit, ran.text) == (0, "locked"), ran.stderr
+
+
+@respx.mock
+def test_a_client_class_s_test_takes_the_kit_s_factory(install: Installer) -> None:
+    respx.get(f"{_URL}/me").mock(return_value=httpx.Response(200, json={}))
+    with install(Desk).running() as run:
+        client = run.http.client(DeskSettings(), base_url=_URL, bearer="tok")
+        seen = client.get("/me").request.headers.get("authorization")
+    assert (client.system, seen) == ("desk", "Bearer tok")
