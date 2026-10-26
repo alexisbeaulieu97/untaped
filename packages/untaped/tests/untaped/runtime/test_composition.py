@@ -1531,6 +1531,63 @@ def test_a_filler_waits_for_the_later_offerer_to_take_the_contract_over() -> Non
     assert [plugin.name for plugin in declaration.plugins] == ["shelf", "reader"]
 
 
+@pytest.mark.parametrize("broken", ["taken name", "empty refresh"])
+def test_a_filler_listed_first_waits_for_a_later_plugin_broken_on_its_own(broken: str) -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a plugin broken on its own."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Bare(Command):
+        """Refreshes nothing."""
+
+        refresh: Refresh = Refresh()
+
+        def run(self) -> None:
+            return None
+
+    class First(Plugin):
+        """Offers Notes first."""
+
+        settings = HelloSettings
+        commands = (Bare,) if broken == "empty refresh" else ()
+        offers = (Notes,)
+
+    class Shelf(Plugin):
+        """Offers Held behind First's Notes."""
+
+        settings = HelloSettings
+        offers = (Held, Notes)
+        held_pages = held
+
+    class Fill(Held, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Held)
+    reader.offers = ()
+    reader.fills = (Fill,)
+    entries = [
+        _entry(reader, "reader", module="untaped_reader.plugin"),
+        _entry(First, "config", module="untaped_first.plugin"),
+        _entry(Shelf, "shelf"),
+    ]
+    taken = {"config"} if broken == "taken name" else set()
+    declaration = compose(entries, taken=taken)
+    assert [plugin.name for plugin in declaration.plugins] == ["reader", "shelf"]
+
+
 def test_a_name_is_free_once_its_first_holder_is_refused_for_the_others() -> None:
     @experimental
     class Paging(Contract):

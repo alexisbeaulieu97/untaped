@@ -157,9 +157,9 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     plugin not quarantined that offers it; a later one is refused
     (``duplicate-offer``). A plugin refused for a problem of its own stays
     quarantined while the others recompose without it: first every plugin
-    broken whatever the others are, then, one at a time in order, a plugin
-    whose problem is about the others (a taken name or kind, a cache no
-    composed plugin owns).
+    broken whatever the others are (a name ``taken`` holds included), then,
+    one at a time in entry order, a plugin whose problem is about the others
+    (a name or kind another plugin has, a cache no composed plugin owns).
     """
     reserved = frozenset(taken)
     # Refused for a problem of its own, by index: quarantined for good, as it was refused.
@@ -180,13 +180,17 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
             return declaration
         # A problem about the others may go once the plugins broken on their own are out:
         # withdraw those first, then the first plugin left with one, a pass at a time.
-        alone = {i: problems for i, problems in own.items() if _broken_alone(problems)}
+        alone = {
+            i: problems
+            for i, problems in own.items()
+            if _broken_alone(problems) or entries[i].name in reserved  # taken for good
+        }
         first = min(own)
         withdrawn |= alone or {first: own[first]}
 
 
 #: Problems a plugin has because of the others composed beside it, in this pass.
-_RELATIONAL = frozenset({"duplicate-name", "duplicate-kind", "duplicate-offer", "refresh-cache"})
+_RELATIONAL = frozenset({"duplicate-name", "duplicate-kind", "duplicate-offer", "unowned-cache"})
 
 
 def _refused_for_itself(problems: Sequence[Problem]) -> bool:
@@ -1101,7 +1105,7 @@ class _CommandWalk:
                     named.append((cache, spelled))
                     continue
                 self.problem(
-                    "refresh-cache",
+                    "unowned-cache",
                     where,
                     f"{each!r}'s cache {cache!r} belongs to no composed plugin: spell it "
                     "Cache(owner, name, ...) or hold it on the owner's plugin class",
