@@ -574,6 +574,11 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         if cache is not None:
             _check_cache(where, cls.__name__, name, cache, hints["return"])
             if not cache.spelled and cache._held_as is None:
+                if cache._declared_as is not None:
+                    raise TypeError(
+                        f"{where}.{name}: @cached takes a cache of its own; this one already "
+                        f"caches {cache._declared_as}"
+                    )
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
         is_bridge = _is_bridge(value, hints, item_param, item)
@@ -606,7 +611,9 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
 def _owner_of(cls: type[Contract]) -> str:
     """The plugin this run composed as offering ``cls``: its answer cache's plugin."""
     from untaped.runtime.contracts.registry import owner_of  # noqa: PLC0415 - the registry's cost
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
+    current_run()  # outside a run no plugin owns it: NoRunError, as for a held block
     return owner_of(cast("ContractInfo", contract_of(cls)))  # asked once ``cls`` is declared
 
 

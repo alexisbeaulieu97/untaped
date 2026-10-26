@@ -1230,6 +1230,40 @@ def test_a_second_class_offering_the_contract_changes_nothing_for_the_first() ->
     for plugin, name in ((First, "first"), (Second, "second"), (First, "renamed")):
         [decl] = compose([_entry(plugin, name)]).plugins
         assert [block.name for block in decl.blocks] == ["shared_pages"]
+    # composed together, the first owns the contract and the second is refused
+    both = compose([_entry(First, "first"), _entry(Second, "second")])
+    assert [plugin.name for plugin in both.plugins] == ["first"]
+    [refused] = both.quarantined
+    [problem] = refused.problems
+    assert (
+        problem.rule,
+        problem.detail.endswith("is offered by first too; a contract has one owner"),
+    ) == ("duplicate-offer", True)
+
+
+def test_one_cache_caches_one_contract_method() -> None:
+    shared = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Alpha(Contract):
+        """Alpha."""
+
+        @cached(shared)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    with pytest.raises(
+        TypeError,
+        match=r"Beta\.pages: @cached takes a cache of its own; this one already caches alpha_pages",
+    ):
+
+        @experimental
+        class Beta(Contract):
+            """Beta."""
+
+            @cached(shared)
+            def pages(self) -> list[Book]:
+                raise NotImplementedError
 
 
 def test_an_answer_cache_s_name_taken_by_something_else_is_named() -> None:

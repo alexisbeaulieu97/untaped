@@ -159,13 +159,15 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     owners: dict[str, int] = {}
     for index, entry in enumerate(entries):
         owners.setdefault(_package(entry.target), index)
-    offering = _offering(entries)
+    excluded: set[int] = set()
     while True:
         names = {package: entries[index].name for package, index in owners.items()}
+        offering = _offering([e for i, e in enumerate(entries) if i not in excluded])
         declaration, refused = _compose(entries, reserved, names, offering)
-        if not refused & set(owners.values()):
+        if refused <= excluded and not refused & set(owners.values()):
             return declaration
-        # A quarantined plugin owns no kind: the plugins reaching its classes do.
+        # A quarantined plugin owns no kind and offers no contract: the others do.
+        excluded |= refused
         owners = {package: index for package, index in owners.items() if index not in refused}
 
 
@@ -408,6 +410,12 @@ class _PluginWalk:
             if info is None or info.cls is not offered:
                 self.problem(
                     "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
+                )
+            elif (owner := self.offering.get(info.cls, self.name)) != self.name:
+                self.problem(
+                    "duplicate-offer",
+                    f"{where}.offers",
+                    f"{info.cls.__qualname__} is offered by {owner} too; a contract has one owner",
                 )
             else:
                 self._answer_caches(cls, info)
