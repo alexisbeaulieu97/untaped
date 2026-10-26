@@ -33,7 +33,7 @@ def _row(*stores: Store, check: str = "stores") -> dict[str, object]:
     result = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
     # under the composition's run, as doctor runs, so a fix is spelled from its class
     with run_scope(build_run(result.mount.declaration, result.mount.settings)):
-        rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+        rows = collect_doctor_rows(result)
     [row] = [row for row in rows if row["check"] == check]
     return row
 
@@ -153,9 +153,7 @@ def test_a_store_whose_base_fails_is_named(tmp_path: Path) -> None:
 
 def test_no_store_passes() -> None:
     result = bootstrap.compose_root(candidates=[])
-    [row] = [
-        row for row in collect_doctor_rows(bootstrap.SHELL_SPEC, result) if row["check"] == "stores"
-    ]
+    [row] = [row for row in collect_doctor_rows(result) if row["check"] == "stores"]
     assert (row["status"], row["detail"]) == ("pass", "no plugin declares a store")
 
 

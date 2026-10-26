@@ -144,10 +144,9 @@ def collect_sections() -> list[Section]:
     plugin rather than drop its section.
     """
     from untaped.core.surface._settings import check_quarantine, sections  # noqa: PLC0415
-    from untaped.runtime.bootstrap import SHELL_SPEC  # noqa: PLC0415
     from untaped.runtime.registry import compose  # noqa: PLC0415
 
-    result = compose(SHELL_SPEC, _first_party())
+    result = compose(_first_party())
     check_quarantine(result)
     return sections(result, extensions=False)
 

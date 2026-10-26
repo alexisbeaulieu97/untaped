@@ -1,6 +1,6 @@
 """Root ``untaped doctor`` command group: ``Doctor`` on core's plugin class.
 
-``untaped doctor`` (``Doctor.runs``, :class:`Check`) runs the shell plus
+``untaped doctor`` (``Doctor.runs``, :class:`Check`) runs core's plus
 every composed plugin's health checks OFFLINE — config-file reads plus
 in-process model validation only, never network I/O. ``--online`` adds the checks
 plugins contribute with ``DoctorCheck(online=True)``, which contact the
@@ -49,7 +49,6 @@ from untaped.runtime.profile_resolver import (
     selected_profile,
 )
 from untaped.runtime.registry import (
-    ApplicationSpec,
     CompositionResult,
     PluginSpec,
     QuarantineRecord,
@@ -141,9 +140,9 @@ class Check(Command[CoreSettings]):
 
     def run(self) -> Iterator[records.DoctorCheck]:
         # Lazy: bootstrap is the CLI's root and imports this module.
-        from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
+        from untaped.runtime.bootstrap import composition  # noqa: PLC0415
 
-        rows = collect_doctor_rows(SHELL_SPEC, composition(), online=self.online)
+        rows = collect_doctor_rows(composition(), online=self.online)
         if (yield from report_check_rows(rows, op="doctor", output=self.output)):
             raise Failed("a doctor check failed")
 
@@ -172,10 +171,9 @@ class Fix(Command[CoreSettings]):
     def run(self) -> Iterator[records.FixOutcome]:
         # Lazy: bootstrap is the CLI's root and imports this module; fix imports doctor.
         from untaped.core.commands.fix import run_fixes  # noqa: PLC0415
-        from untaped.runtime.bootstrap import SHELL_SPEC, composition, root_command  # noqa: PLC0415
+        from untaped.runtime.bootstrap import composition, root_command  # noqa: PLC0415
 
         return run_fixes(
-            SHELL_SPEC,
             composition(),
             online=self.online,
             confirm=self.confirm,
@@ -317,38 +315,22 @@ def is_automatic(covered: list[dict[str, object]]) -> bool:
     return all(row.get("automatic") for row in covered)
 
 
-def _scopes(
-    shell: ApplicationSpec, result: CompositionResult, plugins: frozenset[str] | None
-) -> list[_SectionScope]:
+def _scopes(result: CompositionResult, plugins: frozenset[str] | None) -> list[_SectionScope]:
+    core = result.core
     scopes = [
         _SectionScope(
-            plugin=shell.name,
-            section=shell.section,
+            plugin=core.name,
+            section=core.name,
             # Core's parts get a row each (_core_row), so its checks get no
             # settings: one reads its part with load_core_part.
             settings_model=None,
-            state_model=shell.state,
-            checks=_core_checks(shell, result, plugins),
+            state_model=core.state,
+            # setup checks only what it configured: then Core's class stays unloaded
+            checks=tuple(core.doctor_checks) if plugins is None or core.name in plugins else (),
         )
     ]
     scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
     return scopes
-
-
-def _core_checks(
-    shell: ApplicationSpec, result: CompositionResult, plugins: frozenset[str] | None
-) -> tuple[DoctorCheck, ...]:
-    """Core's checks: the shell's and its class's; none when ``plugins`` leaves core out."""
-    if plugins is not None and shell.name not in plugins:
-        return ()  # setup checks only what it configured: Core's class stays unloaded
-    return (*shell.doctor_checks, *_core_spec(result).doctor_checks)
-
-
-def _core_spec(result: CompositionResult) -> PluginSpec:
-    """Core's own class as the spec doctor reads: its checks and caches."""
-    from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - imports Core's class
-
-    return plugin_spec(result.mount, NAME)
 
 
 def _plugin_scope(spec: PluginSpec) -> _SectionScope:
@@ -367,7 +349,6 @@ def _plugin_scope(spec: PluginSpec) -> _SectionScope:
 
 
 def collect_doctor_rows(
-    shell: ApplicationSpec,
     result: CompositionResult,
     *,
     online: bool = False,
@@ -379,11 +360,11 @@ def collect_doctor_rows(
     plugins (``setup`` checks only what it configured).
     """
     rows: list[dict[str, object]] = []
-    raw, config_row = _config_row(shell)
+    raw, config_row = _config_row()
     rows.append(config_row)
     if raw is not None:
-        rows.append(_deprecated_keys_row(shell, raw))
-    state, state_file_row = _state_file_row(shell)
+        rows.append(_deprecated_keys_row(raw))
+    state, state_file_row = _state_file_row()
     rows.append(state_file_row)
     settings_error: str | None = None
     effective: Mapping[str, Any] | None = None
@@ -394,11 +375,11 @@ def collect_doctor_rows(
             effective = active_settings_layout().effective(raw)
         except ConfigError as exc:
             settings_error = str(exc)
-        rows.append(_profile_row(shell, settings_error))
+        rows.append(_profile_row(settings_error))
     for part in CoreSettings.model_fields:
-        rows.append(_core_row(shell, part, effective, settings_error))
+        rows.append(_core_row(part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
-    scopes = _scopes(shell, result, plugins)
+    scopes = _scopes(result, plugins)
     profile = fix_target()
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)
@@ -408,12 +389,12 @@ def collect_doctor_rows(
             rows.append(_state_row(scope, scope.state_model, state))
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
-    rows.append(_skills_row(shell, result))
+    rows.append(_skills_row(result))
     if plugins is None:
-        rows.append(_references_row(shell, result))
-        rows.append(_stores_row(shell, result))
-        rows.append(_caches_row(shell, result))
-        rows.append(_plugin_folders_row(shell, result))
+        rows.append(_references_row(result))
+        rows.append(_stores_row(result))
+        rows.append(_caches_row(result))
+        rows.append(_plugin_folders_row(result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     for registered in result.plugins:
@@ -427,14 +408,13 @@ def collect_doctor_rows(
 
 
 def selected_check_rows(
-    shell: ApplicationSpec,
     result: CompositionResult,
     profile: str,
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
     """``selected`` plugins' doctor rows for ``profile``, online checks included."""
     with child_run(profiles=profile):
-        rows = collect_doctor_rows(shell, result, online=True, plugins=selected)
+        rows = collect_doctor_rows(result, online=True, plugins=selected)
     # Old keys concern every plugin's settings, so setup shows them too.
     return [
         row
@@ -511,7 +491,7 @@ def _check_rows(
     ]
 
 
-def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
+def _deprecated_keys_row(raw: Mapping[str, Any]) -> dict[str, object]:
     """Warn about old keys and deprecated settings in any profile."""
     title = "deprecated config keys"
     found = [
@@ -521,7 +501,7 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
     ]
     variables = retired_env_vars(profile_section_models())
     if not found and not variables:
-        return _row("deprecated-keys", shell.name, _PASS, title, "no deprecated keys")
+        return _row("deprecated-keys", NAME, _PASS, title, "no deprecated keys")
     parts = []
     for item in found:
         old = f"{item.section}.{item.old}"
@@ -541,10 +521,10 @@ def _deprecated_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict
     fix = None
     if any(item.kind != "deprecated" for item in found):
         fix = command_argv("config migrate", profile=fix_target())
-    return _row("deprecated-keys", shell.name, _WARN, title, "; ".join(parts), fix, automatic=True)
+    return _row("deprecated-keys", NAME, _WARN, title, "; ".join(parts), fix, automatic=True)
 
 
-def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+def _skills_row(result: CompositionResult) -> dict[str, object]:
     """Warn when an installed skill is outdated, edited, or shipped by no plugin here.
 
     A stub a newer untaped wrote is fine and not reported; the automatic fix
@@ -557,7 +537,7 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         if item.state is not SkillState.newer
     ]
     if not stale:
-        return _row("skills", shell.name, _PASS, title, "no outdated skills")
+        return _row("skills", NAME, _PASS, title, "no outdated skills")
     parts = [f"{item.state.value} skill: {item.path}" for item in stale]
     fix = None
     if any(item.state is SkillState.outdated for item in stale):
@@ -573,10 +553,10 @@ def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
             " that ships one, or remove it with `untaped skills remove NAME`"
         )
     detail = "; ".join(parts)
-    return _row("skills", shell.name, _WARN, title, detail, fix, automatic=True)
+    return _row("skills", NAME, _WARN, title, detail, fix, automatic=True)
 
 
-def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+def _stores_row(result: CompositionResult) -> dict[str, object]:
     """Each composed store's layouts on disk and who holds each.
 
     Green while every layout on disk is held or will go at the next complete
@@ -593,7 +573,7 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
         if isinstance(store, Store)  # an item store keeps no layouts
     ]
     if not stores:
-        return _row("stores", shell.name, _PASS, title, "no plugin declares a store")
+        return _row("stores", NAME, _PASS, title, "no plugin declares a store")
     references = read_references()
     parts: list[str] = []
     reasons: set[str] = set()
@@ -613,11 +593,11 @@ def _stores_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
             reasons |= warns
         parts.append(f"{store.qualified}: {'; '.join(texts)}")
     if not reasons:
-        return _row("stores", shell.name, _PASS, title, "; ".join(parts))
-    return _row("stores", shell.name, _WARN, title, "; ".join(parts), _stores_fix(reasons))
+        return _row("stores", NAME, _PASS, title, "; ".join(parts))
+    return _row("stores", NAME, _WARN, title, "; ".join(parts), _stores_fix(reasons))
 
 
-def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+def _caches_row(result: CompositionResult) -> dict[str, object]:
     """What doctor notes about caches: always a pass, since every cache refills.
 
     A cache's keys holding only another version's value. The caches of a
@@ -627,7 +607,7 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
 
     title = "no caches of another version"
     parts: list[str] = []
-    for spec in (_core_spec(result), *(registered.spec for registered in result.plugins)):
+    for spec in (result.core, *(registered.spec for registered in result.plugins)):
         for cache in spec.caches:
             try:
                 outdated = outdated_keys(cache)
@@ -639,10 +619,10 @@ def _caches_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, 
                 parts.append(
                     f"{cache.qualified}: {keys} filled by another version, refilled when due"
                 )
-    return _row("caches", shell.name, _PASS, title, "; ".join(parts) or "nothing to note")
+    return _row("caches", NAME, _PASS, title, "; ".join(parts) or "nothing to note")
 
 
-def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+def _plugin_folders_row(result: CompositionResult) -> dict[str, object]:
     """Each ``plugins/<name>/`` folder of a plugin not installed here, offered to ``setup prune``.
 
     It warns while one could go (no live reference names its plugin): it
@@ -657,7 +637,7 @@ def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> di
     title = "no folders of plugins not installed here"
     leftovers = leftover_folders(result, read_references())
     if not leftovers:
-        return _row("plugin-folders", shell.name, _PASS, title, "nothing to note")
+        return _row("plugin-folders", NAME, _PASS, title, "nothing to note")
     parts = []
     for leftover in leftovers:
         text = f"{shown_path(leftover.path)}: plugin {leftover.path.name!r} isn't installed here"
@@ -667,8 +647,8 @@ def _plugin_folders_row(shell: ApplicationSpec, result: CompositionResult) -> di
             size = size_text(dir_bytes(leftover.path))
             parts.append(f"{text} and nothing here uses it ({size}); it goes whole, state included")
     if all(leftover.kept is not None for leftover in leftovers):
-        return _row("plugin-folders", shell.name, _PASS, title, "; ".join(parts))
-    return _row("plugin-folders", shell.name, _WARN, title, "; ".join(parts), _prune_fix())
+        return _row("plugin-folders", NAME, _PASS, title, "; ".join(parts))
+    return _row("plugin-folders", NAME, _WARN, title, "; ".join(parts), _prune_fix())
 
 
 def _prune_fix() -> list[str]:
@@ -742,7 +722,7 @@ def _stores_fix(reasons: set[str]) -> list[str] | None:
     return None
 
 
-def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+def _references_row(result: CompositionResult) -> dict[str, object]:
     """Every reference in the home, with its state, and whether this install is registered.
 
     Installs hold store layouts; projects hold items. A missing project
@@ -780,7 +760,7 @@ def _references_row(shell: ApplicationSpec, result: CompositionResult) -> dict[s
     detail = "; ".join(parts) or "no install is registered"
     # Never automatic: a lasting registration is a deliberate step (a one-off `uvx` run's
     # environment would otherwise pin layouts until its installer's cache is cleared).
-    return _row("references", shell.name, _WARN if warn else _PASS, title, detail, fix)
+    return _row("references", NAME, _WARN if warn else _PASS, title, detail, fix)
 
 
 def _reference_text(ref: Reference, mine: RefHolder | None) -> tuple[str, bool]:
@@ -851,40 +831,37 @@ def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -
     return False
 
 
-def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:
+def _config_row() -> tuple[dict[str, Any] | None, dict[str, object]]:
     path = resolve_config_path()
     try:
         raw = read_config_dict(path)
     except ConfigError as exc:
-        return None, _row("config", shell.name, _FAIL, "load config file", str(exc))
-    return raw, _row("config", shell.name, _PASS, "load config file", str(path))
+        return None, _row("config", NAME, _FAIL, "load config file", str(exc))
+    return raw, _row("config", NAME, _PASS, "load config file", str(path))
 
 
-def _state_file_row(
-    shell: ApplicationSpec,
-) -> tuple[tuple[dict[str, Any], Path] | None, dict[str, object]]:
+def _state_file_row() -> tuple[tuple[dict[str, Any], Path] | None, dict[str, object]]:
     """Load ``state.yml``; return ``((raw, path), row)`` or ``(None, failed row)``."""
     title = "load state file"
     try:
         path = resolve_state_path()
         raw = read_state_dict(path)
     except ConfigError as exc:
-        return None, _row("config", shell.name, _FAIL, title, str(exc))
-    return (raw, path), _row("config", shell.name, _PASS, title, str(path))
+        return None, _row("config", NAME, _FAIL, title, str(exc))
+    return (raw, path), _row("config", NAME, _PASS, title, str(path))
 
 
-def _profile_row(shell: ApplicationSpec, settings_error: str | None) -> dict[str, object]:
+def _profile_row(settings_error: str | None) -> dict[str, object]:
     """Each picked profile (flag or env) must exist."""
     title = "resolve picked profiles"
     if settings_error is not None:
-        return _row("profile", shell.name, _FAIL, title, settings_error)
+        return _row("profile", NAME, _FAIL, title, settings_error)
     picks = current_pick()
     detail = ", ".join(f"{pick.name} (via {pick.source})" for pick in picks)
-    return _row("profile", shell.name, _PASS, title, detail or "default (via fallback)")
+    return _row("profile", NAME, _PASS, title, detail or "default (via fallback)")
 
 
 def _core_row(
-    shell: ApplicationSpec,
     part: str,
     effective: Mapping[str, Any] | None,
     settings_error: str | None,
@@ -896,10 +873,10 @@ def _core_row(
     """
     title = f"validate {NAME}.{part}"
     if effective is None:
-        return _row("settings", shell.name, _FAIL, title, settings_error or "config unreadable")
+        return _row("settings", NAME, _FAIL, title, settings_error or "config unreadable")
     section = effective.get(NAME)
     if section is not None and not isinstance(section, dict):
-        return _row("settings", shell.name, _FAIL, title, f"section {NAME!r} must be a mapping")
+        return _row("settings", NAME, _FAIL, title, f"section {NAME!r} must be a mapping")
     node = (section or {}).get(part)
     try:
         checked = check_settings_field(
@@ -912,8 +889,8 @@ def _core_row(
         if isinstance(value, HttpSettings):
             resolve_verify(value)
     except ConfigError as exc:
-        return _row("settings", shell.name, _FAIL, title, str(exc))
-    return _row("settings", shell.name, _PASS, title, "settings OK")
+        return _row("settings", NAME, _FAIL, title, str(exc))
+    return _row("settings", NAME, _PASS, title, "settings OK")
 
 
 def _state_row(

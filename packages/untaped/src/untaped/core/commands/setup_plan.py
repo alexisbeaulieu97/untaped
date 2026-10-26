@@ -27,9 +27,10 @@ from untaped.core.commands.setup_state import (
     service_states,
     service_store,
 )
+from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
+from untaped.runtime.registry import CompositionResult, PluginSpec, settings_model
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
 from untaped.sdk.health._setup_status import set_command
@@ -51,7 +52,6 @@ SETUP_ALTERNATIVE = "untaped setup plan --format json"
 
 
 def plan_rows(
-    shell: ApplicationSpec,
     result: CompositionResult,
     services: dict[str, PluginSpec],
     profile: str,
@@ -60,7 +60,7 @@ def plan_rows(
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = profile_exists(profile)
-    rows = [_install_row(shell, profile), _profile_row(shell, profile, exists=exists)]
+    rows = [_install_row(profile), _profile_row(profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     store = service_store(services)
     ready: list[str] = []
@@ -69,7 +69,7 @@ def plan_rows(
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
-    checks = selected_check_rows(shell, result, profile, frozenset(ready)) if ready else []
+    checks = selected_check_rows(result, profile, frozenset(ready)) if ready else []
     for spec in services.values():
         rows.extend(_online_rows(spec, checks, online=online, ready=spec.name in ready))
     return rows
@@ -118,7 +118,7 @@ def _row(
     }
 
 
-def _install_row(shell: ApplicationSpec, profile: str) -> Row:
+def _install_row(profile: str) -> Row:
     """Whether this install is registered, so the cleanup of store layouts keeps what it uses."""
     from untaped.sdk.storage._refs import environment, install_state, this_install  # noqa: PLC0415
 
@@ -127,20 +127,18 @@ def _install_row(shell: ApplicationSpec, profile: str) -> Row:
     env = environment()
     if state == "source tree" or env is None:
         detail = "run from a source tree: only an installed untaped can be registered"
-        return _row("install", shell.name, "skipped", detail)
+        return _row("install", NAME, "skipped", detail)
     if state == "registered" and ref is not None:
-        return _row("install", shell.name, "done", f"registered: {ref.describe()}")
+        return _row("install", NAME, "done", f"registered: {ref.describe()}")
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
-    return _row(
-        "install", shell.name, "todo", detail, spelled_argv(Register.spelled(), profile=profile)
-    )
+    return _row("install", NAME, "todo", detail, spelled_argv(Register.spelled(), profile=profile))
 
 
-def _profile_row(shell: ApplicationSpec, profile: str, *, exists: bool) -> Row:
+def _profile_row(profile: str, *, exists: bool) -> Row:
     if exists:
-        return _row("profile", shell.name, "done", f"profile {profile} exists")
+        return _row("profile", NAME, "done", f"profile {profile} exists")
     detail = f"profile {profile} does not exist; it inherits {DEFAULT_PROFILE}'s settings"
-    return _row("profile", shell.name, "todo", detail, ["profile", "create", profile])
+    return _row("profile", NAME, "todo", detail, ["profile", "create", profile])
 
 
 def _service_rows(

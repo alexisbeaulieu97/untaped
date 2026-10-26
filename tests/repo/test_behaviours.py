@@ -54,8 +54,8 @@ def test_behaviours_are_listed() -> None:
     missing = sorted(declared(PACKAGES) - listed())
     assert not missing, (
         "a deprecated behaviour gets its surface line, and so its date check, only from its "
-        "spec: list it in the spec's deprecations (ApplicationSpec for core's, else the "
-        "PluginSpec), then regenerate with scripts/gen_surface.py:\n"
+        "spec: list it in the spec's deprecations (core's in sdk/marks.py's _core_behaviours, "
+        "else the PluginSpec), then regenerate with scripts/gen_surface.py:\n"
         + "\n".join(f"  {line}" for line in missing)
     )
 

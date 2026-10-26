@@ -86,7 +86,6 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
     ``extensions=False`` leaves the injected ``extensions`` key out of an
     owner's section (the config reference documents it elsewhere).
     """
-    from untaped.runtime.bootstrap import SHELL_SPEC  # noqa: PLC0415
     from untaped.runtime.registry import (  # noqa: PLC0415
         section_settings,
         state_declarations,
@@ -95,22 +94,8 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
     from untaped.sdk.storage.state import ProjectStateRows, StateRows  # noqa: PLC0415
 
     found: list[Section] = []
-    if root:
-        found.append(
-            Section(f"`{SHELL_SPEC.section}`", SHELL_SPEC.section, SHELL_SPEC.settings, False, None)
-        )
-        if SHELL_SPEC.state is not None:
-            found.append(
-                Section(
-                    f"`{SHELL_SPEC.section}` state",
-                    SHELL_SPEC.section,
-                    SHELL_SPEC.state,
-                    True,
-                    None,
-                )
-            )
-    for registered in sorted(result.plugins, key=lambda plugin: plugin.spec.name):
-        spec = registered.spec
+    plugins = sorted((registered.spec for registered in result.plugins), key=lambda s: s.name)
+    for spec in [result.core, *plugins] if root else plugins:
         settings = section_settings(spec, extensions=extensions)
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))

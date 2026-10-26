@@ -902,7 +902,7 @@ def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
     assert [(row["name"], row["status"]) for row in json.loads(listed.stdout)] == [
         ("bare", "ready")
     ]
-    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, bootstrap.composition())
+    rows = collect_doctor_rows(bootstrap.composition())
     assert [row for row in rows if row["plugin"] == "bare"] == []
 
 

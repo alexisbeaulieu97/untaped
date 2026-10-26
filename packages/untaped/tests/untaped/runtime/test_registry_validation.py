@@ -10,24 +10,20 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import (
     make_candidate,
     make_check,
-    make_shell,
     make_skill,
     make_spec,
 )
 from untaped.runtime.registry import (
-    ApplicationSpec,
     PluginCandidate,
     PluginSpec,
     SkillAsset,
     compose,
 )
-from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.doctor import DoctorCheck
 
 
@@ -182,7 +178,7 @@ def test_invalid_spec_is_quarantined(
     make: Callable[[], PluginSpec], reason: str, named: str
 ) -> None:
     spec = make()
-    result = compose(make_shell(), [make_candidate(spec, "ext-dist")])
+    result = compose([make_candidate(spec, "ext-dist")])
     assert result.plugins == ()
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("ext-dist", reason)
@@ -223,9 +219,7 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
     named: str,
 ) -> None:
     first, second = make()
-    result = compose(
-        make_shell(), [make_candidate(second, "b-dist"), make_candidate(first, "a-dist")]
-    )
+    result = compose([make_candidate(second, "b-dist"), make_candidate(first, "a-dist")])
     assert [c.spec.name for c in result.plugins] == [first.name]
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("b-dist", reason)
@@ -233,39 +227,28 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
 
 
 @pytest.mark.parametrize(
-    ("shell", "spec", "reason", "detail"),
+    ("spec", "reason", "detail"),
     [
         (
-            make_shell(),
             make_spec(name="doctor"),
             "duplicate-name",
             "duplicate plugin name: 'doctor' is taken by a root command",
         ),
         (
-            make_shell(),
             make_spec(name="s", skills=(make_skill("untaped"),)),
             "duplicate-skill",
             "duplicate skill name: 'untaped'",
         ),
         (
-            make_shell(checks=(make_check("shell.health"),)),
-            make_spec(name="d", checks=(make_check("shell.health"),)),
-            "duplicate-doctor-check",
-            "duplicate doctor id: 'shell.health'",
-        ),
-        (
-            make_shell(),
             make_spec(name="d", checks=(make_check("untaped.token-store"),)),
             "duplicate-doctor-check",
             "duplicate doctor id: 'untaped.token-store'",
         ),
     ],
-    ids=["command", "skill", "doctor-id", "core-class-doctor-id"],
+    ids=["command", "skill", "core-class-doctor-id"],
 )
-def test_collision_with_the_shell_quarantines(
-    shell: Any, spec: PluginSpec, reason: str, detail: str
-) -> None:
-    result = compose(shell, [make_candidate(spec)])
+def test_collision_with_core_quarantines(spec: PluginSpec, reason: str, detail: str) -> None:
+    result = compose([make_candidate(spec)])
     assert result.plugins == ()
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (reason, detail)
@@ -273,7 +256,7 @@ def test_collision_with_the_shell_quarantines(
 
 @pytest.mark.parametrize("name", FREE)
 def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
-    result = compose(make_shell(), [make_candidate(make_spec(name=name))])
+    result = compose([make_candidate(make_spec(name=name))])
     assert result.quarantine == ()
     assert [plugin.spec.name for plugin in result.plugins] == [name]
 
@@ -281,7 +264,7 @@ def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
-    result = compose(make_shell(), [first, second])
+    result = compose([first, second])
     assert [c.spec.name for c in result.plugins] == ["a"]
     (record,) = result.quarantine
     assert record.reason == "duplicate-skill"
@@ -291,7 +274,7 @@ def test_a_spec_target_composes() -> None:
     """The entry point names the spec itself; nothing else is declared."""
     spec = make_spec(name="plain")
     candidate = PluginCandidate(distribution="plain-dist", name="plain", target=spec)
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
     assert result.quarantine == ()
     assert [registered.spec for registered in result.plugins] == [spec]
 
@@ -371,7 +354,7 @@ def _needs_arg(value: str) -> PluginSpec:
 def test_bad_entry_point_target_quarantines(
     candidate: PluginCandidate, reason: str, entry_point: str | None, named: str
 ) -> None:
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
     (record,) = result.quarantine
     assert record.reason == reason
     assert record.distribution == "d"
@@ -389,7 +372,7 @@ def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
     bad = make_spec(name="bad", settings=BadKeysProfile)
     good = make_spec(name="good", settings=TokenProfile)
 
-    result = compose(make_shell(), [make_candidate(bad), make_candidate(good)])
+    result = compose([make_candidate(bad), make_candidate(good)])
 
     assert [c.spec.name for c in result.plugins] == ["good"]
     (record,) = result.quarantine
@@ -412,16 +395,6 @@ def test_a_raising_default_factory_is_not_called_while_composing() -> None:
     lazy = make_spec(name="lazy", settings=LazyProfile)
     good = make_spec(name="good", settings=TokenProfile)
 
-    result = compose(make_shell(), [make_candidate(lazy), make_candidate(good)])
+    result = compose([make_candidate(lazy), make_candidate(good)])
 
     assert ([c.spec.name for c in result.plugins], result.quarantine) == (["good", "lazy"], ())
-
-
-def test_a_shell_with_broken_key_declarations_fails_loudly() -> None:
-    with pytest.raises(ConfigError, match="invalid key declarations on BadKeysProfile"):
-        ApplicationSpec(
-            name="untaped",
-            app_factory=lambda: App(),
-            section="untaped",
-            settings=BadKeysProfile,
-        )

@@ -11,7 +11,6 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel
 
-from untaped.runtime.bootstrap import SHELL_SPEC
 from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
 from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
@@ -201,7 +200,7 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
         retired_keys: ClassVar[Mapping[str, str | Retired]] = {"caches.old": Retired(note="gone")}
 
     spec = PluginSpec(name="toy", settings=Own, caches=(COMPOSED,))
-    result = compose(SHELL_SPEC, [plugin_candidate(spec)])
+    result = compose([plugin_candidate(spec)])
     assert [plugin.spec.name for plugin in result.plugins] == ["toy"], result.quarantine
 
 

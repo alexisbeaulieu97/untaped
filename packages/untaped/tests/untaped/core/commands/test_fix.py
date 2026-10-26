@@ -18,7 +18,7 @@ import pytest
 from core_test_support.commands.support import age_stub, make_spec, write_config
 from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
-from untaped.core.settings import CoreSettings
+from untaped.core.settings import NAME, CoreSettings
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk._home import config_path
@@ -542,7 +542,7 @@ def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
         trigger()
     root = bootstrap.build_root_app()
     rows = json.loads(invoke_cli(root.meta, ["doctor", "--format", "json"]).stdout)
-    shell = [row for row in rows if row["plugin"] == bootstrap.SHELL_SPEC.name]
+    shell = [row for row in rows if row["plugin"] == NAME]
     fixable = {row["check"] for row in shell if row["fix"]}
     assert fixable == set(_SHELL_FIX_TRIGGERS)
     for check in fixable:

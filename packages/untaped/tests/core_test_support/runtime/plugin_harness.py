@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 from untaped.runtime.registry import (
     PLUGINS_ENTRY_POINT_GROUP,
-    ApplicationSpec,
     PluginCandidate,
     PluginSpec,
     SkillAsset,
@@ -89,20 +88,6 @@ def make_spec(
         skills=skills,
         doctor_checks=checks,
         stability=stability,
-    )
-
-
-def make_shell(
-    name: str = "untaped",
-    section: str = "untaped",
-    checks: tuple[DoctorCheck, ...] = (),
-) -> ApplicationSpec:
-    return ApplicationSpec(
-        name=name,
-        app_factory=nullary_app("root"),
-        section=section,
-        settings=OtherProfile,
-        doctor_checks=checks,
     )
 
 

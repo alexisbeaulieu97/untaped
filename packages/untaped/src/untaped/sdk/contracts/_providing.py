@@ -74,7 +74,6 @@ def offering_candidates(
     among ``base`` (composed once); with ``owner`` set, every instance must
     fill one of that plugin's contracts.
     """
-    from untaped.runtime.bootstrap import SHELL_SPEC  # noqa: PLC0415
     from untaped.runtime.registry import (  # noqa: PLC0415
         PluginCandidate,
         PluginSpec,
@@ -86,7 +85,7 @@ def offering_candidates(
     if not offered:
         return []
     owners: dict[type, str] = {}
-    for plugin in compose(SHELL_SPEC, base).plugins:
+    for plugin in compose(base).plugins:
         if owns_contracts(plugin.spec):
             owners.update(dict.fromkeys(plugin.spec.contracts(), plugin.spec.name))
     built: list[PluginCandidate] = []

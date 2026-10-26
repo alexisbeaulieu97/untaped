@@ -41,7 +41,7 @@ from untaped.core.commands.doctor import (
 )
 from untaped.core.commands.records import FixOutcome
 from untaped.runtime.profile_resolver import selected_profile
-from untaped.runtime.registry import ApplicationSpec, CompositionResult
+from untaped.runtime.registry import CompositionResult
 from untaped.runtime.sink import (
     DIAGNOSTICS_ENV,
     Diagnostics,
@@ -85,7 +85,6 @@ class ChildRun:
 
 
 def run_fixes(
-    shell: ApplicationSpec,
     result: CompositionResult,
     *,
     online: bool,
@@ -102,7 +101,7 @@ def run_fixes(
     :class:`~untaped.sdk.errors.Failed` once the rows are out.
     """
     profile = selected_profile()
-    rows = collect_doctor_rows(shell, result, online=online)
+    rows = collect_doctor_rows(result, online=online)
     fixes = _select(rows)
     if not fixes:
         _diag.info("nothing to fix")
@@ -119,7 +118,7 @@ def run_fixes(
     go = bool(runnable) and confirm(question, preview=preview)
     runs = _run_all(runnable) if go else {}
     ran = any(isinstance(run, ChildRun) for run in runs.values())
-    after = collect_doctor_rows(shell, result, online=online) if ran else rows
+    after = collect_doctor_rows(result, online=online) if ran else rows
     dry_run = confirm.dry_run
     outcomes = [
         _outcome(fix, refusals[fix], runs.get(fix), after, dry_run=dry_run) for fix in fixes

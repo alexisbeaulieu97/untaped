@@ -359,7 +359,7 @@ def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
             plugin_candidate(_deferred("good", lambda: App(name="good"))),
         ]
     )
-    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+    rows = collect_doctor_rows(result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
     assert [(row["plugin"], row["title"]) for row in quarantine] == [("bad", "bad-app-factory")]
     assert quarantine[0]["status"] == "fail"
@@ -371,7 +371,7 @@ def test_doctor_names_each_quarantined_plugin(
     broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
 ) -> None:
     result = bootstrap.compose_root(candidates=broken_first_party_candidates())
-    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result)
+    rows = collect_doctor_rows(result)
     quarantine = [row for row in rows if row["check"] == "quarantine"]
     assert [(row["plugin"], row["title"]) for row in quarantine] == [
         ("awx", "malformed-entry-point"),
@@ -384,7 +384,7 @@ def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
     result = bootstrap.compose_root(
         candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]
     )
-    rows = collect_doctor_rows(bootstrap.SHELL_SPEC, result, plugins=frozenset({"other"}))
+    rows = collect_doctor_rows(result, plugins=frozenset({"other"}))
     assert [row for row in rows if row["check"] == "quarantine"] == []
 
 

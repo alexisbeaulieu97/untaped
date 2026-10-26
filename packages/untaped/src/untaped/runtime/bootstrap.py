@@ -23,13 +23,12 @@ from cyclopts.core import _apply_parent_defaults_to_app
 
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
-from untaped.core.settings import NAME, CoreSettings
+from untaped.core.settings import NAME
 from untaped.core.skills import PackagedSkill
 from untaped.runtime.declaration import Declaration
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
 from untaped.runtime.registry import (
-    ApplicationSpec,
     CompositionResult,
     PluginCandidate,
     PluginSpec,
@@ -69,7 +68,6 @@ from untaped.sdk._run import Run, current_run
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
-    DeprecatedBehaviour,
     apply_marks,
     bind_behaviours,
     bind_owners,
@@ -85,24 +83,6 @@ def _shell_app() -> App:
     return App(name=NAME, help="Unified untaped developer CLI.")
 
 
-def _shell_deprecations() -> Sequence[DeprecatedBehaviour]:
-    from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415
-    from untaped.sdk.network.auth import PLAINTEXT_TOKEN  # noqa: PLC0415 - off the composition path
-    from untaped.sdk.network.http import CONNECTED_BY_NAME  # noqa: PLC0415
-
-    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
-
-
-#: The root application. A singleton so repeated
-#: compositions re-register the identical models idempotently.
-SHELL_SPEC = ApplicationSpec(
-    name=NAME,
-    app_factory=_shell_app,
-    section=NAME,
-    settings=CoreSettings,
-    deprecations=_shell_deprecations,
-)
-
 _COMPOSED_RESULT: CompositionResult | None = None
 #: The root :func:`build_root_app` last built, which :func:`root_app` reads.
 _BUILT_ROOT: App | None = None
@@ -113,8 +93,8 @@ _BUILT_ROOT: App | None = None
 _STARTED: ContextVar[tuple[Run, RootLine] | None] = ContextVar("untaped_started_run", default=None)
 
 
-def _register_shell_and_plugins(result: CompositionResult) -> None:
-    """Register the shell plus every composed plugin's settings sections.
+def _register_sections(result: CompositionResult) -> None:
+    """Register core's and every composed plugin's settings sections.
 
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
@@ -125,11 +105,7 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
     bind_owners({plugin.spec.name: plugin.plugin_ref.distribution for plugin in result.plugins})
     bind_behaviours({plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins})
     bind_credentials({plugin.spec.name: plugin.spec.credentials for plugin in result.plugins})
-    register_profile_settings(SHELL_SPEC.section, SHELL_SPEC.settings)
-    if SHELL_SPEC.state is not None:
-        register_state_settings(SHELL_SPEC.section, SHELL_SPEC.state)
-    for plugin in result.plugins:
-        spec = plugin.spec
+    for spec in (result.core, *(plugin.spec for plugin in result.plugins)):
         section = section_settings(spec)
         if section is not None:
             register_profile_settings(spec.name, section, spec.stability)
@@ -175,8 +151,8 @@ def compose_root(
     global _COMPOSED_RESULT
     _refuse_inside_a_contract_call()
     candidates = discover_candidates() if candidates is None else candidates
-    result = compose(SHELL_SPEC, candidates)
-    _register_shell_and_plugins(result)
+    result = compose(candidates)
+    _register_sections(result)
     _COMPOSED_RESULT = result
     return result
 
@@ -219,7 +195,7 @@ def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[Composition
 def _reregister() -> None:
     reset_config_registry()
     if _COMPOSED_RESULT is not None:
-        _register_shell_and_plugins(_COMPOSED_RESULT)
+        _register_sections(_COMPOSED_RESULT)
     else:
         bind_owners({})
         bind_behaviours({})
@@ -679,7 +655,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 
 __all__ = [
-    "SHELL_SPEC",
     "build_root_app",
     "compose_root",
     "fail_if_unbuildable",

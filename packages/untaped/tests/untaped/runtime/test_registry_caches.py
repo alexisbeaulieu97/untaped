@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from core_test_support.contracts.support import BookSource
-from core_test_support.runtime.plugin_harness import make_candidate, make_shell
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime.registry import (
     CompositionResult,
     PluginSpec,
@@ -28,7 +28,7 @@ class HelloSettings(BaseModel):
 
 
 def _compose(spec: PluginSpec) -> CompositionResult:
-    return compose(make_shell(), [make_candidate(spec)])
+    return compose([make_candidate(spec)])
 
 
 def _reason(spec: PluginSpec) -> tuple[str, str]:

@@ -6,13 +6,13 @@ import inspect
 import json
 import warnings
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
+import untaped.sdk.marks as mark_module
 from core_test_support.runtime.plugin_harness import make_spec
 from core_test_support.runtime.run import run_owning
 from untaped.core.plugin_check.stability import stability_violations
@@ -116,8 +116,6 @@ def test_a_behaviour_takes_its_name_and_mark_together() -> None:
 def test_a_spec_s_deprecations_is_a_function(value: object) -> None:
     with pytest.raises(ConfigError, match="deprecations must be a function"):
         PluginSpec(name="svc", deprecations=value)  # type: ignore[arg-type]
-    with pytest.raises(ConfigError, match="shell deprecations must be a function"):
-        replace(bootstrap.SHELL_SPEC, deprecations=value)  # type: ignore[arg-type]
 
 
 # --- the sentence and its owner ------------------------------------------------------------
@@ -296,8 +294,7 @@ def test_a_behaviour_under_a_deprecated_plugin_is_nested() -> None:
 
 def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch) -> None:
     gone = deprecated_behaviour("gone", removed_in=12, replacement="untaped auth nowhere")
-    shell = replace(bootstrap.SHELL_SPEC, deprecations=lambda: (gone,))
-    monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
+    monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (gone,))
     root = _compose()
     found = stability_violations(root, bootstrap.composition(), [], sections=["untaped"])
     assert found == [

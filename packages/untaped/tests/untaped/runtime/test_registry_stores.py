@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from core_test_support.runtime.plugin_harness import make_candidate, make_shell
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime.registry import (
     PluginSpec,
@@ -29,12 +29,12 @@ DATA = Store("hello", "data", base=lambda: Path("data.db"))
 
 
 def _reason(spec: PluginSpec) -> tuple[str, str]:
-    (record,) = compose(make_shell(), [make_candidate(spec)]).quarantine
+    (record,) = compose([make_candidate(spec)]).quarantine
     return record.reason, record.detail
 
 
 def test_a_plugin_composes_its_stores() -> None:
-    result = compose(make_shell(), [make_candidate(_hello(stores=[DATA]))])
+    result = compose([make_candidate(_hello(stores=[DATA]))])
     assert result.quarantine == ()
     assert result.plugins[0].spec.stores == (DATA,)
 
@@ -88,7 +88,7 @@ EVERY_ROW = StateRows.per_project("hello", "here", model=Row, key_field="name")
 def test_state_declarations_compose_and_name_the_state_keys() -> None:
     spec = _hello(stores=(DATA, ROWS, ALIASES, EVERY_ROW))
 
-    result = compose(make_shell(), [make_candidate(spec)])
+    result = compose([make_candidate(spec)])
 
     assert result.quarantine == ()
     assert state_declarations(spec) == (ROWS, ALIASES, EVERY_ROW)
@@ -98,7 +98,7 @@ def test_state_declarations_compose_and_name_the_state_keys() -> None:
 def test_state_and_files_are_named_apart() -> None:
     same_name = StateRows("hello", "data", model=Row, key_field="name")
     spec = _hello(stores=(DATA, same_name, ROWS))
-    assert compose(make_shell(), [make_candidate(spec)]).quarantine == ()
+    assert compose([make_candidate(spec)]).quarantine == ()
 
 
 def test_state_of_another_plugin_or_named_twice_is_quarantined() -> None:
@@ -134,7 +134,7 @@ def test_plugin_check_fails_rows_left_unlisted() -> None:
 
 
 def test_rows_another_module_declares_are_not_this_plugins() -> None:
-    assert compose(make_shell(), [make_candidate(_hello())]).quarantine == ()
+    assert compose([make_candidate(_hello())]).quarantine == ()
 
 
 def test_one_projects_rows_are_never_listed(tmp_path: Path) -> None:
@@ -215,7 +215,7 @@ def test_the_state_model_leaves_out_a_projects_rows() -> None:
 
 
 def test_a_projects_rows_have_surface_lines_without_home_state() -> None:
-    result = compose(make_shell(), [make_candidate(_hello(stores=(EVERY_ROW,)))])
+    result = compose([make_candidate(_hello(stores=(EVERY_ROW,)))])
 
     texts = [line.text for line in settings_lines(result, root=False)]
 

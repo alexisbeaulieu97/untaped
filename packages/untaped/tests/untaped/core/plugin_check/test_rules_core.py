@@ -8,7 +8,8 @@ import untaped
 from untaped.core.plugin_check.help_tree import help_tree_violations
 from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.core.plugin_check.stability import stability_violations
-from untaped.runtime.bootstrap import SHELL_SPEC, build_root_app, composition
+from untaped.runtime.bootstrap import build_root_app, composition
+from untaped.runtime.registry import settings_model
 from untaped.runtime.settings import Settings, model_sections
 
 
@@ -17,7 +18,8 @@ def _core_violations() -> list[str]:
     root = build_root_app(candidates=[])
     result = composition()
     commands = sorted(name for name in root if not name.startswith("-"))
-    sections = {**model_sections(Settings), SHELL_SPEC.section: SHELL_SPEC.settings}
+    core = result.core
+    sections = {**model_sections(Settings), core.name: settings_model(core)}
     src = Path(untaped.__file__).parent.parent
     return sorted(
         [
