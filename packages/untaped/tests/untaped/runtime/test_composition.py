@@ -1483,6 +1483,93 @@ def test_a_later_offerer_holding_its_answer_cache_has_its_own_problems_only() ->
     assert [plugin.name for plugin in compose(entries).plugins] == ["shelf"]
 
 
+def test_a_filler_waits_for_the_later_offerer_to_take_the_contract_over() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a broken plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+        runs = 5  # type: ignore[assignment]
+
+    class Shelf(Plugin):
+        """Offers Held behind Broken's Notes."""
+
+        settings = HelloSettings
+        offers = (Held, Notes)
+        held_pages = held
+
+    class Fill(Held, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Held)
+    reader.offers = ()
+    reader.fills = (Fill,)
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Shelf, "shelf"),
+        _entry(reader, "reader", module="untaped_reader.plugin"),
+    ]
+    # the reader's cache has no owner only while the broken plugin is still standing
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["shelf", "reader"]
+
+
+def test_a_name_is_free_once_its_first_holder_is_refused_for_the_others() -> None:
+    @experimental
+    class Paging(Contract):
+        """Offered by a broken plugin, so its cache has no owner."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Paging,)
+        runs = 5  # type: ignore[assignment]
+
+    class Fill(Paging, Provider[HelloSettings]):
+        pass
+
+    refreshing = _pages_plugin(Paging)
+    refreshing.offers = ()
+    refreshing.fills = (Fill,)
+
+    class Plain(Plugin):
+        """Takes the name the refreshing plugin cannot keep."""
+
+        settings = HelloSettings
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(refreshing, "reader", module="untaped_one.plugin"),
+        _entry(Plain, "reader", module="untaped_two.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        "untaped_two.plugin:" + Plain.__qualname__
+    ]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

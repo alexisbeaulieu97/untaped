@@ -156,10 +156,14 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     :meth:`Declaration.owner_of` reads it. A contract belongs to the first
     plugin not quarantined that offers it; a later one is refused
     (``duplicate-offer``). A plugin refused for a problem of its own stays
-    quarantined while the others recompose without it.
+    quarantined while the others recompose without it: first every plugin
+    broken whatever the others are, then, one at a time in order, a plugin
+    whose problem is about the others (a taken name or kind, a cache no
+    composed plugin owns).
     """
     reserved = frozenset(taken)
     # Refused for a problem of its own, by index: quarantined for good, as it was refused.
+    # Each pass that does not return withdraws one more, so there are at most n + 1.
     withdrawn: dict[int, tuple[Problem, ...]] = {}
     while True:
         standing = [i for i in range(len(entries)) if i not in withdrawn]
@@ -172,14 +176,27 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
                 owners.setdefault(_package(entries[i].target), entries[i].name)
         declaration, refused = _compose(entries, reserved, owners, offering, withdrawn)
         own = {i: problems for i, problems in refused.items() if _refused_for_itself(problems)}
-        if own.keys() <= withdrawn.keys():
+        if not own:
             return declaration
-        withdrawn |= {i: problems for i, problems in own.items() if i not in withdrawn}
+        # A problem about the others may go once the plugins broken on their own are out:
+        # withdraw those first, then the first plugin left with one, a pass at a time.
+        alone = {i: problems for i, problems in own.items() if _broken_alone(problems)}
+        first = min(own)
+        withdrawn |= alone or {first: own[first]}
+
+
+#: Problems a plugin has because of the others composed beside it, in this pass.
+_RELATIONAL = frozenset({"duplicate-name", "duplicate-kind", "duplicate-offer", "refresh-cache"})
 
 
 def _refused_for_itself(problems: Sequence[Problem]) -> bool:
     """Whether a plugin has a problem other than a contract an earlier plugin offers."""
     return any(problem.rule != "duplicate-offer" for problem in problems)
+
+
+def _broken_alone(problems: Sequence[Problem]) -> bool:
+    """Whether a plugin has a problem that no other plugin causes."""
+    return any(problem.rule not in _RELATIONAL for problem in problems)
 
 
 def _offered(entry: PluginEntry) -> tuple[type, ...]:
