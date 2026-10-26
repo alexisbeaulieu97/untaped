@@ -758,7 +758,7 @@ class _ScopeSink:
 
     def __init__(self, scope: _Scope | None) -> None:
         self._scope = scope
-        #: The testing kit's recorder when the scope started (``untaped.sdk._run.recording``).
+        #: The test's recorder when the scope started (``Install.running()``'s ``diagnostics``).
         self._recorder = recorder() if scope is not None else None
         self._held: list[str] = []
         self._holding = 0

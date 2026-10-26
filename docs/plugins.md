@@ -335,8 +335,11 @@ with `untaped.sdk.testing.manual_clock()`).
 A plugin class (`class Hello(Plugin)`) is tested through the fixtures (see
 `examples/untaped-hello/tests`): `install(Hello, settings=...)` composes it
 into the test's home; `.run(Greet())` and `.cli("hello say ada")` return a
-`Ran`; `clock`, `terminal` (absent until scripted) and `credentials` are the
-clock, terminal and password store commands meet; `check(install(Hello))`
+`Ran`; `with hello.running() as run:` runs a block as a command of that
+install runs, and `run.diagnostics` are the typed lines shown inside it, as
+`Ran.diagnostics` are a command's; `clock`, `terminal` (absent until
+scripted) and `credentials` are the clock, terminal and password store
+commands meet; `check(install(Hello))`
 and `assert_surface(Hello)` guard its composition checks and surface.
 Define `build_app` (the `app_factory`) in the plugin package's
 `__init__.py`, because the checks scan that package. Declare writing commands

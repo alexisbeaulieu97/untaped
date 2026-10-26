@@ -244,30 +244,32 @@ def installed_clock(clock: Clock) -> Iterator[Clock]:
 
 
 #: Where a test records the diagnostics shown (:func:`recording`), read as each scope starts.
-_recorder: list[list[Diagnostic] | None] = [None]
+_recorder: ContextVar[list[Diagnostic] | None] = ContextVar("untaped_recorder", default=None)
 
 
 @contextmanager
 def recording() -> Iterator[list[Diagnostic]]:
     """Record every diagnostic shown by the output scopes entered inside the block (a test's).
 
-    The testing kit's hook, as :func:`installed_clock` is: one slot for the
-    process, so a scope a thread enters inside the block records too. A
-    scope entered before the block keeps the recorder it started with; the
-    scopes still write to stderr as they would (a tee), so captured text and
-    the records agree. Nested, the inner block records alone until it ends.
+    The testing kit's hook behind ``Install.running()``'s ``diagnostics``.
+    Unlike :func:`installed_clock` it is per context, so two threads or
+    tasks recording at once each keep their own records (a worker started
+    with a copied context records with the block that started it). A scope
+    entered before the block keeps the recorder it started with; the scopes
+    still write to stderr as they would (a tee), so captured text and the
+    records agree. Nested, the inner block records alone until it ends.
     """
     captured: list[Diagnostic] = []
-    previous, _recorder[0] = _recorder[0], captured
+    token = _recorder.set(captured)
     try:
         yield captured
     finally:
-        _recorder[0] = previous
+        _recorder.reset(token)
 
 
 def recorder() -> list[Diagnostic] | None:
     """The list a scope starting now records into (:func:`recording`); ``None`` outside one."""
-    return _recorder[0]
+    return _recorder.get()
 
 
 @contextmanager

@@ -27,13 +27,14 @@ from core_test_support.contracts.support import (
 from core_test_support.contracts.support import write_config as configure
 from untaped.runtime.contracts.registry import Provider, offers
 from untaped.runtime.sink import diagnostics_scope
+from untaped.sdk._run import recording
 from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._gather import Answers
 from untaped.sdk.diagnostic import Diagnostic, Failure, Message, Progress, StaleData
 from untaped.sdk.errors import HttpTransportError, UntapedError
 from untaped.sdk.storage.cache import RETRY_AFTER, Cache, Filled
-from untaped.sdk.testing import CacheClock, ProgressClock, cache_clock, progress_clock, recording
+from untaped.sdk.testing import CacheClock, ProgressClock, cache_clock, progress_clock
 
 pytestmark = pytest.mark.usefixtures("home_run")
 

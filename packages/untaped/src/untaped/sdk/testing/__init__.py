@@ -23,9 +23,9 @@ freezes the cadence for the invocation unless the test set it, so
 slow the run (``--verbose`` still prints every update); a deadline or a
 back-off inside keeps its time.
 
-:func:`recording` records every diagnostic the scopes entered inside its
-block show, for a test that calls a block directly (``invoke_cli`` fills
-``CliResult.diagnostics`` through it).
+:meth:`Install.running` runs a block under an install's run, for a test
+that calls a block directly; what it yields keeps the typed lines shown
+inside (``run.diagnostics``), as ``invoke_cli`` fills ``CliResult.diagnostics``.
 
 :func:`write_reference` writes another install's reference in
 core's ``refs`` folder, so a test can say what holds a store's layouts.
@@ -70,9 +70,9 @@ from untaped.sdk._run import (
     Run,
     _installed,
     installed_clock,
-    recording,
     run_clock,
 )
+from untaped.sdk._run import recording as _recording
 from untaped.sdk._run import run_scope as _run_scope
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import apply_marks, deprecated, experimental
@@ -124,6 +124,7 @@ __all__ = [
     "ProgressClock",
     "PromptBackend",
     "Ran",
+    "Running",
     "ScreenKeys",
     "ScreenRun",
     "ScriptedPromptBackend",
@@ -153,7 +154,6 @@ __all__ = [
     "plugin_candidate",
     "progress_clock",
     "read_rows",
-    "recording",
     "release_ask",
     "write_reference",
     "write_rows",
@@ -492,7 +492,7 @@ def invoke_cli(
             frozen,
             redirect_stdout(stdout),
             redirect_stderr(stderr),
-            recording() as emitted,
+            _recording() as emitted,
         ):
             try:
                 _call_command(command, list(args or []), stdout=stdout, stderr=stderr)
@@ -939,4 +939,4 @@ def _exit_code(exc: SystemExit) -> int:
 
 # Last: these read this module's runners.
 from untaped.sdk.testing.guards import assert_surface, check  # noqa: E402
-from untaped.sdk.testing.install import Home, Install, Ran, install  # noqa: E402
+from untaped.sdk.testing.install import Home, Install, Ran, Running, install  # noqa: E402

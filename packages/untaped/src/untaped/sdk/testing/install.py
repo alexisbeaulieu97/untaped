@@ -63,6 +63,22 @@ class Ran:
         return cast("list[M]", self.rows)
 
 
+@dataclass(frozen=True)
+class Running:
+    """A block running under an install (:meth:`Install.running`): what it showed so far.
+
+    ``diagnostics`` are the typed stderr lines shown inside the block, as
+    :attr:`Ran.diagnostics` are a command's.
+    """
+
+    _shown: list[Diagnostic] = field(repr=False)
+
+    @property
+    def diagnostics(self) -> tuple[Diagnostic, ...]:
+        """The typed lines shown inside the block so far, oldest first."""
+        return tuple(self._shown)
+
+
 #: Each knob of :meth:`Install.run` and the core field it fills.
 _KNOBS: Mapping[str, str] = {
     "answer": "confirm",
@@ -166,13 +182,22 @@ class Install:
         return _ran(result, printed[-1] if printed else None, read_back=True)
 
     @contextmanager
-    def running(self) -> Iterator[None]:
-        """Run the block as a command of this install runs: under its run, its plugins composed."""
-        from untaped.runtime.run import build_run  # noqa: PLC0415
-        from untaped.sdk._run import run_scope  # noqa: PLC0415
+    def running(self) -> Iterator[Running]:
+        """Run the block as a command of this install runs: under its run, its plugins composed.
 
-        with run_scope(build_run(self._mount.declaration, self._mount.settings)):
-            yield
+        The block runs in one diagnostics scope, as a command does; what it
+        yields records the typed lines shown inside (``run.diagnostics``).
+        """
+        from untaped.runtime.run import build_run  # noqa: PLC0415
+        from untaped.runtime.sink import diagnostics_scope  # noqa: PLC0415
+        from untaped.sdk._run import recording, run_scope  # noqa: PLC0415
+
+        with (
+            run_scope(build_run(self._mount.declaration, self._mount.settings)),
+            recording() as shown,
+            diagnostics_scope(),
+        ):
+            yield Running(shown)
 
     @cached_property
     def _mount(self) -> Mount:
@@ -432,4 +457,4 @@ class Home:
         return plugins_root() / candidate_of(plugin, None, discover_candidates()).name
 
 
-__all__ = ["Home", "Install", "Ran", "install"]
+__all__ = ["Home", "Install", "Ran", "Running", "install"]

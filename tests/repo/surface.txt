@@ -7415,6 +7415,8 @@ sdk untaped.sdk.testing.Ran.rows_as(model)
 sdk untaped.sdk.testing.Ran.stderr
 sdk untaped.sdk.testing.Ran.stdout
 sdk untaped.sdk.testing.Ran.text
+sdk untaped.sdk.testing.Running(_shown)
+sdk untaped.sdk.testing.Running.diagnostics
 sdk untaped.sdk.testing.ScreenKeys()  [experimental]
 sdk untaped.sdk.testing.ScreenKeys(*keys)  [experimental]
 sdk untaped.sdk.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]
@@ -7561,7 +7563,6 @@ sdk untaped.sdk.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.sdk.testing.plugin_candidate(spec)
 sdk untaped.sdk.testing.progress_clock()
 sdk untaped.sdk.testing.read_rows(rows)  [experimental]
-sdk untaped.sdk.testing.recording()
 sdk untaped.sdk.testing.release_ask(force=) default=false  [experimental]
 sdk untaped.sdk.testing.release_ask(holder=) default=present  [experimental]
 sdk untaped.sdk.testing.release_ask(others=) default=0  [experimental]

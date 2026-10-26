@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from dataclasses import fields, replace
 from pathlib import Path
@@ -32,6 +33,7 @@ from untaped.sdk._run import (
 )
 
 PACKAGE = __name__.partition(".")[0]
+_DEADLINE = 10.0
 
 
 class HelloSettings(BaseModel):
@@ -163,6 +165,35 @@ def test_recording_nests_and_restores_the_recorder_before() -> None:
             assert recorder() is inner
             assert inner is not outer
         assert recorder() is outer
+    assert recorder() is None
+
+
+def test_recording_in_two_threads_at_once_keeps_each_its_own() -> None:
+    a_in, b_in, a_out = threading.Event(), threading.Event(), threading.Event()
+    seen: dict[str, list[object]] = {}
+
+    def first() -> None:
+        with recording() as mine:
+            a_in.set()
+            assert b_in.wait(_DEADLINE)  # the other block is open now
+            seen["first"] = [recorder() is mine]
+        seen["first"].append(recorder())
+        a_out.set()
+
+    def second() -> None:
+        assert a_in.wait(_DEADLINE)
+        with recording() as mine:
+            b_in.set()
+            assert a_out.wait(_DEADLINE)  # the other block closed meanwhile
+            seen["second"] = [recorder() is mine]
+        seen["second"].append(recorder())
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(_DEADLINE)
+    assert seen == {"first": [True, None], "second": [True, None]}
     assert recorder() is None
 
 

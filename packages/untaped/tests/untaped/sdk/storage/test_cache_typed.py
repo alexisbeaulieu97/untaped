@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from untaped.runtime.registry import named_plugin_dir
 from untaped.runtime.sink import diagnostics_scope
+from untaped.sdk._run import recording
 from untaped.sdk.contracts import cached
 from untaped.sdk.diagnostic import Diagnostic, StaleData
 from untaped.sdk.errors import ConfigError, HttpTransportError
@@ -25,7 +26,7 @@ from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.storage import data_file
 from untaped.sdk.storage._digest import settings_digest
 from untaped.sdk.storage.cache import Cache, Filled, Freshness, NeverRefreshed
-from untaped.sdk.testing import CacheClock, cache_clock, damage, keep_value, recording
+from untaped.sdk.testing import CacheClock, cache_clock, damage, keep_value
 
 pytestmark = pytest.mark.usefixtures("home_run")
 

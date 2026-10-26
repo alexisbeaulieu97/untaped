@@ -18,6 +18,7 @@ import pytest
 from untaped.runtime.output_policy import enable_quiet, reset_quiet
 from untaped.runtime.registry import named_plugin_dir
 from untaped.runtime.sink import diagnostics_scope
+from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure, Pruned
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.storage import _refs as refs
@@ -25,7 +26,7 @@ from untaped.sdk.storage import store as store_module
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.store import Store, _FileInUse, _forget_opened, _SqliteInUse
-from untaped.sdk.testing import recording, write_reference
+from untaped.sdk.testing import write_reference
 
 pytestmark = pytest.mark.usefixtures("home_run")
 
