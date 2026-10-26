@@ -24,12 +24,12 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.plugin_harness import make_candidate, make_spec
 from untaped.runtime import bootstrap
-from untaped.runtime.output_policy import is_quiet, is_verbose
 from untaped.runtime.profile_resolver import profile_override, set_profile_override
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.settings import get_settings, reset_config_registry
 from untaped.sdk._app_context import app_context
 from untaped.sdk._cli import create_app, echo
+from untaped.sdk._run import is_quiet, is_verbose
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.projects import untaped_home
 from untaped.sdk.testing import CliInvoker, plugin_candidate

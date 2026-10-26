@@ -14,48 +14,21 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from untaped.sdk._schema import Choices, field_choices
+from untaped.sdk._theme import (
+    DEFAULT_SYMBOLS,
+    SCREEN_SYMBOLS,
+    STATUS_SYMBOLS,
+    BorderStyle,
+    CollectionView,
+    Density,
+    DetailView,
+    ThemeSpec,
+)
 from untaped.sdk.errors import ConfigError
 
-BorderStyle = Literal["rounded", "square", "ascii", "none"]
-CollectionView = Literal["table", "list"]
-DetailView = Literal["list", "table"]
-Density = Literal["normal", "compact"]
 OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
 TreeOutputFormat = Literal["json", "yaml", "table", "raw", "pipe", "tree"]
 """The shared formats plus ``tree``, for a command that draws its rows as a tree."""
-
-#: Status symbols that prefix ``success``/``warning``/``error``/``info`` lines
-#: (empty by default).
-STATUS_SYMBOLS: dict[str, str] = {
-    "success": "",
-    "warning": "",
-    "error": "",
-    "info": "",
-}
-
-#: Glyphs screens draw with; every default is one cell wide.
-SCREEN_SYMBOLS: dict[str, str] = {
-    "chosen": "\u25b6",
-    "checked": "\u2713",
-    "unchecked": " ",
-    "on": "\u2713",
-    "off": "\u2717",
-    "expand": "\u25bc",
-    "collapse": "\u25b2",
-    "mask": "\u2022",
-    "ellipsis": "\u2026",
-    "separator": "\u00b7",
-    "cycle.left": "\u2039",
-    "cycle.right": "\u203a",
-    "tab.active": "\u2501",
-    "tab.inactive": "\u2500",
-    "tree.open": "\u25be",
-    "tree.closed": "\u25b8",
-    "tag.add": "+",
-    "tag.remove": "\u2715",
-    "heading": "\u25c6",
-    "dash": "\u2014",
-}
 
 #: The ``success``/``warning``/``error`` colors a theme that leaves them out gets
 #: (the default one); a theme setting a role to ``""`` turns its color off.
@@ -87,8 +60,6 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "heading": "*",
     "dash": "-",
 }
-
-DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}
 
 #: The declared names ``untaped.ui.symbols`` and ``untaped.ui.color_roles`` accept on write.
 SYMBOL_NAMES: tuple[str, ...] = (*STATUS_SYMBOLS, *SCREEN_SYMBOLS)
@@ -146,18 +117,6 @@ NAMED_SCREEN_ROLES: dict[str, str] = {
     "screen.emphasis": "bold",
     "screen.match": "bold underline",
 }
-
-
-class ThemeSpec(BaseModel):
-    """Terminal presentation tokens and default semantic view choices."""
-
-    border: BorderStyle = "rounded"
-    density: Density = "normal"
-    collection_view: CollectionView = "table"
-    detail_view: DetailView = "list"
-    hide_empty_columns: bool = True
-    symbols: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_SYMBOLS))
-    color_roles: dict[str, str] = Field(default_factory=dict)
 
 
 #: Pydantic validation context enabling write-time checks (``config set``):

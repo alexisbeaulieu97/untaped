@@ -10,8 +10,7 @@ from typing import Any
 
 import pytest
 
-from untaped.runtime.output_policy import enable_quiet, reset_quiet
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import enable_quiet, entered, start_run
 from untaped.sdk._batch import BatchOutcome, batch_apply, finish
 from untaped.sdk._ui import UiContext
 from untaped.sdk.errors import HttpError, UntapedError, UsageError
@@ -278,7 +277,7 @@ def test_per_item_errors_are_json_lines_under_json_diagnostics(
         raise HttpError("HTTP 503", status_code=503, url="https://h/x", system="awx")
 
     ui = _ui(interactive=True, confirms=[True])
-    with diagnostics_scope():
+    with entered(start_run()):
         outcome = _run(interactive=True, items=["a"], action=action, label=str, ui=ui)
         with pytest.raises(SystemExit) as excinfo:
             finish(outcome)
@@ -397,12 +396,9 @@ def test_quiet_keeps_the_generic_preview_before_the_prompt(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    token = enable_quiet()
-    try:
-        with diagnostics_scope():
-            _run(interactive=True, confirms=[True], items=["a"], action=action)
-    finally:
-        reset_quiet(token)
+    with entered(start_run()):
+        enable_quiet()
+        _run(interactive=True, confirms=[True], items=["a"], action=action)
 
     assert "About to delete 1 Widget:" in capsys.readouterr().err
     assert calls == ["a"]

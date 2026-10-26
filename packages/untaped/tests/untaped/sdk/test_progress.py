@@ -19,11 +19,11 @@ import pytest
 from cyclopts import App
 
 from untaped.runtime import sink
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import (
     Diagnostics,
     _compose,
     current_sink,
-    diagnostics_scope,
     open_tasks,
 )
 from untaped.sdk._concurrency import bounded_map
@@ -45,7 +45,7 @@ def _session(
     if json_lines:
         assert monkeypatch is not None
         monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    with progress_clock() as clock, redirect_stderr(stream), diagnostics_scope():
+    with progress_clock() as clock, redirect_stderr(stream), entered(start_run()):
         yield clock
 
 
@@ -394,7 +394,7 @@ def test_one_ticker_runs_while_a_task_is_open() -> None:
 def test_a_task_outlives_its_scope_and_keeps_its_ticker() -> None:
     stream = io.StringIO()
     with progress_clock() as clock, redirect_stderr(stream):
-        with diagnostics_scope():
+        with entered(start_run()):
             task = current_sink().progress("Long")
             handle = task.__enter__()
         assert _ticker_alive()  # a scope's close stops nothing
@@ -624,7 +624,7 @@ def test_the_spinner_animates_while_the_main_thread_blocks() -> None:
     def frames() -> set[str]:
         return {ch for ch in stream.getvalue() if ch in _BRAILLE}
 
-    with redirect_stderr(stream), diagnostics_scope(), _progress("Work"):
+    with redirect_stderr(stream), entered(start_run()), _progress("Work"):
         deadline = time.monotonic() + _JOIN
         while len(frames()) < 2 and time.monotonic() < deadline:
             time.sleep(0.01)

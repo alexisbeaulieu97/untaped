@@ -17,7 +17,7 @@ from filelock import FileLock
 from pydantic import BaseModel
 
 from untaped.runtime.registry import named_plugin_dir
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import cached
 from untaped.sdk.diagnostic import Diagnostic, StaleData
@@ -87,7 +87,7 @@ def _serve(
     cache: Cache[Snapshot] = SNAPSHOTS,
     partition: str | None = None,
 ) -> tuple[Any, list[Diagnostic]]:
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         served = cache.serve({KEY: "c.example"}, refresh=refresh, fill=up.fill, partition=partition)
     return served, list(emitted)
 

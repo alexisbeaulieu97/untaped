@@ -26,7 +26,7 @@ from core_test_support.contracts.support import (
 )
 from core_test_support.contracts.support import write_config as configure
 from untaped.runtime.contracts.registry import Provider, offers
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
@@ -87,7 +87,7 @@ def _titled(title: str) -> object:
 
 def test_a_stale_absence_fails_with_the_providers_error_alone(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
         with pytest.raises(UntapedError) as caught:
             select_one(answers, _titled("Ulysses"))  # type: ignore[arg-type]
@@ -101,14 +101,14 @@ def test_a_stale_match_used_says_its_line_once_and_one_unused_says_nothing(
 ) -> None:
     _stale_library(clock)
     Shop.rows = [Book(title="Emma")]
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         found = select_one(gather(BookSource.books)(), _titled("Dune"))  # type: ignore[arg-type]
     assert found.title == "Dune"
     [line] = _stale(emitted)
     assert line.plugin == "library"
 
     monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("shop", "library"))
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         found = select_one(gather(BookSource.books)(), _titled("Emma"))  # type: ignore[arg-type]
     assert found.source is not None and found.source.plugin == "shop"
     assert _stale(emitted) == []
@@ -120,7 +120,7 @@ def test_a_match_ranked_above_a_stale_absence_warns_without_a_stale_line(
     _stale_library(clock)
     Shop.rows = [Book(title="Ulysses")]
     monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("shop", "library"))
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         found = select_one(gather(BookSource.books)(), _titled("Ulysses"))  # type: ignore[arg-type]
     assert found.title == "Ulysses"
     assert _stale(emitted) == []
@@ -134,7 +134,7 @@ def test_a_stale_line_a_warning_left_is_said_when_the_same_answers_use_its_match
     _stale_library(clock)
     Shop.rows = [Book(title="Ulysses")]
     monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("shop", "library"))
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()  # one ask for two names, as `--repo a --repo b`
         select_one(answers, _titled("Ulysses"))  # type: ignore[arg-type]
         assert _stale(emitted) == []
@@ -148,7 +148,7 @@ def test_a_stale_listing_says_its_line_on_first_iteration_or_index_and_never_twi
     clock: CacheClock,
 ) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
         assert len(answers) == 2
         answers.rank_command()
@@ -164,7 +164,7 @@ def test_a_stale_listing_says_its_line_on_first_iteration_or_index_and_never_twi
 
 def test_an_answer_fetched_and_never_used_says_nothing(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
     assert _stale(emitted) == []
     [library, _shop] = answers._unsaid()
@@ -173,7 +173,7 @@ def test_an_answer_fetched_and_never_used_says_nothing(clock: CacheClock) -> Non
 
 def test_take_stale_hands_the_lines_over_once(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
         [line] = answers.take_stale()
         assert answers.take_stale() == ()
@@ -186,7 +186,7 @@ def test_take_stale_hands_the_lines_over_once(clock: CacheClock) -> None:
 
 def test_two_threads_reading_one_answers_say_its_line_once(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
         taken: list[tuple[StaleData, ...]] = []
         threads = [
@@ -202,7 +202,7 @@ def test_two_threads_reading_one_answers_say_its_line_once(clock: CacheClock) ->
 
 def test_a_provider_called_outside_gather_says_its_line_at_the_call(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         books = _library_provider().instance.books()  # type: ignore[attr-defined]
     assert [book.title for book in books] == ["Dune", "Emma"]
     [line] = _stale(emitted)
@@ -248,7 +248,7 @@ def test_a_provider_that_raises_drops_the_stale_lines_of_its_own_caches(
     extra.serve({"k": "k"}, refresh=None, fill=fill, read=lambda: None)
     clock.advance(timedelta(hours=2))
     Library.error = failure
-    with recording() as emitted, diagnostics_scope(), pytest.raises(type(failure)):
+    with recording() as emitted, invocation(), pytest.raises(type(failure)):
         _library_provider().instance.books()  # type: ignore[attr-defined]
     assert _stale(emitted) == []  # the raise says it
 
@@ -267,7 +267,7 @@ def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> 
     gather(BookSource.books)()
     clock.advance(timedelta(hours=2))
     Halting.halt = True
-    with recording() as emitted, diagnostics_scope(), pytest.raises(KeyboardInterrupt):
+    with recording() as emitted, invocation(), pytest.raises(KeyboardInterrupt):
         _library_provider().instance.books()  # type: ignore[attr-defined]
     [error] = [each for each in emitted if isinstance(each, Failure)]
     assert error.message == "interrupted while refreshing library"
@@ -281,7 +281,7 @@ def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> 
 
 def test_the_line_names_the_provider_the_owners_cache_and_the_entry(clock: CacheClock) -> None:
     _stale_library(clock)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         list(gather(BookSource.books)())
     [line] = _stale(emitted)
     [entry] = [each for each in _entries() if "library" in each.name]
@@ -387,7 +387,7 @@ def test_a_failed_refresh_is_remembered_until_its_retry_time(clock: CacheClock) 
     _stale_library(clock)
     list(gather(BookSource.books)())
     assert Library.calls == 2
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         [library, _shop] = gather(BookSource.books)()
     assert Library.calls == 2  # inside the retry window: no call
     assert isinstance(library, Ok) and library.stale is not None
@@ -426,7 +426,7 @@ def test_a_first_fill_runs_under_a_task_naming_the_provider() -> None:
     with progress_clock() as ticks:
         compose(shelf_spec(), library_spec(_ticking(ticks)))
         configure(LIBRARY_CONFIG)
-        with recording() as emitted, diagnostics_scope():
+        with recording() as emitted, invocation():
             gather(BookSource.books)()
     progress = [each for each in emitted if isinstance(each, Progress)]
     assert {each.label for each in progress} == {"Refreshing library (first use)"}
@@ -440,7 +440,7 @@ def test_a_failed_refresh_closes_its_task_before_the_line(clock: CacheClock) -> 
         gather(BookSource.books)()
         clock.advance(timedelta(hours=2))
         Library.error = DOWN
-        with recording() as emitted, diagnostics_scope():
+        with recording() as emitted, invocation():
             list(gather(BookSource.books)())
     kinds = [
         each.state if isinstance(each, Progress) else "stale"
@@ -481,7 +481,7 @@ def test_plugin_check_reports_a_stale_answer_as_its_failed_row_alone() -> None:
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     Library.error = DOWN
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         row = _call(_library_provider(), "books", "shelf.book_source.books", [], lambda *a: a)
     assert row == ("live", "shelf.book_source.books", "fail", "served a cached answer: HTTP 503")
     assert _stale(emitted) == []

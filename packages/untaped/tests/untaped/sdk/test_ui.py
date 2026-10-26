@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec, UiSettings, resolve_theme
+from untaped.runtime.theme import BUILTIN_THEMES, UiSettings, resolve_theme
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import progress_clock
@@ -318,20 +319,21 @@ def test_ui_context_reflects_active_verbose_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from untaped.runtime import verbose
+    from untaped.runtime.run import entered, start_run
     from untaped.runtime.settings import get_settings
 
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     get_settings.cache_clear()
-    verbose.reset()
 
-    assert ui_context(strict=False).verbose is False
+    with entered(start_run()):
+        assert ui_context(strict=False).verbose is False
 
-    verbose.enable()
-    try:
-        assert ui_context(strict=False).verbose is True
-    finally:
-        verbose.reset()
-        get_settings.cache_clear()
+        token = verbose.enable()
+        try:
+            assert ui_context(strict=False).verbose is True
+        finally:
+            verbose.reset(token)
+            get_settings.cache_clear()
 
 
 def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
@@ -413,15 +415,12 @@ def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: 
     assert ("the message" in buf.getvalue()) is shown
 
 
-def test_ui_context_factory_reads_quiet_flag(_isolated_config: Path) -> None:
-    from untaped.runtime.output_policy import enable_quiet as enable
-    from untaped.runtime.output_policy import reset_quiet as reset
+@pytest.mark.usefixtures("_isolated_config", "home_run")
+def test_ui_context_factory_reads_quiet_flag() -> None:
+    from untaped.runtime.run import enable_quiet
 
-    try:
-        enable()
-        assert ui_context().quiet is True
-    finally:
-        reset()
+    enable_quiet()
+    assert ui_context().quiet is True
 
 
 def test_default_prompt_backend_follows_reopened_terminal_streams() -> None:

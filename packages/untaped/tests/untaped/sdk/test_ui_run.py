@@ -11,10 +11,10 @@ from typing import TextIO
 
 import pytest
 
-from untaped.runtime.theme import ThemeSpec
 from untaped.screen.core import Cancel, Cmd, Key, Quit, Screen
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.sdk._cli import create_app, report_errors
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext, no_terminal_message
 from untaped.sdk.errors import (
     ConfigError,

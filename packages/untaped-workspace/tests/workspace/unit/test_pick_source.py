@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import invocation
 from untaped.sdk import UntapedError
 
 # The 11.x seam: these blocks record under compose_with's fake providers, which
@@ -319,7 +319,7 @@ def test_the_first_pass_drops_its_stale_line_and_a_failed_refresh_says_its_own()
         source.catalog(refresh=True)
         age_answers(timedelta(hours=7))
         github.error = UntapedError("HTTP 503", category="unavailable")
-        with recording() as emitted, diagnostics_scope():
+        with recording() as emitted, invocation():
             first = source.catalog(refresh=False)
             assert [each for each in emitted if isinstance(each, StaleData)] == []
             refreshed = source.catalog(refresh=None)

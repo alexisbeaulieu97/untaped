@@ -1,4 +1,4 @@
-"""Unit tests for process-scoped verbose state and logging."""
+"""``--verbose`` on the run, and logging through the stderr sink."""
 
 from __future__ import annotations
 
@@ -10,7 +10,9 @@ from contextlib import redirect_stderr
 import pytest
 
 from untaped.runtime import verbose
-from untaped.runtime.output_policy import is_verbose
+from untaped.sdk._run import is_verbose
+
+pytestmark = pytest.mark.usefixtures("home_run")
 
 
 @pytest.fixture(autouse=True)
@@ -37,16 +39,16 @@ def test_enable_turns_verbose_on() -> None:
 
 
 def test_reset_turns_verbose_off() -> None:
-    verbose.enable()
-    verbose.reset()
+    token = verbose.enable()
+    verbose.reset(token)
     assert is_verbose() is False
 
 
 def test_reset_undoes_debug_logging() -> None:
-    verbose.enable()
+    token = verbose.enable()
     assert logging.getLogger("untaped").level == logging.DEBUG
 
-    verbose.reset()
+    verbose.reset(token)
 
     assert logging.getLogger("untaped").level != logging.DEBUG
 

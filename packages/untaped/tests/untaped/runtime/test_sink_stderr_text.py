@@ -25,9 +25,9 @@ import pytest
 from rich.text import Text
 
 from untaped.runtime import verbose
-from untaped.runtime.output_policy import note_theme
-from untaped.runtime.sink import Diagnostics, diagnostics_scope
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.run import entered, start_run
+from untaped.runtime.sink import Diagnostics
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import (
     clamp_parallel,
     echo,
@@ -35,6 +35,8 @@ from untaped.sdk._cli import (
     report_declined,
     report_error,
 )
+from untaped.sdk._run import Rendering
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext
 from untaped.sdk.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.sdk.testing import progress_clock
@@ -108,11 +110,12 @@ def _empty_note() -> None:
 
 
 def _debug_line() -> None:
-    token = verbose.enable()
-    try:
-        logging.getLogger("untaped.http").debug("GET %s", "https://example.test/api")
-    finally:
-        verbose.reset(token)
+    with entered(start_run()):
+        token = verbose.enable()
+        try:
+            logging.getLogger("untaped.http").debug("GET %s", "https://example.test/api")
+        finally:
+            verbose.reset(token)
 
 
 def _progress_lines() -> None:
@@ -234,8 +237,8 @@ def test_diag_messages_print_what_ui_message_prints(
         monkeypatch.setenv("FORCE_COLOR", "1")
 
     def case() -> None:
-        with diagnostics_scope():
-            note_theme(theme)
+        with entered(start_run()) as run:
+            run.render_with(Rendering(theme=theme))
             diag = Diagnostics()
             diag.success("a success line")
             diag.info("a info line")
@@ -250,7 +253,7 @@ def test_without_a_theme_diag_messages_print_plain(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("FORCE_COLOR", "1")
 
     def case() -> None:
-        with diagnostics_scope():
+        with entered(start_run()):
             diag = Diagnostics()
             diag.success("done")
             diag.warning("careful", hint="look")
@@ -264,8 +267,8 @@ def test_without_a_theme_diag_messages_print_plain(monkeypatch: pytest.MonkeyPat
 
 def test_a_theme_leaves_hints_and_failures_plain() -> None:
     def case() -> None:
-        with diagnostics_scope():
-            note_theme(_SYMBOLS)
+        with entered(start_run()) as run:
+            run.render_with(Rendering(theme=_SYMBOLS))
             Diagnostics().hint("next")
             Diagnostics().failure(UntapedError("it broke"), item="acme/x")
 
@@ -281,8 +284,8 @@ def test_a_themed_info_block_is_never_wrapped_or_tab_expanded(
     block = "name\tstate\n" + "x" * 300 + "\n\n\tindented"
 
     def case() -> None:
-        with diagnostics_scope():
-            note_theme(_COLOURED)
+        with entered(start_run()) as run:
+            run.render_with(Rendering(theme=_COLOURED))
             Diagnostics().info(block)
 
     coloured = _capture(case, _TtyStringIO())
@@ -297,8 +300,8 @@ def test_a_role_rich_cannot_parse_styles_nothing(monkeypatch: pytest.MonkeyPatch
     )
 
     def case() -> None:
-        with diagnostics_scope():
-            note_theme(theme)
+        with entered(start_run()) as run:
+            run.render_with(Rendering(theme=theme))
             Diagnostics().info("plain")
 
     assert _capture(case, _TtyStringIO()) == "plain\n"

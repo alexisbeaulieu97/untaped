@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 from untaped.sdk.errors import ConfigError, PromptInterruptedError, UntapedError
 
 if TYPE_CHECKING:
-    from untaped.runtime.theme import ThemeSpec
     from untaped.screen.core import Cancel, Quit, Screen
     from untaped.screen.picker import PickRequest, PickResult
+    from untaped.sdk._theme import ThemeSpec
 
 
 T = TypeVar("T")

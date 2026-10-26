@@ -15,11 +15,11 @@ from pydantic import BaseModel
 
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candidates
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import drop_tasks
 from untaped.sdk import _cli as cli
-from untaped.sdk._run import Run, run_scope
+from untaped.sdk._run import Run
 from untaped.sdk.records import table_columns_of
-from untaped.sdk.testing import _bare_run
 
 pytest_plugins = ["untaped.sdk.testing.plugin"]
 
@@ -130,8 +130,7 @@ def home_run(request: pytest.FixtureRequest) -> Iterator[Run]:
     """
     if "_isolated_config" in request.fixturenames:
         request.getfixturevalue("_isolated_config")
-    run = _bare_run()
-    with run_scope(run):
+    with entered(start_run()) as run:
         yield run
 
 

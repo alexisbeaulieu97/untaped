@@ -7,8 +7,9 @@ import io
 import pytest
 from pydantic import ValidationError
 
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk import TreeGraph, TreeGraphEdge, TreeGraphNode, UiContext, print_tree, tree_text
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.testing import TtyStringIO
 
 _UNICODE = UiContext()

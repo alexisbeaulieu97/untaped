@@ -299,10 +299,10 @@ def test_another_python_warning_is_a_warning_line_and_the_hook_ends_with_its_sco
 
 _RECORDED = """
 import warnings
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import entered, start_run
 with warnings.catch_warnings(record=True) as log:
     warnings.simplefilter("always")
-    with diagnostics_scope():
+    with entered(start_run()):
         warnings.warn("recorded", DeprecationWarning, stacklevel=1)
 assert [str(w.message) for w in log] == ["recorded"], log
 """

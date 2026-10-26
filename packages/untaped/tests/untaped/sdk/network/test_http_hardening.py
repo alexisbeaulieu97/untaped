@@ -356,6 +356,7 @@ def test_a_password_holding_an_apostrophe_is_masked() -> None:
     assert redact_credentials("http://user:it's@proxy:3128") == "http://***@proxy:3128"
 
 
+@pytest.mark.usefixtures("home_run")
 def test_verbose_lines_mask_the_proxy_and_authorization(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

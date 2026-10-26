@@ -36,7 +36,6 @@ from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.layout import Layout
 
-from untaped.runtime.theme import ThemeSpec
 from untaped.screen.core import (
     SHARED_KEYS,
     Binding,
@@ -54,6 +53,7 @@ from untaped.screen.core import (
     SharedKey,
     is_inline,
 )
+from untaped.sdk._theme import ThemeSpec
 
 __all__ = ["CmdKind", "Host", "Runtime", "SyncHost", "capture_console"]
 

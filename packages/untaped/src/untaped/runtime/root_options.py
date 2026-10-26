@@ -1,10 +1,11 @@
 """How the root app reads a command line before dispatch.
 
 The root options (``--profile``, ``--verbose``, ``--quiet``, ``--deprecated``),
-accepted anywhere before a ``--``. One token pass applies them before the run
-starts (:func:`applied_root_options`): it reads the selected command's token
-shapes from the declaration, so it takes a root option wherever it sits among
-a declared command's own options and never one the command reads as a value.
+accepted anywhere before a ``--``. One token pass applies them onto the run
+once it started (:func:`applied_root_options`): it reads the selected
+command's token shapes from the declaration, so it takes a root option
+wherever it sits among a declared command's own options and never one the
+command reads as a value.
 With no declaration kept, dispatch reads the line the same way by the
 composition's. For a command still mounted through the 11.x seam, the pass
 takes only the leading ones, and the seam's dispatch takes the rest as before
@@ -19,7 +20,7 @@ import inspect
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from copy import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import chain
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -28,15 +29,13 @@ from cyclopts.exceptions import CycloptsError
 from cyclopts.utils import is_option_like
 
 from untaped.runtime.declaration import CommandDecl
-from untaped.runtime.output_policy import current_policy, with_format
-from untaped.runtime.output_policy import enable_quiet as _enable_quiet
-from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import (
     check_pick,
     parse_pick,
     profile_override,
     root_pick,
 )
+from untaped.runtime.run import enable_quiet as _enable_quiet
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.runtime.verbose import reset as _reset_verbose
@@ -48,7 +47,7 @@ from untaped.sdk._cli import (
     user_default_format,
     user_theme,
 )
-from untaped.sdk._run import Rendering
+from untaped.sdk._run import Rendering, current_run
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
@@ -92,7 +91,8 @@ class _RootOption:
     name: str
     help: str
     handler: Callable[[str], Any]
-    resetter: Callable[[Any], None]
+    #: What undoes the handler when the line ends; ``None``: the run's end does.
+    resetter: Callable[[Any], None] | None
     aliases: tuple[str, ...] = ()
     takes_value: bool = False
 
@@ -135,7 +135,7 @@ def _root_options() -> dict[str, _RootOption]:
             aliases=("-q",),
             help=_QUIET_HELP,
             handler=_enable_quiet,
-            resetter=_reset_quiet,
+            resetter=None,
         ),
         "--deprecated": _RootOption(
             name="--deprecated",
@@ -245,7 +245,8 @@ class RootLine:
     def _reset(self) -> None:
         """Undo every root option applied, the last applied first."""
         for option, token in reversed(self.applied):
-            option.resetter(token)
+            if option.resetter is not None:
+                option.resetter(token)
         self.applied.clear()
 
 
@@ -562,7 +563,7 @@ def _unnamed_format(tokens: Sequence[str]) -> tuple[str, str] | None:
 def _rendering(chosen: tuple[str, str] | None) -> Rendering:
     """The rendering of the ``chosen`` format and its source, the user's theme under text."""
     fmt, source = chosen if chosen is not None else (None, None)
-    text = with_format(current_policy(), fmt).diagnostics == "text"
+    text = replace(current_run().policy, format=fmt).diagnostics == "text"
     return Rendering(format=fmt, source=source, theme=user_theme() if text else None)
 
 

@@ -15,9 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.runtime.output_policy import enable_quiet, reset_quiet
 from untaped.runtime.registry import named_plugin_dir
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import enable_quiet, entered, invocation, start_run
 from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure, Pruned
 from untaped.sdk.errors import UntapedError
@@ -69,7 +68,7 @@ def _install(root: Path, version: str = "11.1.0") -> Path:
 
 
 def _prune(store: Store) -> list[Pruned]:
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         store.prune()
     return [line for line in emitted if isinstance(line, Pruned)]
 
@@ -155,12 +154,9 @@ def test_the_line_survives_quiet(
     store = _store(base)
     store.open()
     stream = io.StringIO()
-    token = enable_quiet()
-    try:
-        with redirect_stderr(stream), diagnostics_scope():
-            store.prune()
-    finally:
-        reset_quiet(token)
+    with redirect_stderr(stream), entered(start_run()):  # reads UNTAPED_DIAGNOSTICS as built
+        enable_quiet()
+        store.prune()
     [line] = [json.loads(text) for text in stream.getvalue().splitlines()]
     assert (line["kind"], line["layout"]) == ("untaped.pruned", 4)
 
@@ -372,7 +368,7 @@ def test_a_removal_that_fails_is_a_warning(
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(Path, "unlink", lambda self, missing_ok=False: refuse(self))
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         store.prune()
     levels = sorted({line.level for line in emitted})
     assert levels == ["info", "warning"]
@@ -517,7 +513,7 @@ def _serve(cache: Cache, *, fill_result: Filled | None = None, error: bool = Fal
             raise UntapedError("upstream down")
         return fill_result or Filled()
 
-    with diagnostics_scope():
+    with invocation():
         cache.serve({"k": "key"}, refresh=True, fill=fill, read=lambda: None)
 
 
@@ -552,6 +548,6 @@ def test_a_failed_fill_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -
 def test_a_cached_read_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
     _, cache, old = cached_store
     cache.seed("k", refreshed_at=datetime.now(UTC))
-    with diagnostics_scope():
+    with invocation():
         cache.serve({"k": "key"}, refresh=False, fill=lambda *_: Filled(), read=lambda: None)
     assert old.exists()

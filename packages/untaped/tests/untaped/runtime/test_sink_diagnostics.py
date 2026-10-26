@@ -15,7 +15,6 @@ import pytest
 from cyclopts import App
 
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import ThemeSpec
 from untaped.sdk import _cli as cli
 from untaped.sdk._batch import finish
 from untaped.sdk._cli import (
@@ -29,6 +28,7 @@ from untaped.sdk._cli import (
     report_row_errors,
     resolve_each,
 )
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext
 from untaped.sdk.errors import (
     ConfigError,

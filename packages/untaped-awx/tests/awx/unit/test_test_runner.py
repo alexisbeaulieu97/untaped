@@ -9,7 +9,8 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.runtime.sink import Diagnostics, diagnostics_scope, failure_exit_code
+from untaped.runtime.run import entered, start_run
+from untaped.runtime.sink import Diagnostics, failure_exit_code
 from untaped.sdk import ConfigError, HttpTransportError
 from untaped_awx.application.suites.ports import (
     FkPrefetcher,
@@ -197,7 +198,7 @@ def _count(item: str | None, failure: CaseFailure) -> None:
 
 def _exit_code(outcome: SuiteRunOutcome) -> int:
     """The exit code ``awx test run`` gives ``outcome``: the most severe counted failure."""
-    with diagnostics_scope():
+    with entered(start_run()):
         for item, failure in outcome.deciding():
             Diagnostics().failure(failure, item=item)
         return failure_exit_code()
@@ -1755,7 +1756,7 @@ def test_an_aborted_run_still_counts_the_cases_that_finished() -> None:
         {5: Job(id=5, kind="job", status="error", job_explanation="pod lost"), 6: "successful"},
         job_url=job_url,
     )
-    with diagnostics_scope():
+    with entered(start_run()):
         with pytest.raises(RuntimeError, match="bug"):
             runner([_suite("s", {"a": {}, "b": {}})])
         assert failure_exit_code() == 5
@@ -1774,7 +1775,7 @@ def test_an_aborted_run_still_counts_its_baseline_runs_failures() -> None:
         return "url"
 
     runner, _, _, _ = _regression_runner(finals, job_url=job_url)
-    with diagnostics_scope():
+    with entered(start_run()):
         with pytest.raises(RuntimeError, match="bug"):
             runner([_case_suite({})], baseline="main")
         assert failure_exit_code() == 4

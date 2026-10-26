@@ -18,6 +18,7 @@ severe failure, and ``1`` when a check still fails afterwards. The
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import subprocess
@@ -39,15 +40,16 @@ from untaped.core.commands.doctor import (
     run_line,
 )
 from untaped.core.commands.records import FixOutcome
-from untaped.runtime.output_policy import DIAGNOSTICS_ENV, is_verbose
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import ApplicationSpec, CompositionResult
 from untaped.runtime.sink import (
+    DIAGNOSTICS_ENV,
     Diagnostics,
     count_failed_actions,
     count_row_failures,
     current_sink,
 )
+from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ErrorCategory, Failed, UntapedError
 from untaped.sdk.fields import Confirm
@@ -211,9 +213,14 @@ def _run_one(argv: Sequence[str]) -> ChildRun:
         encoding="utf-8",
         errors="replace",
     ) as process:
+        # Each reader relays through the invocation's run: it starts with a copy of its context.
         readers = [
-            threading.Thread(target=_drain, args=(process.stdout, out, relay), daemon=True),
-            threading.Thread(target=_drain, args=(process.stderr, err, relay), daemon=True),
+            threading.Thread(
+                target=contextvars.copy_context().run,
+                args=(_drain, stream, into, relay),
+                daemon=True,
+            )
+            for stream, into in ((process.stdout, out), (process.stderr, err))
         ]
         for reader in readers:
             reader.start()

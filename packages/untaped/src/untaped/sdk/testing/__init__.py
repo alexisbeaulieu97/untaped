@@ -66,17 +66,14 @@ from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk._run import (
     _RUN,
     Clock,
-    Composition,
-    Run,
     _installed,
     installed_clock,
     run_clock,
 )
 from untaped.sdk._run import recording as _recording
-from untaped.sdk._run import run_scope as _run_scope
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import apply_marks, deprecated, experimental
-from untaped.sdk.projects import Project, holder_of, init, untaped_home
+from untaped.sdk.projects import Project, holder_of, init
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
     reset_prompt_backend_override,
@@ -470,6 +467,11 @@ def invoke_cli(
     applied only by a composed root, so assert a spec-marked plugin's help
     through :func:`invoke_root`, not through its own app.
 
+    Each invocation is its own: it runs under a child of the current run
+    (an ``install(...).running()`` block's) with its own stderr output, so
+    the failures it counts are its own, or under a bare run when none is
+    current. A root app's invocation still starts a run of its own.
+
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation
     (reaching even ``UiContext``s the command builds itself). The
@@ -480,6 +482,8 @@ def invoke_cli(
     never touches a terminal: ``prompt_backend=ScriptedPromptBackend(screens=[...])``
     is enough (and ``interactive=True`` only if the command checks for a TTY itself).
     """
+    from untaped.runtime.run import invocation  # noqa: PLC0415
+
     stdout = io.StringIO()
     stderr = io.StringIO()
     previous_stdin = sys.stdin
@@ -493,6 +497,7 @@ def invoke_cli(
             redirect_stdout(stdout),
             redirect_stderr(stderr),
             _recording() as emitted,
+            invocation(),
         ):
             try:
                 _call_command(command, list(args or []), stdout=stdout, stderr=stderr)
@@ -593,28 +598,15 @@ def assert_destructive_contract(
         assert_unchanged()
 
 
-def _bare_run() -> Run:
-    """A run over the hermetic home that composes nothing, as an invocation opens one."""
-    from untaped.runtime.settings import get_config_section  # noqa: PLC0415
-    from untaped.runtime.sink import Diagnostics  # noqa: PLC0415
-    from untaped.sdk._app_context import app_context  # noqa: PLC0415
-
-    return Run(
-        locate_home=lambda: untaped_home().expanduser(),
-        composition=Composition(),
-        picks=get_config_section,
-        diag=Diagnostics(),
-        terminal=lambda: app_context().ui(),
-    )
-
-
 @contextmanager
 def _in_a_run() -> Iterator[None]:
     """The block under the current run, or a bare one: a helper writes where a command would."""
+    from untaped.runtime.run import entered, start_run  # noqa: PLC0415
+
     if _RUN.get() is not None:
         yield
         return
-    with _run_scope(_bare_run()):
+    with entered(start_run()):
         yield
 
 

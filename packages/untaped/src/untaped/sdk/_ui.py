@@ -8,7 +8,6 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from typing import TYPE_CHECKING, Annotated, TextIO
 
-from untaped.runtime.output_policy import is_quiet, is_verbose
 from untaped.runtime.render import (
     MessageKind,
     Row,
@@ -20,12 +19,9 @@ from untaped.runtime.render import (
     stream_is_tty,
 )
 from untaped.runtime.sink import Diagnostics, count_row_failures, current_sink
-from untaped.runtime.theme import (
-    BUILTIN_THEMES,
-    OutputFormat,
-    ThemeSpec,
-    resolve_theme_or_default,
-)
+from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat, resolve_theme_or_default
+from untaped.sdk._run import is_quiet, is_verbose
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.diagnostic import Failure, Message
 from untaped.sdk.errors import (
     ConfigError,

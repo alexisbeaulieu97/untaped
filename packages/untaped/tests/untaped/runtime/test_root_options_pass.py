@@ -15,11 +15,11 @@ from pydantic import BaseModel, Field
 
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
-from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options, _table_default, applied_root_options
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import _table_default_format
+from untaped.sdk._run import is_verbose
 from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
@@ -110,6 +110,9 @@ DECLARATION = Declaration(
         ),
     )
 )
+
+
+pytestmark = pytest.mark.usefixtures("home_run")
 
 
 @pytest.fixture

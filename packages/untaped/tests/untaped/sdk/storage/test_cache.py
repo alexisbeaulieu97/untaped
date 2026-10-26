@@ -20,9 +20,9 @@ from typing import Annotated, Any
 
 import pytest
 
+from untaped.runtime.run import invocation
 from untaped.runtime.sink import (
     count_row_failures,
-    diagnostics_scope,
     exit_on_counted_failure,
     open_tasks,
 )
@@ -480,7 +480,7 @@ def test_refresh_none_reads_the_directive_gather_opened(clock: CacheClock) -> No
     _refreshed(clock, "a", ago=timedelta(minutes=1))
     with call_state(True):
         assert refresh_scope() is True
-        with diagnostics_scope():
+        with invocation():
             TOY.serve({"a": "toy a"}, refresh=None, fill=UP.fill, read=lambda: UP.read(["a"]))
     assert UP.fills == ["a"]
     assert refresh_scope() is None
@@ -513,7 +513,7 @@ def test_a_first_fill_retries_a_transient_failure() -> None:
 
     with respx.mock(base_url="https://example.com") as mock:
         route = mock.get("/items").mock(side_effect=[httpx.Response(503), httpx.Response(200)])
-        with diagnostics_scope():
+        with invocation():
             TOY.serve({"a": "toy a"}, refresh=None, fill=fetch, read=lambda: ["x"])
     assert route.call_count == 2
 
@@ -539,7 +539,7 @@ def test_a_nested_forced_or_first_fill_leaves_the_outer_budget(
         return UP.fill(key, task)
 
     _refreshed(clock, "a", ago=timedelta(hours=2))
-    with diagnostics_scope():
+    with invocation():
         TOY.serve({"a": "toy a"}, refresh=None, fill=outer_fill, read=lambda: UP.read(["a"]))
     assert seen == [True, False, True]
 
@@ -570,7 +570,7 @@ def test_under_a_parent_handle_the_refresh_is_a_phase_and_opens_no_task(
     parent = _Parent()
     opened: list[int] = []
     UP.during = lambda _key, _task: opened.append(open_tasks())
-    with diagnostics_scope():
+    with invocation():
         TOY.serve(
             {"a": "toy a"}, refresh=None, fill=UP.fill, read=lambda: UP.read(["a"]), progress=parent
         )
@@ -600,7 +600,7 @@ def _hold(key: str, *, seconds: float, then: Callable[[], None] = lambda: None) 
 def test_a_refresh_waits_for_the_lock_and_says_so(clock: CacheClock) -> None:
     parent = _Parent()
     holder = _hold("a", seconds=0.2)
-    with diagnostics_scope():
+    with invocation():
         TOY.serve(
             {"a": "toy a"}, refresh=None, fill=UP.fill, read=lambda: UP.read(["a"]), progress=parent
         )
@@ -824,7 +824,7 @@ def test_profiles_whose_settings_read_the_same_share_a_sidecar(
 def test_two_serves_of_one_key_say_it_once_and_the_first_line_wins(clock: CacheClock) -> None:
     _refreshed(clock, "a", ago=timedelta(hours=2))
     UP.error = HttpTransportError("connection refused", system="toy")
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         TOY.serve({"a": "toy a"}, refresh=False, fill=UP.fill, read=lambda: [])
         TOY.serve({"a": "toy a"}, refresh=True, fill=UP.fill, read=lambda: [])
     [line] = [each for each in emitted if isinstance(each, StaleData)]
@@ -838,7 +838,7 @@ def test_cached_peeks_without_a_lock_a_line_or_a_raise(clock: CacheClock) -> Non
     assert TOY.cached("a", lambda: UP.read(["a"])) is None
     _refreshed(clock, "a", ago=timedelta(hours=2))
     holder = _hold("a", seconds=0.5)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         served = TOY.cached("a", lambda: UP.read(["a"]))
     holder.join(5)
     assert served is not None
@@ -1169,7 +1169,7 @@ def test_a_status_row_reports_a_remembered_error_without_failing(clock: CacheClo
         "retry_at": "2026-10-12T09:05:00Z",
         "refresh_error": error.model_dump(mode="json"),
     }
-    with diagnostics_scope():
+    with invocation():
         count_row_failures([row])
         exit_on_counted_failure()  # no SystemExit: a remembered failure is not a failed row
 
@@ -1220,7 +1220,7 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
     with respx.mock(base_url="https://example.com") as mock:
         down = mock.get("/repos/3").mock(side_effect=httpx.ConnectError("offline"))
         mock.get(url__regex=r"/repos/\d+").mock(return_value=httpx.Response(200))
-        with diagnostics_scope():
+        with invocation():
             served = TOY.serve({"a": "toy a"}, refresh=None, fill=probe_all, read=lambda: ["x"])
 
     assert down.call_count == 1  # capped and unretried: the budget was not yet lifted

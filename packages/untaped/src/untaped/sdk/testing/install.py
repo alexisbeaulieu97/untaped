@@ -186,19 +186,17 @@ class Install:
     def running(self) -> Iterator[Running]:
         """Run the block as a command of this install runs: under its run, its plugins composed.
 
-        The block runs in one diagnostics scope, as a command does: the
-        environment (``UNTAPED_DIAGNOSTICS``) is read when the block opens, and
-        what it yields records the typed lines the block itself shows
-        (``run.diagnostics``); a command run inside reports on its own result.
+        The block's run is built when it opens, as a command's is (the
+        environment, ``UNTAPED_DIAGNOSTICS``, read then), and what it yields
+        records the typed lines the block itself shows (``run.diagnostics``);
+        a command run inside reports on its own result.
         """
-        from untaped.runtime.run import build_run  # noqa: PLC0415
-        from untaped.runtime.sink import diagnostics_scope  # noqa: PLC0415
-        from untaped.sdk._run import recording, run_scope  # noqa: PLC0415
+        from untaped.runtime.run import build_run, entered  # noqa: PLC0415
+        from untaped.sdk._run import recording  # noqa: PLC0415
 
         with (
-            run_scope(build_run(self._mount.declaration, self._mount.settings)),
             recording() as shown,
-            diagnostics_scope(),
+            entered(build_run(self._mount.declaration, self._mount.settings)),
         ):
             yield Running(shown)
 
@@ -393,26 +391,21 @@ def _dispatch(
     *,
     raises: bool,
 ) -> None:
-    """Run ``command`` as the root runs one: one diagnostics scope, errors as exit codes.
+    """Run ``command`` as the root runs one, under the invocation's run: errors as exit codes.
 
     A run that emitted a failure fails, as at the root.
     """
     from untaped.runtime.mount import run_built  # noqa: PLC0415
-    from untaped.runtime.sink import (  # noqa: PLC0415
-        derived_exit_code,
-        diagnostics_scope,
-        exit_on_counted_failure,
-    )
+    from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure  # noqa: PLC0415
     from untaped.sdk._cli import report_errors  # noqa: PLC0415
 
-    with diagnostics_scope():
-        try:
-            with nullcontext() if raises else report_errors():
-                run_built(mount, decl, command, flags)
-                exit_on_counted_failure()
-        except SystemExit as exc:
-            exc.code = derived_exit_code(exc.code)
-            raise
+    try:
+        with nullcontext() if raises else report_errors():
+            run_built(mount, decl, command, flags)
+            exit_on_counted_failure()
+    except SystemExit as exc:
+        exc.code = derived_exit_code(exc.code)
+        raise
 
 
 def _ran(result: CliResult, printed: Printed | None, *, read_back: bool) -> Ran:

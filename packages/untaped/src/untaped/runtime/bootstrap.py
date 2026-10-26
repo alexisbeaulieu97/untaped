@@ -29,8 +29,6 @@ from untaped.core.skills import PackagedSkill
 from untaped.runtime.declaration import Declaration
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
-from untaped.runtime.output_policy import fix_rendering
-from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import set_profile_override
 from untaped.runtime.registry import (
     ApplicationSpec,
@@ -61,11 +59,7 @@ from untaped.runtime.settings import (
     register_state_settings,
     reset_config_registry,
 )
-from untaped.runtime.sink import (
-    derived_exit_code,
-    diagnostics_scope,
-    exit_on_counted_failure,
-)
+from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure
 from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import (
     apply_default_format,
@@ -74,7 +68,7 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk._run import Run, current_run, run_scope
+from untaped.sdk._run import Run, current_run
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
@@ -205,7 +199,7 @@ def _refuse_inside_a_contract_call() -> None:
 def kept_composition() -> Iterator[None]:
     """Bring back the composition (and its settings registrations) the block started with.
 
-    The profile, verbose and quiet overrides are left as they are
+    The profile override and the logger's level are left as they are
     (a plugin's check runs under the user's ``--profile``). Raises
     ``RuntimeError`` inside a contract call, as :func:`compose_root` does,
     since leaving the block re-registers the settings.
@@ -247,14 +241,13 @@ def composition() -> CompositionResult:
 def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 
-    Clears the profile/verbose/quiet overrides, the
+    Clears the profile override, the ``untaped`` logger's verbose level, the
     settings caches, and the config registry, then re-registers the
     just-composed shell and plugins. Exists for test isolation; never
     called implicitly between user invocations.
     """
     set_profile_override(())
     _reset_verbose(None)
-    _reset_quiet(None)
     _reregister()
 
 
@@ -532,7 +525,7 @@ def _refresh_reference(command_tokens: Sequence[str]) -> None:
 def _started(
     tokens: Sequence[str], declaration: Declaration | None
 ) -> Iterator[tuple[Run, RootLine]]:
-    """Start the invocation of ``tokens``: its root options applied, then its one run.
+    """Start the invocation of ``tokens``: its one run, then its root options applied onto it.
 
     The token pass reads the line by ``declaration``'s token shapes (with
     none, :func:`run_root` reads it by the composition's, so only when the root
@@ -544,19 +537,17 @@ def _started(
     and a command that never reads it (root ``--help``, ``--version``, a
     group's help) still runs.
     """
-    from untaped.runtime.run import start_run  # noqa: PLC0415 - a start runs no command
+    from untaped.runtime.run import entered, start_run  # noqa: PLC0415 - a start runs no command
 
-    note_requested_format(tokens)  # a bad root option reports in the format asked for
-    with (
-        applied_root_options(tokens, _root_options(), declaration) as line,
-        run_scope(start_run()) as run,
-    ):
-        _fix_rendering(run, line)
-        marker = _STARTED.set((run, line))
-        try:
-            yield run, line
-        finally:
-            _STARTED.reset(marker)
+    with entered(start_run()) as run:
+        note_requested_format(tokens)  # a bad root option reports in the format asked for
+        with applied_root_options(tokens, _root_options(), declaration) as line:
+            _fix_rendering(run, line)
+            marker = _STARTED.set((run, line))
+            try:
+                yield run, line
+            finally:
+                _STARTED.reset(marker)
 
 
 def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:
@@ -564,7 +555,7 @@ def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:
 
     Before anything else is emitted, and once: the dispatch and the
     command's parse then change neither its format nor its theme
-    (:func:`untaped.runtime.output_policy.fix_rendering`). A first word no
+    (:meth:`untaped.sdk._run.Run.render_with` fixes the run's policy too). A first word no
     declaration holds needs the composed ``root`` to tell an unknown command
     (fixed here) from an 11.x seam command, whose parse decides as before
     (:meth:`RootLine.rendering`).
@@ -572,7 +563,6 @@ def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:
     rendering = line.rendering(root)
     if rendering is not None:
         run.render_with(rendering)
-        fix_rendering(rendering)
 
 
 @contextmanager
@@ -641,14 +631,12 @@ def _install_root_callback(
                 after_command(command_tokens, ran, failed)
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
-        # One diagnostics scope covers the command and the checks after it,
-        # so their warnings follow the command's --format. One run covers the
-        # invocation: root --help and --version, and any command it dispatches.
-        # The pass reads the line as given: the meta parse split its short
-        # clusters (`-n5` into `-n -5`).
+        # One run covers the invocation, its output the command and the checks
+        # after it, so their warnings follow the command's --format: root --help
+        # and --version, and any command it dispatches. The pass reads the line
+        # as given: the meta parse split its short clusters (`-n5` into `-n -5`).
         with (
             given_tokens(app.meta) as given,
-            diagnostics_scope(),
             dispatching() as ran,
             _invocation(tokens if given is None else given, result, app) as line,
         ):
@@ -680,13 +668,13 @@ def run_root(
     now, and a first word no declaration holds is told from an 11.x
     command's by the root app, the rendering fixed then, before anything is
     emitted) and its composition attached to the run, then the tokens are
-    dispatched under it. One diagnostics scope spans all of it,
-    so composition warnings (a quarantined plugin) follow the ``--format``
-    the tokens ask for, like an error found before parsing.
+    dispatched under it. The run's output spans all of it, so composition
+    warnings (a quarantined plugin) follow the ``--format`` the tokens ask
+    for, like an error found before parsing.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     found = list(discover_candidates()) if candidates is None else list(candidates)
-    with diagnostics_scope(), _started(argv, kept_declaration(found)) as (run, line):
+    with _started(argv, kept_declaration(found)) as (run, line):
         root = build_root_app(candidates=found)
         result = composition()
         if not line.placed:  # no declaration kept, or a word it doesn't hold

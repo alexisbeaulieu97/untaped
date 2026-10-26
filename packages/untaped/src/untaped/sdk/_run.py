@@ -18,16 +18,17 @@ import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from untaped.sdk._theme import ThemeSpec
     from untaped.sdk._ui import UiContext
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
@@ -130,13 +131,57 @@ class Rendering:
     ``format`` is the ``--format`` the user chose (``None``: the command's
     own default), ``source`` where it came from (``--format``,
     ``UNTAPED_FORMAT`` or ``untaped.ui.format``), ``theme`` the
-    ``untaped.ui.theme`` text messages render with (the runtime's theme
-    model; ``None``: the default theme, as under JSON diagnostics).
+    ``untaped.ui.theme`` text messages render with (``None``: the default
+    theme, as under JSON diagnostics).
     """
 
     format: str | None = None
     source: str | None = None
-    theme: BaseModel | None = None
+    theme: ThemeSpec | None = None
+
+
+#: Output formats whose stderr diagnostics default to JSON Lines.
+STRUCTURED_FORMATS = frozenset({"json", "yaml", "pipe"})
+
+
+@dataclass(frozen=True)
+class OutputPolicy:
+    """What the run asked of stderr (:attr:`Run.policy`); never in ``untaped.sdk``.
+
+    The sink follows it, so a plugin has no reason to read it: branching on
+    JSON around the sink would split what one line says. ``format`` and
+    ``theme`` are the run's rendering once it is fixed (:meth:`Run.render_with`);
+    ``forced`` is the ``UNTAPED_DIAGNOSTICS`` choice read when the run was
+    built (``None``: follow the format); ``quiet`` and ``verbose`` are
+    ``--quiet`` and ``--verbose``. ``theme`` is left out of the hash, since
+    a ``ThemeSpec`` has none.
+    """
+
+    format: str | None = None
+    forced: Literal["text", "json"] | None = None
+    quiet: bool = False
+    verbose: bool = False
+    theme: ThemeSpec | None = field(default=None, hash=False)
+
+    @property
+    def diagnostics(self) -> Literal["text", "json"]:
+        """Whether stderr carries text or JSON Lines."""
+        if self.forced is not None:
+            return self.forced
+        return "json" if self.format in STRUCTURED_FORMATS else "text"
+
+
+@dataclass
+class PolicyCell:
+    """Where a run keeps its :class:`OutputPolicy`, held by reference.
+
+    A child run for a nested pick holds its parent's cell, as it shares
+    the parent's output, so a write under either is the one both read and
+    the sink follows; a nested invocation, with an output of its own, gets
+    a cell of its own.
+    """
+
+    policy: OutputPolicy = field(default_factory=OutputPolicy)
 
 
 @dataclass(frozen=True)
@@ -189,11 +234,25 @@ class Run:
     profiles: tuple[str, ...] | None = None
     #: Candidate settings a child run lays over what it loads; nothing is written.
     overlay: SettingsOverlay | None = None
+    #: Where the run keeps what it asks of stderr (:attr:`policy`), which the
+    #: sink of its ``diag`` follows: a child run sharing its parent's output
+    #: holds its parent's cell, so the two never disagree.
+    policy_cell: PolicyCell = field(default_factory=PolicyCell, repr=False)
 
     @property
     def home(self) -> Path:
         """The home folder; raises the error that keeps it from resolving."""
         return self.locate_home()
+
+    @property
+    def policy(self) -> OutputPolicy:
+        """What the run asks of stderr, which the sink of its ``diag`` follows."""
+        return self.policy_cell.policy
+
+    @property
+    def attached(self) -> bool:
+        """Whether the run's composition is attached (:meth:`attach`)."""
+        return self.composition is not _UNCOMPOSED
 
     def attach(self, composition: Composition) -> Run:
         """Attach the run's one composition once it is built (it is frozen after); the run."""
@@ -207,7 +266,19 @@ class Run:
         if self.rendering is not None:
             raise RuntimeError("a run's rendering is fixed once")
         object.__setattr__(self, "rendering", rendering)  # frozen to every other writer
+        self.set_policy(replace(self.policy, format=rendering.format, theme=rendering.theme))
         return self
+
+    def set_policy(self, policy: OutputPolicy) -> None:
+        """Replace what the run asks of stderr.
+
+        Owed, the 11.x seam: the policy is writable only because the root
+        options' handlers write their flags onto the run once it started, and
+        the seam's parse still chooses the format and theme of a command
+        mounted through it. It closes with the seam. A child run sharing
+        its parent's output writes the policy it shares with the parent.
+        """
+        self.policy_cell.policy = policy
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)
@@ -243,19 +314,19 @@ def installed_clock(clock: Clock) -> Iterator[Clock]:
         _installed[0] = previous
 
 
-#: Where a test records the diagnostics shown (:func:`recording`), read as each scope starts.
+#: Where a test records the diagnostics shown (:func:`recording`), read as each run is built.
 _recorder: ContextVar[list[Diagnostic] | None] = ContextVar("untaped_recorder", default=None)
 
 
 @contextmanager
 def recording() -> Iterator[list[Diagnostic]]:
-    """Record every diagnostic shown by the output scopes entered inside the block (a test's).
+    """Record every diagnostic shown by the runs built inside the block (a test's).
 
     The testing kit's hook behind ``Install.running()``'s ``diagnostics``.
     Unlike :func:`installed_clock` it is per context, so two threads or
     tasks recording at once each keep their own records (a worker started
-    with a copied context records with the block that started it). A scope
-    entered before the block keeps the recorder it started with; the scopes
+    with a copied context records with the block that started it). A run
+    built before the block keeps the recorder it was built with; the runs
     still write to stderr as they would (a tee), so captured text and the
     records agree. Nested, the inner block records alone until it ends.
     """
@@ -268,7 +339,7 @@ def recording() -> Iterator[list[Diagnostic]]:
 
 
 def recorder() -> list[Diagnostic] | None:
-    """The list a scope starting now records into (:func:`recording`); ``None`` outside one."""
+    """The list a run built now records into (:func:`recording`); ``None`` outside one."""
     return _recorder.get()
 
 
@@ -295,10 +366,27 @@ def fixed_rendering() -> Rendering | None:
     return None if run is None else run.rendering
 
 
+def is_quiet() -> bool:
+    """Whether the current run asked for ``--quiet``; ``False`` outside a run."""
+    run = _RUN.get()
+    return run is not None and run.policy.quiet
+
+
+def is_verbose() -> bool:
+    """Whether the current run asked for ``--verbose``; ``False`` outside a run."""
+    run = _RUN.get()
+    return run is not None and run.policy.verbose
+
+
 def current_overlay() -> SettingsOverlay | None:
     """The current run's settings overlay; ``None`` outside a run or without one."""
     run = _RUN.get()
     return None if run is None else run.overlay
+
+
+def run_or_none() -> Run | None:
+    """The current run; ``None`` outside one (a bare thread, code no invocation runs)."""
+    return _RUN.get()
 
 
 def current_run() -> Run:

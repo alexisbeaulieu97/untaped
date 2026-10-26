@@ -20,8 +20,8 @@ from untaped.sdk.errors import ConfigError, PromptInterruptedError
 from untaped.sdk.testing.screens import ScreenKeys, drive_screen
 
 if TYPE_CHECKING:
-    from untaped.runtime.theme import ThemeSpec
     from untaped.screen.picker import PickRequest, PickResult
+    from untaped.sdk._theme import ThemeSpec
     from untaped.sdk.network.credentials import Credential, CredentialKey
     from untaped.sdk.prompt.prompts import PromptChoice
     from untaped.sdk.testing.install import Install

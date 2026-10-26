@@ -10,7 +10,7 @@ from rich.console import Console, RenderableType
 from rich.segment import Segment
 from rich.style import Style
 
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.draw import role_style
 from untaped.screen.components.fields import Field
 from untaped.screen.core import (
@@ -27,6 +27,7 @@ from untaped.screen.core import (
     Screen,
     Submit,
 )
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.testing import ScreenRun, drive_screen
 
 
