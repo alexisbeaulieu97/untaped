@@ -25,7 +25,7 @@ from core_test_support.commands.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import profile_scope
+from untaped.runtime.profile_resolver import root_pick
 from untaped.runtime.settings import FORMAT_VERSION
 from untaped.runtime.theme import THEME_CHOICES
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
@@ -195,7 +195,7 @@ def test_null_profile_is_treated_as_empty(
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: null\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
     assert _invoke(["get", "untaped.http.timeout_seconds"]).exit_code == 0
-    with profile_scope("work"):  # a write lands in the one profile --profile names
+    with root_pick(["work"]):  # a write lands in the one profile --profile names
         result = _invoke(["set", "untaped.http.timeout_seconds", "5"])
     assert result.exit_code == 0, result.output
     assert read_config_dict(_isolated_config)["profiles"] == {
@@ -217,7 +217,7 @@ def test_writes_land_in_the_base_unless_one_profile_is_named(
     assert (
         "this run still reads untaped.http.timeout_seconds from profile work, picked over the base"
     ) in written.stderr
-    with profile_scope(("work", "lab")):
+    with root_pick(["work", "lab"]):
         refused = _invoke(["set", "untaped.http.timeout_seconds", "6", "--format", "json"])
 
     assert read_config_dict(_isolated_config)["untaped"] == {"http": {"timeout_seconds": 5.0}}

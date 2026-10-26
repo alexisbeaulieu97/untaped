@@ -7,13 +7,11 @@ state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 
 from __future__ import annotations
 
-import contextlib
-import contextvars
 import json
 import os
 import re
 import weakref
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
 from pathlib import Path
@@ -56,6 +54,7 @@ from untaped.sdk.health.deprecated_keys import (
     rename_keys,
 )
 from untaped.sdk.marks import Stability
+from untaped.sdk.run import current_overlay
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
@@ -500,59 +499,15 @@ def reset_config_registry() -> None:
     _CONFIG_REGISTRY.reset()
 
 
-@dataclass(frozen=True)
-class SettingsOverlay:
-    """Candidate values for one section of one profile, layered over the loaded config.
-
-    A ``None`` value means "unset this key" (a command token source removes the
-    ``token``). Internal: ``setup`` checks a plugin against what the user
-    typed before anything is written.
-    """
-
-    profile: str
-    section: str
-    values: Mapping[str, object]
-
-
-_overlay: contextvars.ContextVar[SettingsOverlay | None] = contextvars.ContextVar(
-    "untaped_settings_overlay", default=None
-)
-
-
-@contextlib.contextmanager
-def settings_overlay(
-    profile: str, section: str, values: Mapping[str, object]
-) -> Iterator[SettingsOverlay]:
-    """Read ``values`` as ``profile``'s ``section`` inside the block, in this context only.
-
-    Both seams read it: the settings loader (:class:`LayoutSettingsSource`,
-    which every section load goes through) and :func:`get_settings`, which
-    skips its cache while an overlay is set, so candidate values are never
-    cached and the main thread never sees them. A thread sees it only when its
-    context was copied inside the block (the screen runtime's commands are).
-    Nothing is written: no config file, no keychain.
-    """
-    overlay = SettingsOverlay(profile, section, dict(values))
-    token = _overlay.set(overlay)
-    try:
-        yield overlay
-    finally:
-        _overlay.reset(token)
-
-
-def active_overlay() -> SettingsOverlay | None:
-    """The overlay set in this context, if any."""
-    return _overlay.get()
-
-
 def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
-    """``effective`` with the overlay's section updated, when it is for ``profile``.
+    """``effective`` with the run's overlay's section updated, when it is for ``profile``.
 
-    Returns ``effective`` itself when there is no overlay or it is for another
-    profile; otherwise a copy (``effective`` is never mutated). A ``SecretStr``
-    is unwrapped because the layout feeds validation, which takes plain values.
+    Returns ``effective`` itself when the run has no overlay
+    (:attr:`untaped.sdk.run.Run.overlay`) or it is for another profile;
+    otherwise a copy (``effective`` is never mutated). A ``SecretStr`` is
+    unwrapped because the layout feeds validation, which takes plain values.
     """
-    overlay = _overlay.get()
+    overlay = current_overlay()
     if overlay is None or overlay.profile != profile:
         return effective
     node = effective.get(overlay.section)
@@ -577,13 +532,13 @@ def resolve_with_overlay(
     *,
     sections: SectionModels | None = None,
 ) -> ResolvedConfig:
-    """The layout's resolution of ``raw`` with the active overlay laid over it.
+    """The layout's resolution of ``raw`` with the run's overlay laid over it.
 
     The overlay's profile may not exist in ``raw`` yet (``setup`` checks a new
     profile before creating it); it then resolves as the empty profile it will
     be, over the base.
     """
-    overlay = _overlay.get()
+    overlay = current_overlay()
     profiles = raw.get("profiles")
     # A malformed ``profiles`` (not a mapping) is left for resolution to report.
     known = {} if profiles is None else profiles
@@ -1032,11 +987,11 @@ def _build_settings() -> Settings:
 
 
 class _SettingsGetter:
-    """``get_settings``: the cached aggregate settings, uncached while an overlay is set.
+    """``get_settings``: the cached aggregate settings, uncached under a run's overlay.
 
-    The cache is process-global, so candidate values must never reach it: with
-    an overlay set the settings are built fresh and returned without being
-    stored. Keeps ``cache_clear`` and ``cache_info`` of the ``lru_cache`` it
+    The cache is process-global, so candidate values must never reach it: under
+    a run carrying an overlay the settings are built fresh and returned without
+    being stored. Keeps ``cache_clear`` and ``cache_info`` of the ``lru_cache`` it
     wraps (many call sites drop the cache).
     """
 
@@ -1045,7 +1000,7 @@ class _SettingsGetter:
 
     def __call__(self) -> Settings:
         """Return the cached aggregate settings instance."""
-        if _overlay.get() is not None:
+        if current_overlay() is not None:
             return _build_settings()
         return self._cached()
 

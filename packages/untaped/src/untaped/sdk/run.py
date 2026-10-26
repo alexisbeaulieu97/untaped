@@ -137,6 +137,20 @@ class Rendering:
     theme: BaseModel | None = None
 
 
+@dataclass(frozen=True)
+class SettingsOverlay:
+    """Candidate values for one section of one profile, laid over what a run loads.
+
+    A ``None`` value means "unset this key" (a command token source removes
+    the ``token``). ``setup`` checks a plugin against what the user typed,
+    in a child run carrying it, before anything is written.
+    """
+
+    profile: str
+    section: str
+    values: Mapping[str, object]
+
+
 #: What a run reads before its composition is attached: no plugin owns anything.
 _UNCOMPOSED = Composition()
 
@@ -168,6 +182,11 @@ class Run:
     #: a declared command or a line naming none; ``None`` until then, and for
     #: an 11.x command, whose parse still decides it.
     rendering: Rendering | None = None
+    #: The profiles ``--profile`` picks for this run, in order: a child run's
+    #: own (``untaped.runtime.run.child_run``); ``None`` for the root option's.
+    profiles: tuple[str, ...] | None = None
+    #: Candidate settings a child run lays over what it loads; nothing is written.
+    overlay: SettingsOverlay | None = None
 
     @property
     def home(self) -> Path:
@@ -243,6 +262,12 @@ def fixed_rendering() -> Rendering | None:
     """The current run's fixed rendering; ``None`` outside a run or before it is fixed."""
     run = _RUN.get()
     return None if run is None else run.rendering
+
+
+def current_overlay() -> SettingsOverlay | None:
+    """The current run's settings overlay; ``None`` outside a run or without one."""
+    run = _RUN.get()
+    return None if run is None else run.overlay
 
 
 def current_run() -> Run:

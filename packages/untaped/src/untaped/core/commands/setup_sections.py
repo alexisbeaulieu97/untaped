@@ -52,8 +52,9 @@ from untaped.core.config.use_cases import (
     RankProviders,
     SetSetting,
 )
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, profile_scope
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import PluginSpec
+from untaped.runtime.run import child_run
 from untaped.runtime.settings import section_stabilities
 from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
@@ -160,7 +161,7 @@ def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
     """
     exists = profile_exists(profile)
     hidden = frozenset().union(*(connection_keys(spec) for spec in services.values()))
-    with profile_scope(profile if exists else DEFAULT_PROFILE):
+    with child_run(profiles=profile if exists else DEFAULT_PROFILE):
         repo = SettingsFileRepository()
         listing = ListSettings(repo)
         entries = listing()
@@ -312,7 +313,7 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
 
     def open_field() -> object:
         exists = profile_exists(profile)
-        with profile_scope(profile if exists else DEFAULT_PROFILE):
+        with child_run(profiles=profile if exists else DEFAULT_PROFILE):
             repo = SettingsFileRepository()
             if ranking is not None:
                 if not ranking.method:

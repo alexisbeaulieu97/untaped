@@ -2,7 +2,7 @@
 
 ``setup`` calls it before saving. It runs only the plugin's ``online=True``
 checks, over the loaded config with the candidate values laid on top
-(``settings_overlay``), and never writes anything.
+(a child run's overlay), and never writes anything.
 """
 
 from __future__ import annotations
@@ -27,14 +27,14 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands.doctor import online_probe_rows
 from untaped.runtime.registry import CompositionResult
-from untaped.runtime.settings import active_overlay
 from untaped.sdk import online_check
 from untaped.sdk._app_context import app_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
+from untaped.sdk.run import current_overlay
 from untaped.sdk.testing import current_memory_store
 
-pytestmark = pytest.mark.usefixtures("_isolated_config")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 _OLD = "format_version: 2\nwiz:\n  server: {url: https://old}\n"
 
@@ -53,7 +53,7 @@ def _seeing_probe() -> str:
             "url": None if server is None else str(server.url),
             "source": None if token is None else token.source,
             "plain": None if token is None or command else token.get_secret_value(),
-            "overlay": active_overlay() is not None,
+            "overlay": current_overlay() is not None,
         }
     )
     return "authenticated as alice"

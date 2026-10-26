@@ -23,7 +23,7 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
-from untaped.runtime.profile_resolver import profile_scope
+from untaped.runtime.profile_resolver import root_pick
 from untaped.sdk import (
     ConfigError,
     DoctorCheck,
@@ -327,7 +327,7 @@ def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_confi
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = root_group("doctor", spec)
-    with profile_scope("default"):
+    with root_pick(["default"]):
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     # Without the flag the same line would read the profiles UNTAPED_PROFILE picks.
     assert "→ untaped --profile default auth set svc\n" in result.stdout
@@ -347,7 +347,7 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
         monkeypatch.setenv("UNTAPED_PROFILE", env)
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = root_group("doctor", spec)
-    with profile_scope(flag or ()):
+    with root_pick(flag or ()):
         listed = CliInvoker().invoke(app, ["--format", "table", "--online"])
         row = _row(CliInvoker().invoke(app, ["--format", "json", "--online"]), "svc.api")
 
@@ -364,7 +364,7 @@ def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
     monkeypatch.setenv("UNTAPED_PROFILE", "a")
     spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
     app = root_group("doctor", spec)
-    with profile_scope("default"):  # `--profile default` sets the variable aside
+    with root_pick(["default"]):  # `--profile default` sets the variable aside
         result = CliInvoker().invoke(app, ["--format", "table", "--online"])
 
     # The bare line would read profile `a` again.

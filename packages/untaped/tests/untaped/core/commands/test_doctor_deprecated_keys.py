@@ -118,6 +118,7 @@ def test_no_old_keys_pass(_isolated_config: Path) -> None:
     assert (row["status"], row["detail"]) == ("pass", "no deprecated keys")
 
 
+@pytest.mark.usefixtures("home_run")  # setup calls it inside its command's run
 def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
     result = compose(make_spec("old", settings=OldProfile))
 

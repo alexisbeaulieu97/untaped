@@ -58,6 +58,7 @@ from untaped.runtime.settings import env_var_name, env_var_setting, resolve_conf
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.marks import TokenCommand, TokenSources  # type: ignore[deprecated]
 from untaped.sdk.marks import deprecated_behaviour
+from untaped.sdk.run import current_overlay
 
 _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0
@@ -479,11 +480,9 @@ def _warn_plaintext(settings: BaseModel, *, section: str) -> None:
     file, so it never warns; nor does one ``auth set`` cannot store, since
     ``auth migrate`` could not move it.
     """
-    from untaped.runtime.settings import active_overlay  # noqa: PLC0415 - imports each other lazily
-
     # ``setup`` checks a candidate token that is not written yet, possibly on a
     # worker thread over its screen: nothing to warn about, nowhere to print it.
-    if active_overlay() is not None or token_override_env(section) is not None:
+    if current_overlay() is not None or token_override_env(section) is not None:
         return
     if not takes_token_command(type(settings)):
         return
