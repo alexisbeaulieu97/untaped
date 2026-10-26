@@ -13,7 +13,7 @@ from cyclopts import App, Parameter
 
 from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
-from untaped.runtime.profile_resolver import profile_override
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options
 from untaped.runtime.root_options_seam import _take_help_root_options
@@ -36,12 +36,14 @@ def test_help_strips_an_11x_command_s_root_options_around_it() -> None:
 
 
 def test_the_options_dispatch_takes_late_write_the_started_run() -> None:
-    with started_line(["svc", "--help", "--deprecated", "-v"]) as line:
-        assert line.tokens == ["svc", "--help", "--deprecated", "-v"]  # an 11.x command's
+    tokens = ["svc", "--help", "--deprecated", "-v", "--profile", "x"]
+    with started_line(tokens) as line:
+        assert line.tokens == tokens  # an 11.x command's
         _take_help_root_options(line.tokens, _root_options(), line)
         assert line.run.policy.deprecated and line.run.policy.verbose
+        assert line.run.profiles == ("x",)
         assert show_deprecated() and is_verbose()
-    assert not (show_deprecated() or is_verbose())
+    assert not (show_deprecated() or is_verbose() or flag_pick())
 
 
 def test_tokens_after_the_separator_are_never_root_options() -> None:
@@ -76,8 +78,8 @@ def _old_app() -> App:
 
     @app.command(name="picks")
     def picks(*, x: Annotated[bool, Parameter(name=["--x", "-x"])] = False) -> None:
-        """Print the root ``--profile`` names, in the order they stack."""
-        echo(",".join(profile_override()))
+        """Print the run's ``--profile`` pick, in the order it stacks."""
+        echo(",".join(flag_pick()))
 
     @app.command(name="own")
     def own(

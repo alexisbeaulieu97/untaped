@@ -17,24 +17,18 @@ warnings. The bootstrap composition root uses this one implementation.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import copy
 from dataclasses import dataclass, field, replace
 from itertools import chain
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
 from cyclopts.utils import is_option_like
 
 from untaped.runtime.declaration import CommandDecl
-from untaped.runtime.profile_resolver import (
-    check_pick,
-    parse_pick,
-    profile_override,
-    root_pick,
-)
+from untaped.runtime.profile_resolver import check_pick, parse_pick
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.sdk._cli import (
@@ -86,30 +80,21 @@ class _RootOption:
 
     name: str
     help: str
-    #: Applies the option, with its value, onto the invocation's run.
-    handler: Callable[[Run, str], Any]
-    #: What undoes the handler when the line ends; ``None``: the run's end does.
-    #: Owed: only ``--profile`` has one, until its pick is the run's (11f).
-    resetter: Callable[[Any], None] | None = None
+    #: Applies the option, with its value, onto the invocation's run; it ends with the run.
+    handler: Callable[[Run, str], None]
     aliases: tuple[str, ...] = ()
     takes_value: bool = False
 
 
-def _apply_profile(_run: Run, value: str) -> AbstractContextManager[None]:
-    """Stack ``value``'s comma list on any earlier ``--profile`` of this run."""
+def _apply_profile(run: Run, value: str) -> None:
+    """Stack ``value``'s comma list on any earlier ``--profile`` of ``run``, its pick."""
     try:
-        names = (*profile_override(), *parse_pick(value, origin="--profile"))
+        names = (*run.profiles, *parse_pick(value, origin="--profile"))
         check_pick(names, origin="--profile")
     except ConfigError as exc:
         Diagnostics().failure(exc)
         raise SystemExit(exc.exit_code) from None
-    scope = root_pick(names)
-    scope.__enter__()
-    return scope
-
-
-def _reset_profile(scope: AbstractContextManager[None]) -> None:
-    scope.__exit__(None, None, None)
+    run.set_profiles(names)
 
 
 def _quiet(run: Run, _value: str) -> None:
@@ -134,7 +119,6 @@ def _root_options() -> dict[str, _RootOption]:
             name="--profile",
             help=_PROFILE_HELP,
             handler=_apply_profile,
-            resetter=_reset_profile,
             takes_value=True,
         ),
         "--verbose": _RootOption(
@@ -186,8 +170,8 @@ class RootLine:
     #: through the 11.x seam, or until dispatch reads a line the pass had no
     #: declaration for.
     placed: bool = False
-    #: Each root option applied, with what undoes it.
-    applied: list[tuple[_RootOption, object]] = field(default_factory=list, init=False)
+    #: Each root option applied, in line order.
+    applied: list[_RootOption] = field(default_factory=list, init=False)
     #: What a placed line selects, read by its declared shape: the command
     #: (``None`` for no command, or a group without one of its own), the
     #: ``--format`` given among its own options, and whether it asks for help.
@@ -250,41 +234,30 @@ class RootLine:
         """Apply root option ``spec`` with ``value``, written onto the line's run."""
         if spec.name in _CONFLICTING_OPTIONS and any(
             applied.name in _CONFLICTING_OPTIONS and applied.name != spec.name
-            for applied, _ in self.applied
+            for applied in self.applied
         ):
             raise_usage("--verbose and --quiet cannot be combined")
-        self.applied.append((spec, spec.handler(self.run, value)))
-
-    def _reset(self) -> None:
-        """Undo every root option applied that the run's end does not, the last applied first."""
-        for option, token in reversed(self.applied):
-            if option.resetter is not None:
-                option.resetter(token)
-        self.applied.clear()
+        spec.handler(self.run, value)
+        self.applied.append(spec)
 
 
-@contextmanager
 def applied_root_options(
     run: Run,
     tokens: Sequence[str],
     root_options: dict[str, _RootOption],
     declaration: Declaration | None = None,
-) -> Iterator[RootLine]:
+) -> RootLine:
     """Write the root options of ``tokens`` onto ``run``, the started one; the line they leave.
 
     The pass reads the line by ``declaration``'s token shapes, without
     importing a command (:func:`_read_line`). With no declaration to read it
     by, it takes the leading root options only, and dispatch reads the rest
     by the composition's own (:func:`dispatch_line`), onto the same run: only
-    when they apply differs, never what the tokens mean. The flags end with
-    the run; ``--profile`` is undone when the block ends (owed, 11f).
+    when they apply differs, never what the tokens mean. Each ends with the run.
     """
     line = RootLine(run=run, tokens=[])
-    try:
-        line.read(tokens, root_options, declaration)
-        yield line
-    finally:
-        line._reset()
+    line.read(tokens, root_options, declaration)
+    return line
 
 
 def _separator_index(tokens: Sequence[str], start: int = 0) -> int:

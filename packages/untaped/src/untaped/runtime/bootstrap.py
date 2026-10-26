@@ -29,7 +29,6 @@ from untaped.core.skills import PackagedSkill
 from untaped.runtime.declaration import Declaration
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
-from untaped.runtime.profile_resolver import set_profile_override
 from untaped.runtime.registry import (
     ApplicationSpec,
     CompositionResult,
@@ -240,11 +239,10 @@ def composition() -> CompositionResult:
 def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 
-    Clears the profile override, the settings caches, and the config
-    registry, then re-registers the just-composed shell and plugins. Exists
-    for test isolation; never called implicitly between user invocations.
+    Clears the settings caches and the config registry, then re-registers
+    the just-composed shell and plugins. Exists for test isolation; never
+    called implicitly between user invocations.
     """
-    set_profile_override(())
     _reregister()
 
 
@@ -538,13 +536,13 @@ def _started(
 
     with entered(start_run()) as run:
         note_requested_format(tokens)  # a bad root option reports in the format asked for
-        with applied_root_options(run, tokens, _root_options(), declaration) as line:
-            _fix_rendering(run, line)
-            marker = _STARTED.set((run, line))
-            try:
-                yield run, line
-            finally:
-                _STARTED.reset(marker)
+        line = applied_root_options(run, tokens, _root_options(), declaration)
+        _fix_rendering(run, line)
+        marker = _STARTED.set((run, line))
+        try:
+            yield run, line
+        finally:
+            _STARTED.reset(marker)
 
 
 def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:

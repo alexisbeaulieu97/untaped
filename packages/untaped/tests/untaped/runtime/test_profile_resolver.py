@@ -16,11 +16,10 @@ from untaped.runtime.profile_resolver import (
     current_pick,
     profile_entries,
     resolve_profiles,
-    root_pick,
     selected_profile,
     write_target,
 )
-from untaped.runtime.run import child_run
+from untaped.runtime.run import child_run, entered, start_run
 from untaped.sdk.errors import ConfigError, UsageError
 
 
@@ -168,11 +167,13 @@ def test_variable_default_adds_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
         assert current_pick() == (Picked("prod", "flag"),)
 
 
-def test_the_root_pick_takes_a_string_as_one_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_run_built_with_a_pick_takes_a_string_as_one_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    with root_pick("work"):
+    with entered(start_run(profiles="work")):
         assert current_pick() == (Picked("work", "flag"),)
-    with root_pick(("work", "lab")):
+    with entered(start_run(profiles=("work", "lab"))):
         assert selected_profile() == "work,lab"
     assert current_pick() == ()
 

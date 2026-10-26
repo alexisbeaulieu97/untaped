@@ -7,7 +7,7 @@ profile resolution.
 The file's own keys are :data:`FILE_KEYS` (``format_version`` and
 ``profiles``); every other top-level key is a section of the **base**, which
 every run reads. A run picks named profiles (``UNTAPED_PROFILE``'s comma
-list, then the root ``--profile`` option's), layered over the base in order.
+list, then the run's ``--profile`` pick), layered over the base in order.
 :func:`resolve_profiles` returns:
 
 - ``effective``: a deep-merged dict of values (a later pick beats an earlier
@@ -22,12 +22,10 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from untaped.sdk._run import NoRunError, current_run
+from untaped.sdk._run import run_or_none
 from untaped.sdk.errors import ConfigError, UsageError
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
@@ -51,8 +49,6 @@ class Picked:
 
 #: ``config.yml``'s own top-level keys (format 2); every other key is a base section.
 FILE_KEYS = frozenset({"format_version", "profiles"})
-
-_profile_override: ContextVar[tuple[str, ...]] = ContextVar("untaped_profile_override", default=())
 
 
 def parse_pick(text: str, *, origin: str) -> tuple[str, ...]:
@@ -86,43 +82,15 @@ def check_pick(names: Sequence[str], *, origin: str) -> None:
         )
 
 
-def set_profile_override(names: Sequence[str]) -> None:
-    """Set (or clear, with ``()``) the root ``--profile`` option's pick."""
-    _profile_override.set(tuple(names))
-
-
 def pick_names(profiles: str | Sequence[str]) -> tuple[str, ...]:
     """A pick's profile names, in order: a string is one profile, never its letters."""
     return (profiles,) if isinstance(profiles, str) else tuple(profiles)
 
 
-@contextmanager
-def root_pick(profiles: str | Sequence[str]) -> Iterator[None]:
-    """Make ``profiles`` the root ``--profile`` option's pick inside the block.
-
-    A string is one profile; ``()`` is no ``--profile``. The root option's
-    own state, read where no child run picks (:func:`flag_pick`); a nested
-    pick is a child run (:func:`untaped.runtime.run.child_run`).
-    """
-    token = _profile_override.set(pick_names(profiles))
-    try:
-        yield
-    finally:
-        _profile_override.reset(token)
-
-
-def profile_override() -> tuple[str, ...]:
-    """The root ``--profile`` option's names, in order (``()`` without the option)."""
-    return _profile_override.get()
-
-
 def flag_pick() -> tuple[str, ...]:
-    """The names ``--profile`` picks for the current run: a child run's own, else the root's."""
-    try:
-        profiles = current_run().profiles
-    except NoRunError:
-        profiles = None
-    return _profile_override.get() if profiles is None else profiles
+    """The names ``--profile`` picks for the current run, in order (no run: none)."""
+    run = run_or_none()
+    return () if run is None else run.profiles
 
 
 def current_pick() -> tuple[Picked, ...]:

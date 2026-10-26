@@ -16,7 +16,6 @@ from rich.cells import cell_len
 from core_test_support.commands.support import check, make_spec, root_group, write_config
 from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import report_check_rows
-from untaped.runtime.profile_resolver import root_pick
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk.fields import Output
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -91,8 +90,7 @@ def test_a_fix_shows_under_its_row_tagged_when_automatic() -> None:
 
 
 def test_a_fix_keeps_a_profile_the_flag_chose() -> None:
-    with root_pick(["default"]):
-        stdout = _doctor().stdout
+    stdout = _doctor("--profile", "default").stdout
     assert "→ untaped --profile default auth set beta\n" in stdout
 
 
