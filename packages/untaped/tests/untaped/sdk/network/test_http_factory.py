@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import httpx
+import pytest
 import respx
 from pydantic import BaseModel, Field
 
@@ -108,3 +109,30 @@ def test_a_client_class_s_test_takes_the_kit_s_factory(install: Installer) -> No
         client = run.http.client(DeskSettings(), base_url=_URL, bearer="tok")
         seen = client.get("/me").request.headers.get("authorization")
     assert (client.system, seen) == ("desk", "Bearer tok")
+
+
+def test_a_subclass_of_a_plugin_s_settings_is_no_plugin_s(install: Installer) -> None:
+    class Wider(LockedSettings):
+        """A model of its own, which merely extends locked's."""
+
+    from untaped.sdk._run import current_run
+
+    with install(Locked).running():
+        composition = current_run().composition
+        assert composition.owner_of_settings(LockedSettings) == "locked"
+        with pytest.raises(LookupError):
+            composition.owner_of_settings(Wider)
+
+
+def test_a_provider_and_the_run_build_the_same_plugin_s_clients(install: Installer) -> None:
+    from untaped.sdk._run import current_run, provider_context
+
+    settings = LockedSettings(url=_URL)
+    with install(Locked).running():
+        built = (
+            provider_context("locked").http.client(settings, base_url=_URL),
+            current_run().http.client(
+                settings, base_url=_URL
+            ),  # doctor reaches it outside a command
+        )
+    assert [client.system for client in built] == ["locked", "locked"]

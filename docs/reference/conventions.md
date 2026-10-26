@@ -72,7 +72,7 @@ lists the categories. A plugin's error classes declare them as class defaults
   and exits 4. An invalid input *file* the command reads, or a value the user
   gave that fails validation, is `invalid` (exit 1), not config.
 - HTTP errors take their category from the status and their `system` from
-  `connected_client(section=…)`. A mapper that turns them into plugin
+  the plugin whose settings built the client (`self.ctx.http.client(...)`). A mapper that turns them into plugin
   errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
   `auth` even when it becomes a `ConfigError` for its hint.
 - Put a follow-up command in `hint=` (``"run `untaped auth login awx`"``)

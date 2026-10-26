@@ -101,11 +101,12 @@ class Composition:
         """The plugin whose settings model ``model`` is; :class:`LookupError` when none is.
 
         ``model`` may be the class a run's settings are loaded as, which core
-        derives from the plugin's model to add the keys it injects.
+        derives from the plugin's model to add the keys it injects (and marks
+        with that model); a subclass of its own is no plugin's settings.
         """
-        for each in model.__mro__:
-            if (owner := self.owners.get(each)) is not None:
-                return owner
+        declared = model.__dict__.get("__untaped_section_of__", model)
+        if (owner := self.owners.get(declared)) is not None:
+            return owner
         raise LookupError(f"{model.__qualname__} is the settings model of no composed plugin")
 
     def owner_of_module(self, module: str) -> str:
@@ -255,6 +256,13 @@ class Run:
     def policy(self) -> OutputPolicy:
         """What the run asks of stderr, which the sink of its ``diag`` follows."""
         return self.policy_cell.policy
+
+    @property
+    def http(self) -> HttpFactory:
+        """HTTP clients for any composed plugin's services, outside a command too (doctor)."""
+        from untaped.sdk.network.http import HttpFactory  # noqa: PLC0415 - httpx's cost
+
+        return HttpFactory(self.composition.owner_of_settings)
 
     @property
     def attached(self) -> bool:
@@ -485,9 +493,7 @@ class ProviderContext:
     @property
     def http(self) -> HttpFactory:
         """HTTP clients for this plugin's services: ``self.ctx.http.client(self.settings, ...)``."""
-        from untaped.sdk.network.http import HttpFactory  # noqa: PLC0415 - httpx's cost
-
-        return HttpFactory(self._run.composition.owner_of_settings)
+        return self._run.http
 
     @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:

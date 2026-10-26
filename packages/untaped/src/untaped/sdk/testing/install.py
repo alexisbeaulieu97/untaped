@@ -85,9 +85,8 @@ class Running:
     def http(self) -> HttpFactory:
         """HTTP clients as a command's ``self.ctx.http`` builds them, for a client class's tests."""
         from untaped.sdk._run import current_run  # noqa: PLC0415
-        from untaped.sdk.network.http import HttpFactory  # noqa: PLC0415 - httpx's cost
 
-        return HttpFactory(current_run().composition.owner_of_settings)
+        return current_run().http
 
 
 #: Each knob of :meth:`Install.run` and the core field it fills.

@@ -296,6 +296,7 @@ def section_model(
     names the section's credentials, which ``UNTAPED_<SECTION>__<NAME>`` overrides.
     """
     caches = timed_caches(caches)
+    declared = model
     renamed = _cache_renames(model, caches)
     if renamed:
         model = cast(
@@ -329,6 +330,7 @@ def section_model(
     )
     if credentials:
         _CREDENTIAL_NAMES[composed] = credentials
+    composed.__untaped_section_of__ = declared  # type: ignore[attr-defined]  # its owner's model
     return composed
 
 

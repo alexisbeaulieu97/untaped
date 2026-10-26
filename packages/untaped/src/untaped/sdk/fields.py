@@ -442,6 +442,7 @@ class Output[R: BaseModel](FieldBlock):
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            _as_row,
             _model_fields,
             _print_available_columns,
             count_failed_actions,
@@ -469,10 +470,12 @@ class Output[R: BaseModel](FieldBlock):
         if columns is None and self._declared and detail:
             columns = list(self.columns)  # a detail view would hide the empty ones
         following = following_fields(self._model) if self._model and self.format == "table" else {}
+        rows = [records] if isinstance(records, BaseModel) else records
         table_columns = list(self.columns) or None
-        if table_columns is None and following and self._model is not None:
+        if table_columns is None and following:
             # a field printed as its own table is not a column of the first
-            table_columns = [name for name in self._model.model_fields if name not in following]
+            shown = dict.fromkeys(name for row in rows for name in _as_row(row))
+            table_columns = [name for name in shown if name not in following]
         emit_with(
             records,
             ui=ui,
@@ -482,19 +485,28 @@ class Output[R: BaseModel](FieldBlock):
             kind=kind,
             table_columns=table_columns,
         )
-        rows = [records] if isinstance(records, BaseModel) else records
         for name, item in following.items():
-            held = [value for row in rows if (value := getattr(row, name, None)) is not None]
-            if not held:
-                continue  # no row carries it this run (``issues get`` without ``--comments``)
-            print(f"\n{name.replace('_', ' ')}")  # one heading: two bare tables read as one
-            emit_with(
-                [each for value in held for each in value],
-                ui=ui,
-                fmt="table",
-                empty=f"No {name.replace('_', ' ')}.",
-                table_columns=default_columns(item) or None,
-            )
+            words = name.replace("_", " ")
+            for number, row in enumerate(rows, 1):
+                value = getattr(row, name, None)
+                if value is None:
+                    continue  # not carried this run (``issues get`` without ``--comments``)
+                # one heading per table, naming its row among several: two bare tables read as one
+                of = f" of {_named(row, number)}" if len(rows) > 1 else ""
+                print(f"\n{words}{of}")
+                emit_with(
+                    list(value),
+                    ui=ui,
+                    fmt="table",
+                    empty=f"No {words}.",
+                    table_columns=default_columns(item) or None,
+                )
+
+
+def _named(row: BaseModel, number: int) -> str:
+    """The row a following table belongs to: its ``Key`` value, else its place."""
+    field = key_field(type(row))
+    return str(getattr(row, field)) if field is not None else f"row {number}"
 
 
 class Columns(list[str]):

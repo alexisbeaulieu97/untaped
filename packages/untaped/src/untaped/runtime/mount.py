@@ -543,7 +543,7 @@ def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
     return Annotated[value | None, Parameter(**settings), *metadata], None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)  # hashable whatever the default holds
 class DeclaredDefault:
     """An option's declared default, as help shows it; the parser's default stays ``None``.
 
