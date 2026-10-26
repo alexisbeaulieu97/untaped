@@ -84,6 +84,10 @@ def _unspelled(spelled: SpelledCommand) -> str:
     return " ".join([spelled.command.__name__, *map(str, spelled.args)])
 
 
+#: The attribute core's section class of a plugin's settings model holds that model under.
+SECTION_OF = "__untaped_section_of__"
+
+
 @dataclass(frozen=True)
 class Composition:
     """Which plugin owns what, and the plugins this install has."""
@@ -104,7 +108,7 @@ class Composition:
         derives from the plugin's model to add the keys it injects (and marks
         with that model); a subclass of its own is no plugin's settings.
         """
-        declared = model.__dict__.get("__untaped_section_of__", model)
+        declared = model.__dict__.get(SECTION_OF, model)
         if (owner := self.owners.get(declared)) is not None:
             return owner
         raise LookupError(f"{model.__qualname__} is the settings model of no composed plugin")

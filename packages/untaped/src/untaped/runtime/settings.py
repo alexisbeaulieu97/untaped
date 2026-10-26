@@ -45,7 +45,7 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
-from untaped.sdk._run import current_overlay
+from untaped.sdk._run import SECTION_OF, current_overlay
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
@@ -330,7 +330,7 @@ def section_model(
     )
     if credentials:
         _CREDENTIAL_NAMES[composed] = credentials
-    composed.__untaped_section_of__ = declared  # type: ignore[attr-defined]  # its owner's model
+    setattr(composed, SECTION_OF, declared)  # its owner's model, which owner_of_settings reads
     return composed
 
 
