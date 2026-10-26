@@ -78,7 +78,7 @@ def _write_config(path: Path, text: str) -> None:
 
 def test_zero_plugin_root_lists_no_plugins() -> None:
     composition = bootstrap.compose_root(candidates=())
-    assert composition.plugins == ()
+    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped"]
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(candidates=())
@@ -473,7 +473,7 @@ def test_quarantined_providers_warn_and_the_root_boots(
     candidates = [good, *rivals, raising]
 
     composition = bootstrap.compose_root(candidates=candidates)
-    assert [cap.spec.name for cap in composition.plugins] == ["good"]
+    assert [cap.spec.name for cap in composition.plugins] == ["untaped", "good"]
     assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
         ("awx", "untaped", "malformed-entry-point"),
         ("rival", "acme-dist", "duplicate-name"),
@@ -894,7 +894,7 @@ def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
 
     root = bootstrap.build_root_app(candidates=[plugin_candidate(PluginSpec(name="bare"))])
 
-    assert [plugin.spec.name for plugin in bootstrap.composition().plugins] == ["bare"]
+    assert [plugin.spec.name for plugin in bootstrap.composition().plugins] == ["untaped", "bare"]
     assert "bare" not in root
     assert "bare" not in _CONFIG_REGISTRY.profile_sections
     assert "bare" not in _CONFIG_REGISTRY.state_sections

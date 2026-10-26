@@ -127,6 +127,7 @@ def build_map(root: App, result: CompositionResult) -> Map:
             extends=tuple(sorted({owner for owner, _, _ in fills.get(plugin.spec.name, ())})),
         )
         for plugin in sorted(result.plugins, key=lambda each: each.spec.name)
+        if not plugin.root  # the root's commands are the map's own
     )
     return Map(answerer(), shared(root), core, plugins)
 
@@ -154,7 +155,7 @@ def shared(root: App) -> Shared:
 
 def core_commands(root: App, result: CompositionResult) -> Iterator[tuple[str, App]]:
     """The root's own commands, in mount order; plugins are never resolved here."""
-    plugins = {plugin.spec.name for plugin in result.plugins}
+    plugins = {plugin.spec.name for plugin in result.plugins if not plugin.root}
     for name in root:
         if name.startswith("-") or name in plugins:
             continue
@@ -219,8 +220,9 @@ def _contracts(result: CompositionResult) -> tuple[dict[str, tuple[ExtensionPoin
 
 
 def build_plugin_page(root: App, result: CompositionResult, name: str) -> PluginPage:
-    """``untaped agents PLUGIN``, or core's own page for ``untaped``."""
-    if name == CORE:
+    """``untaped agents PLUGIN``, or core's own page for ``untaped``: the root's commands."""
+    plugin = _plugin(result, name)
+    if plugin.root:
         commands = [
             line
             for command, sub in core_commands(root, result)
@@ -228,16 +230,15 @@ def build_plugin_page(root: App, result: CompositionResult, name: str) -> Plugin
         ]
         return PluginPage(
             answerer=answerer(),
-            name=CORE,
+            name=name,
             summary=first_line(root.help),
             mark=None,
             commands=tuple(commands),
             points=(),
             extends=(),
-            settings_prefix=CORE,
-            settings=_settings(result, None),
+            settings_prefix=name,
+            settings=_settings(result, plugin),
         )
-    plugin = _plugin(result, name)
     points, fills = _contracts(result)
     app = None if plugin.spec.app_factory is None else _plugin_app(root, name)
     shadowing = top_names(app)
@@ -337,24 +338,18 @@ def _mark(stability: Stability | None) -> Mark:
 # --- settings ------------------------------------------------------------------
 
 
-def _settings(result: CompositionResult, plugin: RegisteredPlugin | None) -> tuple[Setting, ...]:
-    """The plugin's settings (core's, for ``None``), keys relative to their section."""
+def _settings(result: CompositionResult, plugin: RegisteredPlugin) -> tuple[Setting, ...]:
+    """The plugin's settings, keys relative to their section."""
     # The config reference's reader of the same sections; imported only for a plugin page.
     from untaped.core.surface._settings import sections, setting_leaves  # noqa: PLC0415
 
-    if plugin is None:
-        wanted = [
-            section for section in sections(result, extensions=False) if section.prefix == CORE
-        ]
-        strip = f"{CORE}."
-    else:
-        wanted = [
-            section
-            for section in sections(result, extensions=False, root=False)
-            if section.prefix == plugin.spec.name
-        ]
-        strip = f"{plugin.spec.name}."
-    inherited = None if plugin is None else plugin.spec.stability
+    wanted = [
+        section
+        for section in sections(result, extensions=False, root=plugin.root)
+        if section.prefix == plugin.spec.name
+    ]
+    strip = f"{plugin.spec.name}."
+    inherited = plugin.spec.stability
     rows: list[Setting] = []
     for section in wanted:
         if section.is_state:
@@ -427,14 +422,15 @@ def build_command_page(
     root: App, result: CompositionResult, name: str, path: Sequence[str]
 ) -> CommandPage:
     """``untaped agents PLUGIN COMMAND...``; ``KeyError`` when the path names no command."""
+    named = _plugin(result, name)
     plugin: RegisteredPlugin | None = None
     invocation: tuple[str, ...] = (CORE,)
-    if name == CORE:
+    if named.root:
         app = root
-        if path[0] in {each.spec.name for each in result.plugins}:
+        if path[0] in {each.spec.name for each in result.plugins if not each.root}:
             raise KeyError(path[0])
     else:
-        plugin = _plugin(result, name)
+        plugin = named
         if plugin.spec.app_factory is None:
             raise KeyError(path[0])
         app, invocation = _plugin_app(root, name), (CORE, name)

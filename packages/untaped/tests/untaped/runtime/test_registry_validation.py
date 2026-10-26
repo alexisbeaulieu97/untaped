@@ -179,7 +179,7 @@ def test_invalid_spec_is_quarantined(
 ) -> None:
     spec = make()
     result = compose([make_candidate(spec, "ext-dist")])
-    assert result.plugins == ()
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("ext-dist", reason)
     assert named in record.detail
@@ -220,7 +220,7 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
 ) -> None:
     first, second = make()
     result = compose([make_candidate(second, "b-dist"), make_candidate(first, "a-dist")])
-    assert [c.spec.name for c in result.plugins] == [first.name]
+    assert [c.spec.name for c in result.plugins] == ["untaped", first.name]
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("b-dist", reason)
     assert named in record.detail
@@ -249,7 +249,7 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
 )
 def test_collision_with_core_quarantines(spec: PluginSpec, reason: str, detail: str) -> None:
     result = compose([make_candidate(spec)])
-    assert result.plugins == ()
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (reason, detail)
 
@@ -258,14 +258,14 @@ def test_collision_with_core_quarantines(spec: PluginSpec, reason: str, detail: 
 def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
     result = compose([make_candidate(make_spec(name=name))])
     assert result.quarantine == ()
-    assert [plugin.spec.name for plugin in result.plugins] == [name]
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", name]
 
 
 def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
     first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
     second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
     result = compose([first, second])
-    assert [c.spec.name for c in result.plugins] == ["a"]
+    assert [c.spec.name for c in result.plugins] == ["untaped", "a"]
     (record,) = result.quarantine
     assert record.reason == "duplicate-skill"
 
@@ -276,7 +276,7 @@ def test_a_spec_target_composes() -> None:
     candidate = PluginCandidate(distribution="plain-dist", name="plain", target=spec)
     result = compose([candidate])
     assert result.quarantine == ()
-    assert [registered.spec for registered in result.plugins] == [spec]
+    assert [registered.spec for registered in result.plugins if not registered.root] == [spec]
 
 
 # ---- entry-point targets ------------------------------------------------------
@@ -374,7 +374,7 @@ def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
 
     result = compose([make_candidate(bad), make_candidate(good)])
 
-    assert [c.spec.name for c in result.plugins] == ["good"]
+    assert [c.spec.name for c in result.plugins] == ["untaped", "good"]
     (record,) = result.quarantine
     assert (record.reason, record.detail) == (
         "bad-settings-keys",
@@ -397,4 +397,7 @@ def test_a_raising_default_factory_is_not_called_while_composing() -> None:
 
     result = compose([make_candidate(lazy), make_candidate(good)])
 
-    assert ([c.spec.name for c in result.plugins], result.quarantine) == (["good", "lazy"], ())
+    assert ([c.spec.name for c in result.plugins], result.quarantine) == (
+        ["untaped", "good", "lazy"],
+        (),
+    )

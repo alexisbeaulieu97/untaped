@@ -101,7 +101,7 @@ def _quoted(
     quoted = [*((line, False) for line in console_lines(body)), *commands(body)]
     from untaped.core.agents import page  # noqa: PLC0415
 
-    composed = {"untaped", *(each.spec.name for each in result.plugins)}
+    composed = {each.spec.name for each in result.plugins}
     for command, inline in quoted:
         argv, _ = argv_of(command)
         if argv[:1] != ["agents"]:

@@ -154,7 +154,7 @@ def _split_first(key: str) -> tuple[str, str | None]:
 
 
 def section_scopes(result: CompositionResult) -> dict[str, RootSectionScope]:
-    """Build the root resolution scopes for core and composed plugins."""
+    """Build the root resolution scopes of every composed plugin, core's included."""
     return {
         spec.name: RootSectionScope(
             plugin=spec.name,
@@ -162,7 +162,7 @@ def section_scopes(result: CompositionResult) -> dict[str, RootSectionScope]:
             mappings=key_mappings(settings_model(spec)),
             model=settings_model(spec),
         )
-        for spec in (result.core, *(registered.spec for registered in result.plugins))
+        for spec in (registered.spec for registered in result.plugins)
     }
 
 

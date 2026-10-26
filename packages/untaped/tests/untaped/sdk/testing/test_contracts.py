@@ -52,7 +52,7 @@ def test_compose_with_offers_a_fake_to_the_owner_and_restores_the_composition() 
     before = compose(shelf_spec())
     Kiosk.rows = [Book(title="Dune")]
     with compose_with(shelf_spec(), provides={"fake": [Kiosk()]}) as result:
-        assert [plugin.spec.name for plugin in result.plugins] == ["fake", "shelf"]
+        assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "fake", "shelf"]
         [answer] = gather(BookSource.books, refresh=True)()
         assert isinstance(answer, Ok)
         assert answer.plugin == "fake"

@@ -81,7 +81,7 @@ def check_quarantine(result: CompositionResult) -> None:
 
 
 def sections(result: CompositionResult, *, extensions: bool, root: bool = True) -> list[Section]:
-    """Core's sections (unless ``root=False``), then each plugin's, in name order.
+    """The root plugin's (core's) sections unless ``root=False``, then each other's, by name.
 
     ``extensions=False`` leaves the injected ``extensions`` key out of an
     owner's section (the config reference documents it elsewhere).
@@ -94,8 +94,8 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
     from untaped.sdk.storage.state import ProjectStateRows, StateRows  # noqa: PLC0415
 
     found: list[Section] = []
-    plugins = sorted((registered.spec for registered in result.plugins), key=lambda s: s.name)
-    for spec in [result.core, *plugins] if root else plugins:
+    ordered = sorted(result.plugins, key=lambda each: (not each.root, each.spec.name))
+    for spec in (each.spec for each in ordered if root or not each.root):
         settings = section_settings(spec, extensions=extensions)
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))

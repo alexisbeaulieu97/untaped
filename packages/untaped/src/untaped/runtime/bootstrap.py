@@ -94,18 +94,25 @@ _STARTED: ContextVar[tuple[Run, RootLine] | None] = ContextVar("untaped_started_
 
 
 def _register_sections(result: CompositionResult) -> None:
-    """Register core's and every composed plugin's settings sections.
+    """Register every composed plugin's settings sections, core's included.
 
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
     remembered composition (:func:`_reregister`). Each plugin's distribution
-    is bound as the owner its deprecations name, and its listed behaviours
-    as its own (read only when one of them first warns).
+    is bound as the owner its deprecations name (the root's none: its
+    removals name untaped's own major), and its listed behaviours as its own
+    (read only when one of them first warns).
     """
-    bind_owners({plugin.spec.name: plugin.plugin_ref.distribution for plugin in result.plugins})
+    bind_owners(
+        {
+            plugin.spec.name: plugin.plugin_ref.distribution
+            for plugin in result.plugins
+            if not plugin.root
+        }
+    )
     bind_behaviours({plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins})
     bind_credentials({plugin.spec.name: plugin.spec.credentials for plugin in result.plugins})
-    for spec in (result.core, *(plugin.spec for plugin in result.plugins)):
+    for spec in (plugin.spec for plugin in result.plugins):
         section = section_settings(spec)
         if section is not None:
             register_profile_settings(spec.name, section, spec.stability)
@@ -255,11 +262,13 @@ def build_root_app(
     result = compose_root(candidates=candidates)
     root = _shell_app()
     root.meta.group_parameters = GLOBAL_OPTIONS_GROUP
-    if not result.plugins and not result.quarantine:
+    if all(plugin.root for plugin in result.plugins) and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    _mount_core(root, result.mount)
     for plugin in result.plugins:
-        _mount_plugin(root, plugin)
+        if plugin.root:
+            _mount_root(root, result.mount, plugin.spec.name)
+        else:
+            _mount_plugin(root, plugin)
     root.version = _resolve_version
     root.config = (apply_default_format,)
     skills = composed_skills(result)
@@ -307,11 +316,11 @@ def _mount(app: App, sub: App, *, name: str) -> None:
     apply_marks(sub, path=(name,))
 
 
-def _mount_core(root: App, mount: Mount) -> None:
-    """Mount the commands on ``Core``'s class at the root, from the declaration."""
-    core = mount.declaration.plugin(NAME)
-    add_commands(root, mount, NAME)
-    for node in core.commands:
+def _mount_root(root: App, mount: Mount, name: str) -> None:
+    """Mount the root plugin ``name``'s commands (core's) at the root, from the declaration."""
+    plugin = mount.declaration.plugin(name)
+    add_commands(root, mount, name)
+    for node in plugin.commands:
         apply_marks(root[node.name], path=(node.name,))
 
 

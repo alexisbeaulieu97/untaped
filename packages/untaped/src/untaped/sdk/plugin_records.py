@@ -64,7 +64,11 @@ class InstalledPlugin(Record, kind="untaped.installed_plugin"):
 def plugin_records(
     result: CompositionResult, candidates: Sequence[PluginCandidate]
 ) -> list[InstalledPlugin]:
-    """Every plugin of ``result``, ready or quarantined, by name then distribution."""
+    """Every plugin of ``result``, ready or quarantined, by name then distribution.
+
+    The root plugin (core) is untaped itself, not a plugin installed into it,
+    so it has no row.
+    """
     # A distribution declares each entry-point name once, and a plugin whose
     # spec name differs from it is quarantined, so the reported (distribution,
     # name) finds the candidate of every row, an entry point that never resolved
@@ -72,6 +76,8 @@ def plugin_records(
     by_key = {(candidate_distribution(item), item.name): item for item in candidates}
     rows: list[InstalledPlugin] = []
     for registered in result.plugins:
+        if registered.root:
+            continue
         distribution = registered.plugin_ref.distribution
         candidate = by_key.get((distribution, registered.spec.name))
         rows.append(_ready(registered, candidate))

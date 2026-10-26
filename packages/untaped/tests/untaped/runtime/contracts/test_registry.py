@@ -80,7 +80,13 @@ def test_a_broken_provides_function_quarantines_that_offer_only() -> None:
     )
     dup = PluginSpec(name="dup", provides={"shelf": duplicate})
     composed = compose(shelf_spec(), library, dup, shop_spec())
-    assert {plugin.spec.name for plugin in composed.plugins} == {"shelf", "library", "dup", "shop"}
+    assert {plugin.spec.name for plugin in composed.plugins} == {
+        "untaped",
+        "shelf",
+        "library",
+        "dup",
+        "shop",
+    }
     assert composed.quarantine == ()
     answers = gather(BookSource.books)()
     assert [(a.plugin, type(a).__name__) for a in answers] == [

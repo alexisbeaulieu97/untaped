@@ -164,7 +164,7 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
 ) -> None:
     monkeypatch.setattr("untaped.runtime.registry.discover_candidates", lambda: candidates())
     with compose_with() as result:
-        assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack"]
+        assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack", "untaped"]
     box = importlib.import_module("untaped_bin.providers.rack").Box
     assert_fills(_bin(), samples=[box(id=3, label="pens")])
     recorded = json.loads((contract_plugins_site / "untaped_bin" / "fills.json").read_text("utf-8"))

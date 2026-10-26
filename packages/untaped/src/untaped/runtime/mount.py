@@ -259,7 +259,8 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     (:class:`~untaped.runtime.registry.DeclaredBlocks`).
     """
     plugin = mount.declaration.plugin(name)
-    has_commands = bool(plugin.commands) or plugin.runs is not None
+    # a root plugin's commands mount at the root from the declaration, no app built for them
+    has_commands = not plugin.root and (bool(plugin.commands) or plugin.runs is not None)
     # core's stub skill is named after it, a plugin's after the plugin under core's name
     skill_name = name if plugin.root else f"untaped-{name}"
     skills = (SkillAsset(name=skill_name, description=plugin.skill),) if plugin.skill else ()

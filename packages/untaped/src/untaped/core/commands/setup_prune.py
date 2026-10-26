@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.core.commands.records import PruneOutcome
-from untaped.core.settings import NAME, CoreSettings
+from untaped.core.settings import CoreSettings
 from untaped.runtime.settings import PLUGIN_NAME_PATTERN, plugins_root
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.fields import Confirm, Output
@@ -52,11 +52,10 @@ class Leftover:
 def leftover_folders(result: CompositionResult, references: Sequence[Reference]) -> list[Leftover]:
     """Each ``plugins/<name>/`` folder whose plugin is not installed here, by name.
 
-    Installed is core and every plugin composed or quarantined (its data is
-    still its own). A name no plugin could have is never listed.
+    Installed is every plugin composed, core included, or quarantined (its
+    data is still its own). A name no plugin could have is never listed.
     """
     installed = {
-        NAME,
         *(registered.spec.name for registered in result.plugins),
         *(record.name for record in result.quarantine),
     }

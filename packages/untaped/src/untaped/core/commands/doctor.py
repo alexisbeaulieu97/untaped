@@ -315,15 +315,13 @@ def is_automatic(covered: list[dict[str, object]]) -> bool:
     return all(row.get("automatic") for row in covered)
 
 
-def _scopes(result: CompositionResult, plugins: frozenset[str] | None) -> list[_SectionScope]:
-    core = result.core
-    scopes = [
-        # Core's parts get a row each (_core_row), so its checks get no settings: one
-        # reads its part with load_core_part. setup checks only what it configured.
-        _plugin_scope(core, settings=False, checks=plugins is None or core.name in plugins)
+def _scopes(result: CompositionResult) -> list[_SectionScope]:
+    # The root's parts get a row each (_core_row), so its checks get no settings: one
+    # reads its part with load_core_part.
+    return [
+        _plugin_scope(registered.spec, settings=not registered.root)
+        for registered in result.plugins
     ]
-    scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
-    return scopes
 
 
 def _plugin_scope(spec: PluginSpec, *, settings: bool = True, checks: bool = True) -> _SectionScope:
@@ -373,7 +371,7 @@ def collect_doctor_rows(
     for part in CoreSettings.model_fields:
         rows.append(_core_row(part, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
-    scopes = _scopes(result, plugins)
+    scopes = _scopes(result)
     profile = fix_target()
     for scope in scopes:
         settings = _settings_row(scope, effective, settings_error, rows)
@@ -601,7 +599,7 @@ def _caches_row(result: CompositionResult) -> dict[str, object]:
 
     title = "no caches of another version"
     parts: list[str] = []
-    for spec in (result.core, *(registered.spec for registered in result.plugins)):
+    for spec in (registered.spec for registered in result.plugins):
         for cache in spec.caches:
             try:
                 outdated = outdated_keys(cache)

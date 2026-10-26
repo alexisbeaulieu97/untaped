@@ -44,7 +44,7 @@ def test_bad_candidate_metadata_quarantines(
 ) -> None:
     candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
     result = compose([candidate])
-    assert result.plugins == ()
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
     assert record.distribution == (distribution.strip() or "unknown")
@@ -121,7 +121,7 @@ def test_requires_dist_follows_pep_440_and_508(
 ) -> None:
     result = _compose_with_sdk_version(monkeypatch, sdk_version, requirement)
     names = [cap.spec.name for cap in result.plugins]  # type: ignore[attr-defined]
-    assert names == (["pep440"] if admitted else [])
+    assert names == (["untaped", "pep440"] if admitted else ["untaped"])
 
 
 @pytest.mark.parametrize(
@@ -138,7 +138,7 @@ def test_multi_entry_point_distribution_passes() -> None:
     first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
     second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
     result = compose([second, first])
-    assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
+    assert [cap.spec.name for cap in result.plugins] == ["untaped", "alpha", "beta"]
     assert result.quarantine == ()
 
 
@@ -174,7 +174,7 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
     assert candidate.distribution == "live-dist"
     assert candidate.name == "live-cap"
     result = compose(list(providers))
-    assert [cap.spec.name for cap in result.plugins] == ["live-cap"]
+    assert [cap.spec.name for cap in result.plugins] == ["untaped", "live-cap"]
     assert result.quarantine == ()
 
 
@@ -231,7 +231,7 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
         for name in ("alpha", "beta")
     ]
     result = compose(candidates)
-    assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
+    assert [cap.spec.name for cap in result.plugins] == ["untaped", "alpha", "beta"]
     assert looked_up == ["untaped"]
 
 

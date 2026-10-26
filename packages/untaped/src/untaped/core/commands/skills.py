@@ -19,7 +19,6 @@ from pathlib import Path
 
 from pydantic import Field
 
-from untaped.core import skill_stubs
 from untaped.core.commands import records
 from untaped.core.commands.records import SkillOutcome
 from untaped.core.settings import CoreSettings
@@ -37,7 +36,7 @@ from untaped.core.skills import (
     skill_rows,
     update_installed_skill,
 )
-from untaped.runtime.registry import CompositionResult, SkillAsset
+from untaped.runtime.registry import CompositionResult
 from untaped.runtime.settings import SkillsSettings, load_core_part
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_identifiers
@@ -51,18 +50,12 @@ _diag = Diagnostics()
 
 
 def composed_skills(result: CompositionResult) -> dict[str, PackagedSkill]:
-    """Return core's skill plus every composed plugin's, keyed by name.
+    """Return every composed plugin's skill, core's included, keyed by name.
 
     Core's stub is named ``untaped``, after core itself; a plugin's is
     ``untaped-<plugin>``.
     """
     skills_map: dict[str, PackagedSkill] = {}
-    core = result.mount.declaration.plugin(skill_stubs.CORE)
-    if core.skill:
-        asset = SkillAsset(name=skill_stubs.CORE, description=core.skill)
-        skills_map[asset.name] = PackagedSkill(
-            asset, plugin=skill_stubs.CORE, distribution=skill_stubs.CORE
-        )
     for registered in result.plugins:
         ref = registered.plugin_ref
         for asset in registered.skills:
