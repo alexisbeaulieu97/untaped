@@ -184,7 +184,7 @@ class Fix(Command[CoreSettings]):
 
 
 class Doctor(Group):
-    """Check the health of the shell and every composed plugin."""
+    """Check the health of untaped and every composed plugin."""
 
     runs = Check
     commands = (Fix,)
@@ -318,28 +318,22 @@ def is_automatic(covered: list[dict[str, object]]) -> bool:
 def _scopes(result: CompositionResult, plugins: frozenset[str] | None) -> list[_SectionScope]:
     core = result.core
     scopes = [
-        _SectionScope(
-            plugin=core.name,
-            section=core.name,
-            # Core's parts get a row each (_core_row), so its checks get no
-            # settings: one reads its part with load_core_part.
-            settings_model=None,
-            state_model=core.state,
-            # setup checks only what it configured: then Core's class stays unloaded
-            checks=tuple(core.doctor_checks) if plugins is None or core.name in plugins else (),
-        )
+        # Core's parts get a row each (_core_row), so its checks get no settings: one
+        # reads its part with load_core_part. setup checks only what it configured.
+        _plugin_scope(core, settings=False, checks=plugins is None or core.name in plugins)
     ]
     scopes.extend(_plugin_scope(registered.spec) for registered in result.plugins)
     return scopes
 
 
-def _plugin_scope(spec: PluginSpec) -> _SectionScope:
+def _plugin_scope(spec: PluginSpec, *, settings: bool = True, checks: bool = True) -> _SectionScope:
+    """``spec``'s scope; without ``settings`` no section row, without ``checks`` no checks."""
     return _SectionScope(
         plugin=spec.name,
         section=spec.name,
-        settings_model=section_settings(spec),
+        settings_model=section_settings(spec) if settings else None,
         state_model=state_model(spec),
-        checks=tuple(spec.doctor_checks),
+        checks=tuple(spec.doctor_checks) if checks else (),
         rows=tuple(
             each
             for each in state_declarations(spec)

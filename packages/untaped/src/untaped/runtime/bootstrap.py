@@ -213,7 +213,7 @@ def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 
     Clears the settings caches and the config registry, then re-registers
-    the just-composed shell and plugins. Exists for test isolation; never
+    the just-composed core and plugins. Exists for test isolation; never
     called implicitly between user invocations.
     """
     _reregister()

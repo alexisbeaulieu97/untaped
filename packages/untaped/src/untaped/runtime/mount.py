@@ -260,7 +260,9 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     """
     plugin = mount.declaration.plugin(name)
     has_commands = bool(plugin.commands) or plugin.runs is not None
-    skills = (SkillAsset(name=f"untaped-{name}", description=plugin.skill),) if plugin.skill else ()
+    # core's stub skill is named after it, a plugin's after the plugin under core's name
+    skill_name = name if plugin.root else f"untaped-{name}"
+    skills = (SkillAsset(name=skill_name, description=plugin.skill),) if plugin.skill else ()
     loaded = functools.cache(partial(_spelled_blocks, mount, name))
     factory = partial(build_app, mount, name)
     # the factory builds the plugin's app, so it stands for the plugin's module

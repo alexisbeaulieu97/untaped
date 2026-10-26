@@ -1,6 +1,6 @@
 """Root ``untaped skills …`` command group and the per-run skills check.
 
-The root exposes commands over the union of the shell plus every composed plugin's
+The root exposes commands over the union of core's plus every composed plugin's
 skills. Selection, planning, and install machinery are imported from
 :mod:`untaped.core.skills`; only the short-selector rule is new: a selector
 naming no skill exactly retries with the ``untaped-`` prefix, while the

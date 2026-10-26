@@ -1324,7 +1324,8 @@ def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
     """Core's own deprecated behaviours, the SDK's: each goes in the 12.0 removal sweep.
 
     Never ``Core`` attributes (core move ruling 3): they are listed here,
-    beside the mechanic that reads them, until the sweep removes them.
+    beside the mechanic that reads them, until the sweep removes them, and
+    this listing leaves with them in that sweep.
     """
     from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415 - off the CLI path
     from untaped.sdk.network.auth import PLAINTEXT_TOKEN  # noqa: PLC0415

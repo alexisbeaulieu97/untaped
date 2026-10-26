@@ -122,7 +122,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
 
 
 def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
-    """The surface of one plugin (an 11.x spec, or any candidate), composed alone with the shell.
+    """The surface of one plugin (an 11.x spec, or any candidate), composed alone with core.
 
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
     their payload models, its record kinds once it is a 12.0 plugin class, and

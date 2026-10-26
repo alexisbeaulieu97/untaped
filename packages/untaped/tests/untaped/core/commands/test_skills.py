@@ -1,6 +1,6 @@
 """Tests for the root ``untaped skills …`` command group.
 
-The root group lists the union of the shell plus every composed
+The root group lists the union of core's plus every composed
 plugin's skills. ``install`` accepts short selectors (``demo`` for an
 installed ID of ``untaped-demo``) while installed directories and markers
 keep the full ``untaped-*`` ID.
@@ -35,7 +35,7 @@ def test_list_unions_skills_across_plugins() -> None:
     app = _skills_app("untaped-two", "untaped-one")
     result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    # The shell's own skill is listed with the plugins'.
+    # Core's own skill is listed with the plugins'.
     assert result.output.splitlines() == ["untaped", "untaped-one", "untaped-two"]
 
 

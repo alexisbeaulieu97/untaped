@@ -1139,6 +1139,13 @@ def _check_composed_mappings(spec: PluginSpec) -> None:
 
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_free_name(spec.name, state)
+    _check_own_declaration(spec)
+    _check_skills(spec, state)
+    _check_doctor_checks(spec, state)
+
+
+def _check_own_declaration(spec: PluginSpec) -> None:
+    """The checks of ``spec``'s own declaration, no other plugin's needed: core's too."""
     _check_caches(spec)
     _check_credentials(spec)
     _check_stores(spec)
@@ -1147,8 +1154,6 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_key_mappings(spec)
     _check_composed_mappings(spec)
     _check_state_model(spec)
-    _check_skills(spec, state)
-    _check_doctor_checks(spec, state)
 
 
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
@@ -1494,13 +1499,23 @@ def _core(declared: Declaration | None) -> PluginDecl:
 
 @functools.cache
 def _core_alone() -> PluginDecl:
-    """Core's class composed on its own, once a process: it is the same at every composition."""
+    """Core's class composed on its own, once a process: it is the same at every composition.
+
+    Its own declaration gets the checks a plugin's gets (its settings' key
+    declarations among them); a failure is a core bug no install can work
+    around, so it raises instead of quarantining.
+    """
     from untaped.core.settings import NAME  # noqa: PLC0415 - core imports the runtime
     from untaped.runtime.composition import compose as compose_classes  # noqa: PLC0415
+    from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415
 
     composed = compose_classes([_core_entry()])
-    for refused in composed.quarantined:  # a core bug: no install can work around it
+    for refused in composed.quarantined:
         raise RuntimeError(f"core's own class does not compose: {refused.detail}")
+    try:
+        _check_own_declaration(plugin_spec(Mount.of(composed), NAME))
+    except _Quarantine as failed:
+        raise RuntimeError(f"core's own class does not compose: {failed.detail}") from None
     return composed.plugin(NAME)
 
 

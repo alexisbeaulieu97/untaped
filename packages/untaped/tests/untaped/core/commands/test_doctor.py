@@ -388,6 +388,17 @@ def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
     assert [row for row in rows if row["check"] == "quarantine"] == []
 
 
+def test_core_s_scope_is_read_as_a_plugin_s() -> None:
+    """Core's checks run like a plugin's, only when core is selected; its parts get the rows."""
+    result = bootstrap.compose_root(candidates=[])
+    core_rows = [row for row in collect_doctor_rows(result) if row["plugin"] == "untaped"]
+    checks = {row["check"] for row in core_rows if str(row["check"]).startswith("untaped.")}
+    assert "untaped.token-store" in checks
+    assert "validate settings" not in [row["title"] for row in core_rows]
+    picked = collect_doctor_rows(result, plugins=frozenset({"other"}))
+    assert not [row for row in picked if str(row["check"]).startswith("untaped.")]
+
+
 def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
     root = bootstrap.build_root_app(
         candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]

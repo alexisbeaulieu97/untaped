@@ -528,25 +528,25 @@ def _old_http_key() -> None:
     write_config(config_path(), "format_version: 2\nuntaped:\n  http:\n    timeout: 9\n")
 
 
-#: Puts each shell row that can name a fix into its fixable state, by check id.
-_SHELL_FIX_TRIGGERS: dict[str, Callable[[], None]] = {
+#: Puts each core row that can name a fix into its fixable state, by check id.
+_CORE_FIX_TRIGGERS: dict[str, Callable[[], None]] = {
     "skills": _stale_skill,
     "deprecated-keys": _old_http_key,
 }
 
 
 @pytest.mark.usefixtures("core_renamed_http_timeout")
-def test_every_shell_fix_row_has_a_check_id_of_its_own() -> None:
-    """``doctor fix`` re-checks a shell fix row by its check id, so no other shell row shares it."""
-    for trigger in _SHELL_FIX_TRIGGERS.values():
+def test_every_core_fix_row_has_a_check_id_of_its_own() -> None:
+    """``doctor fix`` re-checks a core fix row by its check id, so no other core row shares it."""
+    for trigger in _CORE_FIX_TRIGGERS.values():
         trigger()
     root = bootstrap.build_root_app()
     rows = json.loads(invoke_cli(root.meta, ["doctor", "--format", "json"]).stdout)
-    shell = [row for row in rows if row["plugin"] == NAME]
-    fixable = {row["check"] for row in shell if row["fix"]}
-    assert fixable == set(_SHELL_FIX_TRIGGERS)
+    core = [row for row in rows if row["plugin"] == NAME]
+    fixable = {row["check"] for row in core if row["fix"]}
+    assert fixable == set(_CORE_FIX_TRIGGERS)
     for check in fixable:
-        assert [row["check"] for row in shell].count(check) == 1, check
+        assert [row["check"] for row in core].count(check) == 1, check
 
 
 def test_no_automatic_fix_no_hint() -> None:

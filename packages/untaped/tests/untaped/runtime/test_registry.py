@@ -29,7 +29,9 @@ from untaped.runtime.registry import (
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
+    _core_alone,
     compose,
+    kept_declaration,
     plugin_dir,
     run_deferred_factory,
     settings_model,
@@ -139,6 +141,46 @@ def test_core_is_read_as_a_plugin_spec() -> None:
     core = compose().core
     assert (core.name, core.settings, core.state) == (NAME, CoreSettings, None)
     assert f"{NAME}.token-store" in [check.id for check in core.doctor_checks]
+    # core's stub skill is named after it, not ``untaped-untaped``
+    assert [skill.name for skill in core.skills] == [NAME]
+
+
+def _read(core: PluginSpec) -> tuple[object, ...]:
+    return (
+        core.name,
+        core.settings,
+        core.state,
+        tuple(check.id for check in core.doctor_checks),
+        core.skills,
+        tuple(cache.qualified for cache in core.caches),
+    )
+
+
+def test_core_reads_the_same_from_a_kept_declaration() -> None:
+    """A warm composition (the kept declaration, no class composed) gives the same core spec."""
+    cold = compose()
+    assert kept_declaration(()) is not None
+    warm = compose()
+    assert warm.mount.declaration == cold.mount.declaration
+    assert _read(warm.core) == _read(cold.core)
+
+
+def test_broken_key_declarations_in_core_s_settings_fail_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Core's settings get the key checks a plugin's get; a broken one is a core bug, raised."""
+    from untaped.core.settings import CoreSettings
+
+    monkeypatch.setattr(
+        CoreSettings, "renamed_keys", {"http.timeout_seconds": "nope.missing"}, raising=False
+    )
+    _core_alone.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="core's own class does not compose"):
+            compose()
+    finally:
+        monkeypatch.undo()
+        _core_alone.cache_clear()
 
 
 def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
