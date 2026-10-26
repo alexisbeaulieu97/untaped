@@ -1,12 +1,17 @@
 """How one invocation writes stderr: its output policy, and where the current one is.
 
-:class:`OutputPolicy` is decided in two phases, both through
+:class:`OutputPolicy`'s format and theme are the run's rendering
+(:class:`untaped.sdk.run.Rendering`): for a declared command, or a line
+naming none, the root fixes it once from the declaration, before anything is
+emitted (:func:`fix_rendering`), and nothing changes it after. For a command still
+mounted through the 11.x seam it is decided in two phases, both through
 :func:`note_format`: from argv before parsing (``note_requested_format``, so a
 parse error renders the way ``-f json`` asks), then from the command's own
-``--format`` once settings are loaded (``apply_default_format``);
+``--format`` once settings are loaded (``apply_default_format``).
 ``UNTAPED_DIAGNOSTICS`` overrides both. ``--quiet`` and ``--verbose`` are flags on it,
-set by their root-option handlers. It is internal: a plugin that could read
-the policy would branch on JSON around the sink.
+set by their root-option handlers. It is internal: the run decides how stderr
+renders and the sink follows it, so a plugin has no reason to branch on JSON
+around the sink (the run's choice stays readable as ``ctx.run.rendering``).
 
 The policy belongs to the invocation's scope (``untaped.runtime.sink``). The
 scope registers here: in a ``ContextVar``, and in one process-wide ordered set
@@ -25,10 +30,13 @@ import os
 import threading
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, cast
+
+from untaped.sdk.run import fixed_rendering
 
 if TYPE_CHECKING:
     from untaped.runtime.theme import ThemeSpec
+    from untaped.sdk.run import Rendering
 
 #: Environment variable choosing the stderr format: ``json`` or ``text``.
 DIAGNOSTICS_ENV = "UNTAPED_DIAGNOSTICS"
@@ -157,15 +165,29 @@ def current_policy() -> OutputPolicy:
     return _holder().policy
 
 
+def fix_rendering(rendering: Rendering) -> None:
+    """Put the run's fixed ``rendering`` on the scope's policy; a nested scope inherits it.
+
+    The root calls it once, as it fixes the run's rendering
+    (:meth:`untaped.sdk.run.Run.render_with`); :func:`note_format` and
+    :func:`note_theme` change neither after. Outside a scope nothing happens.
+    """
+    holder = context_holder()
+    if holder is not None:
+        theme = cast("ThemeSpec | None", rendering.theme)  # the runtime's theme model
+        holder.policy = replace(holder.policy, format=rendering.format, theme=theme)
+
+
 def note_format(fmt: str | None) -> None:
     """Record the ``--format`` the invocation chose on its scope's policy.
 
     Phase 1 records what argv asks for before parsing; phase 2 what the
     parsed command chose (:func:`with_format`). Outside a scope there is no
-    invocation to record it for, and nothing happens.
+    invocation to record it for, and under a run whose rendering is fixed
+    (:func:`fix_rendering`) there is nothing left to choose: nothing happens.
     """
     holder = context_holder()
-    if holder is not None:
+    if holder is not None and fixed_rendering() is None:
         holder.policy = with_format(holder.policy, fmt)
 
 
@@ -174,10 +196,11 @@ def note_theme(theme: ThemeSpec | None) -> None:
 
     Set once settings load (phase 2, beside :func:`note_format`; ``None``
     under JSON diagnostics, which render no theme); a nested scope inherits
-    it. Outside a scope nothing happens.
+    it. Outside a scope, or under a run whose rendering is fixed, nothing
+    happens.
     """
     holder = context_holder()
-    if holder is not None:
+    if holder is not None and fixed_rendering() is None:
         holder.policy = replace(holder.policy, theme=theme)
 
 
@@ -242,6 +265,7 @@ __all__ = [
     "OutputPolicy",
     "current_policy",
     "enable_quiet",
+    "fix_rendering",
     "is_quiet",
     "is_verbose",
     "note_format",

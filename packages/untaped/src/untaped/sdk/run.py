@@ -118,6 +118,25 @@ class RunNotes:
     preview: bool = False
 
 
+@dataclass(frozen=True)
+class Rendering:
+    """How the run renders stderr, fixed once before anything is emitted.
+
+    The run decides it from what the line names (``ctx.run.rendering``),
+    and the sink renders by it, so a plugin has no reason to read it:
+    branching on JSON around the sink would split what one line says.
+    ``format`` is the ``--format`` the user chose (``None``: the command's
+    own default), ``source`` where it came from (``--format``,
+    ``UNTAPED_FORMAT`` or ``untaped.ui.format``), ``theme`` the
+    ``untaped.ui.theme`` text messages render with (the runtime's theme
+    model; ``None``: the default theme, as under JSON diagnostics).
+    """
+
+    format: str | None = None
+    source: str | None = None
+    theme: BaseModel | None = None
+
+
 #: What a run reads before its composition is attached: no plugin owns anything.
 _UNCOMPOSED = Composition()
 
@@ -145,6 +164,10 @@ class Run:
     clock: Clock = field(default_factory=Clock)
     #: What blocks noted during ``run``, for core to read after it.
     notes: RunNotes = field(default_factory=RunNotes)
+    #: How stderr renders: fixed once by the runtime (:meth:`render_with`) for
+    #: a declared command or a line naming none; ``None`` until then, and for
+    #: an 11.x command, whose parse still decides it.
+    rendering: Rendering | None = None
 
     @property
     def home(self) -> Path:
@@ -156,6 +179,13 @@ class Run:
         if self.composition is not _UNCOMPOSED:
             raise RuntimeError("a run's composition is attached once")
         object.__setattr__(self, "composition", composition)  # frozen to every other writer
+        return self
+
+    def render_with(self, rendering: Rendering) -> Run:
+        """Fix how the run renders stderr, once, before anything is emitted; the run."""
+        if self.rendering is not None:
+            raise RuntimeError("a run's rendering is fixed once")
+        object.__setattr__(self, "rendering", rendering)  # frozen to every other writer
         return self
 
 
@@ -207,6 +237,12 @@ def note_preview() -> None:
     run = _RUN.get()
     if run is not None:
         run.notes.preview = True
+
+
+def fixed_rendering() -> Rendering | None:
+    """The current run's fixed rendering; ``None`` outside a run or before it is fixed."""
+    run = _RUN.get()
+    return None if run is None else run.rendering
 
 
 def current_run() -> Run:
