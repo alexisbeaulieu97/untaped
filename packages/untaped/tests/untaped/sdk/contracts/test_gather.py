@@ -30,7 +30,7 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run
-from untaped.runtime.sink import diagnostics_scope, exit_on_counted_failure, recording
+from untaped.runtime.sink import diagnostics_scope, exit_on_counted_failure
 from untaped.sdk.contracts import (
     Contract,
     Failed,
@@ -44,6 +44,7 @@ from untaped.sdk.contracts import (
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
 from untaped.sdk.storage._digest import settings_digest
+from untaped.sdk.testing import recording
 
 
 @pytest.fixture

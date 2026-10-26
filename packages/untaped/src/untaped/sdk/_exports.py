@@ -64,6 +64,7 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.sdk._run import plugin_of, settings_of
 from untaped.sdk._stdin import (
     StdinInput,
     read_identifiers,
@@ -207,7 +208,6 @@ from untaped.sdk.records import (
     kind_of,
     record_model,
 )
-from untaped.sdk.run import plugin_of, settings_of
 from untaped.sdk.storage._fs import atomic_write, dir_bytes, file_lock, read_structured_file
 from untaped.sdk.storage._refs import RefHolder, RefTarget, holders
 from untaped.sdk.storage.cache import (

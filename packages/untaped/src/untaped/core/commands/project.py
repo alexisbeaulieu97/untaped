@@ -36,7 +36,7 @@ from untaped.sdk.words import plural, shown_path
 
 if TYPE_CHECKING:
     from untaped.core.project_lifecycle import Removal
-    from untaped.sdk.run import Diag
+    from untaped.sdk._run import Diag
     from untaped.sdk.storage._refs import Reference
 
 _FORCE = (

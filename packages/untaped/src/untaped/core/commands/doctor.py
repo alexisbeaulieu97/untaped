@@ -73,6 +73,7 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
+from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, Failed, UntapedError, first_validation_error
 from untaped.sdk.fields import Confirm, Output
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
@@ -82,7 +83,6 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import owner, removal_text
 from untaped.sdk.network.http import resolve_verify
 from untaped.sdk.plugin import Command, Group
-from untaped.sdk.run import SettingsOverlay
 from untaped.sdk.storage.state import ProjectStateRows, StateRows
 from untaped.sdk.words import (
     command_argv,
@@ -691,7 +691,7 @@ def _register_fix() -> list[str]:
 
 def spelled_argv(spelled: SpelledCommand, *, profile: str) -> list[str]:
     """The argv after ``untaped`` for a command named by its class, as this run spells it."""
-    from untaped.sdk.run import current_run  # noqa: PLC0415
+    from untaped.sdk._run import current_run  # noqa: PLC0415
 
     return command_argv(current_run().composition.spell(spelled), profile=profile)
 

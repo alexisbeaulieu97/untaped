@@ -7561,6 +7561,7 @@ sdk untaped.sdk.testing.plugin_candidate(requires_dist=) default=[]
 sdk untaped.sdk.testing.plugin_candidate(spec)
 sdk untaped.sdk.testing.progress_clock()
 sdk untaped.sdk.testing.read_rows(rows)  [experimental]
+sdk untaped.sdk.testing.recording()
 sdk untaped.sdk.testing.release_ask(force=) default=false  [experimental]
 sdk untaped.sdk.testing.release_ask(holder=) default=present  [experimental]
 sdk untaped.sdk.testing.release_ask(others=) default=0  [experimental]

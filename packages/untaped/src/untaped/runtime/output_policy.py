@@ -1,7 +1,7 @@
 """How one invocation writes stderr: its output policy, and where the current one is.
 
 :class:`OutputPolicy`'s format and theme are the run's rendering
-(:class:`untaped.sdk.run.Rendering`): for a declared command, or a line
+(:class:`untaped.sdk._run.Rendering`): for a declared command, or a line
 naming none, the root fixes it once from the declaration, before anything is
 emitted (:func:`fix_rendering`), and nothing changes it after. For a command still
 mounted through the 11.x seam it is decided in two phases, both through
@@ -11,7 +11,7 @@ parse error renders the way ``-f json`` asks), then from the command's own
 ``UNTAPED_DIAGNOSTICS`` overrides both. ``--quiet`` and ``--verbose`` are flags on it,
 set by their root-option handlers. It is internal: the run decides how stderr
 renders and the sink follows it, so a plugin has no reason to branch on JSON
-around the sink (the run's choice stays readable as ``ctx.run.rendering``).
+around the sink (the run's choice is ``Run.rendering``, never on ``self.ctx``).
 
 The policy belongs to the invocation's scope (``untaped.runtime.sink``). The
 scope registers here: in a ``ContextVar``, and in one process-wide ordered set
@@ -32,11 +32,11 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from untaped.sdk.run import fixed_rendering
+from untaped.sdk._run import fixed_rendering
 
 if TYPE_CHECKING:
     from untaped.runtime.theme import ThemeSpec
-    from untaped.sdk.run import Rendering
+    from untaped.sdk._run import Rendering
 
 #: Environment variable choosing the stderr format: ``json`` or ``text``.
 DIAGNOSTICS_ENV = "UNTAPED_DIAGNOSTICS"
@@ -169,7 +169,7 @@ def fix_rendering(rendering: Rendering) -> None:
     """Put the run's fixed ``rendering`` on the scope's policy; a nested scope inherits it.
 
     The root calls it once, as it fixes the run's rendering
-    (:meth:`untaped.sdk.run.Run.render_with`); :func:`note_format` and
+    (:meth:`untaped.sdk._run.Run.render_with`); :func:`note_format` and
     :func:`note_theme` change neither after. Outside a scope nothing happens.
     """
     holder = context_holder()

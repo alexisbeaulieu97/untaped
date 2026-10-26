@@ -41,8 +41,8 @@ def compose_with(
         bootstrap,
     )
     from untaped.runtime.run import build_run  # noqa: PLC0415
+    from untaped.sdk._run import run_scope  # noqa: PLC0415
     from untaped.sdk.contracts._providing import offering_candidates  # noqa: PLC0415
-    from untaped.sdk.run import run_scope  # noqa: PLC0415
 
     base = _candidates(plugins)
     fakes = offering_candidates(provides or {}, base)

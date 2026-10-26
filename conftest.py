@@ -17,8 +17,8 @@ from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.runtime.sink import drop_tasks
 from untaped.sdk import _cli as cli
+from untaped.sdk._run import Run, run_scope
 from untaped.sdk.records import table_columns_of
-from untaped.sdk.run import Run, run_scope
 from untaped.sdk.testing import _bare_run
 
 pytest_plugins = ["untaped.sdk.testing.plugin"]

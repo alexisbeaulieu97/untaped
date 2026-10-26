@@ -19,7 +19,7 @@ from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.run import build_run, child_run, composition_of
 from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk import Command, Plugin, plugin_of, settings_of
-from untaped.sdk.run import NoRunError, Rendering, SettingsOverlay, current_run, run_scope
+from untaped.sdk._run import NoRunError, Rendering, SettingsOverlay, current_run, run_scope
 
 PACKAGE = __name__.partition(".")[0]
 

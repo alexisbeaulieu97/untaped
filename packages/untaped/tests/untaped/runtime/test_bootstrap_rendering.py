@@ -25,7 +25,7 @@ from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Command, Output, Plugin, deprecated
 from untaped.sdk._cli import FormatOption, create_app, emit
-from untaped.sdk.run import Rendering, current_run
+from untaped.sdk._run import Rendering, current_run
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import CliInvoker
 

@@ -66,13 +66,13 @@ from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, Validat
 from untaped.runtime.settings import load_settings_section, registered_profile_model
 from untaped.runtime.sink import current_sink
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._run import run_clock
 from untaped.sdk.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc, parse_utc
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.git import safe_path_segment
 from untaped.sdk.network.upstream import fail_fast, full_retries
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Record, UtcTimestamp
-from untaped.sdk.run import run_clock
 from untaped.sdk.storage._fs import file_lock
 from untaped.sdk.storage.store import Store
 from untaped.sdk.words import duration_text
@@ -166,7 +166,7 @@ def _answering_for(cache: Cache[Any]) -> str | None:
 
 
 def _utcnow() -> datetime:
-    """The time caches compare ages against: the run's clock (:func:`untaped.sdk.run.run_clock`)."""
+    """The time caches compare ages against: the run's clock (``untaped.sdk._run.run_clock``)."""
     return run_clock().now()
 
 

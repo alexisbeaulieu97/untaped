@@ -14,9 +14,9 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import Command, ConfigError, Key, Plugin, StateRows, UntapedError
+from untaped.sdk._run import Run, run_scope
 from untaped.sdk.plugin import SpelledCommand
 from untaped.sdk.projects import Project
-from untaped.sdk.run import Run, run_scope
 
 
 class Item(BaseModel):

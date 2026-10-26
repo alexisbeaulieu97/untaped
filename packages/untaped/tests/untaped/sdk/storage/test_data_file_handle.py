@@ -21,7 +21,7 @@ from untaped.sdk import (
     Unreadable,
     UntapedError,
 )
-from untaped.sdk.run import run_scope
+from untaped.sdk._run import run_scope
 from untaped.sdk.storage import data_file
 
 

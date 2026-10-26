@@ -13,14 +13,14 @@ from pydantic import BaseModel
 
 from untaped.runtime.bootstrap import SHELL_SPEC
 from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
-from untaped.runtime.sink import diagnostics_scope, recording
+from untaped.runtime.sink import diagnostics_scope
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.storage.cache import Cache, Filled, NeverRefreshed, refresh_option
 from untaped.sdk.storage.store import Store
-from untaped.sdk.testing import CacheClock, cache_clock, damage, plugin_candidate
+from untaped.sdk.testing import CacheClock, cache_clock, damage, plugin_candidate, recording
 
 START = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
 KEY = "everything"

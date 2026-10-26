@@ -55,10 +55,10 @@ from typing import Any
 from pydantic import BaseModel, SecretStr
 
 from untaped.runtime.settings import env_var_name, env_var_setting, resolve_config_path
+from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.marks import TokenCommand, TokenSources  # type: ignore[deprecated]
 from untaped.sdk.marks import deprecated_behaviour
-from untaped.sdk.run import current_overlay
 
 _LOG = logging.getLogger("untaped.auth")
 _TIMEOUT_SECONDS = 60.0

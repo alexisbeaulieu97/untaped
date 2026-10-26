@@ -169,7 +169,7 @@ class Install:
     def running(self) -> Iterator[None]:
         """Run the block as a command of this install runs: under its run, its plugins composed."""
         from untaped.runtime.run import build_run  # noqa: PLC0415
-        from untaped.sdk.run import run_scope  # noqa: PLC0415
+        from untaped.sdk._run import run_scope  # noqa: PLC0415
 
         with run_scope(build_run(self._mount.declaration, self._mount.settings)):
             yield

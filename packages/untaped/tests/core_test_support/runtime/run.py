@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.run import Composition, Run
+from untaped.sdk._run import Composition, Run
 
 
 def run_owning(home: Path, package: str, plugin: str) -> Run:

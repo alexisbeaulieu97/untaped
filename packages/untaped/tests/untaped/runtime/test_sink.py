@@ -23,7 +23,6 @@ from untaped.runtime.sink import (
     diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
-    recording,
 )
 from untaped.runtime.theme import ThemeSpec
 from untaped.screen.core import Cmd, Quit, Screen
@@ -31,7 +30,7 @@ from untaped.sdk._cli import echo
 from untaped.sdk._ui import UiContext
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
+from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO, recording
 
 _DEADLINE = 10.0
 
@@ -496,6 +495,18 @@ def test_an_echoed_error_line_counts() -> None:
             exit_on_counted_failure()
 
     assert exited.value.code == 1
+
+
+def test_a_scope_records_into_the_recorder_it_started_with() -> None:
+    with redirect_stderr(io.StringIO()), diagnostics_scope():
+        with recording() as later:
+            Diagnostics().warning("before")  # the scope started outside the block
+            with diagnostics_scope():
+                Diagnostics().warning("inside")
+        with diagnostics_scope():
+            Diagnostics().warning("after")
+
+    assert [each.message for each in later] == ["inside"]
 
 
 def test_recorded_diagnostics_are_the_lines_shown() -> None:

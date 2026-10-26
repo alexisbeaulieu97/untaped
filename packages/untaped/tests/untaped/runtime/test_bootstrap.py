@@ -1054,7 +1054,7 @@ def test_a_plugin_apps_own_group_is_ignored_at_the_root() -> None:
 
 
 def test_an_11x_command_runs_under_the_invocation_s_run() -> None:
-    from untaped.sdk.run import current_run
+    from untaped.sdk._run import current_run
 
     def _body() -> None:
         echo(str(current_run().home))

@@ -45,6 +45,7 @@ from untaped.runtime.theme import (
     TreeOutputFormat,
     resolve_theme_or_default,
 )
+from untaped.sdk._run import Rendering, fixed_rendering
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.diagnostic import Failure, dumped_names
 from untaped.sdk.errors import (
@@ -69,7 +70,6 @@ from untaped.sdk.records import (
     kind_of,
     table_columns_of,
 )
-from untaped.sdk.run import Rendering, fixed_rendering
 from untaped.sdk.tree import TreeGraph, print_tree
 
 

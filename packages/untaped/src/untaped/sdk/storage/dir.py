@@ -147,7 +147,7 @@ class Dir(OwnedBlock):
     @property
     def place(self) -> Path:
         """The folder: the ``at=`` setting's path, or ``plugins/<plugin>/<name>`` under the home."""
-        from untaped.sdk.run import (  # noqa: PLC0415 - the run imports the SDK
+        from untaped.sdk._run import (  # noqa: PLC0415 - the run imports the SDK
             current_run,
             settings_of,
         )
@@ -275,7 +275,7 @@ class Dir(OwnedBlock):
 
     def lock_path(self, name: str | None = None) -> Path:
         """The lock file of ``name`` (or the place's own): under the home, never in the place."""
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
         folder = current_run().home / PLUGINS_FOLDER / self.plugin
         if name is None:

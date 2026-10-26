@@ -676,7 +676,7 @@ class Confirm(FieldBlock):
         Noted on the current run, so core treats the invocation as a preview:
         call it at the top of ``run``, before any early return.
         """
-        from untaped.sdk.run import note_preview  # noqa: PLC0415 - only a --check pays
+        from untaped.sdk._run import note_preview  # noqa: PLC0415 - only a --check pays
 
         note_preview()
         dry = _copy(self)
@@ -707,7 +707,7 @@ class Confirm(FieldBlock):
         built outside a run never goes ahead unasked. ``preview`` returns the lines
         printed on stderr before the question; ``--yes`` and ``needed=False`` skip it.
         """
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a command asking pays
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
 
         if self._dry_run:
             self._preview(preview)
@@ -731,7 +731,7 @@ class Confirm(FieldBlock):
     def _preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
         if preview is None:
             return
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a command asking pays
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
 
         diag = current_run().diag
         for line in preview():
@@ -857,7 +857,7 @@ class Parallel(FieldBlock):
     def _from_default(self) -> int:
         if isinstance(self.default, int):
             return self._clamped(self.default, f"the default {self.default}")
-        from untaped.sdk.run import current_run, settings_of  # noqa: PLC0415 - a setting pays
+        from untaped.sdk._run import current_run, settings_of  # noqa: PLC0415 - a setting pays
 
         model = SettingKey.model_of(self.default)
         value: object = settings_of(model)
@@ -906,7 +906,7 @@ class Parallel(FieldBlock):
         """``value`` within the cap; ``source`` says where it came from in the warning."""
         if self.cap is None or value <= self.cap:
             return value
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - only a clamp pays
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a clamp pays
 
         current_run().diag.warning(f"{source} clamped to {self.cap} (this command's cap)")
         return self.cap

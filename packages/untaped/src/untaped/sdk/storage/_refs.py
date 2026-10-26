@@ -47,10 +47,10 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, m
 
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._home import CORE
+from untaped.sdk._run import NoRunError
 from untaped.sdk.diagnostic import _is_none
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.marks import experimental
-from untaped.sdk.run import NoRunError
 from untaped.sdk.storage.data_file import Absent, DataFile, OtherVersion, Unreadable
 from untaped.sdk.storage.dir import Dir
 

@@ -48,6 +48,7 @@ from untaped.runtime.settings import (
     load_core_part,
     registered_profile_model,
 )
+from untaped.sdk._run import Clock, run_clock
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import (
     ConfigError,
@@ -60,7 +61,6 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import deprecated, deprecated_behaviour, deprecated_parameters
 from untaped.sdk.network.auth import takes_token_command, token_alternatives
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
-from untaped.sdk.run import Clock, run_clock
 from untaped.sdk.words import command_line, q, run_hint
 
 if TYPE_CHECKING:
@@ -207,7 +207,7 @@ def request_deadline(seconds: float | None) -> Iterator[None]:
     (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
     deadline is a context variable, so threads started with a copied context
     (``bounded_map``) share it. It counts down on the clock it was set on
-    (:func:`~untaped.sdk.run.run_clock` then).
+    (:func:`~untaped.sdk._run.run_clock` then).
     """
     if seconds is None:
         yield

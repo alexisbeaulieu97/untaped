@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -19,13 +19,15 @@ from untaped.sdk import (
     plugin_of,
     settings_of,
 )
-from untaped.sdk.run import (
+from untaped.sdk._run import (
     Clock,
     Composition,
     NoRunError,
     Run,
     context_for,
     current_run,
+    recorder,
+    recording,
     run_scope,
 )
 
@@ -144,6 +146,24 @@ def test_the_context_is_the_run_seen_by_the_commands_plugin(
     assert ctx.project is None
     ctx.diag.info("hello")
     assert run.diag.lines == ["hello"]  # type: ignore[attr-defined]
+
+
+def test_the_context_keeps_its_run_private(run: Run) -> None:
+    ctx = context_for(Say)
+    assert [each.name for each in fields(ctx)] == ["_run", "plugin"]
+    assert not hasattr(ctx, "run")
+    assert repr(ctx).startswith("Context(plugin=")
+
+
+def test_recording_nests_and_restores_the_recorder_before() -> None:
+    assert recorder() is None
+    with recording() as outer:
+        assert recorder() is outer
+        with recording() as inner:
+            assert recorder() is inner
+            assert inner is not outer
+        assert recorder() is outer
+    assert recorder() is None
 
 
 def test_a_module_no_plugin_owns_is_a_lookup_error(run: Run) -> None:

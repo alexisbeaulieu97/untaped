@@ -48,6 +48,7 @@ from untaped.sdk._cli import (
     user_default_format,
     user_theme,
 )
+from untaped.sdk._run import Rendering
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
@@ -64,7 +65,6 @@ from untaped.sdk.marks import (
     reset_show_deprecated,
     select_command,
 )
-from untaped.sdk.run import Rendering
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration, GroupDecl, OptionDecl, PluginDecl

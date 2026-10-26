@@ -10,7 +10,7 @@ plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
 public surface and :func:`check` runs its plugin check (``untaped.sdk.testing.guards``).
 
-Blocks read time from one clock (``untaped.sdk.run.run_clock``): cache
+Blocks read time from one clock (``untaped.sdk._run.run_clock``): cache
 ages, progress cadence and HTTP back-off. Under :func:`manual_clock` it is a
 :class:`ManualClock`, which moves only on ``advance(...)`` (``advance(hours=1)``
 is "a rerun an hour later") and on a block's sleep, which never waits.
@@ -22,6 +22,10 @@ freezes the cadence for the invocation unless the test set it, so
 ``CliResult.diagnostics`` carries no ``untaped.progress`` line however
 slow the run (``--verbose`` still prints every update); a deadline or a
 back-off inside keeps its time.
+
+:func:`recording` records every diagnostic the scopes entered inside its
+block show, for a test that calls a block directly (``invoke_cli`` fills
+``CliResult.diagnostics`` through it).
 
 :func:`write_reference` writes another install's reference in
 core's ``refs`` folder, so a test can say what holds a store's layouts.
@@ -57,14 +61,19 @@ from rich.console import Console
 
 from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.sink import (
-    cadence_clock,
-    cadence_is_set,
-    frozen_cadence,
-    recording,
-    tick,
-)
+from untaped.runtime.sink import cadence_clock, cadence_is_set, frozen_cadence, tick
 from untaped.sdk._cli import run_cyclopts_app
+from untaped.sdk._run import (
+    _RUN,
+    Clock,
+    Composition,
+    Run,
+    _installed,
+    installed_clock,
+    recording,
+    run_clock,
+)
+from untaped.sdk._run import run_scope as _run_scope
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import apply_marks, deprecated, experimental
 from untaped.sdk.projects import Project, holder_of, init, untaped_home
@@ -75,8 +84,6 @@ from untaped.sdk.prompt.prompts import (
     set_prompt_backend_override,
     set_terminal_override,
 )
-from untaped.sdk.run import _RUN, Clock, Composition, Run, _installed, installed_clock, run_clock
-from untaped.sdk.run import run_scope as _run_scope
 from untaped.sdk.storage._refs import PROJECT, AnchorId, RefHolder, RefTarget
 from untaped.sdk.storage._refs import write_reference as _write_reference
 from untaped.sdk.storage.cache import Cache, versioned
@@ -146,6 +153,7 @@ __all__ = [
     "plugin_candidate",
     "progress_clock",
     "read_rows",
+    "recording",
     "release_ask",
     "write_reference",
     "write_rows",

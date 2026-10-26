@@ -208,7 +208,7 @@ class MemoryCredentials:
 
     def set(self, credential: Credential[Any], key: CredentialKey, secret: str) -> None:
         """File ``secret`` as ``credential``'s for ``key``, under the latest install holding it."""
-        from untaped.sdk.run import NoRunError, current_run  # noqa: PLC0415
+        from untaped.sdk._run import NoRunError, current_run  # noqa: PLC0415
 
         try:
             current_run()

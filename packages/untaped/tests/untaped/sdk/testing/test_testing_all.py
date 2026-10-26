@@ -49,6 +49,7 @@ EXPECTED_ALL = [
     "plugin_candidate",
     "progress_clock",
     "read_rows",
+    "recording",
     "release_ask",
     "write_reference",
     "write_rows",
