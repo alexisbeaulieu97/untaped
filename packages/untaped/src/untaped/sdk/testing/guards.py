@@ -26,7 +26,7 @@ def check(install: Install) -> None:
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
 
     found = list(install.candidates)
-    with bootstrap.composed_with(found, quiet=True) as result:
+    with bootstrap.composed_with(found) as result:
         rows = [
             row
             for candidate in found

@@ -158,7 +158,7 @@ def test_a_plugin_mark_reaches_every_line() -> None:
 
 
 def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:
-    with kept_composition(quiet=True):
+    with kept_composition():
         lines = {str(line) for line in cli_lines(build_root_app(candidates=[]), {})}
     assert {
         "cli untaped --help switch",

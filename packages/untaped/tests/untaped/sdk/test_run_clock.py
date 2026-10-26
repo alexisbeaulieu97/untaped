@@ -36,7 +36,7 @@ START = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 
 def _run(home: Path, **clock: Clock) -> Run:
     return Run(
-        home=home,
+        locate_home=lambda: home,
         composition=Composition(),
         picks=lambda _section, model: model(),
         diag=None,  # type: ignore[arg-type]

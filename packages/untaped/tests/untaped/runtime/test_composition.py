@@ -831,6 +831,33 @@ def test_a_core_short_inside_an_optional_is_still_refused() -> None:
     assert ("core-short", "Clash.force") in _rules(_plugin_with(Clash))
 
 
+@pytest.mark.parametrize(
+    ("field", "annotation", "default"),
+    [
+        ("deprecated", bool, False),
+        ("profile_", str, ""),
+        ("verbose", bool, True),
+        ("loud", Annotated[bool, Short("-v")], False),
+        ("hush", Annotated[bool, Short("-q")], False),
+    ],
+)
+def test_a_root_option_s_spelling_is_refused(
+    field: str, annotation: object, default: object
+) -> None:
+    clash = type(
+        "Clash",
+        (Command,),
+        {
+            "__doc__": "Clash.",
+            "__annotations__": {field: annotation},
+            field: Field(default, description="Clashes with a root option."),
+            "run": lambda self: None,
+        },
+    )
+
+    assert ("root-option", f"Clash.{field}") in _rules(_plugin_with(clash))
+
+
 def test_aliases_are_old_spellings_with_their_removal() -> None:
     class Greet(Command):
         """Greet."""

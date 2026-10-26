@@ -104,7 +104,7 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         kept_composition,
     )
 
-    with kept_composition(quiet=True):
+    with kept_composition():
         root = build_root_app(candidates=candidates)
         result = composition()
         check_quarantine(result)
@@ -141,7 +141,7 @@ def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
 
     candidate = plugin if isinstance(plugin, PluginCandidate) else plugin_candidate(plugin)
     name = candidate.name
-    with kept_composition(quiet=True):
+    with kept_composition():
         root = build_root_app(candidates=[candidate])
         result = composition()
         check_quarantine(result)

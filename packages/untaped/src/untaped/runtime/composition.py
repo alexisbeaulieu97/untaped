@@ -42,6 +42,7 @@ from untaped.runtime.declaration import (
     StabilityDecl,
     target_of,
 )
+from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
 from untaped.sdk.fields import (
     CORE_SHORTS,
@@ -798,10 +799,20 @@ class _CommandWalk:
         negative = None
         if token[0] == "bool" and not positional and default is True:
             negative = f"--no-{name.replace('_', '-')}"
+        flag = None if positional else f"--{name.replace('_', '-')}"
+        for spelled in (flag, negative, *shorts):
+            if spelled in ROOT_FLAGS:
+                fix = "give it another Short" if spelled in shorts else "rename the field"
+                self.problem(
+                    "root-option",
+                    where,
+                    f"{spelled} is a root option, which every command takes "
+                    f"(`untaped {spelled}`); {fix}",
+                )
         self.seen.options.append(
             OptionDecl(
                 field=path,
-                flag=None if positional else f"--{name.replace('_', '-')}",
+                flag=flag,
                 metavar=name.upper(),
                 positional=positional,
                 token=f"list[{token[0]}]" if repeated else token[0],

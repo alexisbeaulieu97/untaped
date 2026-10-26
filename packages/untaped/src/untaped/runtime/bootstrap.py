@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
 from importlib import metadata
 from itertools import chain
@@ -26,6 +26,7 @@ from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import PackagedSkill
+from untaped.runtime.declaration import Declaration
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
@@ -39,17 +40,19 @@ from untaped.runtime.registry import (
     RegisteredPlugin,
     compose,
     discover_candidates,
+    kept_declaration,
     run_deferred_factory,
     section_settings,
     spliced_state,
 )
 from untaped.runtime.root_options import (
+    RootLine,
     _before_separator,
-    _consume_leading_root_options,
-    _dispatch_with_root_options,
     _root_callback_signature,
     _root_options,
     _RootOption,
+    applied_root_options,
+    dispatch_line,
     resolve_command,
 )
 from untaped.runtime.settings import (
@@ -58,7 +61,6 @@ from untaped.runtime.settings import (
     reset_config_registry,
 )
 from untaped.runtime.sink import (
-    Diagnostics,
     derived_exit_code,
     diagnostics_scope,
     exit_on_counted_failure,
@@ -66,11 +68,12 @@ from untaped.runtime.sink import (
 from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import (
     apply_default_format,
+    given_tokens,
     note_requested_format,
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
     DeprecatedBehaviour,
@@ -81,7 +84,7 @@ from untaped.sdk.marks import (
     panel_for,
 )
 from untaped.sdk.network.credentials import bind_credentials
-from untaped.sdk.run import Run, run_scope
+from untaped.sdk.run import Run, current_run, run_scope
 from untaped.sdk.storage._refs import refresh
 from untaped.sdk.storage.cache import current_call
 
@@ -114,8 +117,10 @@ _COMPOSED_RESULT: CompositionResult | None = None
 #: The root :func:`build_root_app` last built, which :func:`root_command` reads.
 _BUILT_ROOT: App | None = None
 
-#: Set inside :func:`kept_composition` ``(quiet=True)``: the warnings were shown once.
-_QUIET_QUARANTINE: ContextVar[bool] = ContextVar("untaped_quiet_quarantine", default=False)
+#: The run :func:`run_root` started and the line its token pass left, until the
+#: root callback takes them over (dispatcher state: an invocation nested in a
+#: command starts its own).
+_STARTED: ContextVar[tuple[Run, RootLine] | None] = ContextVar("untaped_started_run", default=None)
 
 
 def _register_shell_and_plugins(result: CompositionResult) -> None:
@@ -143,12 +148,19 @@ def _register_shell_and_plugins(result: CompositionResult) -> None:
             register_state_settings(spec.name, spliced)
 
 
-def _warn_quarantined(result: CompositionResult) -> None:
-    """Emit one stderr warning per quarantined plugin."""
-    if _QUIET_QUARANTINE.get():
-        return
+def _attach(run: Run, result: CompositionResult) -> None:
+    """Attach the root composition ``result`` to the invocation's ``run``, and warn.
+
+    Only the root composition warns about its quarantined plugins, one
+    warning each, through the run's sink: a composition nested in a command
+    (a plugin check, the surface walk, the testing kit's) is never attached
+    to a run, so it never warns again.
+    """
+    from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
+
+    run.attach(composition_of(result.mount.declaration, result.mount.settings))
     for record in result.quarantine:
-        Diagnostics().warning(
+        run.diag.warning(
             f"plugin {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}"
         )
@@ -163,6 +175,8 @@ def compose_root(
     Discovery (entry-point candidates, or ``candidates`` when given) runs BEFORE any
     settings registration or resolution; registration happens only after every
     surviving plugin validates. Remembers the composition for :func:`reset`.
+    Warns about nothing: the root warns about its quarantined plugins once it
+    attaches the composition to the invocation's run.
 
     Raises ``RuntimeError`` inside a contract call: the composition is
     process-global, so a provider composing would swap it under the providers
@@ -174,7 +188,6 @@ def compose_root(
     result = compose(SHELL_SPEC, candidates)
     _register_shell_and_plugins(result)
     _COMPOSED_RESULT = result
-    _warn_quarantined(result)
     return result
 
 
@@ -188,33 +201,28 @@ def _refuse_inside_a_contract_call() -> None:
 
 
 @contextmanager
-def kept_composition(*, quiet: bool = False) -> Iterator[None]:
+def kept_composition() -> Iterator[None]:
     """Bring back the composition (and its settings registrations) the block started with.
 
     The profile, verbose and quiet overrides are left as they are
-    (a plugin's check runs under the user's ``--profile``). With
-    ``quiet``, compositions inside the block don't warn about quarantined
-    plugins again. Raises ``RuntimeError`` inside a contract call, as
-    :func:`compose_root` does, since leaving the block re-registers the settings.
+    (a plugin's check runs under the user's ``--profile``). Raises
+    ``RuntimeError`` inside a contract call, as :func:`compose_root` does,
+    since leaving the block re-registers the settings.
     """
     global _COMPOSED_RESULT, _BUILT_ROOT
     _refuse_inside_a_contract_call()
     previous, previous_root = _COMPOSED_RESULT, _BUILT_ROOT
-    token = _QUIET_QUARANTINE.set(quiet or _QUIET_QUARANTINE.get())
     try:
         yield
     finally:
-        _QUIET_QUARANTINE.reset(token)
         _COMPOSED_RESULT, _BUILT_ROOT = previous, previous_root
         _reregister()
 
 
 @contextmanager
-def composed_with(
-    candidates: Sequence[PluginCandidate], *, quiet: bool = False
-) -> Iterator[CompositionResult]:
+def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[CompositionResult]:
     """Compose ``candidates`` for the block, then bring back the composition before it."""
-    with kept_composition(quiet=quiet):
+    with kept_composition():
         yield compose_root(candidates=candidates)
 
 
@@ -276,8 +284,11 @@ def build_root_app(
     declaration, the others through the 11.x seam) and each validated
     plugin's sub-app under its plugin name, wires ``--version`` to installed-distribution
     metadata, installs position-independent root options, and registers shell
-    completion. Drive ``app.meta`` directly in tests; run via
-    :func:`run_root` in production.
+    completion. In tests, drive ``app.meta`` through
+    :class:`~untaped.sdk.testing.CliInvoker` (or
+    :func:`~untaped.sdk._cli.run_cyclopts_app`), never by calling it directly:
+    the root reads the tokens as given only there. Run via :func:`run_root`
+    in production.
     """
     candidates = list(candidates) if candidates is not None else list(discover_candidates())
     result = compose_root(candidates=candidates)
@@ -299,7 +310,7 @@ def build_root_app(
     _install_root_callback(
         root,
         _root_options(),
-        run=lambda: _invocation_run(result.mount),
+        result=result,
         after_command=lambda tokens, ran, failed: _check_skills_after(
             root, tokens, ran, skills, failed=failed
         ),
@@ -502,39 +513,74 @@ def _repairs(root: App, tokens: list[str]) -> bool:
     return app is not root and repairs_at(app) is True
 
 
-def _invocation_run(mount: Mount) -> Run:
-    """The run of one root invocation, which every command it dispatches runs under."""
-    from untaped.runtime.run import build_run  # noqa: PLC0415 - a start runs no command
-
-    return build_run(mount.declaration, mount.settings)
-
-
-def _refresh_reference(run: Callable[[], Run] | None = None) -> None:
+def _refresh_reference(command_tokens: Sequence[str]) -> None:
     """Keep this install's registered reference in step with the root composition.
 
     Every start compares, so a write that failed or met a busy lock is
     tried again by the next; one where nothing changed only reads the file.
     It runs here, under the composition the root mounted, never a narrower
-    one a command composes. Called inside the command's run, or with
-    ``run`` to open one for root ``--help`` and ``--version``, which then
-    print even when the home doesn't resolve.
+    one a command composes. A command waits for a busy lock, since a prune
+    elsewhere waits on the same one; root ``--help`` and ``--version`` never
+    wait, and print even when the home doesn't resolve (the refresh never
+    raises).
     """
-    if run is None:
-        refresh(wait=True)  # a prune elsewhere waits on the same lock
+    refresh(wait=bool(command_tokens) and not command_tokens[0].startswith("-"))
+
+
+@contextmanager
+def _started(
+    tokens: Sequence[str], declaration: Declaration | None
+) -> Iterator[tuple[Run, RootLine]]:
+    """Start the invocation of ``tokens``: its root options applied, then its one run.
+
+    The token pass reads the line by ``declaration``'s token shapes (with
+    none, dispatch reads it by the composition's, so only when the root
+    options apply differs, never what the tokens mean). The
+    run is current for the block; the root attaches the composition to it
+    once built (:func:`_attach`). Its home resolves on first read, so a home
+    that doesn't resolve fails only what reads it, through the run's sink,
+    and a command that never reads it (root ``--help``, ``--version``, a
+    group's help) still runs.
+    """
+    from untaped.runtime.run import start_run  # noqa: PLC0415 - a start runs no command
+
+    note_requested_format(tokens)  # a bad root option reports in the format asked for
+    with (
+        applied_root_options(tokens, _root_options(), declaration) as line,
+        run_scope(start_run()) as run,
+    ):
+        marker = _STARTED.set((run, line))
+        try:
+            yield run, line
+        finally:
+            _STARTED.reset(marker)
+
+
+@contextmanager
+def _invocation(tokens: Sequence[str], result: CompositionResult) -> Iterator[RootLine]:
+    """The line under the run :func:`run_root` started, or a run started here for ``tokens``.
+
+    The root app driven directly (a test's ``app.meta``) starts its own run
+    over the composition it mounted, reading the line by its declaration.
+    """
+    started = _STARTED.get()
+    if started is not None and current_run() is started[0]:
+        marker = _STARTED.set(None)  # an invocation nested in the command starts its own
+        try:
+            yield started[1]
+        finally:
+            _STARTED.reset(marker)
         return
-    try:
-        scope = run_scope(run())
-    except UntapedError:
-        return  # a home that doesn't resolve: the next start refreshes
-    with scope:
-        refresh()
+    with _started(tokens, result.mount.declaration) as (run, line):
+        _attach(run, result)
+        yield line
 
 
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
     *,
-    run: Callable[[], Run],
+    result: CompositionResult,
     after_command: Callable[[list[str], Sequence[Dispatched], bool], None] | None = None,
 ) -> None:
     # The meta app must not intercept --help/--version: that would render the
@@ -546,38 +592,23 @@ def _install_root_callback(
     # so the command sees it and root options never match past it.
     app.meta.end_of_options_delimiter = ""
 
-    def _dispatch_root(ran: Sequence[Dispatched], *tokens: str) -> object:
-        applied_tokens: list[tuple[_RootOption, object]] = []
+    def _dispatch_root(ran: Sequence[Dispatched], line: RootLine) -> object:
         dispatched = False
-        command_tokens: list[str] = []
+        command_tokens = line.tokens
         failed = True
         try:
             with report_errors():
-                command_tokens = _consume_leading_root_options(
-                    list(tokens), root_options, applied_tokens
-                )
-                if command_tokens[:1] == ["--"]:
-                    command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 dispatched = True
                 # What dispatch reports before the command parses (the reference
                 # refresh's warning, deprecated command and option notices)
                 # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
-                with ExitStack() as stack:
-                    if command_tokens and not command_tokens[0].startswith("-"):
-                        # A command runs under the run; root --help and --version need none,
-                        # so a home that doesn't resolve still lets them print.
-                        stack.enter_context(run_scope(run()))
-                        _refresh_reference()
-                    else:
-                        _refresh_reference(run)
-                    result = _dispatch_with_root_options(
-                        app, command_tokens, root_options, applied_tokens
-                    )
+                _refresh_reference(command_tokens)
+                outcome = dispatch_line(app, line, root_options, result.mount.declaration)
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
-                return result
+                return outcome
         except SystemExit as exc:
             exc.code = derived_exit_code(exc.code)
             failed = exc.code not in (0, None)
@@ -586,15 +617,20 @@ def _install_root_callback(
             # Runs on failures too: a stale skill is a likely cause of one.
             if after_command is not None and dispatched:
                 after_command(command_tokens, ran, failed)
-            for option, token in reversed(applied_tokens):
-                option.resetter(token)
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # One diagnostics scope covers the command and the checks after it,
         # so their warnings follow the command's --format. One run covers the
-        # command, an 11.x one included; a declared command's own nests inside.
-        with diagnostics_scope(), dispatching() as ran:
-            return _dispatch_root(ran, *tokens)
+        # invocation: root --help and --version, and any command it dispatches.
+        # The pass reads the line as given: the meta parse split its short
+        # clusters (`-n5` into `-n -5`).
+        with (
+            given_tokens(app.meta) as given,
+            diagnostics_scope(),
+            dispatching() as ran,
+            _invocation(tokens if given is None else given, result) as line,
+        ):
+            return _dispatch_root(ran, line)
 
     signature = _root_callback_signature(root_options)
     _root_callback.__signature__ = signature  # type: ignore[attr-defined]
@@ -613,16 +649,20 @@ def run_root(
     console: Any | None = None,
     error_console: Any | None = None,
 ) -> object:
-    """Compose the root app and run it. Use as the unified ``main()``.
+    """Start the invocation's run, compose the root app into it and run it: the ``main()``.
 
-    One diagnostics scope spans composition and dispatch, so composition
-    warnings (a quarantined plugin) follow the ``--format`` the tokens ask
-    for, like an error found before parsing.
+    Before anything else, one pass over the tokens applies the root options,
+    reading the line by the kept declaration's token shapes, and starts the
+    run; then the root is composed and its composition attached to the run,
+    then the tokens are dispatched under it. One diagnostics scope spans all of it,
+    so composition warnings (a quarantined plugin) follow the ``--format``
+    the tokens ask for, like an error found before parsing.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
-    with diagnostics_scope():
-        note_requested_format(argv)
-        root = build_root_app(candidates=candidates)
+    found = list(discover_candidates()) if candidates is None else list(candidates)
+    with diagnostics_scope(), _started(argv, kept_declaration(found)) as (run, _line):
+        root = build_root_app(candidates=found)
+        _attach(run, composition())
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
 

@@ -186,12 +186,12 @@ def test_a_main_module_is_checked_without_running_it(
     assert plugin_violations("demo", candidates=demo) == _FOUND
 
 
-def test_a_quarantined_plugin_is_warned_about_once(
+def test_a_plugin_check_never_warns_about_a_quarantined_plugin(
     demo: list[PluginCandidate], capsys: pytest.CaptureFixture[str]
 ) -> None:
     broken = PluginCandidate(distribution="broken", name="broken", target="no_such_mod:SPEC")
     plugin_violations("demo", candidates=[*demo, broken])
-    assert capsys.readouterr().err.count("quarantined") == 1
+    assert "quarantined" not in capsys.readouterr().err  # only the root's composition warns
 
 
 def test_check_conventions_keeps_the_composition_and_stays_quiet(

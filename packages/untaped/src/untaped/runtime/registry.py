@@ -1305,6 +1305,29 @@ def compose(
     return composed[-1]
 
 
+def kept_declaration(candidates: Sequence[PluginCandidate]) -> Declaration | None:
+    """The declaration core keeps for ``candidates``, read without composing, a lock or a fill.
+
+    What the root's token pass reads command shapes from before anything is
+    composed. ``None`` when none is kept for them: a candidate given as an
+    object, a first start, candidates that changed, or a cache that can't be
+    read (a home that doesn't resolve); composition finds and reports why.
+    """
+    ordered = sorted(candidates, key=_candidate_order)
+    if not all(isinstance(candidate.target, str) for candidate in ordered):
+        return None
+    from untaped.core.settings import DECLARATION  # noqa: PLC0415 - core imports the runtime
+
+    try:
+        served = DECLARATION.cached(_declaration_key(ordered))
+    except Exception:  # composition meets the same failure and reports it
+        _LOG.debug("no kept declaration to read", exc_info=True)
+        return None
+    if served is None or served.value.candidates != _candidates_read(ordered):
+        return None
+    return served.value.declaration
+
+
 def _declaration_key(ordered: Sequence[PluginCandidate]) -> str:
     """The cache key of ``ordered`` in this environment: each name, distribution and target.
 

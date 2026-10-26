@@ -73,7 +73,7 @@ def _run(tmp_path: Path, sections: dict[str, BaseModel] | None = None) -> Run:
         return picked.get(section) or model()
 
     return Run(
-        home=tmp_path,
+        locate_home=lambda: tmp_path,
         composition=Composition(
             owners={HelloSettings: "hello", LintSettings: "lint"}, packages={PACKAGE: "hello"}
         ),
@@ -213,3 +213,27 @@ def test_ctx_plugins_is_the_installs_rows(tmp_path: Path) -> None:
         assert Version().ctx.plugins == (row,)
     with run_scope(base):
         assert Version().ctx.plugins == ()
+
+
+def test_a_run_reads_its_home_when_asked_and_takes_its_composition_once(tmp_path: Path) -> None:
+    asked: list[Path] = []
+
+    def locate() -> Path:
+        asked.append(tmp_path)
+        return tmp_path
+
+    started = Run(
+        locate_home=locate,
+        picks=lambda _section, model: model(),
+        diag=Recorder(),
+        terminal=lambda: pytest.fail("no terminal"),
+    )  # type: ignore[arg-type]
+
+    assert asked == []
+    assert started.home == tmp_path
+    with pytest.raises(LookupError):
+        started.composition.owner_of_settings(HelloSettings)
+    composed = Composition(owners={HelloSettings: "hello"})
+    assert started.attach(composed).composition is composed
+    with pytest.raises(RuntimeError, match="attached once"):
+        started.attach(composed)

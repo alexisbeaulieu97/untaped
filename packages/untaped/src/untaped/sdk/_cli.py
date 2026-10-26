@@ -8,6 +8,7 @@ import sys
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
@@ -967,9 +968,11 @@ def run_cyclopts_app(
     The invocation runs in its own :func:`~untaped.runtime.sink.diagnostics_scope`;
     a parse error follows the ``--format`` its tokens ask for. A command that
     emitted a failure and returned normally exits with the worst code it
-    counted.
+    counted. While it runs, :func:`given_tokens` hands ``app``'s command the
+    tokens as given.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
+    running = _RUNNING.set((app, tuple(argv)))
     try:
         with diagnostics_scope():
             try:
@@ -1005,8 +1008,32 @@ def run_cyclopts_app(
         # interpreter shutdown, where it can't be handled.
         _flush_stdout()
         raise
+    finally:
+        _RUNNING.reset(running)
     _flush_stdout()
     return result
+
+
+#: The app :func:`run_cyclopts_app` runs, and the tokens it was given.
+_RUNNING: ContextVar[tuple[App, tuple[str, ...]] | None] = ContextVar(
+    "untaped_running_app", default=None
+)
+
+
+@contextmanager
+def given_tokens(app: App) -> Iterator[list[str] | None]:
+    """The tokens :func:`run_cyclopts_app` was given to run ``app`` on; ``None`` otherwise.
+
+    Cyclopts' parse rewrites a short cluster before a command sees its tokens
+    (``-n5`` becomes ``-n -5``), so a command that reads the line itself
+    reads these. A call nested in the block sees none, unless run anew.
+    """
+    running = _RUNNING.get()
+    marker = _RUNNING.set(None)
+    try:
+        yield list(running[1]) if running is not None and running[0] is app else None
+    finally:
+        _RUNNING.reset(marker)
 
 
 def _flush_stdout() -> None:
