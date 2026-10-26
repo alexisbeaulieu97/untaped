@@ -31,6 +31,7 @@ from untaped.sdk import (
     Stdin,
     UntapedError,
     UsageError,
+    Written,
     key,
 )
 from untaped.sdk._block import POSITIONAL, Invocation
@@ -125,6 +126,24 @@ def test_existing_file_must_exist(tmp_path: Path) -> None:
     assert Run(compare=present).compare == present
     with pytest.raises(ValidationError):
         Run(compare=tmp_path / "missing.json")
+
+
+class Report(BaseModel):
+    suite: File[Suite] | None = None
+    out: Annotated[File[Suite] | None, Written] = None
+    copy: Annotated[File[Suite], Written] | None = None
+
+
+def test_a_file_read_must_exist_and_a_written_one_need_not(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.yml"
+    with pytest.raises(ValidationError, match="file not found"):
+        Report(suite=str(missing))
+    assert Report(suite=str(tmp_path)).suite == File[Suite](tmp_path)  # a directory is searched
+    report = Report(out=str(missing), copy=str(missing))
+    assert report.out is not None
+    assert report.out.path == missing
+    assert report.out.model is Suite
+    assert report.copy == File[Suite](missing)
 
 
 def test_key_value_splits_on_the_first_equals() -> None:
