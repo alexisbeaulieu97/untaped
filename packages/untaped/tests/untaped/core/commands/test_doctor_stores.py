@@ -13,8 +13,8 @@ from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import build_run
+from untaped.sdk._run import run_scope
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.run import run_scope
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store

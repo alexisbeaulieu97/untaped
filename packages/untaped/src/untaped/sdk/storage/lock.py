@@ -46,7 +46,7 @@ class Lock(OwnedBlock):
     @property
     def path(self) -> Path:
         """The lock file: ``plugins/<plugin>/<name>.lock`` under the home."""
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
         return current_run().home / PLUGINS_FOLDER / self.plugin / f"{self.name}.lock"
 
@@ -125,7 +125,7 @@ def operation_lock(plugin: str, label: str, path: Path, timeout: float) -> Itera
 
 def _provides(provider: str, plugin: str) -> bool:
     """Whether ``plugin`` requires ``provider``'s distribution, as this install's rows say."""
-    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
     rows = {row.name: row for row in current_run().composition.installed()}
     if provider not in rows or plugin not in rows:

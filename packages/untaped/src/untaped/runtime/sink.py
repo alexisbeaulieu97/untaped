@@ -58,7 +58,6 @@ import threading
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
-from contextvars import ContextVar
 from dataclasses import replace
 from typing import TYPE_CHECKING, Literal, Protocol, TextIO
 
@@ -82,6 +81,7 @@ from untaped.runtime.render import (
     stream_is_tty,
 )
 from untaped.runtime.theme import BUILTIN_THEMES
+from untaped.sdk._run import recorder, run_clock
 from untaped.sdk.diagnostic import (
     NOT_COUNTED,
     Debug,
@@ -98,7 +98,6 @@ from untaped.sdk.diagnostic import (
 from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.records import OutcomeRecord
-from untaped.sdk.run import run_clock
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -754,31 +753,13 @@ class _Scope:
             return self._worst
 
 
-#: Set by ``untaped.sdk.testing``: a scope entered meanwhile also records what it emits.
-_recorder: ContextVar[list[Diagnostic] | None] = ContextVar("untaped_recorder", default=None)
-
-
-@contextmanager
-def recording() -> Iterator[list[Diagnostic]]:
-    """Record every diagnostic emitted in the scopes entered inside the block.
-
-    The scopes still write to stderr as they would (a tee), so captured text
-    and the records agree.
-    """
-    captured: list[Diagnostic] = []
-    token = _recorder.set(captured)
-    try:
-        yield captured
-    finally:
-        _recorder.reset(token)
-
-
 class _ScopeSink:
     """The sink of one scope (or, with no scope, of the default ``_Unscoped`` policy)."""
 
     def __init__(self, scope: _Scope | None) -> None:
         self._scope = scope
-        self._recorder = _recorder.get() if scope is not None else None
+        #: The test's recorder when the scope started (``Install.running()``'s ``diagnostics``).
+        self._recorder = recorder() if scope is not None else None
         self._held: list[str] = []
         self._holding = 0
         self._closed = False

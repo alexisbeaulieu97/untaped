@@ -26,7 +26,8 @@ from core_test_support.contracts.support import (
 )
 from core_test_support.contracts.support import write_config as configure
 from untaped.runtime.contracts.registry import Provider, offers
-from untaped.runtime.sink import diagnostics_scope, recording
+from untaped.runtime.sink import diagnostics_scope
+from untaped.sdk._run import recording
 from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._gather import Answers

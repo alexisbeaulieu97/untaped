@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.sdk import Plugin
 from untaped.sdk._block import Binding, Block, OwnedBlock, UnboundBlockError
-from untaped.sdk.run import NoRunError, run_scope
+from untaped.sdk._run import NoRunError, run_scope
 
 
 class Thing(Block):

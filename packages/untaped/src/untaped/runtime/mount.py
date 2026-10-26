@@ -49,6 +49,7 @@ from untaped.runtime.registry import DeclaredBlocks, PluginSpec, SkillAsset, res
 from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
+from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
@@ -64,7 +65,6 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.plugin import Command, Plugin, field_block
 from untaped.sdk.plugin import Group as CommandGroup
-from untaped.sdk.run import Run
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.dir import Dir
 

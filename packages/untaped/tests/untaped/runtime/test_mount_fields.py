@@ -173,7 +173,7 @@ def test_an_unmounted_command_reads_its_setting_afresh(monkeypatch: pytest.Monke
     from untaped.runtime.composition import PluginEntry
     from untaped.runtime.mount import compose_plugins
     from untaped.runtime.run import build_run
-    from untaped.sdk.run import run_scope
+    from untaped.sdk._run import run_scope
 
     mount = compose_plugins([PluginEntry("tool", f"{__name__}:Tool", Tool)])
     seen = []

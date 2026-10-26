@@ -37,7 +37,7 @@ from untaped.sdk.words import plural, shown_path, size_text
 
 if TYPE_CHECKING:
     from untaped.runtime.registry import CompositionResult
-    from untaped.sdk.run import Diag
+    from untaped.sdk._run import Diag
     from untaped.sdk.storage._refs import Reference
 
 

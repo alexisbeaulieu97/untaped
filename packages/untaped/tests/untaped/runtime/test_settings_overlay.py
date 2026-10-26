@@ -28,9 +28,9 @@ from untaped.runtime.settings import (
     register_profile_settings,
     resolve_with_overlay,
 )
+from untaped.sdk._run import Run, SettingsOverlay, current_overlay, current_run
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.auth import TokenSources, clear_token_cache, resolve_token
-from untaped.sdk.run import Run, SettingsOverlay, current_overlay, current_run
 
 pytestmark = pytest.mark.usefixtures("home_run")
 

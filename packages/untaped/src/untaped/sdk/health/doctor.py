@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from untaped.runtime.settings import plugins_root, resolve_config_path
 from untaped.sdk._block import OwnedBlock, spelled_id
+from untaped.sdk._run import PluginHandle
 from untaped.sdk.errors import HttpError, HttpTransportError, UntapedError
 from untaped.sdk.health._setup_status import (
     set_command,
@@ -38,7 +39,6 @@ from untaped.sdk.network.auth import (
     token_alternatives,
     token_instead,
 )
-from untaped.sdk.run import PluginHandle
 
 if TYPE_CHECKING:
     from untaped.runtime.sink import Diagnostics

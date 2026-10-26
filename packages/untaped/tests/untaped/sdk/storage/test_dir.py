@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import ConfigError, Dir, ErrorCategory, Lock, Plugin, UntapedError, key
+from untaped.sdk._run import Composition, Run, run_scope
 from untaped.sdk.plugin_records import InstalledPlugin
-from untaped.sdk.run import Composition, Run, run_scope
 from untaped.sdk.storage.holds import Refused
 
 

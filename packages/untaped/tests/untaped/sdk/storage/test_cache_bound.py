@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import Cache, ConfigError, Plugin
-from untaped.sdk.run import Run, run_scope
+from untaped.sdk._run import Run, run_scope
 from untaped.sdk.storage.store import Store
 
 

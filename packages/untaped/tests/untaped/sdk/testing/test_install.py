@@ -14,6 +14,7 @@ from untaped.sdk import (
     Column,
     Command,
     Confirm,
+    Diagnostics,
     Failed,
     Filled,
     Key,
@@ -26,7 +27,7 @@ from untaped.sdk import (
     Stdin,
 )
 from untaped.sdk.storage import Cache
-from untaped.sdk.testing import Home, Install, ManualClock, Ran
+from untaped.sdk.testing import Home, Install, ManualClock, Ran, Running
 
 Installer = Callable[..., Install]
 
@@ -249,6 +250,21 @@ def test_ran_is_one_type_for_both_spellings(install: Installer) -> None:
     shop = install(Shop)
     assert isinstance(shop.run(Greet()), Ran)
     assert isinstance(shop.cli("shop greet"), Ran)
+
+
+def test_running_records_the_lines_shown_inside_as_ran_does(
+    install: Installer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    shop = install(Shop)
+    Diagnostics().warning("before")  # outside the block: shown, not recorded
+    with shop.running() as run:
+        assert isinstance(run, Running)
+        Diagnostics().warning("low stock")
+        assert [each.message for each in run.diagnostics] == ["low stock"]
+    Diagnostics().warning("after")
+    assert [each.message for each in run.diagnostics] == ["low stock"]
+    assert type(run.diagnostics) is type(shop.run(Greet()).diagnostics)
+    assert "warning: low stock" in capsys.readouterr().err  # a tee: still shown
 
 
 def test_settings_are_written_by_alias_and_secrets_in_clear(install: Installer) -> None:

@@ -23,11 +23,11 @@ from untaped.runtime.sink import (
     diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
-    recording,
 )
 from untaped.runtime.theme import ThemeSpec
 from untaped.screen.core import Cmd, Quit, Screen
 from untaped.sdk._cli import echo
+from untaped.sdk._run import recording
 from untaped.sdk._ui import UiContext
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
 from untaped.sdk.errors import ConfigError
@@ -496,6 +496,50 @@ def test_an_echoed_error_line_counts() -> None:
             exit_on_counted_failure()
 
     assert exited.value.code == 1
+
+
+def test_a_scope_records_into_the_recorder_it_started_with() -> None:
+    with redirect_stderr(io.StringIO()), diagnostics_scope():
+        with recording() as later:
+            Diagnostics().warning("before")  # the scope started outside the block
+            with diagnostics_scope():
+                Diagnostics().warning("inside")
+        with diagnostics_scope():
+            Diagnostics().warning("after")
+
+    assert [each.message for each in later] == ["inside"]
+
+
+def test_two_threads_recording_at_once_keep_their_own_records() -> None:
+    a_in, b_in, a_out = threading.Event(), threading.Event(), threading.Event()
+    got: dict[str, list[str]] = {}
+
+    def first() -> None:
+        with recording() as mine:
+            a_in.set()
+            assert b_in.wait(_DEADLINE)  # the other thread's block is open
+            with diagnostics_scope():
+                Diagnostics().warning("from first")
+        got["first"] = [each.message for each in mine]
+        a_out.set()
+
+    def second() -> None:
+        assert a_in.wait(_DEADLINE)
+        with recording() as mine:
+            b_in.set()
+            assert a_out.wait(_DEADLINE)  # the first block closed meanwhile
+        got["second"] = [each.message for each in mine]
+
+    with redirect_stderr(io.StringIO()):
+        threads = [threading.Thread(target=first), threading.Thread(target=second)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(_DEADLINE)
+        with recording() as after, diagnostics_scope():
+            Diagnostics().warning("after both")
+    assert got == {"first": ["from first"], "second": []}
+    assert [each.message for each in after] == ["after both"]
 
 
 def test_recorded_diagnostics_are_the_lines_shown() -> None:

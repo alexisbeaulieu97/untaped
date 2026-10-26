@@ -34,10 +34,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from untaped.runtime.settings import env_var_name
+from untaped.sdk._run import NoRunError
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.health.deprecated_keys import retired_values
 from untaped.sdk.marks import experimental
-from untaped.sdk.run import NoRunError
 from untaped.sdk.storage._fs import dir_bytes
 
 if TYPE_CHECKING:

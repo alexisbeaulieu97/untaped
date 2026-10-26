@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -19,17 +20,20 @@ from untaped.sdk import (
     plugin_of,
     settings_of,
 )
-from untaped.sdk.run import (
+from untaped.sdk._run import (
     Clock,
     Composition,
     NoRunError,
     Run,
     context_for,
     current_run,
+    recorder,
+    recording,
     run_scope,
 )
 
 PACKAGE = __name__.partition(".")[0]
+_DEADLINE = 10.0
 
 
 class HelloSettings(BaseModel):
@@ -144,6 +148,53 @@ def test_the_context_is_the_run_seen_by_the_commands_plugin(
     assert ctx.project is None
     ctx.diag.info("hello")
     assert run.diag.lines == ["hello"]  # type: ignore[attr-defined]
+
+
+def test_the_context_keeps_its_run_private(run: Run) -> None:
+    ctx = context_for(Say)
+    assert [each.name for each in fields(ctx)] == ["_run", "plugin"]
+    assert not hasattr(ctx, "run")
+    assert repr(ctx).startswith("Context(plugin=")
+
+
+def test_recording_nests_and_restores_the_recorder_before() -> None:
+    assert recorder() is None
+    with recording() as outer:
+        assert recorder() is outer
+        with recording() as inner:
+            assert recorder() is inner
+            assert inner is not outer
+        assert recorder() is outer
+    assert recorder() is None
+
+
+def test_recording_in_two_threads_at_once_keeps_each_its_own() -> None:
+    a_in, b_in, a_out = threading.Event(), threading.Event(), threading.Event()
+    seen: dict[str, list[object]] = {}
+
+    def first() -> None:
+        with recording() as mine:
+            a_in.set()
+            assert b_in.wait(_DEADLINE)  # the other block is open now
+            seen["first"] = [recorder() is mine]
+        seen["first"].append(recorder())
+        a_out.set()
+
+    def second() -> None:
+        assert a_in.wait(_DEADLINE)
+        with recording() as mine:
+            b_in.set()
+            assert a_out.wait(_DEADLINE)  # the other block closed meanwhile
+            seen["second"] = [recorder() is mine]
+        seen["second"].append(recorder())
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(_DEADLINE)
+    assert seen == {"first": [True, None], "second": [True, None]}
+    assert recorder() is None
 
 
 def test_a_module_no_plugin_owns_is_a_lookup_error(run: Run) -> None:

@@ -36,7 +36,7 @@ from untaped.sdk.words import not_found, run_hint
 
 if TYPE_CHECKING:
     from untaped.runtime.settings import ExtensionSettings
-    from untaped.sdk.run import Diag
+    from untaped.sdk._run import Diag
 
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare

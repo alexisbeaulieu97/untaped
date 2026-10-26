@@ -60,9 +60,9 @@ from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
 from untaped.sdk import Credential, online_check
 from untaped.sdk._app_context import app_context
+from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import pick_store
-from untaped.sdk.run import current_overlay
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import ScreenKeys, current_memory_store, drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun, rendered_text

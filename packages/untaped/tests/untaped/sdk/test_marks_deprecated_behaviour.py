@@ -20,6 +20,7 @@ from untaped.core.surface import DeprecatedMark, Line, plugin_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import Plugin
+from untaped.sdk._run import run_scope
 from untaped.sdk.diagnostic import DeprecationNotice
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
@@ -31,7 +32,6 @@ from untaped.sdk.marks import (
     marks,
 )
 from untaped.sdk.network.auth import PLAINTEXT_TOKEN
-from untaped.sdk.run import run_scope
 from untaped.sdk.testing import invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

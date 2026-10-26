@@ -50,9 +50,9 @@ from pydantic import (
 from pydantic.fields import FieldInfo
 
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._run import current_overlay
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.run import current_overlay
 
 if TYPE_CHECKING:
     from untaped.sdk.health.marks import Suggest
@@ -501,7 +501,7 @@ class Credential[K: CredentialKey](OwnedBlock):
     def _candidate(self) -> tuple[str, str | Callable[[], str] | None] | None:
         """What ``untaped setup`` is checking for this credential, before anything is stored.
 
-        The run's settings overlay (:attr:`untaped.sdk.run.Run.overlay`) names
+        The run's settings overlay (:attr:`untaped.sdk._run.Run.overlay`) names
         the candidate as the old ``<name>`` or ``<name>_command``; while it
         does, that answers instead of the stored login and the old settings
         (``(source, None)``: a variable is the candidate, so only ``env``

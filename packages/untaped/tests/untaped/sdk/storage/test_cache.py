@@ -25,9 +25,9 @@ from untaped.runtime.sink import (
     diagnostics_scope,
     exit_on_counted_failure,
     open_tasks,
-    recording,
 )
 from untaped.sdk._cli import create_app, echo, report_errors
+from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure, Progress, StaleData
 from untaped.sdk.errors import ConfigError, ErrorCategory, HttpTransportError, UntapedError
 from untaped.sdk.network.upstream import PROBE_TIMEOUT
@@ -48,7 +48,13 @@ from untaped.sdk.storage.cache import (
     refresh_scope,
 )
 from untaped.sdk.storage.data_file import written_by
-from untaped.sdk.testing import CacheClock, CliResult, cache_clock, invoke_cli, progress_clock
+from untaped.sdk.testing import (
+    CacheClock,
+    CliResult,
+    cache_clock,
+    invoke_cli,
+    progress_clock,
+)
 
 TOY = Cache("toy", "items", label="toy items", max_age=timedelta(hours=1))
 START = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)

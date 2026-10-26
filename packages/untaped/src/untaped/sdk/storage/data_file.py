@@ -424,7 +424,7 @@ def _lock_path(path: Path) -> Path:
     project, a backup) and which may be read-only. Two machines writing one
     file on a share exclude each other only when they share the home too.
     """
-    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
     key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
     folder = current_run().home / "locks"

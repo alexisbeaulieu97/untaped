@@ -22,7 +22,7 @@ from untaped.sdk.plugin import Command
 from untaped.sdk.storage._refs import Reference, register_this_install, unregister
 
 if TYPE_CHECKING:
-    from untaped.sdk.run import Diag
+    from untaped.sdk._run import Diag
 
 
 class Register(Command[CoreSettings]):

@@ -20,6 +20,7 @@ EXPECTED_ALL = [
     "ProgressClock",
     "PromptBackend",
     "Ran",
+    "Running",
     "ScreenKeys",
     "ScreenRun",
     "ScriptedPromptBackend",

@@ -4,10 +4,12 @@ A block needs a few things only a run knows: the home folder, which plugin
 owns which settings model, the settings the run picked, the stderr sink, the
 terminal, the current project and the time. ``untaped.runtime`` builds one
 :class:`Run` per invocation and sets it with :func:`run_scope`; the SDK reads
-it with :func:`current_run` and never imports the runtime. A command sees it
-as ``self.ctx`` (:class:`Context`) and ``self.settings``; code outside a
-command uses :func:`settings_of` and :func:`plugin_of`, each naming a plugin
-by its settings model.
+it with :func:`current_run` and never imports the runtime. The module is
+private: a command sees the run only through ``self.ctx`` (:class:`Context`,
+whose handles never include the run itself) and ``self.settings``; code
+outside a command uses :func:`settings_of` and :func:`plugin_of` (exported
+by ``untaped.sdk``), each naming a plugin by its settings model. The testing
+kit's hooks live here too (:func:`installed_clock`, :func:`recording`).
 """
 
 from __future__ import annotations
@@ -122,7 +124,7 @@ class RunNotes:
 class Rendering:
     """How the run renders stderr, fixed once before anything is emitted.
 
-    The run decides it from what the line names (``ctx.run.rendering``),
+    The run decides it from what the line names (:attr:`Run.rendering`),
     and the sink renders by it, so a plugin has no reason to read it:
     branching on JSON around the sink would split what one line says.
     ``format`` is the ``--format`` the user chose (``None``: the command's
@@ -241,6 +243,35 @@ def installed_clock(clock: Clock) -> Iterator[Clock]:
         _installed[0] = previous
 
 
+#: Where a test records the diagnostics shown (:func:`recording`), read as each scope starts.
+_recorder: ContextVar[list[Diagnostic] | None] = ContextVar("untaped_recorder", default=None)
+
+
+@contextmanager
+def recording() -> Iterator[list[Diagnostic]]:
+    """Record every diagnostic shown by the output scopes entered inside the block (a test's).
+
+    The testing kit's hook behind ``Install.running()``'s ``diagnostics``.
+    Unlike :func:`installed_clock` it is per context, so two threads or
+    tasks recording at once each keep their own records (a worker started
+    with a copied context records with the block that started it). A scope
+    entered before the block keeps the recorder it started with; the scopes
+    still write to stderr as they would (a tee), so captured text and the
+    records agree. Nested, the inner block records alone until it ends.
+    """
+    captured: list[Diagnostic] = []
+    token = _recorder.set(captured)
+    try:
+        yield captured
+    finally:
+        _recorder.reset(token)
+
+
+def recorder() -> list[Diagnostic] | None:
+    """The list a scope starting now records into (:func:`recording`); ``None`` outside one."""
+    return _recorder.get()
+
+
 @contextmanager
 def run_scope(run: Run) -> Iterator[Run]:
     """Make ``run`` the current run for the block inside, then restore the one before."""
@@ -276,7 +307,7 @@ def current_run() -> Run:
     if run is None:
         raise NoRunError(
             "no untaped run is active: the runtime sets one per invocation, and a test "
-            "sets one with untaped.sdk.run.run_scope"
+            "runs the code under the testing kit's install(...).running()"
         )
     return run
 
@@ -333,23 +364,25 @@ class Context:
     ``diag`` writes to stderr; ``terminal`` is the terminal handle for
     prompts and screens; ``project`` is the current project or ``None``;
     ``plugin`` is the command's own plugin; ``plugins`` is every plugin
-    this install has, as ``untaped plugin list`` shows them.
+    this install has, as ``untaped plugin list`` shows them. The run they
+    read is kept private: a plugin never reaches the sink's policy or the
+    composition except through these handles.
     """
 
-    run: Run
+    _run: Run = field(repr=False)
     plugin: PluginHandle
 
     @property
     def diag(self) -> Diag:
-        return self.run.diag
+        return self._run.diag
 
     @property
     def terminal(self) -> UiContext:
-        return self.run.terminal()
+        return self._run.terminal()
 
     @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:
-        return self.run.composition.installed()
+        return self._run.composition.installed()
 
     @property
     def project(self) -> Project | None:
@@ -368,4 +401,4 @@ def context_for(cls: type) -> Context:
             f"{cls.__qualname__} belongs to no composed plugin: its module {cls.__module__} "
             "is under no plugin's package"
         ) from None
-    return Context(run=run, plugin=PluginHandle(name=name, home=run.home))
+    return Context(_run=run, plugin=PluginHandle(name=name, home=run.home))

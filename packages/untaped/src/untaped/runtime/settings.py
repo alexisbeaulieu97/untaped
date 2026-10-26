@@ -45,6 +45,7 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
+from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
@@ -54,7 +55,6 @@ from untaped.sdk.health.deprecated_keys import (
     rename_keys,
 )
 from untaped.sdk.marks import Stability
-from untaped.sdk.run import current_overlay
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
@@ -503,7 +503,7 @@ def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
     """``effective`` with the run's overlay's section updated, when it is for ``profile``.
 
     Returns ``effective`` itself when the run has no overlay
-    (:attr:`untaped.sdk.run.Run.overlay`) or it is for another profile;
+    (:attr:`untaped.sdk._run.Run.overlay`) or it is for another profile;
     otherwise a copy (``effective`` is never mutated). A ``SecretStr`` is
     unwrapped because the layout feeds validation, which takes plain values.
     """

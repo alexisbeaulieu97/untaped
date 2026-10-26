@@ -19,7 +19,7 @@ from untaped.runtime.root_options import RootLine
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app, echo
-from untaped.sdk.run import Run, current_run
+from untaped.sdk._run import Run, current_run
 from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

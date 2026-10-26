@@ -191,7 +191,7 @@ class OwnedBlock(Block):
             return self._plugin
         if self._held_as is not None:
             return self._held_as[0]
-        from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
         owner = self.binding.owner
         try:

@@ -27,8 +27,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from untaped.sdk._run import NoRunError, current_run
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.run import NoRunError, current_run
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 #: The base's name: what ``--profile default`` picks and what provenance calls it.

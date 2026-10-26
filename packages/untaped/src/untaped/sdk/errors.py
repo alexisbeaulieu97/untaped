@@ -18,7 +18,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.runtime.redaction import redact_url_password
-from untaped.sdk.run import NoRunError, current_run
+from untaped.sdk._run import NoRunError, current_run
 
 if TYPE_CHECKING:
     from pydantic import BaseModel, ValidationError

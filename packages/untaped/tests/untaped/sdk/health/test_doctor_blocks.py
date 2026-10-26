@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
 from untaped.sdk import ExecutableCheck, OnlineCheck, Plugin, PluginContext
-from untaped.sdk.run import run_scope
+from untaped.sdk._run import run_scope
 
 
 class DemoSettings(BaseModel):

@@ -570,7 +570,7 @@ class StateRows[M: BaseModel](OwnedBlock):
         if key is None:
             return None
         if self.remove is not None:
-            from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+            from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
             try:
                 return current_run().composition.spell(self.remove.spelled(key))
@@ -860,7 +860,7 @@ class _RowsAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,nam
 
 def _plugin_state_path(plugin: str) -> Path:
     """``~/.untaped/plugins/<plugin>/state.yml``: the plugin's own rows."""
-    from untaped.sdk.run import current_run  # noqa: PLC0415 - the run imports the SDK
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
     return current_run().home / PLUGINS_FOLDER / plugin / _STATE_FILE
 

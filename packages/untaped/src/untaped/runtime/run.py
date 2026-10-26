@@ -30,9 +30,7 @@ from untaped.runtime.profile_resolver import pick_names
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._app_context import app_context
-from untaped.sdk.plugin_records import installed_plugins
-from untaped.sdk.projects import untaped_home
-from untaped.sdk.run import (
+from untaped.sdk._run import (
     Composition,
     NoRunError,
     Run,
@@ -40,6 +38,8 @@ from untaped.sdk.run import (
     current_run,
     run_scope,
 )
+from untaped.sdk.plugin_records import installed_plugins
+from untaped.sdk.projects import untaped_home
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration

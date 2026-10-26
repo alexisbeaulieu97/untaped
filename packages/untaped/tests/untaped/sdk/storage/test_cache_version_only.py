@@ -13,7 +13,8 @@ from pydantic import BaseModel
 
 from untaped.runtime.bootstrap import SHELL_SPEC
 from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
-from untaped.runtime.sink import diagnostics_scope, recording
+from untaped.runtime.sink import diagnostics_scope
+from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.health.deprecated_keys import Retired
