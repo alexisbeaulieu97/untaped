@@ -120,6 +120,24 @@ def test_a_child_run_shares_the_parents_state_and_reads_under_its_own_pick(
         assert write_target() == "default"
 
 
+def test_a_run_reads_a_section_again_once_its_pick_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    (tmp_path / "config.yml").write_text(
+        "format_version: 2\nprofiles:\n  work:\n    hello:\n      greeting: hi\n",
+        encoding="utf-8",
+    )
+    declaration, settings = _composed()
+    run = build_run(declaration, settings, home=tmp_path)
+    with run_scope(run):
+        assert settings_of(HelloSettings).greeting == "hello"
+        run.set_profiles(("work",))  # a late --profile, as the 11.x seam's dispatch takes one
+        assert settings_of(HelloSettings).greeting == "hi"
+        assert write_target() == "work"
+
+
 def test_a_child_runs_overlay_reaches_its_sections_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

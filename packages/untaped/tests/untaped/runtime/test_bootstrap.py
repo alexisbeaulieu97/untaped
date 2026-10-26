@@ -24,8 +24,9 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.plugin_harness import make_candidate, make_spec
 from untaped.runtime import bootstrap
-from untaped.runtime.profile_resolver import profile_override, set_profile_override
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings, reset_config_registry
 from untaped.sdk._app_context import app_context
 from untaped.sdk._cli import create_app, echo
@@ -205,7 +206,7 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 0, result.output
         assert result.stdout.strip() == "WT"
-    assert profile_override() == ()
+    assert flag_pick() == ()
 
 
 @pytest.mark.parametrize(
@@ -313,7 +314,7 @@ def test_root_options_apply_between_nested_command_names(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT quiet=True"
-    assert profile_override() == ()
+    assert flag_pick() == ()
     assert not is_quiet()
 
 
@@ -336,7 +337,7 @@ def test_root_options_after_end_of_options_reach_the_command(
     _isolated_config: Path,
 ) -> None:
     def run(cmd: str, /) -> None:
-        echo(f"{cmd} profile={profile_override()}")
+        echo(f"{cmd} profile={flag_pick()}")
 
     ext = create_app(name="ext", help="ext plugin.")
     ext.command(run, name="run")
@@ -374,8 +375,22 @@ def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
     result = CliInvoker().invoke(root.meta, ["--profile", "work", "ext", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "WT"
-    assert profile_override() == ()
+    assert flag_pick() == ()
     assert os.environ.get("UNTAPED_PROFILE") == env_before
+
+
+def test_a_root_invocation_in_a_run_does_not_inherit_its_pick(_isolated_config: Path) -> None:
+    _write_config(
+        _isolated_config, "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
+    )
+    root = bootstrap.build_root_app(candidates=[_ext_candidate([])])
+    with entered(start_run(profiles="work")):
+        bare = CliInvoker().invoke(root.meta, ["ext", "who"])
+        picked = CliInvoker().invoke(root.meta, ["--profile", "work", "ext", "who"])
+        assert flag_pick() == ("work",)
+    assert bare.exit_code == 0, bare.output
+    assert bare.stdout.strip() == "default-token"  # it starts its own run
+    assert picked.stdout.strip() == "WT"
 
 
 @pytest.mark.parametrize(
@@ -542,14 +557,12 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
     bootstrap.build_root_app(candidates=[_ext_candidate(calls)])
     assert app_context().section("ext", _ExtProfile).token == "default-token"
 
-    set_profile_override("work")
     reset_config_registry()
     get_settings.cache_clear()
     with pytest.raises(ConfigError):
         app_context().section("ext", _ExtProfile)
 
     bootstrap.reset()
-    assert profile_override() == ()
     assert app_context().section("ext", _ExtProfile).token == "default-token"
 
 

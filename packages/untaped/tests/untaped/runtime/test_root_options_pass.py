@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _table_default
 from untaped.sdk import Command, Plugin
@@ -221,6 +222,14 @@ def test_the_pass_writes_the_root_flags_onto_the_started_run_and_they_end_with_i
     assert not show_deprecated()
     with started_line(["hello", "greet", "-v"], DECLARATION) as line:
         assert line.run.policy.verbose and not line.run.policy.quiet
+
+
+def test_the_pass_writes_the_profile_pick_onto_the_started_run_and_it_ends_with_it() -> None:
+    tokens = ["--profile", "a", "hello", "greet", "--profile=b,c"]
+    with started_line(tokens, DECLARATION) as line:
+        assert line.run.profiles == ("a", "b", "c")
+        assert flag_pick() == ("a", "b", "c")
+    assert flag_pick() == ()
 
 
 @pytest.mark.usefixtures("read")

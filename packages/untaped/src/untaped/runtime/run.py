@@ -11,8 +11,8 @@ settings overlay is a child of the current run for a block
 (:func:`child_run`), and so is an invocation nested in a test's
 (:func:`invocation`), with its own output. Each member reads what the
 11.x runtime already provides: settings sections through
-``get_config_section`` (each section validated once per run, on first read,
-so after every root option applies), the install's plugins through
+``get_config_section`` (each section validated once per run and pick, on
+first read, so after every root option applies), the install's plugins through
 ``installed_plugins()`` (read once, on first use), the home and the themed
 terminal (each resolved on first use: a home that doesn't resolve fails the
 read that needs it, through the run's own sink). The run's output
@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.profile_resolver import pick_names
+from untaped.runtime.profile_resolver import pick_names, picked_names
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import RunOutput, forced_diagnostics, opened
 from untaped.runtime.verbose import restore as restore_logging
@@ -74,22 +74,28 @@ def _given(home: Path) -> Callable[[], Path]:
 
 
 def _section_reader() -> Callable[[str, type[BaseModel]], BaseModel]:
-    """A run's ``picks``: each section validated once, on first read, under the run's pick."""
-    picked: dict[str, BaseModel] = {}
+    """A run's ``picks``: each section validated once per pick, on first read, under the run's.
+
+    Keyed by the pick, so a section read before a late ``--profile`` (one the
+    11.x seam's dispatch takes) is read again under the pick that follows.
+    """
+    picked: dict[tuple[str, tuple[str, ...]], BaseModel] = {}
 
     def picks(section: str, model: type[BaseModel]) -> BaseModel:
-        if section not in picked:
-            picked[section] = get_config_section(section, model)
-        return picked[section]
+        key = (section, picked_names())
+        if key not in picked:
+            picked[key] = get_config_section(section, model)
+        return picked[key]
 
     return picks
 
 
-def start_run(*, home: Path | None = None) -> Run:
+def start_run(*, home: Path | None = None, profiles: str | Sequence[str] = ()) -> Run:
     """The run of one invocation, before anything is composed: :meth:`Run.attach` follows.
 
-    Its output is its own, and ``UNTAPED_DIAGNOSTICS`` is read now, as the
-    run's other inputs are.
+    ``profiles`` is its ``--profile`` pick (a string is one profile); the
+    root's token pass writes the line's onto it instead. Its output is its
+    own, and ``UNTAPED_DIAGNOSTICS`` is read now, as the run's other inputs are.
     """
     built: list[UiContext] = []
 
@@ -104,6 +110,7 @@ def start_run(*, home: Path | None = None) -> Run:
         picks=_section_reader(),
         diag=output,
         terminal=terminal,
+        profiles=pick_names(profiles),
         policy_cell=PolicyCell(OutputPolicy(forced=forced_diagnostics())),
     )
     output.bind(run)

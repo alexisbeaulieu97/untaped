@@ -17,9 +17,10 @@ from pydantic import BaseModel, SecretStr
 
 from core_test_support.commands.stores import FakeStores, install_fake_stores
 from core_test_support.commands.support import make_spec, write_config
+from untaped.core.commands.auth import save_token
+from untaped.core.config.repository import SettingsFileRepository
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import root_pick
 from untaped.runtime.settings import get_config_section
 from untaped.sdk import TokenCommand, TokenSources
 from untaped.sdk.errors import ConfigError
@@ -575,8 +576,7 @@ def test_set_refuses_when_default_holds_a_plaintext_token(
         _isolated_config,
         "format_version: 2\nsvc:\n  token: shared\nprofiles:\n  work: {}\n",
     )
-    with root_pick(["work"]):
-        result = _auth("set", "svc", "--stdin", input="tok")
+    result = _auth("--profile", "work", "set", "svc", "--stdin", input="tok")
     assert result.exit_code == 4
     assert "svc.token is set in profile default" in result.stderr
     assert "untaped auth migrate" in result.stderr
@@ -601,14 +601,16 @@ def test_set_rejects_a_section_without_token_command(
     assert f"unknown token section {section!r}; known: other, svc" in result.stderr
 
 
-def test_set_rejects_a_profile_name_that_cannot_name_an_entry(
+def test_saving_refuses_a_profile_name_that_cannot_name_an_entry(
     _isolated_config: Path, stores: FakeStores
 ) -> None:
+    # `--profile` refuses the name; setup can still target it
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  'my work': {}\n")
-    with root_pick(["my work"]):  # `--profile` refuses the name; setup can still target it
-        result = _auth("set", "svc", "--stdin", input="tok")
-    assert result.exit_code == 1
-    assert "profile 'my work' cannot name a store entry" in result.stderr
+    store = token_store.pick_store()
+    assert store is not None
+    with pytest.raises(ConfigError, match="profile 'my work' cannot name a store entry"):
+        save_token(SettingsFileRepository(), "svc", "my work", "tok", store)
+    assert stores.entries() == {}
 
 
 # --- auth unset ---------------------------------------------------------------
@@ -740,9 +742,8 @@ def test_unset_leaves_an_inherited_command_alone(
     config = _config(_isolated_config)
     config["profiles"] = {"work": {}}
     write_config(_isolated_config, json.dumps(config))
-    with root_pick(["work"]):
-        result = _auth("unset", "svc", "--yes", "--format", "json")
-        quiet = _auth("-q", "unset", "svc", "--yes")
+    result = _auth("--profile", "work", "unset", "svc", "--yes", "--format", "json")
+    quiet = _auth("--profile", "work", "-q", "unset", "svc", "--yes")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "unchanged"
     lines = _records(result.stderr)

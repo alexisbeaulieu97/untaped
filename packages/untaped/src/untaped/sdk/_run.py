@@ -232,9 +232,10 @@ class Run:
     #: a declared command or a line naming none; ``None`` until then, and for
     #: an 11.x command, whose parse still decides it.
     rendering: Rendering | None = None
-    #: The profiles ``--profile`` picks for this run, in order: a child run's
-    #: own (``untaped.runtime.run.child_run``); ``None`` for the root option's.
-    profiles: tuple[str, ...] | None = None
+    #: The profiles ``--profile`` picks for this run, in order (``()``: none):
+    #: the root option's, written by the token pass (:meth:`set_profiles`), or
+    #: a child run's own (``untaped.runtime.run.child_run``).
+    profiles: tuple[str, ...] = ()
     #: Candidate settings a child run lays over what it loads; nothing is written.
     overlay: SettingsOverlay | None = None
     #: Where the run keeps what it asks of stderr (:attr:`policy`), which the
@@ -283,6 +284,18 @@ class Run:
         its parent's output writes the policy it shares with the parent.
         """
         self.policy_cell.policy = policy
+
+    def set_profiles(self, profiles: tuple[str, ...]) -> None:
+        """Replace the run's ``--profile`` pick (:attr:`profiles`).
+
+        Owed, the 11.x seam, as :meth:`set_policy`: the token pass writes the
+        root ``--profile`` onto the run once it started, before it is composed,
+        and the seam's dispatch (or a line read with no declaration kept)
+        writes the ones it takes late onto the same run, whose sections are
+        read under the pick it holds when read. Frozen to every other writer;
+        it closes with the seam.
+        """
+        object.__setattr__(self, "profiles", profiles)
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)

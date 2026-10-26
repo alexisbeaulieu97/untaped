@@ -43,8 +43,5 @@ def started_line(
 
     The root flags it takes are the run's, so they end with the block.
     """
-    with (
-        entered(start_run()) as run,
-        applied_root_options(run, tokens, _root_options(), declaration) as line,
-    ):
-        yield line
+    with entered(start_run()) as run:
+        yield applied_root_options(run, tokens, _root_options(), declaration)

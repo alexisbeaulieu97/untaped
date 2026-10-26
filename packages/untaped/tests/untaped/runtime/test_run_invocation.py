@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +13,7 @@ from pydantic import BaseModel, Field
 from untaped.core.surface import generate
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import Declaration
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import RootLine
 from untaped.runtime.settings import get_settings
@@ -131,8 +131,9 @@ def test_a_trailing_profile_is_the_run_s_pick_for_a_declared_command(
 
     assert capsys.readouterr().out.strip() == "HEY"
     assert seen == started  # the command ran under the invocation's one run
-    # which keeps its pick after the invocation, the trailing --profile undone
-    assert started[0].picks("chime", ChimeSettings) == ChimeSettings(greeting="HEY")
+    # whose pick it is, so it ends with the run
+    assert started[0].profiles == ("loud",)
+    assert flag_pick() == ()
 
 
 def test_profiles_repeated_among_a_declared_command_s_options_stack_in_order(
@@ -160,16 +161,15 @@ def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
     lines: list[tuple[Declaration | None, list[str], bool]] = []
     read = bootstrap.applied_root_options
 
-    @contextmanager
     def reading(
         run: Run,
         tokens: Sequence[str],
         options: dict[str, Any],
         declaration: Declaration | None = None,
-    ) -> Iterator[RootLine]:
-        with read(run, tokens, options, declaration) as line:
-            lines.append((declaration, list(line.tokens), line.placed))
-            yield line
+    ) -> RootLine:
+        line = read(run, tokens, options, declaration)
+        lines.append((declaration, list(line.tokens), line.placed))
+        return line
 
     monkeypatch.setattr(bootstrap, "applied_root_options", reading)
 

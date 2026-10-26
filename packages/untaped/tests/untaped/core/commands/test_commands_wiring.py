@@ -26,7 +26,7 @@ from core_test_support.commands.support import (
 from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import profile_override
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.settings import get_settings
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
@@ -65,7 +65,7 @@ def test_management_commands_dispatch_through_root(_isolated_config: Path) -> No
     ):
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
-    assert profile_override() == ()
+    assert flag_pick() == ()
 
 
 def test_root_options_work_around_management_commands(_isolated_config: Path) -> None:
@@ -82,7 +82,7 @@ def test_root_options_work_around_management_commands(_isolated_config: Path) ->
         result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
         assert result.exit_code == 0, (argv, result.output)
         assert "https://w" in result.stdout
-    assert profile_override() == ()
+    assert flag_pick() == ()
 
 
 def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
