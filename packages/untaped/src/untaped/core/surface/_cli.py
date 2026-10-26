@@ -52,15 +52,12 @@ def root_plugin_lines(root: App, words: Collection[str], mark: LineMark | None) 
 
 
 def subtree_lines(root: App, name: str, mark: LineMark | None) -> list[Line]:
-    """The ``cli`` lines of the plugin mounted at ``untaped <name>``, the group itself included."""
-    for child, sub in children(root, resolve=True):
-        if child == name:
-            own = line_mark(mark_of(sub), root) or mark
-            return [
-                *_command(root, sub, (ROOT, name), own),
-                *_walk(root, sub, (ROOT, name), own),
-            ]
-    return []
+    """The ``cli`` lines of the plugin mounted at ``untaped <name>``, the group itself included.
+
+    The walk any root command gets, so a hidden plugin is skipped as a hidden
+    command is.
+    """
+    return list(_walk(root, root, (ROOT,), mark, only=frozenset({name})))
 
 
 def _root_options(root: App) -> Iterator[Line]:
