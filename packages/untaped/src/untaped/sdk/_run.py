@@ -171,6 +171,19 @@ class OutputPolicy:
         return "json" if self.format in STRUCTURED_FORMATS else "text"
 
 
+@dataclass
+class PolicyCell:
+    """Where a run keeps its :class:`OutputPolicy`, held by reference.
+
+    A child run for a nested pick holds its parent's cell, as it shares
+    the parent's output, so a write under either is the one both read and
+    the sink follows; a nested invocation, with an output of its own, gets
+    a cell of its own.
+    """
+
+    policy: OutputPolicy = field(default_factory=OutputPolicy)
+
+
 @dataclass(frozen=True)
 class SettingsOverlay:
     """Candidate values for one section of one profile, laid over what a run loads.
@@ -221,14 +234,20 @@ class Run:
     profiles: tuple[str, ...] | None = None
     #: Candidate settings a child run lays over what it loads; nothing is written.
     overlay: SettingsOverlay | None = None
-    #: What the run asks of stderr, which the sink of its ``diag`` follows; a
-    #: child run starts with its parent's.
-    policy: OutputPolicy = field(default_factory=OutputPolicy)
+    #: Where the run keeps what it asks of stderr (:attr:`policy`), which the
+    #: sink of its ``diag`` follows: a child run sharing its parent's output
+    #: holds its parent's cell, so the two never disagree.
+    policy_cell: PolicyCell = field(default_factory=PolicyCell, repr=False)
 
     @property
     def home(self) -> Path:
         """The home folder; raises the error that keeps it from resolving."""
         return self.locate_home()
+
+    @property
+    def policy(self) -> OutputPolicy:
+        """What the run asks of stderr, which the sink of its ``diag`` follows."""
+        return self.policy_cell.policy
 
     @property
     def attached(self) -> bool:
@@ -256,9 +275,10 @@ class Run:
         Owed, the 11.x seam: the policy is writable only because the root
         options' handlers write their flags onto the run once it started, and
         the seam's parse still chooses the format and theme of a command
-        mounted through it. It closes with the seam.
+        mounted through it. It closes with the seam. A child run sharing
+        its parent's output writes the policy it shares with the parent.
         """
-        object.__setattr__(self, "policy", policy)  # frozen to every other writer
+        self.policy_cell.policy = policy
 
 
 _RUN: ContextVar[Run | None] = ContextVar("untaped_run", default=None)

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import contextvars
 import io
+import json
 import threading
 from contextlib import redirect_stderr
 
 import pytest
 from cyclopts import App
 
-from untaped.runtime.run import child_run, enable_quiet, entered, start_run
+from untaped.runtime.run import child_run, enable_quiet, entered, invocation, start_run
 from untaped.runtime.sink import Diagnostics, exit_on_counted_failure, failure_exit_code
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import note_requested_format
@@ -81,6 +82,30 @@ def test_a_child_run_shares_its_parents_output_and_policy() -> None:
             assert child.policy.quiet
             Diagnostics().failure(ConfigError("in the child", category="auth"))
         assert failure_exit_code() == 4
+
+
+def test_a_policy_written_under_a_child_run_is_the_one_its_shared_sink_follows() -> None:
+    stderr = io.StringIO()
+    with redirect_stderr(stderr), entered(start_run()) as run:
+        with child_run(overlay=SettingsOverlay("default", "hello", {})) as child:
+            enable_quiet()  # written under the child
+            Diagnostics().info("muted in the child")
+            note_requested_format(["--format", "json"])  # the 11.x seam's phase 1
+            Diagnostics().warning("a JSON line")
+            assert is_quiet() and run.policy.quiet
+            assert child.policy is run.policy
+        assert is_quiet() and run.policy.diagnostics == "json"
+
+    lines = stderr.getvalue().splitlines()
+    assert "muted in the child" not in stderr.getvalue()
+    assert [json.loads(line)["message"] for line in lines] == ["a JSON line"]
+
+
+def test_a_nested_invocation_keeps_a_policy_of_its_own() -> None:
+    with entered(start_run()) as run, invocation() as nested:
+        enable_quiet()
+        assert nested.policy.quiet and is_quiet()
+        assert not run.policy.quiet
 
 
 def test_a_nested_invocation_counts_its_own_failures() -> None:

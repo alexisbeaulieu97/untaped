@@ -38,6 +38,7 @@ from untaped.sdk._app_context import app_context
 from untaped.sdk._run import (
     Composition,
     OutputPolicy,
+    PolicyCell,
     Run,
     SettingsOverlay,
     current_run,
@@ -102,7 +103,7 @@ def start_run(*, home: Path | None = None) -> Run:
         picks=_section_reader(),
         diag=output,
         terminal=terminal,
-        policy=OutputPolicy(forced=forced_diagnostics()),
+        policy_cell=PolicyCell(OutputPolicy(forced=forced_diagnostics())),
     )
     output.bind(run)
     return run
@@ -126,9 +127,10 @@ def entered(run: Run) -> Iterator[Run]:
 def invocation() -> Iterator[Run]:
     """Run the block as an invocation nested in a test's: a child of the current run.
 
-    The child keeps the parent's home, composition, rendering, policy,
-    picks, terminal, clock and notes, with an output of its own, so what it
-    counts and holds is its own; with no run current it is a bare run
+    The child keeps the parent's home, composition, rendering, picks,
+    terminal, clock and notes, with an output of its own, so what it counts
+    and holds is its own, and a policy of its own, starting as the parent's,
+    which its sink follows; with no run current it is a bare run
     (:func:`start_run`), whose composition a declared command attaches
     (:func:`current_or_built`). The testing kit's ``invoke_cli`` runs each
     invocation under it.
@@ -138,7 +140,7 @@ def invocation() -> Iterator[Run]:
         run = start_run()
     else:
         output = RunOutput()
-        run = replace(parent, diag=output)
+        run = replace(parent, diag=output, policy_cell=PolicyCell(parent.policy))
         output.bind(run)
     with entered(run):
         yield run
@@ -195,8 +197,11 @@ def current_or_built(
 ) -> Iterator[Run]:
     """The invocation's run; outside one (a library call), a run built over ``declaration``.
 
-    A run not yet composed (a test's bare invocation, :func:`invocation`) is
-    attached the composition of ``declaration``.
+    The built run is entered for the block (:func:`entered`), so it opens an
+    output of its own: Python warnings shown meanwhile go to its sink, and
+    the failures the call emits count on that throwaway run, never on a
+    later one. A run not yet composed (a test's bare invocation,
+    :func:`invocation`) is attached the composition of ``declaration``.
     """
     run = run_or_none()
     if run is None:
@@ -215,7 +220,8 @@ def child_run(
     """Run the block under a child of the current run: a nested pick or a settings overlay.
 
     The child has the parent's home, composition, rendering, diag (its sink
-    and count, following the parent's policy), terminal, clock and notes,
+    and count), policy (the parent's own: a write under either is the one
+    both read, as the shared sink follows it), terminal, clock and notes,
     and its own sections, read under its own pick:
     ``profiles`` replaces the ``--profile`` pick (a string is one profile;
     ``UNTAPED_PROFILE``'s names still stack beneath it; ``"default"`` reads
