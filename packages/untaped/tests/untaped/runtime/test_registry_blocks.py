@@ -40,6 +40,6 @@ def test_a_check_records_the_module_creating_it() -> None:
 
 def test_the_11x_spelling_keeps_its_id() -> None:
     assert DoctorCheck("git.repo-store", title="git store", run=_fine).id == "git.repo-store"
-    shell = DoctorCheck("config", title="config", run=_fine)
-    assert (shell.id, repr(shell)) == ("config", "DoctorCheck('config', title='config')")
+    dotless = DoctorCheck("config", title="config", run=_fine)
+    assert (dotless.id, repr(dotless)) == ("config", "DoctorCheck('config', title='config')")
     assert DoctorCheck("a.", title="t", run=_fine).id == "a."

@@ -667,7 +667,7 @@ def _duplicates(names: Collection[str]) -> list[str]:
 
 
 def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
-    """The shell's ``untaped`` and ``untaped-<name>`` for each expected plugin,
+    """Core's ``untaped`` and ``untaped-<name>`` for each expected plugin,
     each listed once."""
     try:
         rows = json.loads(skills_json)

@@ -36,7 +36,6 @@ from untaped.core.config.use_cases import (
 from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import (
-    ApplicationSpec,
     CompositionResult,
     settings_model,
     state_keys,
@@ -154,34 +153,25 @@ def _split_first(key: str) -> tuple[str, str | None]:
     return first, rest if sep else None
 
 
-def section_scopes(
-    shell: ApplicationSpec, result: CompositionResult
-) -> dict[str, RootSectionScope]:
+def section_scopes(result: CompositionResult) -> dict[str, RootSectionScope]:
     """Build the root resolution scopes for core and composed plugins."""
-    scopes: dict[str, RootSectionScope] = {}
-    scopes[shell.section] = RootSectionScope(
-        plugin=shell.name,
-        state_fields=state_keys(shell),
-        mappings=key_mappings(shell.settings),
-        model=shell.settings,
-    )
-    for registered in result.plugins:
-        spec = registered.spec
-        scopes[spec.name] = RootSectionScope(
+    return {
+        spec.name: RootSectionScope(
             plugin=spec.name,
             state_fields=state_keys(spec),
             mappings=key_mappings(settings_model(spec)),
             model=settings_model(spec),
         )
-    return scopes
+        for spec in (result.core, *(registered.spec for registered in result.plugins))
+    }
 
 
 def _context() -> RootConfigContext:
     """The key-resolution rule for this run's composition: core's section and each plugin's."""
     # Lazy: bootstrap is the CLI's root and imports this module.
-    from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
+    from untaped.runtime.bootstrap import composition  # noqa: PLC0415
 
-    return RootConfigContext(sections=section_scopes(SHELL_SPEC, composition()))
+    return RootConfigContext(sections=section_scopes(composition()))
 
 
 class List(Command[CoreSettings]):

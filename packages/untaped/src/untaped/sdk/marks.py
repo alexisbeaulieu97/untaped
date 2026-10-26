@@ -579,11 +579,7 @@ def listed_behaviours(result: CompositionResult) -> list[tuple[str, DeprecatedBe
     Calls each spec's ``deprecations``, importing what it lists (checkers and
     generators only, never the CLI path).
     """
-    from untaped.runtime.bootstrap import (  # noqa: PLC0415 - bootstrap imports this module
-        SHELL_SPEC,
-    )
-
-    listings = [(_CORE_OWNER, SHELL_SPEC.deprecations)]
+    listings = [(_CORE_OWNER, _core_behaviours)]
     listings.extend((plugin.spec.name, plugin.spec.deprecations) for plugin in result.plugins)
     found: list[tuple[str, DeprecatedBehaviour]] = []
     owners: dict[int, str] = {}
@@ -1324,6 +1320,20 @@ def deprecated_behaviour(
     return DeprecatedBehaviour(name, Deprecated(replacement=replacement, removed_in=removed_in))
 
 
+def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
+    """Core's own deprecated behaviours, the SDK's: each goes in the 12.0 removal sweep.
+
+    Never ``Core`` attributes (core move ruling 3): they are listed here,
+    beside the mechanic that reads them, until the sweep removes them, and
+    this listing leaves with them in that sweep.
+    """
+    from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415 - off the CLI path
+    from untaped.sdk.network.auth import PLAINTEXT_TOKEN  # noqa: PLC0415
+    from untaped.sdk.network.http import CONNECTED_BY_NAME  # noqa: PLC0415
+
+    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
+
+
 # Plugin name → the ``deprecations`` callable of its spec, bound by the
 # composition and called only when a behaviour first asks who lists it, so a
 # spec module never imports its behaviours to compose. Core's are the rest.
@@ -1348,12 +1358,8 @@ def behaviour_owner(behaviour: DeprecatedBehaviour) -> str | None:
     """
     key = id(behaviour)
     if key not in _BEHAVIOUR_OWNERS:
-        from untaped.runtime.bootstrap import (  # noqa: PLC0415 - bootstrap imports this module
-            SHELL_SPEC,
-        )
-
         found: str | None = None
-        if not any(item is behaviour for item in SHELL_SPEC.deprecations()):
+        if not any(item is behaviour for item in _core_behaviours()):
             listers = (n for n, items in _listed() if any(item is behaviour for item in items))
             found = next(listers, None)
         _BEHAVIOUR_OWNERS[key] = (behaviour, found)

@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 
 class DoctorCheck(OwnedBlock):
-    """A health check contributed by the shell or a plugin.
+    """A health check contributed by core or a plugin.
 
     A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
     is the check ``<plugin>.store``; the 11.x spelling passes its ``id``. An

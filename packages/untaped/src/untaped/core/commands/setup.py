@@ -82,7 +82,7 @@ class Screen(Command[CoreSettings]):
         # Lazy: bootstrap is the CLI's root and imports this module; the screen and
         # its write step stay off the path of setup's other commands.
         from untaped.core.commands.setup_screen import setup_screen  # noqa: PLC0415
-        from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
+        from untaped.runtime.bootstrap import composition  # noqa: PLC0415
 
         result = composition()
         only = self.only or None
@@ -108,7 +108,7 @@ class Screen(Command[CoreSettings]):
             if not (outcome.registered or outcome.written):
                 self.ctx.diag.info("nothing saved; no changes made")
         else:
-            rows = selected_check_rows(SHELL_SPEC, result, profile, frozenset(outcome.touched))
+            rows = selected_check_rows(result, profile, frozenset(outcome.touched))
             failed = yield from report_check_rows(rows, op="setup", output=self.output)
             if not failed:
                 self.ctx.diag.success(_ready(profile))
@@ -163,7 +163,7 @@ class Plan(Command[CoreSettings]):
 
     def run(self) -> Iterator[records.SetupStep]:
         # Lazy: bootstrap is the CLI's root and imports this module.
-        from untaped.runtime.bootstrap import SHELL_SPEC, composition  # noqa: PLC0415
+        from untaped.runtime.bootstrap import composition  # noqa: PLC0415
 
         result = composition()
         only = self.only or None
@@ -171,7 +171,7 @@ class Plan(Command[CoreSettings]):
         if not services:
             raise ConfigError(_NOTHING_TO_PLAN if only else _NO_SERVICE)
         profile = write_target()
-        rows = plan_rows(SHELL_SPEC, result, services, profile, online=self.online)
+        rows = plan_rows(result, services, profile, online=self.online)
         if self.output.format == "table" and self.output.requested != ["?"]:
             # A table shows ``run`` as the line to type, so it is a view, not the record.
             emit_plan(rows, profile=profile, columns=self.output.requested)

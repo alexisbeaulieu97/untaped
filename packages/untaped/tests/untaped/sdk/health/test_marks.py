@@ -16,7 +16,7 @@ from typing import Annotated, ClassVar
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.runtime.plugin_harness import make_shell, nullary_app
+from core_test_support.runtime.plugin_harness import nullary_app
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import CompositionResult, PluginSpec, compose, section_settings
@@ -106,7 +106,7 @@ def _spec(
 
 
 def _compose(spec: PluginSpec) -> CompositionResult:
-    return compose(make_shell(), [plugin_candidate(spec)])
+    return compose([plugin_candidate(spec)])
 
 
 TOKEN = Credential("alpha", "token", key=Server, env=("ALPHA_TOKEN",))

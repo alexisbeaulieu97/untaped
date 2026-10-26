@@ -18,7 +18,6 @@ from core_test_support.runtime.plugin_harness import (
     make_app,
     make_candidate,
     make_check,
-    make_shell,
     make_skill,
     make_spec,
 )
@@ -30,7 +29,9 @@ from untaped.runtime.registry import (
     QuarantineRecord,
     RegisteredPlugin,
     SkillAsset,
+    _core_alone,
     compose,
+    kept_declaration,
     plugin_dir,
     run_deferred_factory,
     settings_model,
@@ -101,14 +102,12 @@ def test_spec_normalizes_sequences_to_tuples() -> None:
 
 
 def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    shell = make_shell()
     github_spec = make_spec(name="github", settings=Profile, skills=(make_skill("gh-skill"),))
     package = ModuleType("fake_github_package")
     package.SPEC = github_spec  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "fake_github_package", package)
     jira_spec = make_spec(name="jira", settings=OtherProfile, checks=(make_check("jira.auth"),))
     result = compose(
-        shell,
         [
             make_candidate(jira_spec, "example-jira"),
             PluginCandidate(
@@ -129,10 +128,59 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert jira.plugin_ref == PluginRef(distribution="example-jira", entry_point="jira")
 
 
-def test_compose_shell_only() -> None:
-    result = compose(make_shell())
+def test_compose_core_only() -> None:
+    result = compose()
     assert result.plugins == ()
     assert result.quarantine == ()
+
+
+def test_core_is_read_as_a_plugin_spec() -> None:
+    """``result.core`` is the root plugin's spec, built from the declaration as a plugin's is."""
+    from untaped.core.settings import NAME, CoreSettings
+
+    core = compose().core
+    assert (core.name, core.settings, core.state) == (NAME, CoreSettings, None)
+    assert f"{NAME}.token-store" in [check.id for check in core.doctor_checks]
+    # core's stub skill is named after it, not ``untaped-untaped``
+    assert [skill.name for skill in core.skills] == [NAME]
+
+
+def _read(core: PluginSpec) -> tuple[object, ...]:
+    return (
+        core.name,
+        core.settings,
+        core.state,
+        tuple(check.id for check in core.doctor_checks),
+        core.skills,
+        tuple(cache.qualified for cache in core.caches),
+    )
+
+
+def test_core_reads_the_same_from_a_kept_declaration() -> None:
+    """A warm composition (the kept declaration, no class composed) gives the same core spec."""
+    cold = compose()
+    assert kept_declaration(()) is not None
+    warm = compose()
+    assert warm.mount.declaration == cold.mount.declaration
+    assert _read(warm.core) == _read(cold.core)
+
+
+def test_broken_key_declarations_in_core_s_settings_fail_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Core's settings get the key checks a plugin's get; a broken one is a core bug, raised."""
+    from untaped.core.settings import CoreSettings
+
+    monkeypatch.setattr(
+        CoreSettings, "renamed_keys", {"http.timeout_seconds": "nope.missing"}, raising=False
+    )
+    _core_alone.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="core's own class does not compose"):
+            compose()
+    finally:
+        monkeypatch.undo()
+        _core_alone.cache_clear()
 
 
 def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
@@ -143,7 +191,7 @@ def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
         return make_spec(name="func")
 
     candidate = PluginCandidate(distribution="fn-dist", name="func", target=provider)
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
     assert result.plugins == ()
     (record,) = result.quarantine
     assert record.reason == "not-a-spec"
@@ -158,8 +206,7 @@ def test_compose_never_runs_doctor_bodies() -> None:
         name="watched",
         checks=(make_check("watched.ok", record_calls=calls), exploding_check()),
     )
-    shell = make_shell(checks=(exploding_check("shell.boom"),))
-    result = compose(shell, [make_candidate(spec), make_candidate(make_spec(name="ext"))])
+    result = compose([make_candidate(spec), make_candidate(make_spec(name="ext"))])
     assert calls == []
     assert [cap.spec.name for cap in result.plugins] == ["ext", "watched"]
 
@@ -170,7 +217,6 @@ def test_compose_leaves_global_settings_registry_untouched() -> None:
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     before_state = dict(_CONFIG_REGISTRY.state_sections)
     compose(
-        make_shell(),
         [make_candidate(make_spec(name="alpha")), make_candidate(make_spec(name="beta"))],
     )
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
@@ -186,7 +232,6 @@ def test_failed_provider_registers_nothing() -> None:
     bad = make_spec(name="untaped")
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     result = compose(
-        make_shell(),
         [
             make_candidate(bad, "bad-dist"),
             make_candidate(good, "good-dist"),
@@ -206,7 +251,7 @@ def test_failed_provider_registers_nothing() -> None:
 def test_plugins_compose_in_name_order_whatever_the_distribution() -> None:
     zeta = make_candidate(make_spec(name="zeta"), "aaa-dist")
     alpha = make_candidate(make_spec(name="alpha"), "zzz-dist")
-    result = compose(make_shell(), [zeta, alpha])
+    result = compose([zeta, alpha])
     assert [c.spec.name for c in result.plugins] == ["alpha", "zeta"]
     assert result.quarantine == ()
 
@@ -220,7 +265,7 @@ def _github_rivals() -> list[PluginCandidate]:
 
 
 def test_a_contested_name_quarantines_every_claimant() -> None:
-    result = compose(make_shell(), _github_rivals())
+    result = compose(_github_rivals())
     assert [c.spec.name for c in result.plugins] == ["jira"]
     detail = "duplicate plugin name: 'github' (claimed by 'acme-dist', 'untaped')"
     assert [(q.distribution, q.reason, q.detail) for q in result.quarantine] == [
@@ -230,8 +275,8 @@ def test_a_contested_name_quarantines_every_claimant() -> None:
 
 
 def test_a_contested_name_does_not_depend_on_candidate_order() -> None:
-    forward = compose(make_shell(), _github_rivals())
-    backward = compose(make_shell(), list(reversed(_github_rivals())))
+    forward = compose(_github_rivals())
+    backward = compose(list(reversed(_github_rivals())))
     assert [c.spec.name for c in backward.plugins] == ["jira"]
     assert backward.quarantine == forward.quarantine
 
@@ -241,7 +286,7 @@ def test_three_claimants_are_all_quarantined() -> None:
         make_candidate(make_spec(name="github"), dist)
         for index, dist in enumerate(("c-dist", "a-dist", "b-dist"))
     ]
-    result = compose(make_shell(), claimants)
+    result = compose(claimants)
     assert result.plugins == ()
     assert [(q.distribution, q.reason) for q in result.quarantine] == [
         ("a-dist", "duplicate-name"),
@@ -279,7 +324,7 @@ def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
     broken: PluginCandidate, reason: str
 ) -> None:
     sound = make_candidate(make_spec(name="github"), "b-dist")
-    result = compose(make_shell(), [broken, sound])
+    result = compose([broken, sound])
     assert [c.plugin_ref.distribution for c in result.plugins] == ["b-dist"]
     assert [(q.distribution, q.reason) for q in result.quarantine] == [("a-dist", reason)]
 
@@ -304,7 +349,7 @@ def test_a_provider_with_help_is_deferred_and_one_without_is_staged() -> None:
 
     lazy = make_candidate(replace(make_spec(name="lazy", factory=factory), help="Lazy."))
     eager = make_candidate(make_spec(name="eager"))
-    result = compose(make_shell(), [lazy, eager])
+    result = compose([lazy, eager])
     staged = {c.spec.name: c.app for c in result.plugins}
     assert staged["lazy"] is None
     assert calls == []
@@ -317,7 +362,7 @@ def test_a_name_with_an_at_says_it_is_reserved() -> None:
 
 
 def test_every_part_of_a_spec_but_its_name_is_optional() -> None:
-    result = compose(make_shell(), [make_candidate(PluginSpec(name="bare"))])
+    result = compose([make_candidate(PluginSpec(name="bare"))])
 
     [bare] = result.plugins
     assert (bare.spec.name, bare.app, result.quarantine) == ("bare", None, ())
@@ -330,7 +375,7 @@ def test_an_app_factory_must_be_callable() -> None:
 
 
 def test_asking_a_plugin_without_commands_for_its_app_is_a_bug() -> None:
-    [bare] = compose(make_shell(), [make_candidate(PluginSpec(name="bare"))]).plugins
+    [bare] = compose([make_candidate(PluginSpec(name="bare"))]).plugins
 
     with pytest.raises(ConfigError, match="plugin 'bare' has no commands to build"):
         run_deferred_factory(bare)
@@ -355,7 +400,7 @@ def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
         distribution="thief-dist", name="thief", target="untaped_kind_thief:provide"
     )
 
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
     assert "untaped.core.config.models.Setting" in result.quarantine[0].detail
@@ -375,7 +420,7 @@ def test_a_plugin_declaring_a_kind_under_another_name_is_quarantined(
     monkeypatch.delitem(sys.modules, "untaped_toy", raising=False)
     candidate = PluginCandidate(distribution="toy-dist", name="toy", target="untaped_toy:provide")
 
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("toy", "foreign-kind")]
     detail = result.quarantine[0].detail
@@ -401,7 +446,7 @@ def test_a_kind_a_lazy_module_declares_under_another_name_quarantines_at_first_b
         return App()
 
     spec = PluginSpec(name="toy-lazy", app_factory=factory, help="Toy commands.")
-    [toy] = compose(make_shell(), [make_candidate(spec)]).plugins
+    [toy] = compose([make_candidate(spec)]).plugins
     failure = run_deferred_factory(toy)
 
     assert isinstance(failure, QuarantineRecord)
@@ -416,7 +461,7 @@ def test_a_plugin_whose_app_factory_redeclares_a_kind_is_quarantined() -> None:
 
         return App()
 
-    result = compose(make_shell(), [make_candidate(make_spec(name="thief", factory=factory))])
+    result = compose([make_candidate(make_spec(name="thief", factory=factory))])
 
     assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
 

@@ -1285,7 +1285,7 @@ def _build_settings_model(
 ) -> type[Settings]:
     from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
 
-    # Core's section is there before composition registers it too (``SHELL_SPEC``),
+    # Core's section is there before composition registers it too (``result.core``),
     # so a model built before composition (or for a test's own sections) has it.
     profile_sections = {NAME: CoreSettings, **profile_sections}
     fields: dict[str, Any] = {}

@@ -57,7 +57,7 @@ from untaped.runtime.settings import (
 from untaped.sdk._home import HOME_ENV
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
+from untaped.sdk.health.deprecated_keys import mapping_errors
 from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
 from untaped.sdk.marks import (
@@ -145,29 +145,6 @@ def check_plugin_name(name: str) -> None:
 
 def _no_deprecations() -> Sequence[DeprecatedBehaviour]:
     return ()
-
-
-@dataclass(frozen=True)
-class ApplicationSpec:
-    """The root application; ``deprecations`` lists core's deprecated behaviours."""
-
-    name: str
-    app_factory: Callable[[], App]
-    section: str
-    settings: type[BaseModel]
-    state: type[BaseModel] | None = None
-    doctor_checks: tuple[DoctorCheck, ...] = ()
-    deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
-
-    def __post_init__(self) -> None:
-        if not self.name.strip() or not self.section.strip():
-            raise ConfigError("shell name and section must not be empty")
-        if not callable(self.deprecations):
-            raise ConfigError("shell deprecations must be a function")
-        _check_model(self.settings, "settings", "shell")
-        _check_model(self.state, "state", "shell")
-        key_mappings(self.settings)  # a broken shell declaration is a core bug
-        object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
 def _no_contracts() -> Sequence[type[Contract]]:
@@ -528,6 +505,21 @@ class CompositionResult:
     #: The plugin classes composed, core's included, mounted.
     mount: Mount = field(kw_only=True, compare=False)
 
+    @cached_property
+    def core(self) -> PluginSpec:
+        """Core as the spec its readers take, built as every plugin class's is.
+
+        Core is the plugin whose commands mount at the root
+        (:attr:`~untaped.runtime.declaration.PluginDecl.root`); its spec comes
+        from the declaration (:func:`untaped.runtime.mount.plugin_spec`), so
+        its settings model, state and checks are read as any plugin's. Until
+        core is one of :attr:`plugins` (core move 11i).
+        """
+        from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - mount imports this module
+
+        root = next(plugin for plugin in self.mount.declaration.plugins if plugin.root)
+        return plugin_spec(self.mount, root.name)
+
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
     """The distribution a candidate is reported under; a blank one is ``unknown``."""
@@ -774,13 +766,16 @@ def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[Plug
 
 
 class _CompositionState:
-    """Mutable accumulation of one composition run (shell + committed plugins)."""
+    """Mutable accumulation of one composition run (core + committed plugins)."""
 
-    def __init__(self, shell: ApplicationSpec) -> None:
-        self.shell = shell
+    def __init__(self, core: PluginDecl) -> None:
         # Core's own stub skill is named after it.
-        self.skill_names: set[str] = {shell.name}
-        self.doctor_ids: set[str] = {check.id for check in shell.doctor_checks}
+        self.skill_names: set[str] = {core.name} if core.skill else set()
+        self.doctor_ids: set[str] = {
+            f"{core.name}.{block.name}"
+            for block in core.blocks
+            if block.block == DoctorCheck.block_kind
+        }
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
@@ -788,7 +783,10 @@ class _CompositionState:
             "home": f"the variable {HOME_ENV}",
         }
         #: Core's name and its commands' words (:func:`_core`), held as ``taken`` is.
-        self.core: dict[str, str] = {}
+        self.core: dict[str, str] = {
+            core.name: "core",
+            **dict.fromkeys(core.command_words(), "a root command"),
+        }
 
     @cached_property
     def sdk_version(self) -> str | None:
@@ -996,18 +994,17 @@ def state_declarations(spec: PluginSpec) -> tuple[StateDeclaration, ...]:
     return tuple(store for store in spec.stores if _is_state(store))
 
 
-def state_keys(spec: PluginSpec | ApplicationSpec) -> frozenset[str]:
+def state_keys(spec: PluginSpec) -> frozenset[str]:
     """The keys of ``spec``'s state section: its state declarations' and its ``state`` model's.
 
     Read from names only: no row model is imported.
     """
     keys = set() if spec.state is None else set(spec.state.model_fields)
-    if isinstance(spec, PluginSpec):
-        keys.update(declared.name for declared in state_declarations(spec))
+    keys.update(declared.name for declared in state_declarations(spec))
     return frozenset(keys)
 
 
-def state_model(spec: PluginSpec | ApplicationSpec) -> type[BaseModel] | None:
+def state_model(spec: PluginSpec) -> type[BaseModel] | None:
     """One model of ``spec``'s whole state section in the home; ``None`` when it keeps none.
 
     The ``state`` model's fields, then a field per state declaration it
@@ -1016,10 +1013,8 @@ def state_model(spec: PluginSpec | ApplicationSpec) -> type[BaseModel] | None:
     Resolves lazy row models: for the surface, the config reference and
     ``doctor``, never on the startup path.
     """
-    declarations = (
-        tuple(each for each in state_declarations(spec) if not isinstance(each, ProjectStateRows))
-        if isinstance(spec, PluginSpec)
-        else ()
+    declarations = tuple(
+        each for each in state_declarations(spec) if not isinstance(each, ProjectStateRows)
     )
     covered = set() if spec.state is None else set(spec.state.model_fields)
     extra: dict[str, Any] = {
@@ -1144,6 +1139,13 @@ def _check_composed_mappings(spec: PluginSpec) -> None:
 
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_free_name(spec.name, state)
+    _check_own_declaration(spec)
+    _check_skills(spec, state)
+    _check_doctor_checks(spec, state)
+
+
+def _check_own_declaration(spec: PluginSpec) -> None:
+    """The checks of ``spec``'s own declaration, no other plugin's needed: core's too."""
     _check_caches(spec)
     _check_credentials(spec)
     _check_stores(spec)
@@ -1152,8 +1154,6 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_key_mappings(spec)
     _check_composed_mappings(spec)
     _check_state_model(spec)
-    _check_skills(spec, state)
-    _check_doctor_checks(spec, state)
 
 
 def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
@@ -1232,16 +1232,14 @@ def resolve_target(target: object) -> object:
     return resolved
 
 
-def compose(
-    shell: ApplicationSpec, candidates: Sequence[PluginCandidate] = ()
-) -> CompositionResult:
+def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
     """Compose core, then every candidate in name order; quarantine failures.
 
     Core's own class (:class:`untaped.core.plugin.Core`) composes first, with
     no entry point: its name and its commands' words are taken, as are the
     config files' own keys, so a plugin named
     after one is quarantined (``duplicate-name``) and core always runs.
-    Each candidate is first provided and validated against the shell alone.
+    Each candidate is first provided and validated against core alone.
     A plugin name that two or more of the survivors
     claim is contested: every claimant is quarantined, so the result never
     depends on candidate order. The rest commit in ``(name, distribution,
@@ -1260,14 +1258,14 @@ def compose(
     """
     ordered = sorted(candidates, key=_candidate_order)
     if not all(isinstance(candidate.target, str) for candidate in ordered):
-        return _compose(shell, ordered)
+        return _compose(ordered)
     key, read = _declaration_key(ordered), _candidates_read(ordered)
     composed: list[CompositionResult] = []
     filling: list[bool] = []
 
     def fill(_key: str, _progress: ProgressHandle) -> Filled[KeptDeclaration]:
         filling.append(True)
-        composed.append(_compose(shell, ordered))
+        composed.append(_compose(ordered))
         return Filled(
             value=KeptDeclaration(candidates=read, declaration=composed[-1].mount.declaration)
         )
@@ -1281,7 +1279,7 @@ def compose(
                 kept = served.value[key]
                 if kept.candidates != read:
                     raise _StaleDeclaration("the candidates changed")
-                return _compose(shell, ordered, kept.declaration)
+                return _compose(ordered, kept.declaration)
             except Exception:
                 # a candidate it doesn't account for, or a part of it that no longer loads
                 # (a dependency gone): compose afresh and keep that instead
@@ -1294,7 +1292,7 @@ def compose(
             raise  # composing itself failed: no cache stands in for that
         # the cache failed (its version, its folder): compose without it, as before it existed
         _LOG.debug("composing without the declaration cache", exc_info=True)
-        return _compose(shell, ordered)
+        return _compose(ordered)
     return composed[-1]
 
 
@@ -1361,19 +1359,11 @@ class _StaleDeclaration(Exception):
 
 
 def _compose(
-    shell: ApplicationSpec,
     ordered: Sequence[PluginCandidate],
     declared: Declaration | None = None,
 ) -> CompositionResult:
     """:func:`compose` over ``ordered``; with ``declared``, its plugin classes come from it."""
-    state = _CompositionState(shell)
-    core = _core(declared)
-    state.core = {core.name: "core", **dict.fromkeys(core.command_words(), "a root command")}
-    state.doctor_ids |= {
-        f"{core.name}.{block.name}"
-        for block in core.blocks
-        if block.block == DoctorCheck.block_kind
-    }
+    state = _CompositionState(_core(declared))
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, PluginSpec | type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
@@ -1509,13 +1499,23 @@ def _core(declared: Declaration | None) -> PluginDecl:
 
 @functools.cache
 def _core_alone() -> PluginDecl:
-    """Core's class composed on its own, once a process: it is the same at every composition."""
+    """Core's class composed on its own, once a process: it is the same at every composition.
+
+    Its own declaration gets the checks a plugin's gets (its settings' key
+    declarations among them); a failure is a core bug no install can work
+    around, so it raises instead of quarantining.
+    """
     from untaped.core.settings import NAME  # noqa: PLC0415 - core imports the runtime
     from untaped.runtime.composition import compose as compose_classes  # noqa: PLC0415
+    from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415
 
     composed = compose_classes([_core_entry()])
-    for refused in composed.quarantined:  # a core bug: no install can work around it
+    for refused in composed.quarantined:
         raise RuntimeError(f"core's own class does not compose: {refused.detail}")
+    try:
+        _check_own_declaration(plugin_spec(Mount.of(composed), NAME))
+    except _Quarantine as failed:
+        raise RuntimeError(f"core's own class does not compose: {failed.detail}") from None
     return composed.plugin(NAME)
 
 

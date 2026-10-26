@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import compose, make_spec, root_group, write_config
 from untaped.core.commands.doctor import selected_check_rows
-from untaped.runtime import bootstrap
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import CliInvoker
@@ -123,7 +122,7 @@ def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
     result = compose(make_spec("old", settings=OldProfile))
 
     def checks() -> set[str]:
-        rows = selected_check_rows(bootstrap.SHELL_SPEC, result, "default", frozenset({"old"}))
+        rows = selected_check_rows(result, "default", frozenset({"old"}))
         return {str(row["check"]) for row in rows if row["plugin"] != "old"}
 
     write_config(_isolated_config, "format_version: 2\n")

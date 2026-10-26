@@ -121,7 +121,7 @@ class Block:
 def spelled_id(id: str | None) -> tuple[str, str] | tuple[()]:
     """The plugin and name an 11.x id spells, or nothing for a block a plugin class names.
 
-    A shell check's id has no dot: its plugin part is the whole id and its name is empty.
+    An id with no dot (the 11.x spelling allows one) is all plugin part, with an empty name.
     """
     if id is None:
         return ()

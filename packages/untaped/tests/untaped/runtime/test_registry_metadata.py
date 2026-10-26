@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.runtime.registry as registry
-from core_test_support.runtime.plugin_harness import make_candidate, make_shell, make_spec
+from core_test_support.runtime.plugin_harness import make_candidate, make_spec
 from untaped.runtime.registry import (
     PluginCandidate,
     compose,
@@ -43,7 +43,7 @@ def test_bad_candidate_metadata_quarantines(
     distribution: str, name: str, kwargs: dict[str, object], named: list[str]
 ) -> None:
     candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
     assert result.plugins == ()
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
@@ -75,7 +75,7 @@ def test_metadata_is_checked_before_import(
         target="definitely.missing.row13_module:SPEC",
         **candidate_kwargs,  # type: ignore[arg-type]
     )
-    result = compose(make_shell(), [candidate])
+    result = compose([candidate])
     assert calls == []
     (record,) = result.quarantine
     assert record.reason == "bad-metadata"
@@ -93,7 +93,7 @@ def _compose_with_sdk_version(
     candidate = make_candidate(
         make_spec(name="pep440"), "example-dist", requires_dist=(requirement,)
     )
-    return compose(make_shell(), [candidate])
+    return compose([candidate])
 
 
 @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch, requireme
 def test_multi_entry_point_distribution_passes() -> None:
     first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
     second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
-    result = compose(make_shell(), [second, first])
+    result = compose([second, first])
     assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
     assert result.quarantine == ()
 
@@ -173,7 +173,7 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
     (candidate,) = providers
     assert candidate.distribution == "live-dist"
     assert candidate.name == "live-cap"
-    result = compose(make_shell(), list(providers))
+    result = compose(list(providers))
     assert [cap.spec.name for cap in result.plugins] == ["live-cap"]
     assert result.quarantine == ()
 
@@ -230,7 +230,7 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
         make_candidate(make_spec(name=name), "example-dist", requires_dist=("untaped>=6",))
         for name in ("alpha", "beta")
     ]
-    result = compose(make_shell(), candidates)
+    result = compose(candidates)
     assert [cap.spec.name for cap in result.plugins] == ["alpha", "beta"]
     assert looked_up == ["untaped"]
 

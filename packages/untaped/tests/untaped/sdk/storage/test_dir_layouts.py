@@ -96,7 +96,7 @@ def test_doctor_lists_a_numbered_dirs_layouts(atlas: Install) -> None:
         old = Atlas.maps.place / "maps.v2"
         old.mkdir(parents=True)
         Atlas.maps.open()
-        rows = collect_doctor_rows(bootstrap.SHELL_SPEC, bootstrap.composition())
+        rows = collect_doctor_rows(bootstrap.composition())
     [row] = [row for row in rows if row["check"] == "stores"]
     assert row["status"] == "warn"
     assert "atlas.maps: layout 3 at" in str(row["detail"])
