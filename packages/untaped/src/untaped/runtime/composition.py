@@ -160,7 +160,8 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     plugin broken whatever the others are (a name ``taken`` holds included)
     is withdrawn first, then the plugins listing one contract; the others
     then read owners (of a package, a contract) only among the plugins that
-    compose, until those they read are those that compose.
+    compose, until those they read are those that compose (when no such set
+    exists, the refusals of a pass reading every plugin stand, first-wins).
     """
     reserved = frozenset(taken)
     every = frozenset(range(len(entries)))
@@ -168,7 +169,8 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     withdrawn: dict[int, tuple[Problem, ...]] = {}
     read: frozenset[int] | None = None  # the plugins the others read; None: all standing
     tried: set[frozenset[int]] = set()
-    settled: Declaration | None = None  # the last pass composing only plugins it read
+    # the refusals of the last pass composing only plugins it read
+    settled: dict[int, tuple[Problem, ...]] | None = None
     while True:
         standing = every - frozenset(withdrawn)
         readable = standing if read is None else read & standing
@@ -191,17 +193,20 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
         if composed == readable:
             return declaration
         if composed < readable:
-            settled = declaration
+            settled = refused
         if composed not in tried:
             read = composed
         elif composed & readable < readable:
             read = composed & readable  # a set seen before: only shrink, so this ends
         else:
             # a plugin composes only while it isn't read (its class then clashes
-            # with its own): no read set agrees, so the last that composed only
-            # plugins it read stands, first-wins (the first pass reads all)
+            # with its own): no read set agrees, so the refusals of the last pass
+            # that composed only plugins it read stand, first-wins (the first
+            # pass reads all), and the rest compose without them
             assert settled is not None
-            return settled
+            withdrawn |= settled
+            read, tried, settled = None, set(), None
+            continue
         tried.add(composed)
 
 

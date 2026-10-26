@@ -1804,7 +1804,7 @@ def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_w
     """y reaches a class of o's package: while o is read it is o's, and clashes with o's own.
 
     No read set agrees (o composes only while unread), so the pass reading
-    both stands: y composes, o is refused, as composing the two first-wins.
+    both refuses o, first-wins, and y composes as it would alone.
     """
 
     def book(module: str) -> type[BaseModel]:
@@ -1835,6 +1835,7 @@ def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_w
     ]
     declaration = compose(entries)  # ends
     assert [plugin.name for plugin in declaration.plugins] == ["y"]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
     [refused] = declaration.quarantined
     assert refused.name == "o"
     assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
