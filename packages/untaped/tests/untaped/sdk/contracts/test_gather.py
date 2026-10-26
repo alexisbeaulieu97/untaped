@@ -29,6 +29,7 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
+from untaped.runtime.run import child_run
 from untaped.runtime.sink import diagnostics_scope, exit_on_counted_failure, recording
 from untaped.sdk.contracts import (
     Contract,
@@ -382,6 +383,7 @@ def test_an_expired_entry_is_refreshed() -> None:
     assert Library.calls == 2
 
 
+@pytest.mark.usefixtures("home_run")
 def test_the_cache_is_per_provider_settings() -> None:
     compose(shelf_spec(), library_spec())
     write_config(
@@ -391,14 +393,12 @@ def test_the_cache_is_per_provider_settings() -> None:
         + "  same:\n    library: {catalog: https://w.example, volumes: []}\n"
     )
     gather(BookSource.books)()
-    from untaped.runtime.profile_resolver import profile_scope
-
-    with profile_scope("work"):
+    with child_run(profiles="work"):
         [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert answer.value == []
     assert Library.calls == 2
-    with profile_scope("same"):
+    with child_run(profiles="same"):
         [answer] = gather(BookSource.books)()
     assert Library.calls == 2  # the provider's settings read the same as work's
     files = _cache_files()

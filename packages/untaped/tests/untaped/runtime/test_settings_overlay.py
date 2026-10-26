@@ -1,36 +1,38 @@
-"""``settings_overlay``: candidate values layered over the loaded config, in one context.
+"""A settings overlay: candidate values a child run lays over the loaded config.
 
 ``setup`` checks a plugin against what the user typed before anything is
-written. The overlay is the internal seam for that: the settings loader reads
-it, ``get_settings`` bypasses its cache while it is set, and nothing outside
-the context that set it (the main thread, a fresh thread, the config file, the
-keychain) ever sees the candidate values.
+written. The overlay is the internal seam for that: a child run carries it
+(``child_run(overlay=...)``), the settings loader reads it, ``get_settings``
+bypasses its cache under it, and nothing outside the child run (the main
+thread, a fresh thread, the config file, the keychain) ever sees the
+candidate values.
 """
 
 from __future__ import annotations
 
 import contextvars
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped.runtime.profile_resolver import profile_scope
+from untaped.runtime.run import child_run
 from untaped.runtime.settings import (
-    SettingsOverlay,
-    active_overlay,
     apply_overlay,
     get_settings,
     load_settings_section,
     register_profile_settings,
     resolve_with_overlay,
-    settings_overlay,
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.auth import TokenSources, clear_token_cache, resolve_token
+from untaped.sdk.run import Run, SettingsOverlay, current_overlay, current_run
+
+pytestmark = pytest.mark.usefixtures("home_run")
 
 
 class OverlayProfile(BaseModel):
@@ -46,6 +48,13 @@ class OverlayProfile(BaseModel):
 @pytest.fixture(autouse=True)
 def _register() -> None:
     register_profile_settings("ovl", OverlayProfile)
+
+
+def _overlaid(
+    profile: str, section: str, values: Mapping[str, object], *, pick: str | None = None
+) -> AbstractContextManager[Run]:
+    """A child run laying ``values`` over ``profile``'s ``section`` (and picking ``pick``)."""
+    return child_run(profiles=pick, overlay=SettingsOverlay(profile, section, values))
 
 
 def _config(path: Path, text: str) -> None:
@@ -81,7 +90,7 @@ def test_overlay_values_are_visible_to_load_settings_section(_isolated_config: P
     )
 
     candidate = {"base_url": "https://new", "token": SecretStr("typed")}
-    with settings_overlay("default", "ovl", candidate):
+    with _overlaid("default", "ovl", candidate):
         section = load_settings_section("ovl")
 
     assert section.base_url == "https://new"
@@ -96,9 +105,9 @@ def test_overlay_for_another_profile_is_ignored(_isolated_config: Path) -> None:
         "format_version: 2\novl:\n  base_url: https://old\nprofiles:\n  prod: {}\n",
     )
 
-    with settings_overlay("prod", "ovl", {"base_url": "https://new"}):
+    with _overlaid("prod", "ovl", {"base_url": "https://new"}):
         assert load_settings_section("ovl").base_url == "https://old"
-        with profile_scope("prod"):
+        with child_run(profiles="prod"):  # a child of the child keeps its overlay
             assert load_settings_section("ovl").base_url == "https://new"
 
 
@@ -108,7 +117,7 @@ def test_overlay_none_unsets_a_key(_isolated_config: Path) -> None:
         "format_version: 2\novl:\n  base_url: https://old\n  token: file-token\n",
     )
 
-    with settings_overlay("default", "ovl", {"token": None}):
+    with _overlaid("default", "ovl", {"token": None}):
         section = load_settings_section("ovl")
 
     assert section.token is None
@@ -122,13 +131,13 @@ def test_overlay_reaches_a_profile_that_is_not_written_yet(_isolated_config: Pat
     )
 
     typed = {"token": SecretStr("t")}
-    with profile_scope("brand-new"), settings_overlay("brand-new", "ovl", typed):
+    with _overlaid("brand-new", "ovl", typed, pick="brand-new"):
         section = load_settings_section("ovl")
 
     # It starts from default's values, as the profile will once it is created.
     assert section.base_url == "https://old"
     assert section.token is not None
-    with pytest.raises(ConfigError, match="brand-new"), profile_scope("brand-new"):
+    with pytest.raises(ConfigError, match="brand-new"), child_run(profiles="brand-new"):
         load_settings_section("ovl")
 
 
@@ -139,7 +148,7 @@ def test_overlay_reaches_a_new_profile_in_a_config_without_profiles(
     _config(_isolated_config, profiles or "{}\n")
 
     typed = {"token": SecretStr("t")}
-    with profile_scope("brand-new"), settings_overlay("brand-new", "ovl", typed):
+    with _overlaid("brand-new", "ovl", typed, pick="brand-new"):
         section = load_settings_section("ovl")
 
     assert section.token is not None
@@ -151,7 +160,7 @@ def test_overlay_never_changes_get_settings_on_the_main_thread(_isolated_config:
     assert before.ovl.base_url == "https://old"  # type: ignore[attr-defined]
 
     def candidate() -> str | None:
-        with settings_overlay("default", "ovl", {"base_url": "https://candidate"}):
+        with _overlaid("default", "ovl", {"base_url": "https://candidate"}):
             return get_settings().ovl.base_url  # type: ignore[attr-defined, no-any-return]
 
     assert _in_thread(candidate) == "https://candidate"
@@ -166,7 +175,7 @@ def test_the_cache_is_never_filled_with_candidate_values(_isolated_config: Path)
     _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
     get_settings.cache_clear()
 
-    with settings_overlay("default", "ovl", {"base_url": "https://candidate"}):
+    with _overlaid("default", "ovl", {"base_url": "https://candidate"}):
         assert get_settings().ovl.base_url == "https://candidate"  # type: ignore[attr-defined]
         assert get_settings.cache_info().currsize == 0
 
@@ -191,7 +200,7 @@ def test_overlay_does_not_write_config_or_keychain(
     _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
     config_bytes = _isolated_config.read_bytes()
 
-    with settings_overlay(
+    with _overlaid(
         "default",
         "ovl",
         {"base_url": "https://new", "token": SecretStr("typed"), "token_command": ["pass", "x"]},
@@ -209,7 +218,7 @@ def test_overlay_is_visible_in_a_copied_context_thread_and_not_a_fresh_one(
 ) -> None:
     _config(_isolated_config, "format_version: 2\novl:\n  base_url: https://old\n")
 
-    with settings_overlay("default", "ovl", {"base_url": "https://new"}):
+    with _overlaid("default", "ovl", {"base_url": "https://new"}):
         copied = _in_thread(lambda: load_settings_section("ovl").base_url)
         fresh = _in_thread(lambda: load_settings_section("ovl").base_url, copy=False)
 
@@ -217,19 +226,19 @@ def test_overlay_is_visible_in_a_copied_context_thread_and_not_a_fresh_one(
 
 
 def test_the_overlay_ends_with_its_block(_isolated_config: Path) -> None:
-    assert active_overlay() is None
+    assert current_overlay() is None
 
-    with settings_overlay("default", "ovl", {"base_url": "x"}) as overlay:
-        assert active_overlay() is overlay
-        assert overlay == SettingsOverlay("default", "ovl", {"base_url": "x"})
+    with _overlaid("default", "ovl", {"base_url": "x"}) as child:
+        assert current_run() is child
+        assert current_overlay() == SettingsOverlay("default", "ovl", {"base_url": "x"})
 
-    assert active_overlay() is None
+    assert current_overlay() is None
 
 
 def test_apply_overlay_copies_and_unwraps_secrets() -> None:
     effective: dict[str, Any] = {"ovl": {"base_url": "a", "token": "t"}, "other": {"k": 1}}
 
-    with settings_overlay("p", "ovl", {"token": SecretStr("typed"), "token_command": None}):
+    with _overlaid("p", "ovl", {"token": SecretStr("typed"), "token_command": None}):
         same = apply_overlay(effective, profile="elsewhere")
         applied = apply_overlay(effective, profile="p")
 
@@ -258,7 +267,7 @@ def test_plaintext_warning_is_suppressed_under_an_overlay(
     clear_token_cache()
     section = load_settings_section("ovl")
 
-    with settings_overlay("default", "ovl", {"token": SecretStr("typed")}):
+    with _overlaid("default", "ovl", {"token": SecretStr("typed")}):
         resolve_token(section, section="ovl")
 
     assert capsys.readouterr().err == ""

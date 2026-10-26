@@ -20,7 +20,7 @@ from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
 from untaped.core.settings import CoreSettings
 from untaped.runtime import bootstrap
-from untaped.runtime.profile_resolver import profile_scope
+from untaped.runtime.profile_resolver import root_pick
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk._home import config_path
 from untaped.sdk.health.deprecated_keys import key_mappings
@@ -452,7 +452,7 @@ def test_the_result_is_one_line_per_fix(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_the_result_keeps_a_profile_the_flag_chose(monkeypatch: pytest.MonkeyPatch) -> None:
-    with profile_scope("default"):
+    with root_pick(["default"]):
         result = _cli(_spec(_MIGRATE), "--yes", monkeypatch=monkeypatch)
     assert "untaped --profile default auth migrate" in result.stdout
 

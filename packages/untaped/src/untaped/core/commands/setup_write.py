@@ -40,8 +40,9 @@ from untaped.core.config.use_cases import (
 )
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.core.profile.use_cases import CreateProfile
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, profile_scope
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.run import child_run
 from untaped.runtime.settings import env_var_setting, load_settings_section
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.network._token_store import TokenStore, entry_name, preset_entry
@@ -260,7 +261,7 @@ def _login(
     section, profile, how = candidate.section, candidate.profile, secret.how
     if how == "keep":
         return []
-    with profile_scope(profile):
+    with child_run(profiles=profile):
         settings = load_settings_section(section)
     key = credential_key(credential, settings)
     if key is None:

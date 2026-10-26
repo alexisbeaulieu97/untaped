@@ -28,8 +28,9 @@ from untaped.core.commands.setup_state import (
     service_store,
 )
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE, profile_scope
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import ApplicationSpec, CompositionResult, PluginSpec, settings_model
+from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
@@ -89,7 +90,7 @@ def emit_plan(rows: list[Row], *, profile: str, columns: list[str] | None) -> No
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
-    with profile_scope(scope):
+    with child_run(profiles=scope):
         emit(shown, fmt="table", columns=columns, table_columns=SetupStep.table_columns)
 
 

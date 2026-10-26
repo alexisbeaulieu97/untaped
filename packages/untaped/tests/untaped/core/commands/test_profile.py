@@ -15,7 +15,6 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import profile_scope
 from untaped.runtime.settings import FORMAT_VERSION, get_settings, register_profile_settings
 from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
@@ -172,8 +171,7 @@ def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
 def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
     _seed(_isolated_config)
     app = _root()
-    with profile_scope("stage"):
-        result = CliInvoker().invoke(app, ["profile", "current"])
+    result = CliInvoker().invoke(app, ["--profile", "stage", "profile", "current"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "stage"
     assert "(source: flag)" in result.stderr
@@ -182,8 +180,7 @@ def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
 def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_config: Path) -> None:
     _seed(_isolated_config)
     app = _root()
-    with profile_scope("typo"):
-        result = CliInvoker().invoke(app, ["profile", "current"])
+    result = CliInvoker().invoke(app, ["--profile", "typo", "profile", "current"])
     assert result.exit_code == 2  # a pick naming no profile is a usage error
     assert "'typo' (from flag) is not defined" in result.stderr
 
@@ -194,9 +191,10 @@ def test_current_lists_a_stacked_pick_with_each_source(
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
     app = _root()
-    with profile_scope("stage"):
-        plain = CliInvoker().invoke(app, ["profile", "current"])
-        structured = CliInvoker().invoke(app, ["profile", "current", "--format", "json"])
+    plain = CliInvoker().invoke(app, ["--profile", "stage", "profile", "current"])
+    structured = CliInvoker().invoke(
+        app, ["--profile", "stage", "profile", "current", "--format", "json"]
+    )
     assert plain.stdout == "prod,stage\n"
     assert "(source: env, flag)" in plain.stderr
     assert json.loads(structured.stdout) == {
@@ -212,9 +210,8 @@ def test_show_without_a_name_shows_the_stacked_pick(
     _seed(_isolated_config)
     monkeypatch.setenv("UNTAPED_PROFILE", "prod")
     app = _root()
-    with profile_scope("stage"):
-        shown = CliInvoker().invoke(app, ["profile", "show", "--format", "json"])
-        raw = CliInvoker().invoke(app, ["profile", "show", "--raw"])
+    shown = CliInvoker().invoke(app, ["--profile", "stage", "profile", "show", "--format", "json"])
+    raw = CliInvoker().invoke(app, ["--profile", "stage", "profile", "show", "--raw"])
     assert shown.exit_code == 0, shown.output
     assert (json.loads(shown.stdout)["name"], json.loads(shown.stdout)["selected"]) == (
         "prod,stage",
@@ -234,8 +231,9 @@ def test_list_json_marks_the_selected_with_booleans(
     assert result.exit_code == 0, result.output
     selected = {row["name"]: row["selected"] for row in json.loads(result.stdout)}
     assert selected == {"default": False, "prod": True, "stage": False}
-    with profile_scope("stage"):
-        stacked = CliInvoker().invoke(app, ["profile", "list", "--format", "json"])
+    stacked = CliInvoker().invoke(
+        app, ["--profile", "stage", "profile", "list", "--format", "json"]
+    )
     selected = {row["name"]: row["selected"] for row in json.loads(stacked.stdout)}
     assert selected == {"default": False, "prod": True, "stage": True}
 

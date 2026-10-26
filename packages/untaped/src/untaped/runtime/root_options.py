@@ -35,7 +35,7 @@ from untaped.runtime.profile_resolver import (
     check_pick,
     parse_pick,
     profile_override,
-    profile_scope,
+    root_pick,
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
@@ -105,7 +105,7 @@ def _apply_profile(value: str) -> AbstractContextManager[None]:
     except ConfigError as exc:
         Diagnostics().failure(exc)
         raise SystemExit(exc.exit_code) from None
-    scope = profile_scope(names)
+    scope = root_pick(names)
     scope.__enter__()
     return scope
 

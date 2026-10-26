@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from untaped.core.config import SettingsFileRepository
-from untaped.runtime.profile_resolver import base_sections, profile_scope
+from untaped.runtime.profile_resolver import base_sections
+from untaped.runtime.run import child_run
 from untaped.runtime.settings import (
     Settings,
     register_profile_settings,
@@ -316,6 +317,7 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
         ("format_version: 2\nprofiles:\n  stage:\n    mandatory: x\n", "stage"),
     ],
 )
+@pytest.mark.usefixtures("home_run")
 def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
     _isolate_settings: Path, initial: str, profile: str
 ) -> None:
@@ -324,7 +326,7 @@ def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
     ``get_settings`` with an opaque pydantic error; the file is untouched."""
     _isolate_settings.write_text(initial)
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
-    with profile_scope(profile), pytest.raises(ConfigError) as exc_info:
+    with child_run(profiles=profile), pytest.raises(ConfigError) as exc_info:
         repo.unset_value("mandatory")
     assert "mandatory" in str(exc_info.value)
     assert profile in str(exc_info.value)

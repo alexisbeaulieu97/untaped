@@ -7,13 +7,11 @@ state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
 
 from __future__ import annotations
 
-import contextlib
-import contextvars
 import json
 import os
 import re
 import weakref
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
 from pathlib import Path
@@ -56,6 +54,7 @@ from untaped.sdk.health.deprecated_keys import (
     rename_keys,
 )
 from untaped.sdk.marks import Stability
+from untaped.sdk.run import current_overlay
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
@@ -500,59 +499,15 @@ def reset_config_registry() -> None:
     _CONFIG_REGISTRY.reset()
 
 
-@dataclass(frozen=True)
-class SettingsOverlay:
-    """Candidate values for one section of one profile, layered over the loaded config.
-
-    A ``None`` value means "unset this key" (a command token source removes the
-    ``token``). Internal: ``setup`` checks a plugin against what the user
-    typed before anything is written.
-    """
-
-    profile: str
-    section: str
-    values: Mapping[str, object]
-
-
-_overlay: contextvars.ContextVar[SettingsOverlay | None] = contextvars.ContextVar(
-    "untaped_settings_overlay", default=None
-)
-
-
-@contextlib.contextmanager
-def settings_overlay(
-    profile: str, section: str, values: Mapping[str, object]
-) -> Iterator[SettingsOverlay]:
-    """Read ``values`` as ``profile``'s ``section`` inside the block, in this context only.
-
-    Both seams read it: the settings loader (:class:`LayoutSettingsSource`,
-    which every section load goes through) and :func:`get_settings`, which
-    skips its cache while an overlay is set, so candidate values are never
-    cached and the main thread never sees them. A thread sees it only when its
-    context was copied inside the block (the screen runtime's commands are).
-    Nothing is written: no config file, no keychain.
-    """
-    overlay = SettingsOverlay(profile, section, dict(values))
-    token = _overlay.set(overlay)
-    try:
-        yield overlay
-    finally:
-        _overlay.reset(token)
-
-
-def active_overlay() -> SettingsOverlay | None:
-    """The overlay set in this context, if any."""
-    return _overlay.get()
-
-
 def apply_overlay(effective: dict[str, Any], *, profile: str) -> dict[str, Any]:
-    """``effective`` with the overlay's section updated, when it is for ``profile``.
+    """``effective`` with the run's overlay's section updated, when it is for ``profile``.
 
-    Returns ``effective`` itself when there is no overlay or it is for another
-    profile; otherwise a copy (``effective`` is never mutated). A ``SecretStr``
-    is unwrapped because the layout feeds validation, which takes plain values.
+    Returns ``effective`` itself when the run has no overlay
+    (:attr:`untaped.sdk.run.Run.overlay`) or it is for another profile;
+    otherwise a copy (``effective`` is never mutated). A ``SecretStr`` is
+    unwrapped because the layout feeds validation, which takes plain values.
     """
-    overlay = _overlay.get()
+    overlay = current_overlay()
     if overlay is None or overlay.profile != profile:
         return effective
     node = effective.get(overlay.section)
@@ -577,13 +532,13 @@ def resolve_with_overlay(
     *,
     sections: SectionModels | None = None,
 ) -> ResolvedConfig:
-    """The layout's resolution of ``raw`` with the active overlay laid over it.
+    """The layout's resolution of ``raw`` with the run's overlay laid over it.
 
     The overlay's profile may not exist in ``raw`` yet (``setup`` checks a new
     profile before creating it); it then resolves as the empty profile it will
     be, over the base.
     """
-    overlay = _overlay.get()
+    overlay = current_overlay()
     profiles = raw.get("profiles")
     # A malformed ``profiles`` (not a mapping) is left for resolution to report.
     known = {} if profiles is None else profiles
@@ -1031,26 +986,34 @@ def _build_settings() -> Settings:
         raise ConfigError(settings_error_message(exc, settings_cls)) from exc
 
 
-class _SettingsGetter:
-    """``get_settings``: the cached aggregate settings, uncached while an overlay is set.
+def _build_picked(_pick: tuple[str, ...]) -> Settings:
+    """The aggregate settings of the current context, whose pick is ``_pick`` (the cache key)."""
+    return _build_settings()
 
-    The cache is process-global, so candidate values must never reach it: with
-    an overlay set the settings are built fresh and returned without being
-    stored. Keeps ``cache_clear`` and ``cache_info`` of the ``lru_cache`` it
-    wraps (many call sites drop the cache).
+
+class _SettingsGetter:
+    """``get_settings``: the aggregate settings, cached per pick, uncached under a run's overlay.
+
+    The cache is keyed by the profiles the current run picks (:func:`picked_names`),
+    so runs that pick differently (a child run, a thread in one, an asyncio task
+    in another) each read their own entry and none ever clears another's. Under
+    a run carrying an overlay the settings are built fresh and never stored, so
+    candidate values reach no cache. The key is the pick alone, not the home or
+    the environment: a config write, registration or reset drops every pick's
+    entry through ``cache_clear`` (``cache_info`` is the wrapped ``lru_cache``'s).
     """
 
     def __init__(self) -> None:
-        self._cached = lru_cache(maxsize=1)(_build_settings)
+        self._cached = lru_cache(maxsize=16)(_build_picked)
 
     def __call__(self) -> Settings:
-        """Return the cached aggregate settings instance."""
-        if _overlay.get() is not None:
+        """Return the aggregate settings of the current pick, cached."""
+        if current_overlay() is not None:
             return _build_settings()
-        return self._cached()
+        return self._cached(picked_names())
 
     def cache_clear(self) -> None:
-        """Drop the cached settings."""
+        """Drop the cached settings of every pick."""
         self._cached.cache_clear()
 
     def cache_info(self) -> Any:

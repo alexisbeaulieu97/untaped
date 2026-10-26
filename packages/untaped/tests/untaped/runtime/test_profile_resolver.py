@@ -15,11 +15,12 @@ from untaped.runtime.profile_resolver import (
     base_sections,
     current_pick,
     profile_entries,
-    profile_scope,
     resolve_profiles,
+    root_pick,
     selected_profile,
     write_target,
 )
+from untaped.runtime.run import child_run
 from untaped.sdk.errors import ConfigError, UsageError
 
 
@@ -143,25 +144,37 @@ def test_the_variable_picks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert current_pick() == (Picked("stage", "env"),)
 
 
+@pytest.mark.usefixtures("home_run")
 def test_the_flag_stacks_after_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "a, b")
-    with profile_scope(("c", "a")):
+    with child_run(profiles=("c", "a")):
         assert current_pick() == (Picked("b", "env"), Picked("c", "flag"), Picked("a", "flag"))
         assert selected_profile() == "b,c,a"
 
 
+@pytest.mark.usefixtures("home_run")
 def test_flag_default_reads_the_base_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
-    with profile_scope("default"):
+    with child_run(profiles="default"):
         assert current_pick() == ()
         assert selected_profile() == "default"
 
 
+@pytest.mark.usefixtures("home_run")
 def test_variable_default_adds_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "default")
     assert current_pick() == ()
-    with profile_scope("prod"):
+    with child_run(profiles="prod"):
         assert current_pick() == (Picked("prod", "flag"),)
+
+
+def test_the_root_pick_takes_a_string_as_one_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    with root_pick("work"):
+        assert current_pick() == (Picked("work", "flag"),)
+    with root_pick(("work", "lab")):
+        assert selected_profile() == "work,lab"
+    assert current_pick() == ()
 
 
 def test_nothing_picks_without_flag_or_variable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -190,14 +203,15 @@ def test_a_malformed_variable_is_a_usage_error(
     assert refused.value.exit_code == 2
 
 
+@pytest.mark.usefixtures("home_run")
 def test_writes_go_to_the_one_flag_profile_else_the_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
     assert write_target() == "default"  # the variable picks reads, never writes
-    with profile_scope("prod"):
+    with child_run(profiles="prod"):
         assert write_target() == "prod"
-    with profile_scope(("prod", "lab")), pytest.raises(UsageError) as refused:
+    with child_run(profiles=("prod", "lab")), pytest.raises(UsageError) as refused:
         write_target()
     assert refused.value.details == {"profiles": ["prod", "lab"]}
 

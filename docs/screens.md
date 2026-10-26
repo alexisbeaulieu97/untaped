@@ -121,9 +121,9 @@ loop and its message comes back to `update`:
   for a password prompt or a pinentry, then redraws.
 - `Cmd.send(message)` delivers a message in the same turn, with no thread.
 
-Every command runs in the context captured when it was issued, so
-`profile_scope` and the other context variables the caller set are visible in
-it. A command that raises arrives as `CmdError`, never as a crash.
+Every command runs in the context captured when it was issued, so the run it
+was issued in and the context variables the caller set are visible in it. A
+command that raises arrives as `CmdError`, never as a crash.
 
 ## Without a terminal
 

@@ -54,7 +54,7 @@ from untaped.core.commands.setup_state import (
 )
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import PluginSpec
-from untaped.runtime.settings import active_overlay, active_settings_layout, get_settings
+from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
@@ -62,6 +62,7 @@ from untaped.sdk import Credential, online_check
 from untaped.sdk._app_context import app_context
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import pick_store
+from untaped.sdk.run import current_overlay
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import ScreenKeys, current_memory_store, drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun, rendered_text
@@ -491,7 +492,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
     # The main thread never saw them (the check dropped the cache; it was never filled).
     main = get_settings().wiz  # type: ignore[attr-defined]
     assert (str(main.server.url), WIZ_TOKEN.find(main.server)) == ("https://old/", None)
-    assert active_overlay() is None
+    assert current_overlay() is None
     host.deliver()  # ... then the write ran, on its own thread
     host.join()
 

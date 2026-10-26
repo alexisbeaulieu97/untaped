@@ -44,9 +44,8 @@ from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     current_pick,
     fix_target,
+    flag_pick,
     picked_names,
-    profile_override,
-    profile_scope,
     selected_profile,
 )
 from untaped.runtime.registry import (
@@ -60,6 +59,7 @@ from untaped.runtime.registry import (
     state_declarations,
     state_model,
 )
+from untaped.runtime.run import child_run
 from untaped.runtime.settings import (
     HttpSettings,
     active_settings_layout,
@@ -70,7 +70,6 @@ from untaped.runtime.settings import (
     resolve_with_overlay,
     retired_env_vars,
     section_stabilities,
-    settings_overlay,
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
@@ -83,6 +82,7 @@ from untaped.sdk.health.marks import section_marks
 from untaped.sdk.marks import owner, removal_text
 from untaped.sdk.network.http import resolve_verify
 from untaped.sdk.plugin import Command, Group
+from untaped.sdk.run import SettingsOverlay
 from untaped.sdk.storage.state import ProjectStateRows, StateRows
 from untaped.sdk.words import (
     command_argv,
@@ -271,7 +271,7 @@ def run_line(argv: list[str]) -> str:
     base too.
     """
     named, rest = split_profile(argv)
-    if named == DEFAULT_PROFILE and not profile_override() and not picked_names():
+    if named == DEFAULT_PROFILE and not flag_pick() and not picked_names():
         argv = rest
     return command_line(shlex.join(argv))
 
@@ -433,7 +433,7 @@ def selected_check_rows(
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
     """``selected`` plugins' doctor rows for ``profile``, online checks included."""
-    with profile_scope(profile):
+    with child_run(profiles=profile):
         rows = collect_doctor_rows(shell, result, online=True, plugins=selected)
     # Old keys concern every plugin's settings, so setup shows them too.
     return [
@@ -454,7 +454,8 @@ def online_probe_rows(
 
     ``values`` are candidate settings for the plugin's section in
     ``profile`` (a ``None`` value unsets that key), laid over the loaded config
-    for the duration of the call (:func:`untaped.runtime.settings.settings_overlay`);
+    for the duration of the call, in a child run carrying them
+    (:func:`untaped.runtime.run.child_run`);
     ``profile`` need not exist yet. Only the ``online=True`` checks run: the
     offline ones (connection settings, the plaintext-token warning) would
     misreport on candidate values, and there are no state or config-file rows.
@@ -462,7 +463,7 @@ def online_probe_rows(
     settings`` row. Never writes: not the config, not a token store.
 
     ``setup`` runs this on a worker thread inside a copy of its own context;
-    the overlay lives in that copy only.
+    the child run lives in that copy only.
     """
     spec = next(
         (registered.spec for registered in result.plugins if registered.spec.name == plugin),
@@ -471,7 +472,8 @@ def online_probe_rows(
     if spec is None:
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
     scope = _plugin_scope(spec)
-    with profile_scope(profile), settings_overlay(profile, scope.section, values):
+    overlay = SettingsOverlay(profile, scope.section, dict(values))
+    with child_run(profiles=profile, overlay=overlay):
         settings, error = None, None
         if scope.settings_model is not None:
             settings, error = _validate_section(scope, scope.settings_model, *_overlaid_effective())

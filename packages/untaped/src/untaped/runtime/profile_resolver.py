@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from untaped.sdk.errors import ConfigError, UsageError
+from untaped.sdk.run import NoRunError, current_run
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 #: The base's name: what ``--profile default`` picks and what provenance calls it.
@@ -86,33 +87,42 @@ def check_pick(names: Sequence[str], *, origin: str) -> None:
 
 
 def set_profile_override(names: Sequence[str]) -> None:
-    """Set (or clear, with ``()``) the invocation-scoped ``--profile`` pick."""
+    """Set (or clear, with ``()``) the root ``--profile`` option's pick."""
     _profile_override.set(tuple(names))
 
 
+def pick_names(profiles: str | Sequence[str]) -> tuple[str, ...]:
+    """A pick's profile names, in order: a string is one profile, never its letters."""
+    return (profiles,) if isinstance(profiles, str) else tuple(profiles)
+
+
 @contextmanager
-def profile_scope(names: str | Sequence[str]) -> Iterator[None]:
-    """Make ``names`` this invocation's ``--profile`` pick inside the block.
+def root_pick(profiles: str | Sequence[str]) -> Iterator[None]:
+    """Make ``profiles`` the root ``--profile`` option's pick inside the block.
 
-    A string is one profile. The root ``--profile`` option and ``setup`` both
-    use it. The settings cache is dropped on entry and exit so reads follow
-    the selection.
+    A string is one profile; ``()`` is no ``--profile``. The root option's
+    own state, read where no child run picks (:func:`flag_pick`); a nested
+    pick is a child run (:func:`untaped.runtime.run.child_run`).
     """
-    # Lazy: ``untaped.runtime.settings`` imports this module.
-    from untaped.runtime.settings import get_settings  # noqa: PLC0415
-
-    token = _profile_override.set((names,) if isinstance(names, str) else tuple(names))
-    get_settings.cache_clear()
+    token = _profile_override.set(pick_names(profiles))
     try:
         yield
     finally:
         _profile_override.reset(token)
-        get_settings.cache_clear()
 
 
 def profile_override() -> tuple[str, ...]:
     """The root ``--profile`` option's names, in order (``()`` without the option)."""
     return _profile_override.get()
+
+
+def flag_pick() -> tuple[str, ...]:
+    """The names ``--profile`` picks for the current run: a child run's own, else the root's."""
+    try:
+        profiles = current_run().profiles
+    except NoRunError:
+        profiles = None
+    return _profile_override.get() if profiles is None else profiles
 
 
 def current_pick() -> tuple[Picked, ...]:
@@ -122,7 +132,7 @@ def current_pick() -> tuple[Picked, ...]:
     keeps its last place. ``--profile default`` sets the variable aside and
     reads the base alone; ``UNTAPED_PROFILE=default`` adds nothing.
     """
-    flag = _profile_override.get()
+    flag = flag_pick()
     if flag == (DEFAULT_PROFILE,):
         return ()
     text = os.environ.get(ACTIVE_PROFILE_ENV)
@@ -150,7 +160,7 @@ def write_target() -> str:
     ``UNTAPED_PROFILE`` picks what runs read, never where they write.
     Raises :class:`UsageError` when ``--profile`` names more than one.
     """
-    flag = _profile_override.get()
+    flag = flag_pick()
     if len(flag) > 1:
         raise UsageError(
             f"--profile {','.join(flag)} names {len(flag)} profiles; a write needs one",
