@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from untaped.runtime.contracts.registry import Provider, offers, upgrade_hint
+from untaped.runtime.contracts.registry import BoundProvider, offers, upgrade_hint
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts._declare import ContractInfo, method_contract
@@ -194,11 +194,11 @@ def _read(model: type[Any], envelope: PipeEnvelope) -> Any:
         ) from None
 
 
-def _reader(info: ContractInfo, given: type[Any]) -> Provider | None:
+def _reader(info: ContractInfo, given: type[Any]) -> BoundProvider | None:
     readers = [
         entry
         for entry in offers(info)
-        if isinstance(entry, Provider)
+        if isinstance(entry, BoundProvider)
         and not entry.binding.owns_item
         and entry.binding.item is not None
         and issubclass(given, entry.binding.item)

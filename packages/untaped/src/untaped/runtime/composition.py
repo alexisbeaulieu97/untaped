@@ -32,6 +32,7 @@ from untaped.runtime.declaration import (
     CacheDecl,
     CommandDecl,
     Declaration,
+    FillDecl,
     GroupDecl,
     KindDecl,
     OptionDecl,
@@ -74,6 +75,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from pydantic.fields import FieldInfo
+
+    from untaped.sdk.contracts._declare import ContractInfo
 
 #: Field names core or pydantic reserves on a command; ``run_`` still spells ``--run``.
 RESERVED_FIELDS: frozenset[str] = frozenset(
@@ -274,6 +277,7 @@ class _PluginWalk:
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
         self.decl: PluginDecl | None = None
+        self.settings: type[BaseModel] | None = None
         if getattr(sys.modules.get(module), "__path__", None) is not None:
             self.problem(
                 "plugin-module",
@@ -333,7 +337,7 @@ class _PluginWalk:
             commands=commands,
             runs=runs,
             offers=tuple(target_of(c) for c in cls.offers),
-            fills=tuple(target_of(c) for c in cls.fills),
+            fills=self._fill_decls(cls),
             skill=skill,
             blocks=blocks,
         )
@@ -385,12 +389,69 @@ class _PluginWalk:
                 self.problem(
                     "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
                 )
+            else:
+                self._answer_caches(cls, info)
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
                 self.problem(
                     "reserved-name", f"{where}.fills", f"{filled!r} is not a provider of a contract"
                 )
+            elif isinstance(filled, type):
+                self._provider(where, filled)
+
+    def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
+        """Each cached method of an offered contract is cached in a cache some plugin class holds.
+
+        A cache made with no plugin and no name learns them from the class
+        holding it, which the contract cannot check when it is declared.
+        """
+        for method in info.methods.values():
+            cache = method.cache
+            if cache is None or cache.spelled or cache._held_as is not None or cache.bindings:
+                continue
+            expected = f"{info.name}_{method.name}"
+            self.problem(
+                "answer-cache",
+                f"{info.cls.__qualname__}.{method.name}",
+                f"is cached in a cache no plugin class holds: assign it to "
+                f"{cls.__qualname__}.{expected}",
+            )
+
+    def _provider(self, where: str, filled: type) -> None:
+        """A filled class is a ``Provider``, reading its own plugin's settings if any."""
+        from untaped.sdk.contracts._declare import Provider, settings_type  # noqa: PLC0415
+
+        at = f"{where}.fills"
+        if not issubclass(filled, Provider):
+            self.problem(
+                "bad-provider",
+                at,
+                f"{filled.__qualname__} is no Provider: subclass Provider[YourSettings] beside "
+                "the contract, or plain Provider when the plugin reads no settings",
+            )
+            return
+        wanted = settings_type(filled)
+        if wanted is not None and wanted is not self.settings:
+            ours = self.settings.__qualname__ if self.settings else "not declared"
+            self.problem(
+                "bad-provider",
+                at,
+                f"{filled.__qualname__} reads Provider[{wanted.__qualname__}], but the plugin's "
+                f"settings model is {ours}",
+            )
+
+    def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
+        if not cls.fills:
+            return ()
+        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
+
+        # each one fills a contract: _reserved refused the plugin otherwise
+        return tuple(
+            FillDecl(target=target_of(filled), contract=target_of(info.cls))
+            for filled in cls.fills
+            if (info := contract_of(filled)) is not None
+        )
 
     def _attributes(self, cls: type[Plugin]) -> dict[str, object]:
         """Every attribute the plugin class has beyond the reserved names, its own and inherited."""

@@ -14,7 +14,7 @@ or names another repo than ``full_name``, is refused.
 from __future__ import annotations
 
 from untaped.sdk import UsageError, app_context
-from untaped.sdk.contracts import Configured, NotReady
+from untaped.sdk.contracts import NotReady, Provider
 from untaped_git.api import store_key
 from untaped_github.application.inventory import (
     RepositoryInventoryScope,
@@ -30,7 +30,7 @@ from untaped_github.settings import GithubSettings
 from untaped_workspace.api import Repo, RepoSource
 
 
-class GithubRepos(RepoSource[GithubRepo], Configured[GithubSettings]):
+class GithubRepos(RepoSource[GithubRepo], Provider[GithubSettings]):
     """The repositories of GitHub's inventory scope, as workspace repos."""
 
     def ready(self) -> NotReady | None:

@@ -219,24 +219,32 @@ def install(
     *plugins: type[Plugin],
     settings: BaseModel | Iterable[BaseModel] = (),
     names: Mapping[type[Plugin], str] | None = None,
+    providers: Mapping[str, Sequence[type]] | None = None,
 ) -> Install:
     """Compose ``plugins`` into the hermetic home, with ``settings`` written as their sections.
 
-    A plugin installed in the environment keeps its entry point's name; a
-    class defined in a test is named after itself (``Shop`` is ``shop``)
-    unless ``names`` says otherwise. Each settings model is written as set
-    (secrets in clear, by alias) to the section of the plugin whose
-    ``settings`` it is; a plugin given none has none of its own, as a user
-    who set nothing. What core keeps in a section (a cache's max age) stays.
+    A plugin installed in the environment keeps its entry point's name and
+    brings the plugins its distribution declares (an owner a provider names
+    under the owner's extra); a class defined in a test is named after
+    itself (``Shop`` is ``shop``) unless ``names`` says otherwise.
+    ``providers={"forge": (Forge,)}`` composes the provider classes a test
+    defines as one plugin per key, filling the contracts they subclass, so
+    ``gather`` asks them. Each settings model is written as set (secrets in
+    clear, by alias) to the section of the plugin whose ``settings`` it is;
+    a plugin given none has none of its own, as a user who set nothing.
+    What core keeps in a section (a cache's max age) stays.
     """
     from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
 
     named = dict(names or {})
     discovered = discover_candidates()
-    candidates = tuple(candidate_of(cls, named.get(cls), discovered) for cls in plugins)
+    entries = [(cls, named.get(cls)) for cls in plugins]
+    entries += [(_providers_plugin(key, each), key) for key, each in (providers or {}).items()]
+    candidates = tuple(candidate_of(cls, name, discovered) for cls, name in entries)
+    candidates += _dependencies(candidates, discovered)
     models = [settings] if isinstance(settings, BaseModel) else list(settings)
     given: dict[str, tuple[type[BaseModel], BaseModel | None]] = {}
-    for cls, candidate in zip(plugins, candidates, strict=True):
+    for cls, candidate in zip(plugins, candidates, strict=False):
         model = getattr(cls, "settings", None)
         if isinstance(model, type) and issubclass(model, BaseModel):
             given[candidate.name] = (model, None)
@@ -249,6 +257,68 @@ def install(
     installed = Install(candidates)
     _remember(installed)
     return installed
+
+
+def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
+    """A plugin named ``name`` whose ``fills`` are ``classes``, as a test's providers compose."""
+    from pydantic import ConfigDict, create_model  # noqa: PLC0415
+
+    from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import Provider, contract_of  # noqa: PLC0415
+
+    check_plugin_name(name)
+    for each in classes:
+        info = contract_of(each) if isinstance(each, type) else None
+        if info is None or info.cls is each or not issubclass(each, Provider):
+            raise TypeError(
+                f"providers[{name!r}] holds {each!r}, not a provider: subclass the contract and "
+                "Provider (Provider[S] when it reads settings)"
+            )
+    if not classes:
+        raise TypeError(f"providers[{name!r}] holds no provider class")
+    title = name.title().replace("-", "")
+    model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
+    plugin = type(
+        title,
+        (Plugin,),
+        {
+            "__doc__": f"The test's providers {name}.",
+            "__module__": classes[0].__module__,
+            "settings": model,
+            "fills": tuple(classes),
+        },
+    )
+    return cast("type[Plugin]", plugin)
+
+
+def _dependencies(
+    candidates: Sequence[PluginCandidate], discovered: Sequence[PluginCandidate]
+) -> tuple[PluginCandidate, ...]:
+    """The installed plugins ``candidates`` declare, and theirs, not already among them.
+
+    A requirement under an extra counts when the extra is an installed
+    plugin's name: the owner a provider declares (``untaped-shelf`` under
+    library's ``shelf`` extra).
+    """
+    from packaging.utils import canonicalize_name  # noqa: PLC0415
+
+    from untaped.runtime.registry import declared_distributions  # noqa: PLC0415
+
+    owners = frozenset(each.name for each in discovered)
+    by_distribution: dict[str, PluginCandidate] = {
+        canonicalize_name(each.distribution): each for each in discovered
+    }
+    held = {each.name for each in candidates}
+    added: list[PluginCandidate] = []
+    waiting = list(candidates)
+    while waiting:
+        for name in sorted(declared_distributions(waiting.pop().requires_dist, owners)):
+            found = by_distribution.get(name)
+            if found is not None and found.name not in held:
+                held.add(found.name)
+                added.append(found)
+                waiting.append(found)
+    return tuple(added)
 
 
 def _remember(installed: Install) -> None:

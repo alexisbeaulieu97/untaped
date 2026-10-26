@@ -6611,8 +6611,6 @@ sdk untaped.sdk.contracts.Answers(pending=) default=None
 sdk untaped.sdk.contracts.Answers.rank_command()
 sdk untaped.sdk.contracts.Answers.rank_command(plugins@1=) default=None
 sdk untaped.sdk.contracts.Answers.take_stale()
-sdk untaped.sdk.contracts.Configured()
-sdk untaped.sdk.contracts.Configured.settings
 sdk untaped.sdk.contracts.Contract implement=
 sdk untaped.sdk.contracts.Contract.__init_subclass__(shell=) default=None
 sdk untaped.sdk.contracts.Contract.http
@@ -6668,6 +6666,9 @@ sdk untaped.sdk.contracts.Ok.rank
 sdk untaped.sdk.contracts.Ok.refreshed_at
 sdk untaped.sdk.contracts.Ok.stale
 sdk untaped.sdk.contracts.Ok.value
+sdk untaped.sdk.contracts.Provider()
+sdk untaped.sdk.contracts.Provider.ctx
+sdk untaped.sdk.contracts.Provider.settings
 sdk untaped.sdk.contracts.Record()
 sdk untaped.sdk.contracts.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.contracts.Record.table_columns class
@@ -7540,6 +7541,7 @@ sdk untaped.sdk.testing.git.trace2_events(path)  [experimental]
 sdk untaped.sdk.testing.install()
 sdk untaped.sdk.testing.install(*plugins)
 sdk untaped.sdk.testing.install(names=) default=None
+sdk untaped.sdk.testing.install(providers=) default=None
 sdk untaped.sdk.testing.install(settings=) default=[]
 sdk untaped.sdk.testing.invoke_cli(args@2=) default=None
 sdk untaped.sdk.testing.invoke_cli(catch_exceptions=) default=true

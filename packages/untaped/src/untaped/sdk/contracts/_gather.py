@@ -22,7 +22,7 @@ from typing import Any, Concatenate, get_args, get_origin, overload
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from untaped.runtime.contracts.registry import (
-    Provider,
+    BoundProvider,
     Quarantined,
     offers,
     owner_of,
@@ -241,7 +241,7 @@ def gather[C: Contract, **P, R](
         owner = owner_of(info)
         order = ranking(owner, info.name, wanted.name)
         answers: dict[str, Answer[R]] = {}
-        runnable: list[tuple[Provider, int | None]] = []
+        runnable: list[tuple[BoundProvider, int | None]] = []
         reasons: list[str] = []
         not_ready: dict[str, NotReady] = {}
         quarantined: dict[str, str] = {}
@@ -276,12 +276,12 @@ def gather[C: Contract, **P, R](
 
         stale: dict[str, list[StaleData]] = {}
 
-        def ask(job: tuple[Provider, int | None]) -> tuple[Answer[R], list[StaleData]]:
+        def ask(job: tuple[BoundProvider, int | None]) -> tuple[Answer[R], list[StaleData]]:
             provider, rank = job
             return _ask(provider, wanted, rank, refresh, seconds, args, kwargs)
 
         def keep(
-            job: tuple[Provider, int | None], asked: tuple[Answer[R], list[StaleData]]
+            job: tuple[BoundProvider, int | None], asked: tuple[Answer[R], list[StaleData]]
         ) -> None:
             answers[job[0].plugin], stale[job[0].plugin] = asked
             progress.update(job[0].plugin, done=len(stale), total=len(runnable))
@@ -314,7 +314,7 @@ def _excluded[R](plugin: str, reason: str, detail: str, rank: int | None) -> Ans
 
 
 def _ask[R](
-    provider: Provider,
+    provider: BoundProvider,
     method: Method,
     rank: int | None,
     refresh: bool | None,
@@ -329,7 +329,12 @@ def _ask[R](
 
 
 def _answer[R](
-    provider: Provider, method: Method, rank: int | None, state: CallState, args: Any, kwargs: Any
+    provider: BoundProvider,
+    method: Method,
+    rank: int | None,
+    state: CallState,
+    args: Any,
+    kwargs: Any,
 ) -> Answer[R]:
     plugin = provider.plugin
     try:

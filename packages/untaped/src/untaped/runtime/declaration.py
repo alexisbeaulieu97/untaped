@@ -158,6 +158,14 @@ class KindDecl(_Frozen):
     plugin: str
 
 
+class FillDecl(_Frozen):
+    """A provider class a plugin fills another plugin's contract with (``fills``)."""
+
+    target: str
+    #: The contract it fills, which names its owner: the plugin that ``offers`` it.
+    contract: str
+
+
 class PluginDecl(_Frozen):
     """One composed plugin."""
 
@@ -173,7 +181,7 @@ class PluginDecl(_Frozen):
     #: The command ``untaped <plugin>`` runs on its own (``runs = Check``).
     runs: CommandDecl | None = None
     offers: tuple[str, ...] = ()
-    fills: tuple[str, ...] = ()
+    fills: tuple[FillDecl, ...] = ()
     skill: str | None = None
     blocks: tuple[BlockDecl, ...] = ()
     #: Its commands mount at the root (core's): ``untaped plugin``, not ``untaped untaped plugin``.

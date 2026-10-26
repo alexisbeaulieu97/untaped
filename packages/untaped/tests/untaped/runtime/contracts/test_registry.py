@@ -25,7 +25,7 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.sdk.contracts import Configured, Contract, Failed, Ok, Skipped, gather
+from untaped.sdk.contracts import Contract, Failed, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.records import DuplicateKindError
@@ -136,7 +136,7 @@ class _OtherSettings(BaseModel):
     catalog: str = ""
 
 
-class _WrongSettings(BookSource, Configured[_OtherSettings]):
+class _WrongSettings(BookSource, Provider[_OtherSettings]):
     def books(self) -> list[Book]:
         return []
 
@@ -147,7 +147,7 @@ class _WrongSettings(BookSource, Configured[_OtherSettings]):
         (_NoBridge(), "missing-bridge", "must fill to_book"),
         ("not a provider", "bad-provider", "which is not a provider"),
         (_ElsewhereProvider(), "bad-provider", "which shelf does not declare"),
-        (_WrongSettings(), "bad-provider", "Configured[_OtherSettings]"),
+        (_WrongSettings(), "bad-provider", "Provider[_OtherSettings]"),
     ],
 )
 def test_a_provider_breaking_a_rule_is_quarantined_alone(

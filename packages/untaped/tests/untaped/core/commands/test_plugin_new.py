@@ -124,9 +124,9 @@ def test_the_provider_carries_each_method_and_docstring(tmp_path: Path) -> None:
         encoding="utf-8"
     )
     # date comes from where the contract's module found it, never from rack's api.
-    assert "from datetime import date\n\nfrom untaped.sdk.contracts import Configured\n" in provider
+    assert "from datetime import date\n\nfrom untaped.sdk.contracts import Provider\n" in provider
     assert "from untaped_rack.api import Item, ItemSource\n" in provider
-    assert "class GitlabItemSource(ItemSource, Configured[GitlabSettings]):" in provider
+    assert "class GitlabItemSource(ItemSource, Provider[GitlabSettings]):" in provider
     assert (
         "    def items(self, since: date | None = None) -> list[Item]:\n"
         '        """Every item on the rack."""\n'
@@ -306,7 +306,7 @@ def test_untaped_names_come_from_the_modules_a_plugin_may_import(
     assert found == (
         "from pathlib import Path\n\n"
         "from untaped.sdk import TargetRecord, UtcTimestamp\n"
-        "from untaped.sdk.contracts import Configured, NotReady\n"
+        "from untaped.sdk.contracts import NotReady, Provider\n"
         "from untaped_toy.api import Item\n\n"
         "from untaped_gitlab.settings import GitlabSettings"
     )

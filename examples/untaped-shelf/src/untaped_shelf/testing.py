@@ -1,7 +1,6 @@
 """shelf's checks on any provider of its contract: ``untaped lint`` runs them.
 
-A provider's own tests may call :func:`conformance` too, on a provider
-composed with ``untaped.sdk.testing.compose_with``.
+``check(install(...))`` runs them too, for every provider in the install.
 """
 
 from __future__ import annotations

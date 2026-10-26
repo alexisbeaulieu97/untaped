@@ -43,7 +43,7 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk._block import Block
-from untaped.sdk.contracts import Contract, cached
+from untaped.sdk.contracts import Contract, Provider, cached
 
 PACKAGE = __name__.partition(".")[0]
 
@@ -1128,3 +1128,71 @@ def test_every_return_shape() -> None:
 
     shapes = [c.returns for c in compose([_entry(_plugin_with(Maybe, Either))]).commands()]
     assert shapes == ["line-or-none", "rows-or-record"]
+
+
+class _OtherSettings(BaseModel):
+    """Another plugin's settings."""
+
+
+class _Bare(BookSource):
+    def books(self) -> list[Book]:
+        return []
+
+
+class _Ours(BookSource, Provider[HelloSettings]):
+    def books(self) -> list[Book]:
+        return []
+
+
+class _Theirs(BookSource, Provider[_OtherSettings]):
+    def books(self) -> list[Book]:
+        return []
+
+
+def test_a_filled_class_is_a_provider_reading_its_own_plugin_s_settings() -> None:
+    class Lender(Plugin):
+        """Lender."""
+
+        settings = HelloSettings
+        fills = (_Bare, _Ours, _Theirs)
+
+    problems = _problems(Lender, "lender")
+    assert [(p.rule, p.where.rpartition(".<locals>.")[2]) for p in problems] == [
+        ("bad-provider", "Lender.fills"),
+        ("bad-provider", "Lender.fills"),
+    ]
+    assert "_Bare is no Provider" in problems[0].detail
+    assert "reads Provider[_OtherSettings]" in problems[1].detail
+
+    class Good(Plugin):
+        """Good."""
+
+        settings = HelloSettings
+        fills = (_Ours,)
+
+    [plugin] = compose([_entry(Good, "good")]).plugins
+    [fill] = plugin.fills
+    assert (fill.target.endswith(":_Ours"), fill.contract.endswith(":BookSource")) == (True, True)
+
+
+def test_an_offered_contract_s_answer_cache_is_held_by_a_plugin_class() -> None:
+    @experimental
+    class Loose(Contract):
+        """Its cache is held by no plugin class."""
+
+        @cached(Cache(label="pages", max_age=timedelta(hours=1)))
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        offers = (Loose,)
+
+    [problem] = _problems(Owner, "owner")
+    assert (problem.rule, problem.where.rpartition(".<locals>.")[2]) == (
+        "answer-cache",
+        "Loose.pages",
+    )
+    assert problem.detail.endswith("Owner.loose_pages")

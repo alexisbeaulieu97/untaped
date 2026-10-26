@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from untaped.runtime.contracts.registry import Provider
+from untaped.runtime.contracts.registry import BoundProvider
 from untaped.sdk.contracts._cache import return_type
 from untaped.sdk.contracts._declare import Binding, fills
 from untaped.sdk.contracts._gather import issue
@@ -43,7 +43,7 @@ def fills_key(binding: Binding) -> str:
     return f"{binding.owner}.{binding.contract.name}"
 
 
-def fills_problems(provider: Provider, samples: Sequence[object]) -> list[str]:
+def fills_problems(provider: BoundProvider, samples: Sequence[object]) -> list[str]:
     """What breaks when ``provider`` handles each sample of its ``T``; empty when nothing does."""
     binding = provider.binding
     item = binding.item
@@ -87,7 +87,7 @@ def _issues(binding: Binding, record: Record, label: str) -> list[str]:
     return []
 
 
-def _bridges(provider: Provider, record: Record, label: str) -> list[str]:
+def _bridges(provider: BoundProvider, record: Record, label: str) -> list[str]:
     binding = provider.binding
     info = binding.contract
     problems: list[str] = []
@@ -140,7 +140,7 @@ def fills_path(provider: type) -> Path | None:
     return Path(next(iter(found.submodule_search_locations))) / FILLS_FILE
 
 
-def recorded_hash(provider: Provider) -> str | None:
+def recorded_hash(provider: BoundProvider) -> str | None:
     """The owner schema hash recorded for ``provider``'s contract, if any."""
     path = fills_path(type(provider.instance))
     if path is None:
@@ -154,12 +154,12 @@ def recorded_hash(provider: Provider) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def current_hash(provider: Provider) -> str:
+def current_hash(provider: BoundProvider) -> str:
     """The installed owner's schema hash for ``provider``'s contract."""
     return schema_hash(provider.binding.contract)
 
 
-def record_hash(provider: Provider) -> Path | None:
+def record_hash(provider: BoundProvider) -> Path | None:
     """Write the installed owner's schema hash into ``fills.json``; the file when it changed.
 
     Only a package outside the interpreter's site-packages (a checkout, an

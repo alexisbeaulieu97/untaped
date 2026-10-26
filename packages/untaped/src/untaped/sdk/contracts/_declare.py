@@ -38,6 +38,7 @@ from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
     from untaped.runtime.registry import PluginSpec
+    from untaped.sdk._run import ProviderContext
     from untaped.sdk.network.http import HttpClient, VerifyTypes
 
 #: Set to ``True`` on a function a provider base defines for its own role (a rule
@@ -261,11 +262,11 @@ class Contract(ABC):  # noqa: B024 - every method has a default
     def ready(self) -> NotReady | None:
         """``None`` when this provider can answer in the active profile, else why not.
 
-        The default: a :class:`Configured` provider is ready when its settings
-        validate; any other provider always is. Override only for a condition
-        a settings schema can't express.
+        The default: a ``Provider[S]`` is ready when its settings validate;
+        any other provider always is. Override only for a condition a settings
+        schema can't express.
         """
-        if isinstance(self, Configured):
+        if isinstance(self, Provider):
             return self._settings_ready()
         return None
 
@@ -332,12 +333,18 @@ def _http_client(binding: Binding | None, *, verify: VerifyTypes | None = None) 
     )
 
 
-class Configured[S: BaseModel]:
-    """Mixin giving a provider its plugin's settings as ``self.settings``.
+class Provider[S: BaseModel]:
+    """Base of a provider beside the contract it fills, as a command is ``Command[S]``.
 
-    ``S`` is the plugin's settings model (``PluginSpec.settings``), read for
-    the active profile on first use. ``Contract.ready`` counts the provider
-    ready when they validate.
+    ``S`` is the providing plugin's settings model, read in a method as
+    ``self.settings`` for the active profile, on first use; composition
+    checks that it is the plugin's own. A provider whose plugin reads no
+    settings writes plain ``Provider``. ``self.ctx`` is what a command's
+    context has but the terminal: a provider runs inside someone else's
+    command, often unattended, so only the command asks. Core instantiates
+    the provider at the first ask that reaches it, never at composition.
+    ``Contract.ready`` counts a ``Provider[S]`` ready when its settings
+    validate.
     """
 
     @property
@@ -346,7 +353,22 @@ class Configured[S: BaseModel]:
         settings = _per_profile(self, "_untaped_settings", lambda: _load_settings(self))
         return cast("S", settings)
 
+    @property
+    def ctx(self) -> ProviderContext:
+        """``diag``, ``project``, ``plugin`` (the providing one) and ``plugins``, from the run."""
+        from untaped.sdk._run import provider_context  # noqa: PLC0415 - the run imports the SDK
+
+        binding = binding_of(self)
+        if binding is None:
+            raise UntapedError(
+                f"{type(self).__qualname__} is not bound to a plugin, so it has no context",
+                hint="ask for providers through untaped.sdk.contracts (gather, convert)",
+            )
+        return provider_context(binding.plugin)
+
     def _settings_ready(self) -> NotReady | None:
+        if settings_type(type(self)) is None:
+            return None
         try:
             self.settings  # noqa: B018 - loading is the check
         except ConfigError as exc:
@@ -361,12 +383,12 @@ class Configured[S: BaseModel]:
 
 
 def settings_type(cls: type) -> type[BaseModel] | None:
-    """``S`` of ``Configured[S]`` in ``cls``'s bases (``None``: not configured, or unresolved)."""
-    found = _base_argument(cls, Configured)
+    """``S`` of ``Provider[S]`` in ``cls``'s bases (``None``: plain ``Provider``, or unresolved)."""
+    found = _base_argument(cls, Provider)
     return found if isinstance(found, type) and issubclass(found, BaseModel) else None
 
 
-def _load_settings(provider: Configured[Any]) -> BaseModel:
+def _load_settings(provider: Provider[Any]) -> BaseModel:
     from untaped.runtime.settings import get_config_section  # noqa: PLC0415
 
     binding = binding_of(provider)
@@ -374,7 +396,7 @@ def _load_settings(provider: Configured[Any]) -> BaseModel:
     if binding is None or model is None:
         raise ConfigError(
             f"{type(provider).__qualname__} has no plugin settings to read "
-            "(it is not bound to a plugin, or its Configured[...] argument is not a model)"
+            "(it is not bound to a plugin, or its Provider[...] argument is not a model)"
         )
     return get_config_section(binding.plugin, model)
 
@@ -561,9 +583,13 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
 
 
 def _check_cache(where: str, contract: str, name: str, cache: Cache, returns: object) -> None:
-    """A ``@cached`` method's cache is named ``<contract>_<method>`` and never keeps a secret."""
+    """A ``@cached`` method's cache is named ``<contract>_<method>`` and never keeps a secret.
+
+    A cache a plugin class will hold learns its name when that class is
+    created, after the contract: composition checks its name then.
+    """
     expected = f"{snake_case(contract)}_{name}"
-    if cache.name != expected:
+    if (cache.spelled or cache._held_as is not None) and cache.name != expected:
         raise TypeError(
             f"{where}.{name}: @cached takes the cache named {expected!r}, not {cache.name!r} "
             f"(Cache({cache.plugin!r}, {expected!r}, ...))"

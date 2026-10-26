@@ -325,7 +325,7 @@ class _Scaffold:
             f"``{self.api.__name__}``.\n"
             '"""\n\nfrom __future__ import annotations\n\n'
             f"{imports}\n\n\n"
-            f"class {self.provider}({info.cls.__name__}, Configured[{self.camel}Settings]):\n"
+            f"class {self.provider}({info.cls.__name__}, Provider[{self.camel}Settings]):\n"
             f'    """Fills {info.cls.__name__} from ... (say where the answers come from)."""\n\n'
             + indent(body, "    ")
         )
@@ -464,7 +464,7 @@ def _imports(
     exported = set(getattr(api, "__all__", ()))
     owner_top = api.__name__.partition(".")[0]
     plain: list[str] = []
-    froms: dict[str, set[str]] = {api.__name__: set(), "untaped.sdk.contracts": {"Configured"}}
+    froms: dict[str, set[str]] = {api.__name__: set(), "untaped.sdk.contracts": {"Provider"}}
     for name in sorted(names):
         if name not in seen:
             continue

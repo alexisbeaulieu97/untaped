@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from untaped_shelf.api import Book, BookSource
 
-from untaped.sdk.contracts import Configured, NotReady
+from untaped.sdk.contracts import NotReady, Provider
 from untaped_library.records import Volume
 from untaped_library.settings import LibrarySettings
 
 
-class LibraryBooks(BookSource[Volume], Configured[LibrarySettings]):
+class LibraryBooks(BookSource[Volume], Provider[LibrarySettings]):
     """Lends the configured volumes as books; each book's source keeps its volume."""
 
     def ready(self) -> NotReady | None:

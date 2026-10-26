@@ -41,7 +41,7 @@ from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_sub
 from untaped.sdk.words import not_found, plural
 
 if TYPE_CHECKING:
-    from untaped.runtime.contracts.registry import Provider
+    from untaped.runtime.contracts.registry import BoundProvider
 
 
 type _Violations = Callable[..., list[str]]
@@ -152,7 +152,7 @@ def _offers(
     spec: PluginSpec, candidates: Sequence[PluginCandidate], row: _Row
 ) -> list[PluginCheckRow]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
-    from untaped.runtime.contracts.registry import Provider, every_offer  # noqa: PLC0415
+    from untaped.runtime.contracts.registry import BoundProvider, every_offer  # noqa: PLC0415
 
     installed = {candidate.name for candidate in candidates}
     owners = [owner for owner in spec.provides if owner in installed]
@@ -161,10 +161,10 @@ def _offers(
         unusable = _unusable_owners(owners, composed)
         rows += [row("registration", owner, "fail", why) for owner, why in unusable.items()]
         for entry in every_offer():
-            owner = entry.binding.owner if isinstance(entry, Provider) else entry.owner
+            owner = entry.binding.owner if isinstance(entry, BoundProvider) else entry.owner
             if entry.plugin != spec.name or owner in unusable:
                 continue
-            if not isinstance(entry, Provider):
+            if not isinstance(entry, BoundProvider):
                 title = (
                     entry.owner if entry.contract is None else _what(entry.owner, entry.contract)
                 )
@@ -203,7 +203,7 @@ def _what(owner: str, contract: type) -> str:
 
 
 def _provider(
-    provider: Provider,
+    provider: BoundProvider,
     composed: CompositionResult,
     candidates: Sequence[PluginCandidate],
     row: _Row,
@@ -228,7 +228,7 @@ def _provider(
 
 
 def _conformance(
-    provider: Provider,
+    provider: BoundProvider,
     composed: CompositionResult,
     candidates: Sequence[PluginCandidate],
     waiting: str | None,
@@ -270,7 +270,7 @@ def _owner_conformance(
 
 
 def _live(
-    provider: Provider, waiting: str | None, samples: list[object], row: _Row
+    provider: BoundProvider, waiting: str | None, samples: list[object], row: _Row
 ) -> Iterator[PluginCheckRow]:
     from untaped.sdk.contracts._declare import fills  # noqa: PLC0415
 
@@ -290,7 +290,7 @@ def _live(
 
 
 def _call(
-    provider: Provider, name: str, title: str, samples: list[object], row: _Row
+    provider: BoundProvider, name: str, title: str, samples: list[object], row: _Row
 ) -> PluginCheckRow:
     from untaped.sdk.contracts import Failed, Ok, gather  # noqa: PLC0415
 
@@ -330,7 +330,7 @@ def _round_trips(items: Sequence[Any]) -> Iterator[str]:
             yield f"item {index} changes in a JSON round trip"
 
 
-def _samples(provider: Provider, items: Sequence[Any]) -> list[object]:
+def _samples(provider: BoundProvider, items: Sequence[Any]) -> list[object]:
     """The provider's own records behind ``items``: what its bridge turned into them."""
     binding = provider.binding
     if binding.owns_item:
@@ -343,7 +343,7 @@ def _samples(provider: Provider, items: Sequence[Any]) -> list[object]:
     return found
 
 
-def _fills(provider: Provider, samples: Sequence[object], row: _Row) -> PluginCheckRow:
+def _fills(provider: BoundProvider, samples: Sequence[object], row: _Row) -> PluginCheckRow:
     from untaped.runtime.contracts.fills import fills_problems  # noqa: PLC0415
 
     what = f"{provider.binding.owner}.{provider.binding.contract.name}"
@@ -355,7 +355,7 @@ def _fills(provider: Provider, samples: Sequence[object], row: _Row) -> PluginCh
     return row("fills", what, "pass", plural(len(samples), "live item"))
 
 
-def _schema(provider: Provider, what: str, row: _Row) -> PluginCheckRow:
+def _schema(provider: BoundProvider, what: str, row: _Row) -> PluginCheckRow:
     from untaped.runtime.contracts.fills import current_hash, recorded_hash  # noqa: PLC0415
 
     recorded = recorded_hash(provider)

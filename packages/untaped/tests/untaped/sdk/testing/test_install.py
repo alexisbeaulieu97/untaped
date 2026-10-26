@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from datetime import timedelta
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, Field, SecretStr
 
+from core_test_support.contracts.support import Book
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
     Column,
     Command,
@@ -25,7 +28,10 @@ from untaped.sdk import (
     Record,
     Refresh,
     Stdin,
+    UntapedError,
+    experimental,
 )
+from untaped.sdk.contracts import Contract, Ok, Provider, gather
 from untaped.sdk.storage import Cache
 from untaped.sdk.testing import Home, Install, ManualClock, Ran, Running
 
@@ -312,3 +318,100 @@ def test_cli_reads_rows_back_whatever_spelled_the_format(
 def test_cli_goes_ahead_with_yes(install: Installer) -> None:
     ran = install(Shop).cli("shop remove tea --yes")
     assert (ran.exit, ran.text) == (0, "removed")
+
+
+class Pages(BaseModel):
+    """The owner of the contract the providers below fill (``books``)."""
+
+
+@experimental
+class Books(Contract):
+    """Where the test's books come from."""
+
+    @abstractmethod
+    def books(self) -> list[Book]: ...
+
+
+class Titles(Command[Pages]):
+    """Print every title every provider keeps."""
+
+    def run(self) -> str:
+        return ",".join(
+            f"{answer.plugin}:{book.title}"
+            for answer in gather(Books.books)()
+            if isinstance(answer, Ok)
+            for book in answer.value
+        )
+
+
+class Reader(Plugin):
+    """Ask for books."""
+
+    settings = Pages
+    commands = (Titles,)
+    offers = (Books,)
+
+
+class Fixed(Books, Provider):
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+
+class Plain(Books):
+    def books(self) -> list[Book]:
+        return []
+
+
+def test_providers_compose_as_one_plugin_per_key(install: Installer) -> None:
+    shelf = install(Reader, providers={"fake": (Fixed,), "spare": (Fixed,)})
+    assert shelf.run(Titles()).text == "fake:Dune,spare:Dune"
+
+
+def test_providers_must_be_provider_classes(install: Installer) -> None:
+    with pytest.raises(TypeError, match=r"providers\['fake'\] holds .*Plain.*not a provider"):
+        install(Reader, providers={"fake": (Plain,)})
+    with pytest.raises(TypeError, match=r"providers\['fake'\] holds no provider class"):
+        install(Reader, providers={"fake": ()})
+
+
+def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.runtime import registry
+
+    owner = PluginCandidate(distribution="untaped-reader", name="reader", target=_target(Reader))
+    provider = PluginCandidate(
+        distribution="untaped-lender",
+        name="lender",
+        target=_target(Lender),
+        requires_dist=('untaped-reader>=1; extra == "reader"', 'untaped-gone; extra == "gone"'),
+    )
+    monkeypatch.setattr(registry, "discover_candidates", lambda: (owner, provider))
+    lender = install(Lender)
+    assert [candidate.name for candidate in lender.candidates] == ["lender", "reader"]
+    assert lender.cli("reader titles").stdout == "lender:Dune\n"
+
+
+class Lender(Plugin):
+    """Lend books to reader."""
+
+    settings = ShopSettings
+    fills = (Fixed,)
+
+
+def _target(cls: type) -> str:
+    return f"{cls.__module__}:{cls.__qualname__}"
+
+
+class Named(Books, Provider):
+    """Its one book is titled after the plugin its context says it is."""
+
+    def books(self) -> list[Book]:
+        assert not hasattr(self.ctx, "terminal")  # only the command asks
+        return [Book(title=self.ctx.plugin.name)]
+
+
+def test_a_provider_s_context_is_its_own_plugin_s_without_a_terminal(install: Installer) -> None:
+    assert install(Reader, providers={"fake": (Named,)}).run(Titles()).text == "fake:fake"
+    with pytest.raises(UntapedError, match="not bound to a plugin, so it has no context"):
+        Named().ctx  # noqa: B018 - reading it is the point

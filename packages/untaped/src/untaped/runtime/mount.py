@@ -40,6 +40,7 @@ from untaped.runtime.declaration import (
     Declaration,
     GroupDecl,
     OptionDecl,
+    PluginDecl,
     Problem,
     Quarantined,
     StabilityDecl,
@@ -279,6 +280,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         stability=_mark(plugin.stability),
         skills=skills,
         deprecations=lambda: loaded()["deprecations"] if behaviours else (),
+        **_contract_fields(mount, plugin),
     )
     for field_name in ("caches", "doctor_checks", "credentials", "stores"):
         kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
@@ -295,6 +297,39 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         # the spec's own checks read every block, so the lazy ones go in after them
         object.__setattr__(spec, field_name, blocks)
     return spec
+
+
+def _contract_fields(mount: Mount, plugin: PluginDecl) -> dict[str, Any]:
+    """The 11.x registry's ``contracts`` and ``provides`` from ``offers`` and ``fills``.
+
+    Both import the classes only when the registry first asks, as the 11.x
+    functions did. A fill's owner is the composed plugin class offering its
+    contract; a fill whose contract no composed plugin class offers is left
+    out, since a class names no plugin before its owner is composed. The
+    seam goes with the last 11.x owner or provider.
+    """
+    fields: dict[str, Any] = {}
+    if plugin.offers:
+        fields["contracts"] = partial(_resolved, plugin.offers)
+    owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
+    grouped: dict[str, list[str]] = defaultdict(list)
+    for fill in plugin.fills:
+        if fill.contract in owners:
+            grouped[owners[fill.contract]].append(fill.target)
+    if grouped:
+        fields["provides"] = {
+            owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
+        }
+    return fields
+
+
+def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:
+    return tuple(resolve_target(target) for target in targets)
+
+
+def _instances(targets: Sequence[str]) -> tuple[Any, ...]:
+    """One instance of each provider class: core instantiates a provider at the first ask."""
+    return tuple(cls() for cls in _resolved(targets))
 
 
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:
