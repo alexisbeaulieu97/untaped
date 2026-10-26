@@ -208,9 +208,12 @@ def test_a_malformed_ignore_is_a_usage_error_even_with_nothing_to_lint(
 
 
 def test_piped_plugin_list_checks_each_plugin() -> None:
-    """``untaped plugin list -f pipe | untaped lint --stdin``, the list cut to two plugins."""
+    """``untaped plugin list -f pipe | untaped lint --stdin``, the list cut to two plugins
+    and untaped's own row, which lint skips."""
     listed = invoke_root(["plugin", "list", "-f", "pipe"]).stdout.splitlines()
-    piped = [line for line in listed if json.loads(line)["record"]["name"] in ("git", "lint")]
+    wanted = ("git", "lint", "untaped")
+    piped = [line for line in listed if json.loads(line)["record"]["name"] in wanted]
+    assert len(piped) == 3
     PluginReader.read.clear()
     with compose_with("git", "lint", provides={"acme": [PluginReader()]}):
         result = _lint(input="\n".join(piped) + "\n")

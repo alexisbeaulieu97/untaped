@@ -3,3 +3,4 @@ command's `ctx.plugins`) lists untaped itself as the plugin `untaped`, with
 untaped's version, marked by the new `root` field of
 `untaped.installed_plugin` records: `true` for it, `false` for every plugin
 installed into untaped.
+`untaped plugin list -f pipe | untaped lint --stdin` skips that row.
