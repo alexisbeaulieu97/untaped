@@ -138,8 +138,9 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
     """``"<rel>:<lineno>"`` for ``HttpClient(...)`` calls whose ``verify=`` is
     missing or not a ``resolve_verify(...)`` call (or, in a core builder, its
     parameter's override of one), and for ``connected_client(...)`` or
-    ``_http_client(...)`` calls passing a ``verify=`` that is not a
-    credential key's own ``verify_tls`` (``True`` while there is no key)."""
+    ``_http_client(...)`` calls (and ``ctx.http.client(...)``) passing a
+    ``verify=`` that is not a credential key's own ``verify_tls`` (``True``
+    while there is no key)."""
     offenders: list[str] = []
     overrides = rel in _VERIFY_OVERRIDES
     for call in ast.walk(tree):
@@ -151,11 +152,32 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
                 offenders.append(f"{rel}:{call.lineno}")
         elif (
             verify_kw is not None
-            and (_is_named_call(call, "connected_client") or _is_named_call(call, "_http_client"))
+            and (
+                _is_named_call(call, "connected_client")
+                or _is_named_call(call, "_http_client")
+                or _is_factory_call(call)
+            )
             and not _keys_tls(verify_kw.value)
+            and not (overrides and _forwards_verify(verify_kw.value))
         ):
             offenders.append(f"{rel}:{call.lineno}")
     return offenders
+
+
+def _is_factory_call(call: ast.Call) -> bool:
+    """``<x>.http.client(...)``: a plugin's client from its context's ``HttpFactory``."""
+    func = call.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "client"
+        and isinstance(func.value, ast.Attribute)
+        and func.value.attr == "http"
+    )
+
+
+def _forwards_verify(value: ast.expr) -> bool:
+    """A core builder passing on its own caller's ``verify`` (``HttpFactory.client``)."""
+    return isinstance(value, ast.Name) and value.id == "verify"
 
 
 def _keys_tls(value: ast.expr, *, bare_true: bool = False) -> bool:
@@ -203,6 +225,9 @@ _HEADER = "from untaped.sdk import HttpClient, resolve_verify\nimport untaped.sd
         ),
         ("capi.connected_client(c, section='x', base_url='u')", False),
         ("_http_client(binding, verify=False)", True),
+        ("self.ctx.http.client(s, base_url='u', verify=False)", True),
+        ("self.ctx.http.client(s, base_url='u', verify=server.verify_tls)", False),
+        ("connected_client(c, section='x', base_url='u', verify=verify)", True),
         ("HttpClient(base_url='x', headers={})", True),
         ("HttpClient(base_url='x', verify=True)", True),
         ("HttpClient(base_url='x', verify=False)", True),

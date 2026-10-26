@@ -358,9 +358,16 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
             extensions=owner,
             caches=caches,
             section=spec.name,
-            credentials=tuple(spec.credentials),
+            credentials=_credential_names(spec),
         )
     return spec.settings
+
+
+def _credential_names(spec: PluginSpec) -> frozenset[str]:
+    """The plugin's credential names; a 12.0 plugin's from its declaration, unimported."""
+    if isinstance(spec.credentials, DeclaredBlocks):
+        return frozenset(each.partition(".")[2] for each in spec.credentials.ids)
+    return frozenset(each.name for each in spec.credentials)
 
 
 def _timed_caches(spec: PluginSpec) -> tuple[Cache[Any], ...]:

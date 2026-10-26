@@ -72,7 +72,8 @@ lists the categories. A plugin's error classes declare them as class defaults
   and exits 4. An invalid input *file* the command reads, or a value the user
   gave that fails validation, is `invalid` (exit 1), not config.
 - HTTP errors take their category from the status and their `system` from
-  `connected_client(section=…)`. A mapper that turns them into plugin
+  the plugin whose settings built the client
+  (`self.ctx.http.client(...)`). A mapper that turns them into plugin
   errors keeps both: `JiraApiError(msg, **attribution(err))`, and a 401 stays
   `auth` even when it becomes a `ConfigError` for its hint.
 - Put a follow-up command in `hint=` (``"run `untaped auth login awx`"``)
@@ -269,8 +270,9 @@ The sections above name the helper for each rule. Beyond those:
   than `app_context().settings`.
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
   setting and declare each secret as a `Credential` on the spec (not
-  `token_sources` or a `token` setting), and pass `connected_client` the
-  values; see [Credentials](../credentials.md).
+  `token_sources` or a `token` setting), and build its client with
+  `self.ctx.http.client(self.settings, base_url=…, bearer=…)`; see
+  [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
 - To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`

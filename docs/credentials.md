@@ -11,14 +11,14 @@ Three rules decide where a plugin's settings and secrets go:
   `untaped.http.ca_bundle_path`) stays outside, in core's `http` settings.
 
 In code, the server is a `CredentialKey` subclass held by one marked setting,
-and each secret is a `Credential` listed on `PluginSpec(credentials=...)`:
+and each secret is a `Credential` the plugin class holds:
 
 ```python
 from typing import Annotated
 
 from pydantic import BaseModel, HttpUrl
 
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify, connected_client
+from untaped.sdk import Command, Credential, CredentialKey, NeedsSetup, Plugin, TlsVerify
 
 
 class AcmeServer(CredentialKey):
@@ -30,25 +30,36 @@ class AcmeSettings(BaseModel):
     server: Annotated[AcmeServer | None, NeedsSetup] = None
 
 
-TOKEN = Credential("acme", "token", key=AcmeServer, env=("ACME_TOKEN",))
+TOKEN = Credential(key=AcmeServer, env=("ACME_TOKEN",))
 
 
-def client(settings: AcmeSettings):
-    server = settings.server  # None until set up: connected_client says so
-    return connected_client(
-        settings,
-        section="acme",
-        base_url=None if server is None else str(server.url),
-        bearer=None if server is None else TOKEN.get(server),
-        verify=True if server is None else server.verify_tls,
-    )
+class Whoami(Command[AcmeSettings]):
+    """Print who the token is."""
+
+    def run(self) -> str:
+        server = self.settings.server  # None until set up: the client says so
+        client = self.ctx.http.client(
+            self.settings,
+            base_url=None if server is None else str(server.url),
+            bearer=None if server is None else TOKEN.get(server),
+            verify=True if server is None else server.verify_tls,
+        )
+        return client.get("/me").json()["name"]
+
+
+class Acme(Plugin):
+    """Talk to Acme."""
+
+    settings = AcmeSettings
+    commands = (Whoami,)
+    token = TOKEN
 ```
 
 `TOKEN.get(server)` answers from `UNTAPED_ACME__TOKEN`, then the login stored
 for exactly this server, then `ACME_TOKEN`; with none it raises
 `NoCredential` (exit 4) naming `untaped auth login acme`, a step only the
 person takes. The token is bound to the server's origin (scheme, host and
-port): `connected_client` refuses to build a client for another one, and a
+port): the client refuses to be built for another one, and a
 request elsewhere raises `HttpError` before it is sent. Redirects are
 returned unless a call passes `follow_redirects=True`, which follows them on
 the same origin only. In tests, `untaped.sdk.testing` keeps logins in memory

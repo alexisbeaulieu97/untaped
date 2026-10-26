@@ -157,6 +157,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Credential",
         "CredentialKey",
         "HttpClient",
+        "HttpFactory",
         "HttpError",
         "HttpSettings",
         "HttpStatusError",

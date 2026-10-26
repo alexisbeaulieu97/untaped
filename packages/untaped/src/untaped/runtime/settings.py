@@ -45,7 +45,7 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
-from untaped.sdk._run import current_overlay
+from untaped.sdk._run import SECTION_OF, current_overlay
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
@@ -58,7 +58,6 @@ from untaped.sdk.marks import Stability
 from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
-    from untaped.sdk.network.credentials import Credential
     from untaped.sdk.storage.cache import Cache
 
 STATE_FILE_NAME = "state.yml"
@@ -281,7 +280,7 @@ def section_model(
     extensions: bool,
     caches: tuple[Cache[Any], ...],
     section: str = "",
-    credentials: tuple[Credential[Any], ...] = (),
+    credentials: frozenset[str] = frozenset(),
 ) -> type[BaseModel]:
     """``model`` with the keys the SDK injects into a plugin's section.
 
@@ -293,9 +292,11 @@ def section_model(
     age; an unknown cache name loads (doctor names it), so a cache a plugin
     drops never breaks a config. Each cache's ``renamed_from`` joins
     ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key.
+    owner's own declarations never point at an injected key. ``credentials``
+    names the section's credentials, which ``UNTAPED_<SECTION>__<NAME>`` overrides.
     """
     caches = timed_caches(caches)
+    declared = model
     renamed = _cache_renames(model, caches)
     if renamed:
         model = cast(
@@ -328,7 +329,8 @@ def section_model(
         create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
     )
     if credentials:
-        _CREDENTIAL_NAMES[composed] = frozenset(each.name for each in credentials)
+        _CREDENTIAL_NAMES[composed] = credentials
+    setattr(composed, SECTION_OF, declared)  # its owner's model, which owner_of_settings reads
     return composed
 
 

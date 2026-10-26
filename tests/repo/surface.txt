@@ -3797,7 +3797,7 @@ cli untaped plugin new --format choice=pipe
 cli untaped plugin new --format choice=raw
 cli untaped plugin new --format choice=table
 cli untaped plugin new --format choice=yaml
-cli untaped plugin new --path VALUE default=unset
+cli untaped plugin new --path VALUE default=.
 cli untaped plugin new NAME --fills VALUE
 cli untaped plugin rank --columns VALUE... default=unset
 cli untaped plugin rank --columns alias=-c
@@ -4253,11 +4253,11 @@ cli untaped skills install
 cli untaped skills install --all switch default=unset
 cli untaped skills install --force switch default=unset
 cli untaped skills install --project-dir VALUE default=unset
-cli untaped skills install --scope VALUE default=unset
+cli untaped skills install --scope VALUE default=global
 cli untaped skills install --scope choice=global
 cli untaped skills install --scope choice=local
 cli untaped skills install --stdin switch default=unset
-cli untaped skills install --target VALUE default=unset
+cli untaped skills install --target VALUE default=codex
 cli untaped skills install --target choice=all
 cli untaped skills install --target choice=claude
 cli untaped skills install --target choice=codex
@@ -4290,7 +4290,7 @@ cli untaped skills remove --scope VALUE default=unset
 cli untaped skills remove --scope choice=global
 cli untaped skills remove --scope choice=local
 cli untaped skills remove --stdin switch default=unset
-cli untaped skills remove --target VALUE default=unset
+cli untaped skills remove --target VALUE default=all
 cli untaped skills remove --target choice=all
 cli untaped skills remove --target choice=claude
 cli untaped skills remove --target choice=codex
@@ -5425,6 +5425,11 @@ sdk untaped.sdk.HttpError.fix_by class
 sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
+sdk untaped.sdk.HttpFactory(_owner) callback(_owner, 1)
+sdk untaped.sdk.HttpFactory.client(bearer=) default=None
+sdk untaped.sdk.HttpFactory.client(headers=) default=None
+sdk untaped.sdk.HttpFactory.client(settings, *, base_url)
+sdk untaped.sdk.HttpFactory.client(verify=) default=None
 sdk untaped.sdk.HttpSettings()
 sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
 sdk untaped.sdk.HttpSettings(proxy=) default=None
@@ -6932,6 +6937,11 @@ sdk untaped.sdk.network.HttpClient.request(method, path)
 sdk untaped.sdk.network.HttpClient.request(retry=) default=<computed>
 sdk untaped.sdk.network.HttpClient.request_json(**kwargs)
 sdk untaped.sdk.network.HttpClient.request_json(method, path)
+sdk untaped.sdk.network.HttpFactory(_owner) callback(_owner, 1)
+sdk untaped.sdk.network.HttpFactory.client(bearer=) default=None
+sdk untaped.sdk.network.HttpFactory.client(headers=) default=None
+sdk untaped.sdk.network.HttpFactory.client(settings, *, base_url)
+sdk untaped.sdk.network.HttpFactory.client(verify=) default=None
 sdk untaped.sdk.network.RetryPolicy()
 sdk untaped.sdk.network.RetryPolicy(backoff_base@2=) default=0.5
 sdk untaped.sdk.network.RetryPolicy(backoff_max@3=) default=30.0
@@ -7422,6 +7432,7 @@ sdk untaped.sdk.testing.Ran.stdout
 sdk untaped.sdk.testing.Ran.text
 sdk untaped.sdk.testing.Running(_shown)
 sdk untaped.sdk.testing.Running.diagnostics
+sdk untaped.sdk.testing.Running.http
 sdk untaped.sdk.testing.ScreenKeys()  [experimental]
 sdk untaped.sdk.testing.ScreenKeys(*keys)  [experimental]
 sdk untaped.sdk.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]

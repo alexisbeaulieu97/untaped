@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from untaped.sdk._ui import UiContext
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
+    from untaped.sdk.network.http import HttpFactory
     from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.progress import ProgressHandle
@@ -83,6 +84,10 @@ def _unspelled(spelled: SpelledCommand) -> str:
     return " ".join([spelled.command.__name__, *map(str, spelled.args)])
 
 
+#: The attribute core's section class of a plugin's settings model holds that model under.
+SECTION_OF = "__untaped_section_of__"
+
+
 @dataclass(frozen=True)
 class Composition:
     """Which plugin owns what, and the plugins this install has."""
@@ -97,13 +102,16 @@ class Composition:
     spell: Callable[[SpelledCommand], str] = _unspelled
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
-        """The plugin whose settings model ``model`` is; :class:`LookupError` when none is."""
-        try:
-            return self.owners[model]
-        except KeyError:
-            raise LookupError(
-                f"{model.__qualname__} is the settings model of no composed plugin"
-            ) from None
+        """The plugin whose settings model ``model`` is; :class:`LookupError` when none is.
+
+        ``model`` may be the class a run's settings are loaded as, which core
+        derives from the plugin's model to add the keys it injects (and marks
+        with that model); a subclass of its own is no plugin's settings.
+        """
+        declared = model.__dict__.get(SECTION_OF, model)
+        if (owner := self.owners.get(declared)) is not None:
+            return owner
+        raise LookupError(f"{model.__qualname__} is the settings model of no composed plugin")
 
     def owner_of_module(self, module: str) -> str:
         """The plugin owning the classes defined in ``module``; :class:`LookupError` when none."""
@@ -252,6 +260,13 @@ class Run:
     def policy(self) -> OutputPolicy:
         """What the run asks of stderr, which the sink of its ``diag`` follows."""
         return self.policy_cell.policy
+
+    @property
+    def http(self) -> HttpFactory:
+        """HTTP clients for any composed plugin's services, outside a command too (doctor)."""
+        from untaped.sdk.network.http import HttpFactory  # noqa: PLC0415 - httpx's cost
+
+        return HttpFactory(self.composition.owner_of_settings)
 
     @property
     def attached(self) -> bool:
@@ -466,9 +481,9 @@ def settings_of[M: BaseModel](model: type[M]) -> M:
 class ProviderContext:
     """What a provider reaches without declaring it: ``self.ctx`` on a ``Provider``.
 
-    ``diag`` writes to stderr; ``project`` is the current project or
-    ``None``; ``plugin`` is the providing plugin; ``plugins`` is every
-    plugin this install has. No terminal: a provider runs inside someone
+    ``diag`` writes to stderr; ``http`` builds HTTP clients; ``project``
+    is the current project or ``None``; ``plugin`` is the providing plugin;
+    ``plugins`` is every plugin this install has. No terminal: a provider runs inside someone
     else's command, so only the command asks.
     """
 
@@ -478,6 +493,11 @@ class ProviderContext:
     @property
     def diag(self) -> Diag:
         return self._run.diag
+
+    @property
+    def http(self) -> HttpFactory:
+        """HTTP clients for this plugin's services: ``self.ctx.http.client(self.settings, ...)``."""
+        return self._run.http
 
     @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:
@@ -494,8 +514,8 @@ class ProviderContext:
 class Context(ProviderContext):
     """What a command reaches without declaring it: ``self.ctx``.
 
-    A provider's context (``diag``, ``project``, ``plugin`` its own plugin,
-    ``plugins``) and ``terminal``, the terminal handle for prompts and
+    A provider's context (``diag``, ``http``, ``project``, ``plugin`` its
+    own plugin, ``plugins``) and ``terminal``, the terminal handle for prompts and
     screens. The run they read is kept private: a plugin never reaches the
     sink's policy or the composition except through these handles.
     """

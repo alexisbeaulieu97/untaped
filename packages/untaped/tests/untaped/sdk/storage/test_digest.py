@@ -51,7 +51,7 @@ class ToySettingsWithNewField(ToySettings):
 
 def _register(model: type[BaseModel] = ToySettings) -> None:
     composed = section_model(
-        model, extensions=True, caches=(ITEMS,), section="toy", credentials=(TOKEN,)
+        model, extensions=True, caches=(ITEMS,), section="toy", credentials=frozenset({TOKEN.name})
     )
     register_profile_settings("toy", composed)
     bind_credentials({"toy": (TOKEN,)})

@@ -82,7 +82,7 @@ class Library(Plugin):
   command is `Command[S]`: `self.settings` is the plugin's section (S is the
   plugin's `settings` model, which composition checks), plain `Provider`
   when the plugin reads none, and `self.ctx` has a command's `diag`,
-  `project`, `plugin` and `plugins` but no terminal, since only the command
+  `http`, `project`, `plugin` and `plugins` but no terminal, since only the command
   asks. The plugin class lists its providers in `fills`; core reads each
   one's owner from the contract it subclasses and builds it at the first
   ask that reaches it, never at composition. A provider is ready when its

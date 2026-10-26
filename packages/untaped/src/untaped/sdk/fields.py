@@ -409,6 +409,12 @@ class Output[R: BaseModel](FieldBlock):
         """The text a table shows when ``run`` printed no row."""
         self._empty = text
 
+    def _option_default(self, option: FieldOption) -> str | int | None:
+        # ``table`` is every command's, so only another default is recorded
+        if option.flag == "--format" and self.default_format != "table":
+            return self.default_format
+        return None
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Output[R]:
         """A copy for one invocation, from ``--format`` and ``--columns``.
 
@@ -436,6 +442,7 @@ class Output[R: BaseModel](FieldBlock):
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            _as_row,
             _model_fields,
             _print_available_columns,
             count_failed_actions,
@@ -457,19 +464,49 @@ class Output[R: BaseModel](FieldBlock):
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
         themed = self.format in ("table", "tree")
+        ui = ui_context(strict=False) if themed else None
         columns = self._requested
         detail = isinstance(records, BaseModel) and self.format == "table"
         if columns is None and self._declared and detail:
             columns = list(self.columns)  # a detail view would hide the empty ones
+        following = following_fields(self._model) if self._model and self.format == "table" else {}
+        rows = [records] if isinstance(records, BaseModel) else records
+        table_columns = list(self.columns) or None
+        if table_columns is None and following:
+            # a field printed as its own table is not a column of the first
+            shown = dict.fromkeys(name for row in rows for name in _as_row(row))
+            table_columns = [name for name in shown if name not in following]
         emit_with(
             records,
-            ui=ui_context(strict=False) if themed else None,
+            ui=ui,
             fmt=cast("OutputFormat", self.format),  # a plugin renderer's format returned above
             columns=columns,
             empty=self._empty,
             kind=kind,
-            table_columns=list(self.columns) or None,
+            table_columns=table_columns,
         )
+        for name, item in following.items():
+            words = name.replace("_", " ")
+            for number, row in enumerate(rows, 1):
+                value = getattr(row, name, None)
+                if value is None:
+                    continue  # not carried this run (``issues get`` without ``--comments``)
+                # one heading per table, naming its row among several: two bare tables read as one
+                of = f" of {_named(row, number)}" if len(rows) > 1 else ""
+                print(f"\n{words}{of}")
+                emit_with(
+                    list(value),
+                    ui=ui,
+                    fmt="table",
+                    empty=f"No {words}.",
+                    table_columns=default_columns(item) or None,
+                )
+
+
+def _named(row: BaseModel, number: int) -> str:
+    """The row a following table belongs to: its ``Key`` value, else its place."""
+    field = key_field(type(row))
+    return str(getattr(row, field)) if field is not None else f"row {number}"
 
 
 class Columns(list[str]):
@@ -488,6 +525,40 @@ def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
     """The fields of ``model`` marked ``Column``: a table's default columns (none: every field)."""
     return tuple(name for name, info in model.model_fields.items() if Column in _marks(info))
+
+
+def following_fields(model: type[BaseModel]) -> dict[str, type[BaseModel]]:
+    """The fields of ``model`` marked ``Following``, each with the model of its items.
+
+    A table prints each as a second table after the first; a field that is
+    not a list of models holds nothing to print (composition refuses it).
+    """
+    found: dict[str, type[BaseModel]] = {}
+    for name, info in model.model_fields.items():
+        if Following in _marks(info) and (item := list_item_model(info.annotation)) is not None:
+            found[name] = item
+    return found
+
+
+def unprintable_following(model: type[BaseModel]) -> list[str]:
+    """The fields of ``model`` marked ``Following`` that are not a list of models."""
+    return [
+        name
+        for name, info in model.model_fields.items()
+        if Following in _marks(info) and list_item_model(info.annotation) is None
+    ]
+
+
+def list_item_model(annotation: object) -> type[BaseModel] | None:
+    """The model ``annotation`` lists (``list[M]``, ``list[M] | None``), if it lists one."""
+    for each in (annotation, *get_args(annotation)):
+        if get_origin(each) is Annotated:
+            each = get_args(each)[0]
+        if get_origin(each) is list:
+            [item] = get_args(each) or (None,)
+            if isinstance(item, type) and issubclass(item, BaseModel):
+                return item
+    return None
 
 
 def key_field(model: type[BaseModel]) -> str | None:
@@ -926,6 +997,9 @@ class Limit(FieldBlock):
     def value(self) -> int | None:
         """At most this many results; ``None`` is no limit."""
         return self._value
+
+    def _option_default(self, option: FieldOption) -> str | int | None:
+        return self.default if option.flag == "--limit" else None
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Limit:
         """A copy for one invocation, from ``--limit``; below 1 is a usage error."""

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, get_args
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field
 
 from untaped.sdk import (
     AllowHyphen,
@@ -16,6 +16,7 @@ from untaped.sdk import (
     Confirm,
     ExistingFile,
     File,
+    Following,
     Key,
     KeyJson,
     KeyValue,
@@ -251,6 +252,83 @@ def test_declared_columns_stay_in_a_one_record_table_only(
     assert "value" in capsys.readouterr().out
     filled._print([Note(key="k"), Note(key="j")], kind=None)
     assert "value" not in capsys.readouterr().out  # hide_empty_columns still applies to rows
+
+
+class Comment(BaseModel):
+    author: Annotated[str, Column]
+    body: Annotated[str, Column]
+    created: str = ""
+
+
+class Ticket(BaseModel):
+    key: Annotated[str, Key]
+    summary: str
+    comments: Annotated[list[Comment] | None, Following] = None
+
+
+def test_a_following_field_prints_as_a_second_table_after_the_first(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({}, _call(Output[Ticket]))
+    filled._print(
+        Ticket(key="T-1", summary="sum", comments=[Comment(author="al", body="hi")]), kind=None
+    )
+    out = capsys.readouterr().out
+    assert "\ncomments\n" in out  # the field's name heads its table
+    first, second = out.split("author")
+    assert "T-1" in first and "hi" not in first
+    assert "hi" in second and "created" not in second  # the item's Column marks pick its columns
+    filled._print(Ticket(key="T-2", summary="sum"), kind=None)
+    assert "author" not in capsys.readouterr().out  # no row carries the field: no second table
+    filled._print(Ticket(key="T-3", summary="sum", comments=[]), kind=None)
+    assert "No comments." in capsys.readouterr().err  # the empty line, as for the first table
+
+
+class Linked(Ticket):
+    model_config = ConfigDict(extra="allow")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def url(self) -> str:
+        return f"https://t.example/{self.key}"
+
+
+def test_a_following_field_leaves_every_other_column_to_the_first_table(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({}, _call(Output[Linked]))
+    filled._print(Linked(key="T-1", summary="s", more="EXTRA", comments=[]), kind=None)
+    first = capsys.readouterr().out.split("\ncomments")[0]
+    assert "https://t.example/T-1" in first and "EXTRA" in first  # computed and extra fields
+
+
+def test_each_row_s_following_table_is_headed_by_its_key(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({}, _call(Output[Ticket]))
+    filled._print(
+        [
+            Ticket(key="T-1", summary="s", comments=[Comment(author="al", body="one")]),
+            Ticket(key="T-2", summary="s"),
+            Ticket(key="T-3", summary="s", comments=[Comment(author="bo", body="three")]),
+        ],
+        kind=None,
+    )
+    out = capsys.readouterr().out
+    assert "\ncomments of T-1\n" in out and "\ncomments of T-3\n" in out
+    assert "comments of T-2" not in out
+    assert out.index("one") < out.index("comments of T-3") < out.index("three")
+
+
+def test_a_following_field_stays_inside_the_record_outside_a_table(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({"--format": "json"}, _call(Output[Ticket]))
+    filled._print(
+        Ticket(key="T-1", summary="s", comments=[Comment(author="al", body="hi")]), kind=None
+    )
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["comments"] == [{"author": "al", "body": "hi", "created": ""}]
 
 
 def test_a_renderer_named_after_a_core_format_replaces_it(

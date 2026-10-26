@@ -83,11 +83,20 @@ class Work(Command[ToolSettings]):
         return f"{self.parallel.value} {self.limit.value}"
 
 
+class Page(Command):
+    """Print how many results at most, fifty unless asked."""
+
+    limit: Limit = Limit(default=50)
+
+    def run(self) -> str:
+        return str(self.limit.value)
+
+
 class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Fetch, Work)
+    commands = (Delete, Tidy, Sweep, Fetch, Work, Page)
     motd = MOTD
 
 
@@ -207,3 +216,14 @@ def test_parallel_and_limit_below_one_are_usage_errors() -> None:
     limited = _run("tool", "work", "--limit", "0")
     assert limited.exit_code == 2
     assert "--limit: must be at least 1" in limited.stderr
+
+
+def test_a_limit_a_command_sets_is_its_default_in_help_and_on_the_surface() -> None:
+    from untaped.core.surface import plugin_lines
+
+    assert _run("tool", "page").stdout.strip() == "50"
+    assert _run("tool", "page", "--limit", "3").stdout.strip() == "3"
+    assert "[default: 50]" in _run("tool", "page", "--help").stdout
+    lines = {line.text for line in plugin_lines(TOOL)}
+    assert "cli untaped tool page --limit VALUE default=50" in lines
+    assert "cli untaped tool work --limit VALUE default=unset" in lines

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential, CredentialKey, TlsVerify
     from untaped.sdk.network.http import (
         HttpClient,
+        HttpFactory,
         RetryPolicy,
         connected_client,
         paginate_link,
@@ -23,6 +24,7 @@ __all__ = [
     "Credential",
     "CredentialKey",
     "HttpClient",
+    "HttpFactory",
     "RetryPolicy",
     "TlsVerify",
     "connected_client",
@@ -41,6 +43,7 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
             "credentials": ("Credential", "CredentialKey", "TlsVerify"),
             "http": (
                 "HttpClient",
+                "HttpFactory",
                 "RetryPolicy",
                 "connected_client",
                 "paginate_link",

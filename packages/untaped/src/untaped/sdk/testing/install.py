@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from untaped.runtime.mount import Mount, Printed
     from untaped.runtime.registry import PluginCandidate
     from untaped.sdk.diagnostic import Diagnostic
+    from untaped.sdk.network.http import HttpFactory
     from untaped.sdk.testing import CliResult
 
 
@@ -69,7 +70,8 @@ class Running:
 
     ``diagnostics`` are the typed stderr lines the block itself shows, as
     :attr:`Ran.diagnostics` are a command's; a ``.run()``, ``.cli()`` or
-    nested ``running()`` inside it reports on its own result.
+    nested ``running()`` inside it reports on its own result. ``http`` is
+    the run's HTTP factory, which a client class takes.
     """
 
     _shown: list[Diagnostic] = field(repr=False)
@@ -78,6 +80,13 @@ class Running:
     def diagnostics(self) -> tuple[Diagnostic, ...]:
         """The typed lines the block itself showed so far, oldest first."""
         return tuple(self._shown)
+
+    @property
+    def http(self) -> HttpFactory:
+        """HTTP clients as a command's ``self.ctx.http`` builds them, for a client class's tests."""
+        from untaped.sdk._run import current_run  # noqa: PLC0415
+
+        return current_run().http
 
 
 #: Each knob of :meth:`Install.run` and the core field it fills.

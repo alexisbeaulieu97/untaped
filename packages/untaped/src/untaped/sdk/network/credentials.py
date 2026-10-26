@@ -32,7 +32,7 @@ import json
 import os
 import re
 import typing
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -769,20 +769,24 @@ def legacy_section_refused(section: str) -> bool:
 # What the composition declares
 # --------------------------------------------------------------------------- #
 
-_DECLARED: dict[str, tuple[Credential[Any], ...]] = {}
+_DECLARED: dict[str, Sequence[Credential[Any]]] = {}
 
 
-def bind_credentials(declared: dict[str, tuple[Credential[Any], ...]]) -> None:
-    """Record each composed plugin's credentials (composition calls it on every commit)."""
+def bind_credentials(declared: Mapping[str, Sequence[Credential[Any]]]) -> None:
+    """Record each composed plugin's credentials (composition calls it on every commit).
+
+    They are kept as given and read when first asked, so a plugin class whose
+    declaration lists them isn't imported at every start.
+    """
     _DECLARED.clear()
-    _DECLARED.update({plugin: tuple(each) for plugin, each in declared.items() if each})
+    _DECLARED.update({plugin: each for plugin, each in declared.items() if each})
     forget_provenance()
 
 
 def declared_credentials(section: str | None = None) -> tuple[Credential[Any], ...]:
     """The credentials ``section``'s plugin declares; every composed plugin's without one."""
     if section is not None:
-        return _DECLARED.get(section, ())
+        return tuple(_DECLARED.get(section, ()))
     return tuple(each for declared in _DECLARED.values() for each in declared)
 
 
