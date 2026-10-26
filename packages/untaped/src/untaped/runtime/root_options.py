@@ -21,7 +21,7 @@ from contextlib import AbstractContextManager, contextmanager
 from copy import copy
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import TYPE_CHECKING, Annotated, Any, get_args
+from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
@@ -38,10 +38,16 @@ from untaped.runtime.profile_resolver import (
     profile_scope,
 )
 from untaped.runtime.sink import Diagnostics
-from untaped.runtime.theme import OutputFormat
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.runtime.verbose import reset as _reset_verbose
-from untaped.sdk._cli import note_requested_format, raise_usage, user_default_format, user_theme
+from untaped.sdk._cli import (
+    follows_user_format,
+    note_requested_format,
+    raise_usage,
+    requested_format,
+    user_default_format,
+    user_theme,
+)
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
@@ -191,32 +197,41 @@ class RootLine:
             self.helps = any(token in _HELP_FLAGS for token in _before_separator(self.tokens))
         walk.apply_to(self)
 
-    def rendering(self) -> Rendering | None:
-        """How the run renders stderr for the declared command the line selects; ``None`` for none.
+    def rendering(self, root: App | None = None) -> Rendering | None:
+        """How the run renders stderr for the line; ``None`` to leave it to the command's parse.
 
-        Decided as the command's parse decides its ``--format``
-        (:func:`untaped.sdk._cli.apply_default_format`), from the declaration
-        alone, so the command's module is not imported: the ``--format`` the
-        line gives, else, for a command whose ``Output`` defaults to
-        ``table``, ``UNTAPED_FORMAT`` and then ``untaped.ui.format``
-        (:func:`untaped.sdk._cli.user_default_format`; an invalid
-        ``UNTAPED_FORMAT`` is a usage error unless the command ``repairs`` or
-        the line asks for help, which never reads it), else none: the
-        command's own default. The theme is the user's under text diagnostics.
-        A line selecting no declared command (an 11.x seam command, root help,
-        a group without a command of its own) leaves it to the parse.
+        For a declared command it is decided as the command's parse decides
+        its ``--format`` (:func:`untaped.sdk._cli.apply_default_format`),
+        from the declaration alone, so the command's module is not imported:
+        the ``--format`` the line gives, else, for a command whose ``Output``
+        defaults to ``table``, ``UNTAPED_FORMAT`` and then
+        ``untaped.ui.format`` (:func:`untaped.sdk._cli.user_default_format`;
+        an invalid ``UNTAPED_FORMAT`` is a usage error unless the command
+        ``repairs`` or the line asks for help, which never reads it), else
+        none: the command's own default. A line naming no declared command
+        (root ``--help`` or ``--version``, bare ``untaped``, a group without
+        a command of its own, an unknown command) takes the ``--format`` it
+        gives, else ``UNTAPED_FORMAT`` (an invalid one ignored), else
+        ``untaped.ui.format``. The theme is the user's under text
+        diagnostics. A first word the declaration doesn't hold is an unknown
+        command only when the composed ``root`` app has no command for it
+        either; an 11.x seam command's line, or any such line without
+        ``root``, gets ``None``.
         """
+        if not self.placed:
+            word = self.tokens[0] if self.tokens else None
+            if root is None or word is None or resolve_command(root, word) is not None:
+                return None
+            return _rendering(_unnamed_format(self.tokens))
         command = self.command
-        if not self.placed or command is None:
-            return None
+        if command is None:
+            return _rendering(_unnamed_format(self.tokens))
         chosen: tuple[str, str] | None = None
         if self.format is not None:
             chosen = (self.format, "--format")
         elif _table_default(command):
             chosen = user_default_format(repairs=command.repairs or self.helps)
-        fmt, source = chosen if chosen is not None else (None, None)
-        text = with_format(current_policy(), fmt).diagnostics == "text"
-        return Rendering(format=fmt, source=source, theme=user_theme() if text else None)
+        return _rendering(chosen)
 
     def apply(self, spec: _RootOption, value: str) -> None:
         """Apply root option ``spec`` with ``value`` for the rest of the invocation."""
@@ -529,11 +544,26 @@ def _table_default(command: CommandDecl) -> bool:
     parse reads it (:func:`untaped.sdk._cli.apply_default_format`).
     """
     return any(
-        option.flag == "--format"
-        and set(get_args(OutputFormat)) <= set(option.choices)
-        and (option.default or "table") == "table"
+        option.flag == "--format" and follows_user_format(option.choices, option.default or "table")
         for option in command.options
     )
+
+
+def _unnamed_format(tokens: Sequence[str]) -> tuple[str, str] | None:
+    """The format a line naming no declared command asks for, and where it came from.
+
+    The last ``--format``/``-f`` in ``tokens``, else the user's default
+    format, an invalid ``UNTAPED_FORMAT`` ignored (no command reads it).
+    """
+    flag = requested_format(tokens)
+    return (flag, "--format") if flag is not None else user_default_format(repairs=True)
+
+
+def _rendering(chosen: tuple[str, str] | None) -> Rendering:
+    """The rendering of the ``chosen`` format and its source, the user's theme under text."""
+    fmt, source = chosen if chosen is not None else (None, None)
+    text = with_format(current_policy(), fmt).diagnostics == "text"
+    return Rendering(format=fmt, source=source, theme=user_theme() if text else None)
 
 
 def _format_spellings(command: CommandDecl | None) -> tuple[str, ...]:

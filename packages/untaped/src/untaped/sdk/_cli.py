@@ -184,11 +184,21 @@ def _table_default_format(arguments: ArgumentCollection) -> Argument | None:
             for argument in arguments
             if "--format" in argument.names
             and not argument.tokens
-            and set(get_args(OutputFormat)) <= set(get_args(argument.hint))
-            and argument.field_info.default == "table"
+            and follows_user_format(get_args(argument.hint), argument.field_info.default)
         ),
         None,
     )
+
+
+def follows_user_format(choices: Iterable[object], default: object) -> bool:
+    """Whether a ``--format`` offering ``choices`` and defaulting to ``default`` follows the user's.
+
+    It does when it offers every shared format and defaults to ``table``: only
+    then do ``UNTAPED_FORMAT`` and ``untaped.ui.format`` set it. The parse
+    asks it of the cyclopts argument, the root of the declaration
+    (``untaped.runtime.root_options``), so the two never disagree.
+    """
+    return set(get_args(OutputFormat)) <= set(choices) and default == "table"
 
 
 def user_default_format(*, repairs: bool) -> tuple[str, str] | None:
@@ -391,13 +401,9 @@ def report_row_errors[RowT: _FailableRow](
             Diagnostics().failure(row.error, item=item(row))
 
 
-def note_requested_format(tokens: Sequence[str]) -> None:
-    """Record the ``--format`` raw ``tokens`` ask for, for an error found before parsing.
-
-    The last ``--format``/``-f`` before ``--`` wins over ``UNTAPED_FORMAT``;
-    only a structured value switches the error to a JSON line.
-    """
-    value = os.environ.get(FORMAT_ENV) or None
+def requested_format(tokens: Sequence[str]) -> str | None:
+    """The value of the last ``--format``/``-f`` before ``--`` in raw ``tokens``; ``None``."""
+    value = None
     for index, token in enumerate(tokens):
         if token == "--":
             break
@@ -407,7 +413,17 @@ def note_requested_format(tokens: Sequence[str]) -> None:
                 value = inline
             elif index + 1 < len(tokens):
                 value = tokens[index + 1]
-    note_format(value)
+    return value
+
+
+def note_requested_format(tokens: Sequence[str]) -> None:
+    """Record the ``--format`` raw ``tokens`` ask for, for an error found before parsing.
+
+    The last ``--format``/``-f`` before ``--`` (:func:`requested_format`)
+    wins over ``UNTAPED_FORMAT``; only a structured value switches the error
+    to a JSON line.
+    """
+    note_format(requested_format(tokens) or os.environ.get(FORMAT_ENV) or None)
 
 
 def report_declined(exc: OperationCancelledError) -> None:

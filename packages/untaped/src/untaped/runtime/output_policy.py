@@ -1,16 +1,17 @@
 """How one invocation writes stderr: its output policy, and where the current one is.
 
 :class:`OutputPolicy`'s format and theme are the run's rendering
-(:class:`untaped.sdk.run.Rendering`): for a declared command the root fixes
-it once from the declaration, before anything is emitted
-(:func:`fix_rendering`), and nothing changes it after. For a command still
+(:class:`untaped.sdk.run.Rendering`): for a declared command, or a line
+naming none, the root fixes it once from the declaration, before anything is
+emitted (:func:`fix_rendering`), and nothing changes it after. For a command still
 mounted through the 11.x seam it is decided in two phases, both through
 :func:`note_format`: from argv before parsing (``note_requested_format``, so a
 parse error renders the way ``-f json`` asks), then from the command's own
 ``--format`` once settings are loaded (``apply_default_format``).
 ``UNTAPED_DIAGNOSTICS`` overrides both. ``--quiet`` and ``--verbose`` are flags on it,
-set by their root-option handlers. It is internal: a plugin that could read
-the policy would branch on JSON around the sink.
+set by their root-option handlers. It is internal: the run decides how stderr
+renders and the sink follows it, so a plugin has no reason to branch on JSON
+around the sink (the run's choice stays readable as ``ctx.run.rendering``).
 
 The policy belongs to the invocation's scope (``untaped.runtime.sink``). The
 scope registers here: in a ``ContextVar``, and in one process-wide ordered set

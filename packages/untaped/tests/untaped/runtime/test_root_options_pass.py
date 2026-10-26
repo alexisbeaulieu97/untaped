@@ -7,7 +7,7 @@ gets only its leading root options taken here.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Annotated
 
 import pytest
@@ -17,8 +17,9 @@ from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
 from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.root_options import _root_options, applied_root_options
+from untaped.runtime.root_options import _root_options, _table_default, applied_root_options
 from untaped.sdk import Command, Plugin
+from untaped.sdk._cli import _table_default_format
 from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
@@ -522,3 +523,30 @@ def test_the_pass_notes_the_format_and_help_a_declared_command_s_tokens_give(
 ) -> None:
     with applied_root_options(tokens, _root_options(), SHOWING) as line:
         assert (line.command, line.format, line.helps) == (SHOW, fmt, helps)
+
+
+def _commands(nodes: Iterable[CommandDecl | GroupDecl]) -> Iterator[CommandDecl]:
+    for node in nodes:
+        if isinstance(node, GroupDecl):
+            yield from () if node.runs is None else (node.runs,)
+            yield from _commands(node.commands)
+        else:
+            yield node
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+def test_the_pass_and_the_parse_agree_on_which_shipped_formats_follow_the_user_s() -> None:
+    root = bootstrap.build_root_app()
+    declaration = bootstrap.composition().mount.declaration
+    seen: dict[tuple[str, ...], tuple[bool, bool]] = {}
+    for plugin in declaration.plugins:
+        runs = () if plugin.runs is None else (plugin.runs,)
+        for command in (*runs, *_commands(plugin.commands)):
+            app = root
+            for word in command.path[1:] if plugin.root else command.path:
+                app = app[word]
+            parsed = _table_default_format(app.assemble_argument_collection()) is not None
+            seen[command.path] = (_table_default(command), parsed)
+
+    assert {path for path, (read, parsed) in seen.items() if read != parsed} == set()
+    assert {read for read, _ in seen.values()} == {True, False}  # both kinds are shipped

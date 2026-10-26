@@ -122,8 +122,9 @@ class RunNotes:
 class Rendering:
     """How the run renders stderr, fixed once before anything is emitted.
 
-    The runtime decides it from the selected command and reads it; no
-    plugin does (one that could would branch on JSON around the sink).
+    The run decides it from what the line names (``ctx.run.rendering``),
+    and the sink renders by it, so a plugin has no reason to read it:
+    branching on JSON around the sink would split what one line says.
     ``format`` is the ``--format`` the user chose (``None``: the command's
     own default), ``source`` where it came from (``--format``,
     ``UNTAPED_FORMAT`` or ``untaped.ui.format``), ``theme`` the
@@ -164,8 +165,8 @@ class Run:
     #: What blocks noted during ``run``, for core to read after it.
     notes: RunNotes = field(default_factory=RunNotes)
     #: How stderr renders: fixed once by the runtime (:meth:`render_with`) for
-    #: a declared command; ``None`` until then, and for an 11.x command, whose
-    #: parse still decides it.
+    #: a declared command or a line naming none; ``None`` until then, and for
+    #: an 11.x command, whose parse still decides it.
     rendering: Rendering | None = None
 
     @property

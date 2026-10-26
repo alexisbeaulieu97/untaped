@@ -537,7 +537,7 @@ def _started(
     The token pass reads the line by ``declaration``'s token shapes (with
     none, :func:`run_root` reads it by the composition's, so only when the root
     options apply differs, never what the tokens mean), and the run's rendering
-    is fixed from the command it selects (:func:`_fix_rendering`). The
+    is fixed from what it names (:func:`_fix_rendering`). The
     run is current for the block; the root attaches the composition to it
     once built (:func:`_attach`). Its home resolves on first read, so a home
     that doesn't resolve fails only what reads it, through the run's sink,
@@ -559,26 +559,29 @@ def _started(
             _STARTED.reset(marker)
 
 
-def _fix_rendering(run: Run, line: RootLine) -> None:
-    """Fix ``run``'s rendering from the declared command ``line`` selects, if it selects one.
+def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:
+    """Fix ``run``'s rendering from what ``line`` names, unless an 11.x command decides it.
 
     Before anything else is emitted, and once: the dispatch and the
     command's parse then change neither its format nor its theme
-    (:func:`untaped.runtime.output_policy.fix_rendering`). An 11.x seam
-    command's line leaves them to its parse, as before.
+    (:func:`untaped.runtime.output_policy.fix_rendering`). A first word no
+    declaration holds needs the composed ``root`` to tell an unknown command
+    (fixed here) from an 11.x seam command, whose parse decides as before
+    (:meth:`RootLine.rendering`).
     """
-    rendering = line.rendering()
+    rendering = line.rendering(root)
     if rendering is not None:
         run.render_with(rendering)
         fix_rendering(rendering)
 
 
 @contextmanager
-def _invocation(tokens: Sequence[str], result: CompositionResult) -> Iterator[RootLine]:
+def _invocation(tokens: Sequence[str], result: CompositionResult, root: App) -> Iterator[RootLine]:
     """The line under the run :func:`run_root` started, or a run started here for ``tokens``.
 
     The root app driven directly (a test's ``app.meta``) starts its own run
-    over the composition it mounted, reading the line by its declaration.
+    over the composition it mounted (``root``), reading the line by its
+    declaration.
     """
     started = _STARTED.get()
     if started is not None and current_run() is started[0]:
@@ -589,6 +592,8 @@ def _invocation(tokens: Sequence[str], result: CompositionResult) -> Iterator[Ro
             _STARTED.reset(marker)
         return
     with _started(tokens, result.mount.declaration) as (run, line):
+        if not line.placed:
+            _fix_rendering(run, line, root)
         _attach(run, result)
         yield line
 
@@ -645,7 +650,7 @@ def _install_root_callback(
             given_tokens(app.meta) as given,
             diagnostics_scope(),
             dispatching() as ran,
-            _invocation(tokens if given is None else given, result) as line,
+            _invocation(tokens if given is None else given, result, app) as line,
         ):
             return _dispatch_root(ran, line)
 
@@ -670,9 +675,10 @@ def run_root(
 
     Before anything else, one pass over the tokens applies the root options,
     reading the line by the kept declaration's token shapes, and starts the
-    run, its rendering fixed from the command the line selects; then the root
-    is composed (with no declaration kept, the line is read by its
-    declaration now, and the rendering fixed then, before anything is
+    run, its rendering fixed from what the line names; then the root is
+    composed (with no declaration kept, the line is read by its declaration
+    now, and a first word no declaration holds is told from an 11.x
+    command's by the root app, the rendering fixed then, before anything is
     emitted) and its composition attached to the run, then the tokens are
     dispatched under it. One diagnostics scope spans all of it,
     so composition warnings (a quarantined plugin) follow the ``--format``
@@ -683,9 +689,9 @@ def run_root(
     with diagnostics_scope(), _started(argv, kept_declaration(found)) as (run, line):
         root = build_root_app(candidates=found)
         result = composition()
-        if not line.placed:  # no declaration kept: read the line by the composition's
+        if not line.placed:  # no declaration kept, or a word it doesn't hold
             line.read(line.tokens, _root_options(), result.mount.declaration)
-            _fix_rendering(run, line)
+            _fix_rendering(run, line, root)
         _attach(run, result)
         return run_cyclopts_app(root.meta, argv, console=console, error_console=error_console)
 
