@@ -242,7 +242,10 @@ def _compose(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        walk = _PluginWalk(entry, owners, offering)
+        # A later offerer reads a contract only it lists as its own, as when composed alone.
+        walk = _PluginWalk(
+            entry, owners, {**dict.fromkeys(_offered(entry), entry.name), **offering}
+        )
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(

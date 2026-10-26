@@ -1412,6 +1412,37 @@ def test_a_later_offerer_owns_no_contract_it_lists_first() -> None:
     assert [q.name for q in declaration.quarantined] == ["both"]
 
 
+def test_a_later_offerer_refreshes_a_contract_only_it_lists() -> None:
+    @experimental
+    class Notes(Contract):
+        """Offered first by a broken plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+        runs = 5  # type: ignore[assignment]
+
+    @experimental
+    class Paging(Contract):
+        """Only the later offerer lists it."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    shelf = _pages_plugin(Paging)
+    shelf.offers = (Paging, Notes)
+    entries = [_entry(Broken, "broken", module="untaped_broken.plugin"), _entry(shelf, "shelf")]
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["shelf"]
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
