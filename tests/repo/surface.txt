@@ -7432,6 +7432,7 @@ sdk untaped.sdk.testing.Ran.stdout
 sdk untaped.sdk.testing.Ran.text
 sdk untaped.sdk.testing.Running(_shown)
 sdk untaped.sdk.testing.Running.diagnostics
+sdk untaped.sdk.testing.Running.http
 sdk untaped.sdk.testing.ScreenKeys()  [experimental]
 sdk untaped.sdk.testing.ScreenKeys(*keys)  [experimental]
 sdk untaped.sdk.testing.ScreenRun(result, outcome, model, frames, commands_run)  [experimental]
