@@ -1,0 +1,350 @@
+# untaped surface 1
+cfg jira.agile_prefix string default=/rest/agile/1.0
+cfg jira.api_prefix string default=/rest/api/2
+cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
+cfg jira.confirm choice=always
+cfg jira.confirm choice=destructive
+cfg jira.confirm choice=never
+cfg jira.confirm string default=destructive
+cfg jira.default_board_id integer? default=unset
+cfg jira.default_project string? default=unset
+cfg jira.page_size integer(exclusiveMinimum=0) default=50
+cfg jira.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
+cfg jira.server.verify_tls boolean|string(format=path) default=true
+cli untaped jira
+cli untaped jira boards
+cli untaped jira boards list
+cli untaped jira boards list --columns VALUE... default=unset
+cli untaped jira boards list --columns alias=-c
+cli untaped jira boards list --format VALUE default=table
+cli untaped jira boards list --format alias=-f
+cli untaped jira boards list --format choice=json
+cli untaped jira boards list --format choice=pipe
+cli untaped jira boards list --format choice=raw
+cli untaped jira boards list --format choice=table
+cli untaped jira boards list --format choice=yaml
+cli untaped jira boards list --limit VALUE default=50
+cli untaped jira boards list --name VALUE default=unset
+cli untaped jira boards list --project VALUE default=unset
+cli untaped jira boards list --type VALUE default=unset
+cli untaped jira boards list --type choice=kanban
+cli untaped jira boards list --type choice=scrum
+cli untaped jira issues
+cli untaped jira issues assigned
+cli untaped jira issues assigned --columns VALUE... default=unset
+cli untaped jira issues assigned --columns alias=-c
+cli untaped jira issues assigned --format VALUE default=table
+cli untaped jira issues assigned --format alias=-f
+cli untaped jira issues assigned --format choice=json
+cli untaped jira issues assigned --format choice=pipe
+cli untaped jira issues assigned --format choice=raw
+cli untaped jira issues assigned --format choice=table
+cli untaped jira issues assigned --format choice=yaml
+cli untaped jira issues assigned --jql VALUE default=unset
+cli untaped jira issues assigned --limit VALUE default=50
+cli untaped jira issues assigned --project VALUE default=unset
+cli untaped jira issues assigned --sprint VALUE default=unset
+cli untaped jira issues assigned --status VALUE default=unset
+cli untaped jira issues assigned --text VALUE default=unset
+cli untaped jira issues comment --body VALUE default=unset
+cli untaped jira issues comment --body-file VALUE default=unset
+cli untaped jira issues comment --columns VALUE... default=unset
+cli untaped jira issues comment --columns alias=-c
+cli untaped jira issues comment --dry-run switch default=unset
+cli untaped jira issues comment --format VALUE default=table
+cli untaped jira issues comment --format alias=-f
+cli untaped jira issues comment --format choice=json
+cli untaped jira issues comment --format choice=pipe
+cli untaped jira issues comment --format choice=raw
+cli untaped jira issues comment --format choice=table
+cli untaped jira issues comment --format choice=yaml
+cli untaped jira issues comment --yes alias=-y
+cli untaped jira issues comment --yes switch default=unset
+cli untaped jira issues comment KEY
+cli untaped jira issues comments
+cli untaped jira issues comments list --columns VALUE... default=unset
+cli untaped jira issues comments list --columns alias=-c
+cli untaped jira issues comments list --format VALUE default=table
+cli untaped jira issues comments list --format alias=-f
+cli untaped jira issues comments list --format choice=json
+cli untaped jira issues comments list --format choice=pipe
+cli untaped jira issues comments list --format choice=raw
+cli untaped jira issues comments list --format choice=table
+cli untaped jira issues comments list --format choice=yaml
+cli untaped jira issues comments list --limit VALUE default=unset
+cli untaped jira issues comments list KEY
+cli untaped jira issues create
+cli untaped jira issues create --columns VALUE... default=unset
+cli untaped jira issues create --columns alias=-c
+cli untaped jira issues create --description VALUE default=unset
+cli untaped jira issues create --dry-run switch default=unset
+cli untaped jira issues create --fields-file VALUE default=unset
+cli untaped jira issues create --format VALUE default=table
+cli untaped jira issues create --format alias=-f
+cli untaped jira issues create --format choice=json
+cli untaped jira issues create --format choice=pipe
+cli untaped jira issues create --format choice=raw
+cli untaped jira issues create --format choice=table
+cli untaped jira issues create --format choice=yaml
+cli untaped jira issues create --issue-type VALUE default=unset
+cli untaped jira issues create --project VALUE default=unset
+cli untaped jira issues create --set VALUE... default=unset
+cli untaped jira issues create --set-json VALUE... default=unset
+cli untaped jira issues create --summary VALUE default=unset
+cli untaped jira issues create --yes alias=-y
+cli untaped jira issues create --yes switch default=unset
+cli untaped jira issues get
+cli untaped jira issues get --columns VALUE... default=unset
+cli untaped jira issues get --columns alias=-c
+cli untaped jira issues get --comments switch default=unset
+cli untaped jira issues get --format VALUE default=table
+cli untaped jira issues get --format alias=-f
+cli untaped jira issues get --format choice=json
+cli untaped jira issues get --format choice=pipe
+cli untaped jira issues get --format choice=raw
+cli untaped jira issues get --format choice=table
+cli untaped jira issues get --format choice=yaml
+cli untaped jira issues get --stdin switch default=unset
+cli untaped jira issues get [KEYS...]@1 default=unset
+cli untaped jira issues links
+cli untaped jira issues links create --columns VALUE... default=unset
+cli untaped jira issues links create --columns alias=-c
+cli untaped jira issues links create --dry-run switch default=unset
+cli untaped jira issues links create --format VALUE default=table
+cli untaped jira issues links create --format alias=-f
+cli untaped jira issues links create --format choice=json
+cli untaped jira issues links create --format choice=pipe
+cli untaped jira issues links create --format choice=raw
+cli untaped jira issues links create --format choice=table
+cli untaped jira issues links create --format choice=yaml
+cli untaped jira issues links create --yes alias=-y
+cli untaped jira issues links create --yes switch default=unset
+cli untaped jira issues links create KEY LINK_TYPE OTHER
+cli untaped jira issues patch --assignee VALUE default=unset
+cli untaped jira issues patch --columns VALUE... default=unset
+cli untaped jira issues patch --columns alias=-c
+cli untaped jira issues patch --description VALUE default=unset
+cli untaped jira issues patch --dry-run switch default=unset
+cli untaped jira issues patch --fields-file VALUE default=unset
+cli untaped jira issues patch --format VALUE default=table
+cli untaped jira issues patch --format alias=-f
+cli untaped jira issues patch --format choice=json
+cli untaped jira issues patch --format choice=pipe
+cli untaped jira issues patch --format choice=raw
+cli untaped jira issues patch --format choice=table
+cli untaped jira issues patch --format choice=yaml
+cli untaped jira issues patch --set VALUE... default=unset
+cli untaped jira issues patch --set-json VALUE... default=unset
+cli untaped jira issues patch --summary VALUE default=unset
+cli untaped jira issues patch --unassign switch default=unset
+cli untaped jira issues patch --yes alias=-y
+cli untaped jira issues patch --yes switch default=unset
+cli untaped jira issues patch KEY
+cli untaped jira issues search
+cli untaped jira issues search --assignee VALUE default=unset
+cli untaped jira issues search --columns VALUE... default=unset
+cli untaped jira issues search --columns alias=-c
+cli untaped jira issues search --format VALUE default=table
+cli untaped jira issues search --format alias=-f
+cli untaped jira issues search --format choice=json
+cli untaped jira issues search --format choice=pipe
+cli untaped jira issues search --format choice=raw
+cli untaped jira issues search --format choice=table
+cli untaped jira issues search --format choice=yaml
+cli untaped jira issues search --jql VALUE default=unset
+cli untaped jira issues search --limit VALUE default=50
+cli untaped jira issues search --project VALUE default=unset
+cli untaped jira issues search --sprint VALUE default=unset
+cli untaped jira issues search --status VALUE default=unset
+cli untaped jira issues search --text VALUE default=unset
+cli untaped jira issues transition
+cli untaped jira issues transition --columns VALUE... default=unset
+cli untaped jira issues transition --columns alias=-c
+cli untaped jira issues transition --comment VALUE default=unset
+cli untaped jira issues transition --dry-run switch default=unset
+cli untaped jira issues transition --format VALUE default=table
+cli untaped jira issues transition --format alias=-f
+cli untaped jira issues transition --format choice=json
+cli untaped jira issues transition --format choice=pipe
+cli untaped jira issues transition --format choice=raw
+cli untaped jira issues transition --format choice=table
+cli untaped jira issues transition --format choice=yaml
+cli untaped jira issues transition --id VALUE default=unset
+cli untaped jira issues transition --resolution VALUE default=unset
+cli untaped jira issues transition --stdin switch default=unset
+cli untaped jira issues transition --to VALUE default=unset
+cli untaped jira issues transition --yes alias=-y
+cli untaped jira issues transition --yes switch default=unset
+cli untaped jira issues transition [KEYS...]@1 default=unset
+cli untaped jira issues transitions --columns VALUE... default=unset
+cli untaped jira issues transitions --columns alias=-c
+cli untaped jira issues transitions --format VALUE default=table
+cli untaped jira issues transitions --format alias=-f
+cli untaped jira issues transitions --format choice=json
+cli untaped jira issues transitions --format choice=pipe
+cli untaped jira issues transitions --format choice=raw
+cli untaped jira issues transitions --format choice=table
+cli untaped jira issues transitions --format choice=yaml
+cli untaped jira issues transitions KEY
+cli untaped jira projects
+cli untaped jira projects get --columns VALUE... default=unset
+cli untaped jira projects get --columns alias=-c
+cli untaped jira projects get --format VALUE default=table
+cli untaped jira projects get --format alias=-f
+cli untaped jira projects get --format choice=json
+cli untaped jira projects get --format choice=pipe
+cli untaped jira projects get --format choice=raw
+cli untaped jira projects get --format choice=table
+cli untaped jira projects get --format choice=yaml
+cli untaped jira projects get KEY
+cli untaped jira projects list
+cli untaped jira projects list --columns VALUE... default=unset
+cli untaped jira projects list --columns alias=-c
+cli untaped jira projects list --format VALUE default=table
+cli untaped jira projects list --format alias=-f
+cli untaped jira projects list --format choice=json
+cli untaped jira projects list --format choice=pipe
+cli untaped jira projects list --format choice=raw
+cli untaped jira projects list --format choice=table
+cli untaped jira projects list --format choice=yaml
+cli untaped jira sprints
+cli untaped jira sprints list
+cli untaped jira sprints list --board-id VALUE default=unset
+cli untaped jira sprints list --columns VALUE... default=unset
+cli untaped jira sprints list --columns alias=-c
+cli untaped jira sprints list --format VALUE default=table
+cli untaped jira sprints list --format alias=-f
+cli untaped jira sprints list --format choice=json
+cli untaped jira sprints list --format choice=pipe
+cli untaped jira sprints list --format choice=raw
+cli untaped jira sprints list --format choice=table
+cli untaped jira sprints list --format choice=yaml
+cli untaped jira sprints list --limit VALUE default=50
+cli untaped jira sprints list --state VALUE default=unset
+cli untaped jira whoami
+cli untaped jira whoami --columns VALUE... default=unset
+cli untaped jira whoami --columns alias=-c
+cli untaped jira whoami --format VALUE default=table
+cli untaped jira whoami --format alias=-f
+cli untaped jira whoami --format choice=json
+cli untaped jira whoami --format choice=pipe
+cli untaped jira whoami --format choice=raw
+cli untaped jira whoami --format choice=table
+cli untaped jira whoami --format choice=yaml
+record jira.IssueLink
+record jira.IssueLink(key)
+record jira.IssueLink.direction default=""
+record jira.IssueLink.direction string
+record jira.IssueLink.key string
+record jira.IssueLink.relation default=""
+record jira.IssueLink.relation string
+record jira.IssueLink.status default=""
+record jira.IssueLink.status string
+record jira.IssueLink.summary default=""
+record jira.IssueLink.summary string
+record jira.IssueLink.type default=""
+record jira.IssueLink.type string
+record jira.IssueLink.url default=""
+record jira.IssueLink.url string
+record jira.board
+record jira.board.api_url string?
+record jira.board.id integer
+record jira.board.name string
+record jira.board.type string
+record jira.comment
+record jira.comment(id)
+record jira.comment.api_url default=None
+record jira.comment.api_url string?
+record jira.comment.author default=""
+record jira.comment.author string
+record jira.comment.body default=""
+record jira.comment.body string
+record jira.comment.created_at default=None
+record jira.comment.created_at string(format=date-time)?
+record jira.comment.id string
+record jira.comment.issue_key default=""
+record jira.comment.issue_key string
+record jira.comment.updated_at default=None
+record jira.comment.updated_at string(format=date-time)?
+record jira.issue
+record jira.issue(key)
+record jira.issue.api_url default=None
+record jira.issue.api_url string?
+record jira.issue.assignee default=""
+record jira.issue.assignee string
+record jira.issue.comments Comment[]?
+record jira.issue.comments default=None
+record jira.issue.created_at default=None
+record jira.issue.created_at string(format=date-time)?
+record jira.issue.description default=None
+record jira.issue.description string?
+record jira.issue.issue_type default=""
+record jira.issue.issue_type string
+record jira.issue.key string
+record jira.issue.labels default=None
+record jira.issue.labels string[]?
+record jira.issue.links IssueLink[]?
+record jira.issue.links default=None
+record jira.issue.priority default=""
+record jira.issue.priority string
+record jira.issue.reporter default=None
+record jira.issue.reporter string?
+record jira.issue.resolution default=None
+record jira.issue.resolution string?
+record jira.issue.status default=""
+record jira.issue.status string
+record jira.issue.summary default=""
+record jira.issue.summary string
+record jira.issue.updated_at default=None
+record jira.issue.updated_at string(format=date-time)?
+record jira.issue.url default=""
+record jira.issue.url string
+record jira.issue_document
+record jira.issue_document()
+record jira.issue_document.fields default={}
+record jira.issue_document.fields object
+record jira.issue_document.update default={}
+record jira.issue_document.update object
+record jira.issue_outcome
+record jira.issue_outcome(action)
+record jira.issue_outcome.action string
+record jira.issue_outcome.api_url default=None
+record jira.issue_outcome.api_url string?
+record jira.issue_outcome.comment_id default=None
+record jira.issue_outcome.comment_id string?
+record jira.issue_outcome.error Failure?
+record jira.issue_outcome.error default=None
+record jira.issue_outcome.id default=None
+record jira.issue_outcome.id string?
+record jira.issue_outcome.key default=None
+record jira.issue_outcome.key string?
+record jira.issue_outcome.link_type default=None
+record jira.issue_outcome.link_type string?
+record jira.issue_outcome.linked_key default=None
+record jira.issue_outcome.linked_key string?
+record jira.issue_outcome.transition_id default=None
+record jira.issue_outcome.transition_id string?
+record jira.issue_outcome.url default=None
+record jira.issue_outcome.url string?
+record jira.project
+record jira.project.id string
+record jira.project.key string
+record jira.project.name string
+record jira.project.project_type_key string?
+record jira.sprint
+record jira.sprint.end_at string(format=date-time)?
+record jira.sprint.goal string?
+record jira.sprint.id integer
+record jira.sprint.name string
+record jira.sprint.origin_board_id integer?
+record jira.sprint.start_at string(format=date-time)?
+record jira.sprint.state string
+record jira.transition
+record jira.transition.id string
+record jira.transition.name string
+record jira.transition.to_status string?
+record jira.user
+record jira.user.display_name string?
+record jira.user.email_address string?
+record jira.user.key string?
+record jira.user.name string?

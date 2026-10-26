@@ -24,7 +24,7 @@ awx:
 github:
   token: ghp_test
 jira:
-  base_url: https://jira.example.com
+  server: {url: https://jira.example.com}
 """
 
 

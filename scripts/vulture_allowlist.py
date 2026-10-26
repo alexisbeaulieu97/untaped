@@ -39,18 +39,19 @@ AppliedRecord.applied_at
 ItemRow.suggested  # dotfiles rows
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
-JiraUser.email_address  # jira rows
+User.email_address  # jira rows
 IssueResult.api_url
 IssueResult.priority
-IssueDetailResult.reporter
+Issue.reporter
+Issue.links  # printed as a following table
 IssueOutcome.comment_id
 IssueOutcome.linked_key
-TransitionResult.to_status
-ProjectResult.project_type_key
-SprintResult.start_at
-SprintResult.end_at
-SprintResult.goal
-SprintResult.origin_board_id
+Transition.to_status
+Project.project_type_key
+Sprint.start_at
+Sprint.end_at
+Sprint.goal
+Sprint.origin_board_id
 ProfileOutcome.previous_name  # profile rename/copy rows
 ProfileOutcome.copied_from
 Pack.manifest_name  # recipe.pack

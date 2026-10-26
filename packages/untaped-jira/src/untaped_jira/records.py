@@ -1,21 +1,22 @@
-"""The records ``untaped jira`` writes, each declaring its kind on the model.
+"""The records ``untaped jira`` writes.
 
-The app factory imports this module (through the CLI), so ``untaped plugin
-schema jira.issue`` finds every jira kind before any command runs.
-Everything else names the model:
-``accepts=(Issue, IssueOutcome)``, ``kind_of(Issue)``. Turning a Jira REST
-payload into one of these is :mod:`untaped_jira.domain.parse`'s job; the
-models hold only what goes on the wire, in the order it is written.
+A record's kind comes from the command that prints it (``Issue`` is
+``jira.issue``). Turning a Jira REST payload into one of these is
+:mod:`untaped_jira.parse`'s job; the models hold only what goes on the
+wire, in the order it is written. ``Column`` marks a table's default
+columns; ``Following`` fields print as their own table after it.
 """
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import Field
 
-from untaped.sdk import OutcomeRecord, Record, UtcTimestamp
+from untaped.sdk import Column, Following, Key, OutcomeRecord, Record, UtcTimestamp
 
 
-class User(Record, kind="jira.user"):
+class User(Record):
     """The authenticated Jira user (``whoami``)."""
 
     name: str | None = None
@@ -33,35 +34,35 @@ class IssueLink(Record):
     phrase, e.g. ``is blocked by``). ``relation`` is that phrase verbatim.
     """
 
-    key: str
-    summary: str = ""
-    status: str = ""
+    key: Annotated[str, Column]
+    summary: Annotated[str, Column] = ""
+    status: Annotated[str, Column] = ""
     type: str = ""
     direction: str = ""
-    relation: str = ""
+    relation: Annotated[str, Column] = ""
     url: str = ""
 
 
-class Comment(Record, kind="jira.comment"):
+class Comment(Record):
     """One issue comment."""
 
     id: str
     issue_key: str = ""
-    author: str = ""
-    created_at: UtcTimestamp | None = None
+    author: Annotated[str, Column] = ""
+    created_at: Annotated[UtcTimestamp | None, Column] = None
     updated_at: UtcTimestamp | None = None
-    body: str = ""
+    body: Annotated[str, Column] = ""
     api_url: str | None = None
 
 
-class Issue(Record, kind="jira.issue"):
+class Issue(Record):
     """One issue, with Jira's nested fields flattened.
 
     Each command's page says which fields it fills; a field a command does
     not fill is ``null``.
     """
 
-    key: str
+    key: Annotated[str, Key]
     summary: str = ""
     status: str = ""
     assignee: str = ""
@@ -75,18 +76,18 @@ class Issue(Record, kind="jira.issue"):
     created_at: UtcTimestamp | None = None
     resolution: str | None = None
     description: str | None = None
-    links: list[IssueLink] | None = None
-    comments: list[Comment] | None = None
+    links: Annotated[list[IssueLink] | None, Following] = None
+    comments: Annotated[list[Comment] | None, Following] = None
 
 
-class IssueOutcome(OutcomeRecord, kind="jira.issue_outcome"):
+class IssueOutcome(OutcomeRecord):
     """The result of one issue mutation.
 
     ``action`` is ``created``, ``updated``, ``commented``, ``transitioned``,
     ``linked``, or ``planned`` under ``--dry-run`` (where a new issue has no ``key`` yet).
     """
 
-    key: str | None = None
+    key: Annotated[str | None, Key] = None
     id: str | None = None
     url: str | None = None
     api_url: str | None = None
@@ -96,42 +97,42 @@ class IssueOutcome(OutcomeRecord, kind="jira.issue_outcome"):
     linked_key: str | None = None
 
 
-class Transition(Record, kind="jira.transition"):
+class Transition(Record):
     """One workflow transition available on an issue.
 
     ``to_status`` is the status it leads to (``None`` when Jira does not say).
     """
 
-    id: str
-    name: str
-    to_status: str | None = None
+    id: Annotated[str, Column]
+    name: Annotated[str, Column]
+    to_status: Annotated[str | None, Column] = None
 
 
-class Project(Record, kind="jira.project"):
+class Project(Record):
     """One Jira project."""
 
-    key: str
-    name: str = ""
+    key: Annotated[str, Key, Column]
+    name: Annotated[str, Column] = ""
     id: str = ""
-    project_type_key: str | None = None
+    project_type_key: Annotated[str | None, Column] = None
 
 
-class Board(Record, kind="jira.board"):
+class Board(Record):
     """One Jira Software board."""
 
-    id: int
-    name: str = ""
-    type: str = ""
+    id: Annotated[int, Column]
+    name: Annotated[str, Column] = ""
+    type: Annotated[str, Column] = ""
     api_url: str | None = None
 
 
-class Sprint(Record, kind="jira.sprint"):
+class Sprint(Record):
     """One Jira Software sprint."""
 
-    id: int
-    name: str = ""
-    state: str = ""
-    start_at: UtcTimestamp | None = None
-    end_at: UtcTimestamp | None = None
-    goal: str | None = None
+    id: Annotated[int, Column]
+    name: Annotated[str, Column] = ""
+    state: Annotated[str, Column] = ""
+    start_at: Annotated[UtcTimestamp | None, Column] = None
+    end_at: Annotated[UtcTimestamp | None, Column] = None
+    goal: Annotated[str | None, Column] = None
     origin_board_id: int | None = None

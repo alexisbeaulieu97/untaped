@@ -59,7 +59,6 @@ cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; 
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
-cfg jira.base_url -> jira.server.url  [deprecated, removed in 12.0]
 cfg jira.confirm choice=always
 cfg jira.confirm choice=destructive
 cfg jira.confirm choice=never
@@ -3546,7 +3545,7 @@ cli untaped jira issues comment --body VALUE default=unset
 cli untaped jira issues comment --body-file VALUE default=unset
 cli untaped jira issues comment --columns VALUE... default=unset
 cli untaped jira issues comment --columns alias=-c
-cli untaped jira issues comment --dry-run switch
+cli untaped jira issues comment --dry-run switch default=unset
 cli untaped jira issues comment --format VALUE default=table
 cli untaped jira issues comment --format alias=-f
 cli untaped jira issues comment --format choice=json
@@ -3555,7 +3554,7 @@ cli untaped jira issues comment --format choice=raw
 cli untaped jira issues comment --format choice=table
 cli untaped jira issues comment --format choice=yaml
 cli untaped jira issues comment --yes alias=-y
-cli untaped jira issues comment --yes switch
+cli untaped jira issues comment --yes switch default=unset
 cli untaped jira issues comment KEY
 cli untaped jira issues comments
 cli untaped jira issues comments list --columns VALUE... default=unset
@@ -3573,7 +3572,7 @@ cli untaped jira issues create
 cli untaped jira issues create --columns VALUE... default=unset
 cli untaped jira issues create --columns alias=-c
 cli untaped jira issues create --description VALUE default=unset
-cli untaped jira issues create --dry-run switch
+cli untaped jira issues create --dry-run switch default=unset
 cli untaped jira issues create --fields-file VALUE default=unset
 cli untaped jira issues create --format VALUE default=table
 cli untaped jira issues create --format alias=-f
@@ -3588,11 +3587,11 @@ cli untaped jira issues create --set VALUE... default=unset
 cli untaped jira issues create --set-json VALUE... default=unset
 cli untaped jira issues create --summary VALUE default=unset
 cli untaped jira issues create --yes alias=-y
-cli untaped jira issues create --yes switch
+cli untaped jira issues create --yes switch default=unset
 cli untaped jira issues get
 cli untaped jira issues get --columns VALUE... default=unset
 cli untaped jira issues get --columns alias=-c
-cli untaped jira issues get --comments switch
+cli untaped jira issues get --comments switch default=unset
 cli untaped jira issues get --format VALUE default=table
 cli untaped jira issues get --format alias=-f
 cli untaped jira issues get --format choice=json
@@ -3600,12 +3599,12 @@ cli untaped jira issues get --format choice=pipe
 cli untaped jira issues get --format choice=raw
 cli untaped jira issues get --format choice=table
 cli untaped jira issues get --format choice=yaml
-cli untaped jira issues get --stdin switch
+cli untaped jira issues get --stdin switch default=unset
 cli untaped jira issues get [KEYS...]@1 default=unset
 cli untaped jira issues links
 cli untaped jira issues links create --columns VALUE... default=unset
 cli untaped jira issues links create --columns alias=-c
-cli untaped jira issues links create --dry-run switch
+cli untaped jira issues links create --dry-run switch default=unset
 cli untaped jira issues links create --format VALUE default=table
 cli untaped jira issues links create --format alias=-f
 cli untaped jira issues links create --format choice=json
@@ -3614,13 +3613,13 @@ cli untaped jira issues links create --format choice=raw
 cli untaped jira issues links create --format choice=table
 cli untaped jira issues links create --format choice=yaml
 cli untaped jira issues links create --yes alias=-y
-cli untaped jira issues links create --yes switch
+cli untaped jira issues links create --yes switch default=unset
 cli untaped jira issues links create KEY LINK_TYPE OTHER
 cli untaped jira issues patch --assignee VALUE default=unset
 cli untaped jira issues patch --columns VALUE... default=unset
 cli untaped jira issues patch --columns alias=-c
 cli untaped jira issues patch --description VALUE default=unset
-cli untaped jira issues patch --dry-run switch
+cli untaped jira issues patch --dry-run switch default=unset
 cli untaped jira issues patch --fields-file VALUE default=unset
 cli untaped jira issues patch --format VALUE default=table
 cli untaped jira issues patch --format alias=-f
@@ -3632,9 +3631,9 @@ cli untaped jira issues patch --format choice=yaml
 cli untaped jira issues patch --set VALUE... default=unset
 cli untaped jira issues patch --set-json VALUE... default=unset
 cli untaped jira issues patch --summary VALUE default=unset
-cli untaped jira issues patch --unassign switch
+cli untaped jira issues patch --unassign switch default=unset
 cli untaped jira issues patch --yes alias=-y
-cli untaped jira issues patch --yes switch
+cli untaped jira issues patch --yes switch default=unset
 cli untaped jira issues patch KEY
 cli untaped jira issues search
 cli untaped jira issues search --assignee VALUE default=unset
@@ -3657,7 +3656,7 @@ cli untaped jira issues transition
 cli untaped jira issues transition --columns VALUE... default=unset
 cli untaped jira issues transition --columns alias=-c
 cli untaped jira issues transition --comment VALUE default=unset
-cli untaped jira issues transition --dry-run switch
+cli untaped jira issues transition --dry-run switch default=unset
 cli untaped jira issues transition --format VALUE default=table
 cli untaped jira issues transition --format alias=-f
 cli untaped jira issues transition --format choice=json
@@ -3667,10 +3666,10 @@ cli untaped jira issues transition --format choice=table
 cli untaped jira issues transition --format choice=yaml
 cli untaped jira issues transition --id VALUE default=unset
 cli untaped jira issues transition --resolution VALUE default=unset
-cli untaped jira issues transition --stdin switch
+cli untaped jira issues transition --stdin switch default=unset
 cli untaped jira issues transition --to VALUE default=unset
 cli untaped jira issues transition --yes alias=-y
-cli untaped jira issues transition --yes switch
+cli untaped jira issues transition --yes switch default=unset
 cli untaped jira issues transition [KEYS...]@1 default=unset
 cli untaped jira issues transitions --columns VALUE... default=unset
 cli untaped jira issues transitions --columns alias=-c
@@ -4539,6 +4538,123 @@ convention entry-point untaped.plugins
 convention file fills.json
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
+record jira.IssueLink
+record jira.IssueLink(key)
+record jira.IssueLink.direction default=""
+record jira.IssueLink.direction string
+record jira.IssueLink.key string
+record jira.IssueLink.relation default=""
+record jira.IssueLink.relation string
+record jira.IssueLink.status default=""
+record jira.IssueLink.status string
+record jira.IssueLink.summary default=""
+record jira.IssueLink.summary string
+record jira.IssueLink.type default=""
+record jira.IssueLink.type string
+record jira.IssueLink.url default=""
+record jira.IssueLink.url string
+record jira.board
+record jira.board.api_url string?
+record jira.board.id integer
+record jira.board.name string
+record jira.board.type string
+record jira.comment
+record jira.comment(id)
+record jira.comment.api_url default=None
+record jira.comment.api_url string?
+record jira.comment.author default=""
+record jira.comment.author string
+record jira.comment.body default=""
+record jira.comment.body string
+record jira.comment.created_at default=None
+record jira.comment.created_at string(format=date-time)?
+record jira.comment.id string
+record jira.comment.issue_key default=""
+record jira.comment.issue_key string
+record jira.comment.updated_at default=None
+record jira.comment.updated_at string(format=date-time)?
+record jira.issue
+record jira.issue(key)
+record jira.issue.api_url default=None
+record jira.issue.api_url string?
+record jira.issue.assignee default=""
+record jira.issue.assignee string
+record jira.issue.comments Comment[]?
+record jira.issue.comments default=None
+record jira.issue.created_at default=None
+record jira.issue.created_at string(format=date-time)?
+record jira.issue.description default=None
+record jira.issue.description string?
+record jira.issue.issue_type default=""
+record jira.issue.issue_type string
+record jira.issue.key string
+record jira.issue.labels default=None
+record jira.issue.labels string[]?
+record jira.issue.links IssueLink[]?
+record jira.issue.links default=None
+record jira.issue.priority default=""
+record jira.issue.priority string
+record jira.issue.reporter default=None
+record jira.issue.reporter string?
+record jira.issue.resolution default=None
+record jira.issue.resolution string?
+record jira.issue.status default=""
+record jira.issue.status string
+record jira.issue.summary default=""
+record jira.issue.summary string
+record jira.issue.updated_at default=None
+record jira.issue.updated_at string(format=date-time)?
+record jira.issue.url default=""
+record jira.issue.url string
+record jira.issue_document
+record jira.issue_document()
+record jira.issue_document.fields default={}
+record jira.issue_document.fields object
+record jira.issue_document.update default={}
+record jira.issue_document.update object
+record jira.issue_outcome
+record jira.issue_outcome(action)
+record jira.issue_outcome.action string
+record jira.issue_outcome.api_url default=None
+record jira.issue_outcome.api_url string?
+record jira.issue_outcome.comment_id default=None
+record jira.issue_outcome.comment_id string?
+record jira.issue_outcome.error Failure?
+record jira.issue_outcome.error default=None
+record jira.issue_outcome.id default=None
+record jira.issue_outcome.id string?
+record jira.issue_outcome.key default=None
+record jira.issue_outcome.key string?
+record jira.issue_outcome.link_type default=None
+record jira.issue_outcome.link_type string?
+record jira.issue_outcome.linked_key default=None
+record jira.issue_outcome.linked_key string?
+record jira.issue_outcome.transition_id default=None
+record jira.issue_outcome.transition_id string?
+record jira.issue_outcome.url default=None
+record jira.issue_outcome.url string?
+record jira.project
+record jira.project.id string
+record jira.project.key string
+record jira.project.name string
+record jira.project.project_type_key string?
+record jira.sprint
+record jira.sprint.end_at string(format=date-time)?
+record jira.sprint.goal string?
+record jira.sprint.id integer
+record jira.sprint.name string
+record jira.sprint.origin_board_id integer?
+record jira.sprint.start_at string(format=date-time)?
+record jira.sprint.state string
+record jira.transition
+record jira.transition.id string
+record jira.transition.name string
+record jira.transition.to_status string?
+record jira.user
+record jira.user.display_name string?
+record jira.user.email_address string?
+record jira.user.key string?
+record jira.user.name string?
 record untaped.PickedProfile
 record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
@@ -4611,6 +4727,7 @@ record untaped.doctor_check.status choice=warn
 record untaped.doctor_check.status string
 record untaped.doctor_check.title string
 record untaped.failure
+record untaped.failure(category, message, system)
 record untaped.failure.category choice=auth
 record untaped.failure.category choice=config
 record untaped.failure.category choice=conflict
@@ -4622,15 +4739,21 @@ record untaped.failure.category choice=permission
 record untaped.failure.category choice=unavailable
 record untaped.failure.category choice=usage
 record untaped.failure.category string
+record untaped.failure.details default={}
 record untaped.failure.details object
+record untaped.failure.exit_code default=1
 record untaped.failure.exit_code integer
 record untaped.failure.fix_by choice=user
+record untaped.failure.fix_by default=None
 record untaped.failure.fix_by string?
+record untaped.failure.hint default=None
 record untaped.failure.hint string?
+record untaped.failure.item default=None
 record untaped.failure.item string?
 record untaped.failure.level choice=error
 record untaped.failure.message string
 record untaped.failure.retryable boolean
+record untaped.failure.retryable default=false
 record untaped.failure.system string
 record untaped.fix_outcome
 record untaped.fix_outcome.action string

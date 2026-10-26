@@ -12,6 +12,7 @@ import json
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
+from pkgutil import resolve_name
 
 import pytest
 import release
@@ -21,7 +22,8 @@ from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginRef, PluginSpec, compose
 from untaped.runtime.settings import get_settings
-from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
@@ -34,12 +36,13 @@ def candidates(
 
 
 @pytest.fixture(scope="module")
-def specs(first_party_specs: tuple[PluginSpec, ...]) -> dict[str, PluginSpec]:
-    return {spec.name: spec for spec in first_party_specs}
+def specs(candidates: dict[str, PluginCandidate]) -> dict[str, PluginSpec | type[Plugin]]:
+    """Each plugin's 11.x spec, or its 12.0 plugin class once it moved."""
+    return {name: resolve_name(str(each.target)) for name, each in candidates.items()}
 
 
-def _invoke(spec: PluginSpec, *args: str) -> str:
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
+def _invoke(candidate: PluginCandidate, *args: str) -> str:
+    root = bootstrap.build_root_app(candidates=(candidate,))
     result = CliInvoker().invoke(root.meta, list(args))
     assert result.exit_code == 0, result.output
     return result.stdout
@@ -51,9 +54,9 @@ def test_the_only_console_script_is_the_unified_shell() -> None:
 
 
 def test_the_fixtures_hold_exactly_the_first_party_plugins(
-    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec]
+    candidates: dict[str, PluginCandidate],
 ) -> None:
-    assert tuple(candidates) == tuple(specs) == FIRST_PARTY
+    assert tuple(candidates) == FIRST_PARTY
 
 
 def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
@@ -70,12 +73,17 @@ def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_the_entry_point_names_the_package_spec(
-    candidates: dict[str, PluginCandidate], name: str
+def test_the_entry_point_names_the_package_spec_or_plugin_class(
+    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec | type[Plugin]], name: str
 ) -> None:
     module = f"untaped_{name}"
     package = import_module(module)
-    assert candidates[name].target == f"{module}:SPEC"
+    target = candidates[name].target
+    spec = specs[name]
+    if isinstance(spec, PluginSpec):
+        assert target == f"{module}:SPEC"
+    else:
+        assert target == f"{module}.plugin:{spec.__qualname__}"
     assert not hasattr(package, "provider")
 
 
@@ -103,9 +111,13 @@ def test_first_party_version_is_the_product_version(
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_first_party_spec_ships_a_lazy_app_and_one_stub_skill(
-    specs: dict[str, PluginSpec], name: str
+    specs: dict[str, PluginSpec | type[Plugin]], name: str
 ) -> None:
     spec = specs[name]
+    if not isinstance(spec, PluginSpec):
+        assert spec.__doc__
+        assert isinstance(spec.skill, StubSkill)
+        return
     assert spec.name == name
     assert spec.help
     assert isinstance(spec.app_factory(), App)
@@ -115,33 +127,37 @@ def test_first_party_spec_ships_a_lazy_app_and_one_stub_skill(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_mounts_under_the_unified_root(specs: dict[str, PluginSpec], name: str) -> None:
-    top = _invoke(specs[name], "--help")
+def test_first_party_mounts_under_the_unified_root(
+    candidates: dict[str, PluginCandidate], name: str
+) -> None:
+    top = _invoke(candidates[name], "--help")
     assert name in top
-    own = _invoke(specs[name], name, "--help")
+    own = _invoke(candidates[name], name, "--help")
     assert f"untaped-{name}" not in own
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_first_party_profile_fields_are_configurable_and_state_is_not(
-    specs: dict[str, PluginSpec], name: str
+    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec | type[Plugin]], name: str
 ) -> None:
     spec = specs[name]
-    stdout = _invoke(spec, "config", "list", "--format", "raw", "--columns", "key")
+    stdout = _invoke(candidates[name], "config", "list", "--format", "raw", "--columns", "key")
     keys = set(stdout.splitlines())
+    assert spec.settings is not None
     for field in spec.settings.model_fields:
         assert any(key.split(".")[:2] == [name, field] for key in keys), field
-    for field in spec.state.model_fields if spec.state else ():
+    state = spec.state if isinstance(spec, PluginSpec) else None
+    for field in state.model_fields if state else ():
         assert f"{name}.{field}" not in keys
 
 
 def test_profile_scoped_plugin_setting_resolves(
-    _isolated_config: Path, specs: dict[str, PluginSpec]
+    _isolated_config: Path, candidates: dict[str, PluginCandidate]
 ) -> None:
     _isolated_config.write_text(
         "format_version: 2\njira:\n  server: {url: https://jira.example.com}\n",
         encoding="utf-8",
     )
     get_settings.cache_clear()
-    stdout = _invoke(specs["jira"], "config", "get", "jira.server.url")
+    stdout = _invoke(candidates["jira"], "config", "get", "jira.server.url")
     assert stdout.strip() == "https://jira.example.com/"

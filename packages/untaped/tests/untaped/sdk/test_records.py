@@ -985,35 +985,6 @@ def _samples() -> dict[str, WireModel]:
                 dependent=Dependent(repo="acme/web", ref=None, path=["acme/web", "acme/role"]),
             )
         )
-    if "untaped_jira" in _SHIPPED:
-        from untaped_jira.records import (
-            Board,
-            Comment,
-            Issue,
-            IssueLink,
-            IssueOutcome,
-            Project,
-            Sprint,
-            Transition,
-            User,
-        )
-
-        rows += [
-            User(name="jdoe", display_name="Jane"),
-            Issue(
-                key="ABC-1",
-                updated_at="2026-06-01T13:00:00Z",
-                labels=["a"],
-                links=[IssueLink(key="ABC-2", direction="outward")],
-                comments=[Comment(id="100", issue_key="ABC-1")],
-            ),
-            Comment(id="100", issue_key="ABC-1", created_at="2026-06-01T13:00:00Z"),
-            IssueOutcome(action="transitioned", key="ABC-1", transition_id="11"),
-            Transition(id="11", name="Start", to_status="Done"),
-            Project(key="ABC", project_type_key="software"),
-            Board(id=3, name="B"),
-            Sprint(id=5, start_at="2026-06-01T13:00:00Z", origin_board_id=3),
-        ]
     if "untaped_dotfiles" in _SHIPPED:
         from untaped_dotfiles.records import (
             ApplyOutcome,

@@ -39,7 +39,7 @@ to `issues search` for an unrestricted query.
 
 ```bash
 untaped jira issues patch OPS-123 --assignee @me --set-json 'labels=["infra","tls"]' --dry-run
-git log -1 --format=%B | untaped jira issues comment OPS-123 --yes
+git log -1 --format=%B | untaped jira issues comment OPS-123 --body - --yes
 untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run
 ```
 

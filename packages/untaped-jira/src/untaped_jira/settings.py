@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Annotated, ClassVar
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, Renamed, TlsVerify
-from untaped_jira.domain.changes import ConfirmPolicy
+from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
+from untaped_jira.changes import ConfirmPolicy
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 
@@ -30,10 +29,6 @@ class JiraServer(CredentialKey):
 
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
-
-    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
-        "base_url": Renamed("server.url", removed_in=12)
-    }
 
     model_config = ConfigDict(frozen=True)
 
@@ -89,5 +84,6 @@ class JiraSettings(BaseModel):
         return stripped
 
 
-#: Jira's personal access token, filed per server by ``untaped auth login jira``.
-TOKEN = Credential("jira", "token", key=JiraServer, env=("JIRA_API_TOKEN",))
+#: Jira's personal access token, filed per server by ``untaped auth login jira``;
+#: the plugin class holds it as ``token``.
+TOKEN = Credential(key=JiraServer, env=("JIRA_API_TOKEN",))

@@ -178,7 +178,6 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
-| `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | renamed |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 | `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |
