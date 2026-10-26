@@ -15,12 +15,13 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import (
     CompositionResult,
+    DeclaredBlocks,
     PluginSpec,
     admits,
     owner_requirement,
@@ -49,6 +50,9 @@ from untaped.sdk.contracts._declare import (
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import KindError
+
+if TYPE_CHECKING:
+    from untaped.sdk.storage.cache import Cache
 
 _LOG = logging.getLogger("untaped.contracts")
 
@@ -151,6 +155,21 @@ def _owners(state: _State) -> dict[type[Contract], str]:
     return state.owners
 
 
+def _listed(spec: PluginSpec, cache: Cache[Any]) -> bool:
+    """Whether ``spec`` lists a cache under the name ``@cached`` gave ``cache``.
+
+    A 12.0 plugin's caches are read by id, so its class stays unimported.
+    """
+    if cache._held_as is not None:
+        return True
+    caches = spec.caches
+    if isinstance(caches, DeclaredBlocks):
+        ids = list(caches.ids)
+    else:
+        ids = [each.qualified for each in caches if each.spelled]
+    return f"{spec.name}.{cache._declared_as}" in ids
+
+
 def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
     declared = tuple(spec.contracts())
     for each in declared:
@@ -159,10 +178,9 @@ def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
             raise TypeError(f"it lists {each!r}, which is not a Contract declaration")
         for method in info.methods.values():
             cache = method.cache
-            # a listed cache is the plugin's own (composition quarantines a foreign one);
-            # one a plugin class holds was checked when composition walked the class, and
-            # one the declaration names on a start that imported no class (`_offered`)
-            if cache is not None and not (cache.spelled or cache.bindings or cache._declared_as):
+            # a listed cache is the plugin's own (composition quarantines a foreign one); one
+            # @cached made is listed under its name (a 12.0 plugin's declaration lists it)
+            if cache is not None and not cache.spelled and not _listed(spec, cache):
                 raise TypeError(
                     f"{info.cls.__qualname__}.{method.name} is cached in a cache with no "
                     f"plugin and name: spell it Cache({spec.name!r}, "

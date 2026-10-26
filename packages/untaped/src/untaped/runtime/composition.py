@@ -66,6 +66,7 @@ from untaped.sdk.plugin import (
     StubSkill,
     field_block,
     generic_argument,
+    held_by,
     settings_model,
 )
 from untaped.sdk.storage.cache import Cache, _max_age_setting, _refresh_help
@@ -158,13 +159,25 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     owners: dict[str, int] = {}
     for index, entry in enumerate(entries):
         owners.setdefault(_package(entry.target), index)
+    offering = _offering(entries)
     while True:
         names = {package: entries[index].name for package, index in owners.items()}
-        declaration, refused = _compose(entries, reserved, names)
+        declaration, refused = _compose(entries, reserved, names, offering)
         if not refused & set(owners.values()):
             return declaration
         # A quarantined plugin owns no kind: the plugins reaching its classes do.
         owners = {package: index for package, index in owners.items() if index not in refused}
+
+
+def _offering(entries: Sequence[PluginEntry]) -> dict[type, str]:
+    """The plugin offering each contract class, the first that lists it: its caches' owner."""
+    found: dict[type, str] = {}
+    for entry in entries:
+        offers = getattr(entry.plugin, "offers", ()) if _is_plugin(entry.plugin) else ()
+        for offered in offers if isinstance(offers, tuple) else ():
+            if isinstance(offered, type):
+                found.setdefault(offered, entry.name)
+    return found
 
 
 def _cache_setting(cache: Cache[Any]) -> CacheDecl:
@@ -178,7 +191,10 @@ def _cache_setting(cache: Cache[Any]) -> CacheDecl:
 
 
 def _compose(
-    entries: Sequence[PluginEntry], taken: frozenset[str], owners: dict[str, str]
+    entries: Sequence[PluginEntry],
+    taken: frozenset[str],
+    owners: dict[str, str],
+    offering: dict[type, str],
 ) -> tuple[Declaration, set[int]]:
     """One pass over ``entries``: the declaration and the indexes of the entries refused."""
     names = set(taken)
@@ -187,7 +203,7 @@ def _compose(
     quarantined: list[Quarantined] = []
     refused: set[int] = set()
     for index, entry in enumerate(entries):
-        walk = _PluginWalk(entry, owners)
+        walk = _PluginWalk(entry, owners, offering)
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(
@@ -268,12 +284,16 @@ def _prose(cls: type) -> tuple[str, str]:
 class _PluginWalk:
     """One plugin's walk: its declaration, the kinds it reaches, and its problems."""
 
-    def __init__(self, entry: PluginEntry, owners: dict[str, str]) -> None:
+    def __init__(
+        self, entry: PluginEntry, owners: dict[str, str], offering: dict[type, str]
+    ) -> None:
         self.name = entry.name
         self.target = entry.target
         module = entry.target.partition(":")[0]
         self.package = _package(entry.target)
         self.owners = owners
+        #: The plugin offering each contract class composed with this one.
+        self.offering = offering
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
         self.decl: PluginDecl | None = None
@@ -401,33 +421,22 @@ class _PluginWalk:
                 self._provider(where, filled)
 
     def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
-        """Each cached method of an offered contract is cached in a cache the plugin class holds.
+        """The name each answer cache of an offered contract takes is the plugin's to give.
 
-        A cache made with no plugin and no name learns them from the class
-        holding it, which the contract cannot check when it is declared: the
-        offering class holds it as ``<contract>_<method>``.
+        The offering plugin holds a cache ``@cached`` made as
+        ``<contract>_<method>`` (:func:`held_by`); an attribute of that name
+        holding anything else is refused.
         """
         for method in info.methods.values():
             cache = method.cache
-            if cache is None or cache.spelled or cache._held_as is not None:
+            name = cache._declared_as if cache is not None and not cache.spelled else None
+            if name is None or (taken := getattr(cls, name, cache)) is cache:
                 continue
-            expected = f"{info.name}_{method.name}"
-            if any(b.owner in cls.__mro__ and b.attribute == expected for b in cache.bindings):
-                continue
-            if (taken := getattr(cls, expected, cache)) is not cache:
-                self.problem(
-                    "answer-cache",
-                    f"{info.cls.__qualname__}.{method.name}",
-                    f"is cached as {cls.__qualname__}.{expected}, which holds {taken!r}: "
-                    "rename that attribute",
-                )
-                continue
-            held = ", ".join(f"{b.owner.__qualname__}.{b.attribute}" for b in cache.bindings)
             self.problem(
                 "answer-cache",
                 f"{info.cls.__qualname__}.{method.name}",
-                f"is cached in a cache {f'held as {held}' if held else 'no plugin class holds'}: "
-                f"assign it to {cls.__qualname__}.{expected}",
+                f"is cached as {cls.__qualname__}.{name}, which holds {taken!r}: "
+                "rename that attribute",
             )
 
     def _provider(self, where: str, filled: type) -> None:
@@ -466,15 +475,7 @@ class _PluginWalk:
         )
 
     def _attributes(self, cls: type[Plugin]) -> dict[str, object]:
-        """Every attribute the plugin class has beyond the reserved names, its own and inherited."""
-        found: dict[str, object] = {}
-        for klass in reversed(cls.__mro__):
-            if klass in (Plugin, object):
-                continue
-            for name, value in vars(klass).items():
-                if not name.startswith("__") and name not in RESERVED_NAMES:
-                    found[name] = value
-        return found
+        return held_by(cls)
 
     def _blocks(self, cls: type[Plugin]) -> tuple[BlockDecl, ...]:
         blocks: list[BlockDecl] = []
@@ -1027,7 +1028,7 @@ class _CommandWalk:
                 continue
             cache = self._cached_method(each)
             if cache is not None:
-                spelled = self._setting_of(cache)
+                spelled = self._setting_of(cache, each)
                 if spelled is not None:
                     named.append((cache, spelled))
                     continue
@@ -1046,15 +1047,24 @@ class _CommandWalk:
             )
         return _refresh_help(named) if len(named) == len(default.caches) else None
 
-    def _setting_of(self, cache: Cache[Any]) -> str | None:
+    def _setting_of(self, cache: Cache[Any], method: object) -> str | None:
         """The max-age setting of a contract method's cache; ``None`` when no plugin owns it.
 
-        A cache spelled or bound where declared knows its plugin; one a plugin
-        class holds belongs to the plugin composed for that class's package,
-        read here because no run exists yet.
+        A cache spelled or bound where declared knows its plugin; one
+        ``@cached`` made belongs to the plugin offering the method's contract;
+        one a plugin class holds belongs to the plugin composed for that
+        class's package, read here because no run exists yet.
         """
         if cache.spelled or cache._held_as is not None:
             return cache.setting
+        if cache._declared_as is not None and not cache.bindings:
+            from untaped.sdk.contracts._declare import method_contract  # noqa: PLC0415
+
+            contract = method_contract(typing.cast("collections.abc.Callable[..., Any]", method))[
+                0
+            ].cls
+            plugin = self.plugin.offering.get(contract)
+            return None if plugin is None else _max_age_setting(plugin, cache._declared_as)
         for binding in cache.bindings:
             plugin = self.plugin.owners.get(binding.owner.__module__.partition(".")[0])
             if plugin is not None:

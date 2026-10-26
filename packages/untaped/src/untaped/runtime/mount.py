@@ -64,7 +64,7 @@ from untaped.sdk.marks import (
     experimental,
     mark_app,
 )
-from untaped.sdk.plugin import Command, Plugin, field_block
+from untaped.sdk.plugin import Command, Plugin, field_block, held_by
 from untaped.sdk.plugin import Group as CommandGroup
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.dir import Dir
@@ -316,7 +316,7 @@ def _contract_fields(
     """
     fields: dict[str, Any] = {}
     if plugin.offers:
-        fields["contracts"] = partial(_offered, plugin.name, plugin.offers)
+        fields["contracts"] = partial(_resolved, plugin.offers)
     owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
     grouped: dict[str, list[str]] = defaultdict(list)
     for fill in plugin.fills:
@@ -329,28 +329,6 @@ def _contract_fields(
             owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
         }
     return fields
-
-
-def _offered(plugin: str, targets: Sequence[str]) -> tuple[Any, ...]:
-    """The contracts ``plugin`` offers, each answer cache named where declared.
-
-    A start served from the declaration cache imports the contract to ask it
-    but not necessarily the owner's plugin class, which holds the cache when
-    created; so the cache learns its name from the declaration and its plugin
-    from the run, which composed ``plugin`` for the contract's package.
-    """
-    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - only when asked
-
-    contracts = _resolved(targets)
-    for each in contracts:
-        info = contract_of(each)
-        if info is None:
-            continue
-        for method in info.methods.values():
-            cache = method.cache
-            if cache is not None and not cache.spelled:
-                cache._declared(f"{info.name}_{method.name}")
-    return contracts
 
 
 def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:
@@ -401,7 +379,7 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
         field: [] for field in _SPEC_FIELDS.values() if field is not None
     }
     for decl in mount.declaration.plugin(name).blocks:
-        block = getattr(cls, decl.attribute)
+        block = held_by(cls)[decl.attribute]
         # every owned block core ships has an entry (tested); one of a kind core
         # doesn't know has no 11.x reader to reach
         field = _SPEC_FIELDS.get(decl.block)

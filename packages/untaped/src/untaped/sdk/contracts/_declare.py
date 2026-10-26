@@ -573,6 +573,9 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         cache = getattr(value, _CACHED, None)
         if cache is not None:
             _check_cache(where, cls.__name__, name, cache, hints["return"])
+            if not cache.spelled and cache._held_as is None:
+                owner = functools.partial(_owner_of, cls)
+                cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
         is_bridge = _is_bridge(value, hints, item_param, item)
         if is_bridge:
             bridges.append(name)
@@ -598,6 +601,13 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         item_param=item_param,
         methods=types.MappingProxyType(methods),
     )
+
+
+def _owner_of(cls: type[Contract]) -> str:
+    """The plugin this run composed as offering ``cls``: its answer cache's plugin."""
+    from untaped.runtime.contracts.registry import owner_of  # noqa: PLC0415 - the registry's cost
+
+    return owner_of(cast("ContractInfo", contract_of(cls)))  # asked once ``cls`` is declared
 
 
 def _is_bridge(

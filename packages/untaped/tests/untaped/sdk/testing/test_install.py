@@ -539,7 +539,7 @@ def test_an_offered_answer_cache_is_the_owner_s_under_the_contract_s_name(
     assert info is not None
     cache = info.methods["entries"].cache
     assert cache is not None
-    assert [(b.owner, b.attribute) for b in cache.bindings] == [(Logbook, "logs_entries")]
+    assert cache.bindings == ()  # the contract names it; the class is never changed
     with install(Logbook).running():
         assert (cache.plugin, cache.name) == ("logbook", "logs_entries")
     # the name is the run's, never kept from an earlier one

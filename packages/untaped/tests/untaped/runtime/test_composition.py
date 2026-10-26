@@ -1200,15 +1200,12 @@ def test_an_answer_cache_held_under_another_name_too_is_refused() -> None:
         offers = (Misheld,)
         wrong_name = held
 
-    # a cache the class already holds is not held again as misheld_pages
+    # the plugin holds it as misheld_pages, so the other name is a second hold
     [problem] = _problems(Owner, "owner")
-    assert problem.rule == "answer-cache"
-    assert problem.detail.startswith("is cached in a cache held as ")
-    assert "Owner.wrong_name: assign it to " in problem.detail
-    assert problem.detail.endswith("Owner.misheld_pages")
+    assert (problem.rule, problem.detail) == ("duplicate-block", "is the same cache as wrong_name")
 
 
-def test_a_second_class_offering_the_contract_leaves_the_first_one_s_cache() -> None:
+def test_a_second_class_offering_the_contract_changes_nothing_for_the_first() -> None:
     @experimental
     class Shared(Contract):
         """Offered by two classes, which is one too many."""
@@ -1229,10 +1226,10 @@ def test_a_second_class_offering_the_contract_leaves_the_first_one_s_cache() -> 
         settings = HelloSettings
         offers = (Shared,)
 
-    assert compose([_entry(First, "first")]).plugins  # defining Second blames only Second
-    [problem] = _problems(Second, "second")
-    assert problem.rule == "answer-cache"
-    assert "First.shared_pages: assign it to " in problem.detail
+    # the class is never changed: each composes alone, holding the cache under its own name
+    for plugin, name in ((First, "first"), (Second, "second"), (First, "renamed")):
+        [decl] = compose([_entry(plugin, name)]).plugins
+        assert [block.name for block in decl.blocks] == ["shared_pages"]
 
 
 def test_an_answer_cache_s_name_taken_by_something_else_is_named() -> None:
