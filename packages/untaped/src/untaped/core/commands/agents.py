@@ -7,56 +7,43 @@ spelling may still change. The pages themselves live in
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Annotated
+from pydantic import Field
 
-from cyclopts import App, Parameter
-
-from untaped.runtime.registry import CompositionResult
-from untaped.sdk._cli import create_app, echo, report_errors
+from untaped.core.settings import CoreSettings
+from untaped.sdk._cli import echo
+from untaped.sdk.fields import Positional
 from untaped.sdk.marks import experimental
+from untaped.sdk.plugin import Command
 
 
-def build_root_agents_app(*, result: CompositionResult, root: Callable[[], App]) -> App:
-    """Return the root ``agents`` command for one composition; ``root`` gives the root app."""
-    app = create_app(
-        name="agents",
-        help="Print what this untaped can do, as Markdown pages for coding agents.",
-        stability=experimental,
+class Agents(Command[CoreSettings]):
+    """Print what this untaped can do, as Markdown pages for coding agents.
+
+    Examples
+    --------
+    The map, then one plugin's page, then one command's page:
+
+    ```console
+    $ untaped agents
+    $ untaped agents untaped
+    $ untaped agents untaped config set
+    ```
+    """
+
+    stability = experimental
+    path: Positional[list[str]] = Field(
+        default_factory=list,
+        description="A plugin (`untaped` for core), then a command under it. "
+        "Without one, the map of every plugin.",
     )
 
-    @app.default
-    def agents_command(
-        *path: Annotated[
-            str,
-            Parameter(
-                help="A plugin (`untaped` for core), then a command under it. "
-                "Without one, the map of every plugin.",
-            ),
-        ],
-    ) -> None:
-        """Print the map of this untaped, one plugin's page, or one command's page.
+    def run(self) -> None:
+        # Lazy: bootstrap is the CLI's root and imports this module, and only this
+        # command pays for the pages.
+        from untaped.core.agents import page  # noqa: PLC0415
+        from untaped.runtime.bootstrap import composition, root_app  # noqa: PLC0415
 
-        The pages are generated from what the plugins declare: their commands,
-        options, settings and extension points. Every page names the untaped
-        that answered.
-
-        Examples
-        --------
-        The map, then one plugin's page, then one command's page:
-
-        ```console
-        $ untaped agents
-        $ untaped agents untaped
-        $ untaped agents untaped config set
-        ```
-        """
-        from untaped.core.agents import page  # noqa: PLC0415 - only this command pays for it
-
-        with report_errors():
-            echo(page(root(), result, path), nl=False)
-
-    return app
+        echo(page(root_app(), composition(), self.path), nl=False)
 
 
-__all__ = ["build_root_agents_app"]
+__all__ = ["Agents"]

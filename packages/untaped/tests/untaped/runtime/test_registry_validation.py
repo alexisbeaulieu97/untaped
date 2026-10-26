@@ -236,10 +236,10 @@ def test_collision_with_an_earlier_plugin_is_quarantined(
     ("shell", "spec", "reason", "detail"),
     [
         (
-            make_shell(commands=("root",)),
-            make_spec(name="root"),
+            make_shell(),
+            make_spec(name="doctor"),
             "duplicate-name",
-            "duplicate plugin name: 'root' is taken by a root command",
+            "duplicate plugin name: 'doctor' is taken by a root command",
         ),
         (
             make_shell(),

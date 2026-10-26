@@ -954,16 +954,15 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
     assert get_config_section("acme-tools", _ToolsProfile).greeting == "blob"
 
 
-def test_the_root_mounts_core_s_commands_its_class_and_the_shell_name() -> None:
+def test_the_root_mounts_exactly_the_commands_on_core_s_class_in_its_order() -> None:
     from untaped.core.plugin import Core
     from untaped.runtime.composition import kebab
 
     root = bootstrap.build_root_app(candidates=[])
 
-    mounted = {name for name in root if not name.startswith("-")}
-    on_class = {kebab(group.__name__.removesuffix("Group")) for group in Core.commands}
-    assert mounted == {*bootstrap.SHELL_SPEC.commands, *on_class}
-    assert not on_class & set(bootstrap.SHELL_SPEC.commands)
+    mounted = [name for name in root if not name.startswith("-")]
+    on_class = [kebab(node.__name__.removesuffix("Group")) for node in Core.commands]
+    assert mounted == on_class  # core's agents page lists commands in this order
 
 
 def test_no_plugin_can_claim_a_root_command() -> None:

@@ -149,11 +149,7 @@ def _no_deprecations() -> Sequence[DeprecatedBehaviour]:
 
 @dataclass(frozen=True)
 class ApplicationSpec:
-    """The root application; ``deprecations`` lists core's deprecated behaviours.
-
-    ``commands`` are the root commands it mounts itself, the ones not yet on
-    ``Core``'s class: no plugin may be named after one.
-    """
+    """The root application; ``deprecations`` lists core's deprecated behaviours."""
 
     name: str
     app_factory: Callable[[], App]
@@ -162,7 +158,6 @@ class ApplicationSpec:
     state: type[BaseModel] | None = None
     doctor_checks: tuple[DoctorCheck, ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
-    commands: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name.strip() or not self.section.strip():
@@ -173,7 +168,6 @@ class ApplicationSpec:
         _check_model(self.state, "state", "shell")
         key_mappings(self.settings)  # a broken shell declaration is a core bug
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
-        object.__setattr__(self, "commands", tuple(self.commands))
 
 
 def _no_contracts() -> Sequence[type[Contract]]:
@@ -790,7 +784,6 @@ class _CompositionState:
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
-            **dict.fromkeys(shell.commands, "a root command"),
             # ``UNTAPED_HOME`` would be read as a ``home`` section's whole value.
             "home": f"the variable {HOME_ENV}",
         }
@@ -1246,7 +1239,7 @@ def compose(
 
     Core's own class (:class:`untaped.core.plugin.Core`) composes first, with
     no entry point: its name and its commands' words are taken, as are the
-    shell's root commands and the config files' own keys, so a plugin named
+    config files' own keys, so a plugin named
     after one is quarantined (``duplicate-name``) and core always runs.
     Each candidate is first provided and validated against the shell alone.
     A plugin name that two or more of the survivors

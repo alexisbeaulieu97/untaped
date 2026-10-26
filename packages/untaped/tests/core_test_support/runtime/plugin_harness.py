@@ -96,7 +96,6 @@ def make_shell(
     name: str = "untaped",
     section: str = "untaped",
     checks: tuple[DoctorCheck, ...] = (),
-    commands: tuple[str, ...] = (),
 ) -> ApplicationSpec:
     return ApplicationSpec(
         name=name,
@@ -104,7 +103,6 @@ def make_shell(
         section=section,
         settings=OtherProfile,
         doctor_checks=checks,
-        commands=commands,
     )
 
 

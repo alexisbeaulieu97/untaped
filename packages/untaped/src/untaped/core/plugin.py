@@ -2,14 +2,13 @@
 
 Core composes it first, with no entry point (one would make core's own class
 removable), and mounts its commands at the root: ``PluginGroup`` is
-``untaped plugin``. The root commands not yet moved onto classes still
-mount through the 11.x seam (:data:`untaped.runtime.bootstrap.SHELL_SPEC`).
-Importing this module imports every command of core's, so a start reads
-:data:`~untaped.core.settings.DECLARATION` instead.
+``untaped plugin``. Importing this module imports every command of core's,
+so a start reads :data:`~untaped.core.settings.DECLARATION` instead.
 """
 
 from __future__ import annotations
 
+from untaped.core.commands.agents import Agents
 from untaped.core.commands.auth import Auth
 from untaped.core.commands.config import Config
 from untaped.core.commands.doctor import Doctor
@@ -25,10 +24,20 @@ from untaped.sdk.storage._refs import REFS
 
 
 class Core(Plugin):
-    """untaped's own commands: config, profiles, projects, skills, doctor, setup, auth, plugins."""
+    """Core's commands: agents, config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
     settings = CoreSettings
-    commands = (Setup, Config, ProfileGroup, Auth, ProjectGroup, Doctor, Skills, PluginGroup)
+    commands = (
+        Agents,
+        Setup,
+        Config,
+        ProfileGroup,
+        Auth,
+        ProjectGroup,
+        Doctor,
+        Skills,
+        PluginGroup,
+    )
     declaration = DECLARATION
     skill = StubSkill(
         "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
