@@ -1031,6 +1031,7 @@ class _CommandWalk:
                 panel=panel,
                 allow_hyphen=AllowHyphen in marks,
                 or_stdin=OR_STDIN in marks,
+                reads_file=get_origin(value) is File and Written not in marks,
                 stability=next((s for s in map(_stability, marks) if s is not None), None),
             )
         )

@@ -10,7 +10,7 @@ requires-python = ">=3.14.1"
 dependencies = ["untaped==11.1.0"]
 
 [project.entry-points."untaped.plugins"]
-jira = "untaped_jira:SPEC"
+jira = "untaped_jira.plugin:Jira"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

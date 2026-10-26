@@ -119,7 +119,6 @@ overridden for one process with the environment variable shown.
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
-| `jira.confirm` | `always` \| `destructive` \| `never` | `destructive` | `UNTAPED_JIRA__CONFIRM` | Which writes ask first: `always`, `destructive` (patches that replace or remove values, assignee changes, transitions) or `never`. `--yes` skips the prompt. |
 
 ## `lint`
 
@@ -178,7 +177,8 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
-| `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | renamed |
+| `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
+| `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 | `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |

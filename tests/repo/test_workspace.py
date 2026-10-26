@@ -105,7 +105,10 @@ def test_plugin_packages_declare_their_entry_point_and_pin_core() -> None:
     for project in projects.values():
         name = project["name"].removeprefix("untaped-")
         assert project["version"] == version
-        assert project["entry-points"]["untaped.plugins"] == {name: f"untaped_{name}:SPEC"}
+        [target] = project["entry-points"]["untaped.plugins"].values()
+        assert project["entry-points"]["untaped.plugins"] == {name: target}
+        # an 11.x spec, or the plugin class of the one plugin shape
+        assert target in {f"untaped_{name}:SPEC", f"untaped_{name}.plugin:{name.title()}"}
         assert f"untaped=={version}" in project["dependencies"]
         assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
     assert sorted(core["optional-dependencies"]["all"]) == sorted(

@@ -1,8 +1,11 @@
-"""The mount fills Refresh, Confirm, Parallel and Limit from their flags for ``run`` to read."""
+"""The mount fills Refresh, Confirm, Parallel and Limit from their flags for ``run`` to read,
+and refuses a ``File[M]`` it reads that names nothing."""
 
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, Field
@@ -13,11 +16,13 @@ from untaped.sdk import (
     Cache,
     Command,
     Confirm,
+    File,
     Limit,
     Parallel,
     Plugin,
     Positional,
     Refresh,
+    Written,
     key,
 )
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
@@ -92,11 +97,31 @@ class Page(Command):
         return str(self.limit.value)
 
 
+class Suite(BaseModel):
+    """A suite of checks."""
+
+    name: str = "suite"
+
+
+class Check(Command):
+    """Read suites; write a report and copies, which need not exist yet."""
+
+    suite: File[Suite] | None = Field(None, description="The suite to read.")
+    more: list[File[Suite]] = Field(default_factory=list, description="More suites.")
+    report: Annotated[File[Suite] | None, Written] = Field(None, description="Write here.")
+    copies: Annotated[list[File[Suite]], Written] = Field(
+        default_factory=list, description="Copy here."
+    )
+
+    def run(self) -> str:
+        return "checked"
+
+
 class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Fetch, Work, Page)
+    commands = (Delete, Tidy, Sweep, Fetch, Work, Page, Check)
     motd = MOTD
 
 
@@ -227,3 +252,21 @@ def test_a_limit_a_command_sets_is_its_default_in_help_and_on_the_surface() -> N
     lines = {line.text for line in plugin_lines(TOOL)}
     assert "cli untaped tool page --limit VALUE default=50" in lines
     assert "cli untaped tool work --limit VALUE default=unset" in lines
+
+
+@pytest.mark.parametrize(("flag", "repeated"), [("--suite", False), ("--more", True)])
+def test_a_file_read_must_exist(tmp_path: Path, flag: str, repeated: bool) -> None:
+    present, missing = tmp_path / "a.yml", tmp_path / "missing.yml"
+    present.write_text("name: a\n", encoding="utf-8")
+    given = [flag, str(present), flag, str(missing)] if repeated else [flag, str(missing)]
+    result = _run("tool", "check", *given)
+    assert result.exit_code == 2
+    assert f"error: {flag}: file not found: {missing}" in result.stderr
+    found = _run("tool", "check", flag, str(tmp_path))  # a directory is searched
+    assert (found.exit_code, found.stdout) == (0, "checked\n")
+
+
+def test_a_written_file_need_not_exist(tmp_path: Path) -> None:
+    missing = str(tmp_path / "missing.yml")
+    result = _run("tool", "check", "--report", missing, "--copies", missing)
+    assert (result.exit_code, result.stdout) == (0, "checked\n")

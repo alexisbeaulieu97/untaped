@@ -7,8 +7,7 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, Renamed, TlsVerify
-from untaped_jira.domain.changes import ConfirmPolicy
+from untaped.sdk import Credential, CredentialKey, NeedsSetup, Retired, TlsVerify
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 
@@ -31,8 +30,13 @@ class JiraServer(CredentialKey):
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
 
-    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
-        "base_url": Renamed("server.url", removed_in=12)
+    #: Gone at 12.0: read only to name a successor or say what to do instead.
+    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
+        "base_url": "server.url",
+        "confirm": Retired(
+            note="deleted in 12.0; jira asks before writes that replace or remove; "
+            "pass --yes to skip the question"
+        ),
     }
 
     model_config = ConfigDict(frozen=True)
@@ -59,14 +63,6 @@ class JiraSettings(BaseModel):
         default=None, description="Board `sprints list` uses when `--board-id` is omitted."
     )
     page_size: int = Field(default=50, gt=0, description="Results requested per Jira API page.")
-    confirm: ConfirmPolicy = Field(
-        default="destructive",
-        description=(
-            "Which writes ask first: `always`, `destructive` (patches that replace "
-            "or remove values, assignee changes, transitions) or `never`. `--yes` "
-            "skips the prompt."
-        ),
-    )
 
     @property
     def url(self) -> str | None:
@@ -89,5 +85,6 @@ class JiraSettings(BaseModel):
         return stripped
 
 
-#: Jira's personal access token, filed per server by ``untaped auth login jira``.
-TOKEN = Credential("jira", "token", key=JiraServer, env=("JIRA_API_TOKEN",))
+#: Jira's personal access token, filed per server by ``untaped auth login jira``;
+#: the plugin class holds it as ``token``.
+TOKEN = Credential(key=JiraServer, env=("JIRA_API_TOKEN",))

@@ -73,7 +73,10 @@ AllowHyphen = Mark("AllowHyphen")
 """An argument that may start with ``-`` (``HEAD~1``, ``-1``): ``Positional[str, AllowHyphen]``."""
 
 Column = Mark("Column")
-"""A record field a table shows by default: ``name: Annotated[str, Column]`` (none marked: all)."""
+"""A record field a list's table shows by default: ``name: Annotated[str, Column]``.
+
+None marked: every field. A single record's table shows every field either way.
+"""
 
 Key = Mark("Key")
 """The record field a bare identifier stands for, on stdin and in state rows."""
@@ -109,11 +112,13 @@ class Short:
 class File[M: BaseModel]:
     """A path to a document of ``M``, YAML or JSON by its suffix: ``list[File[Suite]]``.
 
-    ``.path`` is the path, for a plugin that parses itself; ``.load()`` reads
+    A path the command reads must exist when core fills the command (exit 2
+    otherwise); a directory passes, for a plugin that searches one. ``.path`` is the path,
+    for a plugin that parses itself; ``.load()`` reads
     and validates the document; ``.save(model)`` writes one and refuses to
     replace an existing file unless ``replace=True``. The model's docstring is
     the input's page; ``Annotated[File[M], Written]`` is a file the command
-    writes.
+    writes, which need not exist yet.
     """
 
     __slots__ = ("__orig_class__", "_model", "path")
@@ -353,11 +358,12 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks, else its ``table_columns``, are the table's
-    default columns, and ``--columns`` names its fields (checked before ``run``, so a subclass's own
-    fields are not columns). The default
-    configures it: ``Output(columns=("key", "summary"))`` gives this command
-    its own default columns (a one-record table shows them even when empty),
+    agree); its ``Column`` marks, else its ``table_columns``, are a list's
+    default columns (a single record's table shows every field), and
+    ``--columns`` names its fields (checked before ``run``, so a subclass's
+    own fields are not columns). The default configures it:
+    ``Output(columns=("key", "summary"))`` gives this command its own default
+    columns (a one-record table shows them even when empty),
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
@@ -472,6 +478,8 @@ class Output[R: BaseModel](FieldBlock):
         following = following_fields(self._model) if self._model and self.format == "table" else {}
         rows = [records] if isinstance(records, BaseModel) else records
         table_columns = list(self.columns) or None
+        if detail and not self._declared:
+            table_columns = None  # a single record shows every field: R's marks are a list's
         if table_columns is None and following:
             # a field printed as its own table is not a column of the first
             shown = dict.fromkeys(name for row in rows for name in _as_row(row))

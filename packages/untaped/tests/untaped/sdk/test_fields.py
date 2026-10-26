@@ -239,6 +239,16 @@ def test_a_record_s_table_columns_are_the_default_without_column_marks(
     assert all(name in listed.out + listed.err for name in ("holder", "item", "action"))
 
 
+def test_a_single_record_shows_every_field_beside_its_column_marks(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    filled = Output()._fill({}, _call(Output[Row]))
+    filled._print(Row(name="a", size=7), kind=None)
+    assert "size" in capsys.readouterr().out  # Column marks are a list's columns
+    filled._print([Row(name="a", size=7), Row(name="b", size=8)], kind=None)
+    assert "size" not in capsys.readouterr().out
+
+
 class Note(BaseModel):
     key: str
     value: str | None = None

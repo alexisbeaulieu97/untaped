@@ -58,9 +58,10 @@ def test_lazy_first_party_plugins_render_like_eager_mounts(
     first_party_specs: tuple[PluginSpec, ...],
 ) -> None:
     specs = first_party_specs
+    moved = [c for c in first_party_candidates if c.name not in {spec.name for spec in specs}]
     eager_candidates = [
         plugin_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
-    ]
+    ] + moved
     argv_cases = [["--help"]] + [
         [spec.name, flag] for spec in specs for flag in ("--help", "--version")
     ]

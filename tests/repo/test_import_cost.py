@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 
-def _loaded_heavy_modules(snippet: str) -> str:
+def _loaded_heavy_modules(snippet: str, env: dict[str, str] | None = None) -> str:
     """Run ``snippet`` in a fresh interpreter; return its stdout (the verdict)."""
     code = (
         "import sys\n"
@@ -38,6 +38,7 @@ def _loaded_heavy_modules(snippet: str) -> str:
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     assert proc.returncode == 0, proc.stderr
     return proc.stdout.strip()
@@ -190,17 +191,34 @@ _STARTUP_PROBE = (
 #: start reading the declaration cache drops twelve (setup's 11.x app and what it
 #: imported), 2026-10-25, so the budget goes to 169, and the total (721 with
 #: them) to 723.
-_TOTAL_BUDGET = 723
-_UNTAPED_BUDGET = 169
+#: From the jira move (12.0) on, the budget holds a start reading the
+#: declaration cache, the start a user has but the first after an install
+#: change: a start composing afresh imports each 12.0 plugin class, as core's
+#: declaration cache design accepts. Core reads a 12.0 plugin's credential
+#: names from its declaration, so the warm start imports jira's settings and
+#: nothing more: 138 and 691, 2026-10-26, so the budget goes to 141 and the
+#: total to 694.
+_TOTAL_BUDGET = 694
+_UNTAPED_BUDGET = 141
+#: A start composing afresh (the first after an install change) imports each
+#: 12.0 plugin class, so each move raises these: with jira moved, 181 and 734,
+#: 2026-10-26.
+_FRESH_TOTAL_BUDGET = 737
+_FRESH_UNTAPED_BUDGET = 184
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
-def test_startup_stays_within_its_module_budget(flag: str) -> None:
-    counts, _, heavy = _loaded_heavy_modules(_STARTUP_PROBE.format(argv=[flag])).partition("\n")
-    assert heavy == ""
-    total, own = map(int, counts.split())
-    assert own <= _UNTAPED_BUDGET, f"untaped {flag} imported {own} untaped.* modules"
-    assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"
+def test_startup_stays_within_its_module_budget(flag: str, tmp_path: Path) -> None:
+    env = {**os.environ, "UNTAPED_HOME": str(tmp_path)}
+    probe = _STARTUP_PROBE.format(argv=[flag])
+    budgets = ((_FRESH_UNTAPED_BUDGET, _FRESH_TOTAL_BUDGET), (_UNTAPED_BUDGET, _TOTAL_BUDGET))
+    # the first start composes afresh and keeps the declaration; the second reads it
+    for start, (own_budget, total_budget) in zip(("fresh", "kept"), budgets, strict=True):
+        counts, _, heavy = _loaded_heavy_modules(probe, env).partition("\n")
+        assert heavy == "", start
+        total, own = map(int, counts.split())
+        assert own <= own_budget, f"a {start} untaped {flag} imported {own} untaped.* modules"
+        assert total <= total_budget, f"a {start} untaped {flag} imported {total} modules"
 
 
 def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:

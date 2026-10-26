@@ -1,0 +1,368 @@
+"""End-to-end CLI tests for `untaped jira issues`: rows, JQL, and request payloads."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import httpx
+import pytest
+import respx
+
+from jira_test_support import BASE, Invoke, Settings
+
+
+def _search(*keys: str) -> httpx.Response:
+    issues = [{"key": key, "fields": {"summary": "x"}} for key in keys]
+    return httpx.Response(
+        200, json={"startAt": 0, "maxResults": 50, "total": len(issues), "issues": issues}
+    )
+
+
+def test_me_table_renders_detail_view(jira: Invoke) -> None:
+    """A single entity renders as a vertical key:value detail view under the
+    default config — not a boxed one-row table (the ``emit`` single-record
+    contract). Before the migration this default-config render was a grid."""
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/myself").mock(
+            return_value=httpx.Response(200, json={"name": "jdoe", "displayName": "Jane Doe"})
+        )
+        result = jira(["whoami"])
+
+    assert result.exit_code == 0, result.output
+    assert "name: jdoe" in result.stdout
+    assert "display_name: Jane Doe" in result.stdout
+    assert "╭" not in result.stdout
+
+
+def test_unknown_ui_theme_spares_raw_data(monkeypatch: pytest.MonkeyPatch, jira: Invoke) -> None:
+    monkeypatch.setenv("UNTAPED_UNTAPED__UI__THEME", "missing")
+    with respx.mock(base_url=BASE) as mock:
+        mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "a"}))
+        raw = jira(["whoami", "--format", "raw", "--columns", "name"])
+
+    assert raw.exit_code == 0, raw.output
+    assert raw.stdout.strip() == "a"
+
+
+def test_issue_get_shows_detail_fields(jira: Invoke) -> None:
+    payload = {
+        "key": "ABC-1",
+        "self": f"{BASE}/rest/api/2/issue/10001",
+        "fields": {
+            "summary": "Fix deploy",
+            "status": {"name": "In Progress"},
+            "assignee": {"displayName": "Jane Doe"},
+            "updated": "2026-06-05T10:00:00.000-0400",
+            "description": "Deploy fails on step 3.",
+            "issuetype": {"name": "Bug"},
+            "priority": {"name": "High"},
+            "reporter": {"displayName": "Sam"},
+            "labels": ["deploy", "urgent"],
+            "created": "2026-06-01T09:00:00.000-0400",
+            "resolution": None,
+        },
+    }
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.get("/rest/api/2/issue/ABC-1").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = jira(["issues", "get", "ABC-1", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert row["key"] == "ABC-1"
+    assert row["status"] == "In Progress"
+    assert row["assignee"] == "Jane Doe"
+    assert row["description"] == "Deploy fails on step 3."
+    assert row["issue_type"] == "Bug"
+    assert row["priority"] == "High"
+    assert row["reporter"] == "Sam"
+    assert row["labels"] == ["deploy", "urgent"]
+    assert row["created_at"] == "2026-06-01T13:00:00Z"
+    assert row["updated_at"] == "2026-06-05T14:00:00Z"
+    assert row["url"] == f"{BASE}/browse/ABC-1"
+    assert row["api_url"] == f"{BASE}/rest/api/2/issue/10001"
+    assert row["resolution"] == ""
+    requested = set(route.calls[0].request.url.params["fields"].split(","))
+    assert {"description", "issuetype", "priority", "reporter", "labels", "created"} <= requested
+    assert "resolution" in requested
+
+
+def test_issue_search_fetches_only_row_fields_and_nulls_the_rest(jira: Invoke) -> None:
+    """Search fetches only the row fields; the detail fields ``issues get`` fills are null."""
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/search").mock(return_value=_search("ABC-1"))
+        result = jira(["issues", "search", "--project", "ABC", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    detail = ["reporter", "labels", "created_at", "resolution", "description", "links", "comments"]
+    assert {name: row[name] for name in detail} == dict.fromkeys(detail)
+    body = json.loads(route.calls[0].request.content)
+    assert body["fields"] == ["summary", "status", "assignee", "updated", "issuetype", "priority"]
+
+
+_OPS_SCOPE = "assignee = currentUser() AND project = OPS"
+
+
+@pytest.mark.parametrize(
+    ("assigned_jql", "args", "jql"),
+    [
+        (
+            None,
+            ["search", "--project", "ABC", "--status", "Open"],
+            'project = ABC AND status = "Open" ORDER BY updated DESC',
+        ),
+        # Without filters `search` falls back to jira.assigned_jql ...
+        (_OPS_SCOPE, ["search"], f"{_OPS_SCOPE} ORDER BY updated DESC"),
+        # ... while `assigned` always scopes by it (default or configured).
+        (
+            None,
+            ["assigned"],
+            "(assignee = currentUser() AND resolution = Unresolved) ORDER BY updated DESC",
+        ),
+        (_OPS_SCOPE, ["assigned"], f"({_OPS_SCOPE}) ORDER BY updated DESC"),
+        (
+            _OPS_SCOPE,
+            [
+                "assigned",
+                "--jql",
+                "project = SEC ORDER BY priority DESC",
+                "--status",
+                "In Progress",
+            ],
+            f'({_OPS_SCOPE}) AND (project = SEC) AND status = "In Progress" ORDER BY priority DESC',
+        ),
+    ],
+)
+def test_issue_search_and_assigned_send_rendered_jql(
+    settings: Settings, assigned_jql: str | None, args: list[str], jql: str, jira: Invoke
+) -> None:
+    if assigned_jql is not None:
+        settings["assigned_jql"] = assigned_jql
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/search").mock(return_value=_search("ABC-1"))
+        result = jira(["issues", *args, "--format", "raw", "--columns", "key"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "ABC-1"
+    assert json.loads(route.calls[0].request.content)["jql"] == jql
+
+
+def test_issue_create_merges_fields_file_and_flags(tmp_path: Path, jira: Invoke) -> None:
+    fields_file = tmp_path / "bug.yml"
+    fields_file.write_text(
+        "fields:\n  project:\n    key: OLD\n  summary: old\n  customfield_10000: old\n"
+        "update:\n  labels:\n    - add: old\n"
+    )
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue").mock(
+            return_value=httpx.Response(201, json={"id": "10001", "key": "ABC-1"})
+        )
+        result = jira(
+            [
+                "issues",
+                "create",
+                "--fields-file",
+                str(fields_file),
+                "--project",
+                "ABC",
+                "--issue-type",
+                "Bug",
+                "--summary",
+                "Fix deploy",
+                "--description",
+                "new body",
+                "--set",
+                "customfield_10000=new",
+                "--set-json",
+                'customfield_10001={"value":"prod"}',
+                "--format",
+                "raw",
+                "--columns",
+                "key",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "ABC-1"
+    assert json.loads(route.calls[0].request.content) == {
+        "fields": {
+            "project": {"key": "ABC"},
+            "summary": "Fix deploy",
+            "customfield_10000": "new",
+            "issuetype": {"name": "Bug"},
+            "description": "new body",
+            "customfield_10001": {"value": "prod"},
+        },
+        "update": {"labels": [{"add": "old"}]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("args", "body", "message"),
+    [
+        (
+            ["create", "--project", "ABC", "--fields-file"],
+            "fields: []\n",
+            "fields: Input should be a valid dictionary",
+        ),
+        (
+            ["patch", "ABC-1", "--summary", "x", "--fields-file"],
+            "update: []\n",
+            "update: Input should be a valid dictionary",
+        ),
+    ],
+)
+def test_non_object_payload_sections_are_rejected(
+    tmp_path: Path, args: list[str], body: str, message: str, jira: Invoke
+) -> None:
+    payload = tmp_path / "payload.yml"
+    payload.write_text(body)
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = jira(["issues", *args, str(payload)])
+
+    assert result.exit_code == 1, result.output
+    assert message in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_issue_patch_sends_fields_file_and_overlays_flags(tmp_path: Path, jira: Invoke) -> None:
+    fields_file = tmp_path / "edit.yml"
+    fields_file.write_text("fields:\n  summary: old\n")
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        result = jira(
+            [
+                "issues",
+                "patch",
+                "ABC-1",
+                "--yes",
+                "--fields-file",
+                str(fields_file),
+                "--summary",
+                "new",
+                "--set",
+                "customfield_10000=value",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    request_json = json.loads(route.calls[0].request.content)
+    assert request_json["fields"] == {"summary": "new", "customfield_10000": "value"}
+
+
+def test_issue_patch_without_changes_is_usage_error(tmp_path: Path, jira: Invoke) -> None:
+    empty_body = tmp_path / "empty.yml"
+    empty_body.write_text("fields: {}\n")
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        bare = jira(["issues", "patch", "ABC-1"])
+        empty = jira(["issues", "patch", "ABC-1", "--fields-file", str(empty_body)])
+
+    for result in (bare, empty):
+        assert result.exit_code == 2, result.output
+        assert "nothing to update" in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_issue_patch_with_only_update_operations_is_sent(tmp_path: Path, jira: Invoke) -> None:
+    fields_file = tmp_path / "labels.yml"
+    fields_file.write_text("update:\n  labels:\n    - add: urgent\n")
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        result = jira(["issues", "patch", "ABC-1", "--yes", "--fields-file", str(fields_file)])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls[0].request.content)["update"] == {"labels": [{"add": "urgent"}]}
+
+
+@pytest.mark.parametrize("source", ["stdin", "file"])
+def test_issue_comment_body_keeps_its_formatting(tmp_path: Path, source: str, jira: Invoke) -> None:
+    text = "line1\n\n    code\nline3\n"
+    body_file = tmp_path / "comment.md"
+    body_file.write_text(text)
+    args = ["issues", "comment", "ABC-1", "--format", "raw", "--columns", "comment_id"]
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
+            return_value=httpx.Response(201, json={"id": "700"})
+        )
+        if source == "stdin":
+            result = jira([*args, "--body", "-"], input=text)
+        else:
+            result = jira([*args, "--body-file", str(body_file)])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "700"
+    assert json.loads(route.calls[0].request.content) == {"body": "line1\n\n    code\nline3"}
+
+
+def test_issue_comment_missing_body_uses_sdk_error(jira: Invoke) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = jira(["issues", "comment", "ABC-1"])
+
+    assert result.exit_code == 2, result.output
+    assert "a comment needs --body (- reads stdin) or --body-file" in result.stderr
+    assert len(route.calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("body", "piped"), [(["--body", "  "], None), (["--body", "-"], ""), (["--body", "-"], "\n")]
+)
+def test_a_blank_comment_body_is_refused_before_sending(
+    body: list[str], piped: str | None, jira: Invoke
+) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = jira(["issues", "comment", "ABC-1", *body], input=piped)
+
+    assert result.exit_code == 1, result.output
+    assert "no body provided" in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_a_comment_body_loses_only_its_last_newline(jira: Invoke) -> None:
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
+            return_value=httpx.Response(201, json={"id": "700"})
+        )
+        result = jira(["issues", "comment", "ABC-1", "--body", "-"], input="hi\r\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls[0].request.content) == {"body": "hi\r\n"}
+
+
+def test_a_fields_file_s_other_keys_are_sent_as_given(tmp_path: Path, jira: Invoke) -> None:
+    fields_file = tmp_path / "bug.yml"
+    fields_file.write_text("fields:\n  summary: s\nproperties:\n  - key: k\n    value: v\n")
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue").mock(
+            return_value=httpx.Response(201, json={"id": "10001", "key": "ABC-1"})
+        )
+        args = ["--fields-file", str(fields_file), "--project", "ABC", "--issue-type", "Bug"]
+        result = jira(["issues", "create", *args])
+
+    assert result.exit_code == 0, result.output
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["properties"] == [{"key": "k", "value": "v"}]
+    # one record's table shows every field the write filled
+    assert "10001" in result.stdout
+
+
+def test_issue_transition_by_name_rejects_ambiguous_match(jira: Invoke) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"transitions": [{"id": "1", "name": "Done"}, {"id": "2", "name": "done"}]},
+            )
+        )
+        post = mock.post("/rest/api/2/issue/ABC-1/transitions")
+        result = jira(["issues", "transition", "ABC-1", "--yes", "--to", "done"])
+
+    assert result.exit_code == 1, result.output
+    assert "multiple transitions named 'done' are available for ABC-1" in result.stderr
+    assert len(post.calls) == 0

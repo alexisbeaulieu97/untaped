@@ -248,9 +248,10 @@ records.
 
 ## Commands that change things
 
-Commands that write, delete or launch show a preview and ask before they act.
-Jira asks only before destructive writes by default (see
-[`jira.confirm`](./reference/config.md#jira)).
+Commands that delete, launch or replace what a server holds show a preview
+and ask before they act; their help lists `--yes` under "Confirmation". Others,
+such as a Jira comment or `untaped config set`, don't ask and take `--dry-run`
+alone.
 
 - `--dry-run` shows the preview and changes nothing, even with `--yes`.
 - `--yes` (`-y`) skips the question. Without a terminal, such commands exit 2

@@ -56,6 +56,8 @@ class OptionDecl(_Frozen):
     allow_hyphen: bool = False
     #: ``-`` reads the value from stdin (``TextOrStdin``, ``PathOrStdin``).
     or_stdin: bool = False
+    #: A ``File[M]`` the command reads, not ``Written``: core checks its paths exist.
+    reads_file: bool = False
     stability: StabilityDecl | None = None
 
 
