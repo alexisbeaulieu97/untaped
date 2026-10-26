@@ -230,9 +230,10 @@ def install(
     ``providers={"forge": (Forge,)}`` composes the provider classes a test
     defines as one plugin per key, filling the contracts they subclass, so
     ``gather`` asks them; its settings are their ``Provider[S]``. Each
-    settings model (of a plugin named, given or brought) is written as set (secrets in
-    clear, by alias) to the section of the plugin whose ``settings`` it is;
-    a plugin given none has none of its own, as a user who set nothing.
+    settings model is written as set (secrets in clear, by alias) to the
+    section of the plugin whose ``settings`` it is, whether the test named
+    it, made it from ``providers`` or ``install`` brought it; a plugin given
+    none has none of its own, as a user who set nothing.
     What core keeps in a section (a cache's max age) stays.
     """
     from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
@@ -282,14 +283,14 @@ def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
     if not classes:
         raise TypeError(f"providers[{name!r}] holds no provider class")
     title = name.title().replace("-", "")
-    read = {settings_type(each) for each in classes}
+    read = {settings_type(each) for each in classes} - {None}
     if len(read) > 1:
-        names = sorted(each.__qualname__ if each else "none" for each in read)
+        names = sorted(each.__qualname__ for each in read if each is not None)
         raise TypeError(
             f"providers[{name!r}] read different settings ({', '.join(names)}); "
             "a plugin has one settings model"
         )
-    [model] = read
+    model = next(iter(read), None)
     if model is None:
         model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
     plugin = type(
@@ -311,8 +312,8 @@ def _settings_model(candidate: PluginCandidate) -> type[BaseModel] | None:
 
     try:
         target = resolve_target(candidate.target)
-    except ImportError, AttributeError:
-        return None  # composition reports a target that does not resolve
+    except Exception:
+        return None
     model = getattr(target, "settings", None)
     return model if isinstance(model, type) and issubclass(model, BaseModel) else None
 

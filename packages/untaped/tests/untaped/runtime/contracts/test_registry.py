@@ -412,6 +412,30 @@ def test_a_plugin_class_s_fill_reaches_the_11x_owner_whose_package_defines_the_c
     assert (answer.plugin, isinstance(answer, Ok)) == ("lends", True)
 
 
+def test_a_fill_no_composed_plugin_owns_waits_silently() -> None:
+    reset()
+    lends = PluginCandidate(distribution="untaped-lends", name="lends", target=_Lends)
+    result = bootstrap.compose_root(candidates=[lends])
+    [spec] = [each.spec for each in result.plugins if each.spec.name == "lends"]
+    assert dict(spec.provides) == {}  # a composition row once the 11.x reader goes
+
+
+def test_a_start_from_the_kept_declaration_still_routes_the_fill_to_the_11x_owner() -> None:
+    from untaped.runtime import registry
+
+    target = f"{_Lends.__module__}:{_Lends.__qualname__}"
+    lends = PluginCandidate(distribution="untaped-lends", name="lends", target=target)
+    shelf = PluginSpec(
+        name="shelf", settings=ShelfSettings, contracts=lambda: (BookSource,), caches=CACHES
+    )
+    ordered = [plugin_candidate(shelf), lends]
+    fresh = registry._compose(ordered)
+    replayed = registry._compose(ordered, fresh.mount.declaration)
+    for result in (fresh, replayed):
+        [spec] = [each.spec for each in result.plugins if each.spec.name == "lends"]
+        assert list(spec.provides) == ["shelf"]
+
+
 def test_an_11x_owner_s_cache_with_no_plugin_and_name_is_unreadable() -> None:
     from untaped.runtime.contracts.registry import unreadable_owners
     from untaped.sdk.contracts import cached

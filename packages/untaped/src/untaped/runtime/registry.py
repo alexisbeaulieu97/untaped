@@ -1543,14 +1543,8 @@ def _mounted(
     classes = {index: cls for index, cls in provided.items() if not isinstance(cls, PluginSpec)}
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
-    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
 
-    # an 11.x owner's package, so a 12.0 provider of its contract reaches it
-    packages: dict[str, str] = {}
-    for index in claims:
-        package = candidate_package(ordered[index].target)
-        if package is not None:
-            packages.setdefault(package.partition(".")[0], ordered[index].name)
+    packages = _owner_packages(ordered, claims)
     problems: dict[str, tuple[Problem, ...]] = {}
     while True:
         mount = compose_plugins(
@@ -1596,9 +1590,26 @@ def _replayed(
     from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
 
     mount = Mount.of(declared)
+    packages = _owner_packages(ordered, claims)
     for index, plugin in replayed.items():
-        claims[index] = plugin_spec(mount, plugin.name)
+        claims[index] = plugin_spec(mount, plugin.name, packages)
     return dict(sorted(claims.items())), mount
+
+
+def _owner_packages(ordered: Sequence[PluginCandidate], claims: Iterable[int]) -> dict[str, str]:
+    """Each 11.x plugin by its top-level package, so a 12.0 provider of its contract reaches it.
+
+    One 11.x plugin per top-level package (``untaped_<name>``), the first
+    one winning; the map goes with the 11.x seam.
+    """
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
+
+    packages: dict[str, str] = {}
+    for index in claims:
+        package = candidate_package(ordered[index].target)
+        if package is not None:
+            packages.setdefault(package.partition(".")[0], ordered[index].name)
+    return packages
 
 
 def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:

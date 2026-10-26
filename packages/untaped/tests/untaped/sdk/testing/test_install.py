@@ -385,11 +385,16 @@ class Configured(Books, Provider[Shelved]):
         return [Book(title=self.settings.title)]
 
 
+class Other(Books, Provider[Pages]):
+    def books(self) -> list[Book]:
+        return []
+
+
 def test_providers_reading_settings_get_the_section_the_test_writes(install: Installer) -> None:
     shelf = install(Reader, providers={"fake": (Configured,)}, settings=[Shelved(title="Emma")])
     assert shelf.run(Titles()).text == "fake:Emma"
     with pytest.raises(TypeError, match=r"providers\['fake'\] read different settings"):
-        install(Reader, providers={"fake": (Configured, Fixed)})
+        install(Reader, providers={"fake": (Configured, Other)})
 
 
 def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
