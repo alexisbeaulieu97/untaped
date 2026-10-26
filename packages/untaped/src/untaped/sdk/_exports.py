@@ -172,6 +172,7 @@ from untaped.sdk.network.credentials import (
 )
 from untaped.sdk.network.http import (
     HttpClient,
+    HttpFactory,
     RetryPolicy,
     connected_client,
     paginate_link,
@@ -498,6 +499,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Credential",
     "CredentialKey",
     "HttpClient",
+    "HttpFactory",
     "HttpError",
     "HttpSettings",
     "HttpStatusError",

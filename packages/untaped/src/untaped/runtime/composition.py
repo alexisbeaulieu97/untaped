@@ -56,6 +56,7 @@ from untaped.sdk.fields import (
     Short,
     Stdin,
     Written,
+    unprintable_following,
 )
 from untaped.sdk.marks import Deprecated, Experimental
 from untaped.sdk.plugin import (
@@ -925,6 +926,13 @@ class _CommandWalk:
                 self.where,
                 f"declares Output[{output.__name__}] but run returns {model.__name__}, "
                 "which is not it or a base of it",
+            )
+        for name in unprintable_following(output) if output is not None else ():
+            self.problem(
+                "field-type",
+                f"{self.where}.output",
+                f"{target_of(output)}.{name} is marked Following but is not a list of models: "
+                "a table prints a Following field as its own table of the items",
             )
 
     # --- fields ------------------------------------------------------------------

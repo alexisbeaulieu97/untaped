@@ -457,19 +457,37 @@ class Output[R: BaseModel](FieldBlock):
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
         themed = self.format in ("table", "tree")
+        ui = ui_context(strict=False) if themed else None
         columns = self._requested
         detail = isinstance(records, BaseModel) and self.format == "table"
         if columns is None and self._declared and detail:
             columns = list(self.columns)  # a detail view would hide the empty ones
+        following = following_fields(self._model) if self._model and self.format == "table" else {}
+        table_columns = list(self.columns) or None
+        if table_columns is None and following and self._model is not None:
+            # a field printed as its own table is not a column of the first
+            table_columns = [name for name in self._model.model_fields if name not in following]
         emit_with(
             records,
-            ui=ui_context(strict=False) if themed else None,
+            ui=ui,
             fmt=cast("OutputFormat", self.format),  # a plugin renderer's format returned above
             columns=columns,
             empty=self._empty,
             kind=kind,
-            table_columns=list(self.columns) or None,
+            table_columns=table_columns,
         )
+        rows = [records] if isinstance(records, BaseModel) else records
+        for name, item in following.items():
+            held = [value for row in rows if (value := getattr(row, name, None)) is not None]
+            if not held:
+                continue  # no row carries it this run (``issues get`` without ``--comments``)
+            emit_with(
+                [each for value in held for each in value],
+                ui=ui,
+                fmt="table",
+                empty=f"No {name.replace('_', ' ')}.",
+                table_columns=default_columns(item) or None,
+            )
 
 
 class Columns(list[str]):
@@ -488,6 +506,40 @@ def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
     """The fields of ``model`` marked ``Column``: a table's default columns (none: every field)."""
     return tuple(name for name, info in model.model_fields.items() if Column in _marks(info))
+
+
+def following_fields(model: type[BaseModel]) -> dict[str, type[BaseModel]]:
+    """The fields of ``model`` marked ``Following``, each with the model of its items.
+
+    A table prints each as a second table after the first; a field that is
+    not a list of models holds nothing to print (composition refuses it).
+    """
+    found: dict[str, type[BaseModel]] = {}
+    for name, info in model.model_fields.items():
+        if Following in _marks(info) and (item := list_item_model(info.annotation)) is not None:
+            found[name] = item
+    return found
+
+
+def unprintable_following(model: type[BaseModel]) -> list[str]:
+    """The fields of ``model`` marked ``Following`` that are not a list of models."""
+    return [
+        name
+        for name, info in model.model_fields.items()
+        if Following in _marks(info) and list_item_model(info.annotation) is None
+    ]
+
+
+def list_item_model(annotation: object) -> type[BaseModel] | None:
+    """The model ``annotation`` lists (``list[M]``, ``list[M] | None``), if it lists one."""
+    for each in (annotation, *get_args(annotation)):
+        if get_origin(each) is Annotated:
+            each = get_args(each)[0]
+        if get_origin(each) is list:
+            [item] = get_args(each) or (None,)
+            if isinstance(item, type) and issubclass(item, BaseModel):
+                return item
+    return None
 
 
 def key_field(model: type[BaseModel]) -> str | None:

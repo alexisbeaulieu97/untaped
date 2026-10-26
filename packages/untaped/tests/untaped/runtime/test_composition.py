@@ -24,6 +24,7 @@ from untaped.sdk import (
     DeprecatedBehaviour,
     DryRun,
     File,
+    Following,
     Group,
     Key,
     KeyValue,
@@ -462,6 +463,26 @@ def test_records_need_their_output_field_and_back() -> None:
         ("output-return", "NoRecords"),
         ("output-return", "Mismatch"),
     ]
+
+
+class Thread(BaseModel):
+    name: Annotated[str, Key, Column]
+    replies: Annotated[list[Salutation] | None, Following] = None
+    topic: Annotated[str, Following] = ""
+
+
+def test_a_following_field_is_a_list_of_models() -> None:
+    class Show(Command):
+        """Show."""
+
+        output: Output[Thread]
+
+        def run(self) -> Thread:
+            return Thread(name="a")
+
+    problems = _problems(_plugin_with(Show))
+    assert [(p.rule, p.where.rpartition(".")[2]) for p in problems] == [("field-type", "output")]
+    assert "Thread.topic is marked Following" in problems[0].detail
 
 
 def test_a_subclass_of_the_returned_model_is_its_output() -> None:

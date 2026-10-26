@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from untaped.sdk._ui import UiContext
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
+    from untaped.sdk.network.http import HttpFactory
     from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.plugin_records import InstalledPlugin
     from untaped.sdk.progress import ProgressHandle
@@ -466,9 +467,9 @@ def settings_of[M: BaseModel](model: type[M]) -> M:
 class ProviderContext:
     """What a provider reaches without declaring it: ``self.ctx`` on a ``Provider``.
 
-    ``diag`` writes to stderr; ``project`` is the current project or
-    ``None``; ``plugin`` is the providing plugin; ``plugins`` is every
-    plugin this install has. No terminal: a provider runs inside someone
+    ``diag`` writes to stderr; ``http`` builds HTTP clients; ``project``
+    is the current project or ``None``; ``plugin`` is the providing plugin;
+    ``plugins`` is every plugin this install has. No terminal: a provider runs inside someone
     else's command, so only the command asks.
     """
 
@@ -478,6 +479,13 @@ class ProviderContext:
     @property
     def diag(self) -> Diag:
         return self._run.diag
+
+    @property
+    def http(self) -> HttpFactory:
+        """HTTP clients for this plugin's services: ``self.ctx.http.client(self.settings, ...)``."""
+        from untaped.sdk.network.http import HttpFactory  # noqa: PLC0415 - httpx's cost
+
+        return HttpFactory(self._run.composition.owner_of_settings)
 
     @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:
@@ -494,8 +502,8 @@ class ProviderContext:
 class Context(ProviderContext):
     """What a command reaches without declaring it: ``self.ctx``.
 
-    A provider's context (``diag``, ``project``, ``plugin`` its own plugin,
-    ``plugins``) and ``terminal``, the terminal handle for prompts and
+    A provider's context (``diag``, ``http``, ``project``, ``plugin`` its
+    own plugin, ``plugins``) and ``terminal``, the terminal handle for prompts and
     screens. The run they read is kept private: a plugin never reaches the
     sink's policy or the composition except through these handles.
     """

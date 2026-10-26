@@ -821,6 +821,47 @@ def connected_client(
     )
 
 
+@dataclass(frozen=True)
+class HttpFactory:
+    """A plugin's HTTP clients: ``self.ctx.http.client(settings, base_url=..., bearer=...)``.
+
+    Commands and providers reach it as ``self.ctx.http``; a client class
+    takes it rather than building its own (``JiraClient(settings,
+    http=self.ctx.http)``). Core adds untaped's proxy, trust, timeout and
+    retries, binds the credential to its origin and refuses a folder's
+    proxy, all attributed to the plugin whose settings model ``settings``
+    is.
+    """
+
+    _owner: Callable[[type[BaseModel]], str]
+
+    def client(
+        self,
+        settings: BaseModel,
+        *,
+        base_url: str | None,
+        bearer: SecretStr | str | None = None,
+        verify: bool | Path | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> HttpClient:
+        """A client for ``base_url``, sending ``bearer`` to its origin only.
+
+        ``settings`` is the plugin's settings (as ``self.settings`` holds
+        them): a blank ``base_url`` raises "<plugin> is not set up", naming
+        its marked settings still unset. ``verify`` is the key's
+        :data:`~untaped.sdk.network.credentials.TlsVerify`, left out for
+        untaped's trust; ``headers`` go on every request.
+        """
+        return connected_client(
+            settings,
+            section=self._owner(type(settings)),
+            base_url=base_url,
+            bearer=bearer,
+            verify=verify,
+            headers=headers,
+        )
+
+
 def _key_verify(verify: bool | Path) -> VerifyTypes | None:
     """A key's TLS as httpx takes it; ``None`` for untaped's own trust (``True``)."""
     if verify is True:

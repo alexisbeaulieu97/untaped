@@ -5425,6 +5425,11 @@ sdk untaped.sdk.HttpError.fix_by class
 sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
+sdk untaped.sdk.HttpFactory(_owner) callback(_owner, 1)
+sdk untaped.sdk.HttpFactory.client(bearer=) default=None
+sdk untaped.sdk.HttpFactory.client(headers=) default=None
+sdk untaped.sdk.HttpFactory.client(settings, *, base_url)
+sdk untaped.sdk.HttpFactory.client(verify=) default=None
 sdk untaped.sdk.HttpSettings()
 sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
 sdk untaped.sdk.HttpSettings(proxy=) default=None
@@ -6932,6 +6937,11 @@ sdk untaped.sdk.network.HttpClient.request(method, path)
 sdk untaped.sdk.network.HttpClient.request(retry=) default=<computed>
 sdk untaped.sdk.network.HttpClient.request_json(**kwargs)
 sdk untaped.sdk.network.HttpClient.request_json(method, path)
+sdk untaped.sdk.network.HttpFactory(_owner) callback(_owner, 1)
+sdk untaped.sdk.network.HttpFactory.client(bearer=) default=None
+sdk untaped.sdk.network.HttpFactory.client(headers=) default=None
+sdk untaped.sdk.network.HttpFactory.client(settings, *, base_url)
+sdk untaped.sdk.network.HttpFactory.client(verify=) default=None
 sdk untaped.sdk.network.RetryPolicy()
 sdk untaped.sdk.network.RetryPolicy(backoff_base@2=) default=0.5
 sdk untaped.sdk.network.RetryPolicy(backoff_max@3=) default=30.0
