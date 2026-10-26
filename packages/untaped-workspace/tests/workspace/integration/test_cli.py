@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.runtime.output_policy import enable_quiet, reset_quiet
+from untaped.runtime.run import enable_quiet, entered, start_run
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.cli import app
@@ -29,10 +29,10 @@ def _rows(result: CliResult) -> list[dict[str, object]]:
 
 @pytest.fixture
 def quiet_mode(composed: None) -> Iterator[None]:
-    """Quiet output, set after the root is composed (composing resets it)."""
-    token = enable_quiet()
-    yield
-    reset_quiet(token)
+    """Quiet output: a run asking for it, whose invocations inherit it (the 11.x seam)."""
+    with entered(start_run()):
+        enable_quiet()
+        yield
 
 
 def test_create_list_path(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> None:

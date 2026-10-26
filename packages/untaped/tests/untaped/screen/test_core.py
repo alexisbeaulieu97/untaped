@@ -8,7 +8,7 @@ import pytest
 from rich import box
 
 from core_test_support.screen.support import make_screen
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import (
     SHARED_KEYS,
     Binding,
@@ -19,6 +19,7 @@ from untaped.screen.core import (
     is_inline,
     key_label,
 )
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.marks import Experimental, function_mark
 from untaped.sdk.testing.screens import rendered_text
 

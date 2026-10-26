@@ -28,14 +28,9 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
-from untaped.runtime.theme import (
-    DEFAULT_SYMBOLS,
-    STATUS_COLORS,
-    BorderStyle,
-    OutputFormat,
-    ThemeSpec,
-)
+from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
+from untaped.sdk._theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
 
 MessageKind = Literal["success", "warning", "error", "info"]
 

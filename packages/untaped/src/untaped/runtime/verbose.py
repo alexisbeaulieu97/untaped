@@ -1,14 +1,14 @@
 """``--verbose`` for one CLI invocation, and logging through the stderr sink.
 
 ``--verbose``/``-v`` is a core root option whose handler is :func:`enable`. The
-flag lives on the invocation's output policy (``untaped.runtime.output_policy``): it
+flag lives on the run's output policy (``untaped.sdk._run.Run.policy``): it
 streams a wrapped tool's output live instead of capturing it, and raises the
 ``untaped`` logger to DEBUG. The logger's handler forwards every record to the
 sink as an ``untaped.debug`` diagnostic (``DEBUG untaped.http: …`` in text, a
 JSON line under JSON diagnostics), with credentials masked
-(:func:`~untaped.runtime.redaction.redact_credentials`). The root callback calls :func:`reset` after
-each invocation, clearing the flag and the DEBUG level so neither leaks across
-in-process callers (tests, embedding). The handler added by
+(:func:`~untaped.runtime.redaction.redact_credentials`). The root calls :func:`reset` after
+each invocation, restoring the flag and the logger's level, which is process-wide, so
+the DEBUG level never leaks across in-process callers (tests, embedding). The handler added by
 :func:`configure_logging` is left attached (idempotent), but receives nothing
 once the level is restored.
 """
@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import logging
 
-from untaped.runtime.output_policy import FlagToken, is_verbose, reset_flag, set_flag
 from untaped.runtime.redaction import redact_credentials
+from untaped.runtime.run import FlagToken, reset_flag, set_flag
 from untaped.runtime.sink import current_sink
+from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Debug
 
 _LOGGER_NAME = "untaped"
@@ -37,8 +38,9 @@ def enable(_value: str = "") -> FlagToken:
 
 
 def reset(token: FlagToken | None = None) -> None:
-    """Clear or restore verbose state after one invocation."""
-    reset_flag("verbose", token)
+    """Restore the flag ``token`` saved, then the logger's level to the current run's flag."""
+    if token is not None:
+        reset_flag("verbose", token)
     enabled = is_verbose()
     level = logging.DEBUG if enabled else logging.NOTSET
     logger = logging.getLogger(_LOGGER_NAME)

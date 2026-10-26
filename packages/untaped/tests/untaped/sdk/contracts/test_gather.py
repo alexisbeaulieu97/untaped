@@ -29,8 +29,8 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
-from untaped.runtime.run import child_run
-from untaped.runtime.sink import diagnostics_scope, exit_on_counted_failure
+from untaped.runtime.run import child_run, invocation
+from untaped.runtime.sink import exit_on_counted_failure
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import (
     Contract,
@@ -315,7 +315,7 @@ def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() 
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     Library.error = HttpTransportError("HTTP 503", system="library")
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         list(gather(BookSource.books, refresh=True)())
         list(gather(BookSource.books, refresh=True)())  # the same entry again: no second line
         exit_on_counted_failure()  # a stale answer is not a failure
@@ -336,7 +336,7 @@ def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() 
 def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
     compose(shelf_spec(), library_spec())
     write_config(LIBRARY_CONFIG)
-    with recording() as emitted, diagnostics_scope():
+    with recording() as emitted, invocation():
         list(gather(BookSource.books, refresh=False)())  # nothing stored: skipped
         list(gather(BookSource.books)())  # a miss, filled live
         list(gather(BookSource.books)())  # a fresh hit

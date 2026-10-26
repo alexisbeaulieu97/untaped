@@ -9,9 +9,9 @@ from cyclopts import App
 
 from core_test_support.commands.support import ExtProfile, write_config
 from untaped.runtime import bootstrap
-from untaped.runtime.output_policy import current_policy
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import Diagnostics, FormatOption, create_app
+from untaped.sdk._run import current_run
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -34,7 +34,7 @@ def _factory() -> App:
     def theme(*, format: FormatOption = "table") -> None:
         """Say whether a theme was resolved."""
         del format
-        Diagnostics().warning(f"theme resolved: {current_policy().theme is not None}")
+        Diagnostics().warning(f"theme resolved: {current_run().policy.theme is not None}")
 
     return app
 

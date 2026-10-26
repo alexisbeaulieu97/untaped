@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-from untaped.runtime.theme import BUILTIN_THEMES, SCREEN_ROLE_NAMES, SYMBOL_NAMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES, SCREEN_ROLE_NAMES, SYMBOL_NAMES
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:

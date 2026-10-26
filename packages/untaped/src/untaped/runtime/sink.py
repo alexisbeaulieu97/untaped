@@ -1,26 +1,30 @@
-"""The one writer to stderr: the invocation's scope, its sink, and progress.
+"""The one writer to stderr: a run's output, its sink, and progress.
 
-:func:`diagnostics_scope` scopes one invocation: its :class:`OutputPolicy`
-(inherited from an enclosing scope, so a nested scope starts with what argv
-asked for), its sink, and the most severe failure it counted. Every stderr
-line is a :class:`~untaped.sdk.diagnostic.Diagnostic` emitted through
-:func:`current_sink`, which renders it as text or as one JSON line (``level``
-and ``kind`` first) per the policy, and writes it in one ``write()`` under
-one process-wide lock, clearing and redrawing the spinner around it.
+Each run's ``diag`` is its :class:`RunOutput`: its sink and the most severe
+failure it counted, following the run's :class:`~untaped.sdk._run.OutputPolicy`
+(``Run.policy``). A child run for a nested pick shares its parent's; a nested
+invocation has its own. Every stderr line is a
+:class:`~untaped.sdk.diagnostic.Diagnostic` emitted through
+:func:`current_sink`, the current run's, which renders it as text or as one
+JSON line (``level`` and ``kind`` first) per the policy, and writes it in one
+``write()`` under one process-wide lock, clearing and redrawing the spinner
+around it.
 
 Rules the sink keeps:
 
 - **Counting.** Emitting a :class:`~untaped.sdk.diagnostic.Failure` (a
-  subclass too) counts its ``exit_code`` toward the scope's exit code
+  subclass too) counts its ``exit_code`` toward the run's exit code
   (:func:`failure_exit_code`); a ``StaleData`` whose ``error`` is set is a
   warning and counts nothing.
 - **Muting.** ``--quiet`` mutes ``info``, ``success`` and progress, never a
   warning, a failure or a hint; ``debug`` prints only under ``--verbose``.
-- **Never dropped.** Off its scope a line reaches the most recently entered
-  live scope (``untaped.runtime.output_policy`` says how, and its one documented
-  limit); with no scope at all it goes to a default text sink. ``emit`` on a
-  closed sink writes the line plainly. The stream is ``sys.stderr`` read at
-  each write, so ``capsys`` and ``redirect_stderr`` see it.
+- **Threads.** A worker writes to the run its context carries: one started
+  with a copied context (``bounded_map``, ``Parallel.map``) has its
+  invocation's. Owed, the 11.x seam: a line emitted off every run reaches
+  the most recently opened run still open (:func:`opened`), and with none
+  open a default text sink; both go with the seam. ``emit`` on a closed sink
+  writes the line plainly. The stream is ``sys.stderr`` read at each write,
+  so ``capsys`` and ``redirect_stderr`` see it.
 - **No deadlock.** The lock is never held across a callback or a thread
   ``join()``; nothing in this package logs; and a nested write from a thread
   that already holds the lock writes without taking it. A progress line is
@@ -30,9 +34,9 @@ Rules the sink keeps:
 - **Screens.** While a screen owns the terminal (:meth:`Sink.hold`), text
   lines are held and printed after it exits; JSON lines are not held.
   Progress is the exception: no spinner is drawn and running text progress
-  lines are dropped, not held, while any live scope holds a screen; a task's
+  lines are dropped, not held, while any open run holds a screen; a task's
   ``done`` or ``failed`` line is held like any other when its start line
-  printed (held by its own scope's sink: a screen another scope holds does
+  printed (held by its own run's sink: a screen another run holds does
   not hold it, as for any other line).
 - **Progress.** Open ``progress(label)`` blocks are one process-wide task
   stack, ordered by open time: the first task's line is the one shown, and
@@ -52,26 +56,17 @@ record as its formatter writes it.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import threading
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import replace
 from typing import TYPE_CHECKING, Literal, Protocol, TextIO
 
 from pydantic import BaseModel
 
-from untaped.runtime.output_policy import (
-    OutputPolicy,
-    context_holder,
-    current_holder,
-    current_policy,
-    enter,
-    leave,
-    unscoped_policy,
-)
 from untaped.runtime.redaction import redact_url_password
 from untaped.runtime.render import (
     MessageKind,
@@ -81,7 +76,7 @@ from untaped.runtime.render import (
     stream_is_tty,
 )
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.sdk._run import recorder, run_clock
+from untaped.sdk._run import OutputPolicy, recorder, run_clock, run_or_none
 from untaped.sdk.diagnostic import (
     NOT_COUNTED,
     Debug,
@@ -102,7 +97,8 @@ from untaped.sdk.records import OutcomeRecord
 if TYPE_CHECKING:
     from rich.text import Text
 
-    from untaped.runtime.theme import ThemeSpec
+    from untaped.sdk._run import Run
+    from untaped.sdk._theme import ThemeSpec
 
 type Rendered = Callable[[bool], str] | str
 """A line's text presentation: a string, or a callable given whether to colour."""
@@ -118,7 +114,7 @@ _WRITE_LOCK = threading.Lock()
 _thread = threading.local()
 #: The width of the spinner line on screen (0: none drawn). Guarded by the lock.
 _drawn = 0
-#: How many screens hold the terminal, across every live scope. Guarded by the lock.
+#: How many screens hold the terminal, across every open run. Guarded by the lock.
 _holds = 0
 
 
@@ -271,7 +267,7 @@ class _Task:
         self,
         label: str,
         *,
-        sink: _ScopeSink,
+        sink: _RunSink,
         policy: OutputPolicy,
         mode: _Mode,
         verbose: bool,
@@ -506,7 +502,7 @@ def tick() -> None:
 
 @contextmanager
 def _task(
-    label: str, *, sink: _ScopeSink, policy: OutputPolicy, mode: _Mode, verbose: bool
+    label: str, *, sink: _RunSink, policy: OutputPolicy, mode: _Mode, verbose: bool
 ) -> Iterator[ProgressHandle]:
     """Open a task on the stack for the block; close it ``failed`` when the block raises.
 
@@ -686,7 +682,7 @@ def echo_diagnostic(text: str) -> Diagnostic | None:
 
 
 # --------------------------------------------------------------------------- #
-# The scope and its sink
+# A run's output and its sink
 # --------------------------------------------------------------------------- #
 
 
@@ -734,32 +730,13 @@ class Sink(Protocol):
         ...
 
 
-class _Scope:
-    """One invocation: its policy, its sink and the most severe failure it counted."""
+class _RunSink:
+    """The sink of one run's output (or, off every run, the default text sink's)."""
 
-    def __init__(self, policy: OutputPolicy) -> None:
-        self.policy = policy
-        self._lock = threading.Lock()
-        self._worst: int = ExitCode.OK
-        self.sink = _ScopeSink(self)
-
-    def note(self, code: int) -> None:
-        with self._lock:
-            self._worst = combine_exit_codes(self._worst, code)
-
-    @property
-    def worst(self) -> int:
-        with self._lock:
-            return self._worst
-
-
-class _ScopeSink:
-    """The sink of one scope (or, with no scope, of the default ``_Unscoped`` policy)."""
-
-    def __init__(self, scope: _Scope | None) -> None:
-        self._scope = scope
-        #: The test's recorder when the scope started (``Install.running()``'s ``diagnostics``).
-        self._recorder = recorder() if scope is not None else None
+    def __init__(self, output: RunOutput | None) -> None:
+        self._output = output
+        #: The test's recorder when the run was built (``Install.running()``'s ``diagnostics``).
+        self._recorder = recorder() if output is not None else None
         self._held: list[str] = []
         self._holding = 0
         self._closed = False
@@ -768,7 +745,7 @@ class _ScopeSink:
 
     @property
     def policy(self) -> OutputPolicy:
-        return self._scope.policy if self._scope is not None else current_policy()
+        return self._output.policy if self._output is not None else _default_policy()
 
     def emit(
         self, diagnostic: Diagnostic, *, rendered: Rendered | None = None, unmuted: bool = False
@@ -804,8 +781,8 @@ class _ScopeSink:
             )
         if isinstance(diagnostic, StaleData) and not self._first_stale(diagnostic):
             return
-        if isinstance(diagnostic, Failure) and self._scope is not None:
-            self._scope.note(diagnostic.exit_code)
+        if isinstance(diagnostic, Failure) and self._output is not None:
+            self._output.note(diagnostic.exit_code)
         policy = policy if policy is not None else self.policy
         level = _level(diagnostic)
         if isinstance(diagnostic, Debug) and not policy.verbose:
@@ -904,7 +881,7 @@ class _ScopeSink:
         _write(text)
 
     def _first_stale(self, stale: StaleData) -> bool:
-        """Whether this is the scope's first line about ``stale``'s cache entry."""
+        """Whether this is the run's first line about ``stale``'s cache entry."""
         key = (stale.cache, stale.key)
         with self._state_lock:
             if key in self._stale:
@@ -913,23 +890,56 @@ class _ScopeSink:
             return True
 
 
-_DEFAULT = _ScopeSink(None)
+#: Environment variable choosing the stderr format: ``json`` or ``text``.
+DIAGNOSTICS_ENV = "UNTAPED_DIAGNOSTICS"
 
 
-def _scope() -> _Scope | None:
-    holder = current_holder()
-    return holder if isinstance(holder, _Scope) else None
+def forced_diagnostics() -> Literal["text", "json"] | None:
+    """The stderr format ``UNTAPED_DIAGNOSTICS`` forces now (``None``: follow the format).
+
+    A run reads it once, when it is built (``untaped.runtime.run.start_run``).
+    """
+    choice = os.environ.get(DIAGNOSTICS_ENV, "").strip().lower()
+    if choice == "json":
+        return "json"
+    if choice == "text":
+        return "text"
+    return None
+
+
+def _default_policy() -> OutputPolicy:
+    """The default text sink's policy: the environment's, read at each line (owed, see below)."""
+    return OutputPolicy(forced=forced_diagnostics())
+
+
+#: Owed, the 11.x seam: where a line emitted off every open run goes. It goes with the seam.
+_DEFAULT = _RunSink(None)
+#: Owed, the 11.x seam: the open runs' outputs (:func:`opened`), in open order, for a
+#: line emitted off every run (a bare thread an 11.x path starts without copying its
+#: context). A worker gets its run from the invocation that started it, never from here;
+#: the list goes with the seam.
+_live: list[RunOutput] = []
+_live_lock = threading.Lock()
+
+
+def _output() -> RunOutput | None:
+    """The current run's output; off every run, the most recently opened one (owed)."""
+    run = run_or_none()
+    if run is not None and isinstance(run.diag, RunOutput):
+        return run.diag
+    with _live_lock:
+        return _live[-1] if _live else None
 
 
 def current_sink() -> Sink:
-    """The current scope's sink, else the default text sink; never ``None``."""
-    scope = _scope()
-    return scope.sink if scope is not None else _DEFAULT
+    """The current run's sink; off every run, the 11.x seam's fallbacks (owed); never ``None``."""
+    output = _output()
+    return output.sink if output is not None else _DEFAULT
 
 
 @contextmanager
-def diagnostics_scope() -> Iterator[None]:
-    """Scope one invocation: its policy (an enclosing scope's, else the unscoped one) and sink.
+def opened(output: RunOutput) -> Iterator[None]:
+    """Open a run's ``output`` for the block its run is current in; print its held lines after.
 
     For its duration a Python warning that is shown (not one a filter turns
     into an error or ignores) reaches the sink like any line: an
@@ -937,20 +947,23 @@ def diagnostics_scope() -> Iterator[None]:
     ``untaped.deprecation`` record it carries, any other as a warning
     message, so JSON diagnostics stay one object per line. A warning
     something else records (``warnings.catch_warnings(record=True)``,
-    ``pytest.warns``) is left to it.
+    ``pytest.warns``) is left to it. The output is one of the open ones
+    (``_live``, owed) until the block ends, removed by identity wherever it sits.
     """
-    parent = context_holder()
-    policy = replace(parent.policy) if parent is not None else unscoped_policy()
-    scope = _Scope(policy)
-    token = enter(scope)
+    with _live_lock:
+        _live.append(output)
     shown = warnings.showwarning
     warnings.showwarning = _WarningRoute(shown)
     try:
         yield
     finally:
         warnings.showwarning = shown
-        leave(scope, token)
-        scope.sink.close()
+        with _live_lock:
+            for index in range(len(_live) - 1, -1, -1):
+                if _live[index] is output:
+                    del _live[index]
+                    break
+        output.sink.close()
 
 
 #: How Python shows a warning when nothing records it; ``catch_warnings(record=True)``
@@ -972,7 +985,7 @@ def _recording() -> bool:
 
 
 class _WarningRoute:
-    """``warnings.showwarning`` inside a scope: a warning nothing records goes to the sink."""
+    """``warnings.showwarning`` while a run is open: a warning nothing records goes to the sink."""
 
     def __init__(self, shown: Callable[..., None]) -> None:
         self._shown = shown
@@ -1023,8 +1036,8 @@ def count_row_failures(rows: Iterable[object]) -> None:
     mapping row counts its ``error`` mapping by its ``exit_code`` or
     ``category``. A row marked failed with no error is not counted.
     """
-    scope = _scope()
-    if scope is None:
+    output = _output()
+    if output is None:
         return
     for row in rows:
         if isinstance(row, BaseModel):
@@ -1033,11 +1046,11 @@ def count_row_failures(rows: Iterable[object]) -> None:
                     continue
                 value = getattr(row, name, None)
                 if isinstance(value, Failure):
-                    scope.note(value.exit_code)
+                    output.note(value.exit_code)
         elif isinstance(row, Mapping):
             code = _row_error_code(row.get("error"))
             if code is not None:
-                scope.note(code)
+                output.note(code)
 
 
 def count_failed_actions(rows: Iterable[object]) -> None:
@@ -1050,8 +1063,8 @@ def count_failed_actions(rows: Iterable[object]) -> None:
     an earlier run. A 12.0 command's printed rows go through it; an 11.x
     command still decides with ``finish``.
     """
-    scope = _scope()
-    if scope is None:
+    output = _output()
+    if output is None:
         return
     for row in rows:
         if not isinstance(row, OutcomeRecord) or not row.failed:
@@ -1061,7 +1074,7 @@ def count_failed_actions(rows: Iterable[object]) -> None:
             for name, info in type(row).model_fields.items()
         )
         if not remembered:
-            scope.note(ExitCode.FAILURE)
+            output.note(ExitCode.FAILURE)
 
 
 def _row_error_code(error: object) -> int | None:
@@ -1082,8 +1095,8 @@ def failure_exit_code(*codes: int) -> int:
 
     Never below ``1``: a failed run whose failures carry no category exits ``1``.
     """
-    scope = _scope()
-    code = combine_exit_codes(*codes, scope.worst if scope is not None else ExitCode.OK)
+    output = _output()
+    code = combine_exit_codes(*codes, output.worst if output is not None else ExitCode.OK)
     return code if code not in (ExitCode.OK, ExitCode.PREDICATE) else ExitCode.FAILURE
 
 
@@ -1093,9 +1106,9 @@ def exit_on_counted_failure() -> None:
     A command that emitted a failure and returned normally still fails:
     the exit code is derived from what was emitted.
     """
-    scope = _scope()
-    if scope is not None and scope.worst != ExitCode.OK:
-        raise SystemExit(scope.worst)
+    output = _output()
+    if output is not None and output.worst != ExitCode.OK:
+        raise SystemExit(output.worst)
 
 
 def derived_exit_code(code: str | int | None) -> str | int | None:
@@ -1104,14 +1117,14 @@ def derived_exit_code(code: str | int | None) -> str | int | None:
     The most severe of the two wins (a predicate hit, ``3``, never hides a
     counted failure); a code that is not a number is left alone.
     """
-    scope = _scope()
-    if scope is None or scope.worst == ExitCode.OK:
+    output = _output()
+    if output is None or output.worst == ExitCode.OK:
         return code
     if code is None:
-        return scope.worst
+        return output.worst
     if isinstance(code, str):
         return code
-    return combine_exit_codes(code, scope.worst)
+    return combine_exit_codes(code, output.worst)
 
 
 def failure_text(error: UntapedError | Failure, *, item: str | None = None) -> str:
@@ -1127,17 +1140,21 @@ def failure_text(error: UntapedError | Failure, *, item: str | None = None) -> s
 
 
 class Diagnostics:
-    """The stderr handle a command holds as ``ctx.diag``: one method per level.
+    """The stderr handle: one method per level.
 
-    Every call resolves the current invocation's sink when it is made, never
-    when the handle is built, so a handle kept in a module constant still
-    writes to the invocation that uses it. ``--quiet`` mutes ``info``,
-    ``success`` and progress; a failure counts toward the exit code.
+    Every call resolves the current run's sink when it is made, never when
+    the handle is built, so a handle kept in a module constant still writes
+    to the invocation that uses it. ``--quiet`` mutes ``info``, ``success``
+    and progress; a failure counts toward the exit code. A command's
+    ``ctx.diag`` is its run's own :class:`RunOutput`.
     """
+
+    def _sink(self) -> Sink:
+        return current_sink()
 
     def emit(self, diagnostic: Diagnostic) -> None:
         """Emit any registered kind, core's or a plugin's own (``kind=`` declared)."""
-        current_sink().emit(diagnostic)
+        self._sink().emit(diagnostic)
 
     def info(self, text: str | Text, *, hint: str | None = None, unmuted: bool = False) -> None:
         """An ``info`` line; a Rich ``Text`` renders styled on a terminal, plain elsewhere.
@@ -1152,28 +1169,28 @@ class Diagnostics:
         JSON.
         """
         if isinstance(text, str):
-            current_sink().emit(Message(level="info", message=text, hint=hint), unmuted=unmuted)
+            self._sink().emit(Message(level="info", message=text, hint=hint), unmuted=unmuted)
             return
         tail = "" if hint is None else f"\n{_HINT_PREFIX}{hint}"
 
         def styled(color: bool) -> str:
             return render_styled(text, colorize=color) + tail
 
-        current_sink().emit(
+        self._sink().emit(
             Message(level="info", message=text.plain, hint=hint), rendered=styled, unmuted=unmuted
         )
 
     def success(self, text: str) -> None:
         """A ``success`` line, muted by ``--quiet`` like ``info``."""
-        current_sink().emit(Message(level="success", message=text))
+        self._sink().emit(Message(level="success", message=text))
 
     def warning(self, text: str, *, hint: str | None = None) -> None:
         """A ``warning:`` line, never muted."""
-        current_sink().emit(Message(level="warning", message=text, hint=hint))
+        self._sink().emit(Message(level="warning", message=text, hint=hint))
 
     def hint(self, text: str) -> None:
         """A ``hint:`` line: what to do next, never muted."""
-        current_sink().emit(Message(level="hint", message=text))
+        self._sink().emit(Message(level="hint", message=text))
 
     def failure(self, error: UntapedError | Failure, *, item: str | None = None) -> Failure:
         """Emit ``error`` as an ``error:`` line (``item`` names a per-item one) and return it.
@@ -1188,7 +1205,7 @@ class Diagnostics:
             )
         if item is not None:
             failure = failure.model_copy(update={"item": item})
-        current_sink().emit(failure, rendered=failure_text(error, item=item))
+        self._sink().emit(failure, rendered=failure_text(error, item=item))
         return failure
 
     def relay(self, text: str) -> None:
@@ -1196,7 +1213,7 @@ class Diagnostics:
 
         Unlike ``echo(err=True)``, an ``error:`` line it relays is not a failure.
         """
-        current_sink().relay(text)
+        self._sink().relay(text)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation: a spinner on a terminal, else lines.
@@ -1206,4 +1223,44 @@ class Diagnostics:
         end with one ``done`` or ``failed`` line; ``--verbose`` prints every
         update. Pass the handle on: an inner layer reports through it.
         """
-        return current_sink().progress(label)
+        return self._sink().progress(label)
+
+
+class RunOutput(Diagnostics):
+    """A run's ``diag``: its sink and the most severe failure it counted.
+
+    ``untaped.runtime.run.start_run`` builds one per run and binds it to that
+    run (:meth:`bind`), whose policy its sink follows; it writes to its own
+    sink wherever it is called. A child run for a nested pick shares its
+    parent's (sink, count and the parent's policy); a nested invocation is
+    a child run with its own.
+    """
+
+    def __init__(self) -> None:
+        self._run: Run | None = None
+        self._lock = threading.Lock()
+        self._worst: int = ExitCode.OK
+        self.sink = _RunSink(self)
+
+    def bind(self, run: Run) -> None:
+        """Make ``run`` the run whose policy the sink follows; once."""
+        if self._run is not None:
+            raise RuntimeError("a run's output is bound once")
+        self._run = run
+
+    @property
+    def policy(self) -> OutputPolicy:
+        """The policy of the run this output is bound to (unbound: the default sink's)."""
+        return self._run.policy if self._run is not None else _default_policy()
+
+    def note(self, code: int) -> None:
+        with self._lock:
+            self._worst = combine_exit_codes(self._worst, code)
+
+    @property
+    def worst(self) -> int:
+        with self._lock:
+            return self._worst
+
+    def _sink(self) -> Sink:
+        return self.sink

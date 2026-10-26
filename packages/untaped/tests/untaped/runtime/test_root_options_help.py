@@ -12,11 +12,11 @@ from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
-from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app
+from untaped.sdk._run import is_verbose
 from untaped.sdk.marks import deprecated, show_deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
@@ -69,6 +69,7 @@ def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
     assert "Old." not in _help("svc", "--help")
 
 
+@pytest.mark.usefixtures("home_run")
 def test_the_pass_applies_a_root_option_after_the_root_s_help_for_the_block() -> None:
     with applied_root_options(["--help", "--verbose"], _root_options()) as line:
         assert is_verbose()

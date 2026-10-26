@@ -40,15 +40,14 @@ def compose_with(
     from untaped.runtime import (  # noqa: PLC0415 - the root is heavy; tests pay only on use
         bootstrap,
     )
-    from untaped.runtime.run import build_run  # noqa: PLC0415
-    from untaped.sdk._run import run_scope  # noqa: PLC0415
+    from untaped.runtime.run import build_run, entered  # noqa: PLC0415
     from untaped.sdk.contracts._providing import offering_candidates  # noqa: PLC0415
 
     base = _candidates(plugins)
     fakes = offering_candidates(provides or {}, base)
     with (
         bootstrap.composed_with([*base, *fakes]) as result,
-        run_scope(build_run(result.mount.declaration, result.mount.settings)),
+        entered(build_run(result.mount.declaration, result.mount.settings)),
     ):
         token = _ACTIVE.set(result)
         try:

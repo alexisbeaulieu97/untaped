@@ -69,8 +69,8 @@ from pydantic import (
 from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 
-from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.redaction import redact_url_password
+from untaped.sdk._run import is_verbose
 from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
 from untaped.sdk.words import duration_text
 

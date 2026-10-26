@@ -9,9 +9,10 @@ from typing import TypeVar
 
 import pytest
 
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import PromptChoice, UiContext
 from untaped.sdk.errors import (
     ConfigError,

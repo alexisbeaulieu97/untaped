@@ -12,7 +12,7 @@ from datetime import timedelta
 
 import pytest
 
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import entered, start_run
 from untaped.sdk import ErrorCategory, UntapedError, UsageError
 
 # The 11.x seam: these blocks record under compose_with's fake providers, which
@@ -104,7 +104,7 @@ def test_a_stale_listing_without_the_repo_is_the_providers_failure() -> None:
         gather(RepoSource.repos)()
         age_answers(timedelta(hours=7))
         github.error = HTTP_503
-        with recording() as emitted, diagnostics_scope(), pytest.raises(UntapedError) as caught:
+        with recording() as emitted, entered(start_run()), pytest.raises(UntapedError) as caught:
             _resolve("acme/api")
     assert caught.value is HTTP_503
     assert caught.value.category == ErrorCategory.UNAVAILABLE
@@ -138,7 +138,7 @@ def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line() -> None
         gather(RepoSource.repos)()
         age_answers(timedelta(hours=7))
         github.error = HTTP_503
-        with recording() as emitted, diagnostics_scope():
+        with recording() as emitted, entered(start_run()):
             found = _resolve("acme/api")
     assert found.url == "https://github.com/acme/api.git"
     assert github.calls == 2  # the second call failed; the stored answer stood in
@@ -346,7 +346,7 @@ def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer()
         catalog = RepoSources()
         saved = catalog.resolve("acme/api")  # github's answer is stored
         github.error = HTTP_503
-        with recording() as emitted, diagnostics_scope(), pytest.raises(UntapedError) as caught:
+        with recording() as emitted, entered(start_run()), pytest.raises(UntapedError) as caught:
             catalog.reask(saved)
     assert caught.value is HTTP_503
     assert [each for each in emitted if isinstance(each, StaleData)] == []  # the error says it

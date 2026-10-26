@@ -13,7 +13,7 @@ from rich.style import Style
 from rich.text import Text
 
 from core_test_support.screen.gallery import render_styled
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.box import field_box
 from untaped.screen.components.draw import (
     divider,
@@ -27,6 +27,7 @@ from untaped.screen.components.draw import (
 from untaped.screen.components.paths import MAX_CANDIDATES, MAX_SCANNED, complete_paths
 from untaped.screen.components.text import EditBuffer
 from untaped.screen.core import Frame
+from untaped.sdk._theme import ThemeSpec
 
 DEFAULT = Frame(60, 20, BUILTIN_THEMES["default"])
 _MATCH = Style(bold=True, underline=True)  # the default ``screen.match`` role

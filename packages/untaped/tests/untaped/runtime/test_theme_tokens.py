@@ -12,12 +12,12 @@ from untaped.runtime.theme import (
     BUILTIN_THEMES,
     ROLE_NAMES,
     SCREEN_ROLE_NAMES,
-    SCREEN_SYMBOLS,
     SYMBOL_NAMES,
     UiSettings,
     check_declared_tokens,
     resolve_theme,
 )
+from untaped.sdk._theme import SCREEN_SYMBOLS
 from untaped.sdk.errors import ConfigError
 
 THEMES = sorted(BUILTIN_THEMES)

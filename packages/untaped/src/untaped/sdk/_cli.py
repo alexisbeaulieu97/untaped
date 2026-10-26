@@ -9,6 +9,7 @@ import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
+from dataclasses import replace
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
@@ -19,13 +20,11 @@ from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.runtime.output_policy import current_policy, note_format, note_theme
 from untaped.runtime.render import column_value, render_document
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
     derived_exit_code,
-    diagnostics_scope,
     exit_on_counted_failure,
     failure_exit_code,
 )
@@ -40,12 +39,9 @@ from untaped.runtime.sink import (
 from untaped.runtime.theme import (
     OutputFormat as OutputFormat,
 )
-from untaped.runtime.theme import (
-    ThemeSpec,
-    TreeOutputFormat,
-    resolve_theme_or_default,
-)
-from untaped.sdk._run import Rendering, fixed_rendering
+from untaped.runtime.theme import TreeOutputFormat, resolve_theme_or_default
+from untaped.sdk._run import Rendering, fixed_rendering, run_or_none
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.diagnostic import Failure, dumped_names
 from untaped.sdk.errors import (
@@ -110,11 +106,10 @@ def apply_default_format(
     rendering chose, read once, before anything was emitted. Otherwise (a
     command mounted through the 11.x seam) a ``--format`` the user chose (the
     flag, ``UNTAPED_FORMAT`` or ``untaped.ui.format``; not a command's own
-    default) is recorded for the stderr diagnostics
-    (:func:`untaped.runtime.output_policy.note_format`, phase 2), and, when
-    they are text, the ``untaped.ui.theme`` messages render with
-    (:func:`untaped.runtime.output_policy.note_theme`; a broken ``ui`` section
-    degrades to the default theme).
+    default) is recorded for the stderr diagnostics (:func:`_note_format`,
+    phase 2), and, when they are text, the ``untaped.ui.theme`` messages
+    render with (:func:`_note_theme`; a broken ``ui`` section degrades to the
+    default theme).
     """
     argument = _table_default_format(arguments)
     rendering = fixed_rendering()
@@ -127,9 +122,37 @@ def apply_default_format(
         for argument in arguments
         if "--format" in argument.names and argument.tokens
     ]
-    note_format(given[-1] if given else None)
+    _note_format(given[-1] if given else None)
     # Called for the root (no command) and again for the command parsed.
-    note_theme(user_theme() if commands and current_policy().diagnostics == "text" else None)
+    run = run_or_none()
+    text = run is not None and run.policy.diagnostics == "text"
+    _note_theme(user_theme() if commands and text else None)
+
+
+def _note_format(fmt: str | None) -> None:
+    """Record the ``--format`` an 11.x seam command's invocation chose on its run's policy.
+
+    Phase 1 records what argv asks for before parsing
+    (:func:`note_requested_format`); phase 2 what the parsed command chose
+    (:func:`apply_default_format`). Outside a run there is no invocation to
+    record it for, and under a run whose rendering is fixed there is
+    nothing left to choose: nothing happens. Owed: goes with the seam.
+    """
+    run = run_or_none()
+    if run is not None and run.rendering is None:
+        run.set_policy(replace(run.policy, format=fmt))
+
+
+def _note_theme(theme: ThemeSpec | None) -> None:
+    """Record the theme an 11.x seam command's text messages render with on its run's policy.
+
+    Set once settings load (phase 2, beside :func:`_note_format`; ``None``
+    under JSON diagnostics, which render no theme). Outside a run, or under
+    a run whose rendering is fixed, nothing happens. Owed: goes with the seam.
+    """
+    run = run_or_none()
+    if run is not None and run.rendering is None:
+        run.set_policy(replace(run.policy, theme=theme))
 
 
 def _rendered_default(rendering: Rendering) -> tuple[str, str] | None:
@@ -423,7 +446,7 @@ def note_requested_format(tokens: Sequence[str]) -> None:
     wins over ``UNTAPED_FORMAT``; only a structured value switches the error
     to a JSON line.
     """
-    note_format(requested_format(tokens) or os.environ.get(FORMAT_ENV) or None)
+    _note_format(requested_format(tokens) or os.environ.get(FORMAT_ENV) or None)
 
 
 def report_declined(exc: OperationCancelledError) -> None:
@@ -1015,32 +1038,32 @@ def run_cyclopts_app(
     the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
-    The invocation runs in its own :func:`~untaped.runtime.sink.diagnostics_scope`;
-    a parse error follows the ``--format`` its tokens ask for. A command that
-    emitted a failure and returned normally exits with the worst code it
-    counted. While it runs, :func:`given_tokens` hands ``app``'s command the
-    tokens as given.
+    The invocation writes to the current run's output (the root starts one
+    first; the testing kit runs each invocation under its own); a parse error
+    follows the ``--format`` its tokens ask for. A command that emitted a
+    failure and returned normally exits with the worst code it counted.
+    While it runs, :func:`given_tokens` hands ``app``'s command the tokens
+    as given.
     """
     argv = list(tokens) if tokens is not None else sys.argv[1:]
     running = _RUNNING.set((app, tuple(argv)))
     try:
-        with diagnostics_scope():
-            try:
-                result = app(
-                    argv,
-                    console=console,
-                    error_console=error_console,
-                    exit_on_error=False,
-                    print_error=False,
-                    result_action=result_action,
-                )
-            except CycloptsError as exc:
-                note_requested_format(argv)
-                raise_usage(str(exc))
-            except SystemExit as exc:
-                exc.code = derived_exit_code(exc.code)
-                raise
-            exit_on_counted_failure()
+        try:
+            result = app(
+                argv,
+                console=console,
+                error_console=error_console,
+                exit_on_error=False,
+                print_error=False,
+                result_action=result_action,
+            )
+        except CycloptsError as exc:
+            note_requested_format(argv)
+            raise_usage(str(exc))
+        except SystemExit as exc:
+            exc.code = derived_exit_code(exc.code)
+            raise
+        exit_on_counted_failure()
     except KeyboardInterrupt:
         _flush_stdout()
         raise SystemExit(ExitCode.INTERRUPTED) from None

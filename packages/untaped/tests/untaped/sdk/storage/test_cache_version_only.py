@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from untaped.runtime.bootstrap import SHELL_SPEC
 from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
-from untaped.runtime.sink import diagnostics_scope
+from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
@@ -71,7 +71,7 @@ def up() -> Composer:
 
 
 def _serve(up: Composer, *, refresh: bool | None = None) -> tuple[Composed, list[Any]]:
-    with diagnostics_scope(), recording() as lines:
+    with invocation(), recording() as lines:
         served = COMPOSED.serve({KEY: "all toys"}, refresh=refresh, fill=up.fill)
     return served.value[KEY], list(lines)
 
@@ -109,7 +109,7 @@ def test_a_failed_fill_raises_and_no_other_version_stands_in(
     _serve(up)
     CODE["version"] = "2"
     up.error = UntapedError("cannot compose", category="config")
-    with diagnostics_scope(), recording() as lines, pytest.raises(UntapedError, match="compose"):
+    with invocation(), recording() as lines, pytest.raises(UntapedError, match="compose"):
         COMPOSED.serve({KEY: "all toys"}, refresh=None, fill=up.fill)
     assert list(lines) == []  # no task, no stale line, no hint
 
@@ -119,7 +119,7 @@ def test_a_partial_fill_is_served_but_not_kept(clock: CacheClock, up: Composer) 
         up.fill(key, task)
         return Filled(value=Composed(names=up.names), partial=Failure.plain("one left out"))
 
-    with diagnostics_scope():
+    with invocation():
         served = COMPOSED.serve({KEY: "all toys"}, refresh=None, fill=partial)
     assert served.value[KEY] == Composed(names=("a",))
     assert served.freshness[KEY].partial
@@ -136,7 +136,7 @@ def test_a_damaged_file_is_filled_again(clock: CacheClock, up: Composer) -> None
 
 
 def test_pruning_keeps_another_key_and_another_partition(clock: CacheClock, up: Composer) -> None:
-    with diagnostics_scope():
+    with invocation():
         COMPOSED.serve({"other": "other toys"}, refresh=None, fill=up.fill)
         COMPOSED.serve({KEY: "all toys"}, refresh=None, fill=up.fill, partition="p")
     _serve(up)

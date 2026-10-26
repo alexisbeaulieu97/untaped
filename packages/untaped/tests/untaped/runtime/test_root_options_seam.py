@@ -12,12 +12,12 @@ import pytest
 from cyclopts import App, Parameter
 
 from untaped.runtime import bootstrap
-from untaped.runtime.output_policy import is_verbose
 from untaped.runtime.profile_resolver import profile_override
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.runtime.root_options_seam import _take_help_root_options
 from untaped.sdk._cli import create_app, echo
+from untaped.sdk._run import is_verbose
 from untaped.sdk.marks import show_deprecated
 
 
@@ -26,6 +26,7 @@ def _strip(tokens: list[str]) -> list[str]:
         return _take_help_root_options(line.tokens, _root_options(), line)
 
 
+@pytest.mark.usefixtures("home_run")
 def test_help_strips_an_11x_command_s_root_options_around_it() -> None:
     assert _strip(["svc", "--help", "--verbose"]) == ["svc", "--help"]
     assert _strip(["svc", "--profile", "x", "--help"]) == ["svc", "--help"]

@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, Self
 
-from untaped.runtime.theme import BUILTIN_THEMES, ThemeSpec
+from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import (
     KEY_NAMES,
     Cancel,
@@ -28,6 +28,7 @@ from untaped.screen.core import (
     is_key_name,
 )
 from untaped.screen.runtime import Runtime, SyncHost, capture_console
+from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:

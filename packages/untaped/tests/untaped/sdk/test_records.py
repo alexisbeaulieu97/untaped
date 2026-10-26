@@ -26,10 +26,10 @@ from pydantic import (
 )
 
 from untaped.core.commands.records import RegisteredHolder, RegisteredTarget
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
-    diagnostics_scope,
     failure_exit_code,
 )
 from untaped.sdk.diagnostic import (
@@ -221,7 +221,7 @@ def test_error_info_of_an_unexpected_exception_is_a_failed_untaped_error() -> No
 
 
 def test_building_a_failure_is_pure_and_emitting_it_counts() -> None:
-    with diagnostics_scope():
+    with entered(start_run()):
         info = Failure.from_exception(HttpTransportError("down", system="awx"), message="redacted")
 
         assert (info.category, info.system, info.message) == ("unavailable", "awx", "redacted")
@@ -233,14 +233,14 @@ def test_building_a_failure_is_pure_and_emitting_it_counts() -> None:
 
 def test_emitting_a_failure_counts_like_diag_failure() -> None:
     info = Failure.from_exception(ConfigError("rejected", category="auth"))
-    with diagnostics_scope():
+    with entered(start_run()):
         current_sink().emit(info)
         assert failure_exit_code() == 4
 
 
 def test_an_interrupt_is_interrupted_everywhere() -> None:
     info = Failure.from_exception(KeyboardInterrupt())
-    with diagnostics_scope():
+    with entered(start_run()):
         Diagnostics().failure(info)
         assert (info.category, failure_exit_code()) == ("interrupted", 130)
 

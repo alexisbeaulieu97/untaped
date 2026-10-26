@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
-    diagnostics_scope,
     exit_on_counted_failure,
 )
 from untaped.sdk.diagnostic import Failure, StaleData
@@ -150,7 +150,7 @@ def _stale(**overrides: object) -> StaleData:
 )
 def test_stale_data_wording(overrides: dict[str, object], text: str) -> None:
     stream = io.StringIO()
-    with redirect_stderr(stream), diagnostics_scope():
+    with redirect_stderr(stream), entered(start_run()):
         current_sink().emit(_stale(**overrides))
 
     assert stream.getvalue() == f"warning: {text}\n"
@@ -162,7 +162,7 @@ def test_stale_data_is_a_json_warning_and_counts_nothing(
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     stream = io.StringIO()
     error = Failure.from_exception(ConfigError("token rejected", category="auth"))
-    with redirect_stderr(stream), diagnostics_scope():
+    with redirect_stderr(stream), entered(start_run()):
         Diagnostics().emit(_stale(error=error, attempted_at=_NOW))
         exit_on_counted_failure()  # a stale answer is not a failure: no SystemExit
 
@@ -185,7 +185,7 @@ def test_stale_data_is_a_json_warning_and_counts_nothing(
 def test_an_outdated_stale_line_says_so_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     stream = io.StringIO()
-    with redirect_stderr(stream), diagnostics_scope():
+    with redirect_stderr(stream), entered(start_run()):
         Diagnostics().emit(_stale(outdated=True))
 
     line = json.loads(stream.getvalue())
