@@ -8,9 +8,12 @@ from collections.abc import Iterator
 from contextlib import redirect_stderr
 
 import pytest
+from pydantic import BaseModel
 
-from untaped.runtime import verbose
+from untaped.runtime import bootstrap, verbose
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.run import entered, start_run
+from untaped.sdk import Command, Plugin
 from untaped.sdk._run import is_verbose
 
 pytestmark = pytest.mark.usefixtures("home_run")
@@ -91,3 +94,59 @@ def test_a_debug_line_without_verbose_is_muted() -> None:
         verbose.restore()
 
     assert stream.getvalue() == ""
+
+
+#: The ``untaped`` logger's level each command below saw, in the order they ran.
+levels: list[int] = []
+
+
+class ProbeSettings(BaseModel):
+    """Nothing to configure."""
+
+
+class Peek(Command):
+    """Note the logger's level."""
+
+    def run(self) -> None:
+        levels.append(logging.getLogger("untaped").level)
+
+
+class Nest(Command):
+    """Call the root with ``-v`` from inside the command, then note the level once it returns."""
+
+    def run(self) -> None:
+        with bootstrap.kept_composition(), pytest.raises(SystemExit):
+            bootstrap.run_root(["-v", "probe", "peek"], candidates=[PROBE])
+        levels.append(logging.getLogger("untaped").level)
+
+
+class Probe(Plugin):
+    """Note the logger's level, directly and around a nested root."""
+
+    settings = ProbeSettings
+    commands = (Peek, Nest)
+
+
+PROBE = PluginCandidate(distribution="untaped-probe", name="probe", target=Probe)
+
+
+def _run_root(argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        bootstrap.run_root(argv, candidates=[PROBE])
+    assert exit_info.value.code in (0, None)
+
+
+@pytest.mark.usefixtures("_isolated_config", "fresh_composition")
+def test_the_logger_level_follows_each_root_invocation_s_own_verbose() -> None:
+    levels.clear()
+    logger = logging.getLogger("untaped")
+
+    _run_root(["-v", "probe", "peek"])
+    _run_root(["probe", "peek"])  # a plain root after a -v one
+    assert levels == [logging.DEBUG, logging.NOTSET]
+    assert logger.level == logging.NOTSET
+
+    levels.clear()
+    _run_root(["-v", "probe", "nest"])  # a -v root inside a -v command
+    assert levels == [logging.DEBUG, logging.DEBUG]  # the nested peek, then nest after it
+    assert logger.level == logging.NOTSET

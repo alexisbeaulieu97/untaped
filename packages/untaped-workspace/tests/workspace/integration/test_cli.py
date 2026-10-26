@@ -30,7 +30,12 @@ def _rows(result: CliResult) -> list[dict[str, object]]:
 
 @pytest.fixture
 def quiet_mode(composed: None) -> Iterator[None]:
-    """Quiet output: a run asking for it, whose invocations inherit it (the 11.x seam)."""
+    """Quiet output: a run asking for it (the 11.x seam).
+
+    An invocation inherits it only through ``invocation()``, which copies the
+    policy, as the kit's ``invoke_cli`` on this plugin's app does; a whole root
+    invocation starts its own run.
+    """
     with entered(start_run()) as started:
         started.set_policy(replace(started.policy, quiet=True))
         yield

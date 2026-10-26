@@ -247,7 +247,7 @@ class RootLine:
         return _rendering(self.run, chosen)
 
     def apply(self, spec: _RootOption, value: str) -> None:
-        """Apply root option ``spec`` with ``value`` for the rest of the invocation."""
+        """Apply root option ``spec`` with ``value``, written onto the line's run."""
         if spec.name in _CONFLICTING_OPTIONS and any(
             applied.name in _CONFLICTING_OPTIONS and applied.name != spec.name
             for applied, _ in self.applied
