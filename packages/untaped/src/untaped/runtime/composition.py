@@ -78,7 +78,6 @@ if TYPE_CHECKING:
 
     from untaped.sdk.contracts._declare import ContractInfo
 
-
 #: Field names core or pydantic reserves on a command; ``run_`` still spells ``--run``.
 RESERVED_FIELDS: frozenset[str] = frozenset(
     {
@@ -414,6 +413,14 @@ class _PluginWalk:
                 continue
             expected = f"{info.name}_{method.name}"
             if any(b.owner in cls.__mro__ and b.attribute == expected for b in cache.bindings):
+                continue
+            if (taken := getattr(cls, expected, cache)) is not cache:
+                self.problem(
+                    "answer-cache",
+                    f"{info.cls.__qualname__}.{method.name}",
+                    f"is cached as {cls.__qualname__}.{expected}, which holds {taken!r}: "
+                    "rename that attribute",
+                )
                 continue
             held = ", ".join(f"{b.owner.__qualname__}.{b.attribute}" for b in cache.bindings)
             self.problem(

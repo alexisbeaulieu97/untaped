@@ -173,10 +173,13 @@ def _hold_answer_caches(cls: type[Plugin]) -> None:
     The owner's plugin class holds it as ``<contract>_<method>``, as if the
     class named it so, when the class is created: its setting is
     ``<plugin>.caches.<contract>_<method>.max_age_seconds``. A cache an 11.x
-    owner spelled (``Cache(owner, name, ...)``) stays its own, and a name the
-    class already has is left to composition.
+    owner spelled (``Cache(owner, name, ...)``), one a class already holds
+    (the first offering class keeps it) and a name the class already has are
+    left to composition.
     """
-    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - already imported
+    if not cls.offers:
+        return
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
 
     for offered in cls.offers:
         info = contract_of(offered) if isinstance(offered, type) else None
@@ -185,7 +188,7 @@ def _hold_answer_caches(cls: type[Plugin]) -> None:
         for method in info.methods.values():
             cache = method.cache
             name = f"{info.name}_{method.name}"
-            if cache is None or cache.spelled or hasattr(cls, name):
+            if cache is None or cache.spelled or cache.bindings or hasattr(cls, name):
                 continue
             setattr(cls, name, cache)
             cache.__set_name__(cls, name)

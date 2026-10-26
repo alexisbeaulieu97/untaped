@@ -137,7 +137,8 @@ class OwnedBlock(Block):
     the package defining that class, so it is read inside a run. The 11.x
     spelling passes both (``Cache("hello", "motd", ...)``) and needs no run.
     A block read where its owner's class is deliberately not imported is bound
-    where it is declared instead (:meth:`_bound_to`).
+    where it is declared instead (:meth:`_bound_to`), or named there with its
+    plugin read from the package that created it (:meth:`_declared`).
     """
 
     def __init__(self, plugin: str | None = None, name: str | None = None) -> None:
@@ -150,6 +151,7 @@ class OwnedBlock(Block):
         self._plugin = plugin
         self._name = name
         self._held_as: tuple[str, str] | None = None
+        self._declared_as: str | None = None
 
     def _bound_to(self, plugin: str, attribute: str) -> Self:
         """Bind the block where it is declared: to ``plugin``, as its class's ``attribute``.
@@ -161,6 +163,17 @@ class OwnedBlock(Block):
         that disagrees.
         """
         self._held_as = (plugin, attribute)
+        return self
+
+    def _declared(self, attribute: str) -> Self:
+        """Name the block ``attribute`` where it is declared, until a plugin class holds it.
+
+        For an answer cache ``@cached`` made, read on a start that imports the
+        contract but not its owner's class: its plugin is the one this run
+        composed for the package that created it, so a renamed plugin stays
+        right. A class holding it wins.
+        """
+        self._declared_as = attribute
         return self
 
     def _spelled_as(self, plugin: str, name: str) -> Self:
@@ -193,6 +206,8 @@ class OwnedBlock(Block):
             return self._held_as[0]
         from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
+        if not self._bindings and self._declared_as is not None:
+            return current_run().composition.owner_of_module(self._module)
         owner = self.binding.owner
         try:
             return current_run().composition.owner_of_module(owner.__module__)
@@ -210,6 +225,8 @@ class OwnedBlock(Block):
             return self._name
         if self._held_as is not None:
             return self.derived_name(self._held_as[1])
+        if not self._bindings and self._declared_as is not None:
+            return self.derived_name(self._declared_as)
         return self.derived_name(self.binding.attribute)
 
     @property

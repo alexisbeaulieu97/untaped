@@ -183,6 +183,8 @@ def test_convert_refuses_kind_less_unknown_and_invalid_records() -> None:
     with pytest.raises(ConfigError, match=r"invalid library\.volume record") as err:
         convert(BookSource.to_book, _envelope("library.volume", {"id": "3", "name": "Dune"}))
     assert err.value.exit_code == ExitCode.FAILURE
+    with pytest.raises(TypeError, match=r"BookSource\.books is not a bridge"):
+        convert(BookSource.books, _envelope("shelf.book", {"title": "Dune"}))
 
 
 class _Archive(BookSource[SpecialVolume]):

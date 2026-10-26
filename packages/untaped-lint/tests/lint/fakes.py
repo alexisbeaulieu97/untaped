@@ -97,14 +97,14 @@ class Malformed(Linter):
 
 
 class MalformedRule(Linter):
-    """Declares a rule whose id is dotted, which no ``Rule`` validates."""
+    """Declares ``wide`` and a rule whose id is dotted, which no ``Rule`` validates."""
 
     def rules(self) -> list[Rule]:
         bad = Rule.model_construct(id="acme.dotted", reads=wide.rule.reads, severity="error")
-        return [bad]
+        return [bad, wide.rule]
 
     def findings(self, subject: Subject) -> list[Finding]:
-        return []
+        return [finding(wide, "w", "too wide")]
 
 
 @rule("seen", reads=InstalledPlugin, severity="warning", summary="Records each plugin it reads.")

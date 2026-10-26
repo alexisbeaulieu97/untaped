@@ -198,8 +198,8 @@ def test_a_bridge_used_outside_the_registry_says_how_to_get_a_provider() -> None
 
 
 def test_bridge_and_cached_keep_the_method_signature() -> None:
-    class Direct(Contract):
-        def make(self, item: Volume) -> Book:
+    class Direct[T: Record = Book](Contract):
+        def make(self, item: T) -> Book:
             raise NotImplementedError
 
         @cached(_cache("direct_listing"))
@@ -208,6 +208,8 @@ def test_bridge_and_cached_keep_the_method_signature() -> None:
 
     import inspect
 
+    info = contract_of(Direct)
+    assert info is not None and info.methods["make"].bridge
     assert list(inspect.signature(Direct.make).parameters) == ["self", "item"]
     assert getattr(Direct.listing, "__isabstractmethod__", False)
 

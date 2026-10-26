@@ -332,11 +332,12 @@ def _contract_fields(
 
 
 def _offered(plugin: str, targets: Sequence[str]) -> tuple[Any, ...]:
-    """The contracts ``plugin`` offers, each answer cache bound to it where declared.
+    """The contracts ``plugin`` offers, each answer cache named where declared.
 
     A start served from the declaration cache imports the contract to ask it
     but not necessarily the owner's plugin class, which holds the cache when
-    created; so the cache learns its owner and name from the declaration.
+    created; so the cache learns its name from the declaration and its plugin
+    from the run, which composed ``plugin`` for the contract's package.
     """
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - only when asked
 
@@ -348,7 +349,7 @@ def _offered(plugin: str, targets: Sequence[str]) -> tuple[Any, ...]:
         for method in info.methods.values():
             cache = method.cache
             if cache is not None and not cache.spelled:
-                cache._bound_to(plugin, f"{info.name}_{method.name}")
+                cache._declared(f"{info.name}_{method.name}")
     return contracts
 
 

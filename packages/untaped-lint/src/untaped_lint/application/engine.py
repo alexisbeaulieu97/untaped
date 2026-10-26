@@ -285,7 +285,9 @@ def _load(report: Report) -> _Providers:
         if isinstance(answer, Ok):
             _declare(answer.plugin, answer.value, providers, report)
             for row in answer.invalid:  # a malformed rule is dropped, its plugin's others kept
-                report.failures.append(_failure(answer.plugin, "invalid-item", row))
+                report.failures.append(
+                    _failure(answer.plugin, "invalid-item", row, lead="malformed rule was dropped")
+                )
         else:
             _not_checked(answer, report, rules=None)
     return providers
@@ -377,12 +379,13 @@ def _failure(
     category: ErrorCategory = ErrorCategory.FAILED,
     *,
     details: dict[str, int] | None = None,
+    lead: str = "rules did not run",
 ) -> Failure:
     return Failure(
         category=category,
         system=plugin,
         item=plugin,
-        message=f"{plugin}'s rules did not run: {reason}: {detail}",
+        message=f"{plugin}'s {lead}: {reason}: {detail}",
         hint=_RULES_HINT,
         details={"reason": reason, **(details or {})},
     )
