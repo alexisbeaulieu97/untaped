@@ -11,9 +11,9 @@ from cyclopts import App
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.root_options import _root_options, applied_root_options
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import create_app
 from untaped.sdk._run import is_verbose
@@ -70,8 +70,8 @@ def test_the_flag_applies_inside_a_plugin(argv: list[str]) -> None:
 
 
 @pytest.mark.usefixtures("home_run")
-def test_the_pass_applies_a_root_option_after_the_root_s_help_for_the_block() -> None:
-    with applied_root_options(["--help", "--verbose"], _root_options()) as line:
+def test_the_pass_applies_a_root_option_after_the_root_s_help_for_its_run() -> None:
+    with started_line(["--help", "--verbose"]) as line:
         assert is_verbose()
         assert line.tokens == ["--help"]
     assert not is_verbose()
@@ -134,8 +134,8 @@ def test_the_flag_is_a_root_parameter_beside_the_others() -> None:
 
 def test_a_separator_closing_the_leading_root_options_is_dropped() -> None:
     tokens = ["--profile", "x", "--", "svc", "--verbose"]
-    with applied_root_options(tokens, _root_options()) as line:
+    with started_line(tokens) as line:
         assert line.tokens == ["svc", "--verbose"]  # dispatch takes the 11.x command's -v
-    with applied_root_options(["svc", "--", "--verbose"], _root_options()) as line:
+    with started_line(["svc", "--", "--verbose"]) as line:
         assert line.tokens == ["svc", "--", "--verbose"]
         assert not is_verbose()

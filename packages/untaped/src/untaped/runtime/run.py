@@ -27,13 +27,14 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from untaped.runtime.profile_resolver import pick_names
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import RunOutput, forced_diagnostics, opened
+from untaped.runtime.verbose import restore as restore_logging
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import (
     Composition,
@@ -114,13 +115,19 @@ def entered(run: Run) -> Iterator[Run]:
     """Make ``run`` current for the block as an invocation's: its output open while it is.
 
     Shown Python warnings reach its sink, and lines a screen held print when
-    the block ends (:func:`untaped.runtime.sink.opened`).
+    the block ends (:func:`untaped.runtime.sink.opened`). Its root flags end
+    with it; a ``--verbose`` run puts the ``untaped`` logger's level back to
+    what the run current after it asks for (:func:`untaped.runtime.verbose.restore`).
     """
     output = run.diag
     if not isinstance(output, RunOutput):
         raise TypeError("an entered run has its own output: build it with start_run()")
-    with run_scope(run), opened(output):
-        yield run
+    try:
+        with run_scope(run), opened(output):
+            yield run
+    finally:
+        if run.policy.verbose:
+            restore_logging()  # the logger's level is process-wide; the run's flag ends here
 
 
 @contextmanager
@@ -144,44 +151,6 @@ def invocation() -> Iterator[Run]:
         output.bind(run)
     with entered(run):
         yield run
-
-
-type FlagToken = tuple[Run, OutputPolicy]
-"""What a flag handler returns: the run it changed and its policy before."""
-
-
-def set_flag(name: Literal["quiet", "verbose"], value: bool) -> FlagToken:
-    """Set ``--quiet`` or ``--verbose`` on the current run's policy (:class:`NoRunError` off it)."""
-    run = current_run()
-    previous = run.policy
-    run.set_policy(
-        replace(previous, quiet=value) if name == "quiet" else replace(previous, verbose=value)
-    )
-    return run, previous
-
-
-def reset_flag(name: Literal["quiet", "verbose"], token: FlagToken) -> None:
-    """Restore the flag ``token`` saved on the run it changed."""
-    run, previous = token
-    run.set_policy(
-        replace(run.policy, quiet=previous.quiet)
-        if name == "quiet"
-        else replace(run.policy, verbose=previous.verbose)
-    )
-
-
-def enable_quiet(_value: str = "") -> FlagToken:
-    """Root-option handler for ``--quiet``/``-q``, on the run of the invocation.
-
-    Mutes commentary: lines the user did not ask for and need not act on
-    (progress, ``success`` and ``info``). A preview before a prompt, a stream
-    the user asked to watch, and output a flag exists to produce are not
-    commentary and print (``info(…, unmuted=True)``). Warnings, failures and
-    hints always print, as do prompts and stdout. Takes no value; the
-    dispatcher passes a placeholder string that is ignored. Nothing undoes
-    it: the run ends with its invocation.
-    """
-    return set_flag("quiet", True)
 
 
 def build_run(

@@ -162,9 +162,12 @@ def test_the_root_reads_the_line_by_the_declaration_kept_from_the_last_start(
 
     @contextmanager
     def reading(
-        tokens: Sequence[str], options: dict[str, Any], declaration: Declaration | None = None
+        run: Run,
+        tokens: Sequence[str],
+        options: dict[str, Any],
+        declaration: Declaration | None = None,
     ) -> Iterator[RootLine]:
-        with read(tokens, options, declaration) as line:
+        with read(run, tokens, options, declaration) as line:
             lines.append((declaration, list(line.tokens), line.placed))
             yield line
 

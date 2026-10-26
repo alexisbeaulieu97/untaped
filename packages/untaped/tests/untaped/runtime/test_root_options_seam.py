@@ -11,10 +11,11 @@ from typing import Annotated
 import pytest
 from cyclopts import App, Parameter
 
+from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import profile_override
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.runtime.root_options import _root_options, applied_root_options
+from untaped.runtime.root_options import _root_options
 from untaped.runtime.root_options_seam import _take_help_root_options
 from untaped.sdk._cli import create_app, echo
 from untaped.sdk._run import is_verbose
@@ -22,7 +23,7 @@ from untaped.sdk.marks import show_deprecated
 
 
 def _strip(tokens: list[str]) -> list[str]:
-    with applied_root_options(tokens, _root_options()) as line:
+    with started_line(tokens) as line:
         return _take_help_root_options(line.tokens, _root_options(), line)
 
 
@@ -34,10 +35,19 @@ def test_help_strips_an_11x_command_s_root_options_around_it() -> None:
     assert _strip(["svc", "--help", "-xv"]) == ["svc", "--help", "-x"]
 
 
+def test_the_options_dispatch_takes_late_write_the_started_run() -> None:
+    with started_line(["svc", "--help", "--deprecated", "-v"]) as line:
+        assert line.tokens == ["svc", "--help", "--deprecated", "-v"]  # an 11.x command's
+        _take_help_root_options(line.tokens, _root_options(), line)
+        assert line.run.policy.deprecated and line.run.policy.verbose
+        assert show_deprecated() and is_verbose()
+    assert not (show_deprecated() or is_verbose())
+
+
 def test_tokens_after_the_separator_are_never_root_options() -> None:
     tokens = ["svc", "--help", "--", "--verbose", "--deprecated"]
 
-    with applied_root_options(tokens, _root_options()) as line:
+    with started_line(tokens) as line:
         assert _take_help_root_options(line.tokens, _root_options(), line) == tokens
         assert not is_verbose()
         assert not show_deprecated()

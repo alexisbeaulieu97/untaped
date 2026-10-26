@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 
-from untaped.runtime.run import enable_quiet, entered, start_run
+from core_test_support.runtime.run import quiet
+from untaped.runtime.run import entered, start_run
 from untaped.sdk._batch import BatchOutcome, batch_apply, finish
 from untaped.sdk._ui import UiContext
 from untaped.sdk.errors import HttpError, UntapedError, UsageError
@@ -396,8 +397,7 @@ def test_quiet_keeps_the_generic_preview_before_the_prompt(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    with entered(start_run()):
-        enable_quiet()
+    with entered(quiet(start_run())):
         _run(interactive=True, confirms=[True], items=["a"], action=action)
 
     assert "About to delete 1 Widget:" in capsys.readouterr().err

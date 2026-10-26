@@ -110,12 +110,9 @@ def _empty_note() -> None:
 
 
 def _debug_line() -> None:
-    with entered(start_run()):
-        token = verbose.enable()
-        try:
-            logging.getLogger("untaped.http").debug("GET %s", "https://example.test/api")
-        finally:
-            verbose.reset(token)
+    with entered(start_run()) as run:
+        verbose.enable(run)
+        logging.getLogger("untaped.http").debug("GET %s", "https://example.test/api")
 
 
 def _progress_lines() -> None:

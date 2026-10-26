@@ -20,6 +20,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.runtime import verbose
 from untaped.runtime.redaction import redact_credentials, redact_url_password
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import HttpSettings
 from untaped.sdk.errors import HttpError, HttpTransportError
 from untaped.sdk.git import run_git
@@ -360,8 +361,8 @@ def test_a_password_holding_an_apostrophe_is_masked() -> None:
 def test_verbose_lines_mask_the_proxy_and_authorization(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    token = verbose.enable()
-    try:
+    with entered(start_run()) as run:
+        verbose.enable(run)
         connected_client(
             Service(),
             section="demo",
@@ -369,8 +370,6 @@ def test_verbose_lines_mask_the_proxy_and_authorization(
             http=HttpSettings(proxy=f"http://{_CANARY}@proxy.example.com:3128"),
         ).close()
         logging.getLogger("untaped.http").debug("sent Authorization: Bearer %s", _CANARY)
-    finally:
-        verbose.reset(token)
     err = capsys.readouterr().err
     assert "demo: via proxy http://***@proxy.example.com:3128" in err
     assert "Authorization: Bearer ***" in err

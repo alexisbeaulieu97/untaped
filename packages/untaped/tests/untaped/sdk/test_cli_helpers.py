@@ -13,7 +13,8 @@ from cyclopts import App
 from pydantic import BaseModel, ConfigDict, JsonValue
 from pydantic import Field as PydanticField
 
-from untaped.runtime.run import enable_quiet, entered, start_run
+from core_test_support.runtime.run import quiet
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings
 from untaped.sdk import (
     ColumnsOption,
@@ -927,8 +928,7 @@ def test_columns_question_mark_lists_columns_under_quiet(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The list is output ``--columns ?`` exists to produce: ``-q`` never mutes it."""
-    with entered(start_run()):
-        enable_quiet()
+    with entered(quiet(start_run())):
         emit(_Widget(name="a", value=1), fmt="table", columns=["?"])
     err = capsys.readouterr().err
     assert "available columns" in err

@@ -15,14 +15,9 @@ from core_test_support.runtime.plugin_harness import make_spec
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options
+from untaped.runtime.run import entered, start_run
 from untaped.sdk._cli import create_app
-from untaped.sdk.marks import (
-    deprecated,
-    enable_show_deprecated,
-    mark_of,
-    panel_for,
-    reset_show_deprecated,
-)
+from untaped.sdk.marks import deprecated, mark_of, panel_for
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped.sdk.words import EXPERIMENTAL_LINE
 
@@ -221,12 +216,10 @@ def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visib
     completion = root.generate_completion(shell="bash")
     assert '"sunset"' not in completion
     assert '"config"' in completion
-    token = enable_show_deprecated()
-    try:
+    with entered(start_run()) as run:
+        run.set_policy(replace(run.policy, deprecated=True))
         # The same call lists it once the flag is on, so the check above can fail.
         assert '"sunset"' in root.generate_completion(shell="bash")
-    finally:
-        reset_show_deprecated(token)
 
 
 def _sunset() -> PluginCandidate:
