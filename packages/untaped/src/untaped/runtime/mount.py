@@ -23,7 +23,7 @@ import inspect
 import types
 import typing
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -40,6 +40,7 @@ from untaped.runtime.declaration import (
     Declaration,
     GroupDecl,
     OptionDecl,
+    PluginDecl,
     Problem,
     Quarantined,
     StabilityDecl,
@@ -248,7 +249,9 @@ def compose_plugins(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()
     )
 
 
-def plugin_spec(mount: Mount, name: str) -> PluginSpec:
+def plugin_spec(
+    mount: Mount, name: str, packages: Callable[[], Mapping[str, str]] | None = None
+) -> PluginSpec:
     """The composed plugin ``name`` as the :class:`PluginSpec` the rest of composition reads.
 
     It is built from the declaration alone, so composing never imports the
@@ -256,7 +259,8 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     from the declaration the first time one is dispatched), its settings
     model comes from its own module, and its owned blocks are counted from the
     declaration and read from the class the first time a reader asks for them
-    (:class:`~untaped.runtime.registry.DeclaredBlocks`).
+    (:class:`~untaped.runtime.registry.DeclaredBlocks`). ``packages`` gives
+    the 11.x owners by top-level package, for its fills.
     """
     plugin = mount.declaration.plugin(name)
     # a root plugin's commands mount at the root from the declaration, no app built for them
@@ -279,6 +283,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         stability=_mark(plugin.stability),
         skills=skills,
         deprecations=lambda: loaded()["deprecations"] if behaviours else (),
+        **_contract_fields(mount, plugin, packages or dict),
     )
     for field_name in ("caches", "doctor_checks", "credentials", "stores"):
         kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
@@ -295,6 +300,44 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         # the spec's own checks read every block, so the lazy ones go in after them
         object.__setattr__(spec, field_name, blocks)
     return spec
+
+
+def _contract_fields(
+    mount: Mount, plugin: PluginDecl, packages: Callable[[], Mapping[str, str]]
+) -> dict[str, Any]:
+    """The 11.x registry's ``contracts`` and ``provides`` from ``offers`` and ``fills``.
+
+    Both import the classes only when the registry first asks, as the 11.x
+    functions did. A fill's owner is the composed plugin class offering its
+    contract, else the 11.x plugin whose package (in ``packages``) defines
+    it; a fill whose contract neither owns is left out, since a class names
+    no plugin before its owner is composed. The seam goes with the last 11.x
+    owner or provider; then an owner not composed becomes a composition row.
+    """
+    fields: dict[str, Any] = {}
+    if plugin.offers:
+        fields["contracts"] = partial(_resolved, plugin.offers)
+    owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
+    grouped: dict[str, list[str]] = defaultdict(list)
+    for fill in plugin.fills:
+        package = fill.contract.partition(":")[0].partition(".")[0]
+        owner = owners.get(fill.contract) or packages().get(package)
+        if owner is not None:
+            grouped[owner].append(fill.target)
+    if grouped:
+        fields["provides"] = {
+            owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
+        }
+    return fields
+
+
+def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:
+    return tuple(resolve_target(target) for target in targets)
+
+
+def _instances(targets: Sequence[str]) -> tuple[Any, ...]:
+    """One instance of each provider class: core instantiates a provider at the first ask."""
+    return tuple(cls() for cls in _resolved(targets))
 
 
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:

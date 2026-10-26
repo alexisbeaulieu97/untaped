@@ -1,10 +1,11 @@
 """Contracts: interfaces one plugin declares and others fill (``untaped.sdk.contracts``).
 
 An owner declares a contract as an ABC subclass of :class:`Contract`, marks it
-``@experimental``, lists it in its ``PluginSpec.contracts`` and asks it with
+``@experimental``, lists it in its plugin class's ``offers`` and asks it with
 :func:`gather` (and :func:`select_one` or :func:`convert`). A provider fills it
-by subclassing it, optionally with its own record type ``T`` and the owner's
-``@bridge`` method, and lists an instance in ``PluginSpec.provides[owner]``.
+by subclassing it and :class:`Provider`, optionally with its own record type
+``T`` and the owner's ``@bridge`` method, and its plugin class lists it in
+``fills``.
 
 This module root is never imported by :mod:`untaped.sdk`, so a command that
 asks no contract pays nothing for it. The rules are in ``docs/contracts.md``.
@@ -13,9 +14,9 @@ asks no contract pays nothing for it. The rules are in ``docs/contracts.md``.
 from __future__ import annotations
 
 from untaped.sdk.contracts._declare import (
-    Configured,
     Contract,
     NotReady,
+    Provider,
     bridge,
     cached,
     listing,
@@ -37,7 +38,6 @@ __all__ = [
     "Ambiguous",
     "Answer",
     "Answers",
-    "Configured",
     "Contract",
     "Failed",
     "Issued",
@@ -45,6 +45,7 @@ __all__ = [
     "NotFound",
     "NotReady",
     "Ok",
+    "Provider",
     "Record",
     "Skipped",
     "Source",

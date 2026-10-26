@@ -8,13 +8,13 @@ schemas with :func:`untaped.sdk.testing.assert_surface`. Nothing here imports
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from untaped.runtime.contracts.registry import Provider
+    from untaped.runtime.contracts.registry import BoundProvider
     from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
     from untaped.sdk.contracts import Contract
 
@@ -125,9 +125,9 @@ def _assert_bound(cls: type, samples: Sequence[object]) -> None:
     record_hash(bound)
 
 
-def _bound(cls: type) -> Provider:
+def _bound(cls: type) -> BoundProvider:
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415
-        Provider,
+        BoundProvider,
         every_offer,
         owned_contracts,
         unreadable_owners,
@@ -137,7 +137,7 @@ def _bound(cls: type) -> Provider:
     contract = contract_of(cls)
     entries = every_offer()
     for entry in entries:
-        if isinstance(entry, Provider) and type(entry.instance) is cls:
+        if isinstance(entry, BoundProvider) and type(entry.instance) is cls:
             return entry
     owner = next((o for o, infos in owned_contracts().items() if contract in infos), None)
     if owner is None:
@@ -152,7 +152,11 @@ def _bound(cls: type) -> Provider:
         )
     for entry in entries:
         wanted = (None, getattr(contract, "cls", None))
-        if not isinstance(entry, Provider) and entry.contract in wanted and entry.owner == owner:
+        if (
+            not isinstance(entry, BoundProvider)
+            and entry.contract in wanted
+            and entry.owner == owner
+        ):
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
                 f"{entry.detail}"
@@ -168,6 +172,7 @@ def _installed_for(cls: type) -> list[str]:
         discover_candidates,
         resolve_target,
     )
+    from untaped.sdk.plugin import Plugin  # noqa: PLC0415
 
     top = cls.__module__.partition(".")[0]
     installed = {candidate.name: candidate for candidate in discover_candidates()}
@@ -181,6 +186,30 @@ def _installed_for(cls: type) -> list[str]:
             continue  # a target that does not resolve offers nothing
         if isinstance(spec, PluginSpec):
             return [candidate.name, *(owner for owner in spec.provides if owner in installed)]
+        if isinstance(spec, type) and issubclass(spec, Plugin):
+            plugin = cast("type[Plugin]", spec)  # mypy keeps type[object] past issubclass here
+            return [candidate.name, *_offering(installed.values(), plugin.fills)]
     raise LookupError(
         f"no installed plugin offers {cls.__qualname__}; compose it with compose_with(...)"
     )
+
+
+def _offering(candidates: Iterable[PluginCandidate], fills: Sequence[type]) -> list[str]:
+    """The installed plugin classes offering a contract one of ``fills`` fills, by name."""
+    from untaped.runtime.registry import resolve_target  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
+    from untaped.sdk.plugin import Plugin  # noqa: PLC0415
+
+    wanted = {info.cls for each in fills if (info := contract_of(each)) is not None}
+    found: list[str] = []
+    for candidate in candidates:
+        try:
+            plugin = resolve_target(candidate.target)
+        except ImportError, AttributeError:
+            continue
+        if not (isinstance(plugin, type) and issubclass(plugin, Plugin)):
+            continue
+        offered = cast("type[Plugin]", plugin)
+        if wanted & set(offered.offers):
+            found.append(candidate.name)
+    return found

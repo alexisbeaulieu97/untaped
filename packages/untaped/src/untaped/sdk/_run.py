@@ -463,15 +463,13 @@ def settings_of[M: BaseModel](model: type[M]) -> M:
 
 
 @dataclass(frozen=True)
-class Context:
-    """What a command reaches without declaring it: ``self.ctx``.
+class ProviderContext:
+    """What a provider reaches without declaring it: ``self.ctx`` on a ``Provider``.
 
-    ``diag`` writes to stderr; ``terminal`` is the terminal handle for
-    prompts and screens; ``project`` is the current project or ``None``;
-    ``plugin`` is the command's own plugin; ``plugins`` is every plugin
-    this install has, as ``untaped plugin list`` shows them. The run they
-    read is kept private: a plugin never reaches the sink's policy or the
-    composition except through these handles.
+    ``diag`` writes to stderr; ``project`` is the current project or
+    ``None``; ``plugin`` is the providing plugin; ``plugins`` is every
+    plugin this install has. No terminal: a provider runs inside someone
+    else's command, so only the command asks.
     """
 
     _run: Run = field(repr=False)
@@ -482,10 +480,6 @@ class Context:
         return self._run.diag
 
     @property
-    def terminal(self) -> UiContext:
-        return self._run.terminal()
-
-    @property
     def plugins(self) -> tuple[InstalledPlugin, ...]:
         return self._run.composition.installed()
 
@@ -494,6 +488,27 @@ class Context:
         from untaped.sdk.projects import project_at  # noqa: PLC0415 - projects' cost
 
         return project_at(Path.cwd())
+
+
+@dataclass(frozen=True)
+class Context(ProviderContext):
+    """What a command reaches without declaring it: ``self.ctx``.
+
+    A provider's context (``diag``, ``project``, ``plugin`` its own plugin,
+    ``plugins``) and ``terminal``, the terminal handle for prompts and
+    screens. The run they read is kept private: a plugin never reaches the
+    sink's policy or the composition except through these handles.
+    """
+
+    @property
+    def terminal(self) -> UiContext:
+        return self._run.terminal()
+
+
+def provider_context(plugin: str) -> ProviderContext:
+    """The :class:`ProviderContext` of a provider of ``plugin``, from the current run."""
+    run = current_run()
+    return ProviderContext(_run=run, plugin=PluginHandle(name=plugin, home=run.home))
 
 
 def context_for(cls: type) -> Context:

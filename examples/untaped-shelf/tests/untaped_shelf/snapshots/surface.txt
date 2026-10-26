@@ -3,6 +3,8 @@ cfg shelf.caches.book_source_books.max_age_seconds integer(minimum=0) default=36
 cfg shelf.extensions.book_source.rank.books string[] default=[]  [experimental]
 cfg shelf.extensions.book_source.rank.to_book string[] default=[]  [experimental]
 cli untaped shelf
+cli untaped shelf find --columns VALUE... default=unset
+cli untaped shelf find --columns alias=-c
 cli untaped shelf find --format VALUE default=table
 cli untaped shelf find --format alias=-f
 cli untaped shelf find --format choice=json
@@ -12,6 +14,8 @@ cli untaped shelf find --format choice=table
 cli untaped shelf find --format choice=yaml
 cli untaped shelf find TITLE
 cli untaped shelf list
+cli untaped shelf list --columns VALUE... default=unset
+cli untaped shelf list --columns alias=-c
 cli untaped shelf list --format VALUE default=table
 cli untaped shelf list --format alias=-f
 cli untaped shelf list --format choice=json
@@ -30,6 +34,10 @@ contract shelf.Source.record object default={}
 contract shelf.book_source abstract=books  [experimental]
 contract shelf.book_source.books() -> Book[]  [experimental]
 contract shelf.book_source.to_book(item: Book) -> Book  [experimental]
+record shelf.book
+record shelf.book.pages integer
+record shelf.book.source Source?
+record shelf.book.title string
 sdk untaped_shelf.api.Book base=untaped.sdk.Issued
 sdk untaped_shelf.api.Book base=untaped.sdk.Record
 sdk untaped_shelf.api.Book(*, title)

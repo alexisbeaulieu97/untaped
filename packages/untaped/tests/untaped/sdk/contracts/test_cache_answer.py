@@ -25,7 +25,7 @@ from core_test_support.contracts.support import (
     shop_spec,
 )
 from core_test_support.contracts.support import write_config as configure
-from untaped.runtime.contracts.registry import Provider, offers
+from untaped.runtime.contracts.registry import BoundProvider, offers
 from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
@@ -465,11 +465,11 @@ def test_an_override_calling_its_base_method_is_one_cached_call() -> None:
     assert len(_entries()) == 1
 
 
-def _library_provider() -> Provider:
+def _library_provider() -> BoundProvider:
     [library] = [
         entry
         for entry in offers(contract_of(BookSource))  # type: ignore[arg-type]
-        if isinstance(entry, Provider) and entry.plugin == "library"
+        if isinstance(entry, BoundProvider) and entry.plugin == "library"
     ]
     return library
 

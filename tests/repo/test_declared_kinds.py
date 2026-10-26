@@ -150,15 +150,14 @@ from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.contracts.registry import every_offer, owned_contracts
 from untaped.runtime.registry import PluginCandidate, discover_candidates, run_deferred_factory
 from untaped.sdk.records import record_kinds
-from untaped.sdk.testing import plugin_candidate
-import untaped_library, untaped_shelf
 
 examples = [
-    PluginCandidate(
-        distribution="untaped-hello", name="hello", target="untaped_hello.plugin:Hello"
-    ),
-    plugin_candidate(untaped_shelf.SPEC),
-    plugin_candidate(untaped_library.SPEC, requires_dist=["untaped-shelf>=11"]),
+    PluginCandidate(distribution=f"untaped-{{name}}", name=name, target=target)
+    for name, target in (
+        ("hello", "untaped_hello.plugin:Hello"),
+        ("shelf", "untaped_shelf.plugin:Shelf"),
+        ("library", "untaped_library.plugin:Library"),
+    )
 ]
 build_root_app(candidates=[*discover_candidates(), *examples])
 assert not composition().quarantine, composition().quarantine

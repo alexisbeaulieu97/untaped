@@ -6,6 +6,7 @@ import json
 import math
 from abc import abstractmethod
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -26,11 +27,22 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts import fills as _fills
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import deprecated, experimental
-from untaped.sdk.contracts import Contract, Issued, Ok, Record, Source, bridge, gather
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.sdk import Plugin, deprecated, experimental
+from untaped.sdk.contracts import (
+    Contract,
+    Issued,
+    Ok,
+    Provider,
+    Record,
+    Source,
+    bridge,
+    cached,
+    gather,
+)
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._schema import schema_hash
+from untaped.sdk.storage import Cache
 from untaped.sdk.testing import assert_fills, assert_surface, compose_with
 
 
@@ -313,3 +325,58 @@ def test_with_a_version_an_undated_line_fails(tmp_path: Path) -> None:
     assert_surface(_dated(None), tmp_path / "surface.txt")  # without a version: as before
     with pytest.raises(AssertionError, match="every deprecation is a promise with a date"):
         assert_surface(_dated(None), tmp_path / "surface.txt", version="2.3.0")
+
+
+class _ShelfSettings(BaseModel):
+    """The toy owner's settings."""
+
+
+_SHELVED = Cache(label="books", max_age=timedelta(hours=1))
+
+
+@experimental
+class Shelved(Contract):
+    """Books on a plugin class's shelf; the cache is the one its owner holds."""
+
+    @cached(_SHELVED)
+    @abstractmethod
+    def books(self) -> list[Book]: ...
+
+
+class _Shelf(Plugin):
+    """Ask for books."""
+
+    settings = _ShelfSettings
+    offers = (Shelved,)
+    shelved_books = _SHELVED
+
+
+class _StockistSettings(BaseModel):
+    """The toy provider's settings."""
+
+
+class _Stocked(Shelved, Provider):
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+
+class _Stockist(Plugin):
+    """Lend books."""
+
+    settings = _StockistSettings
+    fills = (_Stocked,)
+
+
+def test_assert_fills_composes_an_installed_plugin_class_with_the_owner_it_fills(
+    fills_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.runtime import registry
+
+    def candidate(name: str, cls: type) -> PluginCandidate:
+        target = f"{cls.__module__}:{cls.__qualname__}"
+        return PluginCandidate(distribution=f"untaped-{name}", name=name, target=target)
+
+    installed = (candidate("stockist", _Stockist), candidate("shelf", _Shelf))
+    monkeypatch.setattr(registry, "discover_candidates", lambda: installed)
+    assert_fills(_Stocked)
+    assert json.loads(fills_file.read_text())  # the owner's hash, recorded

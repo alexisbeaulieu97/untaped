@@ -16,7 +16,7 @@ from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.settings import get_settings
 from untaped.sdk import experimental
 from untaped.sdk._home import config_path
-from untaped.sdk.contracts import Configured, Contract, Issued, Record, bridge, cached, listing
+from untaped.sdk.contracts import Contract, Issued, Provider, Record, bridge, cached, listing
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.testing import plugin_candidate
 
@@ -65,12 +65,16 @@ class SpecialVolume(Volume, kind="library.special_volume"):
     signed: bool = False
 
 
+class ShelfSettings(BaseModel):
+    """What an 11.x shelf reads: nothing, but it locates the owner's package."""
+
+
 class LibrarySettings(BaseModel):
     catalog: str
     volumes: list[Volume] = []
 
 
-class Library(BookSource[Volume], Configured[LibrarySettings]):
+class Library(BookSource[Volume], Provider[LibrarySettings]):
     calls: ClassVar[int] = 0
     error: ClassVar[Exception | None] = None
 

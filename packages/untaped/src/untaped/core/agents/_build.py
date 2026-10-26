@@ -182,12 +182,12 @@ def _contracts(result: CompositionResult) -> tuple[dict[str, tuple[ExtensionPoin
         return {}, {}
     # Only the pages that show contracts pay for importing them.
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415
-        Provider,
+        BoundProvider,
         every_offer,
         owned_contracts,
     )
 
-    offers = [entry for entry in every_offer() if isinstance(entry, Provider)]
+    offers = [entry for entry in every_offer() if isinstance(entry, BoundProvider)]
     point_of: dict[type, ExtensionPoint] = {}
     points: dict[str, tuple[ExtensionPoint, ...]] = {}
     for owner, infos in owned_contracts().items():

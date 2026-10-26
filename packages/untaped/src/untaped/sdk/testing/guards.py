@@ -24,9 +24,14 @@ def check(install: Install) -> None:
     """
     from untaped.core.plugin_check.check import check_plugins  # noqa: PLC0415
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
+    from untaped.runtime.run import build_run, entered  # noqa: PLC0415
 
     found = list(install.candidates)
-    with bootstrap.composed_with(found) as result:
+    with (
+        bootstrap.composed_with(found) as result,
+        # the live rows ask providers as a command of the install would, under its run
+        entered(build_run(result.mount.declaration, result.mount.settings)),
+    ):
         rows = [
             row
             for candidate in found

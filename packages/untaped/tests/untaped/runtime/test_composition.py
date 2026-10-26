@@ -43,7 +43,7 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk._block import Block
-from untaped.sdk.contracts import Contract, cached
+from untaped.sdk.contracts import Contract, Provider, cached
 
 PACKAGE = __name__.partition(".")[0]
 
@@ -820,25 +820,18 @@ def test_refresh_help_names_a_contract_cache_bound_where_declared() -> None:
     )
 
 
-def test_refresh_help_names_a_contract_cache_a_plugin_class_holds() -> None:
+def test_refresh_help_names_a_contract_cache_the_offering_class_holds() -> None:
     held = Cache(label="pages", max_age=timedelta(hours=2))
+    shelf = _pages_plugin(_paging(held))
 
-    class Owner(Plugin):
-        """Owner."""
+    class Holding(shelf):  # type: ignore[valid-type,misc]  # a class made at run time
+        """Holding."""
 
-        settings = HelloSettings
         page_source_pages = held
 
-    shelf = _pages_plugin(_paging(held))
     # the owner's package is this test module's, which the entry composes as shelf
     assert "older than shelf.caches.page_source_pages.max_age_seconds (2 h)." in _refresh_help(
-        shelf, "shelf"
-    )
-    Owner.__module__ = "elsewhere.plugin"  # a package no composed plugin has
-    [problem] = _problems(shelf, "shelf")
-    assert (problem.rule, "belongs to no composed plugin" in problem.detail) == (
-        "refresh-cache",
-        True,
+        Holding, "shelf"
     )
 
 
@@ -1128,3 +1121,97 @@ def test_every_return_shape() -> None:
 
     shapes = [c.returns for c in compose([_entry(_plugin_with(Maybe, Either))]).commands()]
     assert shapes == ["line-or-none", "rows-or-record"]
+
+
+class _OtherSettings(BaseModel):
+    """Another plugin's settings."""
+
+
+class _Bare(BookSource):
+    def books(self) -> list[Book]:
+        return []
+
+
+class _Ours(BookSource, Provider[HelloSettings]):
+    def books(self) -> list[Book]:
+        return []
+
+
+class _Theirs(BookSource, Provider[_OtherSettings]):
+    def books(self) -> list[Book]:
+        return []
+
+
+def test_a_filled_class_is_a_provider_reading_its_own_plugin_s_settings() -> None:
+    class Lender(Plugin):
+        """Lender."""
+
+        settings = HelloSettings
+        fills = (_Bare, _Ours, _Theirs)
+
+    problems = _problems(Lender, "lender")
+    assert [(p.rule, p.where.rpartition(".<locals>.")[2]) for p in problems] == [
+        ("bad-provider", "Lender.fills"),
+        ("bad-provider", "Lender.fills"),
+    ]
+    assert "_Bare is no Provider" in problems[0].detail
+    assert "reads Provider[_OtherSettings]" in problems[1].detail
+
+    class Good(Plugin):
+        """Good."""
+
+        settings = HelloSettings
+        fills = (_Ours,)
+
+    [plugin] = compose([_entry(Good, "good")]).plugins
+    [fill] = plugin.fills
+    assert (fill.target.endswith(":_Ours"), fill.contract.endswith(":BookSource")) == (True, True)
+
+
+def test_an_offered_contract_s_answer_cache_is_held_by_a_plugin_class() -> None:
+    @experimental
+    class Loose(Contract):
+        """Its cache is held by no plugin class."""
+
+        @cached(Cache(label="pages", max_age=timedelta(hours=1)))
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        offers = (Loose,)
+
+    [problem] = _problems(Owner, "owner")
+    assert (problem.rule, problem.where.rpartition(".<locals>.")[2]) == (
+        "answer-cache",
+        "Loose.pages",
+    )
+    assert problem.detail.endswith("Owner.loose_pages")
+
+
+def test_an_answer_cache_held_under_another_name_is_refused() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Misheld(Contract):
+        """Its cache is held under a name of the holder's own."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        offers = (Misheld,)
+        wrong_name = held
+
+    details = [p.detail for p in _problems(Owner, "owner") if p.rule == "answer-cache"]
+    assert details == [
+        "is cached in a cache held as test_an_answer_cache_held_under_another_name_is_refused."
+        "<locals>.Owner.wrong_name: assign it to test_an_answer_cache_held_under_another_name_"
+        "is_refused.<locals>.Owner.misheld_pages"
+    ]

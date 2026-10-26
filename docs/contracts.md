@@ -8,7 +8,7 @@ imports it, so a command that asks no contract pays nothing.
 
 ```python
 # the owner, in its settings module
-BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
+BOOKS = Cache(label="books", max_age=timedelta(hours=1))
 
 # the owner, in its api module
 class Book(Issued, kind="shelf.book"):
@@ -27,13 +27,19 @@ class BookSource[T: Record = Book](Contract):
     def books(self) -> list[Book]: ...
 
 
-SPEC = PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS,))
+class Shelf(Plugin):
+    """Find books."""
+
+    settings = ShelfSettings
+    commands = (List, Find)
+    offers = (BookSource,)
+    book_source_books = BOOKS  # the answer cache, named <contract>_<method>
 
 # the owner, asking
 book = select_one(gather(BookSource.books)(), lambda b: b.title == "Dune")
 
 # a provider
-class Library(BookSource[Volume], Configured[LibrarySettings]):
+class LibraryBooks(BookSource[Volume], Provider[LibrarySettings]):
     def to_book(self, item: Volume) -> Book:
         return Book(title=item.name)
 
@@ -41,7 +47,11 @@ class Library(BookSource[Volume], Configured[LibrarySettings]):
         return [self.to_book(Volume.model_validate(row)) for row in self.http.get_json_list(...)]
 
 
-SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _shelf})
+class Library(Plugin):
+    """Lend books to shelf."""
+
+    settings = LibrarySettings
+    fills = (LibraryBooks,)
 ```
 
 - **Declaring.** A contract subclasses `Contract` directly, with required
@@ -56,8 +66,8 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   the class definition raises `TypeError` (`unserialisable-signature`)
   otherwise. `shell=` is reserved for shell plugins. `@cached(CACHE)`
   keeps answers per provider, its settings and the arguments in a
-  [`Cache`](caches.md) the owner declares, names `<contract>_<method>` and
-  lists in its `caches` (its user setting is
+  [`Cache`](caches.md) the owner's plugin class holds as
+  `<contract>_<method>` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
   returns a secret. `@listing` declares a method whose rows
   stand alone: an invalid row is dropped and the rest kept, where any other
@@ -69,14 +79,17 @@ SPEC = PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": _
   and fills every `@bridge` method; the bridge stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
   bridge.
-- **Filling.** `PluginSpec.provides` maps the owner's name to a function
-  returning provider instances, with a local import (a provider class that
-  breaks a rule raises when it is defined, so only a local import keeps
-  that to its own offer). The contract decides what is `@cached` or a
-  `@listing`; a provider never adds either. `Configured[S]` gives
-  `self.settings` (S is the plugin's `settings` model), and a provider is
-  ready when they validate; override `ready()` only for what a schema can't
-  say. Use `self.http` for requests: it carries the profile's proxy, CA and
+- **Filling.** A provider subclasses the contract and `Provider[S]`, as a
+  command is `Command[S]`: `self.settings` is the plugin's section (S is the
+  plugin's `settings` model, which composition checks), plain `Provider`
+  when the plugin reads none, and `self.ctx` has a command's `diag`,
+  `project`, `plugin` and `plugins` but no terminal, since only the command
+  asks. The plugin class lists its providers in `fills`; core reads each
+  one's owner from the contract it subclasses and builds it at the first
+  ask that reaches it, never at composition. A provider is ready when its
+  settings validate; override `ready()` only for what a schema can't
+  say. The contract decides what is `@cached` or a `@listing`; a provider
+  never adds either. Use `self.http` for requests: it carries the profile's proxy, CA and
   timeout, and `gather(deadline=...)` bounds it (as it does any untaped
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
@@ -110,8 +123,9 @@ doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
 `foreign-kind` (a kind not under its plugin's name),
 `unserialisable-signature`, `owner-not-installed`, `owner-out-of-range` (the
 plugin's extra named like the owner requires a range of it the installed
-owner is outside), or `bad-provider` (its `provides` function raised or
-returned something else). A provider method
+owner is outside), or `bad-provider` (building it raised). A class in
+`fills` that is no `Provider`, or reads another plugin's settings, is a
+composition problem (`bad-provider`) that quarantines its plugin. A provider method
 the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
@@ -200,25 +214,32 @@ An owner tests its questions against providers it controls, and keeps its
 contracts from changing by accident:
 
 ```python
-with compose_with("shelf", provides={"fake": [FakeBooks()]}):
-    [answer] = gather(BookSource.books, refresh=True)()
+class FakeBooks(BookSource, Provider):
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+
+def test_shelf_lists_a_provider_s_books(install) -> None:
+    ran = install(Shelf, providers={"fake": (FakeBooks,)}).run(List())
+    assert [book.title for book in ran.rows_as(Book)] == ["Dune"]
+
 
 def test_shelf_keeps_its_surface() -> None:
-    assert_surface(SPEC, Path(__file__).parent / "surface.txt")
+    assert_surface(Shelf)
 ```
 
-- `compose_with(*plugins, provides={"fake": [...]})` composes the named
-  installed plugins (or `PluginSpec`s) plus a plugin named `fake` offering
-  each instance to the owner of its contract, and restores the composition
-  after the block. Outside tests, `untaped.sdk.contracts.providing(owner,
+- `install(Shelf, providers={"fake": (FakeBooks,)})` composes the owner
+  plus a plugin named `fake` filling the contracts its classes subclass;
+  `install(Library)` composes the owners a provider declares under their
+  extras too. Outside tests, `untaped.sdk.contracts.providing(owner,
   {"house": [...]})` does the same for an owner that loads providers from
   elsewhere (a repository's rule modules): the installed plugins plus a
   plugin `house` offering each instance to `owner`. A key that is not a
   plugin name, is reserved (`untaped`, `sdk`, a core section or command
   group) or is an installed plugin's name is refused before anything is
   composed, and one the composition quarantines raises `ConfigError`.
-- `assert_surface(SPEC, path)` (experimental, with the file's line format)
-  writes `surface.txt` the first time: one line per promise of the plugin,
+- `assert_surface(Shelf)` (experimental, with the file's line format)
+  writes `snapshots/surface.txt` beside the test the first time: one line per promise of the plugin,
   its commands, flags and settings, each contract with its methods'
   parameter and return types, and every model they reach with its fields.
   It fails on an incompatible change, listing the lines that went: a
