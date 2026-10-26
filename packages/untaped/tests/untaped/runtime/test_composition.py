@@ -1722,6 +1722,49 @@ def test_two_offerers_of_one_name_are_both_refused() -> None:
     ] * 2
 
 
+def test_a_contested_lister_names_no_kind_of_its_package() -> None:
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(plugin(offers=(Notes,)), "lib", module="untaped_pk.a"),
+        _entry(plugin(offers=(Notes,)), "m", module="untaped_m.plugin"),
+        _entry(
+            plugin(commands=(lists(book("untaped_q.models")),)), "lib", module="untaped_q.plugin"
+        ),
+        _entry(plugin(commands=(lists(book("untaped_pk.models")),)), "two", module="untaped_pk.b"),
+    ]
+    # the first lib is refused before the package it shares with two names two's kind
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["lib", "two"]
+    assert [kind.kind for kind in declaration.kinds] == ["lib.book", "two.book"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

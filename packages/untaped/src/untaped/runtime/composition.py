@@ -158,8 +158,9 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     refused (``duplicate-offer``), as a fill or refresh of a contract no
     composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
     plugin broken whatever the others are (a name ``taken`` holds included)
-    is withdrawn first, then one refused because its owner is out, then the
-    rest, and the others recompose without them until nothing changes.
+    is withdrawn first, then the plugins listing one contract, then those
+    refused because an owner is out, then the rest, and the others recompose
+    without them until nothing changes.
     """
     reserved = frozenset(taken)
     # Each pass that does not return withdraws one more, so there are at most n + 1.
@@ -181,9 +182,17 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
                 for i, problems in refused.items()
                 if _broken_alone(problems) or entries[i].name in reserved  # taken for good
             }
-            or {i: p for i, p in refused.items() if any(x.rule == "unowned-cache" for x in p)}
+            or _with_rule(refused, "duplicate-offer")
+            or _with_rule(refused, "unowned-cache")
             or refused
         )
+
+
+def _with_rule(
+    refused: dict[int, tuple[Problem, ...]], rule: str
+) -> dict[int, tuple[Problem, ...]]:
+    """The refused entries with a ``rule`` problem."""
+    return {i: problems for i, problems in refused.items() if any(p.rule == rule for p in problems)}
 
 
 #: Problems a plugin has because of the others composed beside it, in this pass.
