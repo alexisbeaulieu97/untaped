@@ -142,8 +142,8 @@ class SettingsOverlay:
     """Candidate values for one section of one profile, laid over what a run loads.
 
     A ``None`` value means "unset this key" (a command token source removes
-    the ``token``). ``setup`` checks a plugin against what the user typed,
-    in a child run carrying it, before anything is written.
+    the ``token``). Internal: ``setup`` checks a plugin against what the
+    user typed, in a child run carrying it, before anything is written.
     """
 
     profile: str

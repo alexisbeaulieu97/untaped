@@ -986,26 +986,33 @@ def _build_settings() -> Settings:
         raise ConfigError(settings_error_message(exc, settings_cls)) from exc
 
 
-class _SettingsGetter:
-    """``get_settings``: the cached aggregate settings, uncached under a run's overlay.
+def _build_picked(_pick: tuple[str, ...]) -> Settings:
+    """The aggregate settings of the current context, whose pick is ``_pick`` (the cache key)."""
+    return _build_settings()
 
-    The cache is process-global, so candidate values must never reach it: under
-    a run carrying an overlay the settings are built fresh and returned without
-    being stored. Keeps ``cache_clear`` and ``cache_info`` of the ``lru_cache`` it
-    wraps (many call sites drop the cache).
+
+class _SettingsGetter:
+    """``get_settings``: the aggregate settings, cached per pick, uncached under a run's overlay.
+
+    The cache is keyed by the profiles the current run picks (:func:`picked_names`),
+    so runs that pick differently (a child run, a thread in one, an asyncio task
+    in another) each read their own entry and none ever clears another's. Under
+    a run carrying an overlay the settings are built fresh and never stored, so
+    candidate values reach no cache. Keeps ``cache_clear`` and ``cache_info`` of
+    the ``lru_cache`` it wraps (a config write drops every pick's entry).
     """
 
     def __init__(self) -> None:
-        self._cached = lru_cache(maxsize=1)(_build_settings)
+        self._cached = lru_cache(maxsize=16)(_build_picked)
 
     def __call__(self) -> Settings:
-        """Return the cached aggregate settings instance."""
+        """Return the aggregate settings of the current pick, cached."""
         if current_overlay() is not None:
             return _build_settings()
-        return self._cached()
+        return self._cached(picked_names())
 
     def cache_clear(self) -> None:
-        """Drop the cached settings."""
+        """Drop the cached settings of every pick."""
         self._cached.cache_clear()
 
     def cache_info(self) -> Any:

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,6 +17,7 @@ from untaped.runtime.declaration import Declaration
 from untaped.runtime.profile_resolver import write_target
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.run import build_run, child_run, composition_of
+from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk import Command, Plugin, plugin_of, settings_of
 from untaped.sdk.run import NoRunError, Rendering, SettingsOverlay, current_run, run_scope
 
@@ -130,3 +135,96 @@ def test_a_child_runs_overlay_reaches_its_sections_only(
 def test_a_child_run_needs_a_run() -> None:
     with pytest.raises(NoRunError), child_run(profiles="work"):
         pass
+
+
+def test_a_child_run_refuses_an_empty_pick(tmp_path: Path) -> None:
+    declaration, settings = _composed()
+    with (
+        run_scope(build_run(declaration, settings, home=tmp_path)),
+        pytest.raises(ValueError, match="default"),
+        child_run(profiles=()),
+    ):
+        pass
+
+
+@pytest.fixture
+def picked_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_composition: None
+) -> Iterator[None]:
+    """A run over a home whose base and ``work`` and ``lab`` profiles greet differently."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    (tmp_path / "config.yml").write_text(
+        "format_version: 2\nhello: {greeting: base}\n"
+        "profiles:\n  work: {hello: {greeting: work}}\n  lab: {hello: {greeting: lab}}\n",
+        encoding="utf-8",
+    )
+    register_profile_settings("hello", HelloSettings)
+    declaration, settings = _composed()
+    with run_scope(build_run(declaration, settings, home=tmp_path)):
+        yield
+
+
+def _read() -> tuple[str, str, str]:
+    """What the current run reads: its section, the aggregate settings and its write target."""
+    return (
+        settings_of(HelloSettings).greeting,
+        get_settings().hello.greeting,  # type: ignore[attr-defined]
+        write_target(),
+    )
+
+
+@pytest.mark.usefixtures("picked_run")
+def test_a_thread_started_in_a_child_run_reads_its_pick_after_the_block() -> None:
+    go = threading.Event()
+    seen: list[tuple[str, str, str]] = []
+
+    def later() -> None:
+        go.wait()
+        seen.append(_read())
+
+    with child_run(profiles="work"):
+        thread = threading.Thread(target=contextvars.copy_context().run, args=(later,))
+        thread.start()
+    assert _read() == ("base", "base", "default")  # the parent fills its own entry
+    go.set()
+    thread.join()
+    assert seen == [("work", "work", "work")]
+
+
+@pytest.mark.usefixtures("picked_run")
+def test_async_tasks_in_separate_child_runs_each_read_their_own_pick() -> None:
+    async def task(name: str) -> list[tuple[str, str, str]]:
+        with child_run(profiles=name):
+            first = _read()
+            await asyncio.sleep(0)  # the other task enters its child and reads
+            return [first, _read()]
+
+    async def both() -> list[list[tuple[str, str, str]]]:
+        return list(await asyncio.gather(task("work"), task("lab")))
+
+    work, lab = asyncio.run(both())
+    assert work == [("work", "work", "work")] * 2
+    assert lab == [("lab", "lab", "lab")] * 2
+
+
+@pytest.mark.usefixtures("picked_run")
+def test_the_main_thread_reads_its_own_pick_while_a_worker_is_in_a_child_run() -> None:
+    inside, read = threading.Event(), threading.Event()
+    seen: list[tuple[str, str, str]] = []
+
+    def worker() -> None:
+        with child_run(profiles="work"):
+            seen.append(_read())
+            inside.set()
+            read.wait()
+            seen.append(_read())
+
+    thread = threading.Thread(target=contextvars.copy_context().run, args=(worker,))
+    thread.start()
+    inside.wait()
+    main = _read()
+    read.set()
+    thread.join()
+    assert main == ("base", "base", "default")
+    assert seen == [("work", "work", "work")] * 2

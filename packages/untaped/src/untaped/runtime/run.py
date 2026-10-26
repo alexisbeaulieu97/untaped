@@ -26,7 +26,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.settings import get_config_section, get_settings
+from untaped.runtime.profile_resolver import pick_names
+from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._app_context import app_context
 from untaped.sdk.plugin_records import installed_plugins
@@ -123,31 +124,23 @@ def child_run(
     The child has the parent's home, composition, rendering, diag, terminal,
     clock and notes, and its own sections, read under its own pick:
     ``profiles`` replaces the ``--profile`` pick (a string is one profile;
-    ``UNTAPED_PROFILE``'s names still stack beneath it), ``overlay`` lays
-    candidate values over what it loads, and either left out keeps the
-    parent's. A new pick drops the settings cache on entry and exit so reads
-    follow it; under an overlay the settings are never cached. A thread sees
-    the child only when its context was copied inside the block.
-    :class:`NoRunError` outside a run.
+    ``UNTAPED_PROFILE``'s names still stack beneath it; ``"default"`` reads
+    the base alone), ``overlay`` lays candidate values over what it loads,
+    and either left out keeps the parent's. An empty pick raises
+    :class:`ValueError`: leave ``profiles`` out to keep the parent's. The
+    aggregate settings are cached per pick and never under an overlay, so
+    nothing is dropped on entry or exit. A thread sees the child only when
+    its context was copied inside the block. :class:`NoRunError` outside a run.
     """
+    names = None if profiles is None else pick_names(profiles)
+    if names == ():
+        raise ValueError("a child run's pick names a profile; pass `default` for the base alone")
     parent = current_run()
     child = replace(
         parent,
         picks=_section_reader(),
-        profiles=parent.profiles if profiles is None else _names(profiles),
+        profiles=parent.profiles if names is None else names,
         overlay=parent.overlay if overlay is None else overlay,
     )
-    if profiles is None:
-        with run_scope(child):
-            yield child
-        return
-    get_settings.cache_clear()
-    try:
-        with run_scope(child):
-            yield child
-    finally:
-        get_settings.cache_clear()
-
-
-def _names(profiles: str | Sequence[str]) -> tuple[str, ...]:
-    return (profiles,) if isinstance(profiles, str) else tuple(profiles)
+    with run_scope(child):
+        yield child

@@ -91,25 +91,24 @@ def set_profile_override(names: Sequence[str]) -> None:
     _profile_override.set(tuple(names))
 
 
+def pick_names(profiles: str | Sequence[str]) -> tuple[str, ...]:
+    """A pick's profile names, in order: a string is one profile, never its letters."""
+    return (profiles,) if isinstance(profiles, str) else tuple(profiles)
+
+
 @contextmanager
-def root_pick(names: Sequence[str]) -> Iterator[None]:
-    """Make ``names`` the root ``--profile`` option's pick inside the block.
+def root_pick(profiles: str | Sequence[str]) -> Iterator[None]:
+    """Make ``profiles`` the root ``--profile`` option's pick inside the block.
 
-    The root option's own state, read where no child run picks
-    (:func:`flag_pick`); a nested pick is a child run
-    (:func:`untaped.runtime.run.child_run`). The settings cache is dropped
-    on entry and exit so reads follow the selection.
+    A string is one profile; ``()`` is no ``--profile``. The root option's
+    own state, read where no child run picks (:func:`flag_pick`); a nested
+    pick is a child run (:func:`untaped.runtime.run.child_run`).
     """
-    # Lazy: ``untaped.runtime.settings`` imports this module.
-    from untaped.runtime.settings import get_settings  # noqa: PLC0415
-
-    token = _profile_override.set(tuple(names))
-    get_settings.cache_clear()
+    token = _profile_override.set(pick_names(profiles))
     try:
         yield
     finally:
         _profile_override.reset(token)
-        get_settings.cache_clear()
 
 
 def profile_override() -> tuple[str, ...]:

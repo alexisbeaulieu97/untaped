@@ -16,6 +16,7 @@ from untaped.runtime.profile_resolver import (
     current_pick,
     profile_entries,
     resolve_profiles,
+    root_pick,
     selected_profile,
     write_target,
 )
@@ -165,6 +166,15 @@ def test_variable_default_adds_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     assert current_pick() == ()
     with child_run(profiles="prod"):
         assert current_pick() == (Picked("prod", "flag"),)
+
+
+def test_the_root_pick_takes_a_string_as_one_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    with root_pick("work"):
+        assert current_pick() == (Picked("work", "flag"),)
+    with root_pick(("work", "lab")):
+        assert selected_profile() == "work,lab"
+    assert current_pick() == ()
 
 
 def test_nothing_picks_without_flag_or_variable(monkeypatch: pytest.MonkeyPatch) -> None:
