@@ -645,7 +645,9 @@ def test_release_notes_fail_without_a_section(tmp_path: Path, text: str, message
 
 # --- smoke ------------------------------------------------------------------
 
+CORE = {"name": "untaped", "status": "ready", "root": True}
 ROWS = [
+    CORE,
     {"name": "awx", "status": "ready"},
     {"name": "jira", "status": "quarantined"},
     {"name": "extra", "status": "ready"},
@@ -661,7 +663,7 @@ def test_smoke_errors_report_version_missing_and_unready() -> None:
         "plugin jira is quarantined",
         "plugin extra is installed but not expected",
     ]
-    assert release.smoke_errors("10.0.0\n", json.dumps(ROWS[:1]), "10.0.0", ["awx"]) == []
+    assert release.smoke_errors("10.0.0\n", json.dumps(ROWS[:2]), "10.0.0", ["awx"]) == []
 
 
 def test_smoke_errors_refuse_output_that_is_not_a_list_of_rows() -> None:
@@ -671,34 +673,46 @@ def test_smoke_errors_refuse_output_that_is_not_a_list_of_rows() -> None:
 
 
 def test_smoke_errors_refuse_an_unexpected_plugin() -> None:
-    rows = [{"name": "awx", "status": "ready"}, {"name": "github", "status": "ready"}]
+    rows = [CORE, {"name": "awx", "status": "ready"}, {"name": "github", "status": "ready"}]
     assert release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", ["awx"]) == [
         "plugin github is installed but not expected"
     ]
 
 
 def test_smoke_errors_check_quarantined_names() -> None:
-    rows = [{"name": "hello", "status": "ready"}]
+    rows = [CORE, {"name": "hello", "status": "ready"}]
     assert release.smoke_errors(
         "10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"]
     ) == ["plugin hello is ready, not quarantined"]
-    rows = [{"name": "hello", "status": "quarantined"}]
+    rows = [CORE, {"name": "hello", "status": "quarantined"}]
     assert (
         release.smoke_errors("10.0.0a0", json.dumps(rows), "10.0.0a0", [], quarantined=["hello"])
         == []
     )
-    assert release.smoke_errors("10.0.0a0", "[]", "10.0.0a0", [], quarantined=["hello"]) == [
-        "plugin hello is missing"
-    ]
+    assert release.smoke_errors(
+        "10.0.0a0", json.dumps([CORE]), "10.0.0a0", [], quarantined=["hello"]
+    ) == ["plugin hello is missing"]
 
 
 def test_smoke_errors_refuse_duplicates_and_overlap() -> None:
-    rows = [{"name": "awx", "status": "ready"}, {"name": "awx", "status": "ready"}]
+    rows = [CORE, {"name": "awx", "status": "ready"}, {"name": "awx", "status": "ready"}]
     assert release.smoke_errors(
         "1.0.0", json.dumps(rows), "1.0.0", ["awx"], quarantined=["awx"]
     ) == [
         "plugin awx is both expected and quarantined",
         "plugin awx is listed twice",
+    ]
+
+
+def test_smoke_errors_want_untaped_itself_once_as_the_ready_root() -> None:
+    awx = {"name": "awx", "status": "ready"}
+    wanted = ["untaped itself is not listed once as the ready root plugin"]
+    for rows in ([awx], [{**CORE, "status": "quarantined"}, awx]):
+        assert release.smoke_errors("1.0.0", json.dumps(rows), "1.0.0", ["awx"]) == wanted
+    twice = json.dumps([CORE, CORE, awx])
+    assert release.smoke_errors("1.0.0", twice, "1.0.0", ["awx"]) == [
+        *wanted,
+        "plugin untaped is listed twice",
     ]
 
 
@@ -750,7 +764,7 @@ def _fake_untaped(tmp_path: Path) -> Path:
     return exe
 
 
-READY = [{"name": name, "status": "ready"} for name in FIRST_PARTY]
+READY = [CORE, *({"name": name, "status": "ready"} for name in FIRST_PARTY)]
 
 
 def _smoke(
@@ -788,7 +802,7 @@ def test_the_smoke_command_passes_a_healthy_install(
         (READY, "--help", 0, "untaped --help exited 2\n"),
         (READY, "", 3, "untaped plugin list --format json exited 3\n"),
         (
-            [{"name": FIRST_PARTY[0], "status": "quarantined"}, *READY[1:]],
+            [CORE, {"name": FIRST_PARTY[0], "status": "quarantined"}, *READY[2:]],
             "",
             0,
             f"plugin {FIRST_PARTY[0]} is quarantined\n",
@@ -813,7 +827,7 @@ def test_smoke_cli_expects_nothing_for_a_bare_install(
 ) -> None:
     exe = _fake_untaped(tmp_path)
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
-    monkeypatch.setenv("FAKE_ROWS", "[]")
+    monkeypatch.setenv("FAKE_ROWS", json.dumps([CORE]))
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", ""]) == 0
     assert "smoke ok: untaped 10.0.0a0, 0 plugins" in capsys.readouterr().out
 
@@ -822,7 +836,7 @@ def test_smoke_cli_checks_expected_and_quarantined_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     exe = _fake_untaped(tmp_path)
-    rows = [{"name": "awx", "status": "ready"}, {"name": "hello", "status": "quarantined"}]
+    rows = [CORE, {"name": "awx", "status": "ready"}, {"name": "hello", "status": "quarantined"}]
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
     argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--quarantined", "hello"]
@@ -842,7 +856,7 @@ def test_smoke_agents_need_each_expected_skill_and_every_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     exe = _fake_untaped(tmp_path)
-    rows = [{"name": "awx", "status": "ready"}, {"name": "jira", "status": "ready"}]
+    rows = [CORE, {"name": "awx", "status": "ready"}, {"name": "jira", "status": "ready"}]
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows))
     monkeypatch.setenv("FAKE_SKILLS", json.dumps([_skill("untaped"), _skill("untaped-awx")]))
@@ -861,7 +875,7 @@ def test_smoke_agents_need_each_expected_skill_and_every_page(
         "untaped agents jira printed nothing\n"
     )
     guides["awx"] = ["writes"]
-    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:1]))
+    monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:2]))
     monkeypatch.setenv("FAKE_MISSING_GUIDE", "")
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--agents"]) == 0
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
@@ -917,7 +931,7 @@ def test_smoke_agents_report_a_broken_skill_listing(
 ) -> None:
     exe = _fake_untaped(tmp_path)
     monkeypatch.setenv("FAKE_VERSION", "10.0.0a0")
-    monkeypatch.setenv("FAKE_ROWS", "[]")
+    monkeypatch.setenv("FAKE_ROWS", json.dumps([CORE]))
     monkeypatch.setenv("FAKE_SKILLS", skills)
     monkeypatch.setenv("FAKE_SKILLS_EXIT", exit_code)
     assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--agents"]) == 1
