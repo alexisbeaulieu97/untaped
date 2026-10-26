@@ -1841,6 +1841,75 @@ def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_w
     assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
 
 
+def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agrees() -> None:
+    """o composes only while unread (as y's test); x refreshes o's contract, another x is fine.
+
+    Refusing o alone leaves x's cache unowned, so the second x holds the
+    name, as composing y and it alone does.
+    """
+
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    @experimental
+    class Paging(Contract):
+        """Paging."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[int]:
+            raise NotImplementedError
+
+    class PagingFill(Paging, Provider[HelloSettings]):
+        pass
+
+    class Pages(Command):
+        """Refresh the pages."""
+
+        refresh: Refresh = Refresh(Paging.pages)
+
+        def run(self) -> None:
+            return None
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(plugin(commands=(lists(book("untaped_pk.other")),)), "y", module="untaped_y.p"),
+        _entry(
+            plugin(commands=(lists(book("untaped_pk.models")),), offers=(Paging,)),
+            "o",
+            module="untaped_pk.p",
+        ),
+        _entry(plugin(fills=(PagingFill,), commands=(Pages,)), "x", module="untaped_x.p"),
+        _entry(plugin(), "x", module="untaped_xx.p"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        entries[0].target,
+        entries[3].target,
+    ]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
+    assert [
+        (refused.target, [problem.rule for problem in refused.problems])
+        for refused in declaration.quarantined
+    ] == [(entries[1].target, ["duplicate-kind"]), (entries[2].target, ["unowned-cache"])]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
