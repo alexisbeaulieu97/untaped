@@ -98,13 +98,15 @@ class Composition:
     spell: Callable[[SpelledCommand], str] = _unspelled
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
-        """The plugin whose settings model ``model`` is; :class:`LookupError` when none is."""
-        try:
-            return self.owners[model]
-        except KeyError:
-            raise LookupError(
-                f"{model.__qualname__} is the settings model of no composed plugin"
-            ) from None
+        """The plugin whose settings model ``model`` is; :class:`LookupError` when none is.
+
+        ``model`` may be the class a run's settings are loaded as, which core
+        derives from the plugin's model to add the keys it injects.
+        """
+        for each in model.__mro__:
+            if (owner := self.owners.get(each)) is not None:
+                return owner
+        raise LookupError(f"{model.__qualname__} is the settings model of no composed plugin")
 
     def owner_of_module(self, module: str) -> str:
         """The plugin owning the classes defined in ``module``; :class:`LookupError` when none."""

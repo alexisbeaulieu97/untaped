@@ -13,7 +13,7 @@ import httpx
 import respx
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, Plugin
+from untaped.sdk import Command, Credential, CredentialKey, Plugin
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -68,3 +68,34 @@ def test_a_blank_url_is_the_plugin_not_set_up(install: Installer) -> None:
     ran = install(Desk).run(Whoami())
     assert ran.exit != 0
     assert "desk is not set up" in ran.stderr[0]
+
+
+class LockedSettings(BaseModel):
+    url: str = Field("", description="The locked desk's API.")
+
+
+class LockedKey(CredentialKey):
+    name: str = "locked"
+
+
+class Ask(Command[LockedSettings]):
+    """Ask the locked desk who the token is."""
+
+    def run(self) -> str:
+        return self.ctx.http.client(self.settings, base_url=self.settings.url).system
+
+
+class Locked(Plugin):
+    """Answer questions behind a key (a test's plugin)."""
+
+    settings = LockedSettings
+    commands = (Ask,)
+    token = Credential(key=LockedKey, env=("LOCKED_TOKEN",))
+
+
+def test_a_client_is_the_plugin_s_when_its_settings_are_core_s_subclass(
+    install: Installer,
+) -> None:
+    # a plugin with a credential has its settings loaded as core's subclass of its model
+    ran = install(Locked, settings=LockedSettings(url=_URL)).cli("locked ask")
+    assert (ran.exit, ran.text) == (0, "locked"), ran.stderr
