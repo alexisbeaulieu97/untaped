@@ -312,7 +312,7 @@ def _settings_model(candidate: PluginCandidate) -> type[BaseModel] | None:
 
     try:
         target = resolve_target(candidate.target)
-    except Exception:
+    except Exception:  # composition quarantines a target that does not load
         return None
     model = getattr(target, "settings", None)
     return model if isinstance(model, type) and issubclass(model, BaseModel) else None

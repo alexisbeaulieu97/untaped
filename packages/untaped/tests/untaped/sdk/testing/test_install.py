@@ -385,6 +385,39 @@ class Configured(Books, Provider[Shelved]):
         return [Book(title=self.settings.title)]
 
 
+@experimental
+class Shelves(Contract):
+    """A second contract, so one test plugin fills two."""
+
+    @abstractmethod
+    def shelves(self) -> list[Book]: ...
+
+
+class Racks(Command[Pages]):
+    """Print every shelf every provider keeps."""
+
+    def run(self) -> str:
+        return ",".join(
+            f"{answer.plugin}:{book.title}"
+            for answer in gather(Shelves.shelves)()
+            if isinstance(answer, Ok)
+            for book in answer.value
+        )
+
+
+class Library(Plugin):
+    """Ask for books and shelves."""
+
+    settings = Pages
+    commands = (Titles, Racks)
+    offers = (Books, Shelves)
+
+
+class Bare(Shelves, Provider):
+    def shelves(self) -> list[Book]:
+        return [Book(title="A1")]
+
+
 class Other(Books, Provider[Pages]):
     def books(self) -> list[Book]:
         return []
@@ -393,6 +426,10 @@ class Other(Books, Provider[Pages]):
 def test_providers_reading_settings_get_the_section_the_test_writes(install: Installer) -> None:
     shelf = install(Reader, providers={"fake": (Configured,)}, settings=[Shelved(title="Emma")])
     assert shelf.run(Titles()).text == "fake:Emma"
+    both = install(
+        Library, providers={"fake": (Configured, Bare)}, settings=[Shelved(title="Emma")]
+    )
+    assert (both.run(Titles()).text, both.run(Racks()).text) == ("fake:Emma", "fake:A1")
     with pytest.raises(TypeError, match=r"providers\['fake'\] read different settings"):
         install(Reader, providers={"fake": (Configured, Other)})
 
@@ -413,6 +450,25 @@ def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
     lender = install(Lender, settings=[Pages()])  # the owner's section is writable too
     assert [candidate.name for candidate in lender.candidates] == ["lender", "reader"]
     assert lender.cli("reader titles").stdout == "lender:Dune\n"
+
+
+def test_a_brought_plugin_that_fails_to_import_is_composition_s_to_report(
+    install: Installer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from untaped.runtime import registry
+
+    (tmp_path / "untaped_boom.py").write_text('raise RuntimeError("boom")\n')
+    monkeypatch.syspath_prepend(tmp_path)
+    boom = PluginCandidate(distribution="untaped-boom", name="boom", target="untaped_boom:SPEC")
+    provider = PluginCandidate(
+        distribution="untaped-lender",
+        name="lender",
+        target=_target(Lender),
+        requires_dist=('untaped-boom>=1; extra == "boom"',),
+    )
+    monkeypatch.setattr(registry, "discover_candidates", lambda: (boom, provider))
+    lender = install(Lender)  # reading boom's settings raises nothing here
+    assert [candidate.name for candidate in lender.candidates] == ["lender", "boom"]
 
 
 class Lender(Plugin):
