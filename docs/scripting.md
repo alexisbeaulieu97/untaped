@@ -102,10 +102,12 @@ line printed; `--verbose` prints every update and `--quiet` none.
   `untaped.ui.format`. A command's own default, such as `export`'s YAML, does not.
 - `UNTAPED_DIAGNOSTICS=json` turns JSON Lines on for any format;
   `UNTAPED_DIAGNOSTICS=text` keeps text lines.
-- A parse error (an unknown flag or command), a warning about a quarantined
-  provider and the warning for a deprecated alias come before `untaped.ui.format` is
-  read, so only a `--format` on the command line or in `UNTAPED_FORMAT`
-  switches them.
+- The format is decided before the first line, so a warning about a
+  quarantined provider, a deprecated command's notice and a parse error
+  follow it too. For a command a plugin still mounts the 11.x way, or a line
+  naming no command (an unknown command, root `--help`), those lines come
+  before `untaped.ui.format` is read, so only a `--format` on the command
+  line or in `UNTAPED_FORMAT` switches them.
 
 ```json
 {"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth login awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}, "fix_by": "user"}

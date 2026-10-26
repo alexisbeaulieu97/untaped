@@ -13,7 +13,7 @@ from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
 
-from cyclopts import App, ArgumentCollection, Parameter, ResultAction, Token
+from cyclopts import App, Argument, ArgumentCollection, Parameter, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
 from cyclopts.validators import Number
 from pydantic import BaseModel
@@ -69,6 +69,7 @@ from untaped.sdk.records import (
     kind_of,
     table_columns_of,
 )
+from untaped.sdk.run import Rendering, fixed_rendering
 from untaped.sdk.tree import TreeGraph, print_tree
 
 
@@ -103,35 +104,63 @@ def apply_default_format(
     ``--format`` offering every shared format, such as ``TreeFormatOption``)
     whose command default is ``table`` follows the user's choice (a command
     defaulting to ``raw`` or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first,
-    then the ``untaped.ui.format`` setting. An explicit ``--format`` has tokens
-    already and always wins. A ``ui`` section that fails to load is ignored
-    here so ``config set`` can still repair it; ``doctor`` reports it. An
-    invalid ``UNTAPED_FORMAT`` is a usage error, except under a command marked
-    ``repairs`` (``doctor``, ``setup``, ``skills``), which ignores it.
-    A ``--format`` the user chose (the flag, ``UNTAPED_FORMAT`` or
-    ``untaped.ui.format``; not a command's own default) is recorded for the stderr
-    diagnostics (:func:`untaped.runtime.output_policy.note_format`, phase 2), and,
-    when they are text, the ``untaped.ui.theme`` messages render with
+    then the ``untaped.ui.format`` setting (:func:`user_default_format`). An
+    explicit ``--format`` has tokens already and always wins. A declared
+    command under a run whose rendering the root fixed takes the default that
+    rendering chose, read once, before anything was emitted. Otherwise (a
+    command mounted through the 11.x seam) a ``--format`` the user chose (the
+    flag, ``UNTAPED_FORMAT`` or ``untaped.ui.format``; not a command's own
+    default) is recorded for the stderr diagnostics
+    (:func:`untaped.runtime.output_policy.note_format`, phase 2), and, when
+    they are text, the ``untaped.ui.theme`` messages render with
     (:func:`untaped.runtime.output_policy.note_theme`; a broken ``ui`` section
     degrades to the default theme).
     """
-    _default_format(_repairs(app), arguments)
-    chosen = [
+    argument = _table_default_format(arguments)
+    rendering = fixed_rendering()
+    if rendering is not None and _declared(app):
+        _default_to(argument, _rendered_default(rendering))
+        return
+    _default_to(argument, None if argument is None else user_default_format(repairs=_repairs(app)))
+    given = [
         str(argument.tokens[-1].value)
         for argument in arguments
         if "--format" in argument.names and argument.tokens
     ]
-    note_format(chosen[-1] if chosen else None)
+    note_format(given[-1] if given else None)
     # Called for the root (no command) and again for the command parsed.
-    note_theme(_user_theme() if commands and current_policy().diagnostics == "text" else None)
+    note_theme(user_theme() if commands and current_policy().diagnostics == "text" else None)
 
 
-def _user_theme() -> ThemeSpec:
+def _rendered_default(rendering: Rendering) -> tuple[str, str] | None:
+    """The user's default format the run's rendering chose, and its source; ``None`` for none."""
+    fmt, source = rendering.format, rendering.source
+    if fmt is None or source is None or source == "--format":
+        return None
+    return fmt, source
+
+
+def _default_to(argument: Argument | None, chosen: tuple[str, str] | None) -> None:
+    """Give the omitted ``argument`` the ``chosen`` default format, from its source."""
+    if argument is not None and chosen is not None:
+        value, source = chosen
+        argument.append(Token(keyword=source, value=value, source=source))
+
+
+def user_theme() -> ThemeSpec:
     """The user's ``untaped.ui.theme`` for stderr messages; the default on a broken ``ui``."""
-    # Keep settings lazy, as ``_default_format`` does.
+    # Keep settings lazy, as ``user_default_format`` does.
     from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
     return resolve_theme_or_default(lambda: load_core_part("ui"), strict=False)
+
+
+def _declared(app: App) -> bool:
+    """Whether the command parsed (``app``) is one the mount made from a declaration."""
+    # Lazy: the mount imports this module.
+    from untaped.runtime.mount import is_declared  # noqa: PLC0415
+
+    return is_declared(app.default_command)
 
 
 def _repairs(app: App) -> bool:
@@ -142,14 +171,14 @@ def _repairs(app: App) -> bool:
     return repairs_at(app) is True
 
 
-def _default_format(repairs: bool, arguments: ArgumentCollection) -> None:
-    """Append the user's default format to an omitted table-default ``--format``.
+def _table_default_format(arguments: ArgumentCollection) -> Argument | None:
+    """The omitted table-default ``--format`` among ``arguments``, if any.
 
     That is a ``--format`` whose choices include every shared format
     (``FormatOption``, ``TreeFormatOption``); the user's default is still
     one of the shared formats.
     """
-    argument = next(
+    return next(
         (
             argument
             for argument in arguments
@@ -160,27 +189,32 @@ def _default_format(repairs: bool, arguments: ArgumentCollection) -> None:
         ),
         None,
     )
-    if argument is None:
-        return
+
+
+def user_default_format(*, repairs: bool) -> tuple[str, str] | None:
+    """The user's default for a table-default ``--format``, and where it came from.
+
+    ``UNTAPED_FORMAT``, else the ``untaped.ui.format`` setting; ``None`` when
+    neither is set. A ``ui`` section that fails to load is ignored here so
+    ``config set`` can still repair it; ``doctor`` reports it. An invalid
+    ``UNTAPED_FORMAT`` is a usage error, except under a command marked
+    ``repairs`` (``doctor``, ``setup``, ``skills``), which ignores it.
+    """
     choices = get_args(OutputFormat)
     value = os.environ.get(FORMAT_ENV) or None
-    source = FORMAT_ENV
-    if value is not None and value not in choices:
-        if repairs:
-            value = None
-        else:
-            raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
-    if value is None:
-        # Keep settings lazy: only commands printing rows need them here.
-        from untaped.runtime.settings import load_core_part  # noqa: PLC0415
-
-        try:
-            value = load_core_part("ui").format
-        except UntapedError:
-            return
-        source = "untaped.ui.format"
     if value is not None:
-        argument.append(Token(keyword=source, value=value, source=source))
+        if value in choices:
+            return value, FORMAT_ENV
+        if not repairs:
+            raise_usage(f"{FORMAT_ENV} must be one of {', '.join(choices)}; got {value!r}")
+    # Keep settings lazy: only commands printing rows need them here.
+    from untaped.runtime.settings import load_core_part  # noqa: PLC0415
+
+    try:
+        setting = load_core_part("ui").format
+    except UntapedError:
+        return None
+    return None if setting is None else (setting, "untaped.ui.format")
 
 
 ColumnsOption = Annotated[

@@ -474,3 +474,51 @@ def test_the_root_driven_directly_reads_the_line_as_run_root_does(
 
     assert (result.exit_code, result.stdout.strip()) == (0, out)
     assert _outcome(argv, kept=True, monkeypatch=monkeypatch, capsys=capsys) == (0, out, "")
+
+
+SHOW = _command(
+    ("show",),
+    _option("x", "bool", short="-x"),
+    _option("pattern", short="-p", allow_hyphen=True),
+    _option("format", short="-f", block="output", choices=("table", "json", "yaml")),
+    _option("who", positional=True, allow_hyphen=True),
+)
+SHOWING = Declaration(
+    plugins=(
+        PluginDecl(
+            name="untaped",
+            target="untaped:Core",
+            package="untaped",
+            summary=".",
+            doc=".",
+            settings="untaped:Settings",
+            root=True,
+            commands=(SHOW,),
+        ),
+    )
+)
+
+
+@pytest.mark.usefixtures("read")
+@pytest.mark.parametrize(
+    ("tokens", "fmt", "helps"),
+    [
+        (["show"], None, False),
+        (["show", "--format", "json"], "json", False),
+        (["show", "--format=json", "-f", "yaml"], "yaml", False),  # the last one, as parsed
+        (["show", "-f=json"], "json", False),
+        (["show", "-fjson"], "json", False),
+        (["show", "-xf", "json"], "json", False),
+        (["show", "-vfjson"], "json", False),
+        (["show", "-p", "-f", "json"], None, False),  # `-f` is the pattern
+        (["show", "--", "-f", "json"], None, False),  # data past the separator
+        (["show", "-f", "json", "--help"], "json", True),
+        (["show", "-xh"], None, True),
+        (["show", "-p", "--help"], None, True),  # cyclopts reads help first, even a value
+    ],
+)
+def test_the_pass_notes_the_format_and_help_a_declared_command_s_tokens_give(
+    tokens: list[str], fmt: str | None, helps: bool
+) -> None:
+    with applied_root_options(tokens, _root_options(), SHOWING) as line:
+        assert (line.command, line.format, line.helps) == (SHOW, fmt, helps)

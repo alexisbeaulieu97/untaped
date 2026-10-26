@@ -21,13 +21,14 @@ from contextlib import AbstractContextManager, contextmanager
 from copy import copy
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, get_args
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
 from cyclopts.utils import is_option_like
 
 from untaped.runtime.declaration import CommandDecl
+from untaped.runtime.output_policy import current_policy, with_format
 from untaped.runtime.output_policy import enable_quiet as _enable_quiet
 from untaped.runtime.output_policy import reset_quiet as _reset_quiet
 from untaped.runtime.profile_resolver import (
@@ -37,9 +38,10 @@ from untaped.runtime.profile_resolver import (
     profile_scope,
 )
 from untaped.runtime.sink import Diagnostics
+from untaped.runtime.theme import OutputFormat
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.runtime.verbose import reset as _reset_verbose
-from untaped.sdk._cli import note_requested_format, raise_usage
+from untaped.sdk._cli import note_requested_format, raise_usage, user_default_format, user_theme
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
@@ -56,6 +58,7 @@ from untaped.sdk.marks import (
     reset_show_deprecated,
     select_command,
 )
+from untaped.sdk.run import Rendering
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration, GroupDecl, OptionDecl, PluginDecl
@@ -166,6 +169,12 @@ class RootLine:
     placed: bool = False
     #: Each root option applied, with what undoes it.
     applied: list[tuple[_RootOption, object]] = field(default_factory=list, init=False)
+    #: What a placed line selects, read by its declared shape: the command
+    #: (``None`` for no command, or a group without one of its own), the
+    #: ``--format`` given among its own options, and whether it asks for help.
+    command: CommandDecl | None = field(default=None, init=False)
+    format: str | None = field(default=None, init=False)
+    helps: bool = field(default=False, init=False)
 
     def read(
         self,
@@ -176,7 +185,38 @@ class RootLine:
         """Read ``tokens`` by ``declaration``'s shapes, applying the root options taken."""
         walk, self.placed = _read_line(tokens, root_options, declaration)
         self.tokens = walk.left
+        if self.placed:
+            self.command, self.format = walk.selected, walk.format
+            # cyclopts prints help for a help flag anywhere before a `--`, even an option's value
+            self.helps = any(token in _HELP_FLAGS for token in _before_separator(self.tokens))
         walk.apply_to(self)
+
+    def rendering(self) -> Rendering | None:
+        """How the run renders stderr for the declared command the line selects; ``None`` for none.
+
+        Decided as the command's parse decides its ``--format``
+        (:func:`untaped.sdk._cli.apply_default_format`), from the declaration
+        alone, so the command's module is not imported: the ``--format`` the
+        line gives, else, for a command whose ``Output`` defaults to
+        ``table``, ``UNTAPED_FORMAT`` and then ``untaped.ui.format``
+        (:func:`untaped.sdk._cli.user_default_format`; an invalid
+        ``UNTAPED_FORMAT`` is a usage error unless the command ``repairs`` or
+        the line asks for help, which never reads it), else none: the
+        command's own default. The theme is the user's under text diagnostics.
+        A line selecting no declared command (an 11.x seam command, root help,
+        a group without a command of its own) leaves it to the parse.
+        """
+        command = self.command
+        if not self.placed or command is None:
+            return None
+        chosen: tuple[str, str] | None = None
+        if self.format is not None:
+            chosen = (self.format, "--format")
+        elif _table_default(command):
+            chosen = user_default_format(repairs=command.repairs or self.helps)
+        fmt, source = chosen if chosen is not None else (None, None)
+        text = with_format(current_policy(), fmt).diagnostics == "text"
+        return Rendering(format=fmt, source=source, theme=user_theme() if text else None)
 
     def apply(self, spec: _RootOption, value: str) -> None:
         """Apply root option ``spec`` with ``value`` for the rest of the invocation."""
@@ -263,6 +303,10 @@ class _LineWalk:
     taken: list[tuple[_RootOption, str, str | None]] = field(default_factory=list)
     #: Where the walk stops: the ``--`` that ends the options.
     end: int = field(init=False)
+    #: The command the words select, and the ``--format`` its own options
+    #: give (the last one).
+    selected: CommandDecl | None = None
+    format: str | None = None
 
     def __post_init__(self) -> None:
         self.end = _separator_index(self.tokens)
@@ -357,13 +401,19 @@ class _LineWalk:
                 break  # an option, or an argument of the group's own command
             self.keep(1)
             if isinstance(node, CommandDecl):
+                self.selected = node
                 return True, node
             group, nodes = node, node.commands
-        return True, None if group is None else group.runs
+        self.selected = None if group is None else group.runs
+        return True, self.selected
 
     def options(self, command: CommandDecl | None) -> None:
-        """Walk ``command``'s own tokens, taking each root option that is none of its values."""
+        """Walk ``command``'s own tokens, taking each root option that is none of its values.
+
+        Notes the ``--format`` they give, as the command's parse will read it.
+        """
         shapes = _option_shapes(command)
+        spellings = _format_spellings(command)
         arguments = [] if command is None else [opt for opt in command.options if opt.positional]
         slot = 0
         while self.index < self.end:
@@ -373,6 +423,7 @@ class _LineWalk:
             value = argument is not None and _takes_hyphen(argument)
             cluster = _read_cluster(token, shapes, self.root_options)
             if cluster is not None and cluster.splits(value):
+                self.note_format(cluster, spellings)
                 self.split(cluster)
                 continue
             width = _option_width(token, shapes, cluster)
@@ -383,7 +434,36 @@ class _LineWalk:
                     # the next token fills the next argument
                     slot += token not in _HELP_OR_VERSION
                 width = 1
+            else:
+                taken = self.tokens[self.index : min(self.index + width, self.end)]
+                self.note_format(taken if cluster is None else cluster, spellings)
             self.keep(min(width, self.end - self.index))
+
+    def note_format(self, given: _Cluster | Sequence[str], spellings: tuple[str, ...]) -> None:
+        """Note the value ``--format`` gives, when the option at the index is ``--format``.
+
+        ``given`` is the option's tokens (its spelling and its value's), or
+        the short cluster it is read as, whose last letter alone may read a
+        value: the rest of the token, or the tokens after it.
+        """
+        if isinstance(given, _Cluster):
+            if len(spellings) < 2:  # no short to spell in a cluster
+                return
+            short, last = spellings[1], given.kept[-1]
+            if given.kept[-2:-1] == [short]:
+                self.format = last  # `-f` and `=json` apart, as cyclopts reads them
+            elif last == short and given.reads_next and self.index + 1 < self.end:
+                self.format = self.tokens[self.index + 1]
+            elif last.startswith(short) and len(last) > len(short):
+                self.format = last[len(short) :]  # `-fjson`
+            return
+        if not spellings:
+            return
+        name, separator, inline = given[0].partition("=")
+        if name in spellings and separator:
+            self.format = inline
+        elif given[0] in spellings and len(given) > 1:
+            self.format = given[1]
 
 
 def _root_value(
@@ -440,6 +520,29 @@ def _option_shapes(command: CommandDecl | None) -> dict[str, int]:
         for name in (option.flag, option.short, option.negative)
         if name
     }
+
+
+def _table_default(command: CommandDecl) -> bool:
+    """Whether ``command``'s ``--format`` offers every shared format and defaults to ``table``.
+
+    Only such a ``--format`` follows the user's default format, as the
+    parse reads it (:func:`untaped.sdk._cli.apply_default_format`).
+    """
+    return any(
+        option.flag == "--format"
+        and set(get_args(OutputFormat)) <= set(option.choices)
+        and (option.default or "table") == "table"
+        for option in command.options
+    )
+
+
+def _format_spellings(command: CommandDecl | None) -> tuple[str, ...]:
+    """``command``'s ``--format`` spellings: the flag, then its short; none without one."""
+    options = () if command is None else command.options
+    option = next((opt for opt in options if opt.flag == "--format"), None)
+    if option is None:
+        return ()
+    return ("--format",) if option.short is None else ("--format", option.short)
 
 
 def _option_width(token: str, shapes: Mapping[str, int], cluster: _Cluster | None) -> int:
