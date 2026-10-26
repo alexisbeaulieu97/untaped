@@ -1543,7 +1543,14 @@ def _mounted(
     classes = {index: cls for index, cls in provided.items() if not isinstance(cls, PluginSpec)}
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
 
+    # an 11.x owner's package, so a 12.0 provider of its contract reaches it
+    packages: dict[str, str] = {}
+    for index in claims:
+        package = candidate_package(ordered[index].target)
+        if package is not None:
+            packages.setdefault(package.partition(".")[0], ordered[index].name)
     problems: dict[str, tuple[Problem, ...]] = {}
     while True:
         mount = compose_plugins(
@@ -1564,7 +1571,7 @@ def _mounted(
             try:
                 if candidate.name in refused:
                     raise _Quarantine("bad-plugin-class", refused[candidate.name].detail)
-                spec = plugin_spec(mount, candidate.name)
+                spec = plugin_spec(mount, candidate.name, packages)
                 _check_declaration(spec, state)
             except _Quarantine as failed:
                 quarantined[index] = failed.to_record(candidate)

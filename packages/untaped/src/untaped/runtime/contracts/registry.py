@@ -161,6 +161,12 @@ def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
             cache = method.cache
             # a listed cache is the plugin's own (composition quarantines a foreign one);
             # one a plugin class holds was checked when composition walked the class
+            if cache is not None and not (cache.spelled or cache.bindings or cache._held_as):
+                raise TypeError(
+                    f"{info.cls.__qualname__}.{method.name} is cached in a cache with no "
+                    f"plugin and name: spell it Cache({spec.name!r}, "
+                    f"'{info.name}_{method.name}', ...) and list it on PluginSpec.caches"
+                )
             if cache is not None and cache.spelled and cache not in spec.caches:
                 raise TypeError(
                     f"{info.cls.__qualname__}.{method.name} is cached in {cache.qualified}, "

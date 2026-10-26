@@ -229,7 +229,8 @@ def install(
     itself (``Shop`` is ``shop``) unless ``names`` says otherwise.
     ``providers={"forge": (Forge,)}`` composes the provider classes a test
     defines as one plugin per key, filling the contracts they subclass, so
-    ``gather`` asks them. Each settings model is written as set (secrets in
+    ``gather`` asks them; its settings are their ``Provider[S]``. Each
+    settings model (of a plugin named, given or brought) is written as set (secrets in
     clear, by alias) to the section of the plugin whose ``settings`` it is;
     a plugin given none has none of its own, as a user who set nothing.
     What core keeps in a section (a cache's max age) stays.
@@ -244,9 +245,9 @@ def install(
     candidates += _dependencies(candidates, discovered)
     models = [settings] if isinstance(settings, BaseModel) else list(settings)
     given: dict[str, tuple[type[BaseModel], BaseModel | None]] = {}
-    for cls, candidate in zip(plugins, candidates, strict=False):
-        model = getattr(cls, "settings", None)
-        if isinstance(model, type) and issubclass(model, BaseModel):
+    for candidate in candidates:
+        model = _settings_model(candidate)
+        if model is not None:
             given[candidate.name] = (model, None)
     for each in models:
         section = next((name for name, (m, _) in given.items() if isinstance(each, m)), None)
@@ -264,7 +265,11 @@ def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
     from pydantic import ConfigDict, create_model  # noqa: PLC0415
 
     from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415
-    from untaped.sdk.contracts._declare import Provider, contract_of  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import (  # noqa: PLC0415
+        Provider,
+        contract_of,
+        settings_type,
+    )
 
     check_plugin_name(name)
     for each in classes:
@@ -277,7 +282,16 @@ def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
     if not classes:
         raise TypeError(f"providers[{name!r}] holds no provider class")
     title = name.title().replace("-", "")
-    model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
+    read = {settings_type(each) for each in classes}
+    if len(read) > 1:
+        names = sorted(each.__qualname__ if each else "none" for each in read)
+        raise TypeError(
+            f"providers[{name!r}] read different settings ({', '.join(names)}); "
+            "a plugin has one settings model"
+        )
+    [model] = read
+    if model is None:
+        model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
     plugin = type(
         title,
         (Plugin,),
@@ -289,6 +303,18 @@ def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
         },
     )
     return cast("type[Plugin]", plugin)
+
+
+def _settings_model(candidate: PluginCandidate) -> type[BaseModel] | None:
+    """The settings model of the plugin ``candidate`` installs, a 12.0 class's or an 11.x spec's."""
+    from untaped.runtime.registry import resolve_target  # noqa: PLC0415
+
+    try:
+        target = resolve_target(candidate.target)
+    except ImportError, AttributeError:
+        return None  # composition reports a target that does not resolve
+    model = getattr(target, "settings", None)
+    return model if isinstance(model, type) and issubclass(model, BaseModel) else None
 
 
 def _dependencies(

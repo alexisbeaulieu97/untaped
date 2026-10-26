@@ -374,6 +374,24 @@ def test_providers_must_be_provider_classes(install: Installer) -> None:
         install(Reader, providers={"fake": ()})
 
 
+class Shelved(BaseModel):
+    """What a test's provider reads."""
+
+    title: str = "Dune"
+
+
+class Configured(Books, Provider[Shelved]):
+    def books(self) -> list[Book]:
+        return [Book(title=self.settings.title)]
+
+
+def test_providers_reading_settings_get_the_section_the_test_writes(install: Installer) -> None:
+    shelf = install(Reader, providers={"fake": (Configured,)}, settings=[Shelved(title="Emma")])
+    assert shelf.run(Titles()).text == "fake:Emma"
+    with pytest.raises(TypeError, match=r"providers\['fake'\] read different settings"):
+        install(Reader, providers={"fake": (Configured, Fixed)})
+
+
 def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
     install: Installer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -387,7 +405,7 @@ def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
         requires_dist=('untaped-reader>=1; extra == "reader"', 'untaped-gone; extra == "gone"'),
     )
     monkeypatch.setattr(registry, "discover_candidates", lambda: (owner, provider))
-    lender = install(Lender)
+    lender = install(Lender, settings=[Pages()])  # the owner's section is writable too
     assert [candidate.name for candidate in lender.candidates] == ["lender", "reader"]
     assert lender.cli("reader titles").stdout == "lender:Dune\n"
 

@@ -820,25 +820,18 @@ def test_refresh_help_names_a_contract_cache_bound_where_declared() -> None:
     )
 
 
-def test_refresh_help_names_a_contract_cache_a_plugin_class_holds() -> None:
+def test_refresh_help_names_a_contract_cache_the_offering_class_holds() -> None:
     held = Cache(label="pages", max_age=timedelta(hours=2))
+    shelf = _pages_plugin(_paging(held))
 
-    class Owner(Plugin):
-        """Owner."""
+    class Holding(shelf):  # type: ignore[valid-type,misc]  # a class made at run time
+        """Holding."""
 
-        settings = HelloSettings
         page_source_pages = held
 
-    shelf = _pages_plugin(_paging(held))
     # the owner's package is this test module's, which the entry composes as shelf
     assert "older than shelf.caches.page_source_pages.max_age_seconds (2 h)." in _refresh_help(
-        shelf, "shelf"
-    )
-    Owner.__module__ = "elsewhere.plugin"  # a package no composed plugin has
-    [problem] = _problems(shelf, "shelf")
-    assert (problem.rule, "belongs to no composed plugin" in problem.detail) == (
-        "refresh-cache",
-        True,
+        Holding, "shelf"
     )
 
 
@@ -1196,3 +1189,29 @@ def test_an_offered_contract_s_answer_cache_is_held_by_a_plugin_class() -> None:
         "Loose.pages",
     )
     assert problem.detail.endswith("Owner.loose_pages")
+
+
+def test_an_answer_cache_held_under_another_name_is_refused() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Misheld(Contract):
+        """Its cache is held under a name of the holder's own."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        offers = (Misheld,)
+        wrong_name = held
+
+    details = [p.detail for p in _problems(Owner, "owner") if p.rule == "answer-cache"]
+    assert details == [
+        "is cached in a cache held as test_an_answer_cache_held_under_another_name_is_refused."
+        "<locals>.Owner.wrong_name: assign it to test_an_answer_cache_held_under_another_name_"
+        "is_refused.<locals>.Owner.misheld_pages"
+    ]

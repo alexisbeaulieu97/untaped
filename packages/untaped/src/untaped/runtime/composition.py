@@ -401,21 +401,25 @@ class _PluginWalk:
                 self._provider(where, filled)
 
     def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
-        """Each cached method of an offered contract is cached in a cache some plugin class holds.
+        """Each cached method of an offered contract is cached in a cache the plugin class holds.
 
         A cache made with no plugin and no name learns them from the class
-        holding it, which the contract cannot check when it is declared.
+        holding it, which the contract cannot check when it is declared: the
+        offering class holds it as ``<contract>_<method>``.
         """
         for method in info.methods.values():
             cache = method.cache
-            if cache is None or cache.spelled or cache._held_as is not None or cache.bindings:
+            if cache is None or cache.spelled or cache._held_as is not None:
                 continue
             expected = f"{info.name}_{method.name}"
+            if any(b.owner in cls.__mro__ and b.attribute == expected for b in cache.bindings):
+                continue
+            held = ", ".join(f"{b.owner.__qualname__}.{b.attribute}" for b in cache.bindings)
             self.problem(
                 "answer-cache",
                 f"{info.cls.__qualname__}.{method.name}",
-                f"is cached in a cache no plugin class holds: assign it to "
-                f"{cls.__qualname__}.{expected}",
+                f"is cached in a cache {f'held as {held}' if held else 'no plugin class holds'}: "
+                f"assign it to {cls.__qualname__}.{expected}",
             )
 
     def _provider(self, where: str, filled: type) -> None:

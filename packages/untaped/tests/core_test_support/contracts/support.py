@@ -65,6 +65,10 @@ class SpecialVolume(Volume, kind="library.special_volume"):
     signed: bool = False
 
 
+class ShelfSettings(BaseModel):
+    """What an 11.x shelf reads: nothing, but it locates the owner's package."""
+
+
 class LibrarySettings(BaseModel):
     catalog: str
     volumes: list[Volume] = []

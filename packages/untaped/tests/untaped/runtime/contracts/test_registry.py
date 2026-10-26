@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
 from core_test_support.contracts.support import (
+    BOOKS,
     BY_AUTHOR,
     LIBRARY_CONFIG,
     Book,
     BookSource,
     Library,
     LibrarySettings,
+    ShelfSettings,
     Volume,
     compose,
     library_spec,
@@ -28,7 +31,9 @@ from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk.contracts import Contract, Failed, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
+from untaped.sdk.plugin import Plugin
 from untaped.sdk.records import DuplicateKindError
+from untaped.sdk.testing import plugin_candidate
 
 
 def _rows() -> list[tuple[str, str, str, str]]:
@@ -374,3 +379,53 @@ def test_an_owner_extra_behind_a_marker_the_environment_cannot_fill_adds_no_requ
     found = owner_requirement(lines, "shelf")
     assert found is not None
     assert str(found.specifier) == ">=2"
+
+
+CACHES = (BOOKS, BY_AUTHOR)
+
+
+class _Lending(BookSource, Provider):
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+
+class _LendsSettings(BaseModel):
+    pass
+
+
+class _Lends(Plugin):
+    """Lend books to an 11.x shelf."""
+
+    settings = _LendsSettings
+    fills = (_Lending,)
+
+
+def test_a_plugin_class_s_fill_reaches_the_11x_owner_whose_package_defines_the_contract() -> None:
+    reset()
+    lends = PluginCandidate(distribution="untaped-lends", name="lends", target=_Lends)
+    # the owner's settings model locates its package, which defines the contract
+    shelf = PluginSpec(
+        name="shelf", settings=ShelfSettings, contracts=lambda: (BookSource,), caches=CACHES
+    )
+    bootstrap.compose_root(candidates=[plugin_candidate(shelf), lends])
+    [answer] = gather(BookSource.books)()
+    assert (answer.plugin, isinstance(answer, Ok)) == ("lends", True)
+
+
+def test_an_11x_owner_s_cache_with_no_plugin_and_name_is_unreadable() -> None:
+    from untaped.runtime.contracts.registry import unreadable_owners
+    from untaped.sdk.contracts import cached
+    from untaped.sdk.storage.cache import Cache
+
+    class Unnamed(Contract):
+        @cached(Cache(label="rows", max_age=timedelta(hours=1)))
+        def rows(self) -> list[Book]:
+            raise NotImplementedError
+
+    compose(PluginSpec(name="rows", contracts=lambda: (Unnamed,)))
+    assert unreadable_owners() == ["rows"]
+    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
+    assert rows[("rows", "bad-contracts")].endswith(
+        "Unnamed.rows is cached in a cache with no plugin and name: spell it "
+        "Cache('rows', 'unnamed_rows', ...) and list it on PluginSpec.caches"
+    )
