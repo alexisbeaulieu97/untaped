@@ -21,6 +21,7 @@ from untaped.runtime.registry import (
     PluginCandidate,
     PluginSpec,
     named_plugin_dir,
+    section_settings,
 )
 from untaped.sdk._home import home
 from untaped.sdk.testing import CliInvoker
@@ -150,6 +151,54 @@ def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> 
     assert "toyplug.plugin" not in sys.modules
     assert [cache.name for cache in spec.caches] == ["motd"]  # reading a block imports the class
     assert "toyplug.plugin" in sys.modules
+
+
+KEYED = '''
+from untaped.sdk import Command, Credential, CredentialKey, Plugin
+
+from {package}.settings import ToySettings
+
+
+class ToyServer(CredentialKey):
+    """The toy server."""
+
+
+TOKEN = Credential(key=ToyServer)
+
+
+class Greet(Command[ToySettings]):
+    """Print the greeting."""
+
+    def run(self) -> str:
+        return self.settings.greeting
+
+
+class Toy(Plugin):
+    """A toy plugin holding a credential."""
+
+    settings = ToySettings
+    commands = (Greet,)
+    token = TOKEN
+'''
+
+
+def test_a_second_start_reads_a_plugins_credentials_when_first_asked(toys: Path) -> None:
+    """The section knows the credential's name from the declaration, so the class waits."""
+    from untaped.runtime.settings import _CREDENTIAL_NAMES
+    from untaped.sdk.network.credentials import declared_credentials
+
+    toy = _package(toys, "toyplug", KEYED)
+    compose_root(candidates=[toy])
+    _unload("toyplug")
+
+    with composed_with([toy]) as again:
+        assert "toyplug.plugin" not in sys.modules
+        section = section_settings(again.plugins[1].spec)
+        assert section is not None
+        assert _CREDENTIAL_NAMES[section] == {"token"}
+        assert "toyplug.plugin" not in sys.modules
+        assert [each.name for each in declared_credentials("toy")] == ["token"]
+        assert "toyplug.plugin" in sys.modules
 
 
 def test_a_replayed_plugin_has_its_setting_ids_and_runs(toys: Path) -> None:
