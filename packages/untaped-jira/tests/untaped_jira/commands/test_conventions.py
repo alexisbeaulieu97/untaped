@@ -1,7 +1,7 @@
 """CLI tests for the jira command conventions (``docs/reference/conventions.md``).
 
 Covers usage errors (exit 2), the write confirmation contract (``--yes`` /
-``--dry-run``, under ``jira.confirm: always``), ``--stdin`` identifiers, and
+``--dry-run`` on the writes that ask), ``--stdin`` identifiers, and
 HTTP error mapping.
 """
 
@@ -53,16 +53,17 @@ def _issue(key: str) -> dict[str, object]:
             "pass either --assignee or --unassign, not both",
         ),
         (
-            ["issues", "create", "--yes", "--project", "ABC", "--set-json", "cf={broken"],
+            ["issues", "create", "--project", "ABC", "--set-json", "cf={broken"],
             "--set-json: the value of 'cf' is not JSON",
         ),
         (["issues", "get", "ABC-1", "../../x"], "invalid issue key '../../x'"),
+        (["issues", "create", "--fields-file", "absent.yml"], "file not found: absent.yml"),
         (["issues", "patch", "A-1?x=y", "--summary", "x", "--yes"], "invalid issue key"),
-        (["issues", "comment", "ABC-1/..", "--body", "hi", "--yes"], "invalid issue key"),
+        (["issues", "comment", "ABC-1/..", "--body", "hi"], "invalid issue key"),
         (["issues", "comments", "list", "ABC-1#x"], "invalid issue key"),
         (["issues", "transitions", "1ABC-1"], "invalid issue key"),
         (["issues", "transition", "ABC-1", "ABC-", "--id", "31"], "invalid issue key"),
-        (["issues", "links", "create", "ABC-1", "Blocks", "x y", "--yes"], "invalid issue key"),
+        (["issues", "links", "create", "ABC-1", "Blocks", "x y"], "invalid issue key"),
         (["projects", "get", "A/B?x=y"], "invalid project key 'A/B?x=y'"),
         (["projects", "get", ".."], "invalid project key"),
     ],
@@ -137,6 +138,8 @@ WRITES = {
     ),
     "link": (["issues", "links", "create", "ABC-1", "Blocks", "ABC-2"], "POST", "/issueLink"),
 }
+#: The writes that ask first: each sets a field, or transitions.
+ASKING = ("patch", "transition")
 
 
 def _mock_writes(mock: respx.MockRouter) -> respx.Route:
@@ -152,13 +155,7 @@ def _mock_writes(mock: respx.MockRouter) -> respx.Route:
     )
 
 
-@pytest.fixture
-def confirm_always(settings: Settings) -> None:
-    settings["confirm"] = "always"
-
-
-@pytest.mark.usefixtures("confirm_always")
-@pytest.mark.parametrize("verb", sorted(WRITES))
+@pytest.mark.parametrize("verb", ASKING)
 def test_writes_need_yes_when_not_interactive(verb: str, jira: Invoke) -> None:
     args, _, _ = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
@@ -170,10 +167,7 @@ def test_writes_need_yes_when_not_interactive(verb: str, jira: Invoke) -> None:
     assert len(route.calls) == 0
 
 
-@pytest.mark.usefixtures("confirm_always")
-@pytest.mark.parametrize(
-    ("verb", "answer"), [(verb, a) for verb in sorted(WRITES) for a in (True, False)]
-)
+@pytest.mark.parametrize(("verb", "answer"), [(verb, a) for verb in ASKING for a in (True, False)])
 def test_writes_send_only_once_confirmed(
     verb: str, answer: bool, terminal: ScriptedTerminal, jira: Invoke
 ) -> None:
@@ -197,7 +191,8 @@ def test_dry_run_prints_the_request_and_wins_over_yes(verb: str, jira: Invoke) -
     args, method, path = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
-        result = jira([*args, "--dry-run", "--yes", "--format", "json"])
+        yes = ["--yes"] if verb in ASKING else []
+        result = jira([*args, "--dry-run", *yes, "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert len(route.calls) == 0

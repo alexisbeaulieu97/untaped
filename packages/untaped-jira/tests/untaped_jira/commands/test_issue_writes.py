@@ -285,7 +285,7 @@ def test_links_create_posts_an_issue_link(jira: Invoke) -> None:
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/rest/api/2/issueLink").mock(return_value=httpx.Response(201))
         result = jira(
-            ["issues", "links", "create", "ABC-1", "Blocks", "ABC-2", "--yes", "--format", "json"],
+            ["issues", "links", "create", "ABC-1", "Blocks", "ABC-2", "--format", "json"],
         )
 
     assert result.exit_code == 0, result.output

@@ -89,7 +89,7 @@ PRODUCERS: list[tuple[list[str], str, str, int, Any, str, bool]] = [
     ),
     # A mutation result is a ``jira.issue_outcome``, not the ``jira.issue`` entity.
     (
-        ["issues", "create", "--yes", "--project", "ABC", "--summary", "x"],
+        ["issues", "create", "--project", "ABC", "--summary", "x"],
         "POST",
         "/rest/api/2/issue",
         201,
@@ -98,7 +98,7 @@ PRODUCERS: list[tuple[list[str], str, str, int, Any, str, bool]] = [
         True,
     ),
     (
-        ["issues", "comment", "ABC-1", "--yes", "--body", "hi"],
+        ["issues", "comment", "ABC-1", "--body", "hi"],
         "POST",
         "/rest/api/2/issue/ABC-1/comment",
         201,
@@ -151,7 +151,7 @@ def test_issue_outcome_record_shape(jira: Invoke) -> None:
     with respx.mock(base_url=BASE) as mock:
         mock.post("/rest/api/2/issue").mock(return_value=httpx.Response(201, json=_CREATED))
         result = jira(
-            ["issues", "create", "--yes", "--project", "ABC", "--summary", "x", "--format", "pipe"],
+            ["issues", "create", "--project", "ABC", "--summary", "x", "--format", "pipe"],
         )
 
     assert result.exit_code == 0, result.output

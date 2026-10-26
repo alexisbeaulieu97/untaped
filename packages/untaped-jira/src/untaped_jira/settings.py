@@ -7,8 +7,7 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
-from untaped_jira.changes import ConfirmPolicy
+from untaped.sdk import Credential, CredentialKey, NeedsSetup, Retired, TlsVerify
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 
@@ -31,8 +30,14 @@ class JiraServer(CredentialKey):
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
 
-    #: Gone at 12.0: read only to name its successor.
-    retired_keys: ClassVar[Mapping[str, str]] = {"base_url": "server.url"}
+    #: Gone at 12.0: read only to name a successor or say what to do instead.
+    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
+        "base_url": "server.url",
+        "confirm": Retired(
+            note="deleted in 12.0; jira asks before writes that replace or remove; "
+            "pass --yes to skip the question"
+        ),
+    }
 
     model_config = ConfigDict(frozen=True)
 
@@ -58,14 +63,6 @@ class JiraSettings(BaseModel):
         default=None, description="Board `sprints list` uses when `--board-id` is omitted."
     )
     page_size: int = Field(default=50, gt=0, description="Results requested per Jira API page.")
-    confirm: ConfirmPolicy = Field(
-        default="destructive",
-        description=(
-            "Which writes ask first: `always`, `destructive` (patches that replace "
-            "or remove values, assignee changes, transitions) or `never`. `--yes` "
-            "skips the prompt."
-        ),
-    )
 
     @property
     def url(self) -> str | None:

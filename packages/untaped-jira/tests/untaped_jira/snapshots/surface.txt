@@ -2,10 +2,6 @@
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
-cfg jira.confirm choice=always
-cfg jira.confirm choice=destructive
-cfg jira.confirm choice=never
-cfg jira.confirm string default=destructive
 cfg jira.default_board_id integer? default=unset
 cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
@@ -58,8 +54,6 @@ cli untaped jira issues comment --format choice=pipe
 cli untaped jira issues comment --format choice=raw
 cli untaped jira issues comment --format choice=table
 cli untaped jira issues comment --format choice=yaml
-cli untaped jira issues comment --yes alias=-y
-cli untaped jira issues comment --yes switch default=unset
 cli untaped jira issues comment KEY
 cli untaped jira issues comments
 cli untaped jira issues comments list --columns VALUE... default=unset
@@ -91,8 +85,6 @@ cli untaped jira issues create --project VALUE default=unset
 cli untaped jira issues create --set VALUE... default=unset
 cli untaped jira issues create --set-json VALUE... default=unset
 cli untaped jira issues create --summary VALUE default=unset
-cli untaped jira issues create --yes alias=-y
-cli untaped jira issues create --yes switch default=unset
 cli untaped jira issues get
 cli untaped jira issues get --columns VALUE... default=unset
 cli untaped jira issues get --columns alias=-c
@@ -117,8 +109,6 @@ cli untaped jira issues links create --format choice=pipe
 cli untaped jira issues links create --format choice=raw
 cli untaped jira issues links create --format choice=table
 cli untaped jira issues links create --format choice=yaml
-cli untaped jira issues links create --yes alias=-y
-cli untaped jira issues links create --yes switch default=unset
 cli untaped jira issues links create KEY LINK_TYPE OTHER
 cli untaped jira issues patch --assignee VALUE default=unset
 cli untaped jira issues patch --columns VALUE... default=unset

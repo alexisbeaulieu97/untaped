@@ -208,11 +208,11 @@ class Issues(Group):
 
     ## Which writes ask first
 
-    `jira.confirm` decides. Under the default, `destructive`, a write asks first
-    when it can replace or remove what an issue holds: every `issues transition`,
-    and an `issues patch` that sets a field, changes the assignee, or has an
-    `update` operation other than `add`. `issues create`, `issues comment`,
-    `issues links create` and add-only patches are sent without asking.
+    A write asks first when it can replace or remove what an issue holds: every
+    `issues transition`, and an `issues patch` that sets a field, changes the
+    assignee, or has an `update` operation other than `add`; an add-only patch
+    doesn't ask. `issues create`, `issues comment` and `issues links create`
+    only add, so they never ask and take `--dry-run` without `--yes`.
 
     When a write asks, it shows the preview with the question. `--yes` skips
     both the question and the preview's reads.

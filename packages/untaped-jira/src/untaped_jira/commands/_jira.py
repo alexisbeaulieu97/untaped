@@ -6,8 +6,7 @@ import textwrap
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 
-from untaped.sdk import Command, Confirm, Output
-from untaped_jira.changes import needs_confirmation
+from untaped.sdk import Command, Confirm, DryRun, Output
 from untaped_jira.client import JiraClient
 from untaped_jira.keys import validate_issue_key
 from untaped_jira.records import IssueOutcome
@@ -50,24 +49,28 @@ class JiraCommand(Command[JiraSettings]):
 
 
 class JiraWrite(JiraCommand):
-    """A command that sends one write: it previews, asks per ``jira.confirm``, then sends."""
+    """A command that sends one write: it previews, goes ahead (:meth:`_go_ahead`), then sends."""
 
-    confirm: Confirm
     output: Output[IssueOutcome]
+
+    def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
+        """Whether to send; ``False`` after ``--dry-run`` printed ``preview``."""
+        raise NotImplementedError
 
     def send(
         self,
         preview: Preview,
         send: Callable[[JiraClient], IssueOutcome],
         *,
-        destructive: bool,
         planned: IssueOutcome,
         progress: str,
+        replaces: bool = False,
     ) -> IssueOutcome:
-        """Preview the write (``--dry-run``), or confirm it per ``jira.confirm`` and send it.
+        """Preview the write (``--dry-run``), or go ahead and send it.
 
         A callable ``preview`` reads the issue's current values, so it runs
         only when a preview is shown; a static one needs no client.
+        ``replaces`` says the write can replace or remove what the issue holds.
         """
         with ExitStack() as stack:
             opened: list[JiraClient] = []
@@ -83,11 +86,33 @@ class JiraWrite(JiraCommand):
                 with self.ctx.diag.progress("Reading current values"):
                     return request_lines(preview(client()))
 
-            needed = needs_confirmation(self.settings.confirm, destructive=destructive)
-            if not self.confirm("Send this request to Jira?", preview=lines, needed=needed):
+            if not self._go_ahead(lines, replaces=replaces):
                 return planned
             with self.ctx.diag.progress(progress):
                 return send(client())
+
+
+class AsksFirst(JiraWrite):
+    """A write that asks before it replaces or removes what an issue holds."""
+
+    confirm: Confirm
+
+    def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
+        return self.confirm("Send this request to Jira?", preview=preview, needed=replaces)
+
+
+class SendsDirectly(JiraWrite):
+    """A write that only adds to Jira, so it never asks; ``--dry-run`` previews it."""
+
+    dry_run: DryRun
+
+    def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
+        del replaces
+        if not self.dry_run:
+            return True
+        for line in preview():
+            self.ctx.diag.info(line, unmuted=True)
+        return False
 
 
 def request_lines(requests: Sequence[PreviewRequest]) -> list[str]:

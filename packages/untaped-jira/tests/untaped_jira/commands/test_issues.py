@@ -164,7 +164,6 @@ def test_issue_create_merges_fields_file_and_flags(tmp_path: Path, jira: Invoke)
             [
                 "issues",
                 "create",
-                "--yes",
                 "--fields-file",
                 str(fields_file),
                 "--project",
@@ -223,7 +222,7 @@ def test_non_object_payload_sections_are_rejected(
     payload.write_text(body)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route()
-        result = jira(["issues", *args, str(payload), "--yes"])
+        result = jira(["issues", *args, str(payload)])
 
     assert result.exit_code == 1, result.output
     assert message in result.stderr
@@ -285,7 +284,7 @@ def test_issue_comment_body_keeps_its_formatting(tmp_path: Path, source: str, ji
     text = "line1\n\n    code\nline3\n"
     body_file = tmp_path / "comment.md"
     body_file.write_text(text)
-    args = ["issues", "comment", "ABC-1", "--yes", "--format", "raw", "--columns", "comment_id"]
+    args = ["issues", "comment", "ABC-1", "--format", "raw", "--columns", "comment_id"]
     with respx.mock(base_url=BASE) as mock:
         route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
             return_value=httpx.Response(201, json={"id": "700"})
@@ -303,7 +302,7 @@ def test_issue_comment_body_keeps_its_formatting(tmp_path: Path, source: str, ji
 def test_issue_comment_missing_body_uses_sdk_error(jira: Invoke) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route()
-        result = jira(["issues", "comment", "ABC-1", "--yes"])
+        result = jira(["issues", "comment", "ABC-1"])
 
     assert result.exit_code == 2, result.output
     assert "a comment needs --body (- reads stdin) or --body-file" in result.stderr
@@ -318,7 +317,7 @@ def test_a_blank_comment_body_is_refused_before_sending(
 ) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route()
-        result = jira(["issues", "comment", "ABC-1", "--yes", *body], input=piped)
+        result = jira(["issues", "comment", "ABC-1", *body], input=piped)
 
     assert result.exit_code == 1, result.output
     assert "no body provided" in result.stderr
@@ -330,7 +329,7 @@ def test_a_comment_body_loses_only_its_last_newline(jira: Invoke) -> None:
         route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
             return_value=httpx.Response(201, json={"id": "700"})
         )
-        result = jira(["issues", "comment", "ABC-1", "--yes", "--body", "-"], input="hi\r\n\n")
+        result = jira(["issues", "comment", "ABC-1", "--body", "-"], input="hi\r\n\n")
 
     assert result.exit_code == 0, result.output
     assert json.loads(route.calls[0].request.content) == {"body": "hi\r\n"}
@@ -344,7 +343,7 @@ def test_a_fields_file_s_other_keys_are_sent_as_given(tmp_path: Path, jira: Invo
             return_value=httpx.Response(201, json={"id": "10001", "key": "ABC-1"})
         )
         args = ["--fields-file", str(fields_file), "--project", "ABC", "--issue-type", "Bug"]
-        result = jira(["issues", "create", "--yes", *args])
+        result = jira(["issues", "create", *args])
 
     assert result.exit_code == 0, result.output
     sent = json.loads(route.calls[0].request.content)

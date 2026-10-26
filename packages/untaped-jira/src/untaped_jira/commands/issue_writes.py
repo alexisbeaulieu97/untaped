@@ -1,7 +1,8 @@
 """``untaped jira issues create|patch|comment|transition``: the issue writes.
 
-Each previews the requests it sends and asks first per ``jira.confirm``;
-the ``issues`` group's page explains both.
+Each previews the requests it sends under ``--dry-run``; patches and
+transitions ask first when they replace or remove. The ``issues`` group's
+page explains both.
 """
 
 from __future__ import annotations
@@ -32,8 +33,7 @@ from untaped.sdk import (
 from untaped_jira.changes import (
     change_line,
     comment_lines,
-    is_destructive_patch,
-    needs_confirmation,
+    patch_replaces,
     payload_changes,
     referenced_fields,
     transition_changes,
@@ -41,9 +41,11 @@ from untaped_jira.changes import (
 from untaped_jira.client import JiraClient
 from untaped_jira.commands._jira import (
     ISSUE_KEY,
+    AsksFirst,
     JiraCommand,
     JiraWrite,
     PreviewRequest,
+    SendsDirectly,
     issue_keys,
     request_lines,
 )
@@ -86,7 +88,7 @@ class _Fields(JiraWrite):
         )
 
 
-class Create(_Fields):
+class Create(_Fields, SendsDirectly):
     """Create one issue from flags and an optional Jira-shaped fields file.
 
     Flags override the fields file. The ``issues`` group's page explains the
@@ -116,13 +118,12 @@ class Create(_Fields):
         return self.send(
             [("POST", f"{settings.api_prefix}/issue", payload_changes(payload))],
             send,
-            destructive=False,
             planned=IssueOutcome(action="planned"),
             progress="Creating issue",
         )
 
 
-class Patch(_Fields):
+class Patch(_Fields, AsksFirst):
     """Update fields of one issue (including its assignee) from flags or a fields file.
 
     ``--assignee`` and ``--unassign`` override ``fields.assignee`` in a
@@ -181,7 +182,7 @@ class Patch(_Fields):
         return self.send(
             preview,
             send,
-            destructive=is_destructive_patch(edit, assigns=assign is not None),
+            replaces=patch_replaces(edit, assigns=assign is not None),
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.url, key)),
             progress="Updating issue",
         )
@@ -218,13 +219,13 @@ class Patch(_Fields):
         return name
 
 
-class Comment(JiraWrite):
+class Comment(SendsDirectly):
     """Add a comment to one issue; ``--body -`` reads it from stdin.
 
     Examples
     --------
     ```console
-    $ git log -1 --format=%B | untaped jira issues comment OPS-123 --body - --yes
+    $ git log -1 --format=%B | untaped jira issues comment OPS-123 --body -
     ```
     """
 
@@ -261,7 +262,6 @@ class Comment(JiraWrite):
         return self.send(
             [("POST", f"{settings.api_prefix}/issue/{key}/comment", comment_lines(body))],
             send,
-            destructive=False,
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.url, key)),
             progress="Adding comment",
         )
@@ -316,10 +316,9 @@ class Transition(JiraCommand):
                 plans = [(key, plan) for key in keys if (plan := self._plan(client, key))]
             if not plans:
                 return []
-            needed = needs_confirmation(self.settings.confirm, destructive=True)
             question = f"Transition {plural(len(plans), 'issue')} in Jira?"
             preview = lambda: self._preview(client, plans)  # noqa: E731 - read only when asked
-            if not self.confirm(question, preview=preview, needed=needed):
+            if not self.confirm(question, preview=preview):
                 return [
                     IssueOutcome(
                         action="planned",

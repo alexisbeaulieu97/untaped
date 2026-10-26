@@ -1,4 +1,4 @@
-"""Readable write previews and the ``jira.confirm`` policy (pure, no I/O).
+"""Readable write previews and which patches replace or remove (pure, no I/O).
 
 A preview is one ``METHOD path`` line per request followed by indented
 ``field: old → new`` lines, instead of the raw JSON body. Old values come
@@ -10,10 +10,7 @@ from __future__ import annotations
 import json
 import textwrap
 from collections.abc import Mapping
-from typing import Any, Literal
-
-# ``jira.confirm``: which writes ask first.
-ConfirmPolicy = Literal["always", "destructive", "never"]
+from typing import Any
 
 _ARROW = "→"
 _TEXT_LIMIT = 60
@@ -24,18 +21,13 @@ _ADDITIVE_OPS = frozenset({"add"})
 _OP_SIGNS = {"add": "+", "remove": "-"}
 
 
-def needs_confirmation(policy: ConfirmPolicy, *, destructive: bool) -> bool:
-    """Whether a write asks first under ``jira.confirm`` (``--yes`` still skips the prompt)."""
-    return policy == "always" or (policy == "destructive" and destructive)
-
-
-def is_destructive_patch(payload: Mapping[str, Any] | None, *, assigns: bool) -> bool:
+def patch_replaces(payload: Mapping[str, Any] | None, *, assigns: bool) -> bool:
     """Whether an issue edit can overwrite or remove what the issue holds now.
 
     Setting a field (``fields``) replaces its value, and an assignee change
     replaces the assignee; an ``update`` operation other than ``add``
     (``set``, ``remove``, ``edit``) replaces or removes. An edit that only
-    adds (``update: {labels: [{add: x}]}``) is not destructive.
+    adds (``update: {labels: [{add: x}]}``) does neither.
     """
     if assigns:
         return True

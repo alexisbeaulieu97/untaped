@@ -6,14 +6,14 @@ from pydantic import Field
 
 from untaped.sdk import Group, Positional, q
 from untaped_jira.client import JiraClient
-from untaped_jira.commands._jira import ISSUE_KEY, JiraWrite
+from untaped_jira.commands._jira import ISSUE_KEY, SendsDirectly
 from untaped_jira.keys import validate_issue_key
 from untaped_jira.parse import browse_url
 from untaped_jira.payloads import build_link_payload
 from untaped_jira.records import IssueOutcome
 
 
-class Create(JiraWrite):
+class Create(SendsDirectly):
     """Link KEY to OTHER, read as "KEY OUTWARD-PHRASE OTHER" (OPS-1 Blocks OPS-2).
 
     With ``Blocks``, KEY blocks OTHER. The preview prints a ``reads as:``
@@ -41,7 +41,6 @@ class Create(JiraWrite):
         return self.send(
             [("POST", f"{settings.api_prefix}/issueLink", [reads_as])],
             send,
-            destructive=False,
             planned=IssueOutcome(action="planned", linked_key=other, **outcome),
             progress="Linking issues",
         )

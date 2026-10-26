@@ -1,8 +1,8 @@
-"""CLI tests for ``jira.confirm`` and the readable write previews.
+"""CLI tests for which writes ask first and the readable write previews.
 
-``jira.confirm`` (``always`` | ``destructive`` | ``never``) picks which writes
-ask first; the preview shows each request as ``field: old → new`` lines,
-reading the issue's current values only when a preview is shown.
+A write that replaces or removes asks first; one that only adds never does.
+The preview shows each request as ``field: old → new`` lines, reading the
+issue's current values only when a preview is shown.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ WRITES = {
     "patch": ["issues", "patch", "ABC-1", "--summary", "x"],
     "transition": ["issues", "transition", "ABC-1", "--id", "31"],
 }
-DESTRUCTIVE = {"patch", "transition"}
+REPLACING = {"patch", "transition"}
 CURRENT = {
     "key": "ABC-1",
     "fields": {
@@ -86,14 +86,14 @@ def run(jira: Invoke) -> Run:
     return run
 
 
-# --- jira.confirm ------------------------------------------------------------------
+# --- which writes ask -------------------------------------------------------------
 
 
 @pytest.mark.parametrize("verb", sorted(WRITES))
-def test_default_policy_asks_only_for_destructive_writes(verb: str, run: Run) -> None:
+def test_only_writes_that_replace_or_remove_ask(verb: str, run: Run) -> None:
     result, _, writes = run(WRITES[verb])
 
-    if verb in DESTRUCTIVE:
+    if verb in REPLACING:
         assert result.exit_code == 2, result.output
         assert f"error: untaped jira issues {verb} requires --yes" in result.stderr
         assert len(writes.calls) == 0
@@ -102,22 +102,18 @@ def test_default_policy_asks_only_for_destructive_writes(verb: str, run: Run) ->
         assert len(writes.calls) == 1
 
 
-@pytest.mark.parametrize("verb", sorted(WRITES))
-def test_always_policy_asks_for_every_write(settings: Settings, verb: str, run: Run) -> None:
-    settings["confirm"] = "always"
-    result, _, writes = run(WRITES[verb])
+@pytest.mark.parametrize("verb", sorted(set(WRITES) - REPLACING))
+def test_writes_that_only_add_take_no_yes(verb: str, run: Run) -> None:
+    result, _, writes = run([*WRITES[verb], "--yes"])
 
     assert result.exit_code == 2, result.output
-    assert "requires --yes when not interactive" in result.stderr
+    assert "Unknown option: --yes" in result.stderr
     assert len(writes.calls) == 0
 
 
-@pytest.mark.parametrize("verb", sorted(WRITES))
-def test_never_policy_sends_without_asking_or_previewing(
-    settings: Settings, verb: str, run: Run
-) -> None:
-    settings["confirm"] = "never"
-    result, issue, writes = run([*WRITES[verb], "--format", "json"])
+@pytest.mark.parametrize("verb", sorted(REPLACING))
+def test_yes_sends_without_previewing(verb: str, run: Run) -> None:
+    result, issue, writes = run([*WRITES[verb], "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert len(writes.calls) == 1
@@ -125,16 +121,15 @@ def test_never_policy_sends_without_asking_or_previewing(
     assert "→" not in result.stderr
 
 
-def test_dry_run_still_previews_under_the_never_policy(settings: Settings, run: Run) -> None:
+def test_a_retired_confirm_setting_is_not_read(settings: Settings, run: Run) -> None:
     settings["confirm"] = "never"
-    result, _, writes = run([*WRITES["patch"], "--dry-run"])
+    result, _, writes = run(WRITES["patch"])
 
-    assert result.exit_code == 0, result.output
-    assert 'summary: "Old title" → "x"' in result.stderr
+    assert result.exit_code == 2, result.output
     assert len(writes.calls) == 0
 
 
-def test_additive_patch_is_not_destructive(tmp_path: Path, run: Run) -> None:
+def test_an_additive_patch_does_not_ask(tmp_path: Path, run: Run) -> None:
     fields_file = tmp_path / "labels.yml"
     fields_file.write_text("update:\n  labels:\n    - add: urgent\n")
     result, _, writes = run(["issues", "patch", "ABC-1", "--fields-file", str(fields_file)])
@@ -144,7 +139,7 @@ def test_additive_patch_is_not_destructive(tmp_path: Path, run: Run) -> None:
 
 
 @pytest.mark.parametrize("update", ["labels:\n    - remove: infra\n", "labels:\n    - set: [a]\n"])
-def test_removing_or_replacing_patch_is_destructive(tmp_path: Path, update: str, run: Run) -> None:
+def test_a_removing_or_replacing_patch_asks(tmp_path: Path, update: str, run: Run) -> None:
     fields_file = tmp_path / "labels.yml"
     fields_file.write_text(f"update:\n  {update}")
     result, _, writes = run(["issues", "patch", "ABC-1", "--fields-file", str(fields_file)])
@@ -154,7 +149,7 @@ def test_removing_or_replacing_patch_is_destructive(tmp_path: Path, update: str,
 
 
 @pytest.mark.parametrize("args", [["--assignee", "bob"], ["--unassign"]])
-def test_assignee_changes_are_destructive(args: list[str], run: Run) -> None:
+def test_assignee_changes_ask(args: list[str], run: Run) -> None:
     result, _, writes = run(["issues", "patch", "ABC-1", *args])
 
     assert result.exit_code == 2, result.output
@@ -474,7 +469,7 @@ def test_link_preview_reads_in_words(run: Run) -> None:
 @pytest.mark.parametrize(
     ("args", "old"),
     [
-        (["issues", "patch", "ABC-1"], "--body-file"),
+        (["issues", "patch", "ABC-1", "--yes"], "--body-file"),
         (["issues", "create", "--project", "ABC"], "--template"),
     ],
 )
@@ -483,8 +478,8 @@ def test_fields_documents_only_come_from_fields_file(
 ) -> None:
     fields_file = tmp_path / "fields.yml"
     fields_file.write_text("fields:\n  summary: From file\n")
-    new, _, new_writes = run([*args, "--fields-file", str(fields_file), "--yes"])
-    stale, _, stale_writes = run([*args, old, str(fields_file), "--yes"])
+    new, _, new_writes = run([*args, "--fields-file", str(fields_file)])
+    stale, _, stale_writes = run([*args, old, str(fields_file)])
 
     assert new.exit_code == 0, new.output
     assert json.loads(new_writes.calls[0].request.content)["fields"]["summary"] == "From file"
