@@ -8,7 +8,6 @@ end through the real surface.
 
 from __future__ import annotations
 
-import dataclasses
 import json
 from pathlib import Path
 
@@ -214,12 +213,3 @@ def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
         prompt_backend=ScriptedPromptBackend(interrupt=True),
     )
     assert result.exit_code == 130
-
-
-def test_a_root_app_the_shell_does_not_list_fails_the_build(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    shell = dataclasses.replace(bootstrap.SHELL_SPEC, commands=())
-    monkeypatch.setattr(bootstrap, "SHELL_SPEC", shell)
-    with pytest.raises(RuntimeError, match=r"root commands SHELL_SPEC doesn't list: .*'agents'"):
-        bootstrap.build_root_app(candidates=())

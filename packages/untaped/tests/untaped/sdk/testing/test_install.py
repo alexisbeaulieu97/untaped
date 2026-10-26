@@ -176,7 +176,7 @@ def test_cli_reads_json_and_pipe_rows_back_and_refuses_a_table(install: Installe
     with pytest.raises(TypeError, match="printed as --format table"):
         shop.cli("shop stock tea").rows_as(Item)
     with pytest.raises(TypeError, match="no command of a plugin installed"):
-        shop.cli("agents shop").rows_as(Item)
+        shop.cli("--version").rows_as(Item)
     with pytest.raises(TypeError, match=r"nothing was printed \(exit 2\)"):
         shop.cli("shop stock --nope -f json").rows_as(Item)
 

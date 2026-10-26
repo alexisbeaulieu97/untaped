@@ -21,7 +21,6 @@ from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
 from cyclopts.core import _apply_parent_defaults_to_app
 
-from untaped.core.commands import build_root_agents_app
 from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME, CoreSettings
@@ -102,12 +101,10 @@ SHELL_SPEC = ApplicationSpec(
     section=NAME,
     settings=CoreSettings,
     deprecations=_shell_deprecations,
-    # the root commands not yet on Core's class, in the order they mount
-    commands=("agents",),
 )
 
 _COMPOSED_RESULT: CompositionResult | None = None
-#: The root :func:`build_root_app` last built, which :func:`root_command` reads.
+#: The root :func:`build_root_app` last built, which :func:`root_app` reads.
 _BUILT_ROOT: App | None = None
 
 #: The run :func:`run_root` started and the line its token pass left, until the
@@ -269,12 +266,11 @@ def build_root_app(
 ) -> App:
     """Compose core plus plugins and return the root app.
 
-    Mounts core's commands at the root (those on ``Core``'s class from the
-    declaration, the others through the 11.x seam) and each validated
-    plugin's sub-app under its plugin name, wires ``--version`` to installed-distribution
-    metadata, installs position-independent root options, and registers shell
-    completion. In tests, drive ``app.meta`` through
-    :class:`~untaped.sdk.testing.CliInvoker` (or
+    Mounts core's commands (those on ``Core``'s class) at the root from the
+    declaration and each validated plugin's sub-app under its plugin name,
+    wires ``--version`` to installed-distribution metadata, installs
+    position-independent root options, and registers shell completion. In
+    tests, drive ``app.meta`` through :class:`~untaped.sdk.testing.CliInvoker` (or
     :func:`~untaped.sdk._cli.run_cyclopts_app`), never by calling it directly:
     the root reads the tokens as given only there. Run via :func:`run_root`
     in production.
@@ -285,11 +281,6 @@ def build_root_app(
     root.meta.group_parameters = GLOBAL_OPTIONS_GROUP
     if not result.plugins and not result.quarantine:
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
-    management = {"agents": build_root_agents_app(result=result, root=lambda: root)}
-    for name in SHELL_SPEC.commands:
-        _mount(root, management.pop(name), name=name)
-    if management:
-        raise RuntimeError(f"root commands SHELL_SPEC doesn't list: {sorted(management)}")
     _mount_core(root, result.mount)
     for plugin in result.plugins:
         _mount_plugin(root, plugin)
@@ -312,15 +303,20 @@ def build_root_app(
     return root
 
 
+def root_app() -> App:
+    """The root :func:`build_root_app` last built, which ``untaped agents`` describes."""
+    if _BUILT_ROOT is None:
+        raise RuntimeError("no root app built yet; call build_root_app() first")
+    return _BUILT_ROOT
+
+
 def root_command(token: str) -> str | None:
     """The root command ``token`` selects in the root :func:`build_root_app` last built.
 
     As dispatch would pick it (exact names, then deprecated aliases, then the
     one loose match); ``None`` when no command, core's or a plugin's, has it.
     """
-    if _BUILT_ROOT is None:
-        raise RuntimeError("no root app built yet; call build_root_app() first")
-    return resolve_command(_BUILT_ROOT, token)
+    return resolve_command(root_app(), token)
 
 
 def _mount(app: App, sub: App, *, name: str) -> None:
@@ -338,9 +334,6 @@ def _mount(app: App, sub: App, *, name: str) -> None:
 def _mount_core(root: App, mount: Mount) -> None:
     """Mount the commands on ``Core``'s class at the root, from the declaration."""
     core = mount.declaration.plugin(NAME)
-    both = set(core.command_words()) & set(SHELL_SPEC.commands)
-    if both:  # a command moved onto ``Core`` leaves SHELL_SPEC in the same change
-        raise RuntimeError(f"root commands both Core and SHELL_SPEC declare: {sorted(both)}")
     add_commands(root, mount, NAME)
     for node in core.commands:
         apply_marks(root[node.name], path=(node.name,))
