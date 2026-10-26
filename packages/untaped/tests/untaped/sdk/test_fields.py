@@ -274,8 +274,9 @@ def test_a_following_field_prints_as_a_second_table_after_the_first(
         Ticket(key="T-1", summary="sum", comments=[Comment(author="al", body="hi")]), kind=None
     )
     out = capsys.readouterr().out
+    assert "\ncomments\n" in out  # the field's name heads its table
     first, second = out.split("author")
-    assert "T-1" in first and "comments" not in first and "hi" not in first
+    assert "T-1" in first and "hi" not in first
     assert "hi" in second and "created" not in second  # the item's Column marks pick its columns
     filled._print(Ticket(key="T-2", summary="sum"), kind=None)
     assert "author" not in capsys.readouterr().out  # no row carries the field: no second table

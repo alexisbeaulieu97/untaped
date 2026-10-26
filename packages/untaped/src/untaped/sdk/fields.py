@@ -481,6 +481,7 @@ class Output[R: BaseModel](FieldBlock):
             held = [value for row in rows if (value := getattr(row, name, None)) is not None]
             if not held:
                 continue  # no row carries it this run (``issues get`` without ``--comments``)
+            print(f"\n{name.replace('_', ' ')}")  # one heading: two bare tables read as one
             emit_with(
                 [each for value in held for each in value],
                 ui=ui,
