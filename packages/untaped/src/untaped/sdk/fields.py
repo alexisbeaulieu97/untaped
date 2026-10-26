@@ -409,6 +409,12 @@ class Output[R: BaseModel](FieldBlock):
         """The text a table shows when ``run`` printed no row."""
         self._empty = text
 
+    def _option_default(self, option: FieldOption) -> str | int | None:
+        # ``table`` is every command's, so only another default is recorded
+        if option.flag == "--format" and self.default_format != "table":
+            return self.default_format
+        return None
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Output[R]:
         """A copy for one invocation, from ``--format`` and ``--columns``.
 
@@ -979,6 +985,9 @@ class Limit(FieldBlock):
     def value(self) -> int | None:
         """At most this many results; ``None`` is no limit."""
         return self._value
+
+    def _option_default(self, option: FieldOption) -> str | int | None:
+        return self.default if option.flag == "--limit" else None
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Limit:
         """A copy for one invocation, from ``--limit``; below 1 is a usage error."""

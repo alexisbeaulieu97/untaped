@@ -539,14 +539,24 @@ def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
         return Annotated[value, Parameter(**settings), *metadata], inspect.Parameter.empty
     shown = option.default is not None and option.default is not False
     shown = shown and option.default not in ([], "")
-    settings["show_default"] = (lambda _value: _shown(option.default)) if shown else False
+    settings["show_default"] = DeclaredDefault(option.default) if shown else False
     return Annotated[value | None, Parameter(**settings), *metadata], None
 
 
-def _shown(default: object) -> str:
-    if isinstance(default, list):
-        return ", ".join(str(each) for each in default)
-    return str(default)
+@dataclass(frozen=True)
+class DeclaredDefault:
+    """An option's declared default, as help shows it; the parser's default stays ``None``.
+
+    The flag's value is ``None`` when not given, so the filler tells a given
+    flag from its default; the surface reader reads the default from here.
+    """
+
+    value: object
+
+    def __call__(self, _value: object) -> str:
+        if isinstance(self.value, list):
+            return ", ".join(str(each) for each in self.value)
+        return str(self.value)
 
 
 def _mark(stability: StabilityDecl | None) -> Stability | None:

@@ -24,6 +24,7 @@ from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.core.surface._lists import WRITTEN_OUTSIDE
 from untaped.core.surface._sdk import line_mark
 from untaped.core.surface._types import choice_text, default_text
+from untaped.runtime.mount import DeclaredDefault
 from untaped.sdk.marks import (
     children,
     deprecated_aliases,
@@ -192,6 +193,9 @@ def option_identity(subject: str, argument: Any) -> str:
     """The identity of an optional option's line: ``cli untaped awx test run --dry-run switch``."""
     main = option_name(argument)
     default = argument.field_info.default
+    declared = argument.parameter.show_default
+    if default is None and isinstance(declared, DeclaredDefault):
+        default = declared.value  # a 12.0 command's, which its flag reads as unset
     if _is_switch(argument):
         shape = "switch" if default is False else f"switch default={_default(default)}"
     else:

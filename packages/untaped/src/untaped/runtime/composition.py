@@ -1088,11 +1088,8 @@ class _CommandWalk:
             )
         for option in block.options:
             choices: tuple[str, ...] = ()
-            initial: str | None = None
             if option.flag == "--format" and isinstance(default, Output):
                 choices = default.formats
-                # ``table`` is every command's, so only another default is recorded
-                initial = None if default.default_format == "table" else default.default_format
             seen.options.append(
                 OptionDecl(
                     field=path,
@@ -1105,7 +1102,7 @@ class _CommandWalk:
                     help=refresh_help or option.help,  # Refresh's one flag pair, about its caches
                     panel=block.panel,
                     block=block.field_kind,
-                    default=initial,
+                    default=default._option_default(option),
                 )
             )
 

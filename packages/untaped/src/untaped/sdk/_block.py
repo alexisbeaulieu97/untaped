@@ -279,6 +279,11 @@ class FieldBlock:
     #: The flags the field adds, before any per-instance ones.
     options: ClassVar[tuple[FieldOption, ...]] = ()
 
+    def _option_default(self, option: FieldOption) -> str | int | None:
+        """The default this instance sets for ``option``, which help shows; ``None``: none."""
+        del option
+        return None
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Self:
         """This field for one invocation, from its flags (``{"--format": "json"}``).
 
