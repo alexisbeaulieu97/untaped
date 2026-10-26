@@ -80,8 +80,10 @@ def check_quarantine(result: CompositionResult) -> None:
         )
 
 
-def sections(result: CompositionResult, *, extensions: bool, root: bool = True) -> list[Section]:
-    """The root plugin's (core's) sections unless ``root=False``, then each other's, by name.
+def sections(
+    result: CompositionResult, *, extensions: bool, owner: str | None = None
+) -> list[Section]:
+    """Each plugin's sections, the root plugin's (core's) first, then by name; ``owner``'s only.
 
     ``extensions=False`` leaves the injected ``extensions`` key out of an
     owner's section (the config reference documents it elsewhere).
@@ -95,7 +97,7 @@ def sections(result: CompositionResult, *, extensions: bool, root: bool = True) 
 
     found: list[Section] = []
     ordered = sorted(result.plugins, key=lambda each: (not each.root, each.spec.name))
-    for spec in (each.spec for each in ordered if root or not each.root):
+    for spec in (each.spec for each in ordered if owner in (None, each.spec.name)):
         settings = section_settings(spec, extensions=extensions)
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
@@ -144,15 +146,15 @@ def setting_leaves(section: Section) -> list[Setting]:
 
 
 def settings_lines(
-    result: CompositionResult, *, root: bool = True, tree: App | None = None
+    result: CompositionResult, *, owner: str | None = None, tree: App | None = None
 ) -> list[Line]:
-    """Every ``cfg`` and ``state`` line of the composition (``root=False``: plugins only).
+    """Every ``cfg`` and ``state`` line of the composition, or only plugin ``owner``'s.
 
     ``tree`` (the root app) names a plugin mark's object replacement, as on
     the plugin's ``cli`` lines.
     """
     lines: list[Line] = []
-    for section in sections(result, extensions=False, root=root):
+    for section in sections(result, extensions=False, owner=owner):
         area = "state" if section.is_state else "cfg"
         plugin_mark = line_mark(section.stability, tree)
         schema = schema_of(section.model)

@@ -53,7 +53,12 @@ from untaped.core.surface._sdk import SurfaceError
 if TYPE_CHECKING:
     from cyclopts import App
 
-    from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
+    from untaped.runtime.registry import (
+        CompositionResult,
+        PluginCandidate,
+        PluginSpec,
+        RegisteredPlugin,
+    )
 
 __all__ = [
     "FORMAT",
@@ -90,14 +95,13 @@ SDK_MODULES = (
 
 
 def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
-    """The whole surface: the root composed with ``candidates`` (first-party plugins).
+    """The whole surface: the lines of every plugin composed with ``candidates``, core's included.
 
     Raises :class:`RuntimeError` naming any quarantined candidate, and
-    :class:`SurfaceError` for anything the walker can't classify.
+    :class:`SurfaceError` for anything the walker can't classify or no
+    composed plugin owns.
     """
-    from untaped.core.surface._cli import cli_lines  # noqa: PLC0415
-    from untaped.core.surface._records import record_lines  # noqa: PLC0415
-    from untaped.core.surface._settings import check_quarantine, settings_lines  # noqa: PLC0415
+    from untaped.core.surface._settings import check_quarantine  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
         composition,
@@ -108,16 +112,9 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
         root = build_root_app(candidates=candidates)
         result = composition()
         check_quarantine(result)
-        marks = _plugin_marks(result, root)
-        modules: dict[str, LineMark | None] = dict.fromkeys(SDK_MODULES)
-        for plugin in result.plugins:
-            modules.update(_plugin_modules(plugin.spec, plugin.plugin_ref.entry_point, root))
-        lines = cli_lines(root, marks)
-        lines.extend(settings_lines(result, tree=root))
-        lines.extend(_owned(result, modules, marks))
-        lines.extend(_behaviour_lines(result, root))
-        lines.extend(record_lines(result, marks))
-        lines.extend(_convention_lines())
+        composed = _Composed(result, root, candidates)
+        composed.check_owned()
+        lines = [line for plugin in result.plugins for line in composed.lines(plugin)]
     return sorted(set(lines))
 
 
@@ -126,11 +123,10 @@ def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
 
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
     their payload models, its record kinds once it is a 12.0 plugin class, and
-    its ``api`` and ``testing`` modules when it has them.
+    its ``api`` and ``testing`` modules when it has them: the lines
+    :func:`generate` takes from every composed plugin.
     """
-    from untaped.core.surface._cli import subtree_lines  # noqa: PLC0415
-    from untaped.core.surface._records import record_lines  # noqa: PLC0415
-    from untaped.core.surface._settings import check_quarantine, settings_lines  # noqa: PLC0415
+    from untaped.core.surface._settings import check_quarantine  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
         composition,
@@ -140,37 +136,118 @@ def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
     from untaped.sdk.testing import plugin_candidate  # noqa: PLC0415
 
     candidate = plugin if isinstance(plugin, PluginCandidate) else plugin_candidate(plugin)
-    name = candidate.name
     with kept_composition():
         root = build_root_app(candidates=[candidate])
         result = composition()
         check_quarantine(result)
-        marks = _plugin_marks(result, root)
-        spec = next(each.spec for each in result.plugins if each.spec.name == name)
-        modules = _plugin_modules(spec, candidate.target, root)
-        lines = subtree_lines(root, name, marks.get(name))
-        lines.extend(settings_lines(result, root=False, tree=root))
-        lines.extend(_owned(result, modules, marks, core=False))
-        lines.extend(_behaviour_lines(result, root, owner=name))
-        lines.extend(record_lines(result, marks, owner=name))
+        registered = next(each for each in result.plugins if each.spec.name == candidate.name)
+        lines = _Composed(result, root, [candidate]).lines(registered)
     return sorted(set(lines))
 
 
-def _plugin_marks(result: CompositionResult, root: App) -> dict[str, LineMark | None]:
-    from untaped.core.surface._sdk import line_mark  # noqa: PLC0415
+class _Composed:
+    """One composition's surface, read plugin by plugin.
 
-    return {plugin.spec.name: line_mark(plugin.spec.stability, root) for plugin in result.plugins}
+    What several plugins' lines share is read once: each plugin's mark, the
+    exports of every composed plugin's Python modules, the behaviours and the
+    record lines by owner. The root plugin (core) differs in two places only,
+    both of them what makes it the root: its commands mount at the root, where
+    the root's own options are, and its Python API is the SDK.
+    """
 
+    def __init__(
+        self, result: CompositionResult, root: App, candidates: Sequence[PluginCandidate]
+    ) -> None:
+        from untaped.core.surface._records import record_lines  # noqa: PLC0415
+        from untaped.core.surface._sdk import collect_exports, line_mark  # noqa: PLC0415
+        from untaped.sdk.marks import listed_behaviours  # noqa: PLC0415
 
-def _plugin_modules(spec: PluginSpec, target: object, tree: App) -> dict[str, LineMark | None]:
-    """``<package>.api`` and ``<package>.testing`` of a plugin, when importable, with its mark."""
-    from untaped.core.surface._sdk import line_mark  # noqa: PLC0415
-    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
+        self.result = result
+        self.root = root
+        self._targets = {candidate.name: candidate.target for candidate in candidates}
+        self.marks: dict[str, LineMark | None] = {
+            plugin.spec.name: line_mark(plugin.spec.stability, root) for plugin in result.plugins
+        }
+        self.modules = {plugin.spec.name: self._modules_of(plugin) for plugin in result.plugins}
+        everything: dict[str, LineMark | None] = {}
+        for modules in self.modules.values():
+            everything.update(modules)
+        self.exports = collect_exports(everything)
+        # ``behaviour <plugin>.<name>``: the name is the identity, so the guard
+        # keeps a behaviour until its major, as it keeps a flag.
+        self.behaviours: dict[str, list[Line]] = {}
+        for name, behaviour in listed_behaviours(result):
+            line = Line(f"behaviour {name}.{behaviour.name}", line_mark(behaviour.mark, root))
+            self.behaviours.setdefault(name, []).append(line)
+        self.records = record_lines(result, self.marks)
 
-    package = candidate_package(target)
-    if package is None:
-        return {}
-    return dict.fromkeys(plugin_sdk_modules(package), line_mark(spec.stability, tree))
+    def check_owned(self) -> None:
+        """Raise :class:`SurfaceError` for a root command or a record no composed plugin owns.
+
+        The whole surface is the union of the plugins' lines, so a line with
+        no owner would drop out of it unseen.
+        """
+        from untaped.sdk.marks import children  # noqa: PLC0415
+
+        owned: set[str] = set()
+        for plugin in self.result.plugins:
+            owned |= self._words(plugin)
+        loose = sorted(name for name, _ in children(self.root, resolve=True) if name not in owned)
+        loose.extend(
+            sorted(f"record owner {owner}" for owner in self.records if owner not in self.marks)
+        )
+        if loose:
+            raise SurfaceError(f"no composed plugin owns: {', '.join(loose)}")
+
+    def lines(self, plugin: RegisteredPlugin) -> list[Line]:
+        """Every line ``plugin`` owns: commands, settings, Python API, contracts, behaviours
+        and kinds."""
+        from untaped.core.surface._cli import root_plugin_lines, subtree_lines  # noqa: PLC0415
+        from untaped.core.surface._contracts import (  # noqa: PLC0415
+            contract_lines,
+            method_mark,
+            owned_contracts,
+        )
+        from untaped.core.surface._sdk import module_lines  # noqa: PLC0415
+        from untaped.core.surface._settings import extension_lines, settings_lines  # noqa: PLC0415
+
+        spec, name = plugin.spec, plugin.spec.name
+        mark = self.marks[name]
+        if plugin.root:
+            lines = root_plugin_lines(self.root, self._words(plugin), mark)
+            lines.extend(_convention_lines())
+        else:
+            lines = subtree_lines(self.root, name, mark)
+        lines.extend(settings_lines(self.result, owner=name, tree=self.root))
+        for path, module_mark in sorted(self.modules[name].items()):
+            lines.extend(module_lines(path, module_mark, self.exports, plugin=not plugin.root))
+        infos = owned_contracts(spec)
+        ranked = {i.name: {m: method_mark(i, m, mark) for m in i.methods} for i in infos}
+        lines.extend(extension_lines(name, ranked))
+        lines.extend(contract_lines(name, infos, mark, self.exports.stable_classes))
+        lines.extend(self.behaviours.get(name, ()))
+        lines.extend(self.records.get(name, ()))
+        return lines
+
+    def _words(self, plugin: RegisteredPlugin) -> set[str]:
+        """The root words ``plugin``'s commands take: its name, or the root plugin's own words."""
+        if plugin.root:
+            return self.result.mount.declaration.plugin(plugin.spec.name).command_words()
+        return {plugin.spec.name}
+
+    def _modules_of(self, plugin: RegisteredPlugin) -> dict[str, LineMark | None]:
+        """The plugin's Python API, with its mark: the SDK for the root, else its ``api`` and
+        ``testing`` modules."""
+        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
+
+        name = plugin.spec.name
+        mark = self.marks[name]
+        if plugin.root:
+            return dict.fromkeys(SDK_MODULES, mark)
+        package = candidate_package(self._targets.get(name, plugin.plugin_ref.entry_point))
+        if package is None:
+            return {}
+        return dict.fromkeys(plugin_sdk_modules(package), mark)
 
 
 def plugin_sdk_modules(package: str) -> list[str]:
@@ -179,56 +256,6 @@ def plugin_sdk_modules(package: str) -> list[str]:
         module
         for module in (f"{package}.api", f"{package}.testing")
         if importlib.util.find_spec(module) is not None
-    ]
-
-
-def _owned(
-    result: CompositionResult,
-    modules: dict[str, LineMark | None],
-    marks: dict[str, LineMark | None],
-    *,
-    core: bool = True,
-) -> list[Line]:
-    """The ``sdk`` lines of ``modules``, then each plugin's contracts and ``extensions`` keys."""
-    from untaped.core.surface._contracts import (  # noqa: PLC0415
-        contract_lines,
-        method_mark,
-        owned_contracts,
-    )
-    from untaped.core.surface._sdk import collect_exports, module_lines  # noqa: PLC0415
-    from untaped.core.surface._settings import extension_lines  # noqa: PLC0415
-
-    everything = dict(modules)
-    if not core:
-        everything.update(dict.fromkeys(SDK_MODULES))
-    exports = collect_exports(everything)
-    lines: list[Line] = []
-    for path, mark in sorted(modules.items()):
-        lines.extend(module_lines(path, mark, exports, plugin=path not in SDK_MODULES))
-    for plugin in result.plugins:
-        name = plugin.spec.name
-        infos = owned_contracts(plugin.spec)
-        ranked = {i.name: {m: method_mark(i, m, marks[name]) for m in i.methods} for i in infos}
-        lines.extend(extension_lines(name, ranked))
-        lines.extend(contract_lines(name, infos, marks[name], exports.stable_classes))
-    return lines
-
-
-def _behaviour_lines(
-    result: CompositionResult, root: App, *, owner: str | None = None
-) -> list[Line]:
-    """``behaviour <plugin>.<name>`` per listed behaviour (``untaped.<name>`` for core's).
-
-    Only ``owner``'s when it is given. The name is the identity, so the guard
-    keeps a behaviour until its major, as it keeps a flag.
-    """
-    from untaped.core.surface._sdk import line_mark  # noqa: PLC0415
-    from untaped.sdk.marks import listed_behaviours  # noqa: PLC0415
-
-    return [
-        Line(f"behaviour {name}.{behaviour.name}", line_mark(behaviour.mark, root))
-        for name, behaviour in listed_behaviours(result)
-        if owner is None or name == owner
     ]
 
 

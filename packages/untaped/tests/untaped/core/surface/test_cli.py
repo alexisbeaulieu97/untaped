@@ -9,7 +9,7 @@ import pytest
 from cyclopts import App, Parameter
 
 from untaped.core.surface import DeprecatedMark
-from untaped.core.surface._cli import cli_lines, subtree_lines
+from untaped.core.surface._cli import root_plugin_lines, subtree_lines
 from untaped.runtime.bootstrap import build_root_app, kept_composition
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
@@ -159,7 +159,7 @@ def test_a_plugin_mark_reaches_every_line() -> None:
 
 def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:
     with kept_composition():
-        lines = {str(line) for line in cli_lines(build_root_app(candidates=[]), {})}
+        lines = {str(line) for line in root_plugin_lines(build_root_app(candidates=[]), (), None)}
     assert {
         "cli untaped --help switch",
         "cli untaped --help alias=-h",
@@ -168,3 +168,18 @@ def test_the_root_lists_its_options_and_cyclopts_built_ins() -> None:
         "cli untaped --install-completion --output alias=-o",
         "cli untaped --profile VALUE default=unset",
     } <= lines
+
+
+def test_the_root_plugin_has_only_the_commands_its_words_spell() -> None:
+    with kept_composition():
+        root = build_root_app(candidates=[])
+        root.command(App(name="stray"))
+        deprecated_alias(root, "old-config", "config")
+        lines = {str(line) for line in root_plugin_lines(root, {"config", "old-config"}, None)}
+
+    assert "cli untaped config list" in lines
+    assert "cli untaped old-config -> untaped config  [deprecated]" in lines
+    assert "cli untaped --help switch" in lines
+    assert not [
+        line for line in lines if line.startswith(("cli untaped stray", "cli untaped doctor"))
+    ]

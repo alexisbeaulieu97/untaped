@@ -141,7 +141,12 @@ def test_unknown_plugin_raises() -> None:
 
 
 def test_untaped_itself_is_not_an_installed_plugin_to_check() -> None:
-    """The root plugin (core) is composed, but its plugin check waits for 11j."""
+    """The root plugin (core) is composed, but the plugin rules don't read it yet.
+
+    Read as an installed plugin, core breaks rules written for one: its
+    package is ``untaped``, its commands import the runtime, and its words
+    mount at the root. Checking it needs root rules of their own first.
+    """
     with pytest.raises(LookupError) as raised:
         plugin_violations("untaped", candidates=[])
     assert str(raised.value) == "no installed plugin named 'untaped'"

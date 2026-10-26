@@ -217,7 +217,7 @@ def test_the_state_model_leaves_out_a_projects_rows() -> None:
 def test_a_projects_rows_have_surface_lines_without_home_state() -> None:
     result = compose([make_candidate(_hello(stores=(EVERY_ROW,)))])
 
-    texts = [line.text for line in settings_lines(result, root=False)]
+    texts = [line.text for line in settings_lines(result, owner="hello")]
 
     assert any(text.startswith("state hello.here.name ") for text in texts), texts
 

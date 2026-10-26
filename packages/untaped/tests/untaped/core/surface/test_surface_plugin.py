@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import pytest
+from cyclopts import App
 from pydantic import BaseModel, Field
 
 from untaped.core.settings import CoreSettings
-from untaped.core.surface import DeprecatedMark, Line, SurfaceError, plugin_lines
+from untaped.core.surface import DeprecatedMark, Line, SurfaceError, generate, plugin_lines
 from untaped.core.surface._sdk import own_mark
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
@@ -20,6 +21,7 @@ from untaped.runtime.registry import PluginSpec
 from untaped.sdk.contracts import Contract
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.marks import experimental
+from untaped.sdk.testing import plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -103,6 +105,32 @@ def test_a_contract_and_the_payload_models_it_reaches() -> None:
 
 def test_a_plugin_without_surface_has_no_lines() -> None:
     assert plugin_lines(PluginSpec(name="bins")) == []
+
+
+def test_the_whole_surface_is_cores_lines_and_each_plugins() -> None:
+    bins = plugin_candidate(
+        PluginSpec(name="bins", settings=Settings, contracts=lambda: (BinSource,))
+    )
+
+    core = set(generate([]))
+
+    assert set(generate([bins])) == core | set(plugin_lines(bins))
+    assert "cli untaped config list" in {line.text for line in core}
+    assert "cli untaped --help switch" in {line.text for line in core}
+
+
+def test_a_root_command_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    build = bootstrap.build_root_app
+
+    def with_a_stray(**kwargs: object) -> App:
+        root = build(**kwargs)  # type: ignore[arg-type]
+        root.command(App(name="stray"))
+        return root
+
+    monkeypatch.setattr(bootstrap, "build_root_app", with_a_stray)
+
+    with pytest.raises(SurfaceError, match="no composed plugin owns: stray"):
+        generate([])
 
 
 def test_lines_do_not_depend_on_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

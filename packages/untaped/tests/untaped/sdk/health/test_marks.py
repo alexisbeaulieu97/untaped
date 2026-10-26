@@ -202,7 +202,7 @@ def test_marks_change_neither_the_schema_nor_the_cfg_lines() -> None:
             plugin_candidate(_spec(Bare)),
         ]
     )
-    texts = [line.text for line in settings_lines(result, root=False)]
+    texts = [line.text for line in settings_lines(result, owner="alpha")]
     assert any(text.startswith("cfg alpha.server.url") for text in texts)
 
 

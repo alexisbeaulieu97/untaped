@@ -49,13 +49,13 @@ class _Reached:
 
 
 def record_lines(
-    result: CompositionResult, marks: Mapping[str, LineMark | None], *, owner: str | None = None
-) -> list[Line]:
+    result: CompositionResult, marks: Mapping[str, LineMark | None]
+) -> dict[str, list[Line]]:
     """The ``record`` lines of core's diagnostic kinds and of ``result``'s declared kinds.
 
-    With ``owner``, only the kinds and nested models that plugin owns.
+    By the plugin that owns each kind or nested model.
     """
-    kinds = _diagnostics()
+    kinds = _diagnostics(result)
     _declared(result.mount, marks, kinds)
     by_model: dict[type[BaseModel], list[_Reached]] = {}
     for each in kinds.values():
@@ -71,12 +71,12 @@ def record_lines(
                 found.written |= written
     subjects = dict(kinds)
     subjects.update({f"{at}.{name}": each for (at, name), each in nested.items()})
-    return [
-        line
-        for subject, each in sorted(subjects.items())
-        if owner is None or each.owner == owner
-        for line in _lines(f"record {subject}", each, _mark(subject, each))
-    ]
+    owned: dict[str, list[Line]] = {}
+    for subject, each in sorted(subjects.items()):
+        owned.setdefault(each.owner, []).extend(
+            _lines(f"record {subject}", each, _mark(subject, each))
+        )
+    return owned
 
 
 def _nested(
@@ -96,13 +96,15 @@ def _nested(
     return found
 
 
-def _diagnostics() -> dict[str, _Reached]:
+def _diagnostics(result: CompositionResult) -> dict[str, _Reached]:
+    """The root plugin's (core's) diagnostic kinds: the SDK's, which core owns."""
     from untaped.sdk.diagnostic import Diagnostic, record_kinds  # noqa: PLC0415
 
+    core = next(plugin.spec.name for plugin in result.plugins if plugin.root)
     return {
-        kind: _Reached("untaped", model, {None})
+        kind: _Reached(core, model, {None})
         for kind, model in record_kinds().items()
-        if kind.startswith("untaped.") and issubclass(model, Diagnostic)
+        if kind.partition(".")[0] == core and issubclass(model, Diagnostic)
     }
 
 
@@ -178,9 +180,8 @@ def _decl_mark(stability: StabilityDecl | None) -> LineMark | None:
 
 
 def _owner_of(model: type, result: CompositionResult, reaching: str) -> str:
-    """The plugin whose package defines ``model``; ``untaped`` for core's; else who reaches it."""
-    if model.__module__.partition(".")[0] == "untaped":
-        return "untaped"
+    """The plugin whose package defines ``model`` (core's, the ``untaped`` package), else who
+    reaches it."""
     return result.mount.declaration.owner_of(model.__module__) or reaching
 
 
