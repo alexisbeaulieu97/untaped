@@ -169,7 +169,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
         owners: dict[str, str] = {}
         for entry in standing:
             owners.setdefault(_package(entry.target), entry.name)
-        offering = _offering(standing)
+        offering = _offering(entries, (i for i in range(len(entries)) if i not in withdrawn))
         declaration, refused = _compose(entries, reserved, owners, offering, withdrawn)
         if not refused.keys() - withdrawn.keys():
             return declaration
@@ -205,29 +205,40 @@ def _offered(entry: PluginEntry) -> tuple[type, ...]:
     )
 
 
-def _offering(entries: Sequence[PluginEntry]) -> dict[type, tuple[str, ...]]:
-    """The plugins listing each contract class: its owner, when it is one."""
-    found: dict[type, list[str]] = {}
-    for entry in entries:
-        for each in dict.fromkeys(_offered(entry)):
-            found.setdefault(each, []).append(entry.name)
-    return {contract: tuple(names) for contract, names in found.items()}
+def _offering(
+    entries: Sequence[PluginEntry], standing: Iterable[int]
+) -> dict[type, tuple[int, ...]]:
+    """The standing entries listing each contract class, by index: its owner, when it is one."""
+    found: dict[type, list[int]] = {}
+    for index in standing:
+        for each in dict.fromkeys(_offered(entries[index])):
+            found.setdefault(each, []).append(index)
+    return {contract: tuple(listers) for contract, listers in found.items()}
 
 
-def _view(entry: PluginEntry, offering: dict[type, tuple[str, ...]]) -> dict[type, str]:
-    """The owner of each contract as ``entry`` reads it, its own offers as when composed alone.
+def _view(
+    entries: Sequence[PluginEntry], index: int, offering: dict[type, tuple[int, ...]]
+) -> dict[type, str]:
+    """The owner of each contract as entry ``index`` reads it, its own offers as when alone.
 
-    A contract another plugin lists too reads as that one's (``duplicate-offer``);
-    one no other plugin lists is ``entry``'s own, or nobody's when it is two
-    others' (``unowned-cache``).
+    A contract another entry lists too reads as that one's (``duplicate-offer``);
+    one only ``index`` lists is its own. A contract owns nobody else's reads
+    when two list it, or when its one lister lists such a contract: that
+    lister is refused, so a fill or refresh of it is ``unowned-cache``.
     """
+    contested = {each for listers in offering.values() if len(listers) > 1 for each in listers}
     view: dict[type, str] = {}
-    for contract, names in offering.items():
-        others = [name for name in names if name != entry.name]
-        if entry.name in names:
-            view[contract] = " and ".join(others) if others else entry.name
-        elif len(names) == 1:
-            view[contract] = names[0]
+    for contract, listers in offering.items():
+        if index in listers:
+            name = entries[index].name
+            others = [
+                entries[each].name if entries[each].name != name else f"another {name}"
+                for each in listers
+                if each != index
+            ]
+            view[contract] = " and ".join(others) if others else name
+        elif len(listers) == 1 and listers[0] not in contested:
+            view[contract] = entries[listers[0]].name
     return view
 
 
@@ -245,7 +256,7 @@ def _compose(
     entries: Sequence[PluginEntry],
     taken: frozenset[str],
     owners: dict[str, str],
-    offering: dict[type, tuple[str, ...]],
+    offering: dict[type, tuple[int, ...]],
     withdrawn: dict[int, tuple[Problem, ...]],
 ) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
     """One pass over ``entries``: the declaration and each refused entry's problems, by index.
@@ -263,7 +274,7 @@ def _compose(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        walk = _PluginWalk(entry, owners, _view(entry, offering))
+        walk = _PluginWalk(entry, owners, _view(entries, index, offering))
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(

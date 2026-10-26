@@ -1645,6 +1645,83 @@ def test_a_name_is_free_once_its_first_holder_is_refused_for_the_others() -> Non
     ]
 
 
+def test_a_contract_whose_one_lister_is_contested_elsewhere_has_no_owner() -> None:
+    @experimental
+    class Paging(Contract):
+        """Listed only by a plugin that lists a contested contract too."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Both(Plugin):
+        """Lists Paging and Notes."""
+
+        settings = HelloSettings
+        offers = (Paging, Notes)
+
+    class Other(Plugin):
+        """Lists Notes too."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    class Fill(Paging, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Paging)
+    reader.offers = ()
+    reader.fills = (Fill,)
+
+    class Plain(Plugin):
+        """Wants the name the reader cannot keep."""
+
+        settings = HelloSettings
+
+    entries = [
+        _entry(Both, "both", module="untaped_both.plugin"),
+        _entry(Other, "other", module="untaped_other.plugin"),
+        _entry(reader, "x", module="untaped_reader.plugin"),
+        _entry(Plain, "x", module="untaped_plain.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        f"untaped_plain.plugin:{Plain.__qualname__}"
+    ]
+
+
+def test_two_offerers_of_one_name_are_both_refused() -> None:
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins of one name."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Offering(Plugin):
+        """Lists Notes."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    entries = [
+        _entry(Offering, "x", module="untaped_one.plugin"),
+        _entry(Offering, "x", module="untaped_two.plugin"),
+    ]
+    declaration = compose(entries)
+    assert declaration.plugins == ()
+    assert [p.detail for q in declaration.quarantined for p in q.problems] == [
+        f"{Notes.__qualname__} is offered by another x too; a contract has one owner"
+    ] * 2
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
