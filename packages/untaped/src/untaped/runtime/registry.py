@@ -1544,7 +1544,7 @@ def _mounted(
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
-    packages = _owner_packages(ordered, claims)
+    packages = functools.cache(functools.partial(_owner_packages, ordered, tuple(claims)))
     problems: dict[str, tuple[Problem, ...]] = {}
     while True:
         mount = compose_plugins(
@@ -1590,7 +1590,7 @@ def _replayed(
     from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
 
     mount = Mount.of(declared)
-    packages = _owner_packages(ordered, claims)
+    packages = functools.cache(functools.partial(_owner_packages, ordered, tuple(claims)))
     for index, plugin in replayed.items():
         claims[index] = plugin_spec(mount, plugin.name, packages)
     return dict(sorted(claims.items())), mount
@@ -1600,7 +1600,8 @@ def _owner_packages(ordered: Sequence[PluginCandidate], claims: Iterable[int]) -
     """Each 11.x plugin by its top-level package, so a 12.0 provider of its contract reaches it.
 
     One 11.x plugin per top-level package (``untaped_<name>``), the first
-    one winning; the map goes with the 11.x seam.
+    one winning; read only when a fill names no composed owner, so a start
+    pays nothing for it. The map goes with the 11.x seam.
     """
     from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
 
