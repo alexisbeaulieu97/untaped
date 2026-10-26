@@ -1241,6 +1241,27 @@ def test_a_second_class_offering_the_contract_changes_nothing_for_the_first() ->
     ) == ("duplicate-offer", True)
 
 
+def test_a_later_offerer_owns_the_contract_when_the_first_is_quarantined() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin first, then by a sound one."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    both = compose([_entry(Broken, "broken"), _entry(_pages_plugin(Shared), "shelf")])
+    assert [plugin.name for plugin in both.plugins] == ["shelf"]
+    assert [refused.name for refused in both.quarantined] == ["broken"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

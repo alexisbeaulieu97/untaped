@@ -159,16 +159,23 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     owners: dict[str, int] = {}
     for index, entry in enumerate(entries):
         owners.setdefault(_package(entry.target), index)
-    excluded: set[int] = set()
+    withdrawn: set[int] = set()
     while True:
         names = {package: entries[index].name for package, index in owners.items()}
-        offering = _offering([e for i, e in enumerate(entries) if i not in excluded])
+        offering = _offering([e for i, e in enumerate(entries) if i not in withdrawn])
         declaration, refused = _compose(entries, reserved, names, offering)
-        if refused <= excluded and not refused & set(owners.values()):
+        # A plugin refused only as a later offerer still offers once the earlier one is out.
+        own = {i for i, problems in refused.items() if _refused_for_itself(problems)}
+        if own <= withdrawn and not refused.keys() & set(owners.values()):
             return declaration
         # A quarantined plugin owns no kind and offers no contract: the others do.
-        excluded |= refused
+        withdrawn |= own
         owners = {package: index for package, index in owners.items() if index not in refused}
+
+
+def _refused_for_itself(problems: Sequence[Problem]) -> bool:
+    """Whether a plugin has a problem other than a contract an earlier plugin offers."""
+    return any(problem.rule != "duplicate-offer" for problem in problems)
 
 
 def _offering(entries: Sequence[PluginEntry]) -> dict[type, str]:
@@ -197,13 +204,13 @@ def _compose(
     taken: frozenset[str],
     owners: dict[str, str],
     offering: dict[type, str],
-) -> tuple[Declaration, set[int]]:
-    """One pass over ``entries``: the declaration and the indexes of the entries refused."""
+) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
+    """One pass over ``entries``: the declaration and each refused entry's problems, by index."""
     names = set(taken)
     plugins: list[PluginDecl] = []
     kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
-    refused: set[int] = set()
+    refused: dict[int, tuple[Problem, ...]] = {}
     for index, entry in enumerate(entries):
         walk = _PluginWalk(entry, owners, offering)
         problems = list(walk.problems)
@@ -221,7 +228,7 @@ def _compose(
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
             )
-            refused.add(index)
+            refused[index] = tuple(problems)
             continue
         names.add(entry.name)
         if entry.root:
