@@ -1765,6 +1765,41 @@ def test_a_contested_lister_names_no_kind_of_its_package() -> None:
     assert [kind.kind for kind in declaration.kinds] == ["lib.book", "two.book"]
 
 
+def test_a_plugin_refused_for_its_name_names_no_kind_of_its_package() -> None:
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(
+            plugin(commands=(lists(book("untaped_d.models")),)), "dup", module="untaped_d.plugin"
+        ),
+        _entry(plugin(), "dup", module="untaped_pk.a"),
+        _entry(plugin(commands=(lists(book("untaped_pk.models")),)), "p", module="untaped_pk.b"),
+    ]
+    # the second dup is refused for its name, so p, not it, owns their package's Book
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["dup", "p"]
+    assert [kind.kind for kind in declaration.kinds] == ["dup.book", "p.book"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

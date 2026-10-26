@@ -158,34 +158,40 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     refused (``duplicate-offer``), as a fill or refresh of a contract no
     composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
     plugin broken whatever the others are (a name ``taken`` holds included)
-    is withdrawn first, then the plugins listing one contract, then those
-    refused because an owner is out, then the rest, and the others recompose
-    without them until nothing changes.
+    is withdrawn first, then the plugins listing one contract; the others
+    then read owners (of a package, a contract) only among the plugins that
+    compose, until those they read are those that compose.
     """
     reserved = frozenset(taken)
-    # Each pass that does not return withdraws one more, so there are at most n + 1.
+    every = frozenset(range(len(entries)))
+    # Refused for good, by index, as it was refused: there are at most n withdrawals.
     withdrawn: dict[int, tuple[Problem, ...]] = {}
+    read: frozenset[int] | None = None  # the plugins the others read; None: all standing
+    tried: set[frozenset[int]] = set()
     while True:
-        standing = [entries[i] for i in range(len(entries)) if i not in withdrawn]
+        standing = every - frozenset(withdrawn)
+        readable = standing if read is None else read & standing
         owners: dict[str, str] = {}
-        for entry in standing:
-            owners.setdefault(_package(entry.target), entry.name)
-        offering = _offering(entries, (i for i in range(len(entries)) if i not in withdrawn))
-        declaration, refused = _compose(entries, reserved, owners, offering, withdrawn)
-        if not refused.keys() - withdrawn.keys():
-            return declaration
+        for i in sorted(readable):
+            owners.setdefault(_package(entries[i].target), entries[i].name)
+        offering = _offering(entries, sorted(standing))
+        declaration, refused = _compose(entries, reserved, owners, offering, withdrawn, readable)
         refused = {i: problems for i, problems in refused.items() if i not in withdrawn}
-        # A problem about the others may go once those it is about are out.
-        withdrawn |= (
-            {
-                i: problems
-                for i, problems in refused.items()
-                if _broken_alone(problems) or entries[i].name in reserved  # taken for good
-            }
-            or _with_rule(refused, "duplicate-offer")
-            or _with_rule(refused, "unowned-cache")
-            or refused
-        )
+        final = {
+            i: problems
+            for i, problems in refused.items()
+            if _broken_alone(problems) or entries[i].name in reserved  # taken for good
+        } or _with_rule(refused, "duplicate-offer")
+        if final:
+            withdrawn |= final
+            read, tried = None, set()
+            continue
+        composed = standing - frozenset(refused)
+        if composed == readable:
+            return declaration
+        # read only those that compose; a set seen before only shrinks, so this ends
+        read = composed & readable if composed in tried else composed
+        tried.add(composed)
 
 
 def _with_rule(
@@ -226,14 +232,18 @@ def _offering(
 
 
 def _view(
-    entries: Sequence[PluginEntry], index: int, offering: dict[type, tuple[int, ...]]
+    entries: Sequence[PluginEntry],
+    index: int,
+    offering: dict[type, tuple[int, ...]],
+    readable: frozenset[int],
 ) -> dict[type, str]:
     """The owner of each contract as entry ``index`` reads it, its own offers as when alone.
 
     A contract another entry lists too reads as that one's (``duplicate-offer``);
     one only ``index`` lists is its own. A contract owns nobody else's reads
     when two list it, or when its one lister lists such a contract: that
-    lister is refused, so a fill or refresh of it is ``unowned-cache``.
+    lister is refused, so a fill or refresh of it is ``unowned-cache``; so
+    is one whose lister is not ``readable`` (it does not compose).
     """
     contested = {each for listers in offering.values() if len(listers) > 1 for each in listers}
     view: dict[type, str] = {}
@@ -246,7 +256,7 @@ def _view(
                 if each != index
             ]
             view[contract] = " and ".join(others) if others else name
-        elif len(listers) == 1 and listers[0] not in contested:
+        elif len(listers) == 1 and listers[0] not in contested and listers[0] in readable:
             view[contract] = entries[listers[0]].name
     return view
 
@@ -267,6 +277,7 @@ def _compose(
     owners: dict[str, str],
     offering: dict[type, tuple[int, ...]],
     withdrawn: dict[int, tuple[Problem, ...]],
+    readable: frozenset[int],
 ) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
     """One pass over ``entries``: the declaration and each refused entry's problems, by index.
 
@@ -283,7 +294,7 @@ def _compose(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        walk = _PluginWalk(entry, owners, _view(entries, index, offering))
+        walk = _PluginWalk(entry, owners, _view(entries, index, offering, readable))
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(
