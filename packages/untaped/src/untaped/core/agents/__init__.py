@@ -46,7 +46,8 @@ def page(root: App, result: CompositionResult, words: Sequence[str]) -> str:
     if not path:
         return render(build_map(root, result))
     name, rest = path[0], path[1:]
-    if name != CORE and name not in {plugin.spec.name for plugin in result.plugins}:
+    plugin = next((each for each in result.plugins if each.spec.name == name), None)
+    if plugin is None:
         raise UsageError(_not_installed(name, result))
     if not rest:
         return render(build_plugin_page(root, result, name))
@@ -54,7 +55,7 @@ def page(root: App, result: CompositionResult, words: Sequence[str]) -> str:
         return render(build_command_page(root, result, name, rest))
     except KeyError:
         pass
-    if name != CORE and len(rest) == 1:
+    if len(rest) == 1:
         try:
             return render(build_guide_page(result, name, rest[0]))
         except KeyError:

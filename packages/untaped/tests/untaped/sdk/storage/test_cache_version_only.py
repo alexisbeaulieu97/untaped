@@ -201,7 +201,7 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
 
     spec = PluginSpec(name="toy", settings=Own, caches=(COMPOSED,))
     result = compose([plugin_candidate(spec)])
-    assert [plugin.spec.name for plugin in result.plugins] == ["toy"], result.quarantine
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "toy"], result.quarantine
 
 
 @pytest.mark.parametrize(

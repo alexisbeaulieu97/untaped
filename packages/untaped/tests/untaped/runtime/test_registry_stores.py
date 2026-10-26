@@ -36,7 +36,7 @@ def _reason(spec: PluginSpec) -> tuple[str, str]:
 def test_a_plugin_composes_its_stores() -> None:
     result = compose([make_candidate(_hello(stores=[DATA]))])
     assert result.quarantine == ()
-    assert result.plugins[0].spec.stores == (DATA,)
+    assert result.plugins[1].spec.stores == (DATA,)
 
 
 def test_a_store_of_another_plugin_is_quarantined() -> None:

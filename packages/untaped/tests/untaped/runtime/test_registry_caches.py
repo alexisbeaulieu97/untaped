@@ -40,7 +40,7 @@ def test_a_plugin_composes_its_caches() -> None:
     spec = PluginSpec(name="hello", settings=HelloSettings, caches=[MOTD])  # type: ignore[arg-type]
     result = _compose(spec)
     assert result.quarantine == ()
-    assert result.plugins[0].spec.caches == (MOTD,)
+    assert result.plugins[1].spec.caches == (MOTD,)
 
 
 def test_a_cache_of_another_plugin_is_quarantined() -> None:

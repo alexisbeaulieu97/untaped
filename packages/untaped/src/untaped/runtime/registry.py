@@ -415,6 +415,9 @@ class RegisteredPlugin:
     #: mount time; ``None`` when the spec sets ``help`` (deferred) or has
     #: no ``app_factory``.
     app: App | None = None
+    #: Its commands mount at the root, read from its declaration
+    #: (:attr:`~untaped.runtime.declaration.PluginDecl.root`): core's.
+    root: bool = False
 
 
 #: Every valid quarantine/diagnostic reason code lives here.
@@ -493,8 +496,11 @@ class PluginCandidate:
 class CompositionResult:
     """Committed plugins plus quarantine records for one composition.
 
-    ``candidates`` are the ones it was composed from, so a reader of the
-    composition (``untaped plugin list``'s records) reads the same ones.
+    ``plugins`` holds every plugin composed, core first: core is the one
+    marked :attr:`RegisteredPlugin.root`, read from its declaration, and a
+    reader that treats it apart reads that mark. ``candidates`` are the ones
+    it was composed from, so a reader of the composition (``untaped plugin
+    list``'s records) reads the same ones.
     """
 
     plugins: tuple[RegisteredPlugin, ...] = ()
@@ -504,21 +510,6 @@ class CompositionResult:
     taken: Mapping[str, str] = field(default_factory=dict, compare=False)
     #: The plugin classes composed, core's included, mounted.
     mount: Mount = field(kw_only=True, compare=False)
-
-    @cached_property
-    def core(self) -> PluginSpec:
-        """Core as the spec its readers take, built as every plugin class's is.
-
-        Core is the plugin whose commands mount at the root
-        (:attr:`~untaped.runtime.declaration.PluginDecl.root`); its spec comes
-        from the declaration (:func:`untaped.runtime.mount.plugin_spec`), so
-        its settings model, state and checks are read as any plugin's. Until
-        core is one of :attr:`plugins` (core move 11i).
-        """
-        from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - mount imports this module
-
-        root = next(plugin for plugin in self.mount.declaration.plugins if plugin.root)
-        return plugin_spec(self.mount, root.name)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -1238,7 +1229,8 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
     Core's own class (:class:`untaped.core.plugin.Core`) composes first, with
     no entry point: its name and its commands' words are taken, as are the
     config files' own keys, so a plugin named
-    after one is quarantined (``duplicate-name``) and core always runs.
+    after one is quarantined (``duplicate-name``) and core always runs. It is
+    the first of the result's plugins, marked ``root``.
     Each candidate is first provided and validated against core alone.
     A plugin name that two or more of the survivors
     claim is contested: every claimant is quarantined, so the result never
@@ -1363,7 +1355,8 @@ def _compose(
     declared: Declaration | None = None,
 ) -> CompositionResult:
     """:func:`compose` over ``ordered``; with ``declared``, its plugin classes come from it."""
-    state = _CompositionState(_core(declared))
+    core = _core(declared)
+    state = _CompositionState(core)
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, PluginSpec | type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
@@ -1415,6 +1408,7 @@ def _compose(
         # Only a class the mount composed leaves it; one refused before it never got there.
         dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}
         mount = mount.kept(_refused(ordered, classes, quarantined, mount), dropped=dropped)
+    plugins.insert(0, _root_plugin(mount, core))
     return CompositionResult(
         plugins=tuple(plugins),
         quarantine=tuple(quarantined[index] for index in sorted(quarantined)),
@@ -1474,6 +1468,20 @@ def _refused(
             )
         )
     return tuple(refused)
+
+
+def _root_plugin(mount: Mount, core: PluginDecl) -> RegisteredPlugin:
+    """Core as one of the composed plugins: the plugin its declaration marks ``root``.
+
+    No entry point names it, so its reference is its distribution and its
+    class's target; its version is read only where it is shown, so composing
+    reads no metadata for it.
+    """
+    from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - mount imports this module
+
+    spec = plugin_spec(mount, core.name)
+    ref = PluginRef(distribution=_CORE_DISTRIBUTION, entry_point=core.target)
+    return RegisteredPlugin(spec=spec, plugin_ref=ref, skills=spec.skills, root=core.root)
 
 
 def _core_entry() -> PluginEntry:

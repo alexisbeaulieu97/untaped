@@ -77,7 +77,7 @@ def test_the_installs_rows_are_read_once(tmp_path: Path) -> None:
     declaration, settings = _composed()
     with run_scope(build_run(declaration, settings, home=tmp_path)):
         rows = Version().ctx.plugins
-        assert [row.name for row in rows] == ["ghost"]
+        assert [row.name for row in rows] == ["ghost", "untaped"]
         assert Version().ctx.plugins is rows
 
 
@@ -90,7 +90,7 @@ def test_each_run_reads_the_installs_rows_afresh(tmp_path: Path) -> None:
         )
         bootstrap.compose_root(candidates=[candidate])
         with run_scope(build_run(declaration, settings, home=tmp_path)):
-            assert [row.name for row in Version().ctx.plugins] == [name]
+            assert [row.name for row in Version().ctx.plugins] == [name, "untaped"]
 
 
 def test_a_child_run_shares_the_parents_state_and_reads_under_its_own_pick(

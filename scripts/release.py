@@ -633,7 +633,8 @@ def smoke_errors(
     expected: Collection[str],
     quarantined: Collection[str] = (),
 ) -> list[str]:
-    """The installed version, and exactly ``expected`` ready plus ``quarantined`` quarantined.
+    """The installed version, untaped's own root row, and exactly ``expected``
+    ready plus ``quarantined`` quarantined.
 
     A row for any other plugin, a plugin listed twice and a name in
     both sets are errors too.
@@ -644,9 +645,12 @@ def smoke_errors(
     try:
         rows = json.loads(plugins_json)
         names = [row["name"] for row in rows]
-        statuses = {row["name"]: row["status"] for row in rows}
-    except ValueError, TypeError, KeyError:
+        roots = [row for row in rows if row.get("root")]
+        statuses = {row["name"]: row["status"] for row in rows if not row.get("root")}
+    except ValueError, TypeError, KeyError, AttributeError:
         return [*errors, "untaped plugin list --format json did not print a list of rows"]
+    if [(row["name"], row["status"]) for row in roots] != [("untaped", "ready")]:
+        errors.append("untaped itself is not listed once as the ready root plugin")
     both = set(expected) & set(quarantined)
     errors += [f"plugin {name} is both expected and quarantined" for name in sorted(both)]
     errors += [f"plugin {name} is listed twice" for name in _duplicates(names)]

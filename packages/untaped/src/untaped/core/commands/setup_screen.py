@@ -462,7 +462,9 @@ class _Setup:
         self.store = store
         self.profiles = profiles
         self.profile = profile
-        self.plugins = frozenset(registered.spec.name for registered in result.plugins)
+        self.plugins = frozenset(
+            registered.spec.name for registered in result.plugins if not registered.root
+        )
         self.owners = contract_owners(result)
         # Tested once, just before the first token goes to the store.
         self.preflight = cache(store.preflight) if store is not None else _no_preflight

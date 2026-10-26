@@ -325,7 +325,7 @@ def test_a_failed_row_counts_under_a_plugin_renderer() -> None:
 def test_a_class_quarantined_after_composing_leaves_the_others_mounted() -> None:
     taken = PluginCandidate(distribution="untaped-taken", name="taken", target=Taken)
     result = compose_root(candidates=[SHAPES, taken])
-    assert [plugin.spec.name for plugin in result.plugins] == ["shapes"]
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "shapes"]
     [record] = result.quarantine
     assert (record.name, record.reason) == ("taken", "bad-settings-keys")
 
@@ -340,7 +340,7 @@ def test_a_plugin_class_s_name_is_checked_like_a_spec_s() -> None:
     taken = PluginCandidate(distribution="untaped-config", name="config", target=Shapes)
     nameless = PluginCandidate(distribution=" ", name="shapes", target=Shapes)
     result = compose_root(candidates=[taken, nameless])
-    assert result.plugins == ()
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     assert sorted(record.reason for record in result.quarantine) == [
         "bad-metadata",
         "duplicate-name",

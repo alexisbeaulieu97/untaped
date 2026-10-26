@@ -4652,6 +4652,7 @@ record untaped.installed_plugin.fills string[]
 record untaped.installed_plugin.name string
 record untaped.installed_plugin.package string?
 record untaped.installed_plugin.requires string[]
+record untaped.installed_plugin.root boolean
 record untaped.installed_plugin.source_dir string(format=path)?
 record untaped.installed_plugin.status choice=quarantined
 record untaped.installed_plugin.status choice=ready
@@ -5467,6 +5468,7 @@ sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
 sdk untaped.sdk.InstalledPlugin(fills=) default=[]
 sdk untaped.sdk.InstalledPlugin(package=) default=None
 sdk untaped.sdk.InstalledPlugin(requires=) default=[]
+sdk untaped.sdk.InstalledPlugin(root=) default=false
 sdk untaped.sdk.InstalledPlugin(source_dir=) default=None
 sdk untaped.sdk.InstalledPlugin(tests_dir=) default=None
 sdk untaped.sdk.InstalledPlugin.__init_subclass__(kind=) default=None
@@ -5475,6 +5477,7 @@ sdk untaped.sdk.InstalledPlugin.fills
 sdk untaped.sdk.InstalledPlugin.name
 sdk untaped.sdk.InstalledPlugin.package
 sdk untaped.sdk.InstalledPlugin.requires
+sdk untaped.sdk.InstalledPlugin.root
 sdk untaped.sdk.InstalledPlugin.source_dir
 sdk untaped.sdk.InstalledPlugin.status
 sdk untaped.sdk.InstalledPlugin.table_columns class
@@ -8080,6 +8083,7 @@ sdk untaped_lint.api.InstalledPlugin(*, name, status, distribution, version)  [e
 sdk untaped_lint.api.InstalledPlugin(fills=) default=[]  [experimental]
 sdk untaped_lint.api.InstalledPlugin(package=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin(requires=) default=[]  [experimental]
+sdk untaped_lint.api.InstalledPlugin(root=) default=false  [experimental]
 sdk untaped_lint.api.InstalledPlugin(source_dir=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin(tests_dir=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin.distribution  [experimental]
@@ -8087,6 +8091,7 @@ sdk untaped_lint.api.InstalledPlugin.fills  [experimental]
 sdk untaped_lint.api.InstalledPlugin.name  [experimental]
 sdk untaped_lint.api.InstalledPlugin.package  [experimental]
 sdk untaped_lint.api.InstalledPlugin.requires  [experimental]
+sdk untaped_lint.api.InstalledPlugin.root  [experimental]
 sdk untaped_lint.api.InstalledPlugin.source_dir  [experimental]
 sdk untaped_lint.api.InstalledPlugin.status  [experimental]
 sdk untaped_lint.api.InstalledPlugin.table_columns class  [experimental]

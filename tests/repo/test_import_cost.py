@@ -17,8 +17,10 @@ process itself has long since imported both libraries, so an in-process
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -262,3 +264,32 @@ def test_help_and_plugin_list_never_call_a_providers_offer() -> None:
         "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
+
+
+_LISTED_PROBE = (
+    "import os, sys\n"
+    "from untaped.runtime.bootstrap import build_root_app\n"
+    "from untaped.sdk import marks\n"
+    "build_root_app()\n"
+    "before = set(sys.modules)\n"
+    "list(marks._listed())\n"
+    "new = sorted(set(sys.modules) - before)\n"
+    "core = ('untaped.core.commands', 'untaped.core.plugin')\n"
+    "print(' '.join(m for m in new if m.startswith(core)))\n"
+)
+
+
+def test_asking_who_lists_a_behaviour_never_imports_core_s_commands(tmp_path: Path) -> None:
+    """A warm start's behaviour listings (read when a plugin's behaviour first warns)
+    import none of core's commands: the root's behaviours are the SDK's to list."""
+    env = {**os.environ, "UNTAPED_HOME": str(tmp_path)}
+    for _ in range(2):  # the second start reads the kept declaration
+        proc = subprocess.run(
+            [sys.executable, "-c", _LISTED_PROBE],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == ""

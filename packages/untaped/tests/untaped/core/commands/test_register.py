@@ -46,7 +46,7 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     assert "registered untaped " in result.stderr and "(acme.data layout 3)" in result.stderr
     ref = refs.this_install()
     assert ref is not None and ref.targets == (RefTarget(plugin="acme", store="data", layout=3),)
-    assert ref.plugins == ("acme",)  # the plugins it composes, whose folders it uses
+    assert ref.plugins == ("acme", "untaped")  # everything it composes, core included
 
 
 def _start(*command: str, plugins: tuple[str, ...] = ("acme", "jira")) -> CliResult:
@@ -71,7 +71,7 @@ def test_a_start_records_a_plugin_added_since(
 
     assert opened == []
     ref = refs.this_install()
-    assert ref is not None and ref.plugins == ("acme", "jira")
+    assert ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
 
 def test_a_start_where_nothing_changed_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,12 +95,12 @@ def test_a_start_that_meets_a_busy_lock_leaves_the_refresh_to_the_next(
         result = _start("--version")  # never waits, never fails, says nothing
     assert result.stderr == ""
     ref = refs.this_install()
-    assert ref is not None and ref.plugins == ("acme",)
+    assert ref is not None and ref.plugins == ("acme", "untaped")
 
     _start("--version")
 
     ref = refs.this_install()
-    assert ref is not None and ref.plugins == ("acme", "jira")
+    assert ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
 
 def test_a_command_waits_for_the_references_lock_to_record_itself(
@@ -120,7 +120,7 @@ def test_a_command_waits_for_the_references_lock_to_record_itself(
     monkeypatch.setattr(refs.REFS, "locked", _waits)
     _start("doctor", "--help")
     ref = refs.this_install()
-    assert waited == [None] and ref is not None and ref.plugins == ("acme", "jira")
+    assert waited == [None] and ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
 
 def test_a_command_still_runs_when_the_references_lock_stays_busy(
@@ -134,10 +134,10 @@ def test_a_command_still_runs_when_the_references_lock_stays_busy(
         result = _start("doctor", "--help")  # busy past the wait: warns, never fails
     assert "could not record this install's plugins" in result.stderr
     ref = refs.this_install()
-    assert ref is not None and ref.plugins == ("acme",)
+    assert ref is not None and ref.plugins == ("acme", "untaped")
     assert "could not record" not in _start("doctor", "--help").stderr
     ref = refs.this_install()
-    assert ref is not None and ref.plugins == ("acme", "jira")
+    assert ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
 
 @contextmanager

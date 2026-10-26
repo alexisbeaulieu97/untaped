@@ -54,7 +54,7 @@ class List(Command[CoreSettings]):
 
     def run(self) -> Iterator[InstalledPlugin]:
         rows = self.ctx.plugins
-        if not rows:
+        if all(row.root for row in rows):
             self.ctx.diag.hint(INSTALL_HINT)
         yield from rows
 

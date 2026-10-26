@@ -68,10 +68,16 @@ def not_installed(name: str) -> Finding:
 
 
 def stdin_subjects(envelopes: Iterable[PipeEnvelope]) -> list[Subject]:
-    """Each pipe envelope as a subject of its kind; a kind-less one is a usage error."""
+    """Each pipe envelope as a subject of its kind; a kind-less one is a usage error.
+
+    untaped's own row of ``plugin list`` (``root``) is skipped: the plugin
+    check does not read untaped itself as an installed plugin yet.
+    """
     subjects: list[Subject] = []
     for envelope in envelopes:
         if not envelope.kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
+        if envelope.kind == PLUGIN_KIND and envelope.record.get("root"):
+            continue
         subjects.append(Subject(kind=envelope.kind, record=dict(envelope.record)))
     return subjects

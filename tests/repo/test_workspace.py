@@ -94,7 +94,7 @@ def test_the_installed_untaped_lists_every_first_party_plugin() -> None:
         timeout=120,
     )
     assert listed.returncode == 0, listed.stderr
-    names = [row["name"] for row in json.loads(listed.stdout)]
+    names = [row["name"] for row in json.loads(listed.stdout) if not row["root"]]
     assert names == list(FIRST_PARTY)
 
 

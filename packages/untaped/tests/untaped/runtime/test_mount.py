@@ -359,7 +359,7 @@ def test_the_stub_skill_and_status_reach_the_plugin_listing() -> None:
 
 def test_a_plugin_class_composition_refuses_is_quarantined_naming_the_problem() -> None:
     result = compose_root(candidates=[HELLO, _candidate("broken", Broken)])
-    assert [plugin.spec.name for plugin in result.plugins] == ["hello"]
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "hello"]
     [record] = result.quarantine
     assert (record.name, record.reason) == ("broken", "bad-plugin-class")
     assert record.detail == "Undocumented: a command's docstring is its help [missing-docstring]"
@@ -368,5 +368,5 @@ def test_a_plugin_class_composition_refuses_is_quarantined_naming_the_problem() 
 def test_a_name_a_spec_and_a_plugin_class_share_quarantines_both() -> None:
     other = PluginCandidate(distribution="untaped-other", name="hello", target=PluginSpec("hello"))
     result = compose_root(candidates=[HELLO, other])
-    assert result.plugins == ()
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     assert [record.reason for record in result.quarantine] == ["duplicate-name"] * 2

@@ -140,6 +140,13 @@ def test_unknown_plugin_raises() -> None:
     assert str(raised.value) == "no installed plugin named 'no-such-plugin'"
 
 
+def test_untaped_itself_is_not_an_installed_plugin_to_check() -> None:
+    """The root plugin (core) is composed, but its plugin check waits for 11j."""
+    with pytest.raises(LookupError) as raised:
+        plugin_violations("untaped", candidates=[])
+    assert str(raised.value) == "no installed plugin named 'untaped'"
+
+
 class _BrokenRenames(BaseModel):
     renamed_keys: ClassVar[dict[str, str]] = {"old": "missing"}
 

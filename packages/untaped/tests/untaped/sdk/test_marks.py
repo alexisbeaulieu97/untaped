@@ -149,7 +149,7 @@ def test_a_plugin_building_a_bad_spec_stability_is_quarantined(
 
     composition = bootstrap.compose_root(candidates=[candidate])
 
-    assert composition.plugins == ()
+    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped"]
     assert [record.name for record in composition.quarantine] == ["bad"]
     assert "stability must be experimental or deprecated" in composition.quarantine[0].detail
 

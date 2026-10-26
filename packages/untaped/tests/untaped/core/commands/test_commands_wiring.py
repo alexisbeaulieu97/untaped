@@ -101,7 +101,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     )
     plugins = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])  # type: ignore[union-attr]
     assert plugins.exit_code == 0, plugins.output
-    assert {row["name"] for row in json.loads(plugins.stdout)} == {"github", "jira"}
+    assert {row["name"] for row in json.loads(plugins.stdout)} == {"github", "jira", "untaped"}
 
     doctor = CliInvoker().invoke(root.meta, ["doctor"])  # type: ignore[union-attr]
     assert doctor.exit_code == 1

@@ -252,6 +252,35 @@ def test_the_order_holds_for_a_lock_and_try_locked_raises_it(
         pytest.fail("try_locked yielded instead of raising")
 
 
+_WITH_CORE = (
+    InstalledPlugin(name="untaped", status="ready", distribution="untaped", version="1", root=True),
+    InstalledPlugin(
+        name="workspace",
+        status="ready",
+        distribution="untaped-workspace",
+        version="1",
+        requires=("untaped",),
+    ),
+)
+
+
+def test_a_plugin_s_lock_inside_one_of_core_s_keeps_today_s_order(run: Run) -> None:
+    """Core (the root) is every plugin's requirement, not a provider the order is about."""
+    package = __name__.partition(".")[0]
+
+    def as_plugin(plugin: str) -> AbstractContextManager[Run]:
+        composition = Composition(packages={package: plugin}, installed=lambda: _WITH_CORE)
+        return run_scope(replace(run, composition=composition))
+
+    with (
+        as_plugin("untaped"),
+        Demo.notes.locked("ada"),
+        as_plugin("workspace"),
+        Workspace.checkouts.locked("ada"),
+    ):
+        pass  # not "workspace requires untaped"
+
+
 def test_taking_again_a_lock_the_thread_holds_is_never_out_of_order(
     as_plugin: Callable[[str], AbstractContextManager[Run]],
 ) -> None:

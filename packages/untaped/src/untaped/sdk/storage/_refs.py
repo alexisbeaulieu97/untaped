@@ -396,7 +396,7 @@ def composed_targets() -> tuple[RefTarget, ...] | None:
 
 
 def composed_plugins() -> tuple[str, ...] | None:
-    """The name of every plugin this run composes or quarantines, core's aside, sorted.
+    """The name of every plugin this run composes, core's included, or quarantines, sorted.
 
     Each one's ``plugins/<name>/`` folder is this install's. ``None`` when
     nothing is composed (a library call outside the CLI).

@@ -101,7 +101,12 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
     spec = next(
-        (plugin.spec for plugin in composition().plugins if plugin.spec.name == name),
+        (
+            plugin.spec
+            for plugin in composition().plugins
+            # the root plugin is untaped itself, not one installed into it
+            if plugin.spec.name == name and not plugin.root
+        ),
         None,
     )
     if spec is None:
