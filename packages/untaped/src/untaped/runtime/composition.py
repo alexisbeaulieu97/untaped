@@ -156,21 +156,24 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     :meth:`Declaration.owner_of` reads it.
     """
     reserved = frozenset(taken)
-    owners: dict[str, int] = {}
+    first: dict[str, int] = {}
     for index, entry in enumerate(entries):
-        owners.setdefault(_package(entry.target), index)
+        first.setdefault(_package(entry.target), index)
+    # Refused for a problem of its own: it offers nothing and owns no package, for good.
     withdrawn: set[int] = set()
+    # Refused last pass only as a later offerer: it owns no package while that holds.
+    later: set[int] = set()
     while True:
+        out = withdrawn | later
+        owners = {package: index for package, index in first.items() if index not in out}
         names = {package: entries[index].name for package, index in owners.items()}
         offering = _offering([e for i, e in enumerate(entries) if i not in withdrawn])
         declaration, refused = _compose(entries, reserved, names, offering)
-        # A plugin refused only as a later offerer still offers once the earlier one is out.
         own = {i for i, problems in refused.items() if _refused_for_itself(problems)}
-        if own <= withdrawn and not refused.keys() & set(owners.values()):
+        if own <= withdrawn and refused.keys() - own == later:
             return declaration
-        # A quarantined plugin owns no kind and offers no contract: the others do.
         withdrawn |= own
-        owners = {package: index for package, index in owners.items() if index not in refused}
+        later = refused.keys() - withdrawn
 
 
 def _refused_for_itself(problems: Sequence[Problem]) -> bool:

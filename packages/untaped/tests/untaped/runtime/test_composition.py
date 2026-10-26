@@ -1262,6 +1262,45 @@ def test_a_later_offerer_owns_the_contract_when_the_first_is_quarantined() -> No
     assert [refused.name for refused in both.quarantined] == ["broken"]
 
 
+def test_a_later_offerer_that_owns_the_contract_keeps_its_package_s_kinds() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin first, then by this module's."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    class Offering(Plugin):
+        """Defines Salutation (this module) and offers Shared."""
+
+        settings = HelloSettings
+        commands = (Say,)
+        offers = (Shared,)
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Peer, "peer", module="untaped_peer.plugin"),
+        _entry(Offering),
+    ]
+    declaration = compose(entries)
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+    assert {c.output for c in declaration.commands() if c.name == "say"} == {"hello.salutation"}
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
