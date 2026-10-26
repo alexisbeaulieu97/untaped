@@ -1443,6 +1443,46 @@ def test_a_later_offerer_refreshes_a_contract_only_it_lists() -> None:
     assert [q.name for q in declaration.quarantined] == ["broken"]
 
 
+def test_a_later_offerer_holding_its_answer_cache_has_its_own_problems_only() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by another plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Earlier(Plugin):
+        """Offers Notes first."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    shelf = _pages_plugin(Held)
+    shelf.offers = (Held, Notes)
+    shelf.held_pages = held  # type: ignore[attr-defined]
+    entries = [_entry(Earlier, "earlier", module="untaped_earlier.plugin"), _entry(shelf, "shelf")]
+    [refused] = compose(entries).quarantined
+    assert [problem.rule for problem in refused.problems] == ["duplicate-offer"]
+    # a misheld cache is a problem of its own, as when composed alone
+    shelf.held_pages = 5  # type: ignore[attr-defined]
+    [refused] = compose(entries).quarantined
+    assert [problem.rule for problem in refused.problems] == ["answer-cache", "duplicate-offer"]
+    shelf.held_pages = held  # type: ignore[attr-defined]
+    # with the earlier one broken, the later offerer composes, as it does alone
+    Earlier.runs = 5  # type: ignore[assignment]
+    assert [plugin.name for plugin in compose(entries).plugins] == ["shelf"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

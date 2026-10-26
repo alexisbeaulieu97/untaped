@@ -242,9 +242,12 @@ def _compose(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        # A later offerer reads a contract only it lists as its own, as when composed alone.
+        # A later offerer, which owns nothing, reads its package and the contracts only it
+        # lists as its own: its problems are those it has composed alone, and duplicate-offer.
         walk = _PluginWalk(
-            entry, owners, {**dict.fromkeys(_offered(entry), entry.name), **offering}
+            entry,
+            {_package(entry.target): entry.name, **owners},
+            {**dict.fromkeys(_offered(entry), entry.name), **offering},
         )
         problems = list(walk.problems)
         if entry.name in names:
@@ -451,14 +454,14 @@ class _PluginWalk:
                 self.problem(
                     "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
                 )
-            elif (owner := self.offering.get(info.cls, self.name)) != self.name:
+                continue
+            if (owner := self.offering.get(info.cls, self.name)) != self.name:
                 self.problem(
                     "duplicate-offer",
                     f"{where}.offers",
                     f"{info.cls.__qualname__} is offered by {owner} too; a contract has one owner",
                 )
-            else:
-                self._answer_caches(cls, info)
+            self._answer_caches(cls, info)
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
