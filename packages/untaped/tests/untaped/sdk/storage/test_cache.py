@@ -215,6 +215,14 @@ def test_the_option_names_the_setting_and_refuses_both_flags(clock: CacheClock) 
     assert _show("a", "--refresh", "--cached").exit_code == 2
 
 
+def test_the_option_help_is_the_one_wording_for_one_cache() -> None:
+    assert refresh_option(TOY).help == (
+        "--refresh checks upstream for toy items now; --cached reads what is cached and never "
+        "checks. Default: check when the cached data is older than "
+        "toy.caches.items.max_age_seconds (1 h)."
+    )
+
+
 # ---- serve: fresh, stale, first use ------------------------------------------
 
 

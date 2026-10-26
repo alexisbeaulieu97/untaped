@@ -954,8 +954,16 @@ class _CommandWalk:
                 continue
             cache = self._cached_method(each)
             if cache is not None:
-                if cache.spelled:  # an answer cache is spelled in its owner's settings module
-                    named.append((cache, cache.setting))
+                spelled = self._setting_of(cache)
+                if spelled is not None:
+                    named.append((cache, spelled))
+                    continue
+                self.problem(
+                    "refresh-cache",
+                    where,
+                    f"{each!r}'s cache {cache!r} belongs to no composed plugin: spell it "
+                    "Cache(owner, name, ...) or hold it on the owner's plugin class",
+                )
                 continue
             self.problem(
                 "refresh-cache",
@@ -964,6 +972,21 @@ class _CommandWalk:
                 "contract the plugin offers or fills",
             )
         return _refresh_help(named) if len(named) == len(default.caches) else None
+
+    def _setting_of(self, cache: Cache[Any]) -> str | None:
+        """The max-age setting of a contract method's cache; ``None`` when no plugin owns it.
+
+        A cache spelled or bound where declared knows its plugin; one a plugin
+        class holds belongs to the plugin composed for that class's package,
+        read here because no run exists yet.
+        """
+        if cache.spelled or cache._held_as is not None:
+            return cache.setting
+        for binding in cache.bindings:
+            plugin = self.plugin.owners.get(binding.owner.__module__.partition(".")[0])
+            if plugin is not None:
+                return _max_age_setting(plugin, cache.derived_name(binding.attribute))
+        return None
 
     def _cached_method(self, method: object) -> Cache[Any] | None:
         """The answer cache of ``method`` if it is a cached method the plugin offers or fills."""

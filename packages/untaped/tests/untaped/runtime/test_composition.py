@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.contracts.support import BOOKS, BookSource, Shop
+from core_test_support.contracts.support import BOOKS, Book, BookSource, Shop
 from untaped.runtime.composition import PluginEntry, compose, kebab, snake, words
 from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
 from untaped.sdk import (
@@ -43,6 +43,7 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk._block import Block
+from untaped.sdk.contracts import Contract, cached
 
 PACKAGE = __name__.partition(".")[0]
 
@@ -654,6 +655,26 @@ def test_refresh_names_a_held_cache_or_a_cached_contract_method() -> None:
         "refresh-cache",
     ]
 
+    marker = object()
+
+    class Odd(Command):
+        """Odd."""
+
+        refresh: Refresh = Refresh(marker)
+
+        def run(self) -> None:
+            return None
+
+    class Holder(Plugin):
+        """Holder."""
+
+        settings = HelloSettings
+        commands = (Odd,)
+        held = marker
+
+    [problem] = _problems(Holder)
+    assert (problem.rule, "neither a cache" in problem.detail) == ("refresh-cache", True)
+
 
 def test_refresh_refuses_a_version_only_cache_even_on_the_plugin_class() -> None:
     held = Cache(
@@ -734,6 +755,90 @@ def test_refresh_help_names_every_cache_a_held_one_and_a_contract_methods() -> N
         "and never checks. Default: check when the cached data is older than "
         "shelf.caches.covers.max_age_seconds (24 h) for covers and "
         "shelf.caches.book_source_books.max_age_seconds (1 h) for books."
+    )
+
+
+def test_refresh_help_names_a_shared_label_once_and_each_setting_alone() -> None:
+    class Books(Command):
+        """Books."""
+
+        refresh: Refresh = Refresh(BookSource.books, BookSource.by_author)
+
+        def run(self) -> None:
+            return None
+
+    class Shelf(Plugin):
+        """Shelf."""
+
+        settings = HelloSettings
+        commands = (Books,)
+        offers = (BookSource,)
+
+    assert _refresh_help(Shelf, "shelf") == (
+        "--refresh checks upstream for books now; --cached reads what is cached and never "
+        "checks. Default: check when the cached data is older than "
+        "shelf.caches.book_source_books.max_age_seconds (1 h) and "
+        "shelf.caches.book_source_by_author.max_age_seconds (1 h)."
+    )
+
+
+def _paging(cache: Cache) -> type[Contract]:
+    class PageSource(Contract):
+        """Where pages come from."""
+
+        @cached(cache)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    return PageSource
+
+
+def _pages_plugin(source: type[Contract]) -> type[Plugin]:
+    class Pages(Command):
+        """Pages."""
+
+        refresh: Refresh = Refresh(source.pages)  # type: ignore[attr-defined]
+
+        def run(self) -> None:
+            return None
+
+    class Shelf(Plugin):
+        """Shelf."""
+
+        settings = HelloSettings
+        commands = (Pages,)
+        offers = (source,)
+
+    return Shelf
+
+
+def test_refresh_help_names_a_contract_cache_bound_where_declared() -> None:
+    bound = Cache(label="pages", max_age=timedelta(hours=2))._bound_to("shelf", "page_source_pages")
+    shelf = _pages_plugin(_paging(bound))
+    assert "older than shelf.caches.page_source_pages.max_age_seconds (2 h)." in _refresh_help(
+        shelf, "shelf"
+    )
+
+
+def test_refresh_help_names_a_contract_cache_a_plugin_class_holds() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=2))
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        page_source_pages = held
+
+    shelf = _pages_plugin(_paging(held))
+    # the owner's package is this test module's, which the entry composes as shelf
+    assert "older than shelf.caches.page_source_pages.max_age_seconds (2 h)." in _refresh_help(
+        shelf, "shelf"
+    )
+    Owner.__module__ = "elsewhere.plugin"  # a package no composed plugin has
+    [problem] = _problems(shelf, "shelf")
+    assert (problem.rule, "belongs to no composed plugin" in problem.detail) == (
+        "refresh-cache",
+        True,
     )
 
 

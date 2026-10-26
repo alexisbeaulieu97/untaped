@@ -51,6 +51,7 @@ import importlib.metadata
 import importlib.util
 import logging
 import re
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -1902,13 +1903,19 @@ def _refresh_help(caches: Sequence[tuple[Cache[Any], str]]) -> str:
     into the 11.x option. None of ``caches`` is version-only.
     """
     named = list({setting: cache for cache, setting in caches}.items())
-    labels = _and([cache.label for _, cache in named])
+    labels = _and(list(dict.fromkeys(cache.label for _, cache in named)))  # each once, in order
     if len(named) == 1:
         setting, cache = named[0]
         default = f"older than {setting} ({cache.default_max_age_text})"
     else:
+        # a label two caches share would name neither: the settings already do
+        shared = {label for label, count in Counter(c.label for _, c in named).items() if count > 1}
         default = "older than " + _and(
-            [f"{each} ({cache.default_max_age_text}) for {cache.label}" for each, cache in named]
+            [
+                f"{each} ({cache.default_max_age_text})"
+                + ("" if cache.label in shared else f" for {cache.label}")
+                for each, cache in named
+            ]
         )
     return (
         f"--refresh checks upstream for {labels} now; --cached reads what is cached "
