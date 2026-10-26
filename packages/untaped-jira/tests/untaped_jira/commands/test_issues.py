@@ -310,6 +310,49 @@ def test_issue_comment_missing_body_uses_sdk_error(jira: Invoke) -> None:
     assert len(route.calls) == 0
 
 
+@pytest.mark.parametrize(
+    ("body", "piped"), [(["--body", "  "], None), (["--body", "-"], ""), (["--body", "-"], "\n")]
+)
+def test_a_blank_comment_body_is_refused_before_sending(
+    body: list[str], piped: str | None, jira: Invoke
+) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = jira(["issues", "comment", "ABC-1", "--yes", *body], input=piped)
+
+    assert result.exit_code == 1, result.output
+    assert "no body provided" in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_a_comment_body_loses_only_its_last_newline(jira: Invoke) -> None:
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
+            return_value=httpx.Response(201, json={"id": "700"})
+        )
+        result = jira(["issues", "comment", "ABC-1", "--yes", "--body", "-"], input="hi\r\n\n")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls[0].request.content) == {"body": "hi\r\n"}
+
+
+def test_a_fields_file_s_other_keys_are_sent_as_given(tmp_path: Path, jira: Invoke) -> None:
+    fields_file = tmp_path / "bug.yml"
+    fields_file.write_text("fields:\n  summary: s\nproperties:\n  - key: k\n    value: v\n")
+    with respx.mock(base_url=BASE) as mock:
+        route = mock.post("/rest/api/2/issue").mock(
+            return_value=httpx.Response(201, json={"id": "10001", "key": "ABC-1"})
+        )
+        args = ["--fields-file", str(fields_file), "--project", "ABC", "--issue-type", "Bug"]
+        result = jira(["issues", "create", "--yes", *args])
+
+    assert result.exit_code == 0, result.output
+    sent = json.loads(route.calls[0].request.content)
+    assert sent["properties"] == [{"key": "k", "value": "v"}]
+    # one record's table shows every field the write filled
+    assert "10001" in result.stdout
+
+
 def test_issue_transition_by_name_rejects_ambiguous_match(jira: Invoke) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.get("/rest/api/2/issue/ABC-1/transitions").mock(

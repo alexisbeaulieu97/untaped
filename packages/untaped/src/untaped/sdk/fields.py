@@ -472,6 +472,9 @@ class Output[R: BaseModel](FieldBlock):
         following = following_fields(self._model) if self._model and self.format == "table" else {}
         rows = [records] if isinstance(records, BaseModel) else records
         table_columns = list(self.columns) or None
+        marked = self._model is not None and table_columns == list(default_columns(self._model))
+        if detail and not self._declared and marked:
+            table_columns = None  # a single record shows every field: R's marks are a list's
         if table_columns is None and following:
             # a field printed as its own table is not a column of the first
             shown = dict.fromkeys(name for row in rows for name in _as_row(row))

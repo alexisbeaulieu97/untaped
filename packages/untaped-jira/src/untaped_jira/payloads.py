@@ -7,8 +7,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import ConfigError
-
 
 def build_issue_payload(
     *,
@@ -24,10 +22,6 @@ def build_issue_payload(
 
     payload = deepcopy(base or {})
     raw_fields = payload.setdefault("fields", {})
-    if not isinstance(raw_fields, dict):
-        raise ConfigError("Jira payload `fields` must be an object", category="invalid")
-    if "update" in payload and not isinstance(payload["update"], dict):
-        raise ConfigError("Jira payload `update` must be an object", category="invalid")
     if project is not None:
         raw_fields["project"] = {"key": project}
     if issue_type is not None:
@@ -82,10 +76,11 @@ class IssueDocument(BaseModel):
 
     ``fields`` sets fields by id (``summary``, ``labels``, ``customfield_10010``);
     ``update`` lists operations per field (``{"labels": [{"add": "infra"}]}``).
-    Flags given beside the file override its fields.
+    Other top-level keys Jira takes (``properties``, ``historyMetadata``) are
+    sent as given. Flags given beside the file override its fields.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="allow")
 
     fields: dict[str, Any] = Field(default_factory=dict)
     update: dict[str, Any] = Field(default_factory=dict)

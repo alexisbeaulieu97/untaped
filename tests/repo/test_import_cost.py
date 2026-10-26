@@ -200,18 +200,25 @@ _STARTUP_PROBE = (
 #: total to 694.
 _TOTAL_BUDGET = 694
 _UNTAPED_BUDGET = 141
+#: A start composing afresh (the first after an install change) imports each
+#: 12.0 plugin class, so each move raises these: with jira moved, 181 and 734,
+#: 2026-10-26.
+_FRESH_TOTAL_BUDGET = 737
+_FRESH_UNTAPED_BUDGET = 184
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
 def test_startup_stays_within_its_module_budget(flag: str, tmp_path: Path) -> None:
     env = {**os.environ, "UNTAPED_HOME": str(tmp_path)}
     probe = _STARTUP_PROBE.format(argv=[flag])
-    _loaded_heavy_modules(probe, env)  # the first start keeps the declaration
-    counts, _, heavy = _loaded_heavy_modules(probe, env).partition("\n")
-    assert heavy == ""
-    total, own = map(int, counts.split())
-    assert own <= _UNTAPED_BUDGET, f"untaped {flag} imported {own} untaped.* modules"
-    assert total <= _TOTAL_BUDGET, f"untaped {flag} imported {total} modules"
+    budgets = ((_FRESH_UNTAPED_BUDGET, _FRESH_TOTAL_BUDGET), (_UNTAPED_BUDGET, _TOTAL_BUDGET))
+    # the first start composes afresh and keeps the declaration; the second reads it
+    for start, (own_budget, total_budget) in zip(("fresh", "kept"), budgets, strict=True):
+        counts, _, heavy = _loaded_heavy_modules(probe, env).partition("\n")
+        assert heavy == "", start
+        total, own = map(int, counts.split())
+        assert own <= own_budget, f"a {start} untaped {flag} imported {own} untaped.* modules"
+        assert total <= total_budget, f"a {start} untaped {flag} imported {total} modules"
 
 
 def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:

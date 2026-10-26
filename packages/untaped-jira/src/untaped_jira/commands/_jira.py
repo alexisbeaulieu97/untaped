@@ -36,8 +36,6 @@ ISSUE_DETAIL_COLUMNS = (
 )
 
 #: How a positional issue key reads in help.
-#: A write's rows: which issue, what happened to it, and where to open it.
-OUTCOME_COLUMNS = ("key", "action", "url")
 ISSUE_KEY = "Issue key (PROJECT-123, in any case) or numeric id."
 
 
@@ -55,7 +53,7 @@ class JiraWrite(JiraCommand):
     """A command that sends one write: it previews, asks per ``jira.confirm``, then sends."""
 
     confirm: Confirm
-    output: Output[IssueOutcome] = Output(columns=OUTCOME_COLUMNS)
+    output: Output[IssueOutcome]
 
     def send(
         self,

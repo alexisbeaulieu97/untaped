@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
@@ -29,6 +30,9 @@ class JiraServer(CredentialKey):
 
 class JiraSettings(BaseModel):
     """Connection and behavior settings for one Jira Data Center target."""
+
+    #: Gone at 12.0: read only to name its successor.
+    retired_keys: ClassVar[Mapping[str, str]] = {"base_url": "server.url"}
 
     model_config = ConfigDict(frozen=True)
 

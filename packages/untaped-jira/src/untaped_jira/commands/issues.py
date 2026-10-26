@@ -31,8 +31,9 @@ class Get(JiraCommand):
     Besides the fields a search fills, it fills the detail fields
     (``reporter`` to ``links``); ``comments`` stays ``null`` without
     ``--comments``. A linked issue carries only what the link embeds (its key,
-    summary and status); get its key for the rest. A table prints the links,
-    then the comments, as their own tables after the issues.
+    summary and status); get its key for the rest. A table prints the links
+    (when there are some), then the comments, as their own tables after the
+    issues.
 
     One issue prints as a key: value view in a table and as one JSON object;
     several print as a table or a JSON array. ``--stdin`` reads bare keys or
@@ -68,6 +69,8 @@ class Get(JiraCommand):
 
     def _issue(self, client: JiraClient, key: str) -> Issue:
         issue = parse_issue(client.get_issue(key), detail=True)
+        if not issue.links and self.output.format == "table":
+            issue = issue.model_copy(update={"links": None})  # a table shows links only when some
         if not self.comments:
             return issue
         comments = [parse_comment(each, issue_key=issue.key) for each in client.list_comments(key)]

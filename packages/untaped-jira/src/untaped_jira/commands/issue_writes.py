@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import Field
 
 from untaped.sdk import (
+    ConfigError,
     Confirm,
     ExistingFile,
     File,
@@ -25,6 +26,7 @@ from untaped.sdk import (
     UsageError,
     attribution,
     not_found,
+    plural,
     q,
 )
 from untaped_jira.changes import (
@@ -236,12 +238,16 @@ class Comment(JiraWrite):
         if self.body is not None and self.body_file is not None:
             raise UsageError("pass --body or --body-file, not both")
         if self.body is not None:
-            body = self.body
+            body = self.body  # a pipe's last newline is already off
         elif self.body_file is not None:
-            body = self.body_file.read_text(encoding="utf-8")
+            # a file ends with a newline that is not the comment's
+            body = _without_last_newline(self.body_file.read_text(encoding="utf-8", newline=""))
         else:
             raise UsageError("a comment needs --body (- reads stdin) or --body-file")
-        body = body.rstrip("\n")  # the newline a file or a pipe ends with is not the comment's
+        if not body.strip():
+            raise ConfigError(
+                "no body provided (use --body, --body-file, or --body -)", category="invalid"
+            )
 
         def send(client: JiraClient) -> IssueOutcome:
             result = client.add_comment(key, body)
@@ -311,7 +317,7 @@ class Transition(JiraCommand):
             if not plans:
                 return []
             needed = needs_confirmation(self.settings.confirm, destructive=True)
-            question = f"Transition {_count(len(plans))} in Jira?"
+            question = f"Transition {plural(len(plans), 'issue')} in Jira?"
             preview = lambda: self._preview(client, plans)  # noqa: E731 - read only when asked
             if not self.confirm(question, preview=preview, needed=needed):
                 return [
@@ -409,8 +415,9 @@ def _named(client: JiraClient, key: str, name: str) -> dict[str, Any]:
     return {**matches[0], "id": str(matches[0]["id"])}
 
 
-def _count(n: int) -> str:
-    return "1 issue" if n == 1 else f"{n} issues"
+def _without_last_newline(text: str) -> str:
+    """``text`` less one terminal newline (LF or CRLF), as a file or a pipe ends."""
+    return text.removesuffix("\n").removesuffix("\r") if text.endswith("\n") else text
 
 
 def _text(value: Any) -> str | None:

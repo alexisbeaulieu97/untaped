@@ -44,7 +44,7 @@ untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run
 ```
 
 The preview lists each request and one `field: old → new` line per change.
-Writes preview and ask first according to `jira.confirm`; `untaped agents jira writes` says which.
+Writes preview and ask first according to `jira.confirm`; `untaped jira issues --help` says which.
 
 ## Move issues through a workflow
 

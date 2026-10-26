@@ -119,7 +119,8 @@ def test_detail_table_lists_links(jira: Invoke) -> None:
 def test_detail_table_hides_empty_links(jira: Invoke) -> None:
     result, _ = _get(jira, [])
 
-    assert "relation" not in result.stdout
+    assert "links" not in result.stdout
+    assert "No links." not in result.stderr
 
 
 def test_links_create_help_keeps_the_outward_phrase_placeholder(jira: Invoke) -> None:
