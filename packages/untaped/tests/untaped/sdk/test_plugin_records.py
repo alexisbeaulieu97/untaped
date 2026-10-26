@@ -14,5 +14,6 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 def test_the_records_come_from_the_candidates_composed() -> None:
     ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
     bootstrap.compose_root(candidates=[ghost])
-    [record] = installed_plugins()
+    record, core = installed_plugins()
     assert (record.name, record.status, record.package) == ("ghost", "quarantined", "ghost")
+    assert (core.name, core.status, core.root, record.root) == ("untaped", "ready", True, False)

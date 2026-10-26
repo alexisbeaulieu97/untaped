@@ -155,7 +155,7 @@ def shared(root: App) -> Shared:
 
 def core_commands(root: App, result: CompositionResult) -> Iterator[tuple[str, App]]:
     """The root's own commands, in mount order; plugins are never resolved here."""
-    plugins = {plugin.spec.name for plugin in result.plugins if not plugin.root}
+    plugins = {plugin.spec.name for plugin in result.plugins}
     for name in root:
         if name.startswith("-") or name in plugins:
             continue
@@ -427,7 +427,7 @@ def build_command_page(
     invocation: tuple[str, ...] = (CORE,)
     if named.root:
         app = root
-        if path[0] in {each.spec.name for each in result.plugins if not each.root}:
+        if path[0] in {each.spec.name for each in result.plugins}:
             raise KeyError(path[0])
     else:
         plugin = named

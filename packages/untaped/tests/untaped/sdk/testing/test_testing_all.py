@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 
 import pytest
 
@@ -76,4 +77,5 @@ def test_invoke_root_runs_the_composed_root(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(bootstrap, "discover_candidates", lambda: [])
     result = invoke_root(["plugin", "list", "--format", "json"])
-    assert (result.exit_code, result.stdout.strip()) == (0, "[]")
+    assert result.exit_code == 0
+    assert [row["name"] for row in json.loads(result.stdout)] == ["untaped"]  # core alone

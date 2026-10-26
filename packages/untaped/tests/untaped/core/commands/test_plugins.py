@@ -1,8 +1,9 @@
 """``untaped plugin``: core's group on its own class, and ``plugin list`` in particular.
 
-``plugin list`` reports one record per candidate plugin (``name/status/
-distribution/version``) from the composition, in name order. The listing
-never touches settings, so invalid plugin values cannot block it.
+``plugin list`` reports one record per composed plugin (``name/status/
+distribution/version``), core's ``untaped`` row (marked ``root``) among them,
+then each candidate, in name order. The listing never touches settings, so
+invalid plugin values cannot block it.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import replace
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -35,14 +37,28 @@ def _rows(stdout: str) -> list[dict[str, object]]:
 
 
 def _listing(candidates: list[PluginCandidate]) -> list[dict[str, object]]:
-    """The JSON rows ``untaped plugin list`` lists for ``candidates``."""
+    """The JSON rows ``untaped plugin list`` lists for ``candidates``: core's row aside."""
+    return [row for row in _every_row(candidates) if not row["root"]]
+
+
+def _every_row(candidates: list[PluginCandidate]) -> list[dict[str, object]]:
     root = bootstrap.build_root_app(candidates=candidates)
     invoked = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert invoked.exit_code == 0, invoked.output
     return _rows(invoked.stdout)
 
 
-_LOCATED = ("package", "source_dir", "tests_dir", "requires", "fills")
+def test_core_is_listed_as_the_root_with_untaped_s_version() -> None:
+    """Core's row is the composition's like any plugin's, marked ``root``, in name order."""
+    rows = _every_row([make_candidate(make_spec("zeta"), "zeta-dist")])
+    assert [(row["name"], row["root"]) for row in rows] == [("untaped", True), ("zeta", False)]
+    core = rows[0]
+    assert (core["status"], core["distribution"]) == ("ready", "untaped")
+    assert core["version"] == metadata.version("untaped")  # read at listing, not composing
+    assert core["package"] == "untaped.core"  # what lint's import rules reach: untaped.core.api
+
+
+_LOCATED = ("package", "source_dir", "tests_dir", "requires", "fills", "root")
 
 
 def test_lists_a_ready_provider_with_its_distribution_version() -> None:
@@ -90,6 +106,7 @@ def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> N
             "tests_dir": None,
             "requires": [],
             "fills": [],
+            "root": False,
         }
     ]
 
@@ -124,6 +141,7 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
             "tests_dir": None,
             "requires": [],
             "fills": [],
+            "root": False,
         }
     ]
 
@@ -181,7 +199,7 @@ def test_the_table_is_not_blocked_by_a_broken_config(_isolated_config: Path, con
 
 def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., Install]) -> None:
     core = install()
-    assert core.run(List()).rows == []
+    assert [(row.name, row.root) for row in core.run(List()).rows] == [("untaped", True)]
     schema = json.loads(core.run(Schema(kind="untaped.installed_plugin")).text)
     assert schema["$id"] == schema["title"] == "untaped.installed_plugin"
     assert core.cli("plugin schema untaped.installed_plugin").text == json.dumps(schema, indent=2)
@@ -201,7 +219,7 @@ def test_plugins_listing_install_hint_on_stderr(
     root = bootstrap.build_root_app(candidates=candidates)
     result = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert result.exit_code == 0
-    assert bool(_rows(result.stdout)) is not expect_hint
+    assert any(not row["root"] for row in _rows(result.stdout)) is not expect_hint
     if expect_hint:
         # JSON output turns stderr diagnostics into one JSON line, level taken from the prefix.
         assert json.loads(result.stderr) == {

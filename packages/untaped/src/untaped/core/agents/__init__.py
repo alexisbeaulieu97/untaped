@@ -55,7 +55,7 @@ def page(root: App, result: CompositionResult, words: Sequence[str]) -> str:
         return render(build_command_page(root, result, name, rest))
     except KeyError:
         pass
-    if not plugin.root and len(rest) == 1:
+    if len(rest) == 1:
         try:
             return render(build_guide_page(result, name, rest[0]))
         except KeyError:

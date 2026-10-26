@@ -59,6 +59,13 @@ class InstalledPlugin(Record, kind="untaped.installed_plugin"):
     fills: tuple[str, ...] = Field(
         default=(), description="The owners whose contracts it fills (`workspace`)."
     )
+    root: bool = Field(
+        default=False,
+        description=(
+            "Its commands mount at the root: `untaped` itself. Filter on it for the plugins "
+            "installed into untaped."
+        ),
+    )
 
 
 def plugin_records(
@@ -66,8 +73,8 @@ def plugin_records(
 ) -> list[InstalledPlugin]:
     """Every plugin of ``result``, ready or quarantined, by name then distribution.
 
-    The root plugin (core) is untaped itself, not a plugin installed into it,
-    so it has no row.
+    The root plugin (core, ``untaped`` itself) has its row like any plugin's,
+    marked ``root``.
     """
     # A distribution declares each entry-point name once, and a plugin whose
     # spec name differs from it is quarantined, so the reported (distribution,
@@ -76,8 +83,6 @@ def plugin_records(
     by_key = {(candidate_distribution(item), item.name): item for item in candidates}
     rows: list[InstalledPlugin] = []
     for registered in result.plugins:
-        if registered.root:
-            continue
         distribution = registered.plugin_ref.distribution
         candidate = by_key.get((distribution, registered.spec.name))
         rows.append(_ready(registered, candidate))
@@ -112,7 +117,9 @@ def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> I
     from untaped.runtime.plugin_package import package_of  # noqa: PLC0415 - not at startup
 
     spec, distribution = registered.spec, registered.plugin_ref.distribution
-    version = (candidate.distribution_version if candidate else None) or _UNKNOWN
+    # no candidate (the root's): its distribution's version, read now, never while composing
+    found = candidate.distribution_version if candidate else _installed_version(distribution)
+    version = found or _UNKNOWN
     name = spec.name
     fills = frozenset(spec.provides)
     package: str | None
@@ -132,7 +139,17 @@ def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> I
         tests_dir=tests_dir,
         requires=tuple(sorted(declared_distributions(registered.plugin_ref.requires_dist, fills))),
         fills=tuple(sorted(fills)),
+        root=registered.root,
     )
+
+
+def _installed_version(distribution: str) -> str | None:
+    from importlib import metadata  # noqa: PLC0415 - not at startup
+
+    try:
+        return metadata.version(distribution)
+    except metadata.PackageNotFoundError:
+        return None
 
 
 def _entry_package(candidate: PluginCandidate) -> str | None:

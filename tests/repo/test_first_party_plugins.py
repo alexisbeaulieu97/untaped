@@ -63,7 +63,9 @@ def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
     listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert [
-        (row["name"], row["status"], row["distribution"]) for row in json.loads(listed.stdout)
+        (row["name"], row["status"], row["distribution"])
+        for row in json.loads(listed.stdout)
+        if not row["root"]
     ] == [(name, "ready", f"untaped-{name}") for name in FIRST_PARTY]
 
 

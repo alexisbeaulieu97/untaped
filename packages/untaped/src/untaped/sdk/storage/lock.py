@@ -127,7 +127,8 @@ def _provides(provider: str, plugin: str) -> bool:
     """Whether ``plugin`` requires ``provider``'s distribution, as this install's rows say."""
     from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
-    rows = {row.name: row for row in current_run().composition.installed()}
+    # the root (core) is every plugin's requirement, not a provider: its locks order themselves
+    rows = {row.name: row for row in current_run().composition.installed() if not row.root}
     if provider not in rows or plugin not in rows:
         return False
     wanted = _canonical(rows[provider].distribution)

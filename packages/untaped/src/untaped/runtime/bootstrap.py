@@ -101,7 +101,9 @@ def _register_sections(result: CompositionResult) -> None:
     remembered composition (:func:`_reregister`). Each plugin's distribution
     is bound as the owner its deprecations name (the root's none: its
     removals name untaped's own major), and its listed behaviours as its own
-    (read only when one of them first warns).
+    (read only when one of them first warns). The root's behaviours are the
+    SDK's to list (:func:`untaped.sdk.marks.behaviour_owner` reads one nobody
+    lists as core's), so asking who lists one never imports core's class.
     """
     bind_owners(
         {
@@ -110,7 +112,9 @@ def _register_sections(result: CompositionResult) -> None:
             if not plugin.root
         }
     )
-    bind_behaviours({plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins})
+    bind_behaviours(
+        {plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins if not plugin.root}
+    )
     bind_credentials({plugin.spec.name: plugin.spec.credentials for plugin in result.plugins})
     for spec in (plugin.spec for plugin in result.plugins):
         section = section_settings(spec)

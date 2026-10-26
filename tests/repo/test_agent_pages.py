@@ -50,12 +50,14 @@ def test_every_plugin_and_command_page_renders(
     root = build_root_app(candidates=first_party_candidates)
     result = composition()
     assert page(root, result, []).startswith("# untaped\n")
-    for plugin in ("untaped", *(each.spec.name for each in result.plugins)):
+    plugins = {each.spec.name for each in result.plugins if not each.root}
+    for registered in result.plugins:
+        plugin = registered.spec.name
         text = page(root, result, [plugin])
         assert text.startswith(f"# {plugin}"), plugin
-        top = root if plugin == "untaped" else root[plugin]
+        top = root if registered.root else root[plugin]
         for path, _ in _walk(top, ()):
-            if plugin == "untaped" and path[0] in {each.spec.name for each in result.plugins}:
+            if registered.root and path[0] in plugins:
                 continue
             command = page(root, result, [plugin, *path])
             assert command.endswith("The map of this untaped: `untaped agents`\n"), path

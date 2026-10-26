@@ -265,6 +265,8 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
     skill_name = name if plugin.root else f"untaped-{name}"
     skills = (SkillAsset(name=skill_name, description=plugin.skill),) if plugin.skill else ()
     loaded = functools.cache(partial(_spelled_blocks, mount, name))
+    # none declared: nothing to import the class for (as DeclaredBlocks)
+    behaviours = any(block.block == "deprecated-behaviour" for block in plugin.blocks)
     factory = partial(build_app, mount, name)
     # the factory builds the plugin's app, so it stands for the plugin's module
     # where its package is looked for (untaped.runtime.plugin_package)
@@ -276,7 +278,7 @@ def plugin_spec(mount: Mount, name: str) -> PluginSpec:
         help=plugin.summary if has_commands else None,
         stability=_mark(plugin.stability),
         skills=skills,
-        deprecations=lambda: loaded()["deprecations"],
+        deprecations=lambda: loaded()["deprecations"] if behaviours else (),
     )
     for field_name in ("caches", "doctor_checks", "credentials", "stores"):
         kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}

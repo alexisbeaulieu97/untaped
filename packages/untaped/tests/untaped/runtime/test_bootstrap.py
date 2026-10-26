@@ -900,7 +900,8 @@ def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
     assert "bare" not in _CONFIG_REGISTRY.state_sections
     listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
     assert [(row["name"], row["status"]) for row in json.loads(listed.stdout)] == [
-        ("bare", "ready")
+        ("bare", "ready"),
+        ("untaped", "ready"),
     ]
     rows = collect_doctor_rows(bootstrap.composition())
     assert [row for row in rows if row["plugin"] == "bare"] == []
@@ -1086,3 +1087,32 @@ def test_a_home_that_does_not_resolve_is_reported_and_root_flags_still_print(
     result = CliInvoker().invoke(root.meta, ["plugin", "list"])
     assert result.exit_code == 4, result.output
     assert "error: UNTAPED_HOME" in result.stderr
+
+
+@pytest.mark.usefixtures("home_run")
+def test_core_s_removals_name_untaped_s_own_major_and_a_plugin_s_its_distribution() -> None:
+    """The root binds no owner: a removal of one of core's keys reads ``12.0``."""
+    from untaped.sdk.marks import owner, removal_text
+
+    bootstrap.compose_root(candidates=[make_candidate(make_spec(name="acme"), "untaped-acme")])
+    assert removal_text(12, owner("untaped")) == "12.0"
+    assert removal_text(12, owner("acme")) == "untaped-acme 12.0"
+
+
+@pytest.mark.usefixtures("home_run")
+def test_core_s_behaviours_are_the_sdk_s_to_list_never_a_listing_of_its_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The root's spec lists no behaviour, and its class is never asked which it lists."""
+    from untaped.runtime import mount
+    from untaped.sdk import marks
+
+    def loaded(*_: object) -> None:
+        raise AssertionError("a plugin declaring no behaviour had its blocks loaded")
+
+    monkeypatch.setattr(mount, "_spelled_blocks", loaded)
+    result = bootstrap.compose_root(candidates=[make_candidate(make_spec(name="acme"))])
+    assert "untaped" not in marks._LISTINGS
+    assert "acme" in marks._LISTINGS
+    core = next(plugin.spec for plugin in result.plugins if plugin.root)
+    assert core.deprecations() == ()  # none declared: its blocks are never loaded

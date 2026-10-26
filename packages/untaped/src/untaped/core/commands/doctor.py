@@ -324,14 +324,14 @@ def _scopes(result: CompositionResult) -> list[_SectionScope]:
     ]
 
 
-def _plugin_scope(spec: PluginSpec, *, settings: bool = True, checks: bool = True) -> _SectionScope:
-    """``spec``'s scope; without ``settings`` no section row, without ``checks`` no checks."""
+def _plugin_scope(spec: PluginSpec, *, settings: bool = True) -> _SectionScope:
+    """``spec``'s scope; without ``settings`` no section row."""
     return _SectionScope(
         plugin=spec.name,
         section=spec.name,
         settings_model=section_settings(spec) if settings else None,
         state_model=state_model(spec),
-        checks=tuple(spec.doctor_checks) if checks else (),
+        checks=tuple(spec.doctor_checks),
         rows=tuple(
             each
             for each in state_declarations(spec)
