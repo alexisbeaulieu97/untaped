@@ -1301,6 +1301,82 @@ def test_a_later_offerer_that_owns_the_contract_keeps_its_package_s_kinds() -> N
     assert {c.output for c in declaration.commands() if c.name == "say"} == {"hello.salutation"}
 
 
+def test_a_later_offerer_refused_for_its_own_problem_stays_quarantined() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin, a sound one, then one with a kind clash."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    class Offering(Plugin):
+        """Defines Salutation (this module) and offers Shared."""
+
+        settings = HelloSettings
+        commands = (Say,)
+        offers = (Shared,)
+
+    class Salutation(BaseModel):  # its own package's, named like this module's
+        __module__ = "untaped_late.models"
+        name: str
+
+    class Hail(Command[HelloSettings]):
+        """Hail."""
+
+        output: Output[Salutation]
+
+        def run(self) -> None:
+            return None
+
+    class Late(Plugin):
+        """Offers Shared too and reaches both Salutations."""
+
+        settings = HelloSettings
+        commands = (Say, Hail)
+        offers = (Shared,)
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Offering),
+        _entry(Late, "late", module="untaped_late.plugin"),
+    ]
+    # while both later offerers own no package, late's two Salutations are one kind
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["hello"]
+    assert [q.name for q in declaration.quarantined] == ["broken", "late"]
+
+
+def test_the_next_entry_point_of_a_package_owns_it_when_the_first_is_quarantined() -> None:
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        runs = 5  # type: ignore[assignment]
+
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    entries = [
+        _entry(Broken, "broken"),
+        _entry(Peer, "second", module=f"{__name__}.second"),
+        _entry(Peer, "peer", module="untaped_peer.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+    assert {c.output for c in declaration.commands() if c.name == "say"} == {"second.salutation"}
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
