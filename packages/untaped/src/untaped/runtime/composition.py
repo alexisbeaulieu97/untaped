@@ -161,7 +161,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     is withdrawn first, then the plugins listing one contract; the others
     then read owners (of a package, a contract) only among the plugins that
     compose, until those they read are those that compose (when no such set
-    exists, the first plugin composing only while unread is refused, first-wins).
+    exists, the first plugin refused as soon as it is read is, first-wins).
     """
     reserved = frozenset(taken)
     every = frozenset(range(len(entries)))
@@ -171,15 +171,22 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     tried: set[frozenset[int]] = set()
     # each plugin's problems the last time it was refused in this phase
     last: dict[int, tuple[Problem, ...]] = {}
-    while True:
-        standing = every - frozenset(withdrawn)
-        readable = standing if read is None else read & standing
+
+    def attempt(
+        standing: frozenset[int], readable: frozenset[int]
+    ) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
+        """One pass: the others read owners only among ``readable``."""
         owners: dict[str, str] = {}
         for i in sorted(readable):
             owners.setdefault(_package(entries[i].target), entries[i].name)
         offering = _offering(entries, sorted(standing))
         declaration, refused = _compose(entries, reserved, owners, offering, withdrawn, readable)
-        refused = {i: problems for i, problems in refused.items() if i not in withdrawn}
+        return declaration, {i: problems for i, problems in refused.items() if i not in withdrawn}
+
+    while True:
+        standing = every - frozenset(withdrawn)
+        readable = standing if read is None else read & standing
+        declaration, refused = attempt(standing, readable)
         last |= refused
         final = {
             i: problems
@@ -200,9 +207,13 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
         else:
             # a plugin composes only while it isn't read (a class of its package
             # that another reaches then clashes with its own): no read set
-            # agrees, so the first such plugin is refused as it was when read,
-            # first-wins, and the rest compose without it
-            first = min(composed - readable)
+            # agrees, so the first plugin refused once read beside those read
+            # is refused as it was when read, first-wins, and the rest compose
+            # without it (one composing only while unread for another's sake waits)
+            unread = sorted(composed - readable)
+            first = next(
+                (c for c in unread if c in attempt(standing, readable | {c})[1]), unread[0]
+            )
             withdrawn[first] = last[first]
             read, tried, last = None, set(), {}
             continue

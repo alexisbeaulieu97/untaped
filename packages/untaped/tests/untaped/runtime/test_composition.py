@@ -1845,7 +1845,7 @@ def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agre
     """o composes only while unread (as y's test); x refreshes o's contract, another x is fine.
 
     Refusing o alone leaves x's cache unowned, so the second x holds the
-    name, as composing y and it alone does.
+    name, as composing y and it alone does, in either order.
     """
 
     def book(module: str) -> type[BaseModel]:
@@ -1908,6 +1908,9 @@ def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agre
         (refused.target, [problem.rule for problem in refused.problems])
         for refused in declaration.quarantined
     ] == [(entries[1].target, ["duplicate-kind"]), (entries[2].target, ["unowned-cache"])]
+    # in another order the second x composes only while o is unread too, for x's sake
+    again = compose([entries[2], entries[3], entries[0], entries[1]])
+    assert [plugin.target for plugin in again.plugins] == [entries[3].target, entries[0].target]
 
 
 def test_one_cache_caches_one_contract_method() -> None:
