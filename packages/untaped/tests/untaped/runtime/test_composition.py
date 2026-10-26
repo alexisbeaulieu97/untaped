@@ -679,6 +679,64 @@ def test_refresh_refuses_a_version_only_cache_even_on_the_plugin_class() -> None
     assert (problem.rule, "version-only" in problem.detail) == ("refresh-cache", True)
 
 
+def _refresh_help(plugin: type[Plugin], name: str = "hello") -> str:
+    [command] = compose([_entry(plugin, name)]).commands()
+    [option] = [option for option in command.options if option.block == "refresh"]
+    return option.help
+
+
+def test_refresh_help_names_the_cache_its_label_and_its_setting() -> None:
+    motd = Cache(label="message of the day", max_age=timedelta(hours=1))
+
+    class Motd(Command):
+        """Motd."""
+
+        refresh: Refresh = Refresh(motd)
+
+        def run(self) -> None:
+            return None
+
+    class Demo(Plugin):
+        """Demo."""
+
+        settings = HelloSettings
+        commands = (Motd,)
+        message = motd
+
+    assert _refresh_help(Demo) == (
+        "--refresh checks upstream for message of the day now; --cached reads what is cached "
+        "and never checks. Default: check when the cached data is older than "
+        "hello.caches.message.max_age_seconds (1 h)."
+    )
+
+
+def test_refresh_help_names_every_cache_a_held_one_and_a_contract_methods() -> None:
+    held = Cache(label="covers", max_age=timedelta(days=1))
+
+    class Books(Command):
+        """Books."""
+
+        refresh: Refresh = Refresh(held, BookSource.books)
+
+        def run(self) -> None:
+            return None
+
+    class Shelf(Plugin):
+        """Shelf."""
+
+        settings = HelloSettings
+        commands = (Books,)
+        offers = (BookSource,)
+        covers = held
+
+    assert _refresh_help(Shelf, "shelf") == (
+        "--refresh checks upstream for covers and books now; --cached reads what is cached "
+        "and never checks. Default: check when the cached data is older than "
+        "shelf.caches.covers.max_age_seconds (24 h) for covers and "
+        "shelf.caches.book_source_books.max_age_seconds (1 h) for books."
+    )
+
+
 def test_a_record_class_belongs_to_the_plugin_whose_package_defines_it() -> None:
     class Peer(Plugin):
         """Peer."""

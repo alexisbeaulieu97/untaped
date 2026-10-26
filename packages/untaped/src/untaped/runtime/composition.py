@@ -67,7 +67,7 @@ from untaped.sdk.plugin import (
     generic_argument,
     settings_model,
 )
-from untaped.sdk.storage.cache import Cache
+from untaped.sdk.storage.cache import Cache, _max_age_setting, _refresh_help
 from untaped.sdk.storage.dir import Dir
 
 if TYPE_CHECKING:
@@ -308,7 +308,8 @@ class _PluginWalk:
         settings = self._settings(cls)
         self._reserved(cls)
         blocks = self._blocks(cls)
-        self.held = {id(value) for value in self._attributes(cls).values()}
+        #: Each attribute's value by identity: the blocks a command's fields may name.
+        self.held = {id(value): attribute for attribute, value in self._attributes(cls).items()}
         commands = self._nodes(cls.commands, (self.name,), where=f"{cls.__qualname__}.commands")
         runs = None
         if cls.runs is not None and _is_command(cls.runs):
@@ -865,12 +866,13 @@ class _CommandWalk:
             return
         seen.blocks[block.field_kind] += 1
         default = info.default if isinstance(info.default, block) else block()
+        refresh_help: str | None = None
         if isinstance(default, Output):
             self._output_field(where, info.annotation, default)
         elif isinstance(default, Stdin):
             self._stdin_field(where, info.annotation)
         elif isinstance(default, Refresh):
-            self._refresh_field(where, default)
+            refresh_help = self._refresh_field(where, default)
         elif (
             isinstance(default, Parallel)
             and isinstance(default.default, SettingKey)
@@ -895,7 +897,7 @@ class _CommandWalk:
                     choices=choices,
                     negative=option.negative,
                     short=option.short,
-                    help=option.help,
+                    help=refresh_help or option.help,  # Refresh's one flag pair, about its caches
                     panel=block.panel,
                     block=block.field_kind,
                     default=initial,
@@ -923,36 +925,54 @@ class _CommandWalk:
             return
         self.seen.stdin.extend(target_of(model) for model in models)
 
-    def _refresh_field(self, where: str, default: Refresh) -> None:
+    def _refresh_field(self, where: str, default: Refresh) -> str | None:
+        """Check the caches ``default`` names; the help of its flags, or ``None`` on a problem.
+
+        The help names each cache's label and max-age setting, and goes into
+        the declaration, so help never imports the command to say it.
+        """
         if not default.caches:
             self.problem(
                 "refresh-cache",
                 where,
                 "Refresh names the caches its flags are about: Refresh(CACHE)",
             )
-        for cache in default.caches:
-            if isinstance(cache, Cache) and cache.version_only:
+            return None
+        named: list[tuple[Cache[Any], str]] = []
+        for each in default.caches:
+            if isinstance(each, Cache) and each.version_only:
                 self.problem(
                     "refresh-cache",
                     where,
-                    f"{cache!r} is version-only: it has no max age for --refresh to override",
+                    f"{each!r} is version-only: it has no max age for --refresh to override",
                 )
                 continue
-            if id(cache) in self.plugin.held or self._cached_method(cache):
+            attribute = self.plugin.held.get(id(each))
+            if isinstance(each, Cache) and attribute is not None:
+                setting = _max_age_setting(self.plugin.name, each.derived_name(attribute))
+                named.append((each, setting))
+                continue
+            cache = self._cached_method(each)
+            if cache is not None:
+                if cache.spelled:  # an answer cache is spelled in its owner's settings module
+                    named.append((cache, cache.setting))
                 continue
             self.problem(
                 "refresh-cache",
                 where,
-                f"{cache!r} is neither a cache on the plugin class nor a cached method of a "
+                f"{each!r} is neither a cache on the plugin class nor a cached method of a "
                 "contract the plugin offers or fills",
             )
+        return _refresh_help(named) if len(named) == len(default.caches) else None
 
-    def _cached_method(self, method: object) -> bool:
-        if getattr(method, "__untaped_cached__", None) is None:
-            return False
+    def _cached_method(self, method: object) -> Cache[Any] | None:
+        """The answer cache of ``method`` if it is a cached method the plugin offers or fills."""
+        cache = getattr(method, "__untaped_cached__", None)
+        if not isinstance(cache, Cache):
+            return None
         name = getattr(method, "__name__", "")
         classes = (*self.plugin.offers, *self.plugin.fills)
-        return any(getattr(cls, name, None) is method for cls in classes)
+        return cache if any(getattr(cls, name, None) is method for cls in classes) else None
 
     def _duplicates(self) -> None:
         flags: dict[str, str] = {}
