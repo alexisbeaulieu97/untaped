@@ -153,7 +153,10 @@ def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
     """
     info, method = method_contract(bridge)
     if not method.bridge:
-        raise TypeError(f"{info.cls.__qualname__}.{method.name} is not a @bridge method")
+        raise TypeError(
+            f"{info.cls.__qualname__}.{method.name} is not a bridge "
+            "(a method taking T and returning the owner's model)"
+        )
     model = method.hints["return"]
     owner_kind = kind_of(model)
     kind = envelope.kind

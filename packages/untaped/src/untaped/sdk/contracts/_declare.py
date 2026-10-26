@@ -4,7 +4,7 @@ An owner declares a contract as an ABC subclass of :class:`Contract`; a
 provider fills it by subclassing the contract. ``Contract.__init_subclass__``
 tells the two apart: a class whose own bases name :class:`Contract` is a
 declaration and is checked here, once; any other subclass is a provider (or
-an intermediate base of one), whose overrides of ``@bridge`` and ``@cached``
+an intermediate base of one), whose overrides of the bridge and ``@cached``
 methods are re-wrapped so the owner's declaration holds wherever the method is
 called from.
 """
@@ -20,7 +20,17 @@ import types
 from abc import ABC
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
+from datetime import timedelta
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+    overload,
+)
 
 from pydantic import (
     BaseModel,
@@ -51,7 +61,6 @@ SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "
 
 _BRIDGE = "__untaped_bridge__"
 _CACHED = "__untaped_cached__"
-_LISTING = "__untaped_listing__"
 _CONTRACT_OF = "__untaped_contract_of__"
 _CONTRACT = "__untaped_contract__"
 _BINDING = "_untaped_binding"
@@ -84,8 +93,8 @@ class Method:
     bridge: bool
     #: The answer cache of a ``@cached`` method.
     cache: Cache | None
-    #: Declared ``@listing``: an invalid row is dropped and the rest kept.
-    #: Any other method's invalid item fails the answer.
+    #: Returns a list: an invalid row is dropped and the rest kept. Any other
+    #: method's invalid item fails the answer.
     listing: bool
 
 
@@ -131,13 +140,13 @@ def snake_case(name: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name).lower()
 
 
-def bridge[F: Callable[..., Any]](fn: F, /) -> F:
-    """Declare a method that turns a provider's own record into the owner's model.
+def _bridged[F: Callable[..., Any]](fn: F, /) -> F:
+    """``fn``, a provider's bridge, stamping ``source`` on what it returns.
 
-    On the owner's contract it is a declaration; every provider's override is
-    re-wrapped with it, so ``self.to_repo(item)`` inside a provider is stamped
-    too. The wrapper stamps ``source`` (plugin, the item's kind and its JSON
-    dump) and validates nothing: the SDK validates once, after the call.
+    Every provider's bridge is wrapped, so ``self.to_repo(item)`` inside a
+    provider is stamped too. The wrapper stamps ``source`` (plugin, the
+    item's kind and its JSON dump) and validates nothing: the SDK validates
+    once, after the call.
     """
     if getattr(fn, _BRIDGE, None) is not None:
         return fn
@@ -150,32 +159,36 @@ def bridge[F: Callable[..., Any]](fn: F, /) -> F:
     return stamped  # type: ignore[return-value]  # same signature as fn
 
 
-def listing[F: Callable[..., Any]](fn: F, /) -> F:
-    """Declare a method that returns a list of rows, each standing alone.
-
-    An invalid row is dropped (and reported in ``Ok.invalid``) and the rest
-    kept; without it, one invalid item fails the provider's whole answer.
-    The method must return a ``list``; checked at declaration.
-    """
-    setattr(fn, _LISTING, True)
-    return fn
+@overload
+def cached[F: Callable[..., Any]](*, max_age: timedelta, label: str) -> Callable[[F], F]: ...
 
 
-def cached[F: Callable[..., Any]](cache: Cache, /) -> Callable[[F], F]:
-    """Declare that a method's answers are kept in ``cache`` (the answer cache).
+@overload
+def cached[F: Callable[..., Any]](cache: Cache, /) -> Callable[[F], F]: ...
 
-    The owner declares ``cache`` in its settings module, named
-    ``<contract>_<method>`` (``Cache("shelf", "book_source_books", label=…,
-    max_age=…)``), and lists it on ``PluginSpec.caches``; its max age is the
+
+def cached[F: Callable[..., Any]](
+    cache: Cache | None = None, /, *, max_age: timedelta | None = None, label: str | None = None
+) -> Callable[[F], F]:
+    """Declare that a method's answers are kept in the owner's answer cache.
+
+    ``@cached(max_age=timedelta(hours=6), label="repositories")`` makes the
+    cache: core names it ``<contract>_<method>`` (``repo_source_repos``) and
+    gives it to the plugin offering the contract, so its max age is the
     setting ``<owner>.caches.<name>.max_age_seconds``. The SDK keeps one
-    entry per provider, method, profile and arguments. A live call that fails
-    while an entry exists serves the entry, marked stale.
+    entry per provider, method, profile and arguments. A live call that
+    fails while an entry exists serves the entry, marked stale.
+    ``@cached(CACHE)`` takes a cache an 11.x owner declares and lists on
+    ``PluginSpec.caches``; it goes with the last 11.x owner.
     """
+    if cache is None:
+        if max_age is None or label is None:
+            raise TypeError("@cached takes max_age= and label=: @cached(max_age=..., label=...)")
+        cache = Cache(label=label, max_age=max_age)
+    elif max_age is not None or label is not None:
+        raise TypeError("@cached takes a Cache or max_age= and label=, not both")
     if not isinstance(cache, Cache):
-        raise TypeError(
-            "@cached takes a Cache: declare X = Cache(owner, '<contract>_<method>', "
-            "label=..., max_age=...) in your settings module and write @cached(X)"
-        )
+        raise TypeError("@cached takes max_age= and label=: @cached(max_age=..., label=...)")
     if cache.store is not None:
         raise TypeError(
             f"@cached({cache.qualified}): an answer cache follows no store; its entries "
@@ -504,11 +517,11 @@ def unused_methods(provider: type[Contract], contract: ContractInfo) -> list[str
 
 
 def _rewrap(cls: type[Contract]) -> None:
-    """Re-apply the contract's ``@bridge`` and ``@cached`` to what ``cls`` fills.
+    """Re-apply the contract's bridge and ``@cached`` to what ``cls`` fills.
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
-    ``@cached`` or ``@listing`` anywhere in the provider's own code is a ``TypeError``.
+    ``@cached`` anywhere in the provider's own code is a ``TypeError``.
     """
     info = contract_of(cls)
     if info is None:
@@ -516,11 +529,10 @@ def _rewrap(cls: type[Contract]) -> None:
     own = [cls, *(klass for klass in cls.__mro__ if not issubclass(klass, Contract))]
     for klass in own:
         for name, value in vars(klass).items():
-            for marker, what in ((_CACHED, "@cached"), (_LISTING, "a @listing")):
-                if _carries(value, marker):
-                    raise TypeError(
-                        f"{klass.__qualname__}.{name}: only the contract decides what is {what}"
-                    )
+            if _carries(value, _CACHED):
+                raise TypeError(
+                    f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
+                )
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
         if holder is not cls and issubclass(holder, Contract):
@@ -530,7 +542,7 @@ def _rewrap(cls: type[Contract]) -> None:
             continue
         wrapped = value
         if method.bridge:
-            wrapped = bridge(wrapped)
+            wrapped = _bridged(wrapped)
         if method.cache is not None:
             wrapped = _served(wrapped, method.cache, name)
         if wrapped is not value:
@@ -548,6 +560,7 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
     item_param = params[0] if params and isinstance(params[0], TypeVar) else None
     item = _item_default(where, item_param)
     methods: dict[str, Method] = {}
+    bridges: list[str] = []
     for name, value in vars(cls).items():
         if name.startswith("_") or not inspect.isfunction(value):
             continue
@@ -560,18 +573,31 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         cache = getattr(value, _CACHED, None)
         if cache is not None:
             _check_cache(where, cls.__name__, name, cache, hints["return"])
-        rows = getattr(value, _LISTING, False)
-        if rows and get_origin(hints["return"]) is not list:
-            raise TypeError(f"{where}.{name}: a @listing method returns a list")
+            if not cache.spelled and cache._held_as is None:
+                if cache._declared_as is not None:
+                    raise TypeError(
+                        f"{where}.{name}: @cached takes a cache of its own; this one already "
+                        f"caches {cache._declared_as}"
+                    )
+                owner = functools.partial(_owner_of, cls)
+                cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
+        is_bridge = _is_bridge(value, hints, item_param, item)
+        if is_bridge:
+            bridges.append(name)
         methods[name] = Method(
             name=name,
             function=value,
             hints=types.MappingProxyType(hints),
-            bridge=getattr(value, _BRIDGE, None) is not None,
+            bridge=is_bridge,
             cache=cache,
-            listing=rows,
+            listing=get_origin(hints["return"]) is list,
         )
         setattr(value, _CONTRACT_OF, cls)
+    if len(bridges) > 1:
+        raise TypeError(
+            f"{where}: {' and '.join(bridges)} both take {item_param} and return "
+            f"{getattr(item, '__qualname__', item)}; a contract has one bridge"
+        )
     return ContractInfo(
         cls=cls,
         name=snake_case(cls.__name__),
@@ -580,6 +606,28 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
         item_param=item_param,
         methods=types.MappingProxyType(methods),
     )
+
+
+def _owner_of(cls: type[Contract]) -> str:
+    """The plugin this run composed as offering ``cls``: its answer cache's plugin."""
+    from untaped.runtime.contracts.registry import owner_of  # noqa: PLC0415 - the registry's cost
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
+
+    current_run()  # outside a run no plugin owns it: NoRunError, as for a held block
+    return owner_of(cast("ContractInfo", contract_of(cls)))  # asked once ``cls`` is declared
+
+
+def _is_bridge(
+    function: Callable[..., Any],
+    hints: Mapping[str, Any],
+    param: TypeVar | None,
+    item: type[Issued] | None,
+) -> bool:
+    """Whether a method is the bridge: its one parameter is ``T``, its return the owner's model."""
+    if param is None:
+        return False
+    parameters = list(inspect.signature(function).parameters)[1:]
+    return len(parameters) == 1 and hints.get(parameters[0]) is param and hints["return"] is item
 
 
 def _check_cache(where: str, contract: str, name: str, cache: Cache, returns: object) -> None:

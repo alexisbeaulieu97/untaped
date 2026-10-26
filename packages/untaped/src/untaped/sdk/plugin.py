@@ -174,6 +174,36 @@ RESERVED_NAMES: tuple[str, ...] = (
 )
 
 
+def held_by(cls: type[Plugin]) -> dict[str, object]:
+    """What the plugin class holds by name: its attributes beyond the reserved names, and caches.
+
+    Its own and inherited attributes, then each answer cache ``@cached``
+    made on a contract it offers, as ``<contract>_<method>`` (an attribute
+    of that name wins; composition refuses it). The contract names the
+    cache and the run says whose it is, so the class is never changed.
+    """
+    found: dict[str, object] = {}
+    for klass in reversed(cls.__mro__):
+        if klass in (Plugin, object):
+            continue
+        for name, value in vars(klass).items():
+            if not name.startswith("__") and name not in RESERVED_NAMES:
+                found[name] = value
+    offers = cls.offers if isinstance(cls.offers, tuple) else ()
+    if offers:
+        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
+
+        for offered in offers:
+            info = contract_of(offered) if isinstance(offered, type) else None
+            if info is None or info.cls is not offered:
+                continue  # composition says what offers may hold
+            for method in info.methods.values():
+                cache = method.cache
+                if cache is not None and not cache.spelled and cache._declared_as is not None:
+                    found.setdefault(cache._declared_as, cache)
+    return found
+
+
 def field_block(annotation: object) -> type[FieldBlock] | None:
     """The core-filled field type ``annotation`` is (``Output[R]`` gives ``Output``), if any."""
     origin = get_origin(annotation) or annotation

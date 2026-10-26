@@ -31,7 +31,9 @@ from untaped.sdk import (
     UntapedError,
     experimental,
 )
-from untaped.sdk.contracts import Contract, Ok, Provider, gather
+from untaped.sdk._run import NoRunError
+from untaped.sdk.contracts import Contract, Ok, Provider, cached, gather
+from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.storage import Cache
 from untaped.sdk.testing import Home, Install, ManualClock, Ran, Running
 
@@ -494,3 +496,57 @@ def test_a_provider_s_context_is_its_own_plugin_s_without_a_terminal(install: In
     assert install(Reader, providers={"fake": (Named,)}).run(Titles()).text == "fake:fake"
     with pytest.raises(UntapedError, match="not bound to a plugin, so it has no context"):
         Named().ctx  # noqa: B018 - reading it is the point
+
+
+@experimental
+class Logs(Contract):
+    """A contract whose one method keeps its answers."""
+
+    @cached(max_age=timedelta(hours=1), label="logs")
+    @abstractmethod
+    def entries(self) -> list[Book]: ...
+
+
+class Tail(Command[Pages]):
+    """Print every entry every provider keeps."""
+
+    def run(self) -> str:
+        return ",".join(
+            book.title
+            for answer in gather(Logs.entries)()
+            if isinstance(answer, Ok)
+            for book in answer.value
+        )
+
+
+class Logbook(Plugin):
+    """Keep logs."""
+
+    settings = Pages
+    commands = (Tail,)
+    offers = (Logs,)
+
+
+class Written(Logs, Provider):
+    def entries(self) -> list[Book]:
+        return [Book(title="boot")]
+
+
+def test_an_offered_answer_cache_is_the_owner_s_under_the_contract_s_name(
+    install: Installer,
+) -> None:
+    assert install(Logbook, providers={"fake": (Written,)}).run(Tail()).text == "boot"
+    info = contract_of(Logs)
+    assert info is not None
+    cache = info.methods["entries"].cache
+    assert cache is not None
+    assert cache.bindings == ()  # the contract names it; the class is never changed
+    with pytest.raises(NoRunError):
+        cache.plugin  # noqa: B018 - outside a run no plugin owns it
+    with install(Logbook).running():
+        assert (cache.plugin, cache.name) == ("logbook", "logs_entries")
+    # the name is the run's, never kept from an earlier one
+    renamed = install(Logbook, names={Logbook: "journal"}, providers={"other": (Written,)})
+    assert renamed.run(Tail()).text == "boot"
+    with renamed.running():
+        assert cache.plugin == "journal"

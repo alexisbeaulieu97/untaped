@@ -32,16 +32,7 @@ from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run, invocation
 from untaped.runtime.sink import exit_on_counted_failure
 from untaped.sdk._run import recording
-from untaped.sdk.contracts import (
-    Contract,
-    Failed,
-    NoProviderReady,
-    Ok,
-    Skipped,
-    Source,
-    gather,
-    listing,
-)
+from untaped.sdk.contracts import Contract, Failed, NoProviderReady, Ok, Skipped, Source, gather
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
 from untaped.sdk.storage._digest import settings_digest
@@ -169,14 +160,14 @@ def test_a_listing_drops_an_invalid_row_and_keeps_the_rest() -> None:
     assert shop.invalid[0].startswith("row 2: title")
 
 
-def test_a_lookup_with_an_invalid_item_fails_whole_by_rank(rank) -> None:  # type: ignore[no-untyped-def]
+def test_an_invalid_answer_that_is_no_listing_fails_whole_by_rank(rank) -> None:  # type: ignore[no-untyped-def]
     compose(shelf_spec(), shop_spec())
     Shop.rows = [Book.model_construct(title="Dune", pages="many")]
-    [shop] = gather(BookSource.lookup)("Dune")
+    [shop] = gather(BookSource.first)()
     assert isinstance(shop, Skipped)
     assert shop.reason == "invalid-item"
     rank("shop")
-    [shop] = gather(BookSource.lookup)("Dune")
+    [shop] = gather(BookSource.first)()
     assert isinstance(shop, Failed)
     assert shop.reason == "invalid-item"
     assert shop.error.exit_code == ExitCode.ENVIRONMENT
@@ -601,11 +592,10 @@ def _tag(name: str) -> _Tag:
 
 
 class _TagSource(Contract):
-    @listing
     def tags(self) -> list[_Tag]:
         raise NotImplementedError
 
-    def everything(self) -> list[_Tag]:
+    def one(self) -> _Tag:
         raise NotImplementedError
 
     def token(self) -> SecretStr:
@@ -625,10 +615,11 @@ class _Tagger(_TagSource):
     def tags(self) -> list[_Tag]:
         return [_tag("a"), "oops"]  # type: ignore[list-item]  # a bad row
 
-    everything = tags
+    def one(self) -> _Tag:
+        return "oops"  # type: ignore[return-value]  # a bad answer
 
 
-def test_only_a_declared_listing_drops_a_bad_row_whatever_its_item_type() -> None:
+def test_a_listing_drops_a_bad_row_where_a_bad_answer_fails_whole() -> None:
     compose(
         PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
         PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
@@ -637,7 +628,7 @@ def test_only_a_declared_listing_drops_a_bad_row_whatever_its_item_type() -> Non
     assert isinstance(listed, Ok)
     assert listed.value == [_tag("a")]
     assert listed.invalid[0].startswith("row 2:")
-    [whole] = gather(_TagSource.everything)()
+    [whole] = gather(_TagSource.one)()
     assert isinstance(whole, Skipped)
     assert whole.reason == "invalid-item"
 

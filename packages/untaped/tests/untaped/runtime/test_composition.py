@@ -1168,30 +1168,21 @@ def test_a_filled_class_is_a_provider_reading_its_own_plugin_s_settings() -> Non
     assert (fill.target.endswith(":_Ours"), fill.contract.endswith(":BookSource")) == (True, True)
 
 
-def test_an_offered_contract_s_answer_cache_is_held_by_a_plugin_class() -> None:
+def test_an_offered_contract_s_answer_cache_is_bound_to_its_owner() -> None:
     @experimental
     class Loose(Contract):
-        """Its cache is held by no plugin class."""
+        """Its cache is made by @cached and named by composition."""
 
-        @cached(Cache(label="pages", max_age=timedelta(hours=1)))
+        @cached(max_age=timedelta(hours=2), label="pages")
         def pages(self) -> list[Book]:
             raise NotImplementedError
 
-    class Owner(Plugin):
-        """Owner."""
-
-        settings = HelloSettings
-        offers = (Loose,)
-
-    [problem] = _problems(Owner, "owner")
-    assert (problem.rule, problem.where.rpartition(".<locals>.")[2]) == (
-        "answer-cache",
-        "Loose.pages",
+    assert "older than owner.caches.loose_pages.max_age_seconds (2 h)." in _refresh_help(
+        _pages_plugin(Loose), "owner"
     )
-    assert problem.detail.endswith("Owner.loose_pages")
 
 
-def test_an_answer_cache_held_under_another_name_is_refused() -> None:
+def test_an_answer_cache_held_under_another_name_too_is_refused() -> None:
     held = Cache(label="pages", max_age=timedelta(hours=1))
 
     @experimental
@@ -1209,9 +1200,760 @@ def test_an_answer_cache_held_under_another_name_is_refused() -> None:
         offers = (Misheld,)
         wrong_name = held
 
-    details = [p.detail for p in _problems(Owner, "owner") if p.rule == "answer-cache"]
-    assert details == [
-        "is cached in a cache held as test_an_answer_cache_held_under_another_name_is_refused."
-        "<locals>.Owner.wrong_name: assign it to test_an_answer_cache_held_under_another_name_"
-        "is_refused.<locals>.Owner.misheld_pages"
+    # the plugin holds it as misheld_pages, so the other name is a second hold
+    [problem] = _problems(Owner, "owner")
+    assert (problem.rule, problem.detail) == ("duplicate-block", "is the same cache as wrong_name")
+
+
+def test_two_classes_offering_one_contract_are_both_refused() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by two classes, which is one too many."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class First(Plugin):
+        """First."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+
+    class Second(Plugin):
+        """Second."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+
+    # the class is never changed: each composes alone, holding the cache under its own name
+    for plugin, name in ((First, "first"), (Second, "second"), (First, "renamed")):
+        [decl] = compose([_entry(plugin, name)]).plugins
+        assert [block.name for block in decl.blocks] == ["shared_pages"]
+    # composed together, a contract has one owner: the fault names both, in either order
+    for entries in (
+        [_entry(First, "first"), _entry(Second, "second")],
+        [_entry(Second, "second"), _entry(First, "first")],
+    ):
+        both = compose(entries)
+        assert both.plugins == ()
+        details = {q.name: [(p.rule, p.detail) for p in q.problems] for q in both.quarantined}
+        assert details == {
+            "first": [
+                (
+                    "duplicate-offer",
+                    f"{Shared.__qualname__} is offered by second too; a contract has one owner",
+                )
+            ],
+            "second": [
+                (
+                    "duplicate-offer",
+                    f"{Shared.__qualname__} is offered by first too; a contract has one owner",
+                )
+            ],
+        }
+
+
+def test_a_later_offerer_owns_the_contract_when_the_first_is_quarantined() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin first, then by a sound one."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    both = compose([_entry(Broken, "broken"), _entry(_pages_plugin(Shared), "shelf")])
+    assert [plugin.name for plugin in both.plugins] == ["shelf"]
+    assert [refused.name for refused in both.quarantined] == ["broken"]
+
+
+def test_a_later_offerer_that_owns_the_contract_keeps_its_package_s_kinds() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin first, then by this module's."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    class Offering(Plugin):
+        """Defines Salutation (this module) and offers Shared."""
+
+        settings = HelloSettings
+        commands = (Say,)
+        offers = (Shared,)
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Peer, "peer", module="untaped_peer.plugin"),
+        _entry(Offering),
     ]
+    declaration = compose(entries)
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+    assert {c.output for c in declaration.commands() if c.name == "say"} == {"hello.salutation"}
+
+
+def test_a_later_offerer_refused_for_its_own_problem_stays_quarantined() -> None:
+    @experimental
+    class Shared(Contract):
+        """Offered by a broken plugin, a sound one, then one with a kind clash."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Shared,)
+        runs = 5  # type: ignore[assignment]
+
+    class Offering(Plugin):
+        """Defines Salutation (this module) and offers Shared."""
+
+        settings = HelloSettings
+        commands = (Say,)
+        offers = (Shared,)
+
+    class Salutation(BaseModel):  # its own package's, named like this module's
+        __module__ = "untaped_late.models"
+        name: str
+
+    class Hail(Command[HelloSettings]):
+        """Hail."""
+
+        output: Output[Salutation]
+
+        def run(self) -> None:
+            return None
+
+    class Late(Plugin):
+        """Offers Shared too and reaches both Salutations."""
+
+        settings = HelloSettings
+        commands = (Say, Hail)
+        offers = (Shared,)
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Offering),
+        _entry(Late, "late", module="untaped_late.plugin"),
+    ]
+    # while both later offerers own no package, late's two Salutations are one kind
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["hello"]
+    assert [q.name for q in declaration.quarantined] == ["broken", "late"]
+
+
+def test_the_next_entry_point_of_a_package_owns_it_when_the_first_is_quarantined() -> None:
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        runs = 5  # type: ignore[assignment]
+
+    class Peer(Plugin):
+        """Peer."""
+
+        settings = HelloSettings
+        commands = (Say,)
+
+    entries = [
+        _entry(Broken, "broken"),
+        _entry(Peer, "second", module=f"{__name__}.second"),
+        _entry(Peer, "peer", module="untaped_peer.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+    assert {c.output for c in declaration.commands() if c.name == "say"} == {"second.salutation"}
+
+
+def test_offering_a_contract_another_plugin_lists_refuses_both() -> None:
+    @experimental
+    class Pages(Contract):
+        """Offered by a plugin refused as a later offerer of Notes, then by a sound one."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a sound plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    def offering(*offers: type[Contract]) -> type[Plugin]:
+        class Offering(Plugin):
+            """Offers contracts."""
+
+            settings = HelloSettings
+
+        Offering.offers = offers  # type: ignore[assignment]
+        return Offering
+
+    entries = [
+        _entry(offering(Notes), "first", module="untaped_first.plugin"),
+        _entry(offering(Pages, Notes), "both", module="untaped_both.plugin"),
+        _entry(offering(Pages), "pages", module="untaped_pages.plugin"),
+    ]
+    # each contract two plugins list refuses both: no order picks an owner
+    declaration = compose(entries)
+    assert declaration.plugins == ()
+    assert {q.name: len(q.problems) for q in declaration.quarantined} == {
+        "first": 1,
+        "both": 2,
+        "pages": 1,
+    }
+
+
+def test_a_later_offerer_refreshes_a_contract_only_it_lists() -> None:
+    @experimental
+    class Notes(Contract):
+        """Offered first by a broken plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+        runs = 5  # type: ignore[assignment]
+
+    @experimental
+    class Paging(Contract):
+        """Only the later offerer lists it."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    shelf = _pages_plugin(Paging)
+    shelf.offers = (Paging, Notes)
+    entries = [_entry(Broken, "broken", module="untaped_broken.plugin"), _entry(shelf, "shelf")]
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["shelf"]
+    assert [q.name for q in declaration.quarantined] == ["broken"]
+
+
+def test_a_later_offerer_holding_its_answer_cache_has_its_own_problems_only() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by another plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Earlier(Plugin):
+        """Offers Notes first."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    shelf = _pages_plugin(Held)
+    shelf.offers = (Held, Notes)
+    shelf.held_pages = held  # type: ignore[attr-defined]
+    entries = [_entry(Earlier, "earlier", module="untaped_earlier.plugin"), _entry(shelf, "shelf")]
+    rules = {q.name: [p.rule for p in q.problems] for q in compose(entries).quarantined}
+    assert rules == {"earlier": ["duplicate-offer"], "shelf": ["duplicate-offer"]}
+    # a misheld cache is a problem of its own, as when composed alone
+    shelf.held_pages = 5  # type: ignore[attr-defined]
+    rules = {q.name: [p.rule for p in q.problems] for q in compose(entries).quarantined}
+    assert rules["shelf"] == ["answer-cache", "duplicate-offer"]
+    shelf.held_pages = held  # type: ignore[attr-defined]
+    # with the earlier one broken, the later offerer composes, as it does alone
+    Earlier.runs = 5  # type: ignore[assignment]
+    assert [plugin.name for plugin in compose(entries).plugins] == ["shelf"]
+
+
+def test_a_filler_waits_for_the_later_offerer_to_take_the_contract_over() -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a broken plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+        runs = 5  # type: ignore[assignment]
+
+    class Shelf(Plugin):
+        """Offers Held behind Broken's Notes."""
+
+        settings = HelloSettings
+        offers = (Held, Notes)
+        held_pages = held
+
+    class Fill(Held, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Held)
+    reader.offers = ()
+    reader.fills = (Fill,)
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(Shelf, "shelf"),
+        _entry(reader, "reader", module="untaped_reader.plugin"),
+    ]
+    # the reader's cache has no owner only while the broken plugin is still standing
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["shelf", "reader"]
+
+
+@pytest.mark.parametrize("broken", ["taken name", "empty refresh"])
+def test_a_filler_listed_first_waits_for_a_later_plugin_broken_on_its_own(broken: str) -> None:
+    held = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Held(Contract):
+        """Its cache is held by the offering class."""
+
+        @cached(held)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a plugin broken on its own."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Bare(Command):
+        """Refreshes nothing."""
+
+        refresh: Refresh = Refresh()
+
+        def run(self) -> None:
+            return None
+
+    class First(Plugin):
+        """Offers Notes first."""
+
+        settings = HelloSettings
+        commands = (Bare,) if broken == "empty refresh" else ()
+        offers = (Notes,)
+
+    class Shelf(Plugin):
+        """Offers Held behind First's Notes."""
+
+        settings = HelloSettings
+        offers = (Held, Notes)
+        held_pages = held
+
+    class Fill(Held, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Held)
+    reader.offers = ()
+    reader.fills = (Fill,)
+    entries = [
+        _entry(reader, "reader", module="untaped_reader.plugin"),
+        _entry(First, "config", module="untaped_first.plugin"),
+        _entry(Shelf, "shelf"),
+    ]
+    taken = {"config"} if broken == "taken name" else set()
+    declaration = compose(entries, taken=taken)
+    assert [plugin.name for plugin in declaration.plugins] == ["reader", "shelf"]
+
+
+def test_a_name_is_free_once_its_first_holder_is_refused_for_the_others() -> None:
+    @experimental
+    class Paging(Contract):
+        """Offered by a broken plugin, so its cache has no owner."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Broken(Plugin):
+        """Broken."""
+
+        settings = HelloSettings
+        offers = (Paging,)
+        runs = 5  # type: ignore[assignment]
+
+    class Fill(Paging, Provider[HelloSettings]):
+        pass
+
+    refreshing = _pages_plugin(Paging)
+    refreshing.offers = ()
+    refreshing.fills = (Fill,)
+
+    class Plain(Plugin):
+        """Takes the name the refreshing plugin cannot keep."""
+
+        settings = HelloSettings
+
+    entries = [
+        _entry(Broken, "broken", module="untaped_broken.plugin"),
+        _entry(refreshing, "reader", module="untaped_one.plugin"),
+        _entry(Plain, "reader", module="untaped_two.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        "untaped_two.plugin:" + Plain.__qualname__
+    ]
+
+
+def test_a_contract_whose_one_lister_is_contested_elsewhere_has_no_owner() -> None:
+    @experimental
+    class Paging(Contract):
+        """Listed only by a plugin that lists a contested contract too."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Both(Plugin):
+        """Lists Paging and Notes."""
+
+        settings = HelloSettings
+        offers = (Paging, Notes)
+
+    class Other(Plugin):
+        """Lists Notes too."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    class Fill(Paging, Provider[HelloSettings]):
+        pass
+
+    reader = _pages_plugin(Paging)
+    reader.offers = ()
+    reader.fills = (Fill,)
+
+    class Plain(Plugin):
+        """Wants the name the reader cannot keep."""
+
+        settings = HelloSettings
+
+    entries = [
+        _entry(Both, "both", module="untaped_both.plugin"),
+        _entry(Other, "other", module="untaped_other.plugin"),
+        _entry(reader, "x", module="untaped_reader.plugin"),
+        _entry(Plain, "x", module="untaped_plain.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        f"untaped_plain.plugin:{Plain.__qualname__}"
+    ]
+
+
+def test_two_offerers_of_one_name_are_both_refused() -> None:
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins of one name."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Offering(Plugin):
+        """Lists Notes."""
+
+        settings = HelloSettings
+        offers = (Notes,)
+
+    entries = [
+        _entry(Offering, "x", module="untaped_one.plugin"),
+        _entry(Offering, "x", module="untaped_two.plugin"),
+    ]
+    declaration = compose(entries)
+    assert declaration.plugins == ()
+    assert [p.detail for q in declaration.quarantined for p in q.problems] == [
+        f"{Notes.__qualname__} is offered by another x too; a contract has one owner"
+    ] * 2
+
+
+def test_a_contested_lister_names_no_kind_of_its_package() -> None:
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    @experimental
+    class Notes(Contract):
+        """Listed by two plugins."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(plugin(offers=(Notes,)), "lib", module="untaped_pk.a"),
+        _entry(plugin(offers=(Notes,)), "m", module="untaped_m.plugin"),
+        _entry(
+            plugin(commands=(lists(book("untaped_q.models")),)), "lib", module="untaped_q.plugin"
+        ),
+        _entry(plugin(commands=(lists(book("untaped_pk.models")),)), "two", module="untaped_pk.b"),
+    ]
+    # the first lib is refused before the package it shares with two names two's kind
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["lib", "two"]
+    assert [kind.kind for kind in declaration.kinds] == ["lib.book", "two.book"]
+
+
+def test_a_plugin_refused_for_its_name_names_no_kind_of_its_package() -> None:
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(
+            plugin(commands=(lists(book("untaped_d.models")),)), "dup", module="untaped_d.plugin"
+        ),
+        _entry(plugin(), "dup", module="untaped_pk.a"),
+        _entry(plugin(commands=(lists(book("untaped_pk.models")),)), "p", module="untaped_pk.b"),
+    ]
+    # the second dup is refused for its name, so p, not it, owns their package's Book
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["dup", "p"]
+    assert [kind.kind for kind in declaration.kinds] == ["dup.book", "p.book"]
+
+
+def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_wins() -> None:
+    """y reaches a class of o's package: while o is read it is o's, and clashes with o's own.
+
+    No read set agrees (o composes only while unread), so the pass reading
+    both refuses o, first-wins, and y composes as it would alone.
+    """
+
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    def plugin(command: type[Command]) -> type[Plugin]:
+        held = {"__doc__": "A plugin.", "settings": HelloSettings, "commands": (command,)}
+        return type("Each", (Plugin,), held)
+
+    entries = [
+        _entry(plugin(lists(book("untaped_pk.other"))), "y", module="untaped_y.plugin"),
+        _entry(plugin(lists(book("untaped_pk.models"))), "o", module="untaped_pk.plugin"),
+    ]
+    declaration = compose(entries)  # ends
+    assert [plugin.name for plugin in declaration.plugins] == ["y"]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
+    [refused] = declaration.quarantined
+    assert refused.name == "o"
+    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
+
+
+def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agrees() -> None:
+    """o composes only while unread (as y's test); x refreshes o's contract, another x is fine.
+
+    Refusing o alone leaves x's cache unowned, so the second x holds the
+    name, as composing y and it alone does, in either order.
+    """
+
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    @experimental
+    class Paging(Contract):
+        """Paging."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[int]:
+            raise NotImplementedError
+
+    class PagingFill(Paging, Provider[HelloSettings]):
+        pass
+
+    class Pages(Command):
+        """Refresh the pages."""
+
+        refresh: Refresh = Refresh(Paging.pages)
+
+        def run(self) -> None:
+            return None
+
+    def plugin(**held: object) -> type[Plugin]:
+        return type("Each", (Plugin,), {"__doc__": "A plugin.", "settings": HelloSettings, **held})
+
+    entries = [
+        _entry(plugin(commands=(lists(book("untaped_pk.other")),)), "y", module="untaped_y.p"),
+        _entry(
+            plugin(commands=(lists(book("untaped_pk.models")),), offers=(Paging,)),
+            "o",
+            module="untaped_pk.p",
+        ),
+        _entry(plugin(fills=(PagingFill,), commands=(Pages,)), "x", module="untaped_x.p"),
+        _entry(plugin(), "x", module="untaped_xx.p"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.target for plugin in declaration.plugins] == [
+        entries[0].target,
+        entries[3].target,
+    ]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
+    assert [
+        (refused.target, [problem.rule for problem in refused.problems])
+        for refused in declaration.quarantined
+    ] == [(entries[1].target, ["duplicate-kind"]), (entries[2].target, ["unowned-cache"])]
+    # in another order the second x composes only while o is unread too, for x's sake
+    again = compose([entries[2], entries[3], entries[0], entries[1]])
+    assert [plugin.target for plugin in again.plugins] == [entries[3].target, entries[0].target]
+
+
+def test_one_cache_caches_one_contract_method() -> None:
+    shared = Cache(label="pages", max_age=timedelta(hours=1))
+
+    @experimental
+    class Alpha(Contract):
+        """Alpha."""
+
+        @cached(shared)
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    with pytest.raises(
+        TypeError,
+        match=r"Beta\.pages: @cached takes a cache of its own; this one already caches alpha_pages",
+    ):
+
+        @experimental
+        class Beta(Contract):
+            """Beta."""
+
+            @cached(shared)
+            def pages(self) -> list[Book]:
+                raise NotImplementedError
+
+
+def test_an_answer_cache_s_name_taken_by_something_else_is_named() -> None:
+    @experimental
+    class Taken(Contract):
+        """Its cache's name is an attribute the owner already uses."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    class Owner(Plugin):
+        """Owner."""
+
+        settings = HelloSettings
+        offers = (Taken,)
+        taken_pages = "oops"
+
+    [problem] = _problems(Owner, "owner")
+    assert problem.rule == "answer-cache"
+    assert problem.detail.endswith("Owner.taken_pages, which holds 'oops': rename that attribute")

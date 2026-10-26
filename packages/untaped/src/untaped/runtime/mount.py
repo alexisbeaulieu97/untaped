@@ -64,7 +64,7 @@ from untaped.sdk.marks import (
     experimental,
     mark_app,
 )
-from untaped.sdk.plugin import Command, Plugin, field_block
+from untaped.sdk.plugin import Command, Plugin, field_block, held_by
 from untaped.sdk.plugin import Group as CommandGroup
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.dir import Dir
@@ -378,8 +378,9 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
     blocks: dict[str, list[Any]] = {
         field: [] for field in _SPEC_FIELDS.values() if field is not None
     }
+    held = held_by(cls)
     for decl in mount.declaration.plugin(name).blocks:
-        block = getattr(cls, decl.attribute)
+        block = held[decl.attribute]
         # every owned block core ships has an entry (tested); one of a kind core
         # doesn't know has no 11.x reader to reach
         field = _SPEC_FIELDS.get(decl.block)

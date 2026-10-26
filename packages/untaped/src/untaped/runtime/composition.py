@@ -66,6 +66,7 @@ from untaped.sdk.plugin import (
     StubSkill,
     field_block,
     generic_argument,
+    held_by,
     settings_model,
 )
 from untaped.sdk.storage.cache import Cache, _max_age_setting, _refresh_help
@@ -151,20 +152,139 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     it and in whatever order (shelf's ``Book``, which library's provider also
     returns, is ``shelf.book``); a class no composed plugin's package defines
     belongs to the plugin that reaches it. Two entry points in one top-level
-    package share it, the first owning its classes, as
-    :meth:`Declaration.owner_of` reads it.
+    package share it, the first not quarantined owning its classes, as
+    :meth:`Declaration.owner_of` reads it. A contract belongs to the one
+    plugin whose ``offers`` lists it; two plugins listing it are both
+    refused (``duplicate-offer``), as a fill or refresh of a contract no
+    composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
+    plugin broken whatever the others are (a name ``taken`` holds included)
+    is withdrawn first, then the plugins listing one contract; the others
+    then read owners (of a package, a contract) only among the plugins that
+    compose, until those they read are those that compose (when no such set
+    exists, the first plugin refused as soon as it is read is, first-wins).
     """
     reserved = frozenset(taken)
-    owners: dict[str, int] = {}
-    for index, entry in enumerate(entries):
-        owners.setdefault(_package(entry.target), index)
+    every = frozenset(range(len(entries)))
+    # Refused for good, by index, as it was refused: there are at most n withdrawals.
+    withdrawn: dict[int, tuple[Problem, ...]] = {}
+    read: frozenset[int] | None = None  # the plugins the others read; None: all standing
+    tried: set[frozenset[int]] = set()
+    # each plugin's problems the last time it was refused in this phase
+    last: dict[int, tuple[Problem, ...]] = {}
+
+    def attempt(
+        standing: frozenset[int], readable: frozenset[int]
+    ) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
+        """One pass: the others read owners only among ``readable``."""
+        owners: dict[str, str] = {}
+        for i in sorted(readable):
+            owners.setdefault(_package(entries[i].target), entries[i].name)
+        offering = _offering(entries, sorted(standing))
+        declaration, refused = _compose(entries, reserved, owners, offering, withdrawn, readable)
+        return declaration, {i: problems for i, problems in refused.items() if i not in withdrawn}
+
     while True:
-        names = {package: entries[index].name for package, index in owners.items()}
-        declaration, refused = _compose(entries, reserved, names)
-        if not refused & set(owners.values()):
+        standing = every - frozenset(withdrawn)
+        readable = standing if read is None else read & standing
+        declaration, refused = attempt(standing, readable)
+        last |= refused
+        final = {
+            i: problems
+            for i, problems in refused.items()
+            if _broken_alone(problems) or entries[i].name in reserved  # taken for good
+        } or _with_rule(refused, "duplicate-offer")
+        if final:
+            withdrawn |= final
+            read, tried, last = None, set(), {}
+            continue
+        composed = standing - frozenset(refused)
+        if composed == readable:
             return declaration
-        # A quarantined plugin owns no kind: the plugins reaching its classes do.
-        owners = {package: index for package, index in owners.items() if index not in refused}
+        if composed not in tried:
+            read = composed
+        elif composed & readable < readable:
+            read = composed & readable  # a set seen before: only shrink, so this ends
+        else:
+            # a plugin composes only while it isn't read (a class of its package
+            # that another reaches then clashes with its own): no read set
+            # agrees, so the first plugin refused once read beside those read
+            # is refused as it was when read, first-wins, and the rest compose
+            # without it (one composing only while unread for another's sake waits)
+            unread = sorted(composed - readable)
+            first = next(
+                (c for c in unread if c in attempt(standing, readable | {c})[1]), unread[0]
+            )
+            withdrawn[first] = last[first]
+            read, tried, last = None, set(), {}
+            continue
+        tried.add(composed)
+
+
+def _with_rule(
+    refused: dict[int, tuple[Problem, ...]], rule: str
+) -> dict[int, tuple[Problem, ...]]:
+    """The refused entries with a ``rule`` problem."""
+    return {i: problems for i, problems in refused.items() if any(p.rule == rule for p in problems)}
+
+
+#: Problems a plugin has because of the others composed beside it, in this pass.
+_RELATIONAL = frozenset({"duplicate-name", "duplicate-kind", "duplicate-offer", "unowned-cache"})
+
+
+def _broken_alone(problems: Sequence[Problem]) -> bool:
+    """Whether a plugin has a problem that no other plugin causes."""
+    return any(problem.rule not in _RELATIONAL for problem in problems)
+
+
+def _offered(entry: PluginEntry) -> tuple[type, ...]:
+    """The contract classes ``entry``'s plugin class lists in ``offers``."""
+    offers = getattr(entry.plugin, "offers", ()) if _is_plugin(entry.plugin) else ()
+    return (
+        tuple(each for each in offers if isinstance(each, type))
+        if isinstance(offers, tuple)
+        else ()
+    )
+
+
+def _offering(
+    entries: Sequence[PluginEntry], standing: Iterable[int]
+) -> dict[type, tuple[int, ...]]:
+    """The standing entries listing each contract class, by index: its owner, when it is one."""
+    found: dict[type, list[int]] = {}
+    for index in standing:
+        for each in dict.fromkeys(_offered(entries[index])):
+            found.setdefault(each, []).append(index)
+    return {contract: tuple(listers) for contract, listers in found.items()}
+
+
+def _view(
+    entries: Sequence[PluginEntry],
+    index: int,
+    offering: dict[type, tuple[int, ...]],
+    readable: frozenset[int],
+) -> dict[type, str]:
+    """The owner of each contract as entry ``index`` reads it, its own offers as when alone.
+
+    A contract another entry lists too reads as that one's (``duplicate-offer``);
+    one only ``index`` lists is its own. A contract owns nobody else's reads
+    when two list it, or when its one lister lists such a contract: that
+    lister is refused, so a fill or refresh of it is ``unowned-cache``; so
+    is one whose lister is not ``readable`` (it does not compose).
+    """
+    contested = {each for listers in offering.values() if len(listers) > 1 for each in listers}
+    view: dict[type, str] = {}
+    for contract, listers in offering.items():
+        if index in listers:
+            name = entries[index].name
+            others = [
+                entries[each].name if entries[each].name != name else f"another {name}"
+                for each in listers
+                if each != index
+            ]
+            view[contract] = " and ".join(others) if others else name
+        elif len(listers) == 1 and listers[0] not in contested and listers[0] in readable:
+            view[contract] = entries[listers[0]].name
+    return view
 
 
 def _cache_setting(cache: Cache[Any]) -> CacheDecl:
@@ -178,16 +298,29 @@ def _cache_setting(cache: Cache[Any]) -> CacheDecl:
 
 
 def _compose(
-    entries: Sequence[PluginEntry], taken: frozenset[str], owners: dict[str, str]
-) -> tuple[Declaration, set[int]]:
-    """One pass over ``entries``: the declaration and the indexes of the entries refused."""
+    entries: Sequence[PluginEntry],
+    taken: frozenset[str],
+    owners: dict[str, str],
+    offering: dict[type, tuple[int, ...]],
+    withdrawn: dict[int, tuple[Problem, ...]],
+    readable: frozenset[int],
+) -> tuple[Declaration, dict[int, tuple[Problem, ...]]]:
+    """One pass over ``entries``: the declaration and each refused entry's problems, by index.
+
+    A ``withdrawn`` entry is quarantined with the problems it was withdrawn for, unwalked.
+    """
     names = set(taken)
     plugins: list[PluginDecl] = []
     kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
-    refused: set[int] = set()
+    refused: dict[int, tuple[Problem, ...]] = {}
     for index, entry in enumerate(entries):
-        walk = _PluginWalk(entry, owners)
+        if index in withdrawn:
+            quarantined.append(
+                Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
+            )
+            continue
+        walk = _PluginWalk(entry, owners, _view(entries, index, offering, readable))
         problems = list(walk.problems)
         if entry.name in names:
             problems.insert(
@@ -203,7 +336,7 @@ def _compose(
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
             )
-            refused.add(index)
+            refused[index] = tuple(problems)
             continue
         names.add(entry.name)
         if entry.root:
@@ -268,12 +401,16 @@ def _prose(cls: type) -> tuple[str, str]:
 class _PluginWalk:
     """One plugin's walk: its declaration, the kinds it reaches, and its problems."""
 
-    def __init__(self, entry: PluginEntry, owners: dict[str, str]) -> None:
+    def __init__(
+        self, entry: PluginEntry, owners: dict[str, str], offering: dict[type, str]
+    ) -> None:
         self.name = entry.name
         self.target = entry.target
         module = entry.target.partition(":")[0]
         self.package = _package(entry.target)
         self.owners = owners
+        #: The plugin offering each contract class composed with this one.
+        self.offering = offering
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
         self.decl: PluginDecl | None = None
@@ -389,8 +526,14 @@ class _PluginWalk:
                 self.problem(
                     "reserved-name", f"{where}.offers", f"{offered!r} is not a contract class"
                 )
-            else:
-                self._answer_caches(cls, info)
+                continue
+            if (owner := self.offering.get(info.cls, self.name)) != self.name:
+                self.problem(
+                    "duplicate-offer",
+                    f"{where}.offers",
+                    f"{info.cls.__qualname__} is offered by {owner} too; a contract has one owner",
+                )
+            self._answer_caches(cls, info)
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
@@ -401,25 +544,22 @@ class _PluginWalk:
                 self._provider(where, filled)
 
     def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
-        """Each cached method of an offered contract is cached in a cache the plugin class holds.
+        """The name each answer cache of an offered contract takes is the plugin's to give.
 
-        A cache made with no plugin and no name learns them from the class
-        holding it, which the contract cannot check when it is declared: the
-        offering class holds it as ``<contract>_<method>``.
+        The offering plugin holds a cache ``@cached`` made as
+        ``<contract>_<method>`` (:func:`held_by`); an attribute of that name
+        holding anything else is refused.
         """
         for method in info.methods.values():
             cache = method.cache
-            if cache is None or cache.spelled or cache._held_as is not None:
+            name = cache._declared_as if cache is not None and not cache.spelled else None
+            if name is None or (taken := getattr(cls, name, cache)) is cache:
                 continue
-            expected = f"{info.name}_{method.name}"
-            if any(b.owner in cls.__mro__ and b.attribute == expected for b in cache.bindings):
-                continue
-            held = ", ".join(f"{b.owner.__qualname__}.{b.attribute}" for b in cache.bindings)
             self.problem(
                 "answer-cache",
                 f"{info.cls.__qualname__}.{method.name}",
-                f"is cached in a cache {f'held as {held}' if held else 'no plugin class holds'}: "
-                f"assign it to {cls.__qualname__}.{expected}",
+                f"is cached as {cls.__qualname__}.{name}, which holds {taken!r}: "
+                "rename that attribute",
             )
 
     def _provider(self, where: str, filled: type) -> None:
@@ -458,15 +598,7 @@ class _PluginWalk:
         )
 
     def _attributes(self, cls: type[Plugin]) -> dict[str, object]:
-        """Every attribute the plugin class has beyond the reserved names, its own and inherited."""
-        found: dict[str, object] = {}
-        for klass in reversed(cls.__mro__):
-            if klass in (Plugin, object):
-                continue
-            for name, value in vars(klass).items():
-                if not name.startswith("__") and name not in RESERVED_NAMES:
-                    found[name] = value
-        return found
+        return held_by(cls)
 
     def _blocks(self, cls: type[Plugin]) -> tuple[BlockDecl, ...]:
         blocks: list[BlockDecl] = []
@@ -1019,12 +1151,12 @@ class _CommandWalk:
                 continue
             cache = self._cached_method(each)
             if cache is not None:
-                spelled = self._setting_of(cache)
+                spelled = self._setting_of(cache, each)
                 if spelled is not None:
                     named.append((cache, spelled))
                     continue
                 self.problem(
-                    "refresh-cache",
+                    "unowned-cache",
                     where,
                     f"{each!r}'s cache {cache!r} belongs to no composed plugin: spell it "
                     "Cache(owner, name, ...) or hold it on the owner's plugin class",
@@ -1038,15 +1170,24 @@ class _CommandWalk:
             )
         return _refresh_help(named) if len(named) == len(default.caches) else None
 
-    def _setting_of(self, cache: Cache[Any]) -> str | None:
+    def _setting_of(self, cache: Cache[Any], method: object) -> str | None:
         """The max-age setting of a contract method's cache; ``None`` when no plugin owns it.
 
-        A cache spelled or bound where declared knows its plugin; one a plugin
-        class holds belongs to the plugin composed for that class's package,
-        read here because no run exists yet.
+        A cache spelled or bound where declared knows its plugin; one
+        ``@cached`` made belongs to the plugin offering the method's contract;
+        one a plugin class holds belongs to the plugin composed for that
+        class's package, read here because no run exists yet.
         """
         if cache.spelled or cache._held_as is not None:
             return cache.setting
+        if cache._declared_as is not None and not cache.bindings:
+            from untaped.sdk.contracts._declare import method_contract  # noqa: PLC0415
+
+            contract = method_contract(typing.cast("collections.abc.Callable[..., Any]", method))[
+                0
+            ].cls
+            plugin = self.plugin.offering.get(contract)
+            return None if plugin is None else _max_age_setting(plugin, cache._declared_as)
         for binding in cache.bindings:
             plugin = self.plugin.owners.get(binding.owner.__module__.partition(".")[0])
             if plugin is not None:

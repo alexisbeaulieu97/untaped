@@ -7,9 +7,6 @@ knowing whether GitHub, GitLab or both supply them. Everything lives in
 imports it, so a command that asks no contract pays nothing.
 
 ```python
-# the owner, in its settings module
-BOOKS = Cache(label="books", max_age=timedelta(hours=1))
-
 # the owner, in its api module
 class Book(Issued, kind="shelf.book"):
     title: str
@@ -17,12 +14,10 @@ class Book(Issued, kind="shelf.book"):
 
 @experimental
 class BookSource[T: Record = Book](Contract):
-    @bridge
     def to_book(self, item: T) -> Book:  # filled only when T is not Book
         raise NotImplementedError
 
-    @listing
-    @cached(BOOKS)
+    @cached(max_age=timedelta(hours=1), label="books")
     @abstractmethod
     def books(self) -> list[Book]: ...
 
@@ -33,7 +28,6 @@ class Shelf(Plugin):
     settings = ShelfSettings
     commands = (List, Find)
     offers = (BookSource,)
-    book_source_books = BOOKS  # the answer cache, named <contract>_<method>
 
 # the owner, asking
 book = select_one(gather(BookSource.books)(), lambda b: b.title == "Dune")
@@ -64,19 +58,24 @@ class Library(Plugin):
   `settings`, `http`), and every parameter and return type must have a JSON
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
-  otherwise. `shell=` is reserved for shell plugins. `@cached(CACHE)`
-  keeps answers per provider, its settings and the arguments in a
-  [`Cache`](caches.md) the owner's plugin class holds as
-  `<contract>_<method>` (its user setting is
+  otherwise. `shell=` is reserved for shell plugins. The types are the
+  declaration: a method returning a `list` is a listing, whose rows stand
+  alone (an invalid row is dropped and the rest kept, where any other
+  method's invalid item fails the provider's whole answer), and the method
+  taking `T` and returning the owner's model is the bridge (a contract has
+  at most one). `@cached(max_age=, label=)` keeps answers per provider, its
+  settings and the arguments in a [`Cache`](caches.md) core makes for the
+  owner, named `<contract>_<method>` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
-  returns a secret. `@listing` declares a method whose rows
-  stand alone: an invalid row is dropped and the rest kept, where any other
-  method's invalid item fails the provider's whole answer.
+  returns a secret, and a `Cache` passed to `@cached` caches that one method.
+  A contract has one owner, the plugin whose `offers` lists it: two plugins
+  listing it are both quarantined (`duplicate-offer`), and so is a plugin
+  refreshing a cache of a contract no composed plugin owns (`unowned-cache`).
 - **The owner's model** is the item type parameter's default, an `Issued`
   record with a kind (`Issued` and its `Source` are also in `untaped.sdk`, so
   an owner's state model can hold issued records without loading contracts). A provider issuing its own record type passes it
   (`BookSource[Volume]`) directly, never through a generic base of its own,
-  and fills every `@bridge` method; the bridge stamps `source` with the
+  and fills the bridge, which stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
   bridge.
 - **Filling.** A provider subclasses the contract and `Provider[S]`, as a
@@ -88,8 +87,8 @@ class Library(Plugin):
   one's owner from the contract it subclasses and builds it at the first
   ask that reaches it, never at composition. A provider is ready when its
   settings validate; override `ready()` only for what a schema can't
-  say. The contract decides what is `@cached` or a `@listing`; a provider
-  never adds either. Use `self.http` for requests: it carries the profile's proxy, CA and
+  say. The contract decides what is `@cached`; a provider never adds it.
+  Use `self.http` for requests: it carries the profile's proxy, CA and
   timeout, and `gather(deadline=...)` bounds it (as it does any untaped
   `HttpClient`; another library's client is not bounded). Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as

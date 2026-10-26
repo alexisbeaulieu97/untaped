@@ -65,13 +65,14 @@ def test_a_malformed_finding_is_counted_and_the_valid_ones_reported() -> None:
     assert (failure.item, failure.details["reason"]) == ("acme", "invalid-item")
 
 
-def test_a_malformed_rule_skips_its_provider_with_one_row() -> None:
+def test_a_malformed_rule_is_dropped_and_its_provider_s_others_run() -> None:
     """A dotted id is malformed: the engine prefixes the key, so a provider never writes one."""
     with compose_with("lint", provides={"acme": [MalformedRule()], "gizmo": [Gizmo()]}):
         report = run([subject(Widget(name="w")), subject(Gadget(name="g"))])
-    assert [each.rule for each in report.findings] == ["gizmo.default-branch"]
+    assert sorted(each.rule for each in report.findings) == ["acme.wide", "gizmo.default-branch"]
     (failure,) = report.failures
     assert (failure.item, failure.details["reason"]) == ("acme", "invalid-item")
+    assert "acme's malformed rule was dropped" in failure.message
     assert "row 1: id" in failure.message
 
 

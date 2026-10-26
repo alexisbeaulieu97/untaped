@@ -29,17 +29,7 @@ from untaped.runtime import bootstrap
 from untaped.runtime.contracts import fills as _fills
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Plugin, deprecated, experimental
-from untaped.sdk.contracts import (
-    Contract,
-    Issued,
-    Ok,
-    Provider,
-    Record,
-    Source,
-    bridge,
-    cached,
-    gather,
-)
+from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._schema import schema_hash
 from untaped.sdk.storage import Cache
@@ -198,7 +188,6 @@ def _contract(variant: str, *, mark: bool = False) -> type[Contract]:
     if variant == "v1":
 
         class ItemSource[T: Record = Item](Contract):
-            @bridge
             def to_item(self, item: T) -> Item:
                 raise NotImplementedError
 
@@ -211,7 +200,6 @@ def _contract(variant: str, *, mark: bool = False) -> type[Contract]:
         class ItemSource[T: Record = Item](Contract):  # type: ignore[no-redef]
             """Now documented, with a new optional method."""
 
-            @bridge
             def to_item(self, item: T) -> Item:
                 raise NotImplementedError
 
@@ -225,7 +213,6 @@ def _contract(variant: str, *, mark: bool = False) -> type[Contract]:
     else:
 
         class ItemSource[T: Record = Item](Contract):  # type: ignore[no-redef]
-            @bridge
             def to_item(self, item: T) -> Item:
                 raise NotImplementedError
 

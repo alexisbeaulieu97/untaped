@@ -19,7 +19,7 @@ from typing import ClassVar, cast
 from pydantic import ValidationError
 
 from untaped.sdk import Failure, Record, experimental, kind_of
-from untaped.sdk.contracts import Contract, listing
+from untaped.sdk.contracts import Contract
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree
 
@@ -39,7 +39,6 @@ class Linter(Contract):
     def rules(self) -> list[Rule]:
         """Every rule the provider enforces, ids bare: the engine prefixes the plugin."""
 
-    @listing
     @abstractmethod
     def findings(self, subject: Subject) -> list[Finding]:
         """The findings of the rules that read ``subject.kind``, rule ids bare."""
@@ -53,7 +52,6 @@ class TreeReader(Contract):
     file runs.
     """
 
-    @listing
     @abstractmethod
     def read(self, tree: Tree) -> list[Subject]:
         """The subjects the files of ``tree`` hold (already narrowed to the entry's globs).
