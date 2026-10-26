@@ -168,6 +168,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     withdrawn: dict[int, tuple[Problem, ...]] = {}
     read: frozenset[int] | None = None  # the plugins the others read; None: all standing
     tried: set[frozenset[int]] = set()
+    settled: Declaration | None = None  # the last pass composing only plugins it read
     while True:
         standing = every - frozenset(withdrawn)
         readable = standing if read is None else read & standing
@@ -184,13 +185,23 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
         } or _with_rule(refused, "duplicate-offer")
         if final:
             withdrawn |= final
-            read, tried = None, set()
+            read, tried, settled = None, set(), None
             continue
         composed = standing - frozenset(refused)
         if composed == readable:
             return declaration
-        # read only those that compose; a set seen before only shrinks, so this ends
-        read = composed & readable if composed in tried else composed
+        if composed < readable:
+            settled = declaration
+        if composed not in tried:
+            read = composed
+        elif composed & readable < readable:
+            read = composed & readable  # a set seen before: only shrink, so this ends
+        else:
+            # a plugin composes only while it isn't read (its class then clashes
+            # with its own): no read set agrees, so the last that composed only
+            # plugins it read stands, first-wins (the first pass reads all)
+            assert settled is not None
+            return settled
         tried.add(composed)
 
 

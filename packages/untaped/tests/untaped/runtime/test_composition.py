@@ -1800,6 +1800,46 @@ def test_a_plugin_refused_for_its_name_names_no_kind_of_its_package() -> None:
     assert [kind.kind for kind in declaration.kinds] == ["dup.book", "p.book"]
 
 
+def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_wins() -> None:
+    """y reaches a class of o's package: while o is read it is o's, and clashes with o's own.
+
+    No read set agrees (o composes only while unread), so the pass reading
+    both stands: y composes, o is refused, as composing the two first-wins.
+    """
+
+    def book(module: str) -> type[BaseModel]:
+        class Book(BaseModel):
+            title: Annotated[str, Key, Column]
+
+        Book.__module__ = module
+        return Book
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    def plugin(command: type[Command]) -> type[Plugin]:
+        held = {"__doc__": "A plugin.", "settings": HelloSettings, "commands": (command,)}
+        return type("Each", (Plugin,), held)
+
+    entries = [
+        _entry(plugin(lists(book("untaped_pk.other"))), "y", module="untaped_y.plugin"),
+        _entry(plugin(lists(book("untaped_pk.models"))), "o", module="untaped_pk.plugin"),
+    ]
+    declaration = compose(entries)  # ends
+    assert [plugin.name for plugin in declaration.plugins] == ["y"]
+    [refused] = declaration.quarantined
+    assert refused.name == "o"
+    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 
