@@ -84,27 +84,7 @@ Key = Mark("Key")
 Following = Mark("Following")
 """A list-of-models field a table prints as a second table after the first."""
 
-
-class _Written(Mark):
-    """``Written``'s class: a written file need not exist yet, so ``File[M]`` skips its check."""
-
-    __slots__ = ()
-
-    def __get_pydantic_core_schema__(
-        self, source: Any, handler: GetCoreSchemaHandler
-    ) -> core_schema.CoreSchema:
-        if get_origin(source) in (Union, UnionType):
-            return core_schema.union_schema([self._one(arg, handler) for arg in get_args(source)])
-        return self._one(source, handler)
-
-    @staticmethod
-    def _one(source: Any, handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-        if source is File or get_origin(source) is File:
-            return File._schema(source, exists=False)
-        return handler.generate_schema(source)
-
-
-Written = _Written("Written")
+Written = Mark("Written")
 """A ``File[M]`` option the command writes rather than reads: the model's "Starter" line."""
 
 
@@ -132,8 +112,8 @@ class Short:
 class File[M: BaseModel]:
     """A path to a document of ``M``, YAML or JSON by its suffix: ``list[File[Suite]]``.
 
-    The path must exist when the command is filled (exit 2 otherwise); a
-    directory passes, for a plugin that searches one. ``.path`` is the path,
+    A path the command reads must exist when core fills the command (exit 2
+    otherwise); a directory passes, for a plugin that searches one. ``.path`` is the path,
     for a plugin that parses itself; ``.load()`` reads
     and validates the document; ``.save(model)`` writes one and refuses to
     replace an existing file unless ``replace=True``. The model's docstring is
@@ -201,23 +181,15 @@ class File[M: BaseModel]:
     def __get_pydantic_core_schema__(
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
-        del handler
-        return cls._schema(source, exists=True)
-
-    @staticmethod
-    def _schema(source: Any, *, exists: bool) -> core_schema.CoreSchema:
-        """``File[M]``'s schema; ``exists`` refuses a path that names nothing (exit 2)."""
         args = get_args(source)
         model = args[0] if args else None
 
         def build(value: object) -> File[Any]:
             if isinstance(value, File):
                 return value
-            if not isinstance(value, str | Path):
-                raise ValueError("expected a path")
-            if exists and not Path(value).exists():
-                raise ValueError(f"file not found: {value}")
-            return File(value, model=model)
+            if isinstance(value, str | Path):
+                return File(value, model=model)
+            raise ValueError("expected a path")
 
         return core_schema.no_info_plain_validator_function(
             build,

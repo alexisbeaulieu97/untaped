@@ -91,8 +91,8 @@ class _Fields(JiraWrite):
 class Create(_Fields, SendsDirectly):
     """Create one issue from flags and an optional Jira-shaped fields file.
 
-    Flags override the fields file. The ``issues`` group's page explains the
-    preview and when it asks first.
+    Flags override the fields file. It never asks; ``--dry-run`` previews it,
+    as the ``issues`` group's page explains.
     """
 
     project: str | None = Field(None, description="Project key; defaults to jira.default_project.")

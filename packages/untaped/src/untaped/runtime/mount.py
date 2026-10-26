@@ -54,7 +54,7 @@ from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
-from untaped.sdk.fields import Confirm, DryRun, Output
+from untaped.sdk.fields import Confirm, DryRun, File, Output
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -773,9 +773,25 @@ def _instance(
         if _get(data, cls, path) is None and _field(cls, path).is_required():
             _put(data, cls, path, {})
     try:
-        return cls.model_validate(data)
+        command = cls.model_validate(data)
     except ValidationError as exc:
         raise UsageError(_usage(decl, cls, exc)) from exc
+    _check_files(decl, command)
+    return command
+
+
+def _check_files(decl: CommandDecl, command: BaseModel) -> None:
+    """Refuse a ``File[M]`` the command reads whose path names nothing (exit 2)."""
+    for option in decl.options:
+        if not option.reads_file:
+            continue
+        value: object = command
+        for part in option.field.split("."):
+            value = getattr(value, part, None)
+        files = value if isinstance(value, list | tuple) else [value]
+        for each in files:
+            if isinstance(each, File) and not each.path.exists():
+                raise UsageError(f"{option.flag or option.metavar}: file not found: {each.path}")
 
 
 def _filled(
