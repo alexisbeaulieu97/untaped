@@ -11,7 +11,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+from core_test_support.runtime.run import quiet
 from untaped.runtime.theme import BUILTIN_THEMES, UiSettings, resolve_theme
+from untaped.sdk._run import Run
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
@@ -325,14 +327,13 @@ def test_ui_context_reflects_active_verbose_state(
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     get_settings.cache_clear()
 
-    with entered(start_run()):
+    with entered(start_run()) as run:
         assert ui_context(strict=False).verbose is False
 
-        token = verbose.enable()
+        verbose.enable(run)
         try:
             assert ui_context(strict=False).verbose is True
         finally:
-            verbose.reset(token)
             get_settings.cache_clear()
 
 
@@ -415,11 +416,9 @@ def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: 
     assert ("the message" in buf.getvalue()) is shown
 
 
-@pytest.mark.usefixtures("_isolated_config", "home_run")
-def test_ui_context_factory_reads_quiet_flag() -> None:
-    from untaped.runtime.run import enable_quiet
-
-    enable_quiet()
+@pytest.mark.usefixtures("_isolated_config")
+def test_ui_context_factory_reads_quiet_flag(home_run: Run) -> None:
+    quiet(home_run)
     assert ui_context().quiet is True
 
 

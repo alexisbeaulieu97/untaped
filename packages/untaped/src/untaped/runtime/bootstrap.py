@@ -60,7 +60,6 @@ from untaped.runtime.settings import (
     reset_config_registry,
 )
 from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure
-from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import (
     apply_default_format,
     given_tokens,
@@ -199,8 +198,8 @@ def _refuse_inside_a_contract_call() -> None:
 def kept_composition() -> Iterator[None]:
     """Bring back the composition (and its settings registrations) the block started with.
 
-    The profile override and the logger's level are left as they are
-    (a plugin's check runs under the user's ``--profile``). Raises
+    The profile override is left as it is (a plugin's check runs under the
+    user's ``--profile``), as are the run's root flags. Raises
     ``RuntimeError`` inside a contract call, as :func:`compose_root` does,
     since leaving the block re-registers the settings.
     """
@@ -241,13 +240,11 @@ def composition() -> CompositionResult:
 def reset() -> None:
     """Clear invocation-scoped state back to the just-composed composition.
 
-    Clears the profile override, the ``untaped`` logger's verbose level, the
-    settings caches, and the config registry, then re-registers the
-    just-composed shell and plugins. Exists for test isolation; never
-    called implicitly between user invocations.
+    Clears the profile override, the settings caches, and the config
+    registry, then re-registers the just-composed shell and plugins. Exists
+    for test isolation; never called implicitly between user invocations.
     """
     set_profile_override(())
-    _reset_verbose(None)
     _reregister()
 
 
@@ -541,7 +538,7 @@ def _started(
 
     with entered(start_run()) as run:
         note_requested_format(tokens)  # a bad root option reports in the format asked for
-        with applied_root_options(tokens, _root_options(), declaration) as line:
+        with applied_root_options(run, tokens, _root_options(), declaration) as line:
             _fix_rendering(run, line)
             marker = _STARTED.set((run, line))
             try:

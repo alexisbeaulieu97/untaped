@@ -1,4 +1,4 @@
-"""The token pass reads a line by the declared command's shape before the run starts.
+"""The token pass reads a line by the declared command's shape, onto the run once it started.
 
 It takes a root option wherever it sits among a declared command's own
 options and never one the command reads as a value; an 11.x seam command
@@ -13,13 +13,14 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
+from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.root_options import _root_options, _table_default, applied_root_options
+from untaped.runtime.root_options import _table_default
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import _table_default_format
-from untaped.sdk._run import is_verbose
+from untaped.sdk._run import current_run, is_verbose
 from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
@@ -118,12 +119,12 @@ pytestmark = pytest.mark.usefixtures("home_run")
 @pytest.fixture
 def read() -> Iterator[None]:
     yield
-    assert not is_verbose()  # every pass is undone when its block ends
+    assert not is_verbose()  # every pass's flags end with its run
 
 
 def _line(*tokens: str) -> tuple[list[str], bool, bool]:
     """What the pass leaves of ``tokens``, whether it placed them, and whether ``-v`` is on."""
-    with applied_root_options(tokens, _root_options(), DECLARATION) as line:
+    with started_line(tokens, DECLARATION) as line:
         return line.tokens, line.placed, is_verbose()
 
 
@@ -211,12 +212,23 @@ def test_a_root_letter_in_a_short_cluster_is_the_root_s(
     assert _line("hello", "grep", *tokens) == (["hello", "grep", *left], True, verbose)
 
 
+def test_the_pass_writes_the_root_flags_onto_the_started_run_and_they_end_with_it() -> None:
+    with started_line(["-q", "hello", "greet", "--deprecated"], DECLARATION) as line:
+        run = line.run
+        assert current_run() is run
+        assert (run.policy.quiet, run.policy.verbose, run.policy.deprecated) == (True, False, True)
+        assert show_deprecated()
+    assert not show_deprecated()
+    with started_line(["hello", "greet", "-v"], DECLARATION) as line:
+        assert line.run.policy.verbose and not line.run.policy.quiet
+
+
 @pytest.mark.usefixtures("read")
 def test_a_cluster_of_root_letters_is_the_root_s_unless_it_is_a_value() -> None:
     assert _line("hello", "-v", "greet") == (["hello", "greet"], True, True)
     assert _line("-vh") == (["-h"], True, True)
     assert _line("hello", "run", "-vq") == (["hello", "run", "-vq"], True, False)
-    with pytest.raises(SystemExit) as exit_info, applied_root_options(["-vq"], _root_options()):
+    with pytest.raises(SystemExit) as exit_info, started_line(["-vq"]):
         pass
     assert exit_info.value.code == 2
 
@@ -274,16 +286,16 @@ def test_a_separator_ends_the_line_unless_it_only_closed_the_leading_root_option
 @pytest.mark.usefixtures("read")
 def test_an_11x_command_gets_only_its_leading_root_options_taken() -> None:
     assert _line("-v", "old", "who", "--quiet") == (["old", "who", "--quiet"], False, True)
-    with applied_root_options(["old", "-v"], _root_options()) as line:  # no declaration
+    with started_line(["old", "-v"]) as line:  # no declaration
         assert (line.tokens, line.placed, is_verbose()) == (["old", "-v"], False, False)
 
 
 def test_verbose_and_quiet_conflict_only_as_root_options() -> None:
-    with applied_root_options(["hello", "run", "-q", "-v"], _root_options(), DECLARATION):
+    with started_line(["hello", "run", "-q", "-v"], DECLARATION):
         assert not is_verbose()  # both are the command line's: neither is the root's
     with (
         pytest.raises(SystemExit) as exit_info,
-        applied_root_options(["hello", "greet", "-q", "-v"], _root_options(), DECLARATION),
+        started_line(["hello", "greet", "-q", "-v"], DECLARATION),
     ):
         pass
     assert exit_info.value.code == 2
@@ -524,7 +536,7 @@ SHOWING = Declaration(
 def test_the_pass_notes_the_format_and_help_a_declared_command_s_tokens_give(
     tokens: list[str], fmt: str | None, helps: bool
 ) -> None:
-    with applied_root_options(tokens, _root_options(), SHOWING) as line:
+    with started_line(tokens, SHOWING) as line:
         assert (line.command, line.format, line.helps) == (SHOW, fmt, helps)
 
 

@@ -146,21 +146,24 @@ STRUCTURED_FORMATS = frozenset({"json", "yaml", "pipe"})
 
 @dataclass(frozen=True)
 class OutputPolicy:
-    """What the run asked of stderr (:attr:`Run.policy`); never in ``untaped.sdk``.
+    """What the run asked of its output (:attr:`Run.policy`); never in ``untaped.sdk``.
 
     The sink follows it, so a plugin has no reason to read it: branching on
     JSON around the sink would split what one line says. ``format`` and
     ``theme`` are the run's rendering once it is fixed (:meth:`Run.render_with`);
     ``forced`` is the ``UNTAPED_DIAGNOSTICS`` choice read when the run was
-    built (``None``: follow the format); ``quiet`` and ``verbose`` are
-    ``--quiet`` and ``--verbose``. ``theme`` is left out of the hash, since
-    a ``ThemeSpec`` has none.
+    built (``None``: follow the format); ``quiet``, ``verbose`` and
+    ``deprecated`` are the root options ``--quiet``, ``--verbose`` and
+    ``--deprecated`` (help lists deprecated things too), which the token
+    pass writes onto the run once it started. ``theme`` is left out of the
+    hash, since a ``ThemeSpec`` has none.
     """
 
     format: str | None = None
     forced: Literal["text", "json"] | None = None
     quiet: bool = False
     verbose: bool = False
+    deprecated: bool = False
     theme: ThemeSpec | None = field(default=None, hash=False)
 
     @property
@@ -272,10 +275,11 @@ class Run:
     def set_policy(self, policy: OutputPolicy) -> None:
         """Replace what the run asks of stderr.
 
-        Owed, the 11.x seam: the policy is writable only because the root
-        options' handlers write their flags onto the run once it started, and
-        the seam's parse still chooses the format and theme of a command
-        mounted through it. It closes with the seam. A child run sharing
+        Owed, the 11.x seam: the policy is writable only because the token
+        pass writes the root flags onto the run once it started, the seam's
+        dispatch writes the ones it takes late onto the same run, and the
+        seam's parse still chooses the format and theme of a command mounted
+        through it. It closes with the seam. A child run sharing
         its parent's output writes the policy it shares with the parent.
         """
         self.policy_cell.policy = policy

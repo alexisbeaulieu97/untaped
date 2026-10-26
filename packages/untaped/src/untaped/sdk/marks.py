@@ -40,7 +40,7 @@ import warnings
 import weakref
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from contextvars import ContextVar, Token
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._run import run_or_none
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import SettingKey
@@ -188,22 +189,14 @@ def class_mark(cls: type) -> Stability | None:
 
 # --- panels and the --deprecated flag ----------------------------------------
 
-_SHOW_DEPRECATED: ContextVar[bool] = ContextVar("untaped_show_deprecated", default=False)
-
 
 def show_deprecated() -> bool:
-    """Whether ``--deprecated`` is in effect for this run."""
-    return _SHOW_DEPRECATED.get()
+    """Whether the current run asked for ``--deprecated``; ``False`` outside a run.
 
-
-def enable_show_deprecated(_value: object = None) -> Token[bool]:
-    """Show deprecated things for this run (the ``--deprecated`` root option)."""
-    return _SHOW_DEPRECATED.set(True)
-
-
-def reset_show_deprecated(token: Token[bool]) -> None:
-    """Undo :func:`enable_show_deprecated`."""
-    _SHOW_DEPRECATED.reset(token)
+    The root option is the run's (its policy), so it ends with the run.
+    """
+    run = run_or_none()
+    return run is not None and run.policy.deprecated
 
 
 class _DeprecatedGroup(Group):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
@@ -23,9 +23,7 @@ from untaped.runtime import bootstrap
 from untaped.runtime.settings import profile_section_models, section_stabilities
 from untaped.sdk.marks import (
     deprecated,
-    enable_show_deprecated,
     experimental,
-    reset_show_deprecated,
     setting_mark,
     stability_name,
 )
@@ -115,13 +113,6 @@ def _tables(*args: str) -> dict[str, str]:
     return tables
 
 
-@pytest.fixture
-def _show_deprecated() -> Iterator[None]:
-    token = enable_show_deprecated()
-    yield
-    reset_show_deprecated(token)
-
-
 def test_each_setting_is_listed_in_the_table_of_its_stability() -> None:
     tables = _tables()
 
@@ -164,8 +155,8 @@ def test_a_deprecated_setting_set_in_the_environment_is_listed(
     assert "trial.old_flag" in _tables()["Deprecated"]
 
 
-def test_show_deprecated_lists_every_deprecated_setting(_show_deprecated: None) -> None:
-    deprecated_table = _tables()["Deprecated"]
+def test_show_deprecated_lists_every_deprecated_setting() -> None:
+    deprecated_table = _tables("--deprecated")["Deprecated"]
 
     for key in ("trial.old_flag", "trial.gone", "beta.old", "sunset.host", "sunset.port"):
         assert key in deprecated_table

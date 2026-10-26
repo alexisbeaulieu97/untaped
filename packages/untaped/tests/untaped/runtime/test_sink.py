@@ -14,9 +14,10 @@ from typing import Any
 import pytest
 from rich.text import Text
 
+from core_test_support.runtime.run import quiet
 from untaped.core.commands import fix
 from untaped.runtime import verbose
-from untaped.runtime.run import enable_quiet, entered, start_run
+from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
@@ -162,16 +163,13 @@ def test_a_renderer_that_logs_and_two_writing_threads_do_not_deadlock() -> None:
             current_sink().emit(Message(level="info", message="x"), rendered=rendered)
 
     def run() -> None:
-        with redirect_stderr(stream), _opened():
-            token = verbose.enable()
-            try:
-                with Diagnostics().progress("Busy"):
-                    other = threading.Thread(target=contextvars.copy_context().run, args=(writer,))
-                    other.start()
-                    writer()
-                    other.join(_DEADLINE)
-            finally:
-                verbose.reset(token)
+        with redirect_stderr(stream), _opened() as opened:
+            verbose.enable(opened)
+            with Diagnostics().progress("Busy"):
+                other = threading.Thread(target=contextvars.copy_context().run, args=(writer,))
+                other.start()
+                writer()
+                other.join(_DEADLINE)
 
     _finishes(run)
     shown = [line.rsplit("\r", 1)[-1] for line in stream.getvalue().split("\n")[:-1]]
@@ -323,8 +321,7 @@ def test_a_kindless_failure_subclass_is_printed_as_a_plain_failure(
 
 def test_quiet_mutes_info_success_and_progress_only() -> None:
     stream = io.StringIO()
-    with redirect_stderr(stream), _opened():
-        enable_quiet()
+    with redirect_stderr(stream), entered(quiet(start_run())):
         diag = Diagnostics()
         diag.info("info")
         diag.success("success")
@@ -344,8 +341,7 @@ def test_quiet_never_mutes_an_unmuted_info(
     if structured:
         monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     stream = io.StringIO()
-    with redirect_stderr(stream), _opened():
-        enable_quiet()
+    with redirect_stderr(stream), entered(quiet(start_run())):
         diag = Diagnostics()
         diag.info("a preview", unmuted=True)
         diag.info(Text("a styled preview", style="bold"), unmuted=True)
@@ -359,20 +355,20 @@ def test_quiet_never_mutes_an_unmuted_info(
         assert stream.getvalue() == "a preview\na styled preview\n"
 
 
-@pytest.mark.parametrize("quiet", [False, True])
-def test_a_blank_info_is_a_text_separator(quiet: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("muted", [False, True])
+def test_a_blank_info_is_a_text_separator(muted: bool, monkeypatch: pytest.MonkeyPatch) -> None:
     text, structured = io.StringIO(), io.StringIO()
-    with redirect_stderr(text), _opened():
-        if quiet:
-            enable_quiet()
+    with redirect_stderr(text), _opened() as run:
+        if muted:
+            quiet(run)
         Diagnostics().info("")
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    with redirect_stderr(structured), _opened():
-        if quiet:
-            enable_quiet()
+    with redirect_stderr(structured), _opened() as run:
+        if muted:
+            quiet(run)
         Diagnostics().info("")
 
-    assert text.getvalue() == ("" if quiet else "\n")
+    assert text.getvalue() == ("" if muted else "\n")
     assert structured.getvalue() == ""
 
 
@@ -398,18 +394,15 @@ def test_debug_lines_appear_only_under_verbose(
 ) -> None:
     if structured:
         monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    quiet, loud = io.StringIO(), io.StringIO()
+    silent, loud = io.StringIO(), io.StringIO()
     debug = Debug(logger="untaped.http", message="GET /")
-    with redirect_stderr(quiet), _opened():
+    with redirect_stderr(silent), _opened():
         current_sink().emit(debug)
-    with redirect_stderr(loud), _opened():
-        token = verbose.enable()
-        try:
-            current_sink().emit(debug)
-        finally:
-            verbose.reset(token)
+    with redirect_stderr(loud), _opened() as run:
+        verbose.enable(run)
+        current_sink().emit(debug)
 
-    assert quiet.getvalue() == ""
+    assert silent.getvalue() == ""
     if structured:
         assert json.loads(loud.getvalue()) == {
             "level": "debug",
@@ -545,8 +538,7 @@ def test_two_threads_recording_at_once_keep_their_own_records() -> None:
 
 
 def test_recorded_diagnostics_are_the_lines_shown() -> None:
-    with recording() as emitted, redirect_stderr(io.StringIO()), _opened():
-        enable_quiet()
+    with recording() as emitted, redirect_stderr(io.StringIO()), entered(quiet(start_run())):
         Diagnostics().info("muted")
         Diagnostics().warning("kept")
         current_sink().emit(Debug(logger="untaped.x", message="hidden"))

@@ -1,11 +1,11 @@
 """How the root app reads a command line before dispatch.
 
 The root options (``--profile``, ``--verbose``, ``--quiet``, ``--deprecated``),
-accepted anywhere before a ``--``. One token pass applies them onto the run
-once it started (:func:`applied_root_options`): it reads the selected
-command's token shapes from the declaration, so it takes a root option
-wherever it sits among a declared command's own options and never one the
-command reads as a value.
+accepted anywhere before a ``--``. One token pass writes them onto the run
+once it started (:func:`applied_root_options`), so they end with it. It reads
+the selected command's token shapes from the declaration, so it takes a root
+option wherever it sits among a declared command's own options and never one
+the command reads as a value.
 With no declaration kept, dispatch reads the line the same way by the
 composition's. For a command still mounted through the 11.x seam, the pass
 takes only the leading ones, and the seam's dispatch takes the rest as before
@@ -35,10 +35,8 @@ from untaped.runtime.profile_resolver import (
     profile_override,
     root_pick,
 )
-from untaped.runtime.run import enable_quiet as _enable_quiet
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
-from untaped.runtime.verbose import reset as _reset_verbose
 from untaped.sdk._cli import (
     follows_user_format,
     note_requested_format,
@@ -47,21 +45,19 @@ from untaped.sdk._cli import (
     user_default_format,
     user_theme,
 )
-from untaped.sdk._run import Rendering, current_run
+from untaped.sdk._run import Rendering, Run
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Alias,
     Deprecated,
     command_selection,
     deprecated_aliases,
-    enable_show_deprecated,
     mark_of,
     marked_options,
     notify_deprecation,
     option_name,
     path_owner,
     replacement_text,
-    reset_show_deprecated,
     select_command,
 )
 
@@ -90,14 +86,16 @@ class _RootOption:
 
     name: str
     help: str
-    handler: Callable[[str], Any]
+    #: Applies the option, with its value, onto the invocation's run.
+    handler: Callable[[Run, str], Any]
     #: What undoes the handler when the line ends; ``None``: the run's end does.
-    resetter: Callable[[Any], None] | None
+    #: Owed: only ``--profile`` has one, until its pick is the run's (11f).
+    resetter: Callable[[Any], None] | None = None
     aliases: tuple[str, ...] = ()
     takes_value: bool = False
 
 
-def _apply_profile(value: str) -> AbstractContextManager[None]:
+def _apply_profile(_run: Run, value: str) -> AbstractContextManager[None]:
     """Stack ``value``'s comma list on any earlier ``--profile`` of this run."""
     try:
         names = (*profile_override(), *parse_pick(value, origin="--profile"))
@@ -114,6 +112,22 @@ def _reset_profile(scope: AbstractContextManager[None]) -> None:
     scope.__exit__(None, None, None)
 
 
+def _quiet(run: Run, _value: str) -> None:
+    """Mute ``run``'s commentary: lines the user did not ask for and need not act on.
+
+    That is progress, ``success`` and ``info``. A preview before a prompt, a
+    stream the user asked to watch, and output a flag exists to produce are
+    not commentary and print (``info(…, unmuted=True)``). Warnings, failures
+    and hints always print, as do prompts and stdout.
+    """
+    run.set_policy(replace(run.policy, quiet=True))
+
+
+def _deprecated(run: Run, _value: str) -> None:
+    """List deprecated things in ``run``'s help too."""
+    run.set_policy(replace(run.policy, deprecated=True))
+
+
 def _root_options() -> dict[str, _RootOption]:
     return {
         "--profile": _RootOption(
@@ -128,20 +142,17 @@ def _root_options() -> dict[str, _RootOption]:
             aliases=("-v",),
             help=_VERBOSE_HELP,
             handler=_enable_verbose,
-            resetter=_reset_verbose,
         ),
         "--quiet": _RootOption(
             name="--quiet",
             aliases=("-q",),
             help=_QUIET_HELP,
-            handler=_enable_quiet,
-            resetter=None,
+            handler=_quiet,
         ),
         "--deprecated": _RootOption(
             name="--deprecated",
             help=_DEPRECATED_HELP,
-            handler=enable_show_deprecated,
-            resetter=reset_show_deprecated,
+            handler=_deprecated,
         ),
     }
 
@@ -165,6 +176,8 @@ def _match_option(name: str, root_options: dict[str, _RootOption]) -> _RootOptio
 class RootLine:
     """A command line once the token pass took its root options, and what it applied."""
 
+    #: The invocation's run, which every root option the line holds is written onto.
+    run: Run
     #: The command's tokens: the line without the root options the pass took
     #: (nor a ``--`` that only closed the leading ones).
     tokens: list[str]
@@ -222,16 +235,16 @@ class RootLine:
             word = self.tokens[0] if self.tokens else None
             if root is None or word is None or resolve_command(root, word) is not None:
                 return None
-            return _rendering(_unnamed_format(self.tokens))
+            return _rendering(self.run, _unnamed_format(self.tokens))
         command = self.command
         if command is None:
-            return _rendering(_unnamed_format(self.tokens))
+            return _rendering(self.run, _unnamed_format(self.tokens))
         chosen: tuple[str, str] | None = None
         if self.format is not None:
             chosen = (self.format, "--format")
         elif _table_default(command):
             chosen = user_default_format(repairs=command.repairs or self.helps)
-        return _rendering(chosen)
+        return _rendering(self.run, chosen)
 
     def apply(self, spec: _RootOption, value: str) -> None:
         """Apply root option ``spec`` with ``value`` for the rest of the invocation."""
@@ -240,10 +253,10 @@ class RootLine:
             for applied, _ in self.applied
         ):
             raise_usage("--verbose and --quiet cannot be combined")
-        self.applied.append((spec, spec.handler(value)))
+        self.applied.append((spec, spec.handler(self.run, value)))
 
     def _reset(self) -> None:
-        """Undo every root option applied, the last applied first."""
+        """Undo every root option applied that the run's end does not, the last applied first."""
         for option, token in reversed(self.applied):
             if option.resetter is not None:
                 option.resetter(token)
@@ -252,19 +265,21 @@ class RootLine:
 
 @contextmanager
 def applied_root_options(
+    run: Run,
     tokens: Sequence[str],
     root_options: dict[str, _RootOption],
     declaration: Declaration | None = None,
 ) -> Iterator[RootLine]:
-    """Apply the root options of ``tokens`` for the block; the line they leave.
+    """Write the root options of ``tokens`` onto ``run``, the started one; the line they leave.
 
     The pass reads the line by ``declaration``'s token shapes, without
     importing a command (:func:`_read_line`). With no declaration to read it
     by, it takes the leading root options only, and dispatch reads the rest
-    by the composition's own (:func:`dispatch_line`): only when they apply
-    differs, never what the tokens mean. Each is undone when the block ends.
+    by the composition's own (:func:`dispatch_line`), onto the same run: only
+    when they apply differs, never what the tokens mean. The flags end with
+    the run; ``--profile`` is undone when the block ends (owed, 11f).
     """
-    line = RootLine(tokens=[])
+    line = RootLine(run=run, tokens=[])
     try:
         line.read(tokens, root_options, declaration)
         yield line
@@ -560,10 +575,10 @@ def _unnamed_format(tokens: Sequence[str]) -> tuple[str, str] | None:
     return (flag, "--format") if flag is not None else user_default_format(repairs=True)
 
 
-def _rendering(chosen: tuple[str, str] | None) -> Rendering:
+def _rendering(run: Run, chosen: tuple[str, str] | None) -> Rendering:
     """The rendering of the ``chosen`` format and its source, the user's theme under text."""
     fmt, source = chosen if chosen is not None else (None, None)
-    text = replace(current_run().policy, format=fmt).diagnostics == "text"
+    text = replace(run.policy, format=fmt).diagnostics == "text"
     return Rendering(format=fmt, source=source, theme=user_theme() if text else None)
 
 

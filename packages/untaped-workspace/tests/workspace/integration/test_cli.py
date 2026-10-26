@@ -6,11 +6,12 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from untaped.runtime.run import enable_quiet, entered, start_run
+from untaped.runtime.run import entered, start_run
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.cli import app
@@ -30,8 +31,8 @@ def _rows(result: CliResult) -> list[dict[str, object]]:
 @pytest.fixture
 def quiet_mode(composed: None) -> Iterator[None]:
     """Quiet output: a run asking for it, whose invocations inherit it (the 11.x seam)."""
-    with entered(start_run()):
-        enable_quiet()
+    with entered(start_run()) as started:
+        started.set_policy(replace(started.policy, quiet=True))
         yield
 
 

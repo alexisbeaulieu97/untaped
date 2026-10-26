@@ -551,8 +551,6 @@ def test_reset_restores_composed_state(_isolated_config: Path) -> None:
     bootstrap.reset()
     assert profile_override() == ()
     assert app_context().section("ext", _ExtProfile).token == "default-token"
-    assert not is_verbose()
-    assert not is_quiet()
 
 
 def test_module_entrypoint_help() -> None:
