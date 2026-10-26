@@ -10,9 +10,9 @@ import pytest
 from untaped.runtime.sink import diagnostics_scope
 from untaped.sdk import UntapedError
 
-# The 11.x seam: these blocks record under compose_with's fake providers, with
-# no install to record through, so they use the kit's private hook until
-# workspace's tests move onto install(...).running().
+# The 11.x seam: these blocks record under compose_with's fake providers, which
+# install() cannot compose (workspace is still a PluginSpec), so they use the
+# kit's private hook until workspace's tests move onto install(...).running().
 from untaped.sdk._run import recording  # untaped: allow private-test-import
 from untaped.sdk.contracts import Answers, Failed, NoProviderReady, NotReady, Ok, Skipped, Source
 from untaped.sdk.diagnostic import StaleData

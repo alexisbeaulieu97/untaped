@@ -67,15 +67,16 @@ class Ran:
 class Running:
     """A block running under an install (:meth:`Install.running`): what it showed so far.
 
-    ``diagnostics`` are the typed stderr lines shown inside the block, as
-    :attr:`Ran.diagnostics` are a command's.
+    ``diagnostics`` are the typed stderr lines the block itself shows, as
+    :attr:`Ran.diagnostics` are a command's; a ``.run()``, ``.cli()`` or
+    nested ``running()`` inside it reports on its own result.
     """
 
     _shown: list[Diagnostic] = field(repr=False)
 
     @property
     def diagnostics(self) -> tuple[Diagnostic, ...]:
-        """The typed lines shown inside the block so far, oldest first."""
+        """The typed lines the block itself showed so far, oldest first."""
         return tuple(self._shown)
 
 
@@ -185,8 +186,10 @@ class Install:
     def running(self) -> Iterator[Running]:
         """Run the block as a command of this install runs: under its run, its plugins composed.
 
-        The block runs in one diagnostics scope, as a command does; what it
-        yields records the typed lines shown inside (``run.diagnostics``).
+        The block runs in one diagnostics scope, as a command does: the
+        environment (``UNTAPED_DIAGNOSTICS``) is read when the block opens, and
+        what it yields records the typed lines the block itself shows
+        (``run.diagnostics``); a command run inside reports on its own result.
         """
         from untaped.runtime.run import build_run  # noqa: PLC0415
         from untaped.runtime.sink import diagnostics_scope  # noqa: PLC0415
