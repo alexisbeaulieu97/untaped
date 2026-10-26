@@ -1377,6 +1377,41 @@ def test_the_next_entry_point_of_a_package_owns_it_when_the_first_is_quarantined
     assert {c.output for c in declaration.commands() if c.name == "say"} == {"second.salutation"}
 
 
+def test_a_later_offerer_owns_no_contract_it_lists_first() -> None:
+    @experimental
+    class Pages(Contract):
+        """Offered by a plugin refused as a later offerer of Notes, then by a sound one."""
+
+        @cached(max_age=timedelta(hours=1), label="pages")
+        def pages(self) -> list[Book]:
+            raise NotImplementedError
+
+    @experimental
+    class Notes(Contract):
+        """Offered first by a sound plugin."""
+
+        def notes(self) -> list[Book]:
+            raise NotImplementedError
+
+    def offering(*offers: type[Contract]) -> type[Plugin]:
+        class Offering(Plugin):
+            """Offers contracts."""
+
+            settings = HelloSettings
+
+        Offering.offers = offers  # type: ignore[assignment]
+        return Offering
+
+    entries = [
+        _entry(offering(Notes), "first", module="untaped_first.plugin"),
+        _entry(offering(Pages, Notes), "both", module="untaped_both.plugin"),
+        _entry(offering(Pages), "pages", module="untaped_pages.plugin"),
+    ]
+    declaration = compose(entries)
+    assert [plugin.name for plugin in declaration.plugins] == ["first", "pages"]
+    assert [q.name for q in declaration.quarantined] == ["both"]
+
+
 def test_one_cache_caches_one_contract_method() -> None:
     shared = Cache(label="pages", max_age=timedelta(hours=1))
 

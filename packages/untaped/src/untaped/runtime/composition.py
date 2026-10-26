@@ -163,9 +163,9 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     withdrawn: dict[int, tuple[Problem, ...]] = {}
     while True:
         standing = [i for i in range(len(entries)) if i not in withdrawn]
-        offering = _offering([entries[i] for i in standing])
+        offering, late = _offering([entries[i] for i in standing])
         # A later offerer is refused, so it owns no package; it may own the contract next pass.
-        later = {i for i in standing if _offers_late(entries[i], offering)}
+        later = {standing[place] for place in late}
         owners: dict[str, str] = {}
         for i in standing:
             if i not in later:
@@ -192,18 +192,22 @@ def _offered(entry: PluginEntry) -> tuple[type, ...]:
     )
 
 
-def _offering(entries: Sequence[PluginEntry]) -> dict[type, str]:
-    """The plugin offering each contract class, the first that lists it: its caches' owner."""
+def _offering(entries: Sequence[PluginEntry]) -> tuple[dict[type, str], set[int]]:
+    """The plugin owning each contract class, and the later offerers' places in ``entries``.
+
+    In order, a plugin offering a contract an earlier owner holds is a later
+    offerer: it is refused, so it owns none of the contracts it lists.
+    """
     found: dict[type, str] = {}
-    for entry in entries:
-        for offered in _offered(entry):
-            found.setdefault(offered, entry.name)
-    return found
-
-
-def _offers_late(entry: PluginEntry, offering: dict[type, str]) -> bool:
-    """Whether ``entry`` offers a contract an earlier plugin in ``offering`` already offers."""
-    return any(offering[offered] != entry.name for offered in _offered(entry))
+    later: set[int] = set()
+    for place, entry in enumerate(entries):
+        offered = _offered(entry)
+        if any(found.get(each, entry.name) != entry.name for each in offered):
+            later.add(place)
+            continue
+        for each in offered:
+            found.setdefault(each, entry.name)
+    return found, later
 
 
 def _cache_setting(cache: Cache[Any]) -> CacheDecl:
