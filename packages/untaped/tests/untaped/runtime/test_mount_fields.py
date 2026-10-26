@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from pydantic import BaseModel, Field
 
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import Command, Confirm, Limit, Parallel, Plugin, Positional, Refresh, key
+from untaped.sdk import (
+    Cache,
+    Command,
+    Confirm,
+    Limit,
+    Parallel,
+    Plugin,
+    Positional,
+    Refresh,
+    key,
+)
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
 
-#: A stand-in for a cache the plugin class holds: what Refresh's flags are about.
-MOTD = object()
+#: A cache the plugin class holds: what Refresh's flags are about.
+MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
 
 
 class ToolSettings(BaseModel):
@@ -142,6 +154,12 @@ def test_refresh_and_cached_set_the_directive() -> None:
     assert _run("tool", "fetch").stdout == "None\n"
     assert _run("tool", "fetch", "--refresh").stdout == "True\n"
     assert _run("tool", "fetch", "--cached").stdout == "False\n"
+
+
+def test_refresh_help_names_the_cache_and_its_setting() -> None:
+    shown = " ".join(_run("tool", "fetch", "--help").stdout.replace("│", " ").split())
+    assert "--refresh checks upstream for message of the day now" in shown
+    assert "older than tool.caches.motd.max_age_seconds (1 h)." in shown
 
 
 def test_parallel_comes_from_the_flag_or_its_setting_and_is_capped() -> None:

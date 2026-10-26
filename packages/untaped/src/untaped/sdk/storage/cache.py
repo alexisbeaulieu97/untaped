@@ -51,6 +51,7 @@ import importlib.metadata
 import importlib.util
 import logging
 import re
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
@@ -548,7 +549,7 @@ class Cache[M = None](OwnedBlock):
         A version-only cache has none and raises :class:`ConfigError`.
         """
         self._declared_max_age()
-        return f"{self.plugin}.caches.{self.name}.max_age_seconds"
+        return _max_age_setting(self.plugin, self.name)
 
     @property
     def version_only(self) -> bool:
@@ -1885,15 +1886,46 @@ def refresh_option(cache: Cache[Any]) -> Parameter:
         raise ConfigError(
             f"cache {cache.where} is version-only: --refresh and --cached are about a max age"
         )
-    return Parameter(
-        name="--refresh",
-        negative="--cached",
-        help=(
-            f"--refresh checks upstream for {cache.label} now; --cached reads what is cached "
-            f"and never checks. Default: check when the cached data is older than "
-            f"{cache.setting} ({cache.default_max_age_text})."
-        ),
+    text = _refresh_help([(cache, cache.setting)])
+    return Parameter(name="--refresh", negative="--cached", help=text)
+
+
+def _max_age_setting(plugin: str, name: str) -> str:
+    """The setting that tunes a cache's max age: ``<plugin>.caches.<name>.max_age_seconds``."""
+    return f"{plugin}.caches.{name}.max_age_seconds"
+
+
+def _refresh_help(caches: Sequence[tuple[Cache[Any], str]]) -> str:
+    """The ``--refresh``/``--cached`` help about ``caches``, each with its max-age setting.
+
+    Composition writes it into a ``Refresh`` field's declaration, which help
+    reads without importing the command; :func:`refresh_option` writes it
+    into the 11.x option. None of ``caches`` is version-only.
+    """
+    named = list({setting: cache for cache, setting in caches}.items())
+    labels = _and(list(dict.fromkeys(cache.label for _, cache in named)))  # each once, in order
+    if len(named) == 1:
+        setting, cache = named[0]
+        default = f"older than {setting} ({cache.default_max_age_text})"
+    else:
+        # a label two caches share would name neither: the settings already do
+        shared = {label for label, count in Counter(c.label for _, c in named).items() if count > 1}
+        default = "older than " + _and(
+            [
+                f"{each} ({cache.default_max_age_text})"
+                + ("" if cache.label in shared else f" for {cache.label}")
+                for each, cache in named
+            ]
+        )
+    return (
+        f"--refresh checks upstream for {labels} now; --cached reads what is cached "
+        f"and never checks. Default: check when the cached data is {default}."
     )
+
+
+def _and(items: Sequence[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
 
 
 class FreshnessRecord(Record):
