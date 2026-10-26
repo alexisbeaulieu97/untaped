@@ -162,7 +162,10 @@ def _lines(target: type[Plugin] = Shop, *, owner: str | None = None) -> list[Lin
     with kept_composition():
         result = compose_root(candidates=[candidate])
         assert not result.quarantine
-        return record_lines(result, {}, owner=owner)
+        owned = record_lines(result, {})
+        if owner is not None:
+            return owned.get(owner, [])
+        return [line for lines in owned.values() for line in lines]
 
 
 def _plugin(*commands: type[Command], runs: type[Command] | None = None) -> type[Plugin]:

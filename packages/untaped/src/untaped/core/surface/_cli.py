@@ -15,7 +15,7 @@ ones, never a value settings would supply at run time.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator
 from typing import Any
 
 from cyclopts import App
@@ -40,23 +40,24 @@ _POSITIONAL = (
 )
 
 
-def cli_lines(root: App, plugin_marks: Mapping[str, LineMark | None]) -> list[Line]:
-    """Every ``cli`` line of ``root``; ``plugin_marks`` are the composed plugins' marks."""
+def root_plugin_lines(root: App, words: Collection[str], mark: LineMark | None) -> list[Line]:
+    """The ``cli`` lines of the root plugin (core), whose commands mount at the root.
+
+    The root's own options and cyclopts' built-ins, then the commands at the
+    root ``words`` spell (the root plugin's, deprecated aliases included).
+    """
     lines = list(_root_options(root))
-    lines.extend(_walk(root, root, (ROOT,), None, plugin_marks, top=True))
+    lines.extend(_walk(root, root, (ROOT,), mark, only=frozenset(words)))
     return lines
 
 
 def subtree_lines(root: App, name: str, mark: LineMark | None) -> list[Line]:
-    """The ``cli`` lines of the plugin mounted at ``untaped <name>``, the group itself included."""
-    for child, sub in children(root, resolve=True):
-        if child == name:
-            own = line_mark(mark_of(sub), root) or mark
-            return [
-                *_command(root, sub, (ROOT, name), own),
-                *_walk(root, sub, (ROOT, name), own, {}, top=False),
-            ]
-    return []
+    """The ``cli`` lines of the plugin mounted at ``untaped <name>``, the group itself included.
+
+    The walk any root command gets, so a hidden plugin is skipped as a hidden
+    command is.
+    """
+    return list(_walk(root, root, (ROOT,), mark, only=frozenset({name})))
 
 
 def _root_options(root: App) -> Iterator[Line]:
@@ -82,29 +83,28 @@ def _walk(
     app: App,
     path: tuple[str, ...],
     inherited: LineMark | None,
-    plugin_marks: Mapping[str, LineMark | None],
     *,
-    top: bool,
+    only: frozenset[str] | None = None,
 ) -> Iterator[Line]:
+    """The commands under ``app``, or only those of its words in ``only``."""
     aliases = deprecated_aliases(app)
     for old, alias in sorted(aliases.items()):
-        if not old.startswith("-"):
+        if not old.startswith("-") and (only is None or old in only):
             yield Line(
                 f"cli {' '.join((*path, old))} -> {' '.join((*path, alias.new))}",
                 DeprecatedMark(alias.removed_in),
             )
     for name, sub in sorted(children(app, resolve=True), key=lambda item: item[0]):
+        if only is not None and name not in only:
+            continue
         here = (*path, name)
-        own = line_mark(mark_of(sub), root)
-        if top and own is None:
-            own = plugin_marks.get(name)
-        mark = own or inherited
+        mark = line_mark(mark_of(sub), root) or inherited
         hidden = sub.show is False
         deprecated = isinstance(mark, DeprecatedMark)
         if hidden and not deprecated and " ".join(here) not in WRITTEN_OUTSIDE:
             continue
         yield from _command(root, sub, here, mark)
-        yield from _walk(root, sub, here, mark, plugin_marks, top=False)
+        yield from _walk(root, sub, here, mark)
 
 
 def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator[Line]:

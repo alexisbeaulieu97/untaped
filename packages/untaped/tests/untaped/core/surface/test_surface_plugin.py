@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 import warnings
 from abc import abstractmethod
 from collections.abc import Iterator
@@ -9,17 +11,19 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import pytest
+from cyclopts import App
 from pydantic import BaseModel, Field
 
 from untaped.core.settings import CoreSettings
-from untaped.core.surface import DeprecatedMark, Line, SurfaceError, plugin_lines
+from untaped.core.surface import DeprecatedMark, Line, SurfaceError, generate, plugin_lines
 from untaped.core.surface._sdk import own_mark
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk.contracts import Contract
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.marks import experimental
+from untaped.sdk.testing import plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -103,6 +107,114 @@ def test_a_contract_and_the_payload_models_it_reaches() -> None:
 
 def test_a_plugin_without_surface_has_no_lines() -> None:
     assert plugin_lines(PluginSpec(name="bins")) == []
+
+
+def test_a_plugin_reaching_no_other_owner_adds_only_its_own_lines() -> None:
+    # Only for a plugin whose kinds and models reach no other owner's: one
+    # that reaches core's kinds would add to their marks.
+    bins = plugin_candidate(
+        PluginSpec(name="bins", settings=Settings, contracts=lambda: (BinSource,))
+    )
+
+    core = set(generate([]))
+
+    assert set(generate([bins])) == core | set(plugin_lines(bins))
+    assert "cli untaped config list" in {line.text for line in core}
+    assert "cli untaped --help switch" in {line.text for line in core}
+
+
+def test_a_root_command_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    build = bootstrap.build_root_app
+
+    def with_a_stray(**kwargs: object) -> App:
+        root = build(**kwargs)  # type: ignore[arg-type]
+        root.command(App(name="stray"))
+        return root
+
+    monkeypatch.setattr(bootstrap, "build_root_app", with_a_stray)
+
+    with pytest.raises(SurfaceError, match="no composed plugin owns: stray"):
+        generate([])
+
+
+def test_a_behaviour_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.sdk import marks
+
+    monkeypatch.setattr(marks, "_CORE_OWNER", "core")
+
+    with pytest.raises(SurfaceError, match="no composed plugin owns: behaviour owner core"):
+        generate([])
+
+
+def test_a_record_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.core.surface import _records
+
+    real = _records.record_lines
+
+    def with_a_stray(*args: object) -> dict[str, list[Line]]:
+        owned = real(*args)  # type: ignore[arg-type]
+        owned["ghost"] = [Line("record ghost.thing")]
+        return owned
+
+    monkeypatch.setattr(_records, "record_lines", with_a_stray)
+
+    with pytest.raises(SurfaceError, match="no composed plugin owns: record owner ghost"):
+        generate([])
+
+
+def _ghost() -> App:
+    app = App(name="ghost", help="Hidden.", show=False)
+
+    @app.command
+    def boo() -> None:
+        """Boo."""
+
+    return app
+
+
+def test_a_hidden_plugin_has_no_cli_lines() -> None:
+    ghost = plugin_candidate(PluginSpec(name="ghost", app_factory=_ghost, settings=Settings))
+
+    whole = {line.text for line in generate([ghost])}
+    own = {line.text for line in plugin_lines(ghost)}
+
+    assert not [text for text in whole | own if text.startswith("cli untaped ghost")]
+    assert "cfg ghost.timeout number? default=unset" in own
+    assert own <= whole
+
+
+def test_a_plugin_class_gets_its_api_modules_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "surface_crate_pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text('"""A plugin package."""\n', encoding="utf-8")
+    (package / "plugin.py").write_text(
+        '"""A plugin class."""\n'
+        "from pydantic import BaseModel\n"
+        "from untaped.sdk import Plugin\n\n\n"
+        "class Crate(Plugin):\n"
+        '    """Keep crates."""\n\n'
+        "    settings = BaseModel\n",
+        encoding="utf-8",
+    )
+    (package / "api.py").write_text(
+        '"""Its public module."""\n'
+        '__all__ = ["lid"]\n\n\n'
+        "def lid(name: str) -> str:\n"
+        '    """A lid."""\n'
+        "    return name\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in ("surface_crate_pkg", "surface_crate_pkg.plugin", "surface_crate_pkg.api"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    crate = importlib.import_module("surface_crate_pkg.plugin").Crate
+    candidate = PluginCandidate(distribution="untaped-crate", name="crate", target=crate)
+
+    lines = {line.text for line in plugin_lines(candidate)}
+
+    assert [text for text in lines if text.startswith("sdk surface_crate_pkg.api")]
 
 
 def test_lines_do_not_depend_on_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

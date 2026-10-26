@@ -343,11 +343,7 @@ def _settings(result: CompositionResult, plugin: RegisteredPlugin) -> tuple[Sett
     # The config reference's reader of the same sections; imported only for a plugin page.
     from untaped.core.surface._settings import sections, setting_leaves  # noqa: PLC0415
 
-    wanted = [
-        section
-        for section in sections(result, extensions=False, root=plugin.root)
-        if section.prefix == plugin.spec.name
-    ]
+    wanted = sections(result, extensions=False, owner=plugin.spec.name)
     strip = f"{plugin.spec.name}."
     inherited = plugin.spec.stability
     rows: list[Setting] = []
