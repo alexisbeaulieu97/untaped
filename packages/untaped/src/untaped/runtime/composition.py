@@ -628,10 +628,13 @@ class _PluginWalk:
         blocks = self._blocks(cls)
         #: Each attribute's value by identity: the blocks a command's fields may name.
         self.held = {id(value): attribute for attribute, value in self._attributes(cls).items()}
+        #: Each state rows attribute's removers (``removes =``), by command target.
+        self.removers: dict[str, dict[str, str]] = {}
         commands = self._nodes(cls.commands, (self.name,), where=f"{cls.__qualname__}.commands")
         runs = None
         if cls.runs is not None and _is_command(cls.runs):
             runs = self._command(cls.runs, (self.name,))
+        blocks = self._removed_by(cls, blocks)
         summary, doc = _prose(cls)
         if not summary:
             self.problem(
@@ -654,6 +657,25 @@ class _PluginWalk:
             fills=self._fill_decls(cls),
             skill=skill,
             blocks=blocks,
+        )
+
+    def _removed_by(
+        self, cls: type[Plugin], blocks: tuple[BlockDecl, ...]
+    ) -> tuple[BlockDecl, ...]:
+        """``blocks`` with each state rows' remover recorded: one command removes rows."""
+        for attribute, removers in self.removers.items():
+            if len(removers) > 1:
+                self.problem(
+                    "duplicate-remover",
+                    f"{cls.__qualname__}.{attribute}",
+                    f"is removed by {', '.join(sorted(removers.values()))}; "
+                    "one command removes a plugin's rows",
+                )
+        return tuple(
+            block.model_copy(update={"removed_by": next(iter(removers))})
+            if len(removers := self.removers.get(block.attribute, {})) == 1
+            else block
+            for block in blocks
         )
 
     def _settings(self, cls: type[Plugin]) -> type[BaseModel] | None:
@@ -998,6 +1020,7 @@ class _CommandWalk:
         self._duplicates()
         self._positionals()
         self._output(returns)
+        self._removes()
         summary, doc = _prose(cls)
         if not summary:
             self.problem("missing-docstring", self.where, "a command's docstring is its help")
@@ -1025,6 +1048,21 @@ class _CommandWalk:
             aliases=self._aliases(),
             repairs=self._repairs(),
         )
+
+    def _removes(self) -> None:
+        """Record the state rows the command marks ``removes =``: rows its plugin class holds."""
+        rows = self.cls.removes
+        if rows is None:
+            return
+        attribute = self.plugin.held.get(id(rows))
+        if attribute is None or getattr(rows, "block_kind", None) != "state-rows":
+            self.problem(
+                "reserved-name",
+                f"{self.where}.removes",
+                f"holds {rows!r}, not state rows its plugin class holds",
+            )
+            return
+        self.plugin.removers.setdefault(attribute, {})[target_of(self.cls)] = self.where
 
     def _mark(self, cls: type[Command[Any]]) -> StabilityDecl | None:
         return self.plugin.stability_of(cls, cls.stability)

@@ -66,6 +66,7 @@ def composition_of(
         packages=packages,
         installed=functools.cache(lambda: tuple(installed_plugins())),
         spell=declaration.spell,
+        remove_line=declaration.remove_line,
         kinds={kind.target: kind.kind for kind in declaration.kinds},
     )
 
