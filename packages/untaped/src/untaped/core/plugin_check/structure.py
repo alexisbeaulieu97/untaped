@@ -8,8 +8,8 @@ For one plugin package this flags:
 - ``exception-name`` — an exception class whose name does not end in ``Error``;
 - ``error-system`` — a plugin error base (no plugin parent) that does
   not set ``system`` (its failures would blame ``untaped``);
-- ``protocol-location`` — a ``Protocol`` defined outside an
-  ``application/**/ports.py`` module;
+- ``protocol-location`` — a ``Protocol`` defined outside a ``ports`` module
+  (``application/ports.py`` in a layered plugin, ``ports.py`` in a flat one);
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``settings-not-frozen`` — the settings or state model is mutable;
 - ``settings-naming`` and ``settings-renames`` — see
@@ -80,9 +80,7 @@ def _runtime_violations(package: str) -> Iterator[str]:
     ports: dict[str, str] = {}
     adapters: set[str] = set()
     for module in _modules(package):
-        is_ports = module.__name__.startswith(f"{package}.application") and (
-            module.__name__.endswith(".ports")
-        )
+        is_ports = module.__name__.rpartition(".")[2] == "ports"
         for cls in _own_classes(module):
             where = f"{module.__name__}.{cls.__qualname__}"
             if issubclass(cls, BaseException) and not issubclass(cls, Warning):

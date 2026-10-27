@@ -43,7 +43,6 @@ from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import locked_write
 
 if TYPE_CHECKING:
-    from untaped.sdk.plugin import Command
     from untaped.sdk.projects import Project
 
 type Rows = list[dict[str, Any]]
@@ -145,13 +144,14 @@ class RowExists(ConfigError):
 class StateRows[M: BaseModel](OwnedBlock):
     """Typed rows a plugin keeps as the only copy.
 
-    A plugin class holding it names it: ``items = StateRows[Item](remove=Remove)``
-    keeps ``Item`` rows under ``items`` in the plugin's own
+    A plugin class holding it names it: ``items = StateRows[Item]()`` keeps
+    ``Item`` rows under ``items`` in the plugin's own
     ``plugins/<plugin>/state.yml``, stamped and written under that file's
     lock. The row's key is its one required ``str`` field marked ``Key``; a
     model with no such field makes the rows a list (:meth:`all`,
-    :meth:`append`, :meth:`replace_all`). ``remove`` is the command that
-    removes a row, called with its key: a damaged row's error offers it.
+    :meth:`append`, :meth:`replace_all`). The command that removes a row,
+    called with its key, marks itself ``removes = items``: a damaged row's
+    error offers it.
 
     The 11.x spelling keeps them in the shared ``state.yml`` →
     ``<plugin>.<name>``: ``model`` is the rows' pydantic model, or a function
@@ -179,7 +179,6 @@ class StateRows[M: BaseModel](OwnedBlock):
     key_field: str | None
     omit_none: bool
     remove_hint: str | None
-    remove: type[Command[Any]] | None
 
     def __init__(
         self,
@@ -190,13 +189,13 @@ class StateRows[M: BaseModel](OwnedBlock):
         key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
-        remove: type[Command[Any]] | None = None,
     ) -> None:
         if plugin is None and name is None:
             if key_field is not None or remove_hint is not None:
                 raise ConfigError(
                     "state rows a plugin class holds take their key from the field marked "
-                    "Key and their remove command as remove=, not key_field= or remove_hint="
+                    "Key, and the command removing a row marks itself removes=; "
+                    "not key_field= or remove_hint="
                 )
         else:
             if plugin is None or name is None or model is None or key_field is None:
@@ -204,13 +203,10 @@ class StateRows[M: BaseModel](OwnedBlock):
                     f"state rows {plugin}.{name}: the 11.x spelling takes the plugin, the name, "
                     "model= and key_field="
                 )
-            if remove is not None:
-                raise ConfigError(f"state rows {plugin}.{name}: remove= goes with a plugin class")
             _check_declaration(plugin, name, model, key_field, remove_hint)
         if model is not None and not callable(model):
             raise ConfigError("state rows: model takes a model class or a function returning one")
         self._setup(plugin, name, model, key_field, omit_none, remove_hint, None)
-        self.remove = remove
         if plugin is not None:
             _declare(self)
 
@@ -231,7 +227,6 @@ class StateRows[M: BaseModel](OwnedBlock):
         key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
-        remove: type[Command[Any]] | None = None,
     ) -> ProjectStateRows[M]:
         """Rows each project keeps; ``.of(project)`` opens them.
 
@@ -246,7 +241,6 @@ class StateRows[M: BaseModel](OwnedBlock):
             key_field=key_field,
             omit_none=omit_none,
             remove_hint=remove_hint,
-            remove=remove,
         )
 
     @classmethod
@@ -262,12 +256,10 @@ class StateRows[M: BaseModel](OwnedBlock):
         *,
         core: bool = False,
         own: bool = False,
-        remove: type[Command[Any]] | None = None,
     ) -> StateRows[M]:
         rows: StateRows[M] = object.__new__(cls)
         rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path, core=core)
         rows._own = own
-        rows.remove = remove
         return rows
 
     def _setup(
@@ -287,7 +279,6 @@ class StateRows[M: BaseModel](OwnedBlock):
         self.key_field = key_field
         self.omit_none = omit_none
         self.remove_hint = remove_hint
-        self.remove = None
         self._resolved: _Shape | None = None
         self._path = path
         self._own = plugin is None
@@ -569,12 +560,12 @@ class StateRows[M: BaseModel](OwnedBlock):
         """The command line removing the row keyed ``key``, when the rows name one."""
         if key is None:
             return None
-        if self.remove is not None:
+        if self._own:
             from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
 
             try:
-                return current_run().composition.spell(self.remove.spelled(key))
-            except LookupError:  # a command this run did not compose: the hand fix alone
+                return current_run().composition.remove_line(self.plugin, self.name, key)
+            except LookupError:  # rows this run did not compose: the hand fix alone
                 return None
         return None if self.remove_hint is None else self.remove_hint.format(key=key)
 
@@ -606,7 +597,6 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
     key_field: str | None
     omit_none: bool
     remove_hint: str | None
-    remove: type[Command[Any]] | None
 
     def __init__(
         self,
@@ -617,7 +607,6 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
         key_field: str | None = None,
         omit_none: bool = False,
         remove_hint: str | None = None,
-        remove: type[Command[Any]] | None = None,
     ) -> None:
         if plugin is not None or name is not None:
             if plugin is None or name is None or model is None or key_field is None:
@@ -625,13 +614,12 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
                     f"state rows {plugin}.{name}: the 11.x spelling takes the plugin, the name, "
                     "model= and key_field="
                 )
-            if remove is not None:
-                raise ConfigError(f"state rows {plugin}.{name}: remove= goes with a plugin class")
             _check_declaration(plugin, name, model, key_field, remove_hint)
         elif key_field is not None or remove_hint is not None:
             raise ConfigError(
                 "state rows a plugin class holds take their key from the field marked "
-                "Key and their remove command as remove=, not key_field= or remove_hint="
+                "Key, and the command removing a row marks itself removes=; "
+                "not key_field= or remove_hint="
             )
         if model is not None and not callable(model):
             raise ConfigError("state rows: model takes a model class or a function returning one")
@@ -640,7 +628,6 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
         self.key_field = key_field
         self.omit_none = omit_none
         self.remove_hint = remove_hint
-        self.remove = remove
         if plugin is not None:
             _declare(self)
 
@@ -705,7 +692,6 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
             None,
             project.root / DIRECTORY / PLUGINS_FOLDER / plugin / _STATE_FILE,
             own=True,
-            remove=self.remove,
         )
 
 

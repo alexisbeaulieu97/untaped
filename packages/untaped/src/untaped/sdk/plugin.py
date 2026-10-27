@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from untaped.sdk.marks import Stability
+    from untaped.sdk.storage.state import ProjectStateRows, StateRows
 
 
 class StubSkill(Block):
@@ -63,9 +64,12 @@ class Command[S: BaseModel](BaseModel):
     every other field is an option, or an argument when it is
     ``Positional[...]``, with its ``description`` as help. The docstring is
     the summary and the behaviour; ``run``'s return type says what it prints.
-    ``stability``, ``aliases`` and ``repairs`` are class-level marks;
-    ``repairs = True`` says the command repairs untaped's setup, so it runs
-    under a bad ``UNTAPED_FORMAT`` and the per-run skills check skips it.
+    ``stability``, ``aliases``, ``repairs`` and ``removes`` are class-level
+    marks; ``repairs = True`` says the command repairs untaped's setup, so it
+    runs under a bad ``UNTAPED_FORMAT`` and the per-run skills check skips
+    it. ``removes = ITEMS`` says the command, given a row's key, removes that
+    row of the ``StateRows`` its plugin class holds: a damaged row's error
+    offers it. One command removes a plugin's rows.
     """
 
     model_config = ConfigDict(extra="forbid", ignored_types=(Experimental, Deprecated))
@@ -73,6 +77,7 @@ class Command[S: BaseModel](BaseModel):
     stability: ClassVar[Stability | None] = None
     aliases: ClassVar[tuple[Deprecated, ...]] = ()
     repairs: ClassVar[bool] = False
+    removes: ClassVar[StateRows[Any] | ProjectStateRows[Any] | None] = None
 
     @model_validator(mode="before")
     @classmethod

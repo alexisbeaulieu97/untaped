@@ -84,6 +84,11 @@ def _unspelled(spelled: SpelledCommand) -> str:
     return " ".join([spelled.command.__name__, *map(str, spelled.args)])
 
 
+def _no_remover(plugin: str, rows: str, key: str) -> str | None:
+    """No command removes a row in a run that composed no declaration."""
+    return None
+
+
 #: The attribute core's section class of a plugin's settings model holds that model under.
 SECTION_OF = "__untaped_section_of__"
 
@@ -100,6 +105,8 @@ class Composition:
     installed: Callable[[], tuple[InstalledPlugin, ...]] = tuple
     #: The command line a ``Command.spelled(...)`` stands for, as this run names commands.
     spell: Callable[[SpelledCommand], str] = _unspelled
+    #: The command line removing a row (plugin, rows, key), from the command marked ``removes =``.
+    remove_line: Callable[[str, str, str], str | None] = _no_remover
     #: Each composed record kind, by its model's ``module:Qualname``.
     kinds: Mapping[str, str] = field(default_factory=dict)
 

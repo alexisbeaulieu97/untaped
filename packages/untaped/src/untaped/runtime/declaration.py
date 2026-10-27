@@ -9,6 +9,7 @@ help or docs needs no plugin import. Classes are named by their targets
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -152,6 +153,8 @@ class BlockDecl(_Frozen):
     layout: int | None = None
     #: Whether a ``Dir`` declares ``items=``: things holders (projects) hold.
     items: bool = False
+    #: The target of the command marked ``removes =`` these state rows, if one is.
+    removed_by: str | None = None
 
 
 class KindDecl(_Frozen):
@@ -285,14 +288,32 @@ class Declaration(_Frozen):
 
         A ``key(...)`` argument is spelled as its full dotted setting key.
         """
+        return self._line(target_of(spelled.command), spelled.args)
+
+    def remove_line(self, plugin: str, rows: str, key: str) -> str | None:
+        """The command line removing row ``key`` of ``plugin``'s state rows ``rows``.
+
+        ``None`` when no command of the plugin marks itself ``removes =`` them;
+        :class:`LookupError` when the plugin or the rows were not composed.
+        """
+        block = next(
+            (b for b in self.plugin(plugin).blocks if b.block == "state-rows" and b.name == rows),
+            None,
+        )
+        if block is None:
+            raise LookupError(f"{plugin} holds no state rows named {rows!r}")
+        if block.removed_by is None:
+            return None
+        return self._line(block.removed_by, (shlex.quote(key),))
+
+    def _line(self, target: str, args: tuple[object, ...]) -> str:
         from untaped.sdk.fields import SettingKey  # noqa: PLC0415 - only a spelled hint needs it
 
-        target = target_of(spelled.command)
         command = next((c for c in self.commands() if c.target == target), None)
         if command is None:
             raise LookupError(f"{target} is not a composed command")
         words = ["untaped", *self.words(command)]
-        for arg in spelled.args:
+        for arg in args:
             if isinstance(arg, SettingKey):
                 section = self.section_of(target_of(SettingKey.model_of(arg)))
                 words.append(".".join(p for p in (section, str(arg)) if p))

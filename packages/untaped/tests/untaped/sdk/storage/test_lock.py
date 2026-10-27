@@ -58,6 +58,7 @@ def test_another_holder_makes_it_busy(tmp_path: Path) -> None:
         ):
             pytest.fail("held while another process holds it")
         assert caught.value.category == ErrorCategory.UNAVAILABLE
+        assert caught.value.hint == "wait for the other untaped command to finish, then retry"
     with Demo.sync.try_locked() as held:
         assert held
 

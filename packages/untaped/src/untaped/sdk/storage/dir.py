@@ -246,10 +246,10 @@ class Dir(OwnedBlock):
         """Hold the lock of ``name`` in the place (the place's own lock without one).
 
         Waits up to the declared ``wait=`` for another process, then fails
-        with ``<plugin>.<dir> '<name>' is busy (another untaped process)``.
-        Taking it again in one thread only counts. The place's own lock and
-        its things' locks are separate locks, so holding one never waits on
-        the other.
+        with ``<plugin>.<dir> '<name>' is busy (another untaped process)``,
+        hinting to retry once it is done. Taking it again in one thread only
+        counts. The place's own lock and its things' locks are separate
+        locks, so holding one never waits on the other.
         """
         if self.wait is None:
             raise ConfigError(

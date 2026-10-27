@@ -17,15 +17,17 @@ type. A retired key gives no line: it is a major's removal, and its
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 
 from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
 from untaped.core.surface._sdk import line_mark
 from untaped.core.surface._types import choice_text, default_text, node_token, schema_of
+from untaped.sdk._home import PLUGINS_FOLDER
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -45,6 +47,8 @@ class Section(NamedTuple):
     stability: Stability | None
     rows: tuple[Any, ...] = ()
     """A state section's typed row declarations, each field of which has a line."""
+    file: str | None = None
+    """A plugin class's state section: the file its rows live in."""
 
 
 @dataclass(frozen=True)
@@ -107,13 +111,53 @@ def sections(
             for each in state_declarations(spec)
             if isinstance(each, StateRows | ProjectStateRows)
         )
+        held = _held_rows(result, spec.name)
+        file = None
+        if held:  # a plugin class's rows, in its own state file
+            state, rows = _rows_model(spec.name, held), held
+            if state is not None:
+                file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
         if state is None and rows:  # only a project's rows: no section in the home
             state = create_model(spec.name.title().replace("-", "") + "State")
         if state is not None:
             found.append(
-                Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows)
+                Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows, file)
             )
     return found
+
+
+def _held_rows(result: CompositionResult, name: str) -> tuple[Any, ...]:
+    """The state rows plugin ``name``'s class holds, named as the declaration names them."""
+    from untaped.sdk.plugin import held_by  # noqa: PLC0415
+
+    cls = result.mount.plugins.get(name)
+    if cls is None:
+        return ()
+    held = held_by(cls)
+    return tuple(
+        held[block.attribute]._spelled_as(name, block.name)  # type: ignore[attr-defined]
+        for block in result.mount.declaration.plugin(name).blocks
+        if block.block == "state-rows"
+    )
+
+
+def _rows_model(name: str, rows: tuple[Any, ...]) -> type[BaseModel] | None:
+    """A model of the rows a plugin class keeps in the home: a field per rows, its model's summary.
+
+    A project's rows live in the project and are left out; ``None`` when only those are held.
+    """
+    from untaped.sdk.storage.state import ProjectStateRows, _resolved_shape  # noqa: PLC0415
+
+    fields: dict[str, Any] = {}
+    for each in rows:
+        if isinstance(each, ProjectStateRows):
+            continue
+        model = _resolved_shape(each).model
+        summary = (inspect.getdoc(model) or "").partition("\n\n")[0].replace("\n", " ")
+        fields[each.name] = (list[model], Field(default_factory=list, description=summary))  # type: ignore[valid-type]
+    if not fields:
+        return None
+    return create_model(name.title().replace("-", "") + "State", **fields)
 
 
 def setting_leaves(section: Section) -> list[Setting]:
@@ -174,7 +218,9 @@ def row_field_lines(rows: Any, mark: LineMark | None) -> list[Line]:
     A row is the only copy, so its fields are a promise: a minor keeps each
     line, and a field it adds has a default (``tests/repo/test_surface.py``).
     """
-    model: type[BaseModel] = rows.model if isinstance(rows.model, type) else rows.model()
+    from untaped.sdk.storage.state import _resolved_shape  # noqa: PLC0415
+
+    model: type[BaseModel] = _resolved_shape(rows).model
     schema = schema_of(model)
     defs = schema.get("$defs", {})
     lines: list[Line] = []

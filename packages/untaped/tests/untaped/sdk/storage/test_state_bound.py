@@ -13,9 +13,9 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
+from untaped.runtime.declaration import Declaration
 from untaped.sdk import Command, ConfigError, Key, Plugin, StateRows, UntapedError
 from untaped.sdk._run import Run, run_scope
-from untaped.sdk.plugin import SpelledCommand
 from untaped.sdk.projects import Project
 
 
@@ -37,8 +37,23 @@ class Settings(BaseModel):
     pass
 
 
+ITEMS = StateRows[Item]()
+CHECKOUTS = StateRows[Item].per_project()
+
+
 class Remove(Command):
     """Remove an item."""
+
+    removes = ITEMS
+
+    def run(self) -> None:
+        return None
+
+
+class Forget(Command):
+    """Forget a checkout."""
+
+    removes = CHECKOUTS
 
     def run(self) -> None:
         return None
@@ -48,15 +63,23 @@ class Demo(Plugin):
     """Demo."""
 
     settings = Settings
-    commands = (Remove,)
-    items = StateRows[Item](remove=Remove)
+    commands = (Remove, Forget)
+    items = ITEMS
     notes = StateRows[Note]()
-    checkouts = StateRows[Item].per_project()
+    checkouts = CHECKOUTS
+
+
+def _composed(holder: type[Plugin]) -> Declaration:
+    return compose([PluginEntry("demo", f"{__name__}:{holder.__name__}", holder)])
 
 
 @pytest.fixture(autouse=True)
 def run(tmp_path: Path) -> Iterator[Run]:
-    with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")) as active:
+    composition = replace(
+        run_owning(tmp_path, __name__.partition(".")[0], "demo").composition,
+        remove_line=_composed(Demo).remove_line,
+    )
+    with run_scope(replace(run_owning(tmp_path, "", ""), composition=composition)) as active:
         yield active
 
 
@@ -97,7 +120,14 @@ def test_a_damaged_row_offers_the_remove_command(tmp_path: Path) -> None:
     (folder / "state.yml").write_text("items:\n- name: ada\n  size: lots\n")
     with pytest.raises(ConfigError, match=r"demo\.items row ada .* is damaged") as caught:
         Demo.items.get("ada")
-    assert caught.value.hint == "correct that row by hand, or remove it with `Remove ada`"
+    assert (
+        caught.value.hint == "correct that row by hand, or remove it with `untaped demo remove ada`"
+    )
+
+
+def test_the_remover_quotes_a_key_for_the_shell() -> None:
+    line = _composed(Demo).remove_line("demo", "items", "my notes")
+    assert line == "untaped demo remove 'my notes'"
 
 
 def test_a_damaged_list_row_is_named_by_its_place(tmp_path: Path) -> None:
@@ -109,19 +139,63 @@ def test_a_damaged_list_row_is_named_by_its_place(tmp_path: Path) -> None:
     assert caught.value.hint == "correct or remove that row by hand"
 
 
-def test_a_remove_command_the_run_cannot_spell_leaves_the_hand_fix(
-    tmp_path: Path, run: Run
-) -> None:
-    def unknown(spelled: SpelledCommand) -> str:
-        raise LookupError(spelled.command.__name__)
+def test_rows_the_run_did_not_compose_leave_the_hand_fix(tmp_path: Path, run: Run) -> None:
+    def unknown(plugin: str, rows: str, key: str) -> str:
+        raise LookupError(rows)
 
     folder = tmp_path / "plugins" / "demo"
     folder.mkdir(parents=True)
     (folder / "state.yml").write_text("items:\n- name: ada\n  size: lots\n")
-    composition = replace(run.composition, spell=unknown)
+    composition = replace(run.composition, remove_line=unknown)
     with run_scope(replace(run, composition=composition)), pytest.raises(ConfigError) as caught:
         Demo.items.get("ada")
     assert caught.value.hint == "correct or remove that row by hand"
+
+
+def test_the_remover_is_recorded_on_the_rows_it_removes() -> None:
+    [plugin] = _composed(Demo).plugins
+    removed_by = {block.attribute: block.removed_by for block in plugin.blocks}
+    assert removed_by == {
+        "items": f"{__name__}:Remove",
+        "notes": None,
+        "checkouts": f"{__name__}:Forget",
+    }
+
+
+def test_rows_have_one_remover_and_it_names_rows_the_plugin_holds() -> None:
+    rows = StateRows[Item]()
+
+    class Drop(Command):
+        """Drop an item."""
+
+        removes = rows
+
+        def run(self) -> None:
+            return None
+
+    class Delete(Drop):
+        """Delete an item."""
+
+    class Stray(Command):
+        """Remove rows nobody holds."""
+
+        removes = StateRows[Item]()
+
+        def run(self) -> None:
+            return None
+
+    class Twice(Plugin):
+        """Twice."""
+
+        settings = Settings
+        commands = (Drop, Delete, Stray)
+        items = rows
+
+    [quarantined] = _composed(Twice).quarantined
+    assert sorted((p.rule, p.where.rpartition("<locals>.")[2]) for p in quarantined.problems) == [
+        ("duplicate-remover", "Twice.items"),
+        ("reserved-name", "Stray.removes"),
+    ]
 
 
 @pytest.mark.parametrize("method", ["add", "put", "update"])
@@ -202,7 +276,7 @@ def test_a_projects_rows_live_under_its_plugin_folder(tmp_path: Path) -> None:
 
 
 def _shape_problems(holder: type[Plugin]) -> list[tuple[str, str]]:
-    declaration = compose([PluginEntry("demo", f"{__name__}:{holder.__name__}", holder)])
+    declaration = _composed(holder)
     [quarantined] = declaration.quarantined
     return [(p.rule, p.detail) for p in quarantined.problems]
 
@@ -230,18 +304,16 @@ def test_state_rows_cannot_be_named_after_the_stamp() -> None:
     assert [rule for rule, _ in _shape_problems(Stamped)] == ["block-name"]
 
 
-def test_bound_rows_kept_per_project_take_a_remove_command(tmp_path: Path) -> None:
-    class PerProject(Plugin):
-        """Per project."""
-
-        settings = Settings
-        commands = (Remove,)
-        checkouts = StateRows[Item].per_project(remove=Remove)
-
-    assert PerProject.checkouts.remove is Remove
+def test_a_damaged_project_row_offers_its_remover(tmp_path: Path) -> None:
     project = Project(id="0123456789ab", root=tmp_path / "proj")
-    PerProject.checkouts.of(project).add(Item(name="ada"))
-    assert PerProject.checkouts.of(project).keys() == ["ada"]
+    folder = project.root / ".untaped" / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("checkouts:\n- name: ada\n  size: lots\n")
+    with pytest.raises(ConfigError) as caught:
+        Demo.checkouts.of(project).get("ada")
+    assert (
+        caught.value.hint == "correct that row by hand, or remove it with `untaped demo forget ada`"
+    )
 
 
 def test_the_11x_spelling_keeps_its_repr_and_compares_by_name() -> None:
@@ -257,11 +329,6 @@ def test_a_subscripted_11x_per_project_keeps_its_spelling() -> None:
     assert repr(rows) == "ProjectStateRows('acme', 'spelled_checkouts')"
 
 
-def test_the_11x_spelling_per_project_takes_no_remove_command() -> None:
-    with pytest.raises(ConfigError, match="remove= goes with a plugin class"):
-        StateRows.per_project("acme", "nope", model=Item, key_field="name", remove=Remove)
-
-
 def test_the_state_file_stamps_as_every_data_file_does() -> None:
     from untaped.sdk.storage import data_file, state
 
@@ -273,10 +340,6 @@ def test_the_state_file_stamps_as_every_data_file_does() -> None:
     [
         (lambda: StateRows(key_field="name"), "not key_field= or remove_hint="),
         (lambda: StateRows("acme", "x", model=Item), "the 11.x spelling takes"),
-        (
-            lambda: StateRows("acme", "x", model=Item, key_field="name", remove=Remove),
-            "remove= goes with a plugin class",
-        ),
         (lambda: StateRows(model="Item"), "model takes a model class"),  # type: ignore[arg-type]
         (lambda: StateRows.per_project(remove_hint="rm {key}"), "not key_field="),
         (lambda: StateRows.per_project("acme", "x"), "the 11.x spelling takes"),

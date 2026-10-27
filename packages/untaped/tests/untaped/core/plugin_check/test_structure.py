@@ -113,6 +113,20 @@ def test_a_protocol_outside_the_ports_is_flagged(install: Install) -> None:
     assert _violations(install, files) == ["acme.domain.store.Store::protocol-location"]
 
 
+def test_a_flat_plugin_keeps_its_protocols_in_its_ports_module(install: Install) -> None:
+    files = {
+        **_CLEAN,
+        "acme/ports.py": '''
+            from typing import Protocol
+
+
+            class Store(Protocol):
+                """A store."""
+            ''',
+    }
+    assert _violations(install, files) == []
+
+
 def test_a_port_and_an_adapter_sharing_a_name_are_flagged(install: Install) -> None:
     files = {
         **_CLEAN,

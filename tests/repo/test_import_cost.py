@@ -202,9 +202,10 @@ _TOTAL_BUDGET = 694
 _UNTAPED_BUDGET = 141
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, so each move raises these: with jira moved, 181 and 734,
-#: 2026-10-26.
-_FRESH_TOTAL_BUDGET = 737
-_FRESH_UNTAPED_BUDGET = 184
+#: 2026-10-26; with dotfiles moved (its whole package, 28 modules), 205 and
+#: 758, 2026-10-27, while the kept start drops to 137 and 690.
+_FRESH_TOTAL_BUDGET = 761
+_FRESH_UNTAPED_BUDGET = 208
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
