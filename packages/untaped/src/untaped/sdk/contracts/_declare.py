@@ -206,10 +206,10 @@ def cached[F: Callable[..., Any]](
         raise TypeError("@cached takes a Cache or max_age= and label=, not both")
     if not isinstance(cache, Cache):
         raise TypeError("@cached takes max_age= and label=: @cached(max_age=..., label=...)")
-    if cache.store is not None:
+    if cache.store is not None or cache.follows is not None:
         raise TypeError(
             f"@cached({cache.qualified}): an answer cache follows no store; its entries "
-            "are read tolerantly whatever wrote them, so declare it without store="
+            "are read tolerantly whatever wrote them, so declare it without store= or follows="
         )
     if cache.model is not None:
         raise TypeError(

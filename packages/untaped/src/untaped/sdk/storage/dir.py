@@ -2,7 +2,8 @@
 
 A plugin class names the place; core decides where it is and keeps it. By
 default it is the folder ``plugins/<plugin>/<attribute>/`` under the home;
-``at=`` names a path setting instead (the user's folder, an absolute path).
+``at=`` names a path setting instead (the user's folder, an absolute path),
+and an optional one left unset (``Path | None``, ``None``) is the default place.
 ``file=`` makes the place hold one file of that name. ``layout=N`` numbers
 what it holds as a store numbers its layouts (N is the oldest layout this code
 still opens), inside the place: ``<place>/<attribute>.v4/``, or
@@ -40,6 +41,7 @@ from untaped.sdk.storage.lock import operation_lock
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from untaped.sdk.storage.cache import Cache
     from untaped.sdk.storage.holds import ItemStore, LetGo, MoveAsk, Refused, ReleaseAsk
     from untaped.sdk.storage.store import Store
 
@@ -108,6 +110,14 @@ class Dir(OwnedBlock):
         self.release = release
         self.moved = None if moved is _UNSET else moved
         self._stores: dict[tuple[str, str, Path], Store] = {}
+        self._caches: list[Cache[Any]] = []
+
+    def _follow(self, cache: Cache[Any]) -> None:
+        """Record that ``cache`` follows this numbered place (``Cache(follows=)``).
+
+        Its folder is per layout and moves with the layouts, as a store's caches do.
+        """
+        self._caches.append(cache)
 
     def __repr__(self) -> str:
         options = [
@@ -146,17 +156,20 @@ class Dir(OwnedBlock):
 
     @property
     def place(self) -> Path:
-        """The folder: the ``at=`` setting's path, or ``plugins/<plugin>/<name>`` under the home."""
+        """The ``at=`` setting's folder, else ``plugins/<plugin>/<name>`` under the home."""
         from untaped.sdk._run import (  # noqa: PLC0415 - the run imports the SDK
             current_run,
             settings_of,
         )
 
+        default = current_run().home / PLUGINS_FOLDER / self.plugin / self.name
         if self.at is None:
-            return current_run().home / PLUGINS_FOLDER / self.plugin / self.name
+            return default
         value: object = settings_of(SettingKey.model_of(self.at))
         for part in SettingKey.path_of(self.at):
             value = getattr(value, part)
+        if value is None:
+            return default  # an optional setting left unset
         folder = Path(value).expanduser() if isinstance(value, str | Path) and value else None
         if folder is None or not folder.is_absolute() or not folder.name:
             raise ConfigError(
@@ -220,12 +233,15 @@ class Dir(OwnedBlock):
         """The layouts as composition lists them for references and doctor, read on each use."""
         from untaped.sdk.storage.store import Store  # noqa: PLC0415 - numbered places only
 
-        return Store(
+        store = Store(
             self.plugin,
             self.name,
             base=lambda: self.place / (self.file or self.name),
             layout=self.layout or 1,
         )
+        for cache in self._caches:
+            store._follow(cache)
+        return store
 
     def _store(self) -> Store:
         """The store machinery behind a numbered place, one per plugin, name and folder."""
@@ -236,6 +252,8 @@ class Dir(OwnedBlock):
         store = self._stores.get(held)
         if store is None:
             store = Store(self.plugin, self.name, base=lambda: base, layout=self.layout or 1)
+            for cache in self._caches:
+                store._follow(cache)
             self._stores[held] = store
         return store
 

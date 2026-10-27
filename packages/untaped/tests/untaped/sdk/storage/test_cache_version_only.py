@@ -216,7 +216,7 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
         ),
         (
             {"model": Composed, "version": lambda: "1", "store": Store("toy", "repos", base=Path)},
-            "follows no store",
+            "follows no place or store",
         ),
     ],
 )

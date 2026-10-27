@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from pydantic import BaseModel, RootModel
 
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
+from untaped.runtime.composition import PluginEntry, compose
+from untaped.sdk import Cache, ConfigError
 from untaped.sdk.plugin import Plugin
 from untaped.sdk.projects import holder_of
 from untaped.sdk.storage import _refs as refs
@@ -36,6 +39,7 @@ class Atlas(Plugin):
     index = Dir(layout=2, file="index.sqlite3")
     notes = Dir()
     repos = Dir(items=str, release=let_go, moved=None)
+    tiles = Cache(label="tiles", max_age=timedelta(days=1), follows=maps)
 
 
 @pytest.fixture
@@ -142,3 +146,68 @@ def test_items_can_be_a_root_model(atlas: Install) -> None:
     keys = Dir(items=RepoKey, release=let_go, moved=None)._spelled_as("atlas", "keys")
     with atlas.running():
         assert keys.items().item is RepoKey
+
+
+def test_a_cache_following_a_dir_keeps_its_files_per_layout(atlas: Install) -> None:
+    with atlas.running():
+        assert Atlas.tiles._folder().parent.name == "tiles.v3"
+        assert Atlas.tiles._folder().parent.parent.name == "cached"
+
+
+def test_a_complete_fill_prunes_the_layouts_and_the_cache_folders_that_follow(
+    atlas: Install,
+) -> None:
+    with atlas.running():
+        old = Atlas.maps.place / "maps.v2"
+        old.mkdir(parents=True)
+        old_tiles = Atlas.tiles._root(2)
+        old_tiles.mkdir(parents=True)
+        refs.register(refs.composed_targets() or ())
+        Atlas.maps.open()
+        Atlas.maps.prune()
+        assert not old.exists()
+        assert not old_tiles.exists()
+
+
+@pytest.mark.parametrize(
+    ("follows", "message"),
+    [
+        (Dir(), "follows takes a numbered Dir"),
+        ("maps", "follows takes a numbered Dir"),
+    ],
+)
+def test_a_cache_follows_only_a_numbered_dir(follows: object, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        Cache(label="x", max_age=timedelta(0), follows=follows)  # type: ignore[arg-type]
+
+
+def test_an_11x_cache_follows_a_store_not_a_dir() -> None:
+    with pytest.raises(ConfigError, match=r"the 11\.x spelling follows a store"):
+        Cache("atlas", "tiles", label="x", max_age=timedelta(0), follows=Dir(layout=2))
+
+
+def test_a_version_only_cache_follows_no_place() -> None:
+    with pytest.raises(ConfigError, match="a version-only cache follows no place"):
+        Cache(
+            label="x",
+            max_age=None,
+            model=Settings,
+            version=lambda: "1",
+            split="none",
+            follows=Dir(layout=2),
+        )
+
+
+def test_composition_refuses_a_cache_following_another_class_s_dir() -> None:
+    holder = type(
+        "Borrower",
+        (Plugin,),
+        {
+            "__doc__": "Borrower.",
+            "settings": Settings,
+            "tiles": Cache(label="x", max_age=timedelta(0), follows=Atlas.maps),
+        },
+    )
+    declaration = compose([PluginEntry("borrower", f"{__name__}:Borrower", holder)])
+    [quarantined] = declaration.quarantined
+    assert "follows a Dir its own plugin class holds" in quarantined.problems[0].detail

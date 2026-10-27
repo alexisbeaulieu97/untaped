@@ -17,7 +17,7 @@ option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
 Layout: each key is one file under ``<plugin dir>/cached/<name>/<settings digest>/``
-(``cached/<name>.v<layout>/`` when the cache follows a store; no digest
+(``cached/<name>.v<layout>/`` when the cache follows a numbered ``Dir`` or a store; no digest
 folder under ``split="none"``; :mod:`untaped.sdk.storage._digest` names it) on
 core's data file (:mod:`untaped.sdk.storage.data_file`):
 its first line says what the cache knows about the key (:class:`Freshness`),
@@ -59,7 +59,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Annotated, Any, Final, Literal, overload
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, overload
 
 from cyclopts import Parameter
 from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
@@ -77,6 +77,9 @@ from untaped.sdk.records import Record, UtcTimestamp
 from untaped.sdk.storage._fs import file_lock
 from untaped.sdk.storage.store import Store
 from untaped.sdk.words import duration_text
+
+if TYPE_CHECKING:
+    from untaped.sdk.storage.dir import Dir
 
 _LOG = logging.getLogger("untaped.cache")
 
@@ -376,11 +379,14 @@ class Cache[M = None](OwnedBlock):
     ``version`` returns the version of the code that fills the
     cache (usually :func:`code_version`); it is called each time the cache
     is read (once per :meth:`serve`), never at import, and a key filled at
-    another version is refreshed like an expired one. ``store`` ties the
-    cache's files to a :class:`~untaped.sdk.storage.store.Store`'s layout: they live under
+    another version is refreshed like an expired one. ``follows`` ties the
+    cache's files to a numbered :class:`~untaped.sdk.storage.dir.Dir` of the
+    same plugin class (``Cache(follows=index)``): they live under
     ``cached/<name>.v<layout>/``, so a key is never fresh over another
-    layout's file, and a complete fill (no error, not partial) ends with
-    :meth:`Store.prune() <untaped.sdk.storage.store.Store.prune>`.
+    layout's file, they move with the place's layouts, and a complete fill
+    (no error, not partial) ends with :meth:`Dir.prune()
+    <untaped.sdk.storage.dir.Dir.prune>`. The 11.x spelling's ``store`` does
+    the same with a :class:`~untaped.sdk.storage.store.Store`.
 
     ``model`` makes the cache keep the value itself (a ``Cache[M]``): a
     pydantic model class, or a function of no arguments returning it when
@@ -405,6 +411,7 @@ class Cache[M = None](OwnedBlock):
     removed_in: int | None
     version: Callable[[], str] | None
     store: Store | None
+    follows: Dir | None
     model: type[M] | Callable[[], type[M]] | None
     split: Literal["settings", "none"]
 
@@ -420,6 +427,7 @@ class Cache[M = None](OwnedBlock):
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
         store: Store | None = None,
+        follows: Dir | None = None,
         split: Literal["settings", "none"] = "settings",
     ) -> None: ...
 
@@ -435,6 +443,7 @@ class Cache[M = None](OwnedBlock):
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
         store: Store | None = None,
+        follows: Dir | None = None,
         model: type[M] | Callable[[], type[M]],
         split: Literal["settings", "none"] = "settings",
     ) -> None: ...
@@ -450,6 +459,7 @@ class Cache[M = None](OwnedBlock):
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
         store: Store | None = None,
+        follows: Dir | None = None,
         model: type[M] | Callable[[], type[M]] | None = None,
         split: Literal["settings", "none"] = "settings",
     ) -> None:
@@ -468,7 +478,7 @@ class Cache[M = None](OwnedBlock):
                 model=model,
                 version=version,
                 renamed_from=renamed_from,
-                store=store,
+                store=store or follows,
                 split=split,
             )
         elif max_age < timedelta(0) or max_age % timedelta(seconds=1):
@@ -480,15 +490,7 @@ class Cache[M = None](OwnedBlock):
             raise ConfigError(f"cache {where}: removed_in dates renamed_from, which is empty")
         self.removed_in = removed_in
         self.version = version
-        if store is not None and not isinstance(store, Store):
-            raise ConfigError(f"cache {where}: store takes a Store, not {store!r}")
-        if store is not None and plugin is None:
-            raise ConfigError(
-                f"cache {where}: store goes with the plugin and name; a plugin class's cache "
-                "will follow a Dir instead"
-            )
-        if store is not None and store.plugin != plugin:
-            raise ConfigError(f"cache {where}: store {store.qualified} belongs to another plugin")
+        _check_layouts(where, store, follows, plugin=plugin)
         if model is not None and not callable(model):
             raise ConfigError(
                 f"cache {where}: model takes a model class or a function returning one"
@@ -498,9 +500,23 @@ class Cache[M = None](OwnedBlock):
         self.model = model
         self.split = split
         self._resolved: ValueTyping | None = None
+        self.follows = follows
         self.store = store
         if store is not None:
             store._follow(self)  # its folder moves with the store's layouts
+        if follows is not None:
+            follows._follow(self)  # its folder moves with the place's layouts
+
+    def problems(self) -> tuple[str, ...]:
+        if self.follows is None:
+            return ()
+        owners = {binding.owner for binding in self.bindings}
+        if owners and not owners & {binding.owner for binding in self.follows.bindings}:
+            return (
+                "a cache follows a Dir its own plugin class holds, not "
+                f"{self.follows!r} of another class",
+            )
+        return ()
 
     @classmethod
     def name_problem(cls, name: str) -> str | None:
@@ -520,6 +536,7 @@ class Cache[M = None](OwnedBlock):
             self.removed_in,
             self.version,
             self.store,
+            self.follows,
             self.model,
             self.split,
         )
@@ -813,9 +830,9 @@ class Cache[M = None](OwnedBlock):
                 saved, kept_it = self._filled(
                     paths, own, key, label, result, version, typing, max_age
                 )
-            if saved.error is None and kept_it and self.store is not None:
+            if saved.error is None and kept_it and (layouts := self.store or self.follows):
                 # a complete fill: this layout has data, so the ones nothing holds may go
-                self.store.prune()
+                layouts.prune()
             return _Kept(saved, value=None if typing is None else result.value)
         except UntapedError as exc:
             # the task closed `failed` on the way out, before the warning _serve emits
@@ -1146,6 +1163,13 @@ class Cache[M = None](OwnedBlock):
 
     # ---- the seams ----------------------------------------------------------
 
+    @property
+    def _layout(self) -> int | None:
+        """The layout the cache's files follow: its place's or its store's, else none."""
+        if self.follows is not None:
+            return self.follows.layout
+        return None if self.store is None else self.store.layout
+
     def _root(self, layout: int | None = None) -> Path:
         """``plugins/<plugin>/cached/<name>``, or ``<name>.v<layout>`` for a store's layout."""
         from untaped.runtime.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
@@ -1159,7 +1183,7 @@ class Cache[M = None](OwnedBlock):
         Under ``split="settings"``, the root's folder named by the plugin's
         settings digest (:mod:`untaped.sdk.storage._digest`).
         """
-        root = self._root(None if self.store is None else self.store.layout)
+        root = self._root(self._layout)
         if self.split == "none":
             return root
         from untaped.sdk.storage._digest import settings_digest  # noqa: PLC0415 - no cycle
@@ -1668,13 +1692,37 @@ def value_typing(hint: Any, *, model: type[BaseModel] | None = None) -> ValueTyp
     return ValueTyping(adapter, type_hash(adapter.json_schema()), model)
 
 
+def _check_layouts(where: str, store: object, follows: object, *, plugin: str | None) -> None:
+    """Refuse a ``store=`` or ``follows=`` the cache cannot follow the layouts of."""
+    from untaped.sdk.storage.dir import Dir  # noqa: PLC0415 - dir imports nothing of caches
+
+    if store is not None and not isinstance(store, Store):
+        raise ConfigError(f"cache {where}: store takes a Store, not {store!r}")
+    if store is not None and plugin is None:
+        raise ConfigError(
+            f"cache {where}: store goes with the plugin and name; a plugin class's cache "
+            "follows a Dir instead"
+        )
+    if store is not None and store.plugin != plugin:
+        raise ConfigError(f"cache {where}: store {store.qualified} belongs to another plugin")
+    if follows is None:
+        return
+    if not isinstance(follows, Dir) or follows.layout is None:
+        raise ConfigError(f"cache {where}: follows takes a numbered Dir (layout=), not {follows!r}")
+    if plugin is not None:
+        raise ConfigError(
+            f"cache {where}: follows goes with a plugin class's cache; the 11.x spelling "
+            "follows a store"
+        )
+
+
 def _check_version_only(
     where: str,
     *,
     model: object,
     version: Callable[[], str] | None,
     renamed_from: Sequence[str],
-    store: Store | None,
+    store: object,
     split: str,
 ) -> None:
     """Refuse a version-only declaration without its model and version, or with a setting."""
@@ -1686,7 +1734,7 @@ def _check_version_only(
     if renamed_from:
         raise ConfigError(f"cache {where}: a version-only cache has no setting to rename")
     if store is not None:
-        raise ConfigError(f"cache {where}: a version-only cache follows no store")
+        raise ConfigError(f"cache {where}: a version-only cache follows no place or store")
     if split != "none":
         raise ConfigError(
             f'cache {where}: a version-only cache depends on no setting, so it is split="none"'
@@ -1799,7 +1847,7 @@ def outdated_keys(cache: Cache[Any]) -> int:
 
     typing = cache._typing()
     version = cache._version_now()
-    root = cache._root(None if cache.store is None else cache.store.layout)
+    root = cache._root(cache._layout)
     current: set[tuple[Path, str]] = set()
     other: set[tuple[Path, str]] = set()
     try:
