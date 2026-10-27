@@ -106,6 +106,7 @@ if TYPE_CHECKING:
     from untaped.runtime.registry import PluginSpec
     from untaped.screen.picker import PickResult
     from untaped.sdk.diagnostic import Diagnostic
+    from untaped.sdk.plugin import Plugin
 
 __all__ = [
     "CacheClock",
@@ -733,7 +734,7 @@ def _view(n: int, state: HolderState) -> HolderView:
 
 
 def plugin_candidate(
-    spec: PluginSpec,
+    spec: PluginSpec | type[Plugin],
     *,
     distribution: str | None = None,
     requires_dist: Sequence[str] = (),
@@ -743,10 +744,18 @@ def plugin_candidate(
     ``distribution`` defaults to ``untaped-<name>``, the name the
     ``plugin-name`` convention expects; ``requires_dist`` stands for the
     distribution's ``Requires-Dist`` lines (a provider's owner requirement).
+    A 12.0 plugin class is the candidate ``install`` composes: its entry
+    point's, when it is installed, so an 11.x plugin's tests can compose a
+    plugin that already moved beside their own spec.
 
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.runtime.bootstrap.build_root_app(candidates=[...])``.
     """
+    if isinstance(spec, type):
+        from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
+        from untaped.sdk.testing.install import candidate_of  # noqa: PLC0415
+
+        return candidate_of(spec, None, discover_candidates())
     return PluginCandidate(
         distribution=distribution or f"untaped-{spec.name}",
         name=spec.name,
