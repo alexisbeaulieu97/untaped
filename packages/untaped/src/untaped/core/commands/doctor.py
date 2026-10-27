@@ -96,7 +96,6 @@ from untaped.sdk.words import (
 )
 
 if TYPE_CHECKING:
-    from untaped.sdk.plugin import SpelledCommand
     from untaped.sdk.projects import Project
     from untaped.sdk.storage._refs import Reference, RefHolder
     from untaped.sdk.storage.store import Layout, Store
@@ -654,21 +653,14 @@ def _prune_fix() -> list[str]:
     """
     from untaped.core.commands.setup_prune import Prune  # noqa: PLC0415 - setup imports doctor
 
-    return spelled_argv(Prune.spelled(), profile=fix_target())
+    return command_argv(Prune.spelled(), profile=fix_target())
 
 
 def _register_fix() -> list[str]:
     """``setup register``'s argv, spelled from its class; never automatic (a deliberate step)."""
     from untaped.core.commands.register import Register  # noqa: PLC0415 - setup imports doctor
 
-    return spelled_argv(Register.spelled(), profile=fix_target())
-
-
-def spelled_argv(spelled: SpelledCommand, *, profile: str) -> list[str]:
-    """The argv after ``untaped`` for a command named by its class, as this run spells it."""
-    from untaped.sdk._run import current_run  # noqa: PLC0415
-
-    return command_argv(current_run().composition.spell(spelled), profile=profile)
+    return command_argv(Register.spelled(), profile=fix_target())
 
 
 def _layout_text(

@@ -4,8 +4,8 @@ Install it as part of `untaped`: `uv tool install 'untaped[git]'` or `pip instal
 To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
 `untaped git` is where untaped reaches Git remotes with its own credentials.
-Plugins that know a Git host (GitHub, for one) supply credentials and a proxy
-for it; the repo store keeps one shared bare repository per remote, which
+Plugins that know a Git host (GitHub, for one) supply credentials for it, and
+HTTPS fetches go through `untaped.http.proxy` when set; the repo store keeps one shared bare repository per remote, which
 other plugins fetch into and add worktrees from. `untaped git` itself has no
 setup: it reports what the other plugins supply.
 

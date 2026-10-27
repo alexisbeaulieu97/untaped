@@ -462,6 +462,7 @@ def test_fresh_index_stamps_current_schema_version(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("version", [1, None])
+@pytest.mark.usefixtures("composed")  # the warning spells source refresh as the run names it
 def test_outdated_or_versionless_schema_is_rebuilt_as_empty_cache(
     tmp_path, capsys: pytest.CaptureFixture[str], version: int | None
 ) -> None:
@@ -616,6 +617,7 @@ def test_unopenable_index_raises_untaped_error(tmp_path) -> None:
         SqliteDependencyIndex(db_path).status("source:prod")
 
 
+@pytest.mark.usefixtures("composed")  # the error spells source refresh as the run names it
 def test_newer_schema_version_is_not_reported_as_outdated(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
     with closing(sqlite3.connect(db_path)) as db:
@@ -715,6 +717,7 @@ def test_an_index_this_version_only_adds_to_gains_the_new_tables_and_keeps_its_r
     assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
 
 
+@pytest.mark.usefixtures("composed")  # the error spells source refresh as the run names it
 def test_a_newer_index_that_changed_a_table_is_refused(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
     _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))

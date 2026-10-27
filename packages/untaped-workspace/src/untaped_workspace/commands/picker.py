@@ -21,6 +21,7 @@ from untaped.sdk import (
     UiContext,
     UntapedError,
     UsageError,
+    command_line,
     q,
 )
 from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore
@@ -206,6 +207,8 @@ def _pick(
     from untaped_workspace.infrastructure.pick_source import RepoPickSource  # noqa: PLC0415
 
     source = RepoPickSource(git=picker.git, exclude=exclude)
+    from untaped_workspace.commands.create import Add, Create  # noqa: PLC0415 - import cycle
+
     request = build_request(
         heading=heading,
         source=source,
@@ -216,7 +219,7 @@ def _pick(
         branch=branch or "",
         base=base or "",
         allow_empty=record is None,
-        command=f"untaped workspace {'create' if record is None else 'add'}",
+        command=command_line((Create if record is None else Add).spelled()),
     )
     result = ui.pick_many(request)
     args = [source.pick_arg(arg) for arg in repo_args(result)]

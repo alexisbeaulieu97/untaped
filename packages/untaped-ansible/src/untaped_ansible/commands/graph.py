@@ -51,6 +51,7 @@ from untaped_ansible.commands._graph import (
     require_repo,
     within,
 )
+from untaped_ansible.commands.source import Refresh
 from untaped_ansible.domain.containment import find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
 from untaped_ansible.domain.graph_roots import (
@@ -298,9 +299,7 @@ class Uses(_Reaching):
         }
         for selection in selections:
             if selection.key in involved or not involved:
-                self.ctx.diag.hint(
-                    run_hint(f"ansible source refresh {shlex.quote(selection.label)}")
-                )
+                self.ctx.diag.hint(run_hint(Refresh.spelled(shlex.quote(selection.label))))
 
 
 class ImpactGroup(Group):

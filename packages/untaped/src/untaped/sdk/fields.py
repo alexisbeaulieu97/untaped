@@ -1194,7 +1194,7 @@ class Confirm(FieldBlock):
         from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
 
         if self._dry_run:
-            self._preview(preview)
+            _print_preview(preview)
             return False
         if not needed or self._yes:
             return True
@@ -1206,28 +1206,31 @@ class Confirm(FieldBlock):
                 stack.enter_context(terminal.terminal())
             except UsageError:
                 raise NeedsYesError(question, command=self._command) from None
-            self._preview(preview)
+            _print_preview(preview)
             if not terminal.confirm(question):
                 raise OperationCancelledError
         return True
 
-    @staticmethod
-    def _preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
-        if preview is None:
-            return
-        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
 
-        diag = current_run().diag
-        for line in preview():
-            diag.info(line, unmuted=True)
+def _print_preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
+    """The preview's lines on stderr, unmuted: what the user decides on or would get."""
+    if preview is None:
+        return
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - only a preview pays
+
+    diag = current_run().diag
+    for line in preview():
+        diag.info(line, unmuted=True)
 
 
 class DryRun(FieldBlock):
     """This command writes without asking and can preview instead: adds ``--dry-run`` alone.
 
-    ``if self.dry_run: ...`` is true after ``--dry-run``. A command that asks
-    first takes :class:`Confirm`, which has its own ``--dry-run``; one command
-    takes one of the two.
+    ``if self.dry_run.go_ahead(preview=lines): write()`` prints the preview,
+    as :class:`Confirm` does, and writes nothing after ``--dry-run``; ``if
+    self.dry_run: ...`` is true after ``--dry-run``. A command that asks first
+    takes :class:`Confirm`, which has its own ``--dry-run``; one command takes
+    one of the two.
     """
 
     field_kind = "dry_run"
@@ -1240,6 +1243,13 @@ class DryRun(FieldBlock):
     def __bool__(self) -> bool:
         """``--dry-run`` was passed."""
         return self._dry_run
+
+    def go_ahead(self, preview: Callable[[], Iterable[str | Text]] | None = None) -> bool:
+        """``True``: write. After ``--dry-run``, ``False`` once the preview is on stderr."""
+        if not self._dry_run:
+            return True
+        _print_preview(preview)
+        return False
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> DryRun:
         """A copy for one invocation, from ``--dry-run``."""

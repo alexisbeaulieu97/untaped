@@ -23,6 +23,8 @@ from untaped.sdk._run import NoRunError, current_run
 if TYPE_CHECKING:
     from pydantic import BaseModel, ValidationError
 
+    from untaped.sdk.plugin import SpelledCommand
+
 
 class ExitCode(IntEnum):
     """The suite's process exit codes (one meaning each).
@@ -58,6 +60,12 @@ EXIT_CODE_PRECEDENCE: tuple[int, ...] = (
     ExitCode.PREDICATE,
     ExitCode.OK,
 )
+
+
+def _run_hint(command: SpelledCommand) -> str:
+    from untaped.sdk.words import run_hint  # noqa: PLC0415 - only a spelled hint pays
+
+    return run_hint(command)
 
 
 def combine_exit_codes(*codes: int) -> int:
@@ -206,7 +214,10 @@ class UntapedError(Exception):
     system: str = System.UNTAPED
     """Who is responsible: a :class:`System`, or a plugin's :class:`Service`."""
     hint: str | None = None
-    """A follow-up for the user, such as ``run `untaped …```, without a ``hint:`` prefix."""
+    """A follow-up for the user, such as ``run `untaped …```, without a ``hint:`` prefix.
+
+    ``hint=Set.spelled(key(...), "URL")`` names the command by its class: it
+    reads ``run `untaped config set …``` as this run spells it."""
     details: Mapping[str, object] = _NO_DETAILS
     """Machine-readable context: ``status``, ``url``, related ids."""
     fix_by: FixBy | None = None
@@ -218,7 +229,7 @@ class UntapedError(Exception):
         *args: object,
         category: ErrorCategory | str | None = None,
         system: str | Service | None = None,
-        hint: str | None = None,
+        hint: str | SpelledCommand | None = None,
         details: Mapping[str, object] | None = None,
         fix_by: FixBy | None = None,
     ) -> None:
@@ -228,7 +239,7 @@ class UntapedError(Exception):
         # Kept on the instance: a Service names its plugin now, inside the run.
         self.system = system.name() if isinstance(system, Service) else system or self.system
         if hint is not None:
-            self.hint = hint
+            self.hint = hint if isinstance(hint, str) else _run_hint(hint)
         if details:
             self.details = dict(details)
         if fix_by is not None:

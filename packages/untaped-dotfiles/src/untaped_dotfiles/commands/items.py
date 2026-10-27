@@ -10,6 +10,7 @@ from pydantic import Field
 from untaped.sdk import Output, Positional, Short, plural, run_hint
 from untaped_dotfiles.choices import DisableItems, EnableItems
 from untaped_dotfiles.commands._dotfiles import REPO, Chosen, DotfilesCommand, utc_now
+from untaped_dotfiles.commands.apply import Apply
 from untaped_dotfiles.models import item_id
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import Item, ItemOutcome
@@ -57,7 +58,7 @@ class Enable(Chosen):
         before = {choice.id for choice in svc.store.items()}
         rows = enable(targets, policy=self.policy, skip=self.skip)
         self.ctx.diag.success(f"enabled {plural(len(rows), 'item')}")
-        self.ctx.diag.hint(run_hint("dotfiles apply"))
+        self.ctx.diag.hint(run_hint(Apply.spelled()))
         return iter(
             [
                 ItemOutcome(

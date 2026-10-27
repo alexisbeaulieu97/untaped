@@ -2,7 +2,7 @@
 
 Both run from the store root with discovery stopped there, so a repository
 around the process's working directory is never read, and ask
-:class:`~untaped_git.hosts.GitHost` for the URL's credentials and proxy.
+:class:`~untaped_git.hosts.GitHost` for the URL's credentials; core gives its proxy.
 """
 
 from __future__ import annotations

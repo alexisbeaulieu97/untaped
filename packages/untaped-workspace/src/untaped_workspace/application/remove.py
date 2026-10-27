@@ -35,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, not_found, plural
+from untaped.sdk import Failure, UntapedError, command_line, not_found, plural
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.naming import repo_key, workspace_key
@@ -317,9 +317,11 @@ def refusal_hint(plan: RemovalPlan) -> str:
     if blocked_rows:
         parts.append(archive_hint(blocked_rows))
     if any(blocker.startswith("branch ") for repo in plan.blocked for blocker in repo.blockers):
+        from untaped_workspace.commands.create import Create  # noqa: PLC0415 - import cycle
+
         parts.append(
             "push each unpushed branch from a workspace on it "
-            "(`untaped workspace create NAME --repo REPO --branch BRANCH`), "
+            f"(`{command_line(Create.spelled('NAME', '--repo', 'REPO', '--branch', 'BRANCH'))}`), "
             "or pass --force to delete it"
         )
     return "; ".join(parts)

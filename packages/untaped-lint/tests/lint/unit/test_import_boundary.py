@@ -91,6 +91,10 @@ def test_bare_untaped_and_import_statements_are_violations(check: Check) -> None
     ]
 
 
+def test_core_s_api_is_allowed(check: Check) -> None:
+    assert check({"commands/hints.py": "from untaped.core.api import Set\n"}) == []
+
+
 def test_the_sdk_modules_and_own_modules_are_allowed(check: Check) -> None:
     source = (
         "from untaped.sdk import create_app\n"

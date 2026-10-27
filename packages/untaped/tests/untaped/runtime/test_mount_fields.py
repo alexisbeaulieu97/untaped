@@ -16,7 +16,9 @@ from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
     Cache,
     Command,
+    ConfigError,
     Confirm,
+    DryRun,
     File,
     Limit,
     Parallel,
@@ -27,6 +29,7 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk.testing import CliInvoker, CliResult, Install, ScriptedPromptBackend
+from untaped.sdk.words import command_argv
 
 #: A cache the plugin class holds: what Refresh's flags are about.
 MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
@@ -81,6 +84,27 @@ class Purge(Command):
         self.confirm.ensure_answerable(f"Purge {self.name}?")
         self.ctx.diag.info("scanned")
         return "purged" if self.confirm(f"Purge {self.name}?") else "planned"
+
+
+class Add(Command):
+    """Add a thing without asking; --dry-run previews it instead."""
+
+    name: Positional[str] = Field(description="The thing to add.")
+    dry_run: DryRun
+
+    def run(self) -> str:
+        return "added" if self.dry_run.go_ahead(lambda: [f"would add {self.name}"]) else "planned"
+
+
+class Advise(Command):
+    """Name the add command by its class, in a line and in an error's hint."""
+
+    fail: bool = Field(False, description="Fail with the hint instead.")
+
+    def run(self) -> str:
+        if self.fail:
+            raise ConfigError("nothing added", hint=Add.spelled("THING"))
+        return " ".join(command_argv(Add.spelled("x"), profile="p"))
 
 
 class Fetch(Command):
@@ -144,7 +168,7 @@ class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Purge, Fetch, Work, Spread, Page, Check)
+    commands = (Delete, Tidy, Sweep, Purge, Add, Advise, Fetch, Work, Spread, Page, Check)
     motd = MOTD
 
 
@@ -203,6 +227,20 @@ def test_an_unanswerable_question_refuses_before_the_work_it_follows() -> None:
     )
     assert (asked.exit_code, asked.stdout) == (0, "purged\n")
     assert "scanned" in asked.stderr
+
+
+def test_a_dry_run_prints_its_preview_even_quiet_and_writes_nothing() -> None:
+    added = _run("tool", "add", "x")
+    assert (added.stdout, "would add" in added.stderr) == ("added\n", False)
+    planned = _run("-q", "tool", "add", "x", "--dry-run")
+    assert (planned.stdout, planned.stderr) == ("planned\n", "would add x\n")
+
+
+def test_a_command_named_by_its_class_is_spelled_as_the_run_mounts_it() -> None:
+    assert _run("tool", "advise").stdout == "--profile p tool add x\n"
+    failed = _run("tool", "advise", "--fail")
+    assert failed.exit_code == 4
+    assert "hint: run `untaped tool add THING`" in failed.stderr
 
 
 def test_a_question_not_needed_goes_ahead_without_a_terminal() -> None:

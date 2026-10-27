@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, q
+from untaped.sdk import UntapedError, q, run_hint
 from untaped_dotfiles.errors import DotfilesError, ManifestError
 from untaped_dotfiles.manifest import FileEntry, Manifest, parse_manifest
 from untaped_dotfiles.models import (
@@ -140,7 +140,7 @@ class Inventory:
             raise DotfilesError(
                 f"repo {q(choice.repo)} is no longer subscribed",
                 category="not_found",
-                hint=f"run `untaped dotfiles disable {choice.name} --repo {choice.repo}`",
+                hint=_disable(choice.name, choice.repo),
             )
         manifest = self.manifest(repo)
         item = manifest.items.get(choice.name)
@@ -148,7 +148,7 @@ class Inventory:
             raise DotfilesError(
                 f"item {q(choice.name)} is no longer in the manifest of {q(repo.name)}",
                 category="not_found",
-                hint=f"run `untaped dotfiles disable {choice.name} --repo {repo.name}`",
+                hint=_disable(choice.name, repo.name),
             )
         tree = self.source_tree(repo)
         out: list[Placement] = []
@@ -203,3 +203,10 @@ class Inventory:
             fmt=fmt,
             orphan=True,
         )
+
+
+def _disable(name: str, repo: str) -> str:
+    """The hint that disables item ``name`` of ``repo``."""
+    from untaped_dotfiles.commands.items import Disable  # noqa: PLC0415 - import cycle
+
+    return run_hint(Disable.spelled(name, "--repo", repo))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from untaped.sdk import hint, not_found
 from untaped_recipe.application.resolution import find_library_recipe
@@ -17,6 +18,9 @@ from untaped_recipe.errors import (
     RecipeNotFoundError,
 )
 from untaped_recipe.infrastructure.pack_store import PackLibrary
+
+if TYPE_CHECKING:
+    from untaped_recipe.commands._recipe import RecipeCommand
 
 #: What every scaffolding command warns after ``--no-lock``.
 NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running"
@@ -41,7 +45,7 @@ def find_pack(library: PackLibrary, name: str) -> InstalledPack:
 
 
 def find_recipe(
-    library: PackLibrary, ref_text: str, *, verb: str
+    library: PackLibrary, ref_text: str, *, verb: Literal["get", "edit"]
 ) -> tuple[InstalledPack, str, RecipeEntry]:
     """A library recipe; a miss that names a pack or hook instead says which command reads it."""
     try:
@@ -49,7 +53,18 @@ def find_recipe(
     except RecipeNotFoundError as exc:
         if (noun := _other_noun(library, ref_text)) is None:
             raise
-        raise RecipeNotFoundError(f"{exc}\n{hint(f'recipe {noun} {verb} {ref_text}')}") from None
+        raise RecipeNotFoundError(
+            f"{exc}\n{hint(_instead(noun, verb).spelled(ref_text))}"
+        ) from None
+
+
+def _instead(noun: str, verb: Literal["get", "edit"]) -> type[RecipeCommand]:
+    """The ``packs`` or ``hooks`` command doing ``verb`` (``get``, ``edit``) for a missed recipe."""
+    from untaped_recipe.commands import hooks, packs  # noqa: PLC0415 - they import this module
+
+    if noun == "packs":
+        return packs.Get if verb == "get" else packs.Edit
+    return hooks.Get if verb == "get" else hooks.Edit
 
 
 def _other_noun(library: PackLibrary, ref_text: str) -> str | None:

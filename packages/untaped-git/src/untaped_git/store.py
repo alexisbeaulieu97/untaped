@@ -54,6 +54,7 @@ from untaped.sdk import (
     UntapedError,
     attribution,
     experimental,
+    http_of,
     run_git,
 )
 from untaped_git import store_release, worktree_config
@@ -75,6 +76,7 @@ from untaped_git.repo_files import (
     worktree_entries,
 )
 from untaped_git.repo_lock import repo_lock
+from untaped_git.settings import GitSettings
 from untaped_git.store_release import RELEASE_MARK
 from untaped_git.url import https_origin, url_host
 from untaped_git.version import below_floor, floor_text, git_version, version_text
@@ -1237,16 +1239,20 @@ def parse_symref(text: str) -> str | None:
 
 
 def host_config(url: str, auth: HostAuth | None) -> tuple[dict[str, str], dict[str, str]]:
-    """What ``auth`` gives a command reaching ``url``: ``run_git``'s ``auth_config`` and ``config``.
+    """What a command reaching ``url`` gets: ``run_git``'s ``auth_config`` and ``config``.
 
-    The credential and the proxy, both scoped to ``url``'s https origin; an
-    ssh URL gets neither (its credentials are the user's own).
+    ``auth``'s credential and untaped's proxy (``untaped.http.proxy``), both
+    scoped to ``url``'s https origin; an ssh URL gets neither (its
+    credentials are the user's own).
     """
     origin = https_origin(url)
-    if auth is None or origin is None:
+    if origin is None:
         return {}, {}
-    secret = {} if auth.credential is None else _credential_config(origin, auth.credential)
-    proxy = {f"http.{origin}/.proxy": auth.proxy} if auth.proxy else {}
+    credential = None if auth is None else auth.credential
+    secret = {} if credential is None else _credential_config(origin, credential)
+    verified = credential is None or credential.verify_tls is not False
+    found = http_of(GitSettings).proxy_for(url, verified=verified)
+    proxy = {f"http.{origin}/.proxy": found} if found else {}
     return secret, proxy
 
 

@@ -1,4 +1,4 @@
-"""GitHub's ``GitHost``: the credentials and proxy the repo store gets for the GitHub host.
+"""GitHub's ``GitHost``: the credentials the repo store gets for the GitHub host.
 
 Asked the way git asks it: ``gather`` on a ``GitHost`` method under a run
 composing git and github.
@@ -23,8 +23,6 @@ from untaped_github.errors import GitCorpusError
 from untaped_github.plugin import Github
 from untaped_github.settings import GithubSettings
 
-_PROXY = "UNTAPED_UNTAPED__HTTP__PROXY"
-
 
 class OtherForge(GitHost, Provider):
     """A second plugin claiming ``github.com``, as an unranked overlap would."""
@@ -34,9 +32,6 @@ class OtherForge(GitHost, Provider):
 
     def credential(self, url: str) -> Credential | None:
         return Credential(username="other", password=SecretStr("other-token"))
-
-    def proxy(self, url: str) -> str | None:
-        return None
 
 
 @pytest.fixture(autouse=True)
@@ -95,28 +90,14 @@ def test_no_token_means_no_credential() -> None:
     assert ask(GitHost.credential, "https://github.com/acme/api.git") is None
 
 
-def test_the_http_proxy_covers_git_on_the_github_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_PROXY, "http://proxy.example:3128")
-
-    assert ask(GitHost.proxy, "https://github.com/acme/api.git") == "http://proxy.example:3128"
-    assert ask(GitHost.proxy, "https://gitlab.example/acme/api.git") is None
-
-
-def test_no_http_proxy_leaves_git_to_its_own_config() -> None:
-    assert ask(GitHost.proxy, "https://github.com/acme/api.git") is None
-
-
 def test_the_store_asks_github_for_its_host(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_PROXY, "http://proxy.example:3128")
     monkeypatch.setenv("GH_TOKEN", "ghp_secret")
     with installed().running():
         auth = resolve_host("https://github.com/acme/api.git")
         assert resolve_host("https://gitlab.example/acme/api.git") is None
 
     assert auth == HostAuth(
-        "github",
-        Credential(username="x-access-token", password=SecretStr("ghp_secret")),
-        "http://proxy.example:3128",
+        "github", Credential(username="x-access-token", password=SecretStr("ghp_secret"))
     )
 
 
@@ -138,7 +119,7 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
     stderr = "\n".join(ran.stderr)
     assert ran.exit == 4, stderr
     assert "error: github, other all supply credentials for github.com" in stderr
-    assert "hint: untaped plugin rank git.git_host credential github other" in stderr
+    assert "hint: run `untaped plugin rank git.git_host credential github other`" in stderr
     with both.running():
         with pytest.raises(ConfigError) as caught:
             ls_remote("https://github.com/acme/api.git")

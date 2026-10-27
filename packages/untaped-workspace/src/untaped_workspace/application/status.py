@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import NO_PROGRESS, Failure, ProgressHandle, UntapedError, bounded_map
+from untaped.sdk import (
+    NO_PROGRESS,
+    Failure,
+    ProgressHandle,
+    UntapedError,
+    bounded_map,
+    command_line,
+)
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
 from untaped_workspace.records import RepoStatus
@@ -57,7 +64,7 @@ class WorkspaceStatus:
                     update={"detail": f"fetch failed: {outcome.message}", "error": outcome}
                 )
             elif isinstance(outcome, str) and not row.detail:
-                resume = f"`untaped workspace status --fetch {record.name}` resumes it"
+                resume = resumes(record.name)
                 row = row.model_copy(
                     update={"detail": f"history backfill stopped: {outcome}; {resume}"}
                 )
@@ -120,3 +127,10 @@ class WorkspaceStatus:
             unpushed=status.unpushed,
             blockers=archive_blockers(status),
         )
+
+
+def resumes(name: str) -> str:
+    """What resumes workspace ``name``'s stopped history backfill."""
+    from untaped_workspace.commands.status import Status  # noqa: PLC0415 - import cycle
+
+    return f"`{command_line(Status.spelled('--fetch', name))}` resumes it"

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from untaped.core.api import Login
+from untaped.sdk import command_line
 from untaped_git.url import https_origin, store_key, url_host, validate_git_url
 
 
@@ -69,3 +71,10 @@ def test_hosts_and_origins() -> None:
     assert url_host("/srv/app.git") is None
     assert https_origin("https://git.example:8443/a/b.git") == "https://git.example:8443"
     assert https_origin("git@github.com:acme/app.git") is None
+
+
+def test_the_credentials_refusal_names_the_login_command_as_core_spells_it() -> None:
+    # A validator runs outside any run, so it names the command as a string.
+    with pytest.raises(ValueError, match="credentials") as excinfo:
+        validate_git_url("https://token@github.com/acme/app.git")
+    assert f"`{command_line(Login.spelled())}`" in str(excinfo.value)

@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UsageError, git_toplevel, not_found, q
+from untaped.sdk import UsageError, git_toplevel, not_found, q, run_hint
 from untaped_dotfiles.errors import DotfilesError, GitError, RepoNotFoundError
 from untaped_dotfiles.manifest import DEFAULT_MANIFEST
 from untaped_dotfiles.models import RepoRecord
@@ -99,10 +99,13 @@ class SubscribeRepo:
     def _clone(self, name: str, url: str, *, manifest: str | None, ref: str | None) -> RepoRecord:
         dest = self._repos_dir / name
         if dest.exists():
+            from untaped_dotfiles.commands.repos import Subscribe  # noqa: PLC0415 - import cycle
+
+            again = run_hint(Subscribe.spelled(dest, "--name", name))
             raise DotfilesError(
                 f"{dest} already exists",
                 category="conflict",
-                hint=f"move it away, or run `untaped dotfiles subscribe {dest} --name {name}`",
+                hint=f"move it away, or {again}",
             )
         try:
             branch = self._git.clone(url, dest, ref=ref)
@@ -134,10 +137,12 @@ class UnsubscribeRepo:
             )
         enabled = sorted(c.name for c in self._store.items() if c.repo == name)
         if enabled:
+            from untaped_dotfiles.commands.items import Disable  # noqa: PLC0415 - import cycle
+
             raise DotfilesError(
                 f"repo {q(name)} still has enabled items: {', '.join(enabled)}",
                 category="conflict",
-                hint=f"run `untaped dotfiles disable --all --repo {name}` first",
+                hint=f"{run_hint(Disable.spelled('--all', '--repo', name))} first",
             )
         return record
 

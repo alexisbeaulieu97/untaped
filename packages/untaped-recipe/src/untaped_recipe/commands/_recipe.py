@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, ErrorCategory, UntapedError, read_structured_file
+from untaped.sdk import Command, ErrorCategory, UntapedError, command_line, read_structured_file
 from untaped_recipe.domain.hook_project import HookKind
 from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.errors import RecipeError
@@ -19,12 +19,6 @@ from untaped_recipe.settings import LIBRARY, RecipeSettings
 
 #: How a recipe ref reads in help.
 RECIPE_REF = "Recipe name, PACK/RECIPE reference, or path to a recipe file."
-
-#: What ``untaped recipe packs init`` and friends print when the library is empty.
-EMPTY_LIBRARY_HINT = (
-    "no packs installed; scaffold one with `untaped recipe packs init NAME` "
-    "or install one with `untaped recipe packs add PATH|GIT_URL`"
-)
 
 
 class Hooks(BaseModel):
@@ -154,7 +148,12 @@ class RecipeCommand(Command[RecipeSettings]):
 
     def empty_hint(self) -> None:
         """Say how to get a first pack."""
-        self.ctx.diag.info(EMPTY_LIBRARY_HINT)
+        from untaped_recipe.commands.packs import Add, Init  # noqa: PLC0415 - import cycle
+
+        self.ctx.diag.info(
+            f"no packs installed; scaffold one with `{command_line(Init.spelled('NAME'))}` "
+            f"or install one with `{command_line(Add.spelled('PATH|GIT_URL'))}`"
+        )
 
     def backups(self) -> BackupStore:
         return BackupStore(self.root / "backups")

@@ -28,4 +28,15 @@ def test_source_alias_set_warns_that_saved_sources_need_refresh(
     result = run("source-alias", "set", "common", "acme/common")
 
     assert result.exit_code == 0, result.output
-    assert "untaped ansible source refresh" in result.stderr
+    assert "run `untaped ansible source refresh prod`" in result.stderr
+
+
+def test_the_refresh_hint_quotes_a_source_name_a_shell_would_split(
+    tmp_path: Path, monkeypatch
+) -> None:
+    use_config(tmp_path, monkeypatch, {"sources": [{"name": "my prod", "orgs": ["acme"]}]})
+
+    result = run("source-alias", "set", "common", "acme/common")
+
+    assert result.exit_code == 0, result.output
+    assert "run `untaped ansible source refresh 'my prod'`" in result.stderr

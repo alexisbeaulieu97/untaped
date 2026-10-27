@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import NO_PROGRESS, Failure, UntapedError, UsageError, bounded_map, q
 from untaped_workspace.application.locate import active_workspace, workspace_root
+from untaped_workspace.application.status import resumes
 from untaped_workspace.domain.models import (
     Checkout,
     RepoArg,
@@ -120,9 +121,9 @@ class ProvisionRepos:
         ``on_done`` and ``progress`` are as for :meth:`create`.
         """
         if not repos:
-            raise UsageError(
-                "no repos given", hint=f"run `untaped workspace add {record.name} --repo REPO`"
-            )
+            from untaped_workspace.commands.create import Add  # noqa: PLC0415 - import cycle
+
+            raise UsageError("no repos given", hint=Add.spelled(record.name, "--repo", "REPO"))
         resolved = self._resolve(repos, progress)
         with self._store.locked(record.name):
             current = active_workspace(self._store, record.name)
@@ -170,8 +171,7 @@ class ProvisionRepos:
                 if result.backfill_error is not None and self._warn is not None:
                     self._warn(
                         f"history backfill of {job.resolved.name} stopped: "
-                        f"{result.backfill_error}; "
-                        f"`untaped workspace status --fetch {record.name}` resumes it"
+                        f"{result.backfill_error}; {resumes(record.name)}"
                     )
                 specs[job.index] = RepoSpec(
                     **dict(job.resolved),

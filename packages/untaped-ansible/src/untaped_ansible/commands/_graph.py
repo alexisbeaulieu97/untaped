@@ -24,10 +24,12 @@ from untaped.sdk import (
     Parallel,
     Refresh,
     UsageError,
+    command_line,
     key,
     not_found,
     plural,
     q,
+    run_hint,
 )
 from untaped_ansible.application.graph import BuildGraph, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
@@ -651,9 +653,11 @@ def _graph_for_target(
     if local is not None and request.source_key is None and not github_token_found():
         warnings = []
         if any(edge.dependency_repo is not None for edge in local.edges):
+            from untaped.core.api import Login  # noqa: PLC0415 - core's commands load only here
+
             warnings.append(
                 "transitive dependencies were not expanded: pass --source NAME to use "
-                "cached source data, or run `untaped auth login github` for live GitHub reads"
+                f"cached source data, or {run_hint(Login.spelled('github'))} for live GitHub reads"
             )
         return build(NullDependencyIndex()), warnings, _Reads(source=False, live=False)
     live_index = live_reads.index()
@@ -677,8 +681,10 @@ def _refresh_hint(source_state: GraphSource) -> str | None:
     if not source_state.selections:
         return None
     if source_state.saved:
+        from untaped_ansible.commands.source import Refresh  # noqa: PLC0415 - import cycle
+
         commands = " and ".join(
-            f"`untaped ansible source refresh {selection.label}`"
+            f"`{command_line(Refresh.spelled(shlex.quote(selection.label)))}`"
             for selection in source_state.selections
         )
         return f"Run {commands} to update it."

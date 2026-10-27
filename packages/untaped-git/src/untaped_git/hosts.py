@@ -6,9 +6,10 @@ provider for a URL: the plugins whose ``home()`` is the URL's host are the
 candidates; none means plain git (the user's own git config answers); several
 are decided by their rank for ``credential`` (``git.extensions.git_host``),
 whatever the URL, and an unranked tie is a configuration error (exit 4) naming
-them and the rank command. Only the chosen provider is asked for credentials
-and proxy. Credentials are asked only for ``https://`` URLs, so an ssh
-remote never runs anyone's token command.
+them and the rank command. Only the chosen provider is asked for credentials,
+and only for ``https://`` URLs, so an ssh remote never runs anyone's token
+command. The proxy is untaped's (``untaped.http.proxy``), which the repo store
+asks core for itself, for every host.
 
 Core never imports this module: the repo store asks it itself, so consumers
 never see a credential.
@@ -47,11 +48,11 @@ class Credential(BaseModel):
 
 @experimental
 class GitHost(Contract):
-    """Git hosts untaped has credentials and a proxy for.
+    """Git hosts untaped has credentials for.
 
-    A provider knows one Git host: its name, and credentials and proxy for
-    its URLs. untaped asks ``credential`` and ``proxy`` only of the provider
-    it chose for the URL's host by ``home()``.
+    A provider knows one Git host: its name, and credentials for its URLs.
+    untaped asks ``credential`` only of the provider it chose for the URL's
+    host by ``home()``.
     """
 
     @abstractmethod
@@ -62,18 +63,13 @@ class GitHost(Contract):
     def credential(self, url: str) -> Credential | None:
         """Credentials for the full ``url`` (per-organisation tokens), or ``None``."""
 
-    def proxy(self, url: str) -> str | None:
-        """The proxy URL for ``url``, or ``None`` for the user's own git config."""
-        raise NotImplementedError
-
 
 @dataclass(frozen=True, slots=True)
 class HostAuth:
-    """The provider chosen for a URL, with its credential (https only) and proxy."""
+    """The provider chosen for a URL, with its credential (https only)."""
 
     plugin: str
     credential: Credential | None
-    proxy: str | None
 
 
 def resolve_host(url: str) -> HostAuth | None:
@@ -94,8 +90,7 @@ def resolve_host(url: str) -> HostAuth | None:
     chosen = _choose(host, candidates)
     https = url.startswith("https://")
     credentials = _ask(GitHost.credential, url, among=[chosen]) if https else None
-    proxies = _ask(GitHost.proxy, url, among=[chosen])
-    return HostAuth(chosen, _answer(credentials, chosen), _answer(proxies, chosen))
+    return HostAuth(chosen, _answer(credentials, chosen))
 
 
 def _ask(method: Any, *args: str, among: list[str] | None = None) -> Answers[Any] | None:
@@ -114,11 +109,13 @@ def _choose(host: str, candidates: list[str]) -> str:
     for plugin in credential_rank():
         if plugin in candidates:
             return plugin
+    from untaped.core.api import Rank  # noqa: PLC0415 - core's commands load only here
+
     named = ", ".join(candidates)
     raise ConfigError(
         f"{named} all supply credentials for {host}; rank them to choose one",
         system="git",
-        hint=f"untaped plugin rank git.git_host credential {' '.join(candidates)}",
+        hint=Rank.spelled("git.git_host", "credential", *candidates),
         details={"contract": "git.git_host", "method": "credential", "providers": candidates},
     )
 

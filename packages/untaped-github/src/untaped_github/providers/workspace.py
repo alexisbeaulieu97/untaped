@@ -13,7 +13,7 @@ or names another repo than ``full_name``, is refused.
 
 from __future__ import annotations
 
-from untaped.sdk import UsageError, key
+from untaped.sdk import UsageError, key, run_hint
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_git.api import store_key
 from untaped_github.application.inventory import (
@@ -86,7 +86,7 @@ def inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
         raise GithubError(
             "github.inventory.teams entries must be ORG/SLUG unless exactly one org is set",
             category="config",
-            hint="write each team as ORG/SLUG, or run `untaped config set github.default_org ORG`",
+            hint=f"write each team as ORG/SLUG, or {_set_default_org()}",
         ) from exc
     if not orgs and not teams and settings.default_org:
         orgs = (settings.default_org,)
@@ -95,7 +95,18 @@ def inventory_scope(settings: GithubSettings) -> RepositoryInventoryScope:
             "the repository inventory has no scope: set github.inventory.orgs, "
             "github.inventory.teams or github.default_org",
             category="config",
-            hint="run `untaped config set github.inventory.orgs '[\"ORG\"]'` "
-            "or `untaped config set github.default_org ORG`",
+            hint=f"{_set_orgs()} or {_set_default_org()}",
         )
     return RepositoryInventoryScope(orgs=orgs, teams=teams)
+
+
+def _set_default_org() -> str:
+    from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
+
+    return run_hint(Set.spelled(key(GithubSettings).default_org, "ORG"))
+
+
+def _set_orgs() -> str:
+    from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
+
+    return run_hint(Set.spelled(key(GithubSettings).inventory.orgs, "'[\"ORG\"]'"))

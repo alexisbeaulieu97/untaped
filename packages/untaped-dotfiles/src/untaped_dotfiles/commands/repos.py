@@ -8,6 +8,7 @@ from pydantic import Field
 
 from untaped.sdk import Confirm, Output, Positional, plural, q, run_hint
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, utc_now
+from untaped_dotfiles.commands.items import Enable
 from untaped_dotfiles.records import Item, Repo, RepoOutcome
 from untaped_dotfiles.subscriptions import SubscribeRepo, UnsubscribeRepo
 
@@ -45,7 +46,7 @@ class Subscribe(DotfilesCommand):
         rows = svc.catalog.rows(record.name)
         self.output.empty("No items in the manifest.")
         self.ctx.diag.success(f"subscribed {q(record.name)} ({plural(len(rows), 'item')})")
-        self.ctx.diag.hint(run_hint("dotfiles enable ITEMS"))
+        self.ctx.diag.hint(run_hint(Enable.spelled("ITEMS")))
         return iter(rows)
 
 

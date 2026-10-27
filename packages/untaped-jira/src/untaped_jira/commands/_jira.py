@@ -108,11 +108,7 @@ class SendsDirectly(JiraWrite):
 
     def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
         del replaces
-        if not self.dry_run:
-            return True
-        for line in preview():
-            self.ctx.diag.info(line, unmuted=True)
-        return False
+        return self.dry_run.go_ahead(preview)
 
 
 def request_lines(requests: Sequence[PreviewRequest]) -> list[str]:

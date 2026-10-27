@@ -23,6 +23,7 @@ from untaped.sdk import (
     ProgressHandle,
     Served,
     UntapedError,
+    command_line,
     most_severe,
     plural,
 )
@@ -381,9 +382,11 @@ def _warn_skipped_files(result: RefreshResult, warn: Callable[[str], None]) -> N
         else:
             warn(format_skipped_dependency_file(skipped))
     if analysis:
+        from untaped_ansible.commands.graph import Uses  # noqa: PLC0415 - import cycle
+
         warn(
             f"could not fully read {plural(analysis, 'file')} for variables; "
-            "'untaped ansible impact uses ROLE NAME' names those in the role's dependents"
+            f"`{command_line(Uses.spelled('ROLE', 'NAME'))}` names those in the role's dependents"
         )
 
 

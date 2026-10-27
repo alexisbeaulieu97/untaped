@@ -84,8 +84,10 @@ class Init(RecipeCommand):
     def run(self) -> str:
         with recipe_errors():
             if "/" not in self.ref:
+                from untaped_recipe.commands import packs  # noqa: PLC0415 - import cycle
+
                 raise ValueError(
-                    f"recipe refs must use <pack>/<recipe>\n{hint(f'recipe packs init {self.ref}')}"
+                    f"recipe refs must use <pack>/<recipe>\n{hint(packs.Init.spelled(self.ref))}"
                 )
             pack_dir, name = pack_child(self.library(), self.ref)
             path = pack_scaffold.scaffold_recipe(pack_dir, name, lock=self.lock)

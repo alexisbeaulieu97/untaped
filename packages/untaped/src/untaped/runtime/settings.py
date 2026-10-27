@@ -94,7 +94,7 @@ class HttpSettings(BaseModel):
     proxy: str | None = Field(
         default=None,
         description=(
-            "Proxy URL for HTTP clients, and for Git fetches from the GitHub host. "
+            "Proxy URL for HTTP clients, and for Git fetches over HTTPS. "
             "When unset, standard proxy variables (and, for Git, your Git config) "
             "apply."
         ),
