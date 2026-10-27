@@ -6073,6 +6073,7 @@ sdk untaped.sdk.DryRun.field_kind class
 sdk untaped.sdk.DryRun.options class
 sdk untaped.sdk.DryRun.panel class
 sdk untaped.sdk.DryRunOption
+sdk untaped.sdk.Duration
 sdk untaped.sdk.ErrorCategory.AUTH = auth
 sdk untaped.sdk.ErrorCategory.CONFIG = config
 sdk untaped.sdk.ErrorCategory.CONFLICT = conflict
@@ -6555,6 +6556,7 @@ sdk untaped.sdk.NumberInput.view(focused=) default=false  [experimental]
 sdk untaped.sdk.NumberInput.view(frame)  [experimental]
 sdk untaped.sdk.NumberInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.NumberInput.with_error(text)  [experimental]
+sdk untaped.sdk.ObjectName
 sdk untaped.sdk.OnlineCheck(*, probe) callback(probe, 0)
 sdk untaped.sdk.OnlineCheck(title=) default=None
 sdk untaped.sdk.OnlineCheck.binding

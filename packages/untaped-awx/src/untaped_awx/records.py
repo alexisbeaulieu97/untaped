@@ -23,11 +23,11 @@ rules read, in ``domain/lint/resources.py``).
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from pydantic import ConfigDict, Field, JsonValue
 
-from untaped.sdk import OutcomeRecord, Record, UtcTimestamp
+from untaped.sdk import Duration, ObjectName, OutcomeRecord, Record, UtcTimestamp
 from untaped_awx.domain.suites.temporary_set import TemporaryCopyOutcome
 
 ForeignKey = int | str | None
@@ -76,6 +76,7 @@ class Project(AwxResource, kind="awx.project"):
     organization: ForeignKey = None
     scm_url: str | None = None
     scm_branch: str | None = None
+    scm_revision: Annotated[str | None, ObjectName] = None
     allow_override: bool | None = Field(
         default=None,
         description="Whether a job template may run another branch (its own `scm_branch`).",
@@ -169,6 +170,8 @@ class JobRecord(AwxRecord, kind="awx.job"):
 
     name: str | None = None
     status: str | None = None
+    elapsed: Annotated[float | None, Duration] = None
+    scm_revision: Annotated[str | None, ObjectName] = None
 
 
 class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
@@ -284,12 +287,12 @@ class ActionOutcome(OutcomeRecord):
     status: str | None = None
     started_at: UtcTimestamp | None = None
     finished_at: UtcTimestamp | None = None
-    elapsed: float | None = None
+    elapsed: Annotated[float | None, Duration] = None
     job_failed: bool | None = Field(
         default=None, alias="failed", description="The execution's own `failed`, as AWX reports it."
     )
     scm_branch: str | None = None
-    scm_revision: str | None = None
+    scm_revision: Annotated[str | None, ObjectName] = None
 
 
 class LaunchOutcome(ActionOutcome, kind="awx.launch_outcome"):

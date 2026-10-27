@@ -1,4 +1,5 @@
-"""``Bytes``, ``Age`` and ``Spread``: a table's cells in words, other formats raw."""
+"""``Bytes``, ``Age``, ``Duration``, ``ObjectName`` and ``Spread``: a table's cells in words,
+other formats raw."""
 
 from __future__ import annotations
 
@@ -9,20 +10,41 @@ from typing import Annotated, ClassVar, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from untaped.sdk import Age, Bytes, Command, Output, Plugin, Record, Spread, now
+from untaped.sdk import (
+    Age,
+    Bytes,
+    Command,
+    Duration,
+    ObjectName,
+    Output,
+    Plugin,
+    Record,
+    Spread,
+    now,
+)
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
 
 
+#: A full git object name.
+FULL = "0123456789abcdef0123456789abcdef01234567"
+
+
 class Stored(Record):
     """One stored copy."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "size", "fetched", "hits")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "name", "size", "fetched", "took", "commit", "wait_s", "sha", "hits",
+    )  # fmt: skip
 
     name: str
     size: Annotated[int, Bytes]
     fetched: Annotated[datetime, Age]
+    took: Annotated[float, Duration] = 102.5
+    commit: Annotated[str, ObjectName] = FULL
+    wait_s: float = 102.5  # no mark: shown as it is, whatever its name
+    sha: str = FULL
     hits: Annotated[dict[str, int], Spread]
 
 
@@ -88,6 +110,17 @@ def test_a_table_shows_sizes_and_ages_in_words(install: Installer, clock: Manual
     assert "3 h ago" in ran.stdout
 
 
+def test_a_table_shows_marked_run_times_and_object_names_short(
+    install: Installer, clock: ManualClock
+) -> None:
+    del clock
+    ran = install(Keeper).cli("keeper copies -c name,took,commit,wait_s,sha")
+    assert ran.exit == 0, ran.stderr
+    assert "1m42s" in ran.stdout and "102.5" in ran.stdout  # took marked, wait_s not
+    assert ran.stdout.count(FULL) == 1  # sha whole, commit cut
+    assert f"{FULL[:10]} " in ran.stdout
+
+
 def test_a_spread_field_is_a_column_per_key(install: Installer, clock: ManualClock) -> None:
     del clock
     header = _header(install(Keeper).cli("keeper copies").stdout)
@@ -126,6 +159,7 @@ def test_a_key_the_command_names_but_no_row_has_is_an_empty_column(
 def test_json_keeps_the_raw_values(install: Installer, clock: ManualClock) -> None:
     [row] = json.loads(install(Keeper).cli("keeper copies -f json").stdout)
     assert row["size"] == 1536
+    assert (row["took"], row["commit"]) == (102.5, FULL)
     assert row["hits"] == {"grep:a": 2, "has-file:x": 1}
     assert datetime.fromisoformat(row["fetched"]) == clock.now() - timedelta(hours=3)
 

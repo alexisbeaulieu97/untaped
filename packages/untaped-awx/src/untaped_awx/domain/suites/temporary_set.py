@@ -26,11 +26,11 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import Field
 
-from untaped.sdk import ConfigError, OutcomeRecord, UtcTimestamp, q
+from untaped.sdk import ConfigError, ObjectName, OutcomeRecord, UtcTimestamp, q
 from untaped_awx.domain.envelope import Resource
 from untaped_awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped_awx.domain.spec import ResourceSpec
@@ -429,7 +429,7 @@ class TemporaryCopyOutcome(OutcomeRecord):
     organization: str | None = None
     run_id: str
     ref: str
-    sha: str
+    sha: Annotated[str, ObjectName]
     created_at: UtcTimestamp
     path: str | None = None
     prompts: list[str] = Field(default_factory=list)
