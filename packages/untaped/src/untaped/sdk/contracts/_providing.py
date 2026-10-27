@@ -39,7 +39,10 @@ def providing(
     :class:`ConfigError` before anything is composed, so a composed plugin
     can never shadow an installed one; a key the composition quarantines (one
     taken by core: ``untaped``, a root command, a config key) raises
-    :class:`ConfigError` too, once the composition is restored.
+    :class:`ConfigError` too, once the composition is restored. The plugin
+    lives in a package of its own (``untaped_providing_<key>``), so it never
+    takes over the package, and the kinds, of the plugin defining its classes.
+    A class whose contract no composed plugin offers is not asked.
     Composing is refused inside a contract call, as every composition is.
     """
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
@@ -57,7 +60,11 @@ def providing(
             raise ConfigError(f"{key!r} is the name of an installed plugin; pick another name")
     built = [
         PluginCandidate(
-            distribution=f"untaped-{key}", name=key, target=providers_plugin(key, classes)
+            distribution=f"untaped-{key}",
+            name=key,
+            target=providers_plugin(
+                key, classes, module=f"untaped_providing_{key.replace('-', '_')}"
+            ),
         )
         for key, classes in offered.items()
     ]
@@ -70,12 +77,15 @@ def providing(
         yield result
 
 
-def providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
+def providers_plugin(
+    name: str, classes: Sequence[type], *, module: str | None = None
+) -> type[Plugin]:
     """A plugin named ``name`` whose ``fills`` are the provider ``classes``.
 
-    Its settings are the classes' ``Provider[S]`` (one model for all of them),
-    else an empty model. A class that is no provider of a contract, two
-    settings models, or no class at all raise :class:`TypeError`.
+    It lives in ``module`` (by default the first class's, as a test's
+    providers do). Its settings are the classes' ``Provider[S]`` (one model
+    for all of them), else an empty model. A class that is no provider of a
+    contract, two settings models, or no class at all raise :class:`TypeError`.
     """
     from pydantic import ConfigDict, create_model  # noqa: PLC0415
 
@@ -113,7 +123,7 @@ def providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
         (Plugin,),
         {
             "__doc__": f"The providers {name}.",
-            "__module__": classes[0].__module__,
+            "__module__": module or classes[0].__module__,
             "settings": model,
             "fills": tuple(classes),
         },

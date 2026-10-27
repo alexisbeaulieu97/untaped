@@ -211,12 +211,9 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
 
 def _stability(info: ContractInfo, name: str) -> Literal["stable", "experimental", "deprecated"]:
     """The method's own mark, else its contract's."""
-    from untaped.sdk.marks import Deprecated, Experimental, function_mark  # noqa: PLC0415
+    from untaped.sdk.marks import function_mark, stability_name  # noqa: PLC0415
 
-    mark = function_mark(info.methods[name].function) or function_mark(info.cls)
-    if isinstance(mark, Deprecated):
-        return "deprecated"
-    return "experimental" if isinstance(mark, Experimental) else "stable"
+    return stability_name(function_mark(info.methods[name].function) or function_mark(info.cls))
 
 
 def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:
