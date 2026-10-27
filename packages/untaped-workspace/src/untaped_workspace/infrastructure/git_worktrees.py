@@ -78,14 +78,16 @@ _EXISTS_HINT = "move the existing directory aside, or use another branch name"
 
 
 class LocalGitWorktrees:
-    """:class:`GitWorktrees` backed by the repo store (``git.store_dir``)."""
+    """:class:`GitWorktrees` backed by the repo store (``git.store_dir``).
 
-    def __init__(
-        self, *, git: str = "git", timeout: float = 60.0, profile: str | None = None
-    ) -> None:
+    ``plugin`` is workspace's own plugin as the run names it
+    (``self.ctx.plugin``): the store keeps each plugin's refs apart.
+    """
+
+    def __init__(self, *, plugin: object, git: str = "git", timeout: float = 60.0) -> None:
+        self._plugin = plugin
         self._git = git
         self._timeout = timeout
-        self._profile = profile
 
     # -- public port -------------------------------------------------------
 
@@ -111,7 +113,7 @@ class LocalGitWorktrees:
         else:
             checkout = self._add_writable(store, target, branch, start, refs)
             self._set_upstream(store, branch)
-        store.write_worktree_config(target, profile=self._profile)
+        store.write_worktree_config(target)
         failure = self._backfill(store, delta, history)
         return checkout.model_copy(update={"backfill_error": failure})
 
@@ -153,7 +155,7 @@ class LocalGitWorktrees:
         delta = store.fetch(branches=["*"], tags=["*"], prune=True, progress=progress)
         history = self._history(store)
         if dest.is_dir():
-            store.write_worktree_config(dest.absolute(), profile=self._profile)
+            store.write_worktree_config(dest.absolute())
         return self._backfill(store, delta, history, progress=progress)
 
     def configure(self, url: str, dest: Path) -> None:
@@ -163,7 +165,7 @@ class LocalGitWorktrees:
         """
         store = self._store(url)
         if store.exists() and dest.is_dir():
-            store.write_worktree_config(dest.absolute(), profile=self._profile)
+            store.write_worktree_config(dest.absolute())
 
     def in_store(self, url: str) -> bool:
         """Whether the repo store holds ``url``'s repo."""
@@ -182,10 +184,9 @@ class LocalGitWorktrees:
         left out: picking it would fill another store repo.
         """
         from untaped_git.api import RepoStore, store_key  # noqa: PLC0415
-        from untaped_workspace import SPEC  # noqa: PLC0415
 
         found: list[StoredRepo] = []
-        for store in RepoStore.owned_by(SPEC, error=GitError, map_error=_git_error):
+        for store in RepoStore.owned_by(self._plugin, error=GitError, map_error=_git_error):
             key = store_key(store.url)
             if key[0] != "_unknown" and store.path.parts[-len(key) :] == key:
                 found.append(StoredRepo(key=key, origin=store.url))
@@ -531,9 +532,8 @@ class LocalGitWorktrees:
 
     def _store(self, url: str) -> RepoStore:
         from untaped_git.api import RepoStore  # noqa: PLC0415  # keeps CLI startup free of git
-        from untaped_workspace import SPEC  # noqa: PLC0415
 
-        return RepoStore.for_url(url, plugin=SPEC, error=GitError, map_error=_git_error)
+        return RepoStore.for_url(url, plugin=self._plugin, error=GitError, map_error=_git_error)
 
     def _in(
         self, worktree: Path, args: Sequence[str], *, capture: bool = False, check: bool = True

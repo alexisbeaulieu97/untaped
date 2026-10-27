@@ -1,37 +1,20 @@
-"""Workspace settings (profile) and state models."""
+"""Workspace settings (``workspace:`` in ``config.yml``)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from datetime import timedelta
+import os
 from pathlib import Path
-from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Cache, Retired, StateCollection, StateRows
-from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
-
-#: The repos each ``RepoSource`` provider lists (``RepoSource.repos``'s answer cache);
-#: its setting is ``workspace.caches.repo_source_repos.max_age_seconds``.
-REPOS = Cache("workspace", "repo_source_repos", label="repos", max_age=timedelta(hours=6))
-
-#: Active workspaces (``state.yml`` → ``workspace.active``), one row per name. No
-#: ``remove_hint``: ``workspace remove`` plans from every record, so a damaged one is fixed by hand.
-ACTIVE = StateRows("workspace", "active", model=WorkspaceRecord, key_field="name")
-#: Archived workspaces: dict rows, since ``archive`` may keep a name twice.
-ARCHIVED = StateCollection("workspace", "archived")
+#: The most workers a command runs: twice this machine's CPUs.
+MAX_WORKERS = (os.cpu_count() or 1) * 2
 
 
 class WorkspaceSettings(BaseModel):
     """User-tunable workspace profile settings."""
 
     model_config = ConfigDict(frozen=True)
-
-    retired_keys: ClassVar[Mapping[str, str | Retired]] = {
-        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
-        "protocol": Retired(note="deleted in 11.0; set github.git_protocol"),
-    }
 
     workspaces_dir: Path = Field(
         default=Path("~/.untaped/workspaces"),
@@ -46,24 +29,7 @@ class WorkspaceSettings(BaseModel):
             "clamped."
         ),
     )
-    """Workers for ``create``/``add`` checkouts and ``status``/``archive`` checks.
-
-    ``None`` means ``min(8, 2 x CPUs)``.
-    """
     branch_template: str = Field(
         default="{name}",
         description="Branch name for writable repos; `{name}` is the workspace name.",
-    )
-
-
-class WorkspaceState(BaseModel):
-    """Active and archived workspaces (``state.yml`` → ``workspace``)."""
-
-    model_config = ConfigDict(frozen=True)
-
-    active: list[WorkspaceRecord] = Field(
-        default_factory=list, description="Active workspaces. Managed by `workspace` commands."
-    )
-    archived: list[ArchivedRecord] = Field(
-        default_factory=list, description="Archived workspaces. Managed by `workspace` commands."
     )

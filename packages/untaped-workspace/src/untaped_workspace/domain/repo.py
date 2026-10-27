@@ -1,8 +1,7 @@
 """The repo record workspace's ``RepoSource`` contract issues (re-exported by ``api``).
 
-It lives apart from the contract so ``state.yml``'s model loads without the
-contracts machinery or the git plugin's api: ``untaped --help`` composes
-workspace's state model and imports neither.
+It lives apart from the contract so the state rows' model loads without the
+contracts machinery or the git plugin's api.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ type GitUrl = Annotated[str, AfterValidator(_git_url)]
 type RepoName = Annotated[str, StringConstraints(pattern=r"^[^/\s]+(/[^/\s]+)*$")]
 
 
-class Repo(Issued, kind="workspace.repo"):
+class Repo(Issued):
     """A repository workspace can check out; ``source`` names the plugin that issued it."""
 
     name: RepoName

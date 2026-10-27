@@ -91,6 +91,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "TreeGraphNode",
         "TreeOutputFormat",
         "UtcTimestamp",
+        "now",
         "check_columns",
         "echo",
         "emit",

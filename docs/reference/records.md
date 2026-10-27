@@ -67,7 +67,7 @@ a step that asks for or reveals a secret, else `agent`.
 |---|---|
 | `workspace list` | `workspace.workspace` |
 | `workspace create`, `workspace add` | `workspace.repo_outcome` |
-| `workspace status` | `workspace.status` |
+| `workspace status` | `workspace.repo_status` |
 | `workspace archive` | `workspace.archive_outcome` |
 | `workspace remove` | `workspace.remove_outcome` |
 | `workspace run` | `workspace.run_outcome` |
@@ -75,7 +75,7 @@ a step that asks for or reveals a secret, else `agent`.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `workspace run --stdin` | `workspace.status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
+| `workspace run --stdin` | `workspace.repo_status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
 | `workspace create --stdin`, `workspace add --stdin` | `workspace.repo`, and any kind a `RepoSource` provider reads (github: `github.repo`, `github.sweep_repo`, `github.corpus_repo`); or lines, each a repo name (`owner/name`, a unique name) or a clone URL | the whole record, turned into a repo by the plugin whose kind it is, without an API call; a name line is looked up in the providers' repos |
 
 ## github
@@ -221,7 +221,7 @@ names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
 kind that carry an absolute `target_path` (else `path`), such as
-`workspace.status` or `workspace.repo_outcome`.
+`workspace.repo_status` or `workspace.repo_outcome`.
 
 ```bash
 untaped workspace status NAME --format pipe \

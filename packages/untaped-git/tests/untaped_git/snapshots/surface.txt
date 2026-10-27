@@ -161,7 +161,7 @@ sdk untaped_git.api.RepoStore.worktrees_under(path)
 sdk untaped_git.api.RepoStore.write_private()  [experimental]
 sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
-sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
+sdk untaped_git.api.RepoStore.write_worktree_config(worktree)
 sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
 sdk untaped_git.api.TreeEntry.mode

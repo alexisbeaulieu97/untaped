@@ -32,7 +32,9 @@ class ScriptedTerminal:
 
     ``answers(True, False)`` answers the next yes/no questions in order, and
     ``answers(yes=True)`` every one; ``types("Ada")`` answers the next text
-    prompts (and secret ones); ``screens(...)`` answers the next screens:
+    prompts (and secret ones); ``picks(...)`` answers the next pickers
+    (``pick_many``) with a result, or ``None`` when cancelled;
+    ``screens(...)`` answers the next screens:
     each entry is the screen's result, a ``Quit``, a ``Cancel`` (or the class),
     an exception (raised) or ``ScreenKeys`` (replayed through
     ``drive_screen``). ``absent()`` takes the terminal away again. ``asked``
@@ -71,6 +73,12 @@ class ScriptedTerminal:
     def types(self, *texts: str) -> Self:
         """Answer the next text prompts in order (and secret ones, when none is scripted)."""
         self._texts.extend(texts)
+        self.present = True
+        return self
+
+    def picks(self, *results: PickResult | None) -> Self:
+        """Answer the next pickers in order: a result, or ``None`` for one cancelled."""
+        self._picks.extend(results)
         self.present = True
         return self
 

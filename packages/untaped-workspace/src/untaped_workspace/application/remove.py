@@ -56,7 +56,7 @@ if TYPE_CHECKING:
         RepoSpec,
         WorkspaceRecord,
     )
-    from untaped_workspace.records import StatusRow
+    from untaped_workspace.records import RepoStatus
 
 type Key = tuple[str, ...]
 
@@ -84,7 +84,7 @@ class RemovalPlan:
     name: str
     active: WorkspaceRecord | None
     repos: tuple[RepoPlan, ...]
-    status: tuple[StatusRow, ...]
+    status: tuple[RepoStatus, ...]
     """The active workspace's status rows (archive's check); empty when it is archived."""
 
     @property

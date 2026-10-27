@@ -291,10 +291,9 @@ def test_overrides_are_declared() -> None:
 
 def test_written_outside_spellings_have_lines(generated: str) -> None:
     """The git credential helper untaped writes into worktree configs uses promised spellings."""
-    words = shlex.split(worktree_config._helper_command("work", "ab12").removeprefix("!"))[1:]
-    assert words == ["--profile", "work", "git", "credential", "--nonce", "ab12"]
+    words = shlex.split(worktree_config._helper_command("ab12").removeprefix("!"))[1:]
+    assert words == ["git", "credential", "--nonce", "ab12"]
     lines = {line.text for line in parse(generated)}
-    assert "cli untaped --profile VALUE default=unset" in lines
     assert "cli untaped git credential ACTION" in lines
     assert "cli untaped git credential --nonce VALUE default=unset" in lines
     for action in ("get", "store", "erase"):

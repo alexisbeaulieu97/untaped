@@ -971,16 +971,18 @@ class RepoStore:
             self.prefetch(trees=[ref])
             self._git(["checkout", "--quiet", ref], cwd=worktree, env=_NO_LAZY)
 
-    def write_worktree_config(self, worktree: Path, *, profile: str | None) -> None:
+    def write_worktree_config(self, worktree: Path) -> None:
         """Write the worktree's own config: owner, refspec, filter, URL and credential helper.
 
         Workspace calls it at create and on every ``status --fetch``: a
         user's ``git fetch``/``push`` there uses this handle's URL
         (``insteadOf`` over the store's label) and, for https, asks
-        ``untaped git credential`` with ``profile`` after the user's own
-        helpers (instead of them with ``git.untaped_helper_only``).
+        ``untaped git credential`` after the user's own helpers (instead of
+        them with ``git.untaped_helper_only``). The helper line names no
+        profile: the folder's project and ``UNTAPED_PROFILE`` pick it, as
+        for any untaped command run there.
         """
-        worktree_config.write_worktree_config(self, worktree, profile=profile)
+        worktree_config.write_worktree_config(self, worktree)
 
     # ── internals ──────────────────────────────────────────────────────────
 

@@ -19,11 +19,11 @@ def test_a_new_url_spelling_replaces_the_old_rewrite(
     old.fetch(branches=["main"])
     tree = tmp_path / "ws" / "app"
     old.worktree_add(tree, "refs/remotes/origin/main", branch="fix")
-    old.write_worktree_config(tree, profile=None)
+    old.write_worktree_config(tree)
 
     new_url = "https://git.example/APP.git"
     global_config(f"url.file://{remote.path}.insteadOf", new_url, add=True)
-    store_for("workspace", url=new_url).write_worktree_config(tree, profile=None)
+    store_for("workspace", url=new_url).write_worktree_config(tree)
 
     assert git(tree, "remote", "get-url", "origin", bare=False).strip() == f"file://{remote.path}"
     rewrites = git(tree, "config", "--worktree", "--get-regexp", r"^url\.", bare=False)
@@ -38,7 +38,7 @@ def test_a_foreign_path_is_refused(remote: GitRemote, store_for: StoreFor, tmp_p
     subprocess.run(["git", "clone", "--quiet", str(remote.path), str(clone)], check=True)
 
     for call in (
-        lambda: store.write_worktree_config(clone, profile=None),
+        lambda: store.write_worktree_config(clone),
         lambda: store.checkout(clone, "refs/remotes/origin/main"),
     ):
         with pytest.raises(StoreError, match="is not a worktree of repo store") as caught:

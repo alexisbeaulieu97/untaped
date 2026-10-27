@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, cast
 from untaped.sdk.errors import ConfigError
 
 if TYPE_CHECKING:
+    from pydantic import BaseModel
+
     from untaped.runtime.registry import CompositionResult, PluginCandidate
     from untaped.sdk.plugin import Plugin
 
@@ -77,6 +79,11 @@ def providing(
         yield result
 
 
+#: The empty settings model of each name :func:`providers_plugin` made a plugin of:
+#: composing that name again (a test installing twice) is the same section.
+_EMPTY: dict[str, type[BaseModel]] = {}
+
+
 def providers_plugin(
     name: str, classes: Sequence[type], *, module: str | None = None
 ) -> type[Plugin]:
@@ -84,8 +91,9 @@ def providers_plugin(
 
     It lives in ``module`` (by default the first class's, as a test's
     providers do). Its settings are the classes' ``Provider[S]`` (one model
-    for all of them), else an empty model. A class that is no provider of a
-    contract, two settings models, or no class at all raise :class:`TypeError`.
+    for all of them), else an empty model, the same one each time ``name``
+    is made. A class that is no provider of a contract, two settings
+    models, or no class at all raise :class:`TypeError`.
     """
     from pydantic import ConfigDict, create_model  # noqa: PLC0415
 
@@ -117,7 +125,9 @@ def providers_plugin(
         )
     model = next(iter(read), None)
     if model is None:
-        model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
+        if name not in _EMPTY:
+            _EMPTY[name] = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
+        model = _EMPTY[name]
     plugin = type(
         title,
         (Plugin,),
