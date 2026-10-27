@@ -72,7 +72,7 @@ class Show(Command[KeeperSettings]):
 
 
 def _healthy(_ctx: PluginContext) -> DoctorResult:
-    return DoctorResult(id="keeper.readable", ok=True, detail="the notes are readable")
+    return DoctorResult(ok=True, detail="the notes are readable")
 
 
 class Keeper(Plugin):

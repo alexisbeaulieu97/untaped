@@ -1048,7 +1048,7 @@ def _run_check(
             check_item.title,
             f"check returned {type(outcome).__name__}, expected DoctorResult",
         )
-    if outcome.id != check_item.id:
+    if outcome.id is not None and outcome.id != check_item.id:
         return _row(
             check_item.id,
             scope.plugin,

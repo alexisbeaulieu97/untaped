@@ -5496,10 +5496,11 @@ sdk untaped.sdk.DoctorCheck.run
 sdk untaped.sdk.DoctorCheck.spelled
 sdk untaped.sdk.DoctorCheck.title
 sdk untaped.sdk.DoctorCheck.where
-sdk untaped.sdk.DoctorResult(automatic@6=) default=false
-sdk untaped.sdk.DoctorResult(fix@5=) default=None
-sdk untaped.sdk.DoctorResult(id, ok, detail)
-sdk untaped.sdk.DoctorResult(warn@4=) default=false
+sdk untaped.sdk.DoctorResult(automatic@5=) default=false
+sdk untaped.sdk.DoctorResult(fix@4=) default=None
+sdk untaped.sdk.DoctorResult(id=) default=None
+sdk untaped.sdk.DoctorResult(ok, detail)
+sdk untaped.sdk.DoctorResult(warn@3=) default=false
 sdk untaped.sdk.DoctorResult.automatic
 sdk untaped.sdk.DoctorResult.detail
 sdk untaped.sdk.DoctorResult.fix
@@ -7147,10 +7148,11 @@ sdk untaped.sdk.health.DoctorCheck.run
 sdk untaped.sdk.health.DoctorCheck.spelled
 sdk untaped.sdk.health.DoctorCheck.title
 sdk untaped.sdk.health.DoctorCheck.where
-sdk untaped.sdk.health.DoctorResult(automatic@6=) default=false
-sdk untaped.sdk.health.DoctorResult(fix@5=) default=None
-sdk untaped.sdk.health.DoctorResult(id, ok, detail)
-sdk untaped.sdk.health.DoctorResult(warn@4=) default=false
+sdk untaped.sdk.health.DoctorResult(automatic@5=) default=false
+sdk untaped.sdk.health.DoctorResult(fix@4=) default=None
+sdk untaped.sdk.health.DoctorResult(id=) default=None
+sdk untaped.sdk.health.DoctorResult(ok, detail)
+sdk untaped.sdk.health.DoctorResult(warn@3=) default=false
 sdk untaped.sdk.health.DoctorResult.automatic
 sdk untaped.sdk.health.DoctorResult.detail
 sdk untaped.sdk.health.DoctorResult.fix

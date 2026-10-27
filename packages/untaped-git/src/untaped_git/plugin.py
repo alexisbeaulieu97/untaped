@@ -7,11 +7,11 @@ other plugins import) imports without them.
 
 from __future__ import annotations
 
-from untaped.sdk import Plugin, StubSkill
+from untaped.sdk import DoctorCheck, Plugin, StubSkill
 from untaped_git.commands.credential import Credential
 from untaped_git.commands.hosts import Hosts
 from untaped_git.commands.store import Store
-from untaped_git.doctor import REPO_STORE, VERSION
+from untaped_git.doctor import store_check, version_check
 from untaped_git.hosts import GitHost
 from untaped_git.settings import GitSettings
 
@@ -22,8 +22,8 @@ class Git(Plugin):
     settings = GitSettings
     commands = (Credential, Hosts, Store)
     offers = (GitHost,)
-    version = VERSION
-    repo_store = REPO_STORE
+    version = DoctorCheck(title="git version", run=version_check)
+    repo_store = DoctorCheck(title="git store", run=store_check)
     skill = StubSkill(
         "untaped's Git plumbing: the credentials and proxy that plugins supply for "
         "Git hosts, the credential helper in untaped's worktrees, and the repo store "
