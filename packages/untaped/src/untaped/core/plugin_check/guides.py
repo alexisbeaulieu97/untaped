@@ -1,18 +1,17 @@
-"""Guide rules: a plugin's guides and its map lines stay within what an agent can trust.
+"""Guide rules: a plugin's guides and its overview lines stay within what an agent can trust.
 
-See ``docs/reference/agent-pages.md#guides``.
+See ``docs/reference/docs.md#guides``.
 
-Checks the guides of one composed plugin (``PluginSpec.guides``) and the
-lines it puts on the map:
+Checks the guide files of one composed plugin (``PluginSpec.guides``, the
+11.x shape, whose pages ``untaped docs PLUGIN guides NAME`` serves until the
+plugin moves) and the lines it puts on the overview (``untaped docs``):
 
-- ``guide-name`` — a guide's name (its file stem) is not kebab-case, or is
-  the name or alias of one of the plugin's top-level commands, which would
-  shadow it;
+- ``guide-name`` — a guide's name (its file stem) is not kebab-case;
 - ``guide-description`` — a guide has no readable front matter with a
   one-line ``description`` saying when to read it;
 - ``guide-heading`` — a guide's text has a level-one heading of its own (the
   page writes it);
-- ``guide-link`` — an ``untaped agents …`` the guide quotes names no page
+- ``guide-link`` — an ``untaped docs …`` the guide quotes names no page
   (another plugin's page is checked only when that plugin is composed);
 - ``guide-command`` — another ``untaped …`` command the guide quotes does
   not parse: ``console`` ``$`` lines, ``bash`` blocks and the comments of
@@ -20,9 +19,9 @@ lines it puts on the map:
   required arguments;
 - ``guide-yaml`` — a block fenced as ```` ```yaml KIND ```` does not validate
   against the model declaring the record kind ``KIND``;
-- ``map-line`` — a line the plugin puts on the map (its summary, an
-  extension point it owns, its line under one it fills) is over
-  :data:`MAP_LINE_LIMIT` characters.
+- ``map-line`` — a line the plugin puts on the overview (its summary, its
+  line under an extension point it fills) or an extension point it owns
+  is over :data:`MAP_LINE_LIMIT` characters.
 
 Lines are ``<where>::<rule>::<detail>``, where is ``guides/<file>`` or the
 plugin's name; they carry no source line, so no inline marker can suppress
@@ -51,10 +50,10 @@ from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.sdk.errors import UsageError, first_validation_error
 
 if TYPE_CHECKING:
-    from untaped.core.agents._guides import Guide
+    from untaped.core.docs._guide_files import Guide
 
 MAP_LINE_LIMIT = 120
-"""The longest first line the map shows: each plugin adds a bounded cost to every session."""
+"""The longest line the overview shows: each plugin adds a bounded cost to every session."""
 
 _KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _KIND_FENCE = re.compile(r"^```yaml[ \t]+(\S+)[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
@@ -64,29 +63,22 @@ _HEADING = re.compile(r"^# ", re.MULTILINE)
 def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> list[str]:
     """Every guide and map-line violation of the composed plugin ``spec``."""
     # The pages read this package (the Examples section); import them on use.
-    from untaped.core.agents._build import top_names  # noqa: PLC0415
-    from untaped.core.agents._guides import SUFFIX, guides  # noqa: PLC0415
+    from untaped.core.docs._guide_files import SUFFIX, guides  # noqa: PLC0415
 
     found = list(_map_lines(root, result, spec))
-    listed = guides(spec)
-    if not listed:
-        return found
-    top = top_names(None if spec.app_factory is None else root[spec.name])
-    for guide in listed:
+    for guide in guides(spec):
         where = f"guides/{guide.name}{SUFFIX}"
         found += [
-            f"{where}::{rule}::{detail}" for rule, detail in _guide(root, result, spec, guide, top)
+            f"{where}::{rule}::{detail}" for rule, detail in _guide(root, result, spec, guide)
         ]
     return found
 
 
 def _guide(
-    root: App, result: CompositionResult, spec: PluginSpec, guide: Guide, top: frozenset[str]
+    root: App, result: CompositionResult, spec: PluginSpec, guide: Guide
 ) -> Iterator[tuple[str, str]]:
     if not _KEBAB.match(guide.name):
         yield "guide-name", f"{guide.name!r} is not kebab-case"
-    elif guide.name in top:
-        yield "guide-name", f"the command `{guide.name}` shadows it; rename the guide"
     if guide.problem is not None:
         yield "guide-description", guide.problem
     if _HEADING.search(FENCE.sub("", guide.body)):
@@ -99,12 +91,12 @@ def _quoted(
     root: App, result: CompositionResult, spec: PluginSpec, body: str
 ) -> Iterator[tuple[str, str]]:
     quoted = [*((line, False) for line in console_lines(body)), *commands(body)]
-    from untaped.core.agents import page  # noqa: PLC0415
+    from untaped.core.docs import page  # noqa: PLC0415
 
     composed = {each.spec.name for each in result.plugins}
     for command, inline in quoted:
         argv, _ = argv_of(command)
-        if argv[:1] != ["agents"]:
+        if argv[:1] != ["docs"]:
             problem = parse_problem(root, command, inline=inline)
             if problem is not None:
                 yield "guide-command", f"{command}: {problem}"
@@ -140,23 +132,22 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
 
 
 def _map_lines(root: App, result: CompositionResult, spec: PluginSpec) -> Iterator[str]:
-    """The plugin's lines on the map over the limit, measured on the map itself."""
-    from untaped.core.agents._build import build_map  # noqa: PLC0415
+    """The plugin's lines on the overview over the limit, as the overview reads them."""
+    from untaped.core.docs._site import Site  # noqa: PLC0415
 
-    shown = build_map(root, result).plugins
-    own = next(entry for entry in shown if entry.name == spec.name)
-    lines = [("its summary line", own.summary)]
-    lines += [("an extension point's line", point.title) for point in own.points]
-    lines += [
-        (f"its line under {point.owner}'s extension point", fill.summary)
-        for entry in shown
-        for point in entry.points
-        for fill in point.fills
-        if fill.plugin == spec.name
-    ]
+    site = Site(result, root)
+    lines = [("its summary line", site.summary(spec.name))]
+    plugin = site.plugin(spec.name)
+    if plugin is not None:
+        lines += [("an extension point's line", point.summary) for point in plugin.points]
+        lines += [
+            (f"its line under {found[0].name}'s extension point", fill.summary)
+            for fill in plugin.fills
+            if (found := site.point(fill.contract)) is not None
+        ]
     for what, line in lines:
         if len(line) > MAP_LINE_LIMIT:
             yield (
                 f"{spec.name}::map-line::{what} is {len(line)} characters, over "
-                f"{MAP_LINE_LIMIT}: every agent session reads the map"
+                f"{MAP_LINE_LIMIT}: every agent session reads the overview"
             )

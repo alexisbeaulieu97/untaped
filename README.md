@@ -20,7 +20,7 @@ the same output and piping rules:
   all; checks a plugin against the house conventions (experimental).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
-`skills`, `doctor` and `plugin`, and the experimental `project` and `agents`.
+`skills`, `doctor`, `plugin` and `docs`, and the experimental `project`.
 
 ## Install
 
@@ -63,7 +63,7 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
 - [Scripting](./docs/scripting.md): pipes, structured output and stderr
   diagnostics in scripts and CI.
 - [Agent skills](./docs/skills.md): install skills for your agent and keep
-  them current; `untaped agents` prints [pages for agents](./docs/reference/agent-pages.md).
+  them current; `untaped docs` prints [what this untaped can do](./docs/reference/docs.md).
 - [Troubleshooting](./docs/troubleshooting.md): common symptoms and where
   they are explained.
 - [Versioning](./docs/versioning.md): what stays stable within a major

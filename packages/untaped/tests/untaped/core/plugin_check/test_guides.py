@@ -52,25 +52,21 @@ def _guide(body: str, description: str = "Read before showing anything.") -> str
 
 def test_a_clean_guide_has_no_violation(tmp_path: Path) -> None:
     body = (
-        "Run `untaped svc show`, or read `untaped agents svc show` and `untaped agents`.\n\n"
+        "Run `untaped svc show`, or read `untaped docs svc` and `untaped docs`.\n\n"
         "```console\n$ untaped svc show\n```\n"
     )
     assert _violations(tmp_path, lifecycle=_guide(body)) == []
 
 
-@pytest.mark.parametrize(
-    ("name", "detail"),
-    [
-        ("Life_Cycle", "'Life_Cycle' is not kebab-case"),
-        ("show", "the command `show` shadows it; rename the guide"),
-    ],
-)
-def test_guide_names_are_kebab_case_and_shadow_no_command(
-    tmp_path: Path, name: str, detail: str
-) -> None:
-    assert _violations(tmp_path, **{name: _guide("Text.")}) == [
-        (f"guides/{name}.md", "guide-name", detail)
+def test_guide_names_are_kebab_case(tmp_path: Path) -> None:
+    assert _violations(tmp_path, Life_Cycle=_guide("Text.")) == [
+        ("guides/Life_Cycle.md", "guide-name", "'Life_Cycle' is not kebab-case")
     ]
+
+
+def test_a_guide_may_share_a_command_s_name(tmp_path: Path) -> None:
+    """A guide's address is under ``guides``, so no command shadows it."""
+    assert _violations(tmp_path, show=_guide("Text.")) == []
 
 
 @pytest.mark.parametrize(
@@ -101,30 +97,37 @@ def test_the_page_writes_the_guide_s_heading(tmp_path: Path) -> None:
     ]
 
 
-def test_a_quoted_agents_page_must_exist(tmp_path: Path) -> None:
-    body = "See `untaped agents svc nothing`, `untaped agents jira` and `untaped agents svc NAME`."
+def test_a_quoted_docs_page_must_exist(tmp_path: Path) -> None:
+    body = (
+        "See `untaped docs svc guides nothing`, `untaped docs jira` and "
+        "`untaped docs svc guides NAME`."
+    )
     [(_, rule, detail)] = _violations(tmp_path, links=_guide(body))
     assert rule == "guide-link"
-    assert detail.startswith('untaped agents svc nothing: no topic "nothing" in svc')
+    assert detail.startswith('untaped docs svc guides nothing: no page "svc guides nothing"')
 
 
-def test_a_quoted_agents_path_is_checked_as_its_words(tmp_path: Path) -> None:
-    [(_, rule, detail)] = _violations(tmp_path, links=_guide('See `untaped agents "svc nothing"`.'))
+def test_a_quoted_docs_address_is_checked_as_its_words(tmp_path: Path) -> None:
+    body = 'See `untaped docs "svc guides nothing"`.'
+    [(_, rule, detail)] = _violations(tmp_path, links=_guide(body))
     assert rule == "guide-link"
-    assert 'no topic "nothing" in svc' in detail
+    assert 'no page "svc guides nothing"' in detail
 
 
-def test_a_quoted_path_naming_a_placeholder_is_no_link(tmp_path: Path) -> None:
+def test_a_quoted_address_naming_a_placeholder_is_no_link(tmp_path: Path) -> None:
     body = (
-        'See `untaped agents "svc TOPIC"`, `untaped agents "svc <topic>"`, '
-        "`untaped agents svc [TOPIC]`, `untaped agents svc [TOPIC]...` and "
-        "`untaped agents svc TOPIC...`."
+        'See `untaped docs "svc guides NAME"`, `untaped docs "svc guides <name>"`, '
+        "`untaped docs svc [SECTION]`, `untaped docs svc [SECTION]...` and "
+        "`untaped docs svc SECTION...`."
     )
     assert _violations(tmp_path, links=_guide(body)) == []
 
 
 def test_root_options_and_redirects_leave_a_broken_link_flagged(tmp_path: Path) -> None:
-    body = '`untaped --profile PROD agents svc nothing` and `untaped agents "svc nothing" < IN`'
+    body = (
+        "`untaped --profile PROD docs svc guides nothing` and "
+        '`untaped docs "svc guides nothing" < IN`'
+    )
     found = _violations(tmp_path, links=_guide(body))
     assert [rule for _, rule, _ in found] == ["guide-link", "guide-link"]
 
@@ -139,7 +142,9 @@ def test_a_console_block_with_a_title_is_still_checked(tmp_path: Path) -> None:
 def test_a_guide_may_link_another_guide(tmp_path: Path) -> None:
     assert (
         _violations(
-            tmp_path, first=_guide("Then `untaped agents svc second`."), second=_guide("Done.")
+            tmp_path,
+            first=_guide("Then `untaped docs svc guides second`."),
+            second=_guide("Done."),
         )
         == []
     )
@@ -197,7 +202,7 @@ def test_map_lines_are_capped(tmp_path: Path) -> None:
             "svc",
             "map-line",
             f"its summary line is {MAP_LINE_LIMIT + 1} characters, over {MAP_LINE_LIMIT}: "
-            "every agent session reads the map",
+            "every agent session reads the overview",
         )
     ]
     assert _violations(tmp_path, help_text="x" * MAP_LINE_LIMIT) == []

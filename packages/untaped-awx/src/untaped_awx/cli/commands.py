@@ -149,8 +149,8 @@ def apply_command(
     stdin with no documents fails the apply, naming the file (`<stdin>` for
     `apply -`). --check exits 0 when nothing would change (rows show
     `planned` or `unchanged`). How
-    each document is resolved and written: `untaped agents awx documents`;
-    with --source-ref: `untaped agents awx source-ref`.
+    each document is resolved and written: `untaped docs awx guides documents`;
+    with --source-ref: `untaped docs awx guides source-ref`.
 
     Examples
     --------

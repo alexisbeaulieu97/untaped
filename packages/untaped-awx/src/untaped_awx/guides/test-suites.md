@@ -6,8 +6,8 @@ A test suite launches one job template (or one workflow) once per case, each
 with its own launch payload, and checks each job against what the case
 expects. `untaped awx schema AwxTestSuite` lists every field as JSON Schema;
 this page covers the rules it can't say. A case's own fields are in
-`untaped agents awx test-cases`, and working suites to start from in
-`untaped agents awx test-examples`.
+`untaped docs awx guides test-cases`, and working suites to start from in
+`untaped docs awx guides test-examples`.
 
 ## Where suites live
 
@@ -130,7 +130,7 @@ Approvals:
 - `validate` warns about each case without `approvals` whose workflow, or a
   nested one, has approval nodes.
 - Answering needs AWX's Approve role on the workflow
-  (`untaped agents awx agent-profile`).
+  (`untaped docs awx guides agent-profile`).
 
 `expect.nodes` checks each named node's job with a case's own checks:
 

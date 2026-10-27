@@ -41,7 +41,7 @@ untaped awx job-templates edit --filter name__icontains=deploy --field verbosity
 Targets are picked by name inside a scope, by id, by query or from a pipe.
 `patch` sets the same values on every selected resource; `edit` opens the
 selection in your editor as one multi-document file. Writes preview and ask first
-(`untaped agents awx writes`).
+(`untaped docs awx guides writes`).
 
 ## Export and apply documents
 
@@ -79,7 +79,7 @@ references in the batch (`--offline`) or on the controller too; without, it
 checks what the controller holds, from a snapshot kept for an hour. Findings
 share `untaped lint`'s ids, `--ignore` and exit codes (3 on an error), and a
 repository can lint its documents offline with `untaped lint`.
-`untaped agents awx linting` lists the rules.
+`untaped docs awx guides linting` lists the rules.
 
 ## Launch and follow jobs
 
@@ -111,7 +111,7 @@ act, so an environment failure is not blamed on your change.
 
 ## Reference
 
-`untaped agents awx` lists every command with its options, the settings, and the guides on selecting and changing resources, export and apply documents, workflow node graphs, launching jobs, linting, writing and reading test suites, test runs at a git ref, and the AWX user an agent works as; the untaped you run generates it.
+`untaped docs awx` lists the guides on selecting and changing resources, export and apply documents, workflow node graphs, launching jobs, linting, writing and reading test suites, test runs at a git ref, and the AWX user an agent works as, and `untaped awx COMMAND --help` each command's options; the untaped you run generates both.
 
 `untaped skills install awx --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 

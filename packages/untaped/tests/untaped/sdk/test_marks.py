@@ -71,6 +71,12 @@ def _help(root: App, *argv: str) -> str:
     return result.stdout
 
 
+def _before_footer(text: str) -> str:
+    """The help without its last paragraph, the address of its docs page, if it has one."""
+    head, footer, _ = text.rpartition("Full documentation: ")
+    return (head if footer else text).rstrip()
+
+
 def _panels(text: str) -> list[str]:
     return [line.strip("╭─ ").split(" ─")[0] for line in text.splitlines() if line.startswith("╭")]
 
@@ -200,11 +206,9 @@ def test_each_marked_command_help_ends_with_its_line() -> None:
     app = _service()
     root = _root(app)
 
-    assert _help(root, "svc", "try").rstrip().endswith(EXPERIMENTAL_LINE)
-    assert (
-        _help(root, "svc", "put")
-        .rstrip()
-        .endswith("Deprecated: removed in a future major release; use untaped svc set.")
+    assert _before_footer(_help(root, "svc", "try")).endswith(EXPERIMENTAL_LINE)
+    assert _before_footer(_help(root, "svc", "put")).endswith(
+        "Deprecated: removed in a future major release; use untaped svc set."
     )
     assert EXPERIMENTAL_LINE not in _help(root, "svc", "set")
 
@@ -244,8 +248,8 @@ def test_an_experimental_group_marks_every_help_below_it() -> None:
 
     root = _root(group)
 
-    assert _help(root, "grp", "leaf").rstrip().endswith(EXPERIMENTAL_LINE)
-    assert _help(root, "grp").rstrip().endswith(EXPERIMENTAL_LINE)
+    assert _before_footer(_help(root, "grp", "leaf")).endswith(EXPERIMENTAL_LINE)
+    assert _before_footer(_help(root, "grp")).endswith(EXPERIMENTAL_LINE)
 
 
 def test_apply_marks_leaves_an_unresolved_lazy_plugin_unresolved() -> None:
@@ -289,7 +293,7 @@ def test_a_marked_plugin_lists_in_its_panel_and_its_help_ends_with_the_line() ->
     listing = CliInvoker().invoke(root.meta, ["--help"]).stdout
 
     assert _panels(listing) == ["Commands", "Experimental", "Global options"]
-    assert _help(root, "svc", "set").rstrip().endswith(EXPERIMENTAL_LINE)
+    assert _before_footer(_help(root, "svc", "set")).endswith(EXPERIMENTAL_LINE)
 
 
 # --- replacements -------------------------------------------------------------
@@ -368,10 +372,8 @@ def test_without_a_replacement_the_sentence_ends_at_its_removal() -> None:
     assert (
         f"`untaped svc old` {_UNDATED}\n" in CliInvoker().invoke(root.meta, ["svc", "old"]).stderr
     )
-    assert (
-        _help(root, "--deprecated", "svc", "old")
-        .rstrip()
-        .endswith("Deprecated: removed in a future major release.")
+    assert _before_footer(_help(root, "--deprecated", "svc", "old")).endswith(
+        "Deprecated: removed in a future major release."
     )
 
 

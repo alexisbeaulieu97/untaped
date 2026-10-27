@@ -108,7 +108,7 @@ saved source or plugin still uses stays.
 
 ## Reference
 
-`untaped agents ansible` lists every command with its options and the settings; the untaped you run generates it. `untaped ansible --help` explains how a walk resolves refs.
+`untaped docs ansible` explains how a walk resolves refs and lists every command with its options, the settings and the guides; the untaped you run generates it.
 
 `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 

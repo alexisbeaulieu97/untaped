@@ -94,9 +94,9 @@ after a preview.
 
 ## Reference
 
-`untaped agents recipe` is the full reference, with every command's
-options and examples, the settings and the guides; the untaped you run
-generates it. `untaped skills install recipe --target claude` (or another
+`untaped docs recipe` lists the guides and `untaped recipe COMMAND
+--help` each command's options and examples; the untaped you run
+generates both. `untaped skills install recipe --target claude` (or another
 [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills))
 installs the skill that sends your agent there.
 

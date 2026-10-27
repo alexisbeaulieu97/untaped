@@ -55,4 +55,4 @@ Writes emit outcome rows (`awx.apply_outcome` for `apply`, `patch` and
 whose `action` is `planned` in a preview. A failed row carries an `error`
 with `category`, `system`, `retryable`, `message` and `hint`; with
 `--format json`, stderr carries the same fields as JSON Lines. How a batch of
-writes runs: `untaped agents awx writes`.
+writes runs: `untaped docs awx guides writes`.

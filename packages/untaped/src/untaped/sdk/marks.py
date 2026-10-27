@@ -362,7 +362,7 @@ def _ensure_epilogue(app: App, line: str, *, own_only: bool) -> None:
 
     A stability line written before the app was mounted (when its owner, and
     so its removal version's wording, was not known yet) is replaced, never
-    kept beside the new one.
+    kept beside the new one. The docs footer (:func:`docs_footer`) stays last.
     """
     epilogue = app.help_epilogue
     if epilogue is None:
@@ -376,7 +376,27 @@ def _ensure_epilogue(app: App, line: str, *, own_only: bool) -> None:
         for paragraph in epilogue.rstrip().split("\n\n")
         if not _is_stability_line(paragraph)
     ]
-    app.help_epilogue = "\n\n".join([*paragraphs, line]) if paragraphs else line
+    footer = [paragraph for paragraph in paragraphs if paragraph.startswith(FOOTER_START)]
+    rest = [paragraph for paragraph in paragraphs if not paragraph.startswith(FOOTER_START)]
+    app.help_epilogue = "\n\n".join([*rest, line, *footer])
+
+
+#: How the docs footer opens: every ``--help`` ends with the address of its page.
+FOOTER_START = "Full documentation: "
+
+
+def docs_footer(app: App, address: str, *, keep: bool = False) -> None:
+    """End ``app``'s help with "Full documentation: `ADDRESS`", the page that documents it.
+
+    It replaces a footer already there, unless ``keep`` (a plugin's app keeps
+    the footers its commands were built with); a stability line stays above it.
+    """
+    epilogue = app.help_epilogue or ""
+    paragraphs = [paragraph for paragraph in epilogue.rstrip().split("\n\n") if paragraph]
+    if keep and any(paragraph.startswith(FOOTER_START) for paragraph in paragraphs):
+        return
+    rest = [paragraph for paragraph in paragraphs if not paragraph.startswith(FOOTER_START)]
+    app.help_epilogue = "\n\n".join([*rest, f"{FOOTER_START}`{address}`"])
 
 
 def _is_stability_line(paragraph: str) -> bool:

@@ -16,7 +16,7 @@ the same environment (`uv pip install -e .`); one that isn't is the
 Each plugin is checked against:
 
 - what core can only tell from the composed root: names, the provider's
-  requirements, the help tree, guides and map lines, stability marks, error
+  requirements, the help tree, guides and overview lines, stability marks, error
   and settings classes, and each contract it fills, called live
   (`lint.registration`, `lint.conformance`, `lint.live`, `lint.contracts`), and a
   deprecation warning for settings that leave

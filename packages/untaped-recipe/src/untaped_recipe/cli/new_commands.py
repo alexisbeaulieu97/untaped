@@ -48,8 +48,8 @@ def init_pack_command(
     access (or a `[tool.uv.sources]` override). If locking fails, the files
     stay and the error says how to repair them. With --no-lock, hooks can't
     run until `uv lock` succeeds: they run with `uv run --locked --no-dev`.
-    How to write the pieces: `untaped agents recipe recipe-files` and
-    `untaped agents recipe writing-hooks`.
+    How to write the pieces: `untaped docs recipe guides recipe-files` and
+    `untaped docs recipe guides writing-hooks`.
 
     Examples
     --------

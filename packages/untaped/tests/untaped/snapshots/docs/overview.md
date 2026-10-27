@@ -1,15 +1,34 @@
 # untaped
 untaped VERSION · ENV
 
-untaped is one command line built from plugins. Core (below) holds what every plugin shares: profiles, settings, tokens, output. Each plugin adds commands under `untaped PLUGIN`, and a plugin can offer extension points that other plugins fill.
+Unified untaped developer CLI.
 
-Read a plugin's page before running its commands: `untaped agents PLUGIN`, then `untaped agents PLUGIN COMMAND` for a command's options and examples.
+## Navigation
+
+Every page's title is its address: `untaped docs`, `untaped docs PLUGIN`, `untaped docs PLUGIN SECTION`, `untaped docs PLUGIN SECTION NAME`. Drop the last word to go up a level. Core's own commands are the plugin `untaped`.
+
+A plugin's sections are `commands` (what you can run), `inputs` (the files you write for its commands), `outputs` (the rows they print), `settings` and, for a plugin other plugins extend, `extensions`; its page lists the guides to read first (`untaped docs PLUGIN guides NAME`). Commands and guides are spelled as the command line spells them (`untaped docs untaped commands config set`), inputs and outputs as their kind spells itself (`untaped.auth_outcome` is `untaped docs untaped outputs auth_outcome`).
+
+`untaped docs [ADDRESS] --search TEXT` prints every line of the pages under the address that contains the text, after its page's address.
+
+## Plugins
+
+### untaped
+Core's commands: docs, config, profiles, projects, skills, doctor, setup, auth, plugins.
+
+### acme
+Manage widgets on racks.
+
+### store
+The providers store.
+Extends acme `rack`: Where the widgets you can name in acme commands come from. (The widgets the store has in stock.)
 
 ## Shared by every command
 - Settings live in `CONFIG`: each plugin's in its section at the top, and a named profile's under `profiles.<name>`. `untaped config` reads and changes them (keys are `<plugin>.<setting>`). A command missing a setting exits 4, and its hint names the other profiles that set it.
 - Tokens are kept by `untaped auth`; a command missing one exits 4 and names the fix.
 - Results are rows on stdout; progress and errors go to stderr, as JSON Lines under `--format json`. A command's own options, output formats and `--stdin` included where it has them, are on its page.
 - Without a terminal nothing prompts. A command that needs an answer exits 2, and its error names what to pass, such as `--yes`.
+- (asks first), on a command's page: it asks before it changes anything. `--yes`: Go ahead without asking. `--dry-run`: Show what would change and change nothing.
 - Options every command takes:
   - `--profile`: Profiles to layer over the base for this invocation, comma-separated or repeated; stacked after UNTAPED_PROFILE's (`default` reads the base alone).
   - `--verbose`, `-v`: Stream underlying tool output live and enable debug logging.
@@ -23,23 +42,3 @@ Read a plugin's page before running its commands: `untaped agents PLUGIN`, then 
   - 5 A temporary failure (network, timeout, 5xx, 429, a held lock); retry later
   - 130 Interrupted (Ctrl-C), including at a prompt
   - A run that sees several failures exits with the most severe: 130 > 2 > 4 > 5 > 1 > 3 > 0
-
-## untaped (core) · details: `untaped agents untaped`
-- `setup`: Configure a profile's settings and services interactively.
-- `config`: Inspect and change the settings in the home's config.yml.
-- `profile`: Manage the profiles in the home's config.yml.
-- `auth`: Log in to the servers plugins talk to; keep tokens safe.
-- `project` [experimental]: Make a folder a project and list the projects this home records.
-- `doctor`: Check the health of untaped and every composed plugin.
-- `skills`: List, install, update, and remove agent skills shipped by untaped.
-- `plugin`: Inspect installed plugins and their contracts.
-
-## acme · details: `untaped agents acme`
-Manage widgets.
-
-## bin · details: `untaped agents bin`
-- Extends: rack
-
-## rack · details: `untaped agents rack`
-- Where items come from.
-  - **bin**.

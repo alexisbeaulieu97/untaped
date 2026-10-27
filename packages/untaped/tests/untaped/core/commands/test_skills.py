@@ -217,7 +217,7 @@ def test_update_refreshes_only_outdated_installs_in_place(
     assert [(row["name"], row["scope"], row["action"]) for row in rows] == [
         ("untaped-one", "local", "updated"),
     ]
-    assert "`untaped agents plugin-0`" in local.joinpath("untaped-one", "SKILL.md").read_text()
+    assert "`untaped docs plugin-0`" in local.joinpath("untaped-one", "SKILL.md").read_text()
     assert local.joinpath("untaped-one", STUB_MARKER).is_file()
     assert not Path.home().joinpath(".agents", "skills", "untaped-one").exists()
 

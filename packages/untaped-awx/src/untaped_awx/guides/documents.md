@@ -5,7 +5,7 @@ description: "Read before writing, exporting or applying AWX resource documents:
 `export` writes resources as portable YAML documents, and `untaped awx apply`
 creates or updates resources from them. Together they copy configuration
 between controllers and profiles, and keep it in a repository. Applying from a
-git ref: `untaped agents awx source-ref`.
+git ref: `untaped docs awx guides source-ref`.
 
 ## The document
 
@@ -54,7 +54,7 @@ spec:
   instance groups, execution environment) travel by name. They must exist
   where the document is applied, or be created by the same `apply`.
 - A workflow template also holds its node graph under `nodes`
-  (`untaped agents awx workflow-nodes`).
+  (`untaped docs awx guides workflow-nodes`).
 - Unknown fields are sent with a warning.
 
 ## Export
@@ -102,7 +102,7 @@ they must exist where the documents are applied.
 ## Apply
 
 How the `apply` command reads files and confirms:
-`untaped agents awx apply`. What it does with each document:
+`untaped awx apply --help`. What it does with each document:
 
 - An organization-scoped document without `metadata.organization` is
   scoped by `awx.default_organization`; without a default, a name in several
@@ -146,4 +146,4 @@ Export, change `metadata.name`, apply: the new template gets the same
 non-secret configuration (credentials, labels, instance groups, extra vars,
 survey, and a workflow's nodes). Use this to copy to another controller;
 on the same controller, `copy` does it server-side in one step
-(`untaped agents awx job-templates copy`).
+(`untaped awx job-templates copy --help`).

@@ -9,7 +9,7 @@ has are its attributes. Its commands are classes, one module each under
 and `Motd` serves a file through a cache (`motd = MOTD` on the class, so
 `hello.caches.motd.max_age_seconds` tunes it), the way a plugin keeps what an
 upstream answered. The class also has a stub skill (`untaped skills install
-hello` writes it, and it sends the agent to `untaped agents hello`). The entry
+hello` writes it, and it sends the agent to `untaped docs hello`). The entry
 point names the class, `hello = "untaped_hello.plugin:Hello"`, in a leaf
 module so the rest of the package imports without the commands. Copy this
 directory to start a plugin of your own.

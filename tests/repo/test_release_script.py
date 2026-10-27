@@ -747,10 +747,10 @@ case "$1" in
   --version) echo "$FAKE_VERSION" ;;
   plugin) echo "$FAKE_ROWS"; exit "${FAKE_ROWS_EXIT:-0}" ;;
   skills) echo "$FAKE_SKILLS"; exit "${FAKE_SKILLS_EXIT:-0}" ;;
-  agents)
-    [ "$3" = "$FAKE_MISSING_GUIDE" ] && [ -n "$3" ] && exit 2
+  docs)
+    [ "$4" = "$FAKE_MISSING_GUIDE" ] && [ -n "$4" ] && exit 2
     [ "$2" = "$FAKE_EMPTY_PAGE" ] && [ -n "$2" ] && exit 0
-    printf '# page\n\n## Guides\n- `writes`: Read before a write.\n' ;;
+    printf '# page\n\n## Read first\n- `untaped docs %s guides writes`: Read first.\n' "$2" ;;
   "$FAKE_FAILING") exit 2 ;;
 esac
 exit 0
@@ -852,7 +852,7 @@ def _skill(name: str) -> dict[str, str]:
     return {"name": name, "description": "d", "source": "untaped:stub/1", "kind": "stub"}
 
 
-def test_smoke_agents_need_each_expected_skill_and_every_page(
+def test_smoke_docs_need_each_expected_skill_and_every_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     exe = _fake_untaped(tmp_path)
@@ -865,19 +865,19 @@ def test_smoke_agents_need_each_expected_skill_and_every_page(
     # The checkout ships awx's writes and launching guides; the install lists only writes.
     guides = {"awx": ["launching", "writes"], "jira": []}
     monkeypatch.setattr(release, "plugin_guides", lambda root: guides)
-    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--agents"]
+    argv = ["smoke", str(exe), "10.0.0a0", "--expect", "awx,jira", "--docs"]
     assert release.main(argv) == 1
     assert capsys.readouterr().err == (
         "skill untaped-jira is missing\n"
-        "untaped agents untaped writes exited 2\n"
-        "untaped agents awx does not list the guide launching\n"
-        "untaped agents awx writes exited 2\n"
-        "untaped agents jira printed nothing\n"
+        "untaped docs untaped guides writes exited 2\n"
+        "untaped docs awx does not list the guide launching\n"
+        "untaped docs awx guides writes exited 2\n"
+        "untaped docs jira printed nothing\n"
     )
     guides["awx"] = ["writes"]
     monkeypatch.setenv("FAKE_ROWS", json.dumps(rows[:2]))
     monkeypatch.setenv("FAKE_MISSING_GUIDE", "")
-    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--agents"]) == 0
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "awx", "--docs"]) == 0
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
 
 
@@ -891,15 +891,17 @@ def test_plugin_guides_are_each_packages_guide_files() -> None:
     assert guides["lint"] != []
 
 
-def test_page_guides_reads_only_the_guides_section() -> None:
+def test_page_guides_reads_only_the_read_first_section() -> None:
     page = (
-        "# awx\n\n## Commands\n- `job list`: List jobs.\n\n"
-        "## Guides\n- `writes`: Read before a write.\n- `test-cases`: Read when...\n\n"
-        "## Settings\n- `token`: The token.\n"
+        "# awx\n\n## Read first\n- `untaped docs awx guides writes`: Read before a write.\n"
+        "- `untaped docs awx guides test-cases`: Read when...\n\n"
+        "## Sections\n- `commands` (3): what you can run. `untaped docs awx commands`\n"
     )
     assert release.page_guides(page) == ["writes", "test-cases"]
-    assert release.page_guides("## Guides\n- `Odd_Name`: Read it.\n") == ["Odd_Name"]
-    assert release.page_guides("# lint\n\n## Commands\n- `lint`: Lint.\n") == []
+    assert release.page_guides("## Read first\n- `untaped docs a guides Odd_Name`: Read.\n") == [
+        "Odd_Name"
+    ]
+    assert release.page_guides("# lint\n\n## Sections\n- `commands` (1): run.\n") == []
 
 
 def test_skill_errors_refuse_a_skill_listed_twice() -> None:
@@ -921,7 +923,7 @@ def test_skill_errors_need_the_shells_own_skill() -> None:
         ("[]", "4", "untaped skills list --format json exited 4"),
     ],
 )
-def test_smoke_agents_report_a_broken_skill_listing(
+def test_smoke_docs_report_a_broken_skill_listing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -934,7 +936,7 @@ def test_smoke_agents_report_a_broken_skill_listing(
     monkeypatch.setenv("FAKE_ROWS", json.dumps([CORE]))
     monkeypatch.setenv("FAKE_SKILLS", skills)
     monkeypatch.setenv("FAKE_SKILLS_EXIT", exit_code)
-    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--agents"]) == 1
+    assert release.main(["smoke", str(exe), "10.0.0a0", "--expect", "", "--docs"]) == 1
     assert capsys.readouterr().err.endswith(f"{error}\n")
 
 

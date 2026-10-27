@@ -332,13 +332,13 @@ def run_command(
     `--scm-branch HEAD` is the current branch as named on its upstream, and
     is refused while HEAD is detached, has no upstream, or is not pushed.
     Every case is preflighted before any launch, and a failing preflight
-    launches nothing (`untaped agents awx test-suites`). The run prints one
+    launches nothing (`untaped docs awx guides test-suites`). The run prints one
     `awx.test_result` row per case and a summary on stderr; what a failing
-    run's exit code and rows mean: `untaped agents awx test-results`.
+    run's exit code and rows mean: `untaped docs awx guides test-results`.
 
     With --source-ref, temporary copies of the templates with specs are created
     first (no confirmation) and deleted after the run, even when interrupted
-    (`untaped agents awx source-ref`).
+    (`untaped docs awx guides source-ref`).
 
     Examples
     --------
@@ -920,7 +920,7 @@ def init_command(
     prompts for are listed as comments. With --workflow, a comment lists the
     node ids (approvals marked), and the case carries a commented `nodes:`
     example and, when the workflow has approval nodes, a commented `approvals:
-    approve`. Suites to start from instead: `untaped agents awx test-examples`.
+    approve`. Suites to start from instead: `untaped docs awx guides test-examples`.
     """
     from untaped_awx.application.suites.preflight import (  # noqa: PLC0415
         PreflightLaunch,

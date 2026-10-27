@@ -65,7 +65,7 @@ def lint_command(
     mistake or a lint file key that could shadow a plugin, 4 on a
     configuration problem such as a rule importing a plugin that isn't
     installed; the most severe wins (2, then 4, then 1, then 3). Reading
-    findings and leaving one out: ``untaped agents lint findings``.
+    findings and leaving one out: ``untaped docs lint guides findings``.
 
     Examples
     --------
@@ -169,7 +169,7 @@ def new_command(
     fixtures/ID/good and fixtures/ID/bad under the rules directory, checked
     by the two commands printed. The lint file and its linters entry are
     created when missing; without a lint file, --key names its key. How a
-    rule is written: ``untaped agents lint writing-rules``.
+    rule is written: ``untaped docs lint guides writing-rules``.
 
     Examples
     --------

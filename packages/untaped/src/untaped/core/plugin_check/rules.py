@@ -1,6 +1,6 @@
 """The rules that read a composed plugin: what the ``conventions`` check row runs.
 
-Help tree, guides and map lines, stability marks, settings names and
+Help tree, guides and overview lines, stability marks, settings names and
 structure's class checks, each family in its module beside this one. See
 ``docs/reference/conventions.md#enforcement``.
 
@@ -71,7 +71,7 @@ def core_plugin_violations(
     """The violations only the composed root can tell: what ``check_plugin`` reports.
 
     Plugin and distribution names, provides requirements, the help tree,
-    guides and map lines, stability marks and structure's class checks
+    guides and overview lines, stability marks and structure's class checks
     (exceptions, ports, frozen settings, setting names). The rules that read
     the plugin's files, the import boundary among them, are lint's and are
     not run here. Lines and a quarantined

@@ -3,7 +3,7 @@ description: "Read before writing a case of an awx test suite: how launch names 
 ---
 
 What one case of a suite holds. `untaped awx schema AwxTestSuite` lists a
-case's fields; the suite around it is in `untaped agents awx test-suites`.
+case's fields; the suite around it is in `untaped docs awx guides test-suites`.
 
 ## `launch`
 
@@ -121,7 +121,7 @@ An entry matches a failed task, as the result's
   interrupted.
 - An idempotent case must expect `status: successful`.
 
-How a rerun fails: `untaped agents awx test-results`.
+How a rerun fails: `untaped docs awx guides test-results`.
 
 ## Timeouts and parallelism
 

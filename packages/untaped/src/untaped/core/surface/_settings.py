@@ -85,12 +85,18 @@ def check_quarantine(result: CompositionResult) -> None:
 
 
 def sections(
-    result: CompositionResult, *, extensions: bool, owner: str | None = None
+    result: CompositionResult,
+    *,
+    extensions: bool,
+    owner: str | None = None,
+    settings_only: bool = False,
 ) -> list[Section]:
     """Each plugin's sections, the root plugin's (core's) first, then by name; ``owner``'s only.
 
     ``extensions=False`` leaves the injected ``extensions`` key out of an
     owner's section (the config reference documents it elsewhere).
+    ``settings_only`` leaves the state sections out, so a plugin class's
+    state rows, which import the class, are not read.
     """
     from untaped.runtime.registry import (  # noqa: PLC0415
         section_settings,
@@ -105,6 +111,8 @@ def sections(
         settings = section_settings(spec, extensions=extensions)
         if settings is not None:
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
+        if settings_only:
+            continue
         state = state_model(spec)
         rows = tuple(
             each

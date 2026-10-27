@@ -210,9 +210,15 @@ def test_a_deprecated_command_names_its_plugin_s_major() -> None:
 
 def test_the_help_line_carries_the_version() -> None:
     result = CliInvoker().invoke(_root().meta, ["svc", "put", "--help"])
-    assert result.stdout.rstrip().endswith(
+    assert _before_footer(result.stdout).endswith(
         "Deprecated: removed in untaped-svc 3.0; use untaped svc set."
     )
+
+
+def _before_footer(text: str) -> str:
+    """The help without its last paragraph, the address of its docs page, if it has one."""
+    head, footer, _ = text.rpartition("Full documentation: ")
+    return (head if footer else text).rstrip()
 
 
 @pytest.mark.parametrize(

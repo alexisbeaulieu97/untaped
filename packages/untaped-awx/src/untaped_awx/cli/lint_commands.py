@@ -78,7 +78,7 @@ def lint_command(
     """Lint AWX resources: apply documents, or what the controller holds.
 
     Where references resolve, how the controller snapshot is kept, what the
-    selection options narrow, and every rule: `untaped agents awx linting`.
+    selection options narrow, and every rule: `untaped docs awx guides linting`.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     queried = bool(filters) or search is not None

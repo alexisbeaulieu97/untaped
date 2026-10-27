@@ -41,7 +41,7 @@ class PackagedSkill:
     """A skill a composed plugin (or core) ships, and who ships it.
 
     ``plugin`` is the owning spec's name, which a stub's pages use
-    (``untaped agents <plugin>``); ``distribution`` and ``version`` are the
+    (``untaped docs <plugin>``); ``distribution`` and ``version`` are the
     plugin side a stub marker records (``version`` is empty when unknown;
     core's is read when a marker is written, so composing reads no metadata).
     """
