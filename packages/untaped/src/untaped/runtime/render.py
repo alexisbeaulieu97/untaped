@@ -95,7 +95,7 @@ def render_detail(
     if fmt == "table":
         if theme.detail_view == "table":
             rows: list[Row] = [
-                {"field": key, "value": _table_cell(key, value)} for key, value in selected.items()
+                {"field": key, "value": _table_cell(value)} for key, value in selected.items()
             ]
             return _format_table(rows, theme, colorize=colorize, field_rows=True)
         return _format_record_as_lines(selected, theme=theme, colorize=colorize)
@@ -240,7 +240,7 @@ def _format_table(
         padding=(0, 0) if compact else (0, 1),
     )
     columns = list(dict.fromkeys(key for row in rows for key in row))
-    cells = [[_table_cell(col, row.get(col)) for col in columns] for row in rows]
+    cells = [[_table_cell(row.get(col)) for col in columns] for row in rows]
     overhead = len(columns) * (0 if compact else 2) + (len(columns) + 1 if box_style else 0)
     widths = _fit_widths(columns, cells, budget=_output_size()[0] - overhead)
     for col, width in zip(columns, widths, strict=True):
@@ -399,27 +399,17 @@ def _is_scalar(value: Any) -> bool:
     return value is None or isinstance(value, str | int | float | bool)
 
 
-#: Columns whose value is a git object name, shortened in tables.
-_SHA_COLUMNS = frozenset({"sha", "commit", "revision", "scm_revision"})
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-_SHORT_SHA = 10
-
-
-def _table_cell(column: str, value: Any) -> str:
+def _table_cell(value: Any) -> str:
     """One table cell: flat, single-line text a human scans across a row.
 
     Only the ``table`` format uses it; json, yaml, raw and pipe keep values
     verbatim. Mappings flatten to ``key=value`` pairs, empty containers are
-    blank, durations (``*_s``, ``elapsed``) read as ``1m42s``, other floats keep two
-    decimals, a 40-hex commit is shortened, a UTC timestamp shows to the second,
-    and whitespace runs (newlines included) collapse to one space.
+    blank, floats keep two decimals, a UTC timestamp shows to the second, and
+    whitespace runs (newlines included) collapse to one space. A record's marks
+    (``Duration``, ``ObjectName``, ...) have shaped its cells before this.
     """
-    if isinstance(value, int | float) and not isinstance(value, bool) and _is_duration(column):
-        return _duration(value)
     if isinstance(value, float):
         return f"{value:.2f}".rstrip("0").rstrip(".")
-    if isinstance(value, str) and column in _SHA_COLUMNS and _SHA_RE.match(value):
-        return value[:_SHORT_SHA]
     return " ".join(_flat(value).split())
 
 
@@ -447,21 +437,6 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
             yield from _flat_pairs(value, prefix=f"{prefix}{key}.")
         elif text := _flat(value):
             yield f"{prefix}{key}", text
-
-
-def _is_duration(column: str) -> bool:
-    """Seconds by name: ``duration_s``, ``wait_s``, or AWX's ``elapsed``."""
-    return column.endswith("_s") or column == "elapsed"
-
-
-def _duration(seconds: float) -> str:
-    if round(seconds, 1) < 60:
-        return f"{seconds:.1f}s"
-    minutes, secs = divmod(round(seconds), 60)
-    if minutes < 60:
-        return f"{minutes}m{secs:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h{minutes:02d}m"
 
 
 #: Columns holding an outcome or state word, colored by what the word means.

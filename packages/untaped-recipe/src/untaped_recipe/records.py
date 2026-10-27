@@ -13,7 +13,7 @@ are ``null`` on a ``list`` row. ``recipe.pack``'s ``recipes`` and
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -21,6 +21,7 @@ from untaped.sdk import (
     AbsolutePath,
     CheckRecord,
     Failure,
+    ObjectName,
     OutcomeRecord,
     Record,
     TargetRecord,
@@ -73,7 +74,7 @@ class _PackOutcome(OutcomeRecord):
     name: str
     source: str | None = None
     rev: str | None = None
-    commit: str | None = None
+    commit: Annotated[str | None, ObjectName] = None
     detail: str | None = None
 
 
@@ -132,7 +133,7 @@ class Pack(Record, kind="recipe.pack"):
     path: str
     source: str
     rev: str
-    commit: str
+    commit: Annotated[str, ObjectName]
     recipes: int | list[PackRecipe]
     hooks: int | list[PackHook]
     manifest_name: str | None = None

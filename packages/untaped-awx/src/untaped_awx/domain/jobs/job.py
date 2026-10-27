@@ -16,11 +16,11 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from itertools import islice
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from untaped.sdk import UtcTimestamp
+from untaped.sdk import Duration, ObjectName, UtcTimestamp
 
 TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 
@@ -79,12 +79,12 @@ class Job(BaseModel):
     finished_at: UtcTimestamp | None = Field(
         default=None, validation_alias=AliasChoices("finished_at", "finished")
     )
-    elapsed: float | None = None
+    elapsed: Annotated[float | None, Duration] = None
     """Seconds the job ran, as AWX reports it."""
     failed: bool = False
     scm_branch: str | None = None
     """The branch, tag or commit a job was launched on (empty: its project's)."""
-    scm_revision: str | None = None
+    scm_revision: Annotated[str | None, ObjectName] = None
     """The commit a job's project checkout resolved to."""
     event_processing_finished: bool | None = Field(default=None, exclude=True)
     """``False`` while AWX is still saving a finished job's events."""

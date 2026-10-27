@@ -38,6 +38,8 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Following",
         "Bytes",
         "Age",
+        "Duration",
+        "ObjectName",
         "Spread",
         "key",
         "SettingKey",

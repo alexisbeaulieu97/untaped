@@ -15,6 +15,7 @@ from untaped.sdk import (
     Age,
     Bytes,
     Key,
+    ObjectName,
     OutcomeRecord,
     Record,
     Spread,
@@ -262,7 +263,7 @@ class Code(Record):
 
     name: str
     path: str
-    sha: str
+    sha: Annotated[str, ObjectName]
     repo: str = ""
     url: str
 

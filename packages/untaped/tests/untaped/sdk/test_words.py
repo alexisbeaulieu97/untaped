@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk.words import (
+    elapsed_text,
     hint,
     not_found,
     plural,
@@ -79,3 +80,19 @@ def test_shown_path_writes_home_as_a_tilde() -> None:
     assert shown_path(Path.home()) == "~"
     assert shown_path(Path.home() / "x") == "~/x"
     assert shown_path("/elsewhere") == "/elsewhere"
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (5, "5.0s"),
+        (42.13497729599476, "42.1s"),
+        (59.96, "1m00s"),
+        (102.0, "1m42s"),
+        (3725.0, "1h02m"),
+    ],
+)
+def test_a_run_time_reads_to_the_tenth_then_in_minutes_then_hours(
+    seconds: float, expected: str
+) -> None:
+    assert elapsed_text(seconds) == expected
