@@ -3,6 +3,7 @@ and refuses a ``File[M]`` it reads that names nothing."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
@@ -25,7 +26,7 @@ from untaped.sdk import (
     Written,
     key,
 )
-from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, CliResult, Install, ScriptedPromptBackend
 
 #: A cache the plugin class holds: what Refresh's flags are about.
 MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
@@ -33,6 +34,7 @@ MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
 
 class ToolSettings(BaseModel):
     workers: int = Field(3, description="How many workers run at once.")
+    spread: int | None = Field(None, description="How many spread at once; unset: twelve.")
 
 
 class Delete(Command):
@@ -88,6 +90,15 @@ class Work(Command[ToolSettings]):
         return f"{self.parallel.value} {self.limit.value}"
 
 
+class Spread(Command[ToolSettings]):
+    """Print how many spread at once: an optional setting, twelve when unset."""
+
+    parallel: Parallel = Parallel(default=key(ToolSettings).spread, unset=12, cap=8)
+
+    def run(self) -> str:
+        return str(self.parallel.value)
+
+
 class Page(Command):
     """Print how many results at most, fifty unless asked."""
 
@@ -121,7 +132,7 @@ class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Fetch, Work, Page, Check)
+    commands = (Delete, Tidy, Sweep, Fetch, Work, Spread, Page, Check)
     motd = MOTD
 
 
@@ -234,6 +245,27 @@ def test_an_unmounted_command_reads_its_setting_afresh(monkeypatch: pytest.Monke
         with run_scope(build_run(mount.declaration, mount.settings)):
             seen.append(Work().parallel.value)
     assert seen == [3, 5]
+
+
+def test_an_unset_setting_takes_unset_capped_without_a_warning() -> None:
+    unset = _run("tool", "spread")
+    assert (unset.exit_code, unset.stdout, unset.stderr) == (0, "8\n", "")
+
+
+def test_a_set_setting_or_j_above_the_cap_still_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert "--parallel 20 clamped to 8" in _run("tool", "spread", "-j", "20").stderr
+    monkeypatch.setenv("UNTAPED_TOOL__SPREAD", "20")
+    capped = _run("tool", "spread")
+    assert capped.stdout == "8\n"
+    assert "tool.spread 20 clamped to 8" in capped.stderr
+    monkeypatch.setenv("UNTAPED_TOOL__SPREAD", "5")
+    assert _run("tool", "spread").stdout == "5\n"
+
+
+def test_an_unfilled_block_reads_its_default_under_a_run(install: Callable[..., Install]) -> None:
+    # what code outside a command field reads: the same number, no -j
+    with install(Tool).running():
+        assert (Spread().parallel.value, Work().parallel.value) == (8, 3)
 
 
 def test_parallel_and_limit_below_one_are_usage_errors() -> None:

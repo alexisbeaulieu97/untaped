@@ -6070,6 +6070,7 @@ sdk untaped.sdk.Panes.with_error(text)  [experimental]
 sdk untaped.sdk.Parallel()
 sdk untaped.sdk.Parallel(cap=) default=None
 sdk untaped.sdk.Parallel(default=) default=4
+sdk untaped.sdk.Parallel(unset=) default=None
 sdk untaped.sdk.Parallel.field_kind class
 sdk untaped.sdk.Parallel.map(fn, items) callback(fn, 1)
 sdk untaped.sdk.Parallel.map(on_abort=) default=None callback(0)
