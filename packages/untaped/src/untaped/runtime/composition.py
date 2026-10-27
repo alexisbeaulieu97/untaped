@@ -146,21 +146,23 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
 
     ``taken`` are names a plugin may not have: config.yml's own top-level
     keys and the root commands not on a plugin class. A plugin whose name is
-    taken, by those, by an earlier entry sound on its own or by such a root entry's commands (core
-    composes first and wins), or whose walk finds any problem, is quarantined
-    with every problem named. A record a command reaches belongs to the
-    plugin whose package defines it, whichever plugins reach it and in
-    whatever order; a class no composed plugin's package defines belongs to
-    the plugin that reaches it. A contract's records belong to the plugin
-    that lists them: the owner's model to the plugin that ``offers`` the
-    contract (shelf's ``Book`` is ``shelf.book``), a provider's own record
-    to the plugin whose ``fills`` lists the provider. A record has one kind,
-    and a kind one record: kinds are claimed in :data:`_PHASES` across every
-    plugin, a plugin's own records before another's reach of its package, so
-    a plugin is refused (``duplicate-kind``) when a composing plugin's claim
-    outranks its clashing one; entry order decides only within a phase and in
-    a cycle of plugins outranking each other. A plugin refused claims no kind; a
-    name goes to the first plugin sound on its own, before kinds are settled.
+    taken, by those, by an earlier entry sound on its own or by such a root
+    entry's commands (core composes first and wins), or whose walk finds any
+    problem, is quarantined with every problem named. A record a command
+    reaches belongs to the plugin whose package defines it, whichever plugins
+    reach it and in whatever order; a class no composed plugin's package
+    defines belongs to the plugin that reaches it. A contract's records
+    belong to the plugin that lists them: the owner's model to the plugin
+    that ``offers`` the contract (shelf's ``Book`` is ``shelf.book``), a
+    provider's own record to the plugin whose ``fills`` lists the provider.
+    A record has one kind, and a kind one record: claims rank by
+    :data:`_PHASES` across every plugin, a plugin's own records before
+    another's reach of its package, and a plugin is refused
+    (``duplicate-kind``) when its claim clashes with a composing plugin's
+    better one, or with the plugin a cycle of plugins outranking each other
+    composes (the first of it in entry order); entry order decides nothing
+    else but ranks within a phase. A plugin refused claims no kind; a name
+    goes to the first plugin sound on its own, before kinds are settled.
     Two entry points in one top-level package share it, the first not
     quarantined owning its classes, as :meth:`Declaration.owner_of` reads
     it. A contract belongs to the one plugin whose ``offers`` lists it; two
