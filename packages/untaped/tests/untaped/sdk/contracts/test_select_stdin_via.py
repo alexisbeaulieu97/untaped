@@ -9,6 +9,8 @@ from collections.abc import Callable, Iterator
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped.runtime.composition import PluginEntry, compose
+from untaped.runtime.declaration import target_of
 from untaped.sdk import Command, Output, Plugin, Positional, Stdin, experimental, key
 from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record
 from untaped.sdk.testing import Install
@@ -90,8 +92,8 @@ class Loans(Cards[Loan], Provider[Lending]):
         return []
 
 
-#: Loan's kind: its class name under the plugin whose package defines it, this test's owner.
-LOAN = "counter.loan"
+#: Loan's kind: its class name under the plugin that fills with it, the kit's ``lend``.
+LOAN = "lend.loan"
 
 
 def _line(kind: str, **record: object) -> str:
@@ -143,11 +145,45 @@ def test_a_kind_no_provider_reads_or_no_kind_exits_2(install: Installer, piped: 
     assert ran.exit == 2, ran.stderr
 
 
-def test_via_must_be_a_bridge_returning_what_stdin_accepts() -> None:
-    class Other(Issued):
-        name: str
+def _bad_via(field: Stdin[Card]) -> list[tuple[str, str]]:
+    class Bad(Command[Desk]):
+        """Read cards."""
 
-    with pytest.raises(TypeError, match="is not a bridge"):
-        Stdin(via=Cards.cards)._check_via((Card,))
-    with pytest.raises(TypeError, match=r"reads Card rows, which Stdin\[Other\] doesn't accept"):
-        Stdin(via=Cards.to_card)._check_via((Other,))
+        stdin: Stdin[Card] = field
+        output: Output[Card]
+
+        def run(self) -> Iterator[Card]:
+            yield from ()
+
+    class Owner(Plugin):
+        """Own cards."""
+
+        settings = Desk
+        commands = (Bad,)
+        offers = (Cards,)
+
+    declaration = compose([PluginEntry(name="owner", target=target_of(Owner), plugin=Owner)])
+    [refused] = declaration.quarantined
+    return [(problem.rule, problem.detail) for problem in refused.problems]
+
+
+class Other(Issued):
+    name: str
+
+
+@experimental
+class Others[T: Record = Other](Contract):
+    """Other things, whose bridge returns no card."""
+
+    def to_other(self, item: T) -> Other:
+        """A provider's record as another thing."""
+        raise NotImplementedError
+
+
+def test_via_must_be_a_bridge_returning_what_stdin_accepts() -> None:
+    [(rule, detail)] = _bad_via(Stdin(via=Cards.cards))
+    assert rule == "field-type"
+    assert "takes a contract's bridge method" in detail
+    [(rule, detail)] = _bad_via(Stdin(via=Others.to_other))
+    assert rule == "field-type"
+    assert detail.endswith("reads Other rows, which it doesn't accept")

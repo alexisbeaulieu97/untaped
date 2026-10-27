@@ -649,22 +649,8 @@ class Stdin[R: BaseModel](FieldBlock):
             kind: model for kind, model in known.items() if filled._any or issubclass(model, models)
         }
         if self.via is not None:
-            filled._known = known
-            filled._check_via(models)
+            filled._known = known  # composition checked that ``via`` is a bridge returning R
         return filled
-
-    def _check_via(self, models: tuple[type[BaseModel], ...]) -> None:
-        """``via`` is a contract's bridge, returning the owner's model ``R`` accepts."""
-        from untaped.sdk.contracts._select import bridge_of  # noqa: PLC0415 - only via pays
-
-        _, method = bridge_of(cast("Callable[..., Any]", self.via))
-        returned = method.hints["return"]
-        if not issubclass(returned, models):
-            names = " | ".join(model.__name__ for model in models)
-            raise TypeError(
-                f"Stdin[{names}](via={method.name}) reads {returned.__name__} rows, "
-                f"which Stdin[{names}] doesn't accept"
-            )
 
     def identifiers(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str]:
         """The identifiers given, or read from stdin: bare lines, or each row's ``Key`` field.

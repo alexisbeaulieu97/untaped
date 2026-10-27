@@ -541,7 +541,7 @@ class _PluginWalk:
                 )
             self._answer_caches(cls, info)
             if info.item is not None:
-                self.kind(info.item)
+                self.kinds.setdefault(info.item, f"{self.name}.{snake(info.item.__name__)}")
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
@@ -604,7 +604,9 @@ class _PluginWalk:
         except ContractError:
             return  # the registry quarantines the offer, naming why
         if item is not None and info is not None and item is not info.item:
-            self.kind(item)  # the provider's own record: rows of it come back through the bridge
+            # the provider's own record, under the plugin that fills: its rows come back through
+            # the bridge
+            self.kinds.setdefault(item, f"{self.name}.{snake(item.__name__)}")
 
     def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
         if not cls.fills:
@@ -786,6 +788,7 @@ class _Seen:
     inputs: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
     stdin: list[str] = field(default_factory=list)
+    stdin_via: str | None = None
     output: type[BaseModel] | None = None
     formats: tuple[str, ...] = ()
 
@@ -840,6 +843,7 @@ class _CommandWalk:
             output=None if seen.output is None else self._kind(seen.output),
             formats=seen.formats,
             stdin=tuple(seen.stdin),
+            stdin_via=seen.stdin_via,
             inputs=tuple(seen.inputs),
             writes=tuple(seen.writes),
             guides=tuple(dict.fromkeys(seen.guides)),
@@ -1095,7 +1099,7 @@ class _CommandWalk:
         if isinstance(default, Output):
             self._output_field(where, info.annotation, default)
         elif isinstance(default, Stdin):
-            self._stdin_field(where, info.annotation)
+            self._stdin_field(where, info.annotation, default)
         elif isinstance(default, Refresh):
             refresh_help = self._refresh_field(where, default)
         elif (
@@ -1137,7 +1141,7 @@ class _CommandWalk:
         self.seen.formats = default.formats
         self._kind(model)
 
-    def _stdin_field(self, where: str, annotation: object) -> None:
+    def _stdin_field(self, where: str, annotation: object, default: Stdin[Any]) -> None:
         accepted = generic_argument(annotation)
         models = [accepted] if _is_model(accepted) else list(get_args(accepted))
         if not models or not all(_is_model(model) for model in models):
@@ -1146,6 +1150,35 @@ class _CommandWalk:
             )
             return
         self.seen.stdin.extend(target_of(model) for model in models)
+        if default.via is not None:
+            self.seen.stdin_via = self._via(where, default.via, tuple(models))
+
+    def _via(self, where: str, via: object, models: tuple[type[BaseModel], ...]) -> str | None:
+        """The contract whose bridge ``Stdin(via=)`` names, if it names one returning ``R``."""
+        from untaped.sdk.contracts._declare import method_contract  # noqa: PLC0415
+
+        try:
+            info, method = method_contract(typing.cast("collections.abc.Callable[..., Any]", via))
+        except TypeError:
+            info = None
+        if info is None or not method.bridge:
+            self.problem(
+                "field-type",
+                where,
+                f"Stdin(via=) takes a contract's bridge method (BookSource.to_book), not {via!r}",
+            )
+            return None
+        returned = method.hints["return"]
+        if not issubclass(returned, models):
+            names = " | ".join(model.__name__ for model in models)
+            self.problem(
+                "field-type",
+                where,
+                f"Stdin[{names}](via={info.cls.__name__}.{method.name}) reads "
+                f"{returned.__name__} rows, which it doesn't accept",
+            )
+            return None
+        return target_of(info.cls)
 
     def _refresh_field(self, where: str, default: Refresh) -> str | None:
         """Check the caches ``default`` names; the help of its flags, or ``None`` on a problem.

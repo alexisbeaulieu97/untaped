@@ -74,8 +74,9 @@ class Library(Plugin):
 - **The owner's model** is the item type parameter's default, an `Issued`
   record (`Issued` and its `Source` are also in `untaped.sdk`, so an owner's
   state model can hold issued records without loading contracts). Its kind,
-  like a provider's own record's, is its class name under the plugin whose
-  package defines it, given at composition. A provider issuing its own record type passes it
+  like a provider's own record's, is its class name under the plugin that
+  lists it (the owner's `offers`, the provider's `fills`), given at
+  composition. A provider issuing its own record type passes it
   (`BookSource[Volume]`) directly, never through a generic base of its own,
   and fills the bridge, which stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
@@ -119,7 +120,9 @@ class Library(Plugin):
   takes `shelf.book` rows and the rows of any provider's own record
   (`library.volume`), each read through that provider's bridge, so
   `self.stdin.values(given)` returns each argument as given, a bare
-  identifier or a `Book`, in input order. A provider is built, and its
+  identifier or a `Book`, in input order. The declaration records the
+  contract, so the surface lists the providers' kinds the command reads under
+  the composed install. A provider is built, and its
   settings read, only when a row of its kind arrives. A kind no provider
   reads, or a line with no kind, exits 2; an unready provider whose row
   arrived, or a bridge returning an invalid `Book`, exits 4. `convert`, the
