@@ -6,13 +6,14 @@ import json
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, Field
 
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import target_of
-from untaped.sdk import Command, Output, Plugin, Positional, Stdin, experimental, key
+from untaped.sdk import Command, Key, Output, Plugin, Positional, Stdin, experimental, key
 from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record, gather
 from untaped.sdk.testing import Install
 
@@ -22,7 +23,7 @@ Installer = Callable[..., Install]
 class Card(Issued):
     """The owner's model."""
 
-    title: str
+    title: Annotated[str, Key]
 
 
 class Loan(Record):
@@ -86,11 +87,21 @@ class Every(Command[Desk]):
             yield from ok.value
 
 
+class Titles(Command[Desk]):
+    """Print the title of each card given or piped."""
+
+    titles: Positional[list[str]] = Field(default_factory=list, description="Titles.")
+    stdin: Stdin[Card] = Stdin(via=Cards.to_card)
+
+    def run(self) -> str:
+        return ",".join(self.stdin.identifiers(self.titles))
+
+
 class Counter(Plugin):
     """Show cards."""
 
     settings = Desk
-    commands = (Show, Big, Every)
+    commands = (Show, Big, Every, Titles)
     offers = (Cards,)
 
 
@@ -165,6 +176,32 @@ def test_a_bridge_called_off_the_run_s_thread_still_names_its_kind(install: Inst
     assert (row["source"]["plugin"], row["source"]["kind"]) == ("lend", LOAN)
 
 
+def test_identifiers_of_a_provider_row_are_its_bridged_key(install: Installer) -> None:
+    piped = _line(LOAN, shelf_mark="A1", name="Dune") + _line("counter.card", title="Emma")
+    ran = _counter(install).cli("counter titles --stdin", input=piped)
+    assert ran.exit == 0, ran.stderr
+    assert ran.stdout == "Dune (north),Emma\n"
+
+
+class Lend(Plugin):
+    """Lend cards."""
+
+    settings = Lending
+    fills = (Loans,)
+
+
+def test_the_surface_lists_the_provider_kinds_a_via_reads() -> None:
+    from untaped.core.surface import generate, render
+    from untaped.runtime.registry import PluginCandidate
+
+    candidates = [
+        PluginCandidate(distribution=f"untaped-{name}", name=name, target=target_of(cls))
+        for name, cls in (("counter", Counter), ("lend", Lend))
+    ]
+    lines = render(generate(candidates)).splitlines()
+    assert f"record {LOAN}(name, shelf_mark)" in lines  # written: a command reads it
+
+
 def test_nothing_piped_builds_no_provider(install: Installer) -> None:
     ran = _counter(install, branch="").cli("counter show Dune -f json")
     assert ran.exit == 0, ran.stderr
@@ -223,6 +260,8 @@ class Others[T: Record = Other](Contract):
 
 
 def test_via_must_be_a_bridge_returning_what_stdin_accepts() -> None:
+    [(rule, detail)] = _bad_via(Stdin(via=print))
+    assert "takes a contract's bridge method" in detail
     [(rule, detail)] = _bad_via(Stdin(via=Cards.cards))
     assert rule == "field-type"
     assert "takes a contract's bridge method" in detail

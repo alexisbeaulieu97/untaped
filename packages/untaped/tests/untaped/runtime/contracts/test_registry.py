@@ -32,7 +32,7 @@ from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gath
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import DuplicateKindError, Record
+from untaped.sdk.records import DuplicateKindError, ForeignKindError, Record
 from untaped.sdk.testing import plugin_candidate
 
 
@@ -466,3 +466,11 @@ def test_an_11x_owner_s_cache_with_no_plugin_and_name_is_unreadable() -> None:
         "Unnamed.rows is cached in a cache with no plugin and name: spell it "
         "Cache('rows', 'unnamed_rows', ...) and list it on PluginSpec.caches"
     )
+
+
+def test_an_11x_provider_whose_kind_is_foreign_is_a_bad_provider() -> None:
+    def foreign() -> tuple[Contract, ...]:
+        raise ForeignKindError("kind 'shelf.loan' is declared under library's package")
+
+    compose(shelf_spec(), PluginSpec(name="library", provides={"shelf": foreign}))
+    assert _reasons() == {"library": "bad-provider"}
