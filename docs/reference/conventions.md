@@ -78,8 +78,8 @@ lists the categories. A plugin's error classes declare them as class defaults
   `auth` even when it becomes a `ConfigError` for its hint.
 - Put a follow-up command in `hint=` rather than in the message, named by its
   class: `hint=Login.spelled("awx")` reads ``run `untaped auth login awx` ``
-  (core's commands come from `untaped.core.api`). Text output prints it as a
-  `hint:` line.
+  (core's commands come from `untaped.core.api`), printed as a `hint:` line.
+  Only a run spells a class, so a validator names its command as a string.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
 - A run exits with the most severe failure it printed or emitted as a row

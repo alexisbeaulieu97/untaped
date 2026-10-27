@@ -486,3 +486,15 @@ def test_sync_still_updates_the_other_packs_when_one_was_replaced_during_its_fet
     ]
     assert "newer" in _installed_recipe("alpha").read_text()
     assert _installed_recipe("beta").read_text() == _CHANGED
+
+
+def test_sync_refuses_a_relative_recorded_source_and_names_the_reinstall(tmp_path: Path) -> None:
+    _write_pack(tmp_path / "alpha", name="alpha")
+    _add(tmp_path / "alpha")
+    index = PackLibrary(library_dir=library_dir()).index_path
+    index.write_text(index.read_text().replace(str(tmp_path / "alpha"), "alpha"))
+
+    result = run(["packs", "sync", "alpha", "--yes"])
+
+    assert result.exit_code != 0
+    assert "`untaped recipe packs add --force`" in result.stderr
