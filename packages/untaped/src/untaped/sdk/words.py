@@ -115,18 +115,20 @@ def _is_spelled(command: object) -> bool:
 
 
 def _spelled(command: str | SpelledCommand | Sequence[str]) -> str:
-    """``command``'s text: a string as given, a command named by its class as this run spells it."""
+    """``command``'s text: a string as given, a command named by its class as this run spells it.
+
+    Spelling a class needs the run that mounts it: outside any run this raises
+    a :class:`RuntimeError`, and for a class the run does not mount a
+    :class:`LookupError`. Code that may run outside a run (a validator) names
+    its command as a string.
+    """
     if isinstance(command, str):
         return command
     if not _is_spelled(command):
         raise TypeError(f"a command is a string or Command.spelled(...), not {command!r}")
-    from untaped.sdk._run import NoRunError, current_run  # noqa: PLC0415 - only spelling pays
+    from untaped.sdk._run import current_run  # noqa: PLC0415 - only spelling pays
 
-    spelled = cast("SpelledCommand", command)
-    try:
-        return current_run().composition.spell(spelled)
-    except NoRunError:  # a message built outside any run: the class's name stands in
-        return " ".join([spelled.command.__name__, *map(str, spelled.args)])
+    return current_run().composition.spell(cast("SpelledCommand", command))
 
 
 def run_hint(command: str | SpelledCommand) -> str:

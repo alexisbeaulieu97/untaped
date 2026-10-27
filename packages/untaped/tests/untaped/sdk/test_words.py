@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from untaped.sdk import Command
+from untaped.sdk._run import NoRunError
 from untaped.sdk.words import (
+    command_line,
     elapsed_text,
     hint,
     not_found,
@@ -96,3 +99,20 @@ def test_a_run_time_reads_to_the_tenth_then_in_minutes_then_hours(
     seconds: float, expected: str
 ) -> None:
     assert elapsed_text(seconds) == expected
+
+
+class _Named(Command):
+    """A command a hint names by its class."""
+
+    def run(self) -> None:
+        return None
+
+
+def test_a_command_is_a_string_or_spelled_never_a_bare_list() -> None:
+    with pytest.raises(TypeError, match=r"Command\.spelled"):
+        command_line(["auth", "login"])  # type: ignore[arg-type]
+
+
+def test_a_class_is_spelled_only_inside_the_run_that_mounts_it() -> None:
+    with pytest.raises(NoRunError):
+        hint(_Named.spelled("x"))

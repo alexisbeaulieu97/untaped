@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from untaped.sdk import hint, not_found
 from untaped_recipe.application.resolution import find_library_recipe
@@ -45,7 +45,7 @@ def find_pack(library: PackLibrary, name: str) -> InstalledPack:
 
 
 def find_recipe(
-    library: PackLibrary, ref_text: str, *, verb: str
+    library: PackLibrary, ref_text: str, *, verb: Literal["get", "edit"]
 ) -> tuple[InstalledPack, str, RecipeEntry]:
     """A library recipe; a miss that names a pack or hook instead says which command reads it."""
     try:
@@ -58,7 +58,7 @@ def find_recipe(
         ) from None
 
 
-def _instead(noun: str, verb: str) -> type[RecipeCommand]:
+def _instead(noun: str, verb: Literal["get", "edit"]) -> type[RecipeCommand]:
     """The ``packs`` or ``hooks`` command doing ``verb`` (``get``, ``edit``) for a missed recipe."""
     from untaped_recipe.commands import hooks, packs  # noqa: PLC0415 - they import this module
 

@@ -404,7 +404,8 @@ def _fetch(
             # directory could install a different pack.
             raise ValueError(
                 f"recorded source {q(pack.source)} is a relative path; "
-                "reinstall the pack with `untaped recipe packs add --force`"
+                "reinstall the pack with "
+                f"`{command_line(Add.spelled('--force'))}`"
             )
         if not source_dir.is_dir():
             raise PathNotFoundError(f"pack source not found: {pack.source}")

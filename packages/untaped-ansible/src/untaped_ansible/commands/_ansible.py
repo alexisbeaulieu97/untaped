@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 from typing import Literal
 
 from pydantic import ValidationError
@@ -72,7 +73,8 @@ class AnsibleCommand(Command[AnsibleSettings]):
             return
         from untaped_ansible.commands.source import Refresh  # noqa: PLC0415 - import cycle
 
-        commands = ", ".join(f"`{command_line(Refresh.spelled(name))}`" for name in names)
+        lines = (command_line(Refresh.spelled(shlex.quote(name))) for name in names)
+        commands = ", ".join(f"`{line}`" for line in lines)
         self.ctx.diag.warning(
             "cached source data resolves aliases at refresh time; "
             f"run {commands} for this change to affect cached graphs",
