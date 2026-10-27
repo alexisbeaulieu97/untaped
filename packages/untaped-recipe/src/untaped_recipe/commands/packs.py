@@ -261,7 +261,7 @@ class Sync(RecipeCommand):
             changed = [plan for plan in plans if plan.changed]
             go = self.confirm(
                 f"Sync {plural(len(changed), 'pack')}?",
-                preview=lambda: _sync_lines(changed),
+                preview=(lambda: _sync_lines(changed)) if changed else None,
                 needed=bool(changed),
             )
             if go:
@@ -283,7 +283,7 @@ class Sync(RecipeCommand):
 
     def _selected(self, library: PackLibrary) -> dict[str, InstalledPack]:
         """The installed packs to sync, by name: the named ones, or every one with ``--all``."""
-        names = self.stdin.identifiers() if self.stdin.requested else self.names
+        names = self.stdin.identifiers(self.names) if self.stdin.requested or self.names else []
         if bool(names) == self.all_:
             raise UsageError("name the packs to sync, or pass --all (not both)")
         installed = {pack.name: pack for pack in library.packs()}

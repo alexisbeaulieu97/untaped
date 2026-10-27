@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pkgutil import resolve_name
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Plugin
@@ -74,3 +74,29 @@ def test_the_exemptions_are_still_needed(
 ) -> None:
     gone = sorted(set(EXEMPT) - _found(first_party_candidates))
     assert not gone, f"{gone} no longer exist: drop them from EXEMPT"
+
+
+class _Window(BaseModel):
+    max_age_minutes: int = 5
+    parallel: int = 4
+
+
+class _Bad(BaseModel):
+    stale_after_seconds: int = 60
+    cache_ttl_seconds: int = 60
+    window: _Window | None = Field(default_factory=_Window)
+
+
+class _Good(BaseModel):
+    timeout_seconds: float = 30.0
+    throttle_seconds: float = 1.0
+    window_parallel: int = 4
+
+
+def test_the_finder_flags_max_age_names_only() -> None:
+    assert list(hand_made(_Bad)) == [
+        "stale_after_seconds",
+        "cache_ttl_seconds",
+        "window.max_age_minutes",
+    ]
+    assert list(hand_made(_Good)) == []

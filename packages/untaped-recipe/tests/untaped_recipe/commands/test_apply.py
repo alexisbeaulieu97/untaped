@@ -506,6 +506,61 @@ def test_apply_stdin_requires_yes_and_resolves_workspace_status_pipe(tmp_path: P
     assert (repo / "out.txt").read_text() == "hello\n"
 
 
+def _envelope(kind: str | None, record: dict[str, object]) -> str:
+    return json.dumps({"untaped": "1", "kind": kind, "record": record}) + "\n"
+
+
+def test_apply_stdin_reads_a_kind_less_row_by_its_target_path(tmp_path: Path) -> None:
+    recipe, _ = _out_recipe(tmp_path)
+    repo = tmp_path / "api"
+    repo.mkdir()
+
+    piped = _envelope(None, {"name": "api", "target_path": str(repo), "extra": [1]})
+    result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
+
+    assert result.exit_code == 0, result.output
+    assert (repo / "out.txt").read_text() == "hello\n"
+
+
+def test_apply_stdin_refuses_a_kind_no_plugin_declares(tmp_path: Path) -> None:
+    recipe, _ = _out_recipe(tmp_path)
+    repo = tmp_path / "api"
+    repo.mkdir()
+
+    piped = _envelope("acme.thing", {"path": str(repo)})
+    result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
+
+    assert result.exit_code != 0
+    assert "no installed plugin declares the kind 'acme.thing'" in result.said
+    assert not (repo / "out.txt").exists()
+
+
+def test_apply_stdin_refuses_a_row_its_kind_does_not_validate(tmp_path: Path) -> None:
+    recipe, _ = _out_recipe(tmp_path)
+    repo = tmp_path / "api"
+    repo.mkdir()
+
+    piped = _envelope("workspace.repo_status", {"target_path": str(repo)})
+    result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
+
+    assert result.exit_code == 1, result.output
+    assert "line 1: path" in result.said
+    assert not (repo / "out.txt").exists()
+
+
+def test_apply_stdin_names_the_row_that_names_no_target(tmp_path: Path) -> None:
+    recipe, _ = _out_recipe(tmp_path)
+    repo = tmp_path / "api"
+    repo.mkdir()
+
+    piped = _envelope(None, {"path": str(repo)}) + _envelope(None, {"name": "api"})
+    result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
+
+    assert result.exit_code != 0
+    assert "row 2: a piped row names no target" in result.said
+    assert not (repo / "out.txt").exists()
+
+
 def test_apply_stdin_empty_input_still_errors(tmp_path: Path) -> None:
     recipe, _ = _out_recipe(tmp_path)
 

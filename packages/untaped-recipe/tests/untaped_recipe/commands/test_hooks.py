@@ -356,6 +356,29 @@ def test_hook_run_validate_records_and_fail_exit(tmp_path: Path) -> None:
     assert failed_row["record"]["message"] == "not ready"
 
 
+def test_hook_run_prints_a_validate_verdict_in_its_text_format(tmp_path: Path) -> None:
+    hook_project = tmp_path / "hooks"
+    write_hook_project(
+        hook_project,
+        public_name="ready",
+        module_name="ready",
+        code=(
+            "def validate(*, inputs, target, args, helpers):\n"
+            "    if args.get('fail'):\n"
+            "        return helpers.fail('not ready')\n"
+            "    return helpers.pass_()\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+
+    passed = run(["hooks", "run", "ready", *_ctx(hook_project, target)])
+    failed = run(["hooks", "run", "ready", *_ctx(hook_project, target), "--arg", "fail=yes"])
+
+    assert (passed.exit_code, passed.stdout) == (0, "pass\n"), passed.output
+    assert (failed.exit_code, failed.stdout) == (1, "fail: not ready\n"), failed.output
+
+
 def test_hook_run_dual_export_infers_or_requires_kind(tmp_path: Path) -> None:
     hook_project = tmp_path / "hooks"
     write_hook_project(

@@ -5,12 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated
 
 from pydantic import Field
 
 from untaped.sdk import (
-    Document,
     Failed,
     Failure,
     Output,
@@ -31,7 +29,6 @@ from untaped_recipe.application.resolution import find_library_recipe, resolve_e
 from untaped_recipe.commands._recipe import RecipeCommand, recipe_errors
 from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.domain.paths import is_path_ref
-from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 from untaped_recipe.records import Test as TestRow
@@ -58,7 +55,7 @@ class Test(RecipeCommand):
     cases from several packs ran.
     """
 
-    ref: Annotated[Positional[str | None], Document(RecipeFile)] = Field(
+    ref: Positional[str | None] = Field(
         None, description="Installed pack, recipe ref, or pack path."
     )
     update: bool = Field(False, description="Regenerate expected/ trees from the current plan.")

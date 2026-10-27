@@ -32,8 +32,8 @@ class ApplyOutcome(OutcomeRecord, TargetRecord):
     """One target's ``recipe apply`` result.
 
     ``action`` is ``planned`` (preview), ``applied``, ``unchanged``,
-    ``skipped`` (a validate hook marked the target not applicable),
-    ``cancelled`` (confirmation declined) or ``failed``. A failed row says
+    ``skipped`` (a validate hook marked the target not applicable) or
+    ``failed``. A declined confirmation prints no rows. A failed row says
     why in ``detail`` (for humans) and ``error`` (category, system, message).
     """
 

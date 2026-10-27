@@ -216,8 +216,22 @@ def test_each_sample_is_a_kind_the_plugin_declares(sample: BaseModel, keys: list
     assert set(keys) <= set(json.loads(result.stdout)["properties"])
 
 
-def test_every_recipe_kind_has_a_sample() -> None:
-    assert len({type(sample) for sample, _keys in _CASES}) == 13
+@pytest.mark.parametrize(("sample", "keys"), _CASES)
+def test_a_recipe_record_reads_back_its_json_strictly(sample: BaseModel, keys: list[str]) -> None:
+    dumped = json.dumps(sample.model_dump(mode="json"))
+
+    assert type(sample).model_validate_json(dumped, strict=True) == sample
+
+
+def test_every_kind_the_plugin_writes_has_a_sample() -> None:
+    surface = (Path(__file__).parent / "snapshots" / "surface.txt").read_text().splitlines()
+    declared = {
+        line.split()[1] for line in surface if re.fullmatch(r"record recipe\.[a-z_]+", line)
+    }
+    sampled = {f"recipe.{_snake(type(sample).__name__)}" for sample, _keys in _CASES}
+
+    # A recipe file is a document recipe reads, never a row it writes.
+    assert sampled == declared - {"recipe.recipe_file"}
 
 
 def _snake(name: str) -> str:

@@ -362,6 +362,15 @@ def test_sync_needs_names_or_all(args: list[str]) -> None:
     assert result.exit_code == 2, result.output
 
 
+def test_sync_refuses_names_given_with_stdin(tmp_path: Path) -> None:
+    source = tmp_path / "alpha"
+    _write_pack(source, name="alpha")
+    _add(source)
+    result = run(["packs", "sync", "alpha", "--stdin"], input="alpha\n")
+    assert result.exit_code == 2
+    assert "not both" in result.stderr
+
+
 def test_sync_unknown_pack_fails(tmp_path: Path) -> None:
     result = run(["packs", "sync", "ghost", "--yes"])
 

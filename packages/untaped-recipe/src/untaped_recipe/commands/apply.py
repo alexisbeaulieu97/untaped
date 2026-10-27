@@ -220,7 +220,7 @@ class Apply(RecipeCommand):
         confirm = self.confirm.as_dry_run() if self.check else self.confirm
         with recipe_errors():
             if self.stdin.requested:  # before any hook runs, when nobody could answer
-                confirm.ensure_answerable("Apply the recipe?")
+                confirm.ensure_answerable("Apply to the targets?")
             resolved = resolve_apply_recipe(self.library(), self.recipe_ref, recipe_id=self.recipe)
             loaded = read_recipe_file(resolved.path)
             targets = self._targets()
@@ -229,10 +229,10 @@ class Apply(RecipeCommand):
             lines = self._preview(loaded, plans, preview)
             for line in lines:
                 self.ctx.diag.info(line, unmuted=True)
-            if len(lines) > 1 and not (confirm.yes or confirm.dry_run):
+            todo = [plan for plan in plans if plan.status != "error" and plan.changes]
+            if todo and len(lines) > 1 and not (confirm.yes or confirm.dry_run):
                 # The summary again, beside the question a long preview pushed away.
                 self.ctx.diag.info(lines[0], unmuted=True)
-            todo = [plan for plan in plans if plan.status != "error" and plan.changes]
             go = confirm(f"Apply to {plural(len(todo), 'target')}?", needed=bool(todo))
             execution = self._write(todo, ref=resolved.ref) if go else _Execution()
         rows = [_row(plan, execution, ref=resolved.ref, planned=not go) for plan in plans]
@@ -249,10 +249,16 @@ class Apply(RecipeCommand):
             return [Target(path=path) for path in self.dirs]
         if self.dirs:
             raise UsageError("provide targets as positional args or via --stdin, not both")
-        values = self.stdin.values()
-        return [
-            Target(Path(value)) if isinstance(value, str) else target_of(value) for value in values
-        ]
+        targets: list[Target] = []
+        for number, value in enumerate(self.stdin.values(), 1):
+            if isinstance(value, str):
+                targets.append(Target(Path(value)))
+                continue
+            try:
+                targets.append(target_of(value))
+            except ValueError as exc:
+                raise ValueError(f"row {number}: {exc}") from exc
+        return targets
 
     def _plan(
         self,
@@ -337,6 +343,7 @@ class Apply(RecipeCommand):
                     and exc.rollback_incomplete
                 ):
                     draft.commit(reservation)
+                self.ctx.diag.failure(exc, item=str(plan.target))
                 execution.failed[id(plan)] = exc
         if draft is not None:
             execution.backup_id = draft.id if draft.entries else None
