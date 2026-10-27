@@ -14,10 +14,10 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Collection
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from untaped.sdk import PickCatalog, PickItem, UsageError
+from untaped.sdk import PickCatalog, PickItem, UsageError, now
 from untaped.sdk.contracts import Answers, Errored, NoProviderReady, Ok, Reason, Skipped, gather
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoArg
@@ -172,7 +172,7 @@ def _note(answer: Ok[list[Repo]] | Errored | Skipped) -> str | None:
         case Ok(value=value, refreshed_at=at, invalid=invalid):
             note = f"{plugin}: {_repos(len(value))}"
             if at is not None:
-                note += f", refreshed {_age(datetime.now(UTC) - at)}"
+                note += f", refreshed {_age(now() - at)}"
             if invalid:
                 note += f", {len(invalid)} invalid ({invalid[0]}; upgrade untaped-{plugin})"
             return note

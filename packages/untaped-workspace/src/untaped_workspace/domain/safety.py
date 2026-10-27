@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from untaped.sdk import plural
 from untaped_workspace.domain.models import LocalBranch, WorktreeStatus
-from untaped_workspace.records import StatusRow
+from untaped_workspace.records import RepoStatus
 
 UNCOMMITTED = "uncommitted changes"
 NOT_STORED = "repo missing from the repo store; local work cannot be checked"
@@ -52,7 +52,7 @@ def archive_blockers(status: WorktreeStatus | None) -> tuple[str, ...]:
     return tuple(blockers)
 
 
-def archive_hint(blocked: Sequence[StatusRow]) -> str:
+def archive_hint(blocked: Sequence[RepoStatus]) -> str:
     """A non-destructive next step for each kind of blocker in ``blocked``."""
     pairs = [(row, blocker) for row in blocked for blocker in row.blockers]
     parts: list[str] = []

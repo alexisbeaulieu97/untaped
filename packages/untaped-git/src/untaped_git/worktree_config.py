@@ -36,7 +36,7 @@ _NONCE = re.compile(r"--nonce [0-9a-f]+")
 OWNER_MARK = "untaped-owner"
 
 
-def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | None) -> None:
+def write_worktree_config(store: RepoStore, worktree: Path) -> None:
     """Write a worktree's own config; :meth:`RepoStore.write_worktree_config` documents it."""
     with store._locked():
         check_worktree(store, worktree)
@@ -58,7 +58,7 @@ def write_worktree_config(store: RepoStore, worktree: Path, *, profile: str | No
         if store._helper_only:
             _worktree_config(store, worktree, "--add", helper, "")
         nonce = helper_nonce(store._path, worktree, create=True)
-        _worktree_config(store, worktree, "--add", helper, _helper_command(profile, nonce))
+        _worktree_config(store, worktree, "--add", helper, _helper_command(nonce))
 
 
 def enable_worktree_config(store: RepoStore) -> None:
@@ -236,10 +236,7 @@ def _worktree_config(store: RepoStore, worktree: Path, *args: str, check: bool =
     store._git(["config", "--worktree", *args], cwd=worktree, check=check)
 
 
-def _helper_command(profile: str | None, nonce: str | None) -> str:
+def _helper_command(nonce: str | None) -> str:
     executable = find_program("untaped") or str(Path(sys.argv[0]).resolve())
-    command = f"!{shlex.quote(executable)}"
-    if profile:
-        command += f" --profile {shlex.quote(profile)}"
-    command += " git credential"
+    command = f"!{shlex.quote(executable)} git credential"
     return f"{command} --nonce {nonce}" if nonce else command

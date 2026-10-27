@@ -1,11 +1,7 @@
-"""The rows the workspace commands emit, each declaring its ``workspace.*`` kind.
+"""The records the workspace commands print; a kind is its class name (``workspace.workspace``).
 
-The plugin's spec imports this module, so ``untaped plugin schema`` finds
-every kind before any command runs. Everything else names the model
-(``accepts=(StatusRow, ...)``, ``kind_of(StatusRow)``). It holds models
-only: it is on the startup path. The ``workspace.repo`` record a
-``RepoSource`` issues lives in ``domain/repo.py``, which ``state.yml``'s
-model also loads.
+It holds models only, so importing it never imports a command. The
+``workspace.repo`` record a ``RepoSource`` issues lives in ``domain/repo.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +13,7 @@ from pydantic import Field
 from untaped.sdk import OutcomeRecord, TargetRecord, UtcTimestamp
 
 
-class WorkspaceRow(TargetRecord, kind="workspace.workspace"):
+class Workspace(TargetRecord):
     """One active or archived workspace."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("name", "repos", "created_at", "archived_at")
@@ -33,7 +29,7 @@ class WorkspaceRow(TargetRecord, kind="workspace.workspace"):
 RepoAction = Literal["created", "checked_out", "unchanged", "failed"]
 
 
-class RepoOutcome(OutcomeRecord, TargetRecord, kind="workspace.repo_outcome"):
+class RepoOutcome(OutcomeRecord, TargetRecord):
     """What ``create``/``add`` did for one repo."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "branch", "base", "detail")
@@ -56,7 +52,7 @@ class RepoOutcome(OutcomeRecord, TargetRecord, kind="workspace.repo_outcome"):
 StatusState = Literal["ok", "missing", "cache_missing", "error"]
 
 
-class StatusRow(TargetRecord, kind="workspace.status"):
+class RepoStatus(TargetRecord):
     """Live git state of one repo, and what blocks archiving it."""
 
     table_columns: ClassVar[tuple[str, ...]] = (
@@ -104,7 +100,7 @@ class StatusRow(TargetRecord, kind="workspace.status"):
 ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
 
 
-class ArchiveOutcome(OutcomeRecord, TargetRecord, kind="workspace.archive_outcome"):
+class ArchiveOutcome(OutcomeRecord, TargetRecord):
     """What ``archive`` did (or would do) for one repo."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
@@ -124,7 +120,7 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord, kind="workspace.archive_outcom
 RemoveAction = Literal["planned", "released", "removed", "kept", "skipped", "failed"]
 
 
-class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"):
+class RemoveOutcome(OutcomeRecord, TargetRecord):
     """What ``remove`` did (or would do) for one repo.
 
     ``released``: the repo store kept the repo for someone else (``detail``
@@ -147,7 +143,7 @@ class RemoveOutcome(OutcomeRecord, TargetRecord, kind="workspace.remove_outcome"
 ResolveAction = Literal["updated", "unchanged", "skipped", "failed"]
 
 
-class ResolveOutcome(OutcomeRecord, TargetRecord, kind="workspace.resolve_outcome"):
+class ResolveOutcome(OutcomeRecord, TargetRecord):
     """What ``repos resolve`` did for one repo.
 
     ``updated``: its source lists it under a new URL for the same store repo,
@@ -168,7 +164,7 @@ class ResolveOutcome(OutcomeRecord, TargetRecord, kind="workspace.resolve_outcom
 RunAction = Literal["ran", "failed", "skipped"]
 
 
-class RunOutcome(OutcomeRecord, TargetRecord, kind="workspace.run_outcome"):
+class RunOutcome(OutcomeRecord, TargetRecord):
     """What ``run`` did for one repo."""
 
     table_columns: ClassVar[tuple[str, ...]] = (

@@ -65,7 +65,7 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
         ("fetch", lambda: store.fetch(branches=["*"], tags=["*"], prune=True)),
         ("tag", lambda: git(store.path, "tag", "wip-local", "refs/remotes/origin/main")),
         ("worktree_add", lambda: store.worktree_add(tree, "refs/remotes/origin/main", branch="w")),
-        ("write_worktree_config", lambda: store.write_worktree_config(tree, profile="work")),
+        ("write_worktree_config", lambda: store.write_worktree_config(tree)),
         ("upstream", lambda: (remote.delete_branch("gone"), remote.commit("n.txt", "n\n"))),
         ("refetch", lambda: store.fetch(branches=["*"], tags=["*"], prune=True)),
         ("prefetch", lambda: store.prefetch(history=["refs/remotes/origin/*"])),
@@ -133,7 +133,7 @@ def test_a_users_own_fetch_still_prunes(tmp_path: Path) -> None:
     store.fetch(branches=["*"], tags=["*"], prune=True)
     tree = tmp_path / "trees" / "work"
     store.worktree_add(tree, "refs/remotes/origin/main", branch="w")
-    store.write_worktree_config(tree, profile=None)
+    store.write_worktree_config(tree)
     remote.delete_branch("gone")
 
     git(tree, "fetch", "--quiet", bare=False)

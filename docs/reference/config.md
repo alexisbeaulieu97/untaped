@@ -151,10 +151,12 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 ## `workspace` state
 
+Kept in `~/.untaped/plugins/workspace/state.yml`.
+
 | Key | Type | Description |
 |---|---|---|
-| `workspace.active` | list | Active workspaces. Managed by `workspace` commands. |
-| `workspace.archived` | list | Archived workspaces. Managed by `workspace` commands. |
+| `workspace.workspaces` | list | An active workspace as the plugin's state keeps it, one row per name. |
+| `workspace.archived` | list | A workspace after ``archive``: its worktrees are gone, its record stays. |
 
 ## Renamed settings
 
@@ -183,8 +185,6 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
 | `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
-| `workspace.cache_dir` | `UNTAPED_WORKSPACE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
-| `workspace.protocol` | `UNTAPED_WORKSPACE__PROTOCOL` | none | deleted in 11.0; set github.git_protocol |
 
 ## See also
 

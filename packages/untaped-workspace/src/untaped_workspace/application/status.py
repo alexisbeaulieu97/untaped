@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk import NO_PROGRESS, Failure, ProgressHandle, UntapedError, bounded_map
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
-from untaped_workspace.records import StatusRow
+from untaped_workspace.records import RepoStatus
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class WorkspaceStatus:
-    """``workspace status``: one :class:`StatusRow` per repo, offline unless ``fetch``.
+    """``workspace status``: one :class:`RepoStatus` per repo, offline unless ``fetch``.
 
     Repos are read ``parallel`` at a time; rows keep the record's order.
 
@@ -38,17 +38,17 @@ class WorkspaceStatus:
         *,
         fetch: bool = False,
         progress: ProgressHandle = NO_PROGRESS,
-    ) -> list[StatusRow]:
+    ) -> list[RepoStatus]:
         """The rows of ``record``; with ``fetch``, ``progress`` hears the repos fetched.
 
         A workspace of one repo passes ``progress`` on to its fetch, whose
         phases are then the line; with more, the count of repos is.
         """
         root = workspace_root(self._workspaces_dir, record.name)
-        rows: dict[int, StatusRow] = {}
+        rows: dict[int, RepoStatus] = {}
         inner = progress if len(record.repos) == 1 else NO_PROGRESS
 
-        def _one(item: tuple[int, RepoSpec]) -> StatusRow:
+        def _one(item: tuple[int, RepoSpec]) -> RepoStatus:
             spec = item[1]
             outcome = self._fetch(spec.url, root / spec.dir, inner) if fetch else None
             row = self._row(record.name, root, spec)
@@ -63,7 +63,7 @@ class WorkspaceStatus:
                 )
             return row
 
-        def _collect(item: tuple[int, RepoSpec], row: StatusRow) -> None:
+        def _collect(item: tuple[int, RepoSpec], row: RepoStatus) -> None:
             rows[item[0]] = row
             if fetch:
                 progress.update(phase=record.name, done=len(rows), total=len(record.repos))
@@ -80,7 +80,7 @@ class WorkspaceStatus:
         except UntapedError as exc:
             return Failure.from_exception(exc, message=str(exc))
 
-    def _row(self, workspace: str, root: Path, spec: RepoSpec) -> StatusRow:
+    def _row(self, workspace: str, root: Path, spec: RepoSpec) -> RepoStatus:
         common = {
             "workspace": workspace,
             "repo": spec.name,
@@ -90,14 +90,14 @@ class WorkspaceStatus:
             "target_path": root / spec.dir,
         }
         if not self._git.in_store(spec.url):
-            return StatusRow(
+            return RepoStatus(
                 **common, branch=spec.branch, state="cache_missing", blockers=(NOT_STORED,)
             )
         try:
             status = self._git.status(root / spec.dir, branch=spec.branch, base=spec.base)
         except UntapedError as exc:
             reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
-            return StatusRow(
+            return RepoStatus(
                 **common,
                 branch=spec.branch,
                 state="error",
@@ -106,8 +106,8 @@ class WorkspaceStatus:
                 error=Failure.from_exception(exc, message=str(exc)),
             )
         if status is None:
-            return StatusRow(**common, branch=spec.branch, state="missing")
-        return StatusRow(
+            return RepoStatus(**common, branch=spec.branch, state="missing")
+        return RepoStatus(
             **common,
             branch=status.branch,
             state="ok",

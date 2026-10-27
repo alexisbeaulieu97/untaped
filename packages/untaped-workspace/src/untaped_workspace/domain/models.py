@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.sdk import UtcTimestamp
+from untaped.sdk import Key, UtcTimestamp
 from untaped_workspace.domain.repo import Repo
 
 
 class RepoSpec(Repo):
-    """One repo in a workspace (``state.yml``): the :class:`Repo` it was created from, frozen,
+    """One repo in a workspace (its state row): the :class:`Repo` it was created from, frozen,
     and how it is checked out.
 
     The URL never changes after ``create``; ``untaped workspace repos resolve``
@@ -35,18 +35,22 @@ class RepoSpec(Repo):
 
 
 class WorkspaceRecord(BaseModel):
-    """An active workspace as stored in ``state.yml``."""
+    """An active workspace as the plugin's state keeps it, one row per name."""
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: Annotated[str, Key]
     created_at: UtcTimestamp
     repos: tuple[RepoSpec, ...] = ()
 
 
 class ArchivedRecord(WorkspaceRecord):
-    """A workspace after ``archive``: its worktrees are gone, its record stays."""
+    """A workspace after ``archive``: its worktrees are gone, its record stays.
 
+    The archived rows are a list, not keyed: ``archive`` may keep a name twice.
+    """
+
+    name: str
     archived_at: UtcTimestamp
 
 

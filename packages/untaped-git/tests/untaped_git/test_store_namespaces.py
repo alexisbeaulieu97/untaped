@@ -65,7 +65,7 @@ def test_upstream_and_pull_resolve_from_the_worktree_refspec(
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     tree = tmp_path / "ws" / "fix"
     workspace.worktree_add(tree, "refs/remotes/origin/main", branch="fix")
-    workspace.write_worktree_config(tree, profile=None)
+    workspace.write_worktree_config(tree)
 
     assert git(tree, "rev-parse", "--symbolic-full-name", "@{upstream}", bare=False).strip() == (
         "refs/remotes/origin/main"

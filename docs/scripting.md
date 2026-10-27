@@ -64,7 +64,7 @@ another plugin's domain fields.
 ### Failed rows: the `error` field
 
 A failed row of an outcome record (`*_outcome` kinds such as
-`workspace.repo_outcome`, and per-repo records such as `workspace.status`)
+`workspace.repo_outcome`, and per-repo records such as `workspace.repo_status`)
 carries an `error` object next to its human `detail`, and counts toward the
 exit code. Rows that did not fail have no `error` key.
 

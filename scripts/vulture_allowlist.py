@@ -159,6 +159,8 @@ Core.token_store
 Core.refs
 Dotfiles.sync
 Git.repo_store
+WorkspacePlugin.workspaces
+WorkspacePlugin.checkouts
 
 # Enum members read by value from manifests and the state file.
 Policy.ONCE  # dotfiles: `policy: once`
