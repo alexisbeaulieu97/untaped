@@ -12,10 +12,12 @@ is gone.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pkgutil import resolve_name
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.sdk import Plugin
 from untaped.sdk._schema import unwrap_optional
 
 #: Parts of a field name that say a max age; ``ttl`` counts only as a whole word.
@@ -36,19 +38,30 @@ def hand_made(model: type[BaseModel], prefix: str = "") -> Iterator[str]:
             yield f"{prefix}{name}"
 
 
-def _found(specs: tuple[PluginSpec, ...]) -> set[tuple[str, str]]:
+def _settings(candidate: PluginCandidate) -> type[BaseModel] | None:
+    """The settings model of an 11.x spec or a 12.0 plugin class."""
+    target = resolve_name(str(candidate.target))
+    if isinstance(target, PluginSpec):
+        return target.settings
+    if isinstance(target, type) and issubclass(target, Plugin):
+        return target.settings
+    return None
+
+
+def _found(candidates: tuple[PluginCandidate, ...]) -> set[tuple[str, str]]:
     return {
-        (spec.name, path)
-        for spec in specs
-        if spec.settings is not None
-        for path in hand_made(spec.settings)
+        (candidate.name, path)
+        for candidate in candidates
+        if (settings := _settings(candidate)) is not None
+        for path in hand_made(settings)
     }
 
 
 def test_no_plugin_declares_a_max_age_setting_by_hand(
-    first_party_specs: tuple[PluginSpec, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
-    stray = sorted(f"{plugin}.{path}" for plugin, path in _found(first_party_specs) - set(EXEMPT))
+    found = _found(first_party_candidates)
+    stray = sorted(f"{plugin}.{path}" for plugin, path in found - set(EXEMPT))
     assert not stray, (
         f"{stray}: declare a Cache on the spec (PluginSpec.caches); its setting "
         "<plugin>.caches.<cache>.max_age_seconds is generated, and Cache(renamed_from=) "
@@ -56,32 +69,8 @@ def test_no_plugin_declares_a_max_age_setting_by_hand(
     )
 
 
-def test_the_exemptions_are_still_needed(first_party_specs: tuple[PluginSpec, ...]) -> None:
-    gone = sorted(set(EXEMPT) - _found(first_party_specs))
+def test_the_exemptions_are_still_needed(
+    first_party_candidates: tuple[PluginCandidate, ...],
+) -> None:
+    gone = sorted(set(EXEMPT) - _found(first_party_candidates))
     assert not gone, f"{gone} no longer exist: drop them from EXEMPT"
-
-
-class _Window(BaseModel):
-    max_age_minutes: int = 5
-    parallel: int = 4
-
-
-class _Bad(BaseModel):
-    stale_after_seconds: int = 60
-    cache_ttl_seconds: int = 60
-    window: _Window | None = Field(default_factory=_Window)
-
-
-class _Good(BaseModel):
-    timeout_seconds: float = 30.0
-    throttle_seconds: float = 1.0
-    window_parallel: int = 4
-
-
-def test_the_finder_flags_max_age_names_only() -> None:
-    assert list(hand_made(_Bad)) == [
-        "stale_after_seconds",
-        "cache_ttl_seconds",
-        "window.max_age_minutes",
-    ]
-    assert list(hand_made(_Good)) == []

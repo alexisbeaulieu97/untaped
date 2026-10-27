@@ -1,8 +1,4 @@
-"""The records recipe's commands write, each declaring its ``recipe.*`` kind.
-
-Every CLI module imports its models from here, so building the app
-registers every kind before any command runs (``plugin schema`` finds each
-one). This module holds models only: it sits on the app's load path.
+"""The records recipe's commands print; each class names its ``recipe.*`` kind.
 
 A kind has one schema, so where a ``list`` row and a ``get`` detail share a
 kind (``recipe.recipe``, ``recipe.pack``, ``recipe.hook``,
@@ -21,15 +17,18 @@ from untaped.sdk import (
     AbsolutePath,
     CheckRecord,
     Failure,
+    Following,
+    Key,
     ObjectName,
     OutcomeRecord,
     Record,
+    Status,
     TargetRecord,
     UtcTimestamp,
 )
 
 
-class ApplyOutcome(OutcomeRecord, TargetRecord, kind="recipe.apply_outcome"):
+class ApplyOutcome(OutcomeRecord, TargetRecord):
     """One target's ``recipe apply`` result.
 
     ``action`` is ``planned`` (preview), ``applied``, ``unchanged``,
@@ -47,6 +46,7 @@ class ApplyOutcome(OutcomeRecord, TargetRecord, kind="recipe.apply_outcome"):
     )
 
     target_path: AbsolutePath
+    action: Annotated[str, Status(success=("applied",))]
     files_changed: int
     warnings: list[str]
     detail: str | None
@@ -72,21 +72,22 @@ class _PackOutcome(OutcomeRecord):
     )
 
     name: str
+    action: Annotated[str, Status(success=("removed",))]
     source: str | None = None
     rev: str | None = None
     commit: Annotated[str | None, ObjectName] = None
     detail: str | None = None
 
 
-class AddOutcome(_PackOutcome, kind="recipe.add_outcome"):
+class AddOutcome(_PackOutcome):
     """What ``packs add`` did: ``created`` or ``updated``."""
 
 
-class SyncOutcome(_PackOutcome, kind="recipe.sync_outcome"):
+class SyncOutcome(_PackOutcome):
     """What ``packs sync`` did: ``updated``, ``unchanged``, ``planned`` (``--dry-run``)."""
 
 
-class RemoveOutcome(_PackOutcome, kind="recipe.remove_outcome"):
+class RemoveOutcome(_PackOutcome):
     """What ``packs remove`` did: ``removed``, ``partial`` or ``planned`` (``--dry-run``)."""
 
 
@@ -108,7 +109,7 @@ class PackHook(BaseModel):
     exports: list[str]
 
 
-class Pack(Record, kind="recipe.pack"):
+class Pack(Record):
     """An installed pack (``packs list``, ``packs get``).
 
     ``recipes`` and ``hooks`` count them in ``packs list`` and summarize each
@@ -127,7 +128,7 @@ class Pack(Record, kind="recipe.pack"):
         "hooks",
     )
 
-    name: str
+    name: Annotated[str, Key]
     project: str
     version: str
     path: str
@@ -164,7 +165,7 @@ class RecipeStep(BaseModel):
     hook: str
 
 
-class InstalledRecipe(Record, kind="recipe.recipe"):
+class Recipe(Record):
     """An installed recipe (``recipe list``, ``recipe get``).
 
     ``description``, ``inputs``, ``steps`` and ``hooks`` are read from the
@@ -177,13 +178,13 @@ class InstalledRecipe(Record, kind="recipe.recipe"):
     name: str
     ref: str
     description: str | None = None
-    inputs: list[RecipeInput] | None = None
-    steps: list[RecipeStep] | None = None
+    inputs: Annotated[list[RecipeInput] | None, Following] = None
+    steps: Annotated[list[RecipeStep] | None, Following] = None
     hooks: list[str] | None = None
     path: str
 
 
-class Hook(Record, kind="recipe.hook"):
+class Hook(Record):
     """An installed or built-in hook (``hooks list``, ``hooks get``).
 
     A built-in's ``pack`` is ``(builtin)``. ``exports`` (the callables the
@@ -205,30 +206,36 @@ HookRunStatus = Literal["ok", "pass", "fail", "skip"]
 """A ``hooks run`` row's ``status``: ``ok`` for a transform, else the verdict."""
 
 
-class HookRun(Record, kind="recipe.hook_run"):
+class HookRun(Record):
     """What ``hooks run`` got from one hook.
 
     A ``transform`` row has the target-relative ``file``, the transformed
     ``content`` and, with ``--diff``, its ``diff``; a ``validate`` row has
-    the verdict's ``status`` and ``message``. The other kind's fields are
-    null.
+    the verdict's ``status`` and ``message``; a ``fail`` verdict also
+    carries a structured ``error``, which makes the run exit 1. The other
+    kind's fields are null.
     """
+
+    table_columns: ClassVar[tuple[str, ...]] = ("hook", "kind", "file", "status", "message")
 
     hook: str
     kind: Literal["transform", "validate"]
     target: str
     file: str | None = None
-    status: HookRunStatus
+    status: Annotated[
+        HookRunStatus, Status(success=("ok", "pass"), warning=("skip",), error=("fail",))
+    ]
     content: str | None = None
     diff: str | None = None
     message: str | None = None
+    error: Failure | None = None
 
 
 CheckedType = Literal["pack", "recipe", "hook"]
 """What a ``recipe validate`` row checked."""
 
 
-class LibraryCheck(CheckRecord, kind="recipe.check"):
+class Check(CheckRecord):
     """One ``recipe validate`` row.
 
     ``name`` is the pack name, the ``PACK/RECIPE`` ref, or the built-in hook
@@ -246,7 +253,7 @@ class LibraryCheck(CheckRecord, kind="recipe.check"):
     detail: str | None = None
 
 
-class GoldenCase(Record, kind="recipe.test"):
+class Test(Record):
     """One golden case ``recipe test`` ran (or updated with ``--update``).
 
     ``status`` is ``pass``, ``fail``, ``error`` or ``updated``; an ``error``
@@ -258,12 +265,34 @@ class GoldenCase(Record, kind="recipe.test"):
     pack: str
     recipe: str
     case: str
-    status: Literal["pass", "fail", "error", "updated"]
+    status: Annotated[
+        Literal["pass", "fail", "error", "updated"],
+        Status(success=("pass", "updated"), error=("fail", "error")),
+    ]
     detail: str
     error: Failure | None = None
 
 
-class Backup(Record, kind="recipe.backup"):
+class BackupFile(BaseModel):
+    """One file a backup bundle holds, as ``backups get`` lists it.
+
+    ``backup_file`` (relative to the bundle) is ``None`` when the apply created
+    the file, so a restore deletes it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    table_columns: ClassVar[tuple[str, ...]] = ("target", "relative_path")
+
+    target: str
+    relative_path: str
+    before_hash: str | None = None
+    after_hash: str | None
+    backup_file: str | None
+    inputs: dict[str, JsonValue] = {}
+
+
+class Backup(Record):
     """A backup bundle (``backups list``, ``backups get``).
 
     ``created_at`` comes from the bundle id; ``recipe`` from its metadata
@@ -279,10 +308,10 @@ class Backup(Record, kind="recipe.backup"):
     recipe: str | None
     path: str
     inputs: dict[str, JsonValue] | None = None
-    files: list[dict[str, JsonValue]] | None = None
+    files: Annotated[list[BackupFile] | None, Following] = None
 
 
-class RestoreOutcome(OutcomeRecord, kind="recipe.restore_outcome"):
+class RestoreOutcome(OutcomeRecord):
     """The ``backups restore`` row.
 
     ``files`` counts the bundle's files. ``action`` is ``planned``
@@ -290,11 +319,12 @@ class RestoreOutcome(OutcomeRecord, kind="recipe.restore_outcome"):
     """
 
     id: str
+    action: Annotated[str, Status(success=("restored",))]
     files: int
     detail: str | None = None
 
 
-class PruneOutcome(OutcomeRecord, kind="recipe.prune_outcome"):
+class PruneOutcome(OutcomeRecord):
     """One ``backups prune`` row.
 
     ``action`` is ``planned`` (``--dry-run``), ``deleted`` or ``failed`` (with
@@ -310,19 +340,20 @@ __all__ = [
     "AddOutcome",
     "ApplyOutcome",
     "Backup",
+    "BackupFile",
+    "Check",
     "CheckedType",
-    "GoldenCase",
     "Hook",
     "HookRun",
-    "InstalledRecipe",
-    "LibraryCheck",
     "Pack",
     "PackHook",
     "PackRecipe",
     "PruneOutcome",
+    "Recipe",
     "RecipeInput",
     "RecipeStep",
     "RemoveOutcome",
     "RestoreOutcome",
     "SyncOutcome",
+    "Test",
 ]

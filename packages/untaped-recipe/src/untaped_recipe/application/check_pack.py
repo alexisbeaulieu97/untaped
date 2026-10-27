@@ -20,13 +20,13 @@ from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.recipe import (
     CopyStep,
-    Recipe,
+    RecipeFile,
     TemplateStep,
     TransformStep,
     ValidateStep,
 )
 from untaped_recipe.errors import RecipeNotFoundError
-from untaped_recipe.records import LibraryCheck
+from untaped_recipe.records import Check
 
 
 def check_ref(
@@ -34,7 +34,7 @@ def check_ref(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> LibraryCheck:
+) -> Check:
     """Check one installed pack, recipe ref, or explicit path."""
     if is_explicit_recipe_path(ref_text):
         path = Path(ref_text).expanduser()
@@ -55,7 +55,7 @@ def check_ref(
         if "/" not in ref_text:
             builtin = BUILTIN_HOOKS.get(ref_text)
             if builtin is not None:
-                return LibraryCheck(
+                return Check(
                     name=ref_text,
                     type="hook",
                     status="pass",
@@ -69,7 +69,7 @@ def check_library(
     *,
     library: PackLibraryPort,
     inspector: PackInspectorPort,
-) -> list[LibraryCheck]:
+) -> list[Check]:
     """Check every installed pack plus index/directory reconciliation."""
     rows = [
         _failed_pack(name, library.packs_dir / name, problem)
@@ -84,11 +84,11 @@ def check_library(
     return rows
 
 
-def _failed_pack(name: str, path: Path, detail: str) -> LibraryCheck:
-    return LibraryCheck(name=name, type="pack", status="fail", path=str(path), detail=detail)
+def _failed_pack(name: str, path: Path, detail: str) -> Check:
+    return Check(name=name, type="pack", status="fail", path=str(path), detail=detail)
 
 
-def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryCheck:
+def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> Check:
     try:
         inspector.check_hook_project(pack.root, pack.manifest)
         for recipe_name, recipe in sorted(pack.manifest.recipes.items()):
@@ -102,7 +102,7 @@ def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> LibraryChe
             raise ValueError("tests directory names no known recipe: " + ", ".join(orphans))
     except (UntapedError, ValueError, OSError) as exc:
         return _failed_pack(pack.name, pack.root, str(exc))
-    return LibraryCheck(name=pack.name, type="pack", status="pass", path=str(pack.root))
+    return Check(name=pack.name, type="pack", status="pass", path=str(pack.root))
 
 
 def _check_recipe(
@@ -110,7 +110,7 @@ def _check_recipe(
     recipe_ref: str,
     local_hook_project: Path | None,
     inspector: PackInspectorPort,
-) -> LibraryCheck:
+) -> Check:
     try:
         recipe = read_recipe_file(recipe_path)
         validate_recipe_input_sources(recipe)
@@ -118,13 +118,13 @@ def _check_recipe(
         _check_local_hook_project(local_hook_project, inspector)
         _check_hooks(recipe, local_hook_project, inspector)
     except (UntapedError, ValueError, OSError) as exc:
-        return LibraryCheck(
+        return Check(
             name=recipe_ref, type="recipe", status="fail", path=str(recipe_path), detail=str(exc)
         )
-    return LibraryCheck(name=recipe_ref, type="recipe", status="pass", path=str(recipe_path))
+    return Check(name=recipe_ref, type="recipe", status="pass", path=str(recipe_path))
 
 
-def _check_assets(recipe: Recipe, recipe_dir: Path) -> None:
+def _check_assets(recipe: RecipeFile, recipe_dir: Path) -> None:
     for step in recipe.steps:
         if isinstance(step, TemplateStep):
             _check_asset(recipe_dir, step.template, field="template", noun="template")
@@ -159,7 +159,7 @@ def _check_local_hook_project(
 
 
 def _check_hooks(
-    recipe: Recipe,
+    recipe: RecipeFile,
     local_hook_project: Path | None,
     inspector: PackInspectorPort,
 ) -> None:

@@ -1,14 +1,12 @@
-"""Resolve recipe target directories from bare paths or untaped pipe records."""
+"""Recipe target directories, from paths or the rows piped to ``apply``."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from operator import attrgetter
 from pathlib import Path
 
-from untaped.sdk import is_envelope_line, parse_envelope_line
+from pydantic import BaseModel
 
 
 @dataclass(frozen=True)
@@ -19,36 +17,22 @@ class Target:
     record: Mapping[str, object] | None = None
 
 
-def resolve_target_lines(lines: list[tuple[int, str]]) -> list[Target]:
-    """Resolve raw non-blank stdin lines to target paths."""
-    targets: list[Target] = []
-    for lineno, text in lines:
-        try:
-            obj = json.loads(text)
-        except json.JSONDecodeError as exc:
-            if text.lstrip().startswith("{"):
-                raise ValueError(f"line {lineno}: invalid JSON: {exc.msg}") from exc
-            targets.append(Target(path=Path(text)))
-            continue
-        if not isinstance(obj, dict):
-            # Bare path lines that happen to parse as JSON scalars ("2024",
-            # "true") are still paths; only JSON objects enter record parsing.
-            targets.append(Target(path=Path(text)))
-            continue
-        if not is_envelope_line(obj):
-            targets.append(Target(path=Path(text)))
-            continue
-        env = parse_envelope_line(lineno, text)
-        kind = attrgetter("kind")(env)
-        if _is_summary_kind(kind):
-            continue
-        targets.append(
-            Target(
-                path=_target_from_record(env.record, lineno),
-                record=dict(env.record),
-            )
-        )
-    return targets
+def target_of(row: BaseModel) -> Target:
+    """The target a piped row names: its absolute ``target_path``, else its ``path``."""
+    record = row.model_dump(mode="json")
+    target_path = record.get("target_path")
+    if target_path is not None:
+        if not isinstance(target_path, str) or not target_path.strip():
+            raise ValueError("a row's target_path must be a non-empty string")
+        path = Path(target_path.strip())
+        if not path.is_absolute():
+            raise ValueError(f"a row's target_path must be absolute, not {target_path!r}")
+        return Target(path=path, record=record)
+    value = record.get("path")
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise ValueError("a piped row names no target: it has no target_path or path")
+    return Target(path=Path(text), record=record)
 
 
 def dedupe_targets(targets: list[Target]) -> list[Target]:
@@ -67,37 +51,3 @@ def dedupe_targets(targets: list[Target]) -> list[Target]:
         seen.add(key)
         unique.append(target)
     return unique
-
-
-def _target_from_record(record: dict[str, object], lineno: int) -> Path:
-    target_path = _target_path(record, lineno)
-    if target_path is not None:
-        return target_path
-    path_value = _string_field(record, "path")
-    if path_value is None:
-        raise ValueError(f"line {lineno}: record path is missing or blank")
-    return Path(path_value)
-
-
-def _is_summary_kind(kind: str | None) -> bool:
-    return kind is not None and kind.endswith(".summary")
-
-
-def _target_path(record: dict[str, object], lineno: int) -> Path | None:
-    value = record.get("target_path")
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"line {lineno}: target_path must be a non-empty string")
-    path = Path(value.strip())
-    if not path.is_absolute():
-        raise ValueError(f"line {lineno}: target_path must be absolute")
-    return path
-
-
-def _string_field(record: dict[str, object], field: str) -> str | None:
-    value = record.get(field)
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
