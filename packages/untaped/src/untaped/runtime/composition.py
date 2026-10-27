@@ -433,6 +433,11 @@ class _PluginWalk:
     def problem(self, rule: str, where: str, detail: str) -> None:
         self.problems.append(Problem(rule=rule, where=where, detail=detail))
 
+    def kind(self, model: type[BaseModel]) -> str:
+        """``model``'s kind: its class name under the plugin whose package defines it."""
+        owner = self.owners.get(model.__module__.partition(".")[0], self.name)
+        return self.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
+
     def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
         """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""
         decl = _stability(mark)
@@ -535,6 +540,8 @@ class _PluginWalk:
                     f"{info.cls.__qualname__} is offered by {owner} too; a contract has one owner",
                 )
             self._answer_caches(cls, info)
+            if info.item is not None:
+                self.kind(info.item)
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:
@@ -565,7 +572,13 @@ class _PluginWalk:
 
     def _provider(self, where: str, filled: type) -> None:
         """A filled class is a ``Provider``, reading its own plugin's settings if any."""
-        from untaped.sdk.contracts._declare import Provider, settings_type  # noqa: PLC0415
+        from untaped.sdk.contracts._declare import (  # noqa: PLC0415 - contracts' cost
+            ContractError,
+            Provider,
+            contract_of,
+            item_type,
+            settings_type,
+        )
 
         at = f"{where}.fills"
         if not issubclass(filled, Provider):
@@ -585,6 +598,13 @@ class _PluginWalk:
                 f"{filled.__qualname__} reads Provider[{wanted.__qualname__}], but the plugin's "
                 f"settings model is {ours}",
             )
+        info = contract_of(filled)
+        try:
+            item = None if info is None else item_type(filled, info)
+        except ContractError:
+            return  # the registry quarantines the offer, naming why
+        if item is not None and info is not None and item is not info.item:
+            self.kind(item)  # the provider's own record: rows of it come back through the bridge
 
     def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
         if not cls.fills:
@@ -857,8 +877,7 @@ class _CommandWalk:
         )
 
     def _kind(self, model: type[BaseModel]) -> str:
-        owner = self.plugin.owners.get(model.__module__.partition(".")[0], self.plugin.name)
-        return self.plugin.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
+        return self.plugin.kind(model)
 
     def _settings(self) -> None:
         model = settings_model(self.cls)

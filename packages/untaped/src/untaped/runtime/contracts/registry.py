@@ -45,13 +45,14 @@ from untaped.sdk.contracts._declare import (
     contract_of,
     fills,
     item_type,
+    record_kind,
     settings_type,
     unused_methods,
 )
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import SettingKey
-from untaped.sdk.records import KindError
+from untaped.sdk.records import DuplicateKindError, KindError
 
 if TYPE_CHECKING:
     from untaped.sdk.storage.cache import Cache
@@ -251,8 +252,10 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
         return whole(Reason.owner_out_of_range, out_of_range)
     try:
         values = tuple(spec.provides[owner]())
+    except DuplicateKindError as exc:
+        return whole(Reason.duplicate_kind, str(exc))
     except KindError as exc:
-        return whole(_reason(exc.reason), str(exc))
+        return whole(Reason.bad_provider, str(exc))
     except ContractError as exc:
         return whole(_reason(exc.reason), str(exc))
     except Exception as exc:
@@ -325,6 +328,13 @@ def _check(
     except ContractError as exc:
         return quarantined(_reason(exc.reason), str(exc), info.cls)
     binding = Binding(spec=spec, owner=owner, contract=info, item=item, profile=profile)
+    if not binding.owns_item and item is not None and record_kind(item) is None:
+        return quarantined(
+            Reason.unresolved_item_type,
+            f"{provider.__qualname__}: {item.__qualname__} has no kind, "
+            "so a piped record can't find its way back to it",
+            info.cls,
+        )
     if not binding.owns_item:
         missing = [
             name

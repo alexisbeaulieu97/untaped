@@ -604,8 +604,14 @@ class Stdin[R: BaseModel](FieldBlock):
 
     ``R`` is the record kind (or a union, or a base every accepted kind
     subclasses; ``Stdin[Record]`` takes any kind); a bare line stands for
-    ``R``'s ``Key`` field. Accepting a kind never claims it. ``via=`` reads a
-    provider's own kind through its contract's bridge method.
+    ``R``'s ``Key`` field. Accepting a kind never claims it.
+
+    ``Stdin(via=RepoSource.to_repo)`` also takes the rows of any provider's
+    own kind and reads each through that provider's bridge, so ``R`` is the
+    owner's model: a provider is built, and its settings read, only when a
+    row of its kind arrives. A kind no provider reads, or a kind-less line,
+    exits 2; an unready provider, or a bridge returning an invalid owner
+    model, exits 4.
     """
 
     field_kind = "stdin"
@@ -617,6 +623,8 @@ class Stdin[R: BaseModel](FieldBlock):
         self._models: tuple[type[BaseModel], ...] = ()
         #: Each kind read as its model; with ``_any`` the kinds core knows.
         self._kinds: Mapping[str, type[BaseModel]] = {}
+        #: Every kind core knows, for a row ``via`` reads through its provider.
+        self._known: Mapping[str, type[BaseModel]] = {}
         self._any = False
 
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Stdin[R]:
@@ -636,12 +644,27 @@ class Stdin[R: BaseModel](FieldBlock):
         filled._requested = bool(flags.get("--stdin"))
         filled._models = models
         filled._any = any(model in (BaseModel, WireModel, Record) for model in models)
+        known = call.kinds()
         filled._kinds = {
-            kind: model
-            for kind, model in call.kinds().items()
-            if filled._any or issubclass(model, models)
+            kind: model for kind, model in known.items() if filled._any or issubclass(model, models)
         }
+        if self.via is not None:
+            filled._known = known
+            filled._check_via(models)
         return filled
+
+    def _check_via(self, models: tuple[type[BaseModel], ...]) -> None:
+        """``via`` is a contract's bridge, returning the owner's model ``R`` accepts."""
+        from untaped.sdk.contracts._select import bridge_of  # noqa: PLC0415 - only via pays
+
+        _, method = bridge_of(cast("Callable[..., Any]", self.via))
+        returned = method.hints["return"]
+        if not issubclass(returned, models):
+            names = " | ".join(model.__name__ for model in models)
+            raise TypeError(
+                f"Stdin[{names}](via={method.name}) reads {returned.__name__} rows, "
+                f"which Stdin[{names}] doesn't accept"
+            )
 
     def identifiers(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str]:
         """The identifiers given, or read from stdin: bare lines, or each row's ``Key`` field.
@@ -678,7 +701,7 @@ class Stdin[R: BaseModel](FieldBlock):
             return list(given)
         if given:
             raise UsageError("provide identifiers as positional args or via --stdin, not both")
-        kinds = None if self._any else tuple(self._kinds)
+        kinds = None if self._any or self.via is not None else tuple(self._kinds)
         piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
         return list(piped.values) if piped.records is None else list(piped.records)
 
@@ -697,14 +720,20 @@ class Stdin[R: BaseModel](FieldBlock):
         return self._models[0]
 
     def _identifier(self, envelope: PipeEnvelope) -> str:
-        field = key_field(self._model(envelope))
+        if self.via is not None:
+            row = self._row(envelope)
+            model: type[BaseModel] = type(row)
+            record: Mapping[str, object] = row.model_dump()
+        else:
+            model, record = self._model(envelope), envelope.record
+        field = key_field(model)
         if field is None:
             raise ConfigError(
                 "stdin is untaped pipe format but this command cannot map records to "
                 "identifiers: no field of the accepted model is marked Key",
                 category="invalid",
             )
-        value = envelope.record.get(field)
+        value = record.get(field)
         identifier = "" if value is None else str(value).strip()
         if not identifier:
             raise ConfigError(
@@ -714,6 +743,11 @@ class Stdin[R: BaseModel](FieldBlock):
         return identifier
 
     def _row(self, envelope: PipeEnvelope) -> R:
+        if self.via is not None:
+            from untaped.sdk.contracts._select import bridged  # noqa: PLC0415 - only via pays
+
+            given = None if envelope.kind is None else self._known.get(envelope.kind)
+            return cast("R", bridged(self.via, envelope, given))
         try:
             return cast("R", self._model(envelope).model_validate(envelope.record))
         except ValidationError as exc:

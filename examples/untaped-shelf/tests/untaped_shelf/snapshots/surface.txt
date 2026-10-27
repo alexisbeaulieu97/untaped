@@ -23,6 +23,18 @@ cli untaped shelf list --format choice=pipe
 cli untaped shelf list --format choice=raw
 cli untaped shelf list --format choice=table
 cli untaped shelf list --format choice=yaml
+cli untaped shelf show
+cli untaped shelf show --columns VALUE... default=unset
+cli untaped shelf show --columns alias=-c
+cli untaped shelf show --format VALUE default=table
+cli untaped shelf show --format alias=-f
+cli untaped shelf show --format choice=json
+cli untaped shelf show --format choice=pipe
+cli untaped shelf show --format choice=raw
+cli untaped shelf show --format choice=table
+cli untaped shelf show --format choice=yaml
+cli untaped shelf show --stdin switch default=unset
+cli untaped shelf show [TITLES...]@1 default=unset
 contract shelf.Book(title)
 contract shelf.Book.pages integer default=0
 contract shelf.Book.source Source? default=None
@@ -35,8 +47,11 @@ contract shelf.book_source abstract=books  [experimental]
 contract shelf.book_source.books() -> Book[]  [experimental]
 contract shelf.book_source.to_book(item: Book) -> Book  [experimental]
 record shelf.book
+record shelf.book(title)
+record shelf.book.pages default=0
 record shelf.book.pages integer
 record shelf.book.source Source?
+record shelf.book.source default=None
 record shelf.book.title string
 sdk untaped_shelf.api.Book base=untaped.sdk.Issued
 sdk untaped_shelf.api.Book base=untaped.sdk.Record

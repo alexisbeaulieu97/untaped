@@ -100,6 +100,8 @@ class Composition:
     installed: Callable[[], tuple[InstalledPlugin, ...]] = tuple
     #: The command line a ``Command.spelled(...)`` stands for, as this run names commands.
     spell: Callable[[SpelledCommand], str] = _unspelled
+    #: Each composed record kind, by its model's ``module:Qualname``.
+    kinds: Mapping[str, str] = field(default_factory=dict)
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
         """The plugin whose settings model ``model`` is; :class:`LookupError` when none is.
@@ -112,6 +114,10 @@ class Composition:
         if (owner := self.owners.get(declared)) is not None:
             return owner
         raise LookupError(f"{model.__qualname__} is the settings model of no composed plugin")
+
+    def kind_of(self, model: type) -> str | None:
+        """The kind composition gave ``model`` (``None``: no composed plugin reaches it)."""
+        return self.kinds.get(f"{model.__module__}:{model.__qualname__}")
 
     def owner_of_module(self, module: str) -> str:
         """The plugin owning the classes defined in ``module``; :class:`LookupError` when none."""

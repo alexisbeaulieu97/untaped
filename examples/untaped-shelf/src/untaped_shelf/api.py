@@ -11,7 +11,7 @@ from untaped.sdk.contracts import Contract, Issued, Record, cached
 __all__ = ["Book", "BookSource"]
 
 
-class Book(Issued, kind="shelf.book"):
+class Book(Issued):
     """A book, whoever keeps it; ``source`` names the plugin that issued it."""
 
     title: str

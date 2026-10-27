@@ -32,7 +32,7 @@ from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gath
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import DuplicateKindError
+from untaped.sdk.records import DuplicateKindError, Record
 from untaped.sdk.testing import plugin_candidate
 
 
@@ -127,6 +127,18 @@ class _NoBridge(BookSource[Volume]):
         return []
 
 
+class _Kindless(Record):
+    name: str
+
+
+class _NoKind(BookSource[_Kindless]):
+    def to_book(self, item: _Kindless) -> Book:
+        return Book(title=item.name)
+
+    def books(self) -> list[Book]:
+        return []
+
+
 class _Elsewhere(Contract):
     def names(self) -> list[str]:
         raise NotImplementedError
@@ -150,6 +162,7 @@ class _WrongSettings(BookSource, Provider[_OtherSettings]):
     ("value", "reason", "detail"),
     [
         (_NoBridge(), "missing-bridge", "must fill to_book"),
+        (_NoKind(), "unresolved-item-type", "_Kindless has no kind"),
         ("not a provider", "bad-provider", "which is not a provider"),
         (_ElsewhereProvider(), "bad-provider", "which shelf does not declare"),
         (_WrongSettings(), "bad-provider", "Provider[_OtherSettings]"),

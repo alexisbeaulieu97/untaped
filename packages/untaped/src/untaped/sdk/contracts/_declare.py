@@ -244,13 +244,22 @@ def _stamp(provider: Contract, item: Any, result: Any) -> Any:
             hint="ask for providers through untaped.sdk.contracts (gather, convert)",
         )
     if binding.owns_item or not isinstance(item, BaseModel):
-        kind = kind_of(type(result)) or ""
+        kind = record_kind(type(result)) or ""
         record: dict[str, Any] = {}
     else:
-        kind = kind_of(type(item)) or ""
+        kind = record_kind(type(item)) or ""
         record = item.model_dump(mode="json", by_alias=True, round_trip=True)
     source = Source(plugin=binding.plugin, kind=kind, record=record)
     return result.model_copy(update={"source": source})
+
+
+def record_kind(model: type[BaseModel]) -> str | None:
+    """``model``'s kind: the one the run's composition gave it, else its 11.x ``kind=``."""
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the SDK
+
+    run = run_or_none()
+    composed = None if run is None else run.composition.kind_of(model)
+    return composed if composed is not None else kind_of(model)
 
 
 def binding_of(provider: object) -> Binding | None:
@@ -312,7 +321,7 @@ class Contract(ABC):  # noqa: B024 - every method has a default
             return binding.item.model_validate_json(json.dumps(source.record), strict=True)
         except ValidationError as exc:
             raise UntapedError(
-                f"this {kind_of(binding.item)} record no longer reads: "
+                f"this {record_kind(binding.item)} record no longer reads: "
                 f"{first_validation_error(exc)}",
                 category="invalid",
                 system=binding.plugin,
@@ -460,7 +469,8 @@ def item_type(provider: type[Contract], contract: ContractInfo) -> type[Record] 
 
     Raises :class:`ContractError` (``unresolved-item-type``) when a base passes
     a type parameter on (v1 resolves only a direct ``Contract[X]`` or a bare
-    ``Contract``) or ``X`` is not a :class:`Record` with a kind.
+    ``Contract``) or ``X`` is not a :class:`Record`. Its kind is composition's
+    to give (:func:`record_kind`).
     """
     if contract.item_param is None:
         return None
@@ -476,12 +486,6 @@ def item_type(provider: type[Contract], contract: ContractInfo) -> type[Record] 
     if not (isinstance(found, type) and issubclass(found, Record)):
         raise ContractError(
             f"{provider.__qualname__}: {found!r} is not a Record", reason="unresolved-item-type"
-        )
-    if found is not contract.item and kind_of(found) is None:
-        raise ContractError(
-            f"{provider.__qualname__}: {found.__qualname__} declares no kind, "
-            "so a piped record can't find its way back to it",
-            reason="unresolved-item-type",
         )
     return found
 
@@ -679,8 +683,6 @@ def _item_default(where: str, param: TypeVar | None) -> type[Issued] | None:
             f"{where}: the item type parameter {param.__name__} needs the owner's model as its "
             f"default ({param.__name__}: Record = YourModel), an Issued subclass"
         )
-    if kind_of(default) is None:
-        raise TypeError(f"{where}: the owner's model {default.__qualname__} declares no kind")
     return default
 
 

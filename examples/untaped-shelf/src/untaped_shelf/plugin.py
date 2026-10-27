@@ -11,6 +11,7 @@ from untaped.sdk import Plugin
 from untaped_shelf.api import BookSource
 from untaped_shelf.commands.find import Find
 from untaped_shelf.commands.list import List
+from untaped_shelf.commands.show import Show
 from untaped_shelf.settings import ShelfSettings
 
 
@@ -18,7 +19,7 @@ class Shelf(Plugin):
     """Find books (an example contract owner)."""
 
     settings = ShelfSettings
-    commands = (List, Find)
+    commands = (List, Find, Show)
     offers = (BookSource,)
 
 

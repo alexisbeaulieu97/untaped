@@ -1327,11 +1327,13 @@ def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
     beside the mechanic that reads them, until the sweep removes them, and
     this listing leaves with them in that sweep.
     """
-    from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415 - off the CLI path
+    from untaped.sdk._stdin import PIPE_ENVELOPE  # noqa: PLC0415 - off the CLI path
+    from untaped.sdk.contracts._select import CONVERT  # noqa: PLC0415
+    from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415
     from untaped.sdk.network.auth import PLAINTEXT_TOKEN  # noqa: PLC0415
     from untaped.sdk.network.http import CONNECTED_BY_NAME  # noqa: PLC0415
 
-    return (CONNECTED_BY_NAME, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
+    return (CONNECTED_BY_NAME, CONVERT, PIPE_ENVELOPE, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
 
 
 # Plugin name → the ``deprecations`` callable of its spec, bound by the

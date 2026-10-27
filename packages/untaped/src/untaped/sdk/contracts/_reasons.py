@@ -29,8 +29,6 @@ class Reason(StrEnum):
     owner_not_installed = "owner-not-installed"
     owner_out_of_range = "owner-out-of-range"
     duplicate_kind = "duplicate-kind"
-    foreign_kind = "foreign-kind"
-    """A kind under another plugin's name; goes once a kind is its class name."""
     unresolved_item_type = "unresolved-item-type"
     missing_bridge = "missing-bridge"
     unserialisable_signature = "unserialisable-signature"
@@ -52,7 +50,6 @@ QuarantineReason = Literal[
     Reason.owner_not_installed,
     Reason.owner_out_of_range,
     Reason.duplicate_kind,
-    Reason.foreign_kind,
     Reason.unresolved_item_type,
     Reason.missing_bridge,
     Reason.unserialisable_signature,
