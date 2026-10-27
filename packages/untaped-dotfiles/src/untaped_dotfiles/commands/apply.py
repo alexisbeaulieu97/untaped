@@ -37,8 +37,9 @@ class Apply(Selected):
     the way of a new path is kept aside, and the row says where. Refuses
     paths edited on this machine (row action `conflict`, exit 1, under
     --dry-run too) unless --force; `diff` shows what --force would replace in
-    copy and merge files as of the last fetch. The policy guide explains what
-    `apply` does in each state and when a clone is pulled.
+    copy and merge files as of the last fetch. The policy guide (linked from
+    the dotfiles README) explains what `apply` does in each state and when a
+    clone is pulled.
     """
 
     force: bool = Field(
@@ -93,7 +94,8 @@ class Sync(DotfilesCommand):
     Never prompts and never overwrites a path edited on this machine. Exits 3
     when anything needs the user, 1 when an apply or a git operation failed.
     Rewrites status.json and attention unless --dry-run. The policy guide
-    has what each policy does in each state, and when a clone is pulled.
+    (linked from the dotfiles README) has what each policy does in each
+    state, and when a clone is pulled.
     """
 
     dry_run: DryRun

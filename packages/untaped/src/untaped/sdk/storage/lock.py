@@ -29,7 +29,8 @@ class Lock(OwnedBlock):
 
     ``wait`` is how long :meth:`locked` waits for another process holding it
     before it fails with ``<plugin>.<name> is busy (another untaped
-    process)``, hinting to retry once it is done. Taking it again in the same thread only counts.
+    process)``, hinting to retry once it is done. Taking it again in the
+    same thread only counts.
     """
 
     block_kind = "lock"

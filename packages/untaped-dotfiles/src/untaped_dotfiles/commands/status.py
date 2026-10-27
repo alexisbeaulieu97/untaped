@@ -39,7 +39,7 @@ class Status(_Paths):
     It reads nothing from the network, so `behind` is as of the last `sync`
     or fetch. A path that could not be read exits 1. Run without ITEMS or
     --repo, it also rewrites status.json and attention. The policy guide
-    explains each state.
+    (linked from the dotfiles README) explains each state.
     """
 
     check: bool = Field(
