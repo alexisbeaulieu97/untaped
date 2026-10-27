@@ -503,6 +503,19 @@ def test_apply_dry_run_defaults_to_table_preview(
     assert "+++ b/out.txt" not in result.stderr
 
 
+def test_apply_table_draws_each_action_in_its_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    recipe, target = _out_recipe(tmp_path)
+
+    result = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "\x1b[33mplanned" in result.stdout  # a warning, as core's outcome words say
+
+
 def test_apply_table_preview_counts_prefix_like_diff_headers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

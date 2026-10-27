@@ -292,6 +292,8 @@ def test_a_status_takes_words_only() -> None:
 
     with pytest.raises(TypeError, match="takes words"):
         Status(success=(Level.LOW,))
+    with pytest.raises(TypeError, match="tuple of words"):
+        Status(success="ok")  # type: ignore[arg-type]
 
 
 def test_a_view_built_with_table_row_keeps_its_record_s_roles(clock: ManualClock) -> None:

@@ -132,10 +132,12 @@ class Status:
         warning: Iterable[object] = (),
         error: Iterable[object] = (),
     ) -> None:
+        given = (("success", success), ("warning", warning), ("error", error))
+        for role, values in given:
+            if isinstance(values, str):
+                raise TypeError(f"Status({role}=...) takes a tuple of words, as ({values!r},)")
         self.roles: dict[str, str] = {
-            _word(value): role
-            for role, values in (("success", success), ("warning", warning), ("error", error))
-            for value in values
+            _word(value): role for role, values in given for value in values
         }
 
     def __repr__(self) -> str:
@@ -147,10 +149,15 @@ def _word(value: object) -> str:
 
     Anything else (an enum of numbers) is refused: its cell holds no word to draw.
     """
-    word = value.value if isinstance(value, Enum) else value
+    word = _plain(value)
     if not isinstance(word, str):
         raise TypeError(f"Status takes words (str values), not {value!r}")
     return word
+
+
+def _plain(value: object) -> object:
+    """``value``, or an enum member's value: what a row holds."""
+    return value.value if isinstance(value, Enum) else value
 
 
 class Roled(str):
@@ -750,7 +757,7 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
 
 def _role(words: Mapping[str, str] | None, value: object, *, seam: bool) -> str | None:
     """The role ``value``'s word is drawn in: its field's ``Status``, else the 11.x seam's."""
-    word = value.value if isinstance(value, Enum) else value
+    word = _plain(value)
     if not isinstance(word, str):
         return None  # a number, a list, ``None``: no word to draw
     role = words.get(word) if words else None
