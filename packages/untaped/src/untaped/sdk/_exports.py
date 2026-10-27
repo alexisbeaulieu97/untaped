@@ -103,7 +103,9 @@ from untaped.sdk.errors import (
     most_severe,
 )
 from untaped.sdk.fields import (
+    Age,
     AllowHyphen,
+    Bytes,
     Column,
     Confirm,
     DryRun,
@@ -122,6 +124,7 @@ from untaped.sdk.fields import (
     Refresh,
     SettingKey,
     Short,
+    Spread,
     Stdin,
     TextOrStdin,
     Written,
@@ -385,6 +388,9 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Column",
     "Key",
     "Following",
+    "Bytes",
+    "Age",
+    "Spread",
     "key",
     "SettingKey",
     "System",

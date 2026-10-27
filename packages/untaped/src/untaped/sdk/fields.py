@@ -23,6 +23,7 @@ import copy
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
+from datetime import UTC, datetime
 from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
@@ -84,6 +85,25 @@ Key = Mark("Key")
 
 Following = Mark("Following")
 """A list-of-models field a table prints as a second table after the first."""
+
+Bytes = Mark("Bytes")
+"""An ``int`` count of bytes a table shows in words (``1.5 KiB``): ``Annotated[int, Bytes]``.
+
+Only the table changes: json, yaml, raw and pipe keep the number.
+"""
+
+Age = Mark("Age")
+"""A ``datetime`` a table shows as how long ago it was (``3 h ago``), by the run's clock.
+
+Only the table changes: json, yaml, raw and pipe keep the timestamp.
+"""
+
+Spread = Mark("Spread")
+"""A ``dict[str, scalar]`` field a table shows as one column per key, named by the key.
+
+``--columns KEY`` picks one in a table; where the field is a default column its
+keys are. Only the table changes: json, yaml, raw and pipe keep the mapping.
+"""
 
 Written = Mark("Written")
 """A ``File[M]`` option the command writes rather than reads: the model's "Starter" line."""
@@ -450,7 +470,8 @@ class Output[R: BaseModel](FieldBlock):
         if filled.format in self.render and filled.format != "table":
             if filled._requested is not None:
                 raise UsageError(f"--columns does not apply to --format {filled.format}")
-        elif model is not None:
+        elif model is not None and not (filled.format == "table" and spreads(model)):
+            # a ``Spread`` field's keys are columns only the rows know: checked as they print
             fmt = cast("OutputFormat", filled.format)
             check_columns(model, columns=filled._requested, fmt=fmt)
         return filled
@@ -535,6 +556,61 @@ class Columns(list[str]):
     def add(self, *names: str) -> None:
         """Show ``names`` too, after the columns already shown."""
         self.extend(name for name in names if name not in self)
+
+
+def table_rows(
+    records: Sequence[BaseModel | Mapping[str, object]],
+    rows: list[dict[str, object]],
+    columns: Sequence[str] | None,
+) -> tuple[list[dict[str, object]], list[str] | None, list[str]]:
+    """``rows`` as a table shows them, its default ``columns``, and the keys ``Spread`` added.
+
+    A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
+    ago it was by :func:`untaped.sdk.now`'s clock, and a ``Spread`` field gives
+    way to a column per key (a key a row already has keeps the row's value).
+    """
+    from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
+    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
+    from untaped.sdk.words import duration_text, size_text  # noqa: PLC0415
+
+    now = run_clock().now()
+    spread_keys: dict[str, dict[str, None]] = {}
+    shown: list[dict[str, object]] = []
+    for record, row in zip(records, rows, strict=True):
+        if not isinstance(record, BaseModel):
+            shown.append(row)
+            continue
+        fields = {
+            dumped: (name, _marks(type(record).model_fields[name]))
+            for name, dumped in dumped_names(type(record)).items()
+        }
+        out: dict[str, object] = {}
+        for dumped, cell in row.items():  # the dump's order is the table's
+            name, marks = fields.get(dumped, (None, []))
+            value = getattr(record, name) if name is not None else cell
+            if Spread in marks and isinstance(value, Mapping):
+                keys = spread_keys.setdefault(dumped, {})
+                for key, item in value.items():
+                    keys[str(key)] = None
+                    if str(key) not in row:
+                        out[str(key)] = item
+            elif Bytes in marks and isinstance(value, int):
+                out[dumped] = size_text(value)
+            elif Age in marks and isinstance(value, datetime):
+                aware = value if value.tzinfo else value.replace(tzinfo=UTC)
+                out[dumped] = f"{duration_text((now - aware).total_seconds())} ago"
+            else:
+                out[dumped] = cell
+        shown.append(out)
+    if columns is not None and spread_keys:
+        columns = [key for name in columns for key in (spread_keys.get(name) or [name])]
+    added = [key for keys in spread_keys.values() for key in keys]
+    return shown, None if columns is None else list(columns), added
+
+
+def spreads(model: type[BaseModel]) -> bool:
+    """Whether ``model`` has a ``Spread`` field, whose keys a run names as columns."""
+    return any(Spread in _marks(info) for info in model.model_fields.values())
 
 
 def default_columns(model: type[BaseModel]) -> tuple[str, ...]:

@@ -894,8 +894,15 @@ def _emit(
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
     schema = _model_schema(records)
+    rows = [_as_row(item) for item in items]
+    if fmt == "table":
+        from untaped.sdk.fields import table_rows  # noqa: PLC0415 - fields import this module
+
+        rows, table_columns, spread = table_rows(items, rows, table_columns)
+        if schema is not None and spread:
+            schema = [*schema, *(key for key in spread if key not in schema)]
     rendered = _render(
-        [_as_row(item) for item in items],
+        rows,
         single=single,
         fmt=fmt,
         columns=columns,

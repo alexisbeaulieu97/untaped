@@ -5302,6 +5302,7 @@ record workspace.workspace.target_path string(format=path)  [experimental]
 sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
+sdk untaped.sdk.Age
 sdk untaped.sdk.AllowHyphen
 sdk untaped.sdk.AppContext()
 sdk untaped.sdk.AppContext(settings_model@1=) default=<computed>
@@ -5350,6 +5351,7 @@ sdk untaped.sdk.Buttons.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Buttons.view(frame)  [experimental]
 sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
 sdk untaped.sdk.Buttons.with_error(text)  [experimental]
+sdk untaped.sdk.Bytes
 sdk untaped.sdk.Cache(*, label, max_age)
 sdk untaped.sdk.Cache(model=) default=None callback(0)
 sdk untaped.sdk.Cache(name@2=) default=None
@@ -5906,6 +5908,9 @@ sdk untaped.sdk.HttpFactory.client(bearer=) default=None
 sdk untaped.sdk.HttpFactory.client(headers=) default=None
 sdk untaped.sdk.HttpFactory.client(settings, *, base_url)
 sdk untaped.sdk.HttpFactory.client(verify=) default=None
+sdk untaped.sdk.HttpFactory.proxy_for(url)
+sdk untaped.sdk.HttpFactory.proxy_for(verified=) default=true
+sdk untaped.sdk.HttpFactory.trust
 sdk untaped.sdk.HttpSettings()
 sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
 sdk untaped.sdk.HttpSettings(proxy=) default=None
@@ -6630,6 +6635,7 @@ sdk untaped.sdk.Source(record=) default={}
 sdk untaped.sdk.Source.kind
 sdk untaped.sdk.Source.plugin
 sdk untaped.sdk.Source.record
+sdk untaped.sdk.Spread
 sdk untaped.sdk.StaleData(*, message, plugin, cache, key, refreshed_at, age_seconds, max_age_seconds)
 sdk untaped.sdk.StaleData(attempted_at=) default=None
 sdk untaped.sdk.StaleData(error=) default=None
@@ -7433,6 +7439,9 @@ sdk untaped.sdk.network.HttpFactory.client(bearer=) default=None
 sdk untaped.sdk.network.HttpFactory.client(headers=) default=None
 sdk untaped.sdk.network.HttpFactory.client(settings, *, base_url)
 sdk untaped.sdk.network.HttpFactory.client(verify=) default=None
+sdk untaped.sdk.network.HttpFactory.proxy_for(url)
+sdk untaped.sdk.network.HttpFactory.proxy_for(verified=) default=true
+sdk untaped.sdk.network.HttpFactory.trust
 sdk untaped.sdk.network.RetryPolicy()
 sdk untaped.sdk.network.RetryPolicy(backoff_base@2=) default=0.5
 sdk untaped.sdk.network.RetryPolicy(backoff_max@3=) default=30.0
