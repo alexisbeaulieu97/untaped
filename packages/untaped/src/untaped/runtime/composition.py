@@ -58,6 +58,7 @@ from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlo
 from untaped.sdk.fields import (
     CORE_SHORTS,
     AllowHyphen,
+    Document,
     File,
     Output,
     Parallel,
@@ -1389,6 +1390,9 @@ class _CommandWalk:
         return token
 
     def _file(self, value: object, marks: tuple[object, ...]) -> None:
+        for mark in marks:
+            if isinstance(mark, Document):
+                self.seen.inputs.append(self._kind(mark.model))
         if get_origin(value) is not File:
             return
         model = generic_argument(value)

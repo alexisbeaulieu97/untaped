@@ -188,6 +188,27 @@ Written = Mark("Written")
 """A ``File[M]`` option the command writes rather than reads: the model's "Starter" line."""
 
 
+class Document:
+    """A value naming a document of ``M`` the plugin finds and reads itself: ``Document(RecipeFile)``.
+
+    ``recipe: Annotated[Positional[str], Document(RecipeFile)]`` takes a
+    library name or a path, as the plugin resolves them; core checks nothing
+    and reads nothing (a path read as it is given is ``File[M]``'s), it only
+    learns the model, so ``M`` is one of the command's inputs, documented as a
+    ``File[M]`` of it is.
+    """
+
+    __slots__ = ("model",)
+
+    def __init__(self, model: type[BaseModel]) -> None:
+        if not (isinstance(model, type) and issubclass(model, BaseModel)):
+            raise TypeError(f"Document takes a pydantic model class, not {model!r}")
+        self.model = model
+
+    def __repr__(self) -> str:
+        return f"Document({self.model.__name__})"
+
+
 class Short:
     """A one-letter flag for an option: ``repo: Annotated[str, Short("-r")]``.
 

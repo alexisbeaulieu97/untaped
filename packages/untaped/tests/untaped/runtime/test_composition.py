@@ -23,6 +23,7 @@ from untaped.sdk import (
     CredentialKey,
     Deprecated,
     DeprecatedBehaviour,
+    Document,
     DryRun,
     File,
     Following,
@@ -513,6 +514,25 @@ def test_a_subclass_of_the_returned_model_is_its_output() -> None:
     declaration = compose([_entry(_plugin_with(Shout))])
     assert declaration.quarantined == ()
     assert declaration.commands()[0].returns == "record-or-none"
+
+
+def test_a_document_mark_makes_its_model_an_input_core_never_reads() -> None:
+    class Load(Command):
+        """Load a suite by name or path."""
+
+        suite: Annotated[Positional[str], Document(Suite)] = Field(
+            description="A suite name, or a path to one."
+        )
+
+        def run(self) -> None:
+            return None
+
+    declaration = compose([_entry(_plugin_with(Load))])
+    assert declaration.quarantined == ()
+    (load,) = declaration.commands()
+    assert load.inputs == ("hello.suite",)
+    (suite,) = (option for option in load.options if option.block is None)
+    assert (suite.positional, suite.token, suite.reads_file) == (True, "str", False)
 
 
 def test_field_problems_name_the_field() -> None:
