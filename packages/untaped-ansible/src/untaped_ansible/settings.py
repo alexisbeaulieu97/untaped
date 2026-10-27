@@ -144,6 +144,12 @@ SOURCES = StateRows[SourceDefinition](omit_none=True)
 #: Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands.
 ALIASES = StateRows[Alias]()
 
+
+def alias_map() -> dict[str, str]:
+    """The saved aliases as a name → ``owner/repo`` map."""
+    return {row.alias: row.repo for row in ALIASES.all()}
+
+
 #: The dependency index: ``<ansible.index_dir>/index.v4.sqlite3``, or
 #: ``plugins/ansible/index/`` under the home when the setting is unset. The
 #: layout is ``sqlite_schema.ADDITIVE_SINCE`` (a test holds them equal;

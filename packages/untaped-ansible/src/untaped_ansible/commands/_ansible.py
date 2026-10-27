@@ -10,9 +10,9 @@ from pydantic import ValidationError
 
 from untaped.sdk import Command, UsageError, first_validation_error, not_found
 from untaped_ansible.errors import AnsibleError
-from untaped_ansible.infrastructure import AliasRepository, SourceRepository, SqliteDependencyIndex
+from untaped_ansible.infrastructure import SqliteDependencyIndex
 from untaped_ansible.refresh import Backend, RefreshWiring
-from untaped_ansible.settings import AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import SOURCES, AnsibleSettings, SourceDefinition, alias_map
 from untaped_github.api import GithubSettings, github_settings, github_web_host
 
 #: How many hex characters of an inline source's definition hash name its key.
@@ -48,7 +48,7 @@ class AnsibleCommand(Command[AnsibleSettings]):
         """What refreshing any selected source needs, with ``parallel`` Git fetches."""
         return RefreshWiring(
             index=index,
-            aliases=AliasRepository().entries(),
+            aliases=alias_map(),
             settings=self.settings,
             github_settings=self.github,
             http=self.ctx.http,
@@ -60,15 +60,14 @@ class AnsibleCommand(Command[AnsibleSettings]):
 
     def saved(self, name: str) -> SourceDefinition:
         """The saved source ``name``; a missing one exits 1, naming the sources there are."""
-        sources = SourceRepository()
-        source = sources.get(name)
+        source = SOURCES.get(name)
         if source is None:
-            raise AnsibleError(unknown_source(name, sources), category="not_found")
+            raise AnsibleError(unknown_source(name), category="not_found")
         return source
 
     def warn_saved_sources_need_refresh(self) -> None:
         """Aliases are baked into cached source data at refresh time: say what to refresh."""
-        names = [source.name for source in SourceRepository().entries()]
+        names = [source.name for source in SOURCES.all()]
         if not names:
             return
         commands = ", ".join(f"`untaped ansible source refresh {name}`" for name in names)
@@ -78,8 +77,8 @@ class AnsibleCommand(Command[AnsibleSettings]):
         )
 
 
-def unknown_source(name: str, sources: SourceRepository) -> str:
-    return not_found("source", name, known=sorted(source.name for source in sources.entries()))
+def unknown_source(name: str) -> str:
+    return not_found("source", name, known=sorted(source.name for source in SOURCES.all()))
 
 
 def source_definition(

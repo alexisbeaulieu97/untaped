@@ -45,12 +45,10 @@ from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
-    AliasRepository,
     GithubDependencyIndex,
     MultiSourceDependencyIndex,
     NullDependencyIndex,
     OverlayDependencyIndex,
-    SourceRepository,
     SqliteDependencyIndex,
     local_remote_url,
     open_index,
@@ -63,7 +61,13 @@ from untaped_ansible.refresh import (
     ignored_collections_warning,
     serve_sources,
 )
-from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import (
+    SOURCE_DATA,
+    SOURCES,
+    AnsibleSettings,
+    SourceDefinition,
+    alias_map,
+)
 from untaped_github.api import GithubClient, GithubSettings, github_token_found
 
 GraphDirection = Literal["deps", "impact", "both"]
@@ -136,7 +140,7 @@ class GraphCommand(AnsibleCommand):
             )
         if self.backend is not None and self.refresh.directive is False:
             raise UsageError("--backend needs a refresh; drop --cached")
-        aliases = AliasRepository().entries()
+        aliases = alias_map()
         github = self.github
         github_host = self.github_host
         graph_source = _graph_source(data, default_source=settings.default_source)
@@ -448,12 +452,11 @@ def _graph_source(data: SourceData, *, default_source: str | None) -> GraphSourc
     if not names and not data.inline and default_source is not None:
         names, from_default = [default_source], True
     if names:
-        sources = SourceRepository()
         selections: list[SelectedSource] = []
         for name in names:
-            source = sources.get(name)
+            source = SOURCES.get(name)
             if source is None:
-                known = sorted(entry.name for entry in sources.entries())
+                known = sorted(entry.name for entry in SOURCES.all())
                 message = not_found("source", name, known=known)
                 if from_default:
                     # The user's own setting names a missing source: fix the config.

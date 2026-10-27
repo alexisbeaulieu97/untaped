@@ -113,8 +113,7 @@ class Deps(_Reaching):
 
     Reads a source's data when one is selected (--source, inline selectors,
     or ansible.default_source), refreshed first when older than its max age,
-    and GitHub live otherwise (or with --live); the source data options say
-    which data answers. Each row carries the ref as declared, the shortest
+    and GitHub live otherwise (or with --live). Each row carries the ref as declared, the shortest
     path from ROLE and the ROLE ref it was reached from; each repo appears
     once per ROLE ref. `untaped ansible --help` explains refs, local targets
     and where a walk stops.
@@ -146,8 +145,8 @@ class Impact(_Reaching):
     """Show what depends on ROLE (upstream), one row per repository per root ref.
 
     Reads a source's data (--source, inline selectors, or
-    ansible.default_source), refreshed first when older than its max age; the
-    source data options say which data answers. Each row carries the ref it
+    ansible.default_source), refreshed first when older than its max age.
+    Each row carries the ref it
     declares, its shortest path to ROLE and the ROLE ref it was reached from
     (`root_ref` tells a dependent's pinned refs apart). `impact uses` asks
     which of them use a variable of ROLE instead.
@@ -419,6 +418,7 @@ class Find(GraphCommand):
 Direction = Literal["up", "down", "both"]
 
 _DIRECTIONS: dict[Direction, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
+_WRITTEN = ("tree", "mermaid", "json")  # the formats --out writes
 
 
 class GraphDocument(DependencyGraph):
@@ -506,6 +506,8 @@ class Graph(GraphCommand):
 
     def run(self) -> GraphDocument | None:
         check_all_refs(self.ref, all_refs=self.all_refs)
+        if self.out is not None and self.output.format not in _WRITTEN:
+            raise UsageError("--out writes the tree, mermaid or json format")
         direction = _DIRECTIONS[self.direction]
         with ExitStack() as stack:
             env = self.env(stack, command="graph", live=self.live, all_refs=self.all_refs)
@@ -528,10 +530,8 @@ class Graph(GraphCommand):
             text = tree_text(
                 graph_tree(document, header_note=document.header), ui=ui_context(strict=False)
             )
-        elif self.output.format in ("mermaid", "json"):
-            text = render_graph(document, "mermaid" if self.output.format == "mermaid" else "json")
         else:
-            raise UsageError("--out writes the tree, mermaid or json format")
+            text = render_graph(document, "mermaid" if self.output.format == "mermaid" else "json")
         path = self.out.expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)

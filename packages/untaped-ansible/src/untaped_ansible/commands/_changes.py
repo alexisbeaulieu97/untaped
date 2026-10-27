@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, ValidationError
 
 from untaped.sdk import UsageError, first_validation_error
-from untaped_ansible.commands._ansible import RefScanDefault
+from untaped_ansible.commands._ansible import REF_SCAN_DEFAULT, RefScanDefault
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.settings import SourceDefinition, normalize_team_refs
 
@@ -39,9 +39,7 @@ class Changes(BaseModel):
     add_ref_pattern: list[str] = _add("fnmatch pattern for branch/tag names")
     remove_ref_pattern: list[str] = _remove("fnmatch pattern for branch/tag names")
     clear_ref_pattern: bool = Field(False, description="Remove every ref pattern.")
-    ref_scan_default: RefScanDefault | None = Field(
-        None, description="Scan strategy: all refs or only each repo's default branch."
-    )
+    ref_scan_default: RefScanDefault | None = Field(None, description=REF_SCAN_DEFAULT)
     clear_ref_scan_default: bool = Field(
         False,
         description="Drop the per-source scan strategy and fall back to ansible.ref_scan_default.",

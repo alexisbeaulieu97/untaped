@@ -9,9 +9,8 @@ from pydantic import Field
 from untaped.sdk import Confirm, Group, Output, Positional, UsageError, not_found, q
 from untaped_ansible.commands._ansible import AnsibleCommand
 from untaped_ansible.errors import AnsibleError
-from untaped_ansible.infrastructure import AliasRepository
 from untaped_ansible.records import SourceAlias, SourceAliasOutcome
-from untaped_ansible.settings import ALIASES, is_repo_name
+from untaped_ansible.settings import ALIASES, Alias, alias_map, is_repo_name
 
 
 class Set(AnsibleCommand):
@@ -35,11 +34,10 @@ class Set(AnsibleCommand):
     def run(self) -> SourceAliasOutcome:
         if not is_repo_name(self.repo):
             raise UsageError(f"alias target must be a GitHub owner/name repo (got {q(self.repo)})")
-        aliases = AliasRepository()
-        previous = aliases.entries().get(self.alias)
+        previous = alias_map().get(self.alias)
         action = "unchanged" if previous == self.repo else "updated" if previous else "created"
         if action != "unchanged":
-            aliases.set(self.alias, self.repo)
+            ALIASES.put(Alias(alias=self.alias, repo=self.repo))
             self.warn_saved_sources_need_refresh()
         return SourceAliasOutcome(action=action, alias=self.alias, repo=self.repo)
 
@@ -54,7 +52,7 @@ class List(AnsibleCommand):
             "No source aliases configured. Map one with "
             "`untaped ansible source-alias set NAME OWNER/REPO`."
         )
-        for alias, repo in sorted(AliasRepository().entries().items()):
+        for alias, repo in sorted(alias_map().items()):
             yield SourceAlias(alias=alias, repo=repo)
 
 
@@ -71,8 +69,7 @@ class Remove(AnsibleCommand):
     output: Output[SourceAliasOutcome]
 
     def run(self) -> SourceAliasOutcome:
-        aliases = AliasRepository()
-        entries = aliases.entries()
+        entries = alias_map()
         repo = entries.get(self.alias)
         if repo is None:
             raise AnsibleError(
@@ -80,7 +77,7 @@ class Remove(AnsibleCommand):
             )
         if not self.confirm(f"Remove source alias {q(self.alias)} -> {repo}?"):
             return SourceAliasOutcome(action="planned", alias=self.alias, repo=repo)
-        aliases.remove(self.alias)
+        ALIASES.delete(self.alias)
         self.warn_saved_sources_need_refresh()
         return SourceAliasOutcome(action="deleted", alias=self.alias, repo=repo)
 

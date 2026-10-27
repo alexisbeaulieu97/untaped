@@ -123,6 +123,7 @@ _typed_options_are_supported
 UiContext.confirm_action  # documented SDK
 StateRows.per_project  # documented SDK: projects PR 6's workspace rows are the first caller
 StateRows.replace_all  # documented SDK
+StateCollection.upsert  # 11.x SDK, removed with the 11.x state helpers in the sweep
 DataFile.copy_to  # documented SDK: the plugins' move PRs are the first callers
 Lock.try_locked  # documented SDK: dotfiles' move PR is the first caller
 _clear_for_tests  # test hook for the composed root

@@ -269,6 +269,18 @@ def test_graph_out_writes_the_rendered_graph(
     assert json.loads(out.read_text())["target_id"]
 
 
+def test_graph_out_refuses_a_format_it_cannot_write_before_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "graph.yaml"
+
+    result = run("graph", "acme/role", "--source", "missing", "-f", "yaml", "--out", str(out))
+
+    assert result.exit_code == 2
+    assert "--out writes the tree, mermaid or json format" in result.stderr
+    assert not out.exists()
+
+
 def test_parallel_rejects_zero(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_state(_SOURCES)
 

@@ -40,7 +40,6 @@ from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import (
     GitSourceStore,
-    SourceRepository,
     SqliteDependencyIndex,
     open_index,
 )
@@ -105,11 +104,10 @@ class Set(AnsibleCommand):
             ref_patterns=self.ref_pattern,
             ref_scan_default=self.ref_scan_default,
         )
-        sources = SourceRepository()
-        previous = sources.get(self.name)
+        previous = SOURCES.get(self.name)
         action = "created" if previous is None else "unchanged" if previous == source else "updated"
         if action != "unchanged":
-            sources.upsert(source)
+            SOURCES.put(source)
             open_index().clear(saved_source_key(self.name))
         return SourceOutcome(action=action, name=self.name)
 
@@ -136,7 +134,7 @@ class Patch(AnsibleCommand):
         source, changes = edited(previous, self.edit)
         if previous == source:
             return SourceOutcome(action="unchanged", name=self.name)
-        SourceRepository().upsert(source)
+        SOURCES.put(source)
         open_index().clear(saved_source_key(self.name))
         return SourceOutcome(action="updated", name=self.name, changes=changes)
 
@@ -148,7 +146,7 @@ class List(AnsibleCommand):
 
     def run(self) -> Iterator[Source]:
         self.output.empty("No sources configured. Add one with `untaped ansible source set NAME`.")
-        for source in SourceRepository().entries():
+        for source in SOURCES.all():
             yield _source_row(source)
 
 
@@ -183,12 +181,11 @@ class Remove(AnsibleCommand):
     def run(self) -> SourceOutcome:
         self.saved(self.name)
         dry_run = not self.confirm(f"Remove source {q(self.name)} and its cached source data?")
-        sources = SourceRepository()
         index = open_index()
         key = saved_source_key(self.name)
         others = {
             saved_source_key(source.name): source.name
-            for source in sources.entries()
+            for source in SOURCES.all()
             if source.name != self.name
         }
         selected = index.selecting_sources(others)
@@ -200,7 +197,7 @@ class Remove(AnsibleCommand):
             dry_run=dry_run,
         )
         if not dry_run and not failures:
-            sources.remove(self.name)
+            SOURCES.delete(self.name)
             index.clear(key)
             SOURCE_DATA.forget(key)
         for repo, failure in failures:
@@ -230,7 +227,7 @@ class Status(AnsibleCommand):
 
     def run(self) -> Iterator[SourceStatus]:
         index = open_index()
-        configured = {source.name: source for source in SourceRepository().entries()}
+        configured = {source.name: source for source in SOURCES.all()}
         if self.name is not None and self.name not in configured:
             raise AnsibleError(
                 not_found("source", self.name, known=sorted(configured)), category="not_found"
@@ -255,8 +252,9 @@ class Refresh(AnsibleCommand):
     `ansible.source_refresh_rate_limit_floor`, the refresh stops with the
     finished batches saved and exits 5; rerunning resumes where it left off.
     Secondary rate limits, a rejected token, forbidden requests and unknown
-    GraphQL access failures abort the whole refresh instead. The backends are
-    described with the source data options (`untaped ansible deps --help`).
+    GraphQL access failures abort the whole refresh instead. `--backend auto`
+    falls back to `git ls-remote` for the remaining repos when GraphQL's
+    budget is spent; `git` probes every repo that way.
 
     Examples
     --------

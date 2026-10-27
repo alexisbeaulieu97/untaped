@@ -1,8 +1,4 @@
 from untaped_ansible.infrastructure.auto_ref_probe import AutoRefProbe
-from untaped_ansible.infrastructure.config_repo import (
-    AliasRepository,
-    SourceRepository,
-)
 from untaped_ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
 from untaped_ansible.infrastructure.git_store import (
     GitSourceStore,
@@ -20,7 +16,6 @@ from untaped_ansible.infrastructure.overlay_index import (
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex, open_index
 
 __all__ = [
-    "AliasRepository",
     "AutoRefProbe",
     "GitRemoteRefProbe",
     "GitSourceStore",
@@ -29,7 +24,6 @@ __all__ = [
     "MultiSourceDependencyIndex",
     "NullDependencyIndex",
     "OverlayDependencyIndex",
-    "SourceRepository",
     "SqliteDependencyIndex",
     "local_remote_url",
     "open_index",
