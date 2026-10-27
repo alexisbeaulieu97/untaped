@@ -369,6 +369,18 @@ def test_providers_compose_as_one_plugin_per_key(install: Installer) -> None:
     assert shelf.run(Titles()).text == "fake:Dune,spare:Dune"
 
 
+def test_one_name_installed_again_with_other_providers_runs_the_new_ones(
+    install: Installer,
+) -> None:
+    class Other(Books, Provider):
+        def books(self) -> list[Book]:
+            return [Book(title="Emma")]
+
+    first = install(Reader, providers={"fake": (Fixed,)}).cli("reader titles")
+    again = install(Reader, providers={"fake": (Other,)}).cli("reader titles")
+    assert (first.text, again.text) == ("fake:Dune", "fake:Emma")
+
+
 def test_providers_must_be_provider_classes(install: Installer) -> None:
     with pytest.raises(TypeError, match=r"providers\['fake'\] holds .*Plain.*not a provider"):
         install(Reader, providers={"fake": (Plain,)})

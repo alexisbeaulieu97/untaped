@@ -64,7 +64,7 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
-from untaped.sdk._run import plugin_of, settings_of
+from untaped.sdk._run import now, plugin_of, settings_of
 from untaped.sdk._stdin import (
     StdinInput,
     read_identifiers,
@@ -437,6 +437,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "TreeGraphNode",
     "TreeOutputFormat",
     "UtcTimestamp",
+    "now",
     "check_columns",
     "echo",
     "emit",

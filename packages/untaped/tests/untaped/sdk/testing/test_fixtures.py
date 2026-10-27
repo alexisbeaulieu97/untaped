@@ -7,7 +7,19 @@ from collections.abc import Callable
 import pytest
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, Confirm, Credential, CredentialKey, Plugin, Positional
+from untaped.sdk import (
+    Command,
+    Confirm,
+    Credential,
+    CredentialKey,
+    PickCatalog,
+    Picked,
+    PickItem,
+    PickRequest,
+    PickResult,
+    Plugin,
+    Positional,
+)
 from untaped.sdk.testing import Install, MemoryCredentials, ScriptedTerminal
 
 Installer = Callable[..., Install]
@@ -59,6 +71,15 @@ class Maybe(Command):
         return "done" if self.confirm("Do it?") else "planned"
 
 
+class Choose(Command):
+    """Pick vaults and print them."""
+
+    def run(self) -> str:
+        catalog = PickCatalog(items=(PickItem(id="a", label="a"), PickItem(id="b", label="b")))
+        picked = self.ctx.terminal.pick_many(PickRequest(heading="Vaults", catalog=catalog))
+        return ",".join(p.item.id for p in picked.picks)
+
+
 class Peek(Command):
     """Print the vault's token."""
 
@@ -72,7 +93,7 @@ class Vault(Plugin):
     """Keep secrets (a test's plugin)."""
 
     settings = VaultSettings
-    commands = (Wipe, Label, Rename, Peek, Maybe)
+    commands = (Wipe, Label, Rename, Peek, Maybe, Choose)
     token = Credential(key=VaultServer, env=("VAULT_TOKEN",))
 
 
@@ -123,6 +144,19 @@ def test_the_terminal_types_what_a_prompt_reads(
     terminal.types("fragile")
     assert vault.run(Label()).text == "fragile"
     assert terminal.asked == [("text", "Label?")]
+
+
+def test_the_terminal_answers_a_picker_or_cancels_it(
+    install: Installer, terminal: ScriptedTerminal
+) -> None:
+    vault = install(Vault)
+    picked = PickResult(
+        title="", defaults={}, picks=(Picked(item=PickItem(id="b", label="b"), settings={}),)
+    )
+    terminal.picks(picked, None)
+    assert vault.run(Choose()).text == "b"
+    assert vault.run(Choose()).exit == 1  # a cancelled picker changes nothing
+    assert terminal.asked == [("pick_many", "Vaults"), ("pick_many", "Vaults")]
 
 
 def test_a_prompt_with_nothing_scripted_fails_instead_of_waiting(

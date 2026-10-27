@@ -657,6 +657,11 @@ class Stdin[R: BaseModel](FieldBlock):
             filled._known = known  # composition checked that ``via`` is a bridge returning R
         return filled
 
+    @property
+    def requested(self) -> bool:
+        """``--stdin`` was passed: what to read comes from stdin, whatever it carries."""
+        return self._requested
+
     def identifiers(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[str]:
         """The identifiers given, or read from stdin: bare lines, or each row's ``Key`` field.
 

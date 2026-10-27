@@ -18,8 +18,17 @@ import respx
 from cyclopts import App
 
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk import now
 from untaped.sdk._concurrency import bounded_map
-from untaped.sdk._run import Clock, Composition, Run, installed_clock, run_clock, run_scope
+from untaped.sdk._run import (
+    Clock,
+    Composition,
+    NoRunError,
+    Run,
+    installed_clock,
+    run_clock,
+    run_scope,
+)
 from untaped.sdk.network.http import HttpClient, RetryPolicy
 from untaped.sdk.storage import cache as cache_module
 from untaped.sdk.testing import (
@@ -51,6 +60,16 @@ def test_blocks_read_the_runs_clock_else_a_plain_one(tmp_path: Path) -> None:
     with run_scope(_run(tmp_path, clock=own)):
         assert run_clock() is own
     assert run_clock() is plain
+
+
+def test_a_plugin_reads_the_wall_time_of_the_runs_clock_or_the_tests(tmp_path: Path) -> None:
+    with run_scope(_run(tmp_path, clock=ManualClock(START))):
+        assert now() == START
+        with manual_clock(START + timedelta(hours=3)) as clock:
+            clock.advance(minutes=5)
+            assert now() == START + timedelta(hours=3, minutes=5)
+    with pytest.raises(NoRunError):
+        now()  # outside a run: a bug, never the real clock
 
 
 def test_an_installed_clock_wins_over_any_run_and_restores_in_order(tmp_path: Path) -> None:

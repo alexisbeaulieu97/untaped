@@ -481,6 +481,17 @@ def plugin_of(model: type[BaseModel]) -> PluginHandle:
     return PluginHandle(name=run.composition.owner_of_settings(model), home=run.home)
 
 
+def now() -> datetime:
+    """The run's wall time, in UTC: the one clock a plugin reads.
+
+    The kit's ``clock`` moves it, with core's own stamps, cache ages and
+    back-offs. Outside a run it raises :class:`NoRunError`, as
+    :func:`settings_of` does.
+    """
+    current_run()
+    return run_clock().now()
+
+
 def settings_of[M: BaseModel](model: type[M]) -> M:
     """The settings of the plugin whose model is ``model``, as this run picked them."""
     run = current_run()
