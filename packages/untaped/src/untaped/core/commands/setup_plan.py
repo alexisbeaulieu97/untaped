@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import shlex
 
-from untaped.core.commands.doctor import run_line, selected_check_rows, spelled_argv
+from untaped.core.commands.doctor import run_line, selected_check_rows
 from untaped.core.commands.records import SetupActor, SetupState, SetupStep
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_state import (
@@ -132,7 +132,7 @@ def _install_row(profile: str) -> Row:
     if state == "registered" and ref is not None:
         return _row("install", NAME, "done", f"registered: {ref.describe()}")
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
-    return _row("install", NAME, "todo", detail, spelled_argv(Register.spelled(), profile=profile))
+    return _row("install", NAME, "todo", detail, command_argv(Register.spelled(), profile=profile))
 
 
 def _profile_row(profile: str, *, exists: bool) -> Row:

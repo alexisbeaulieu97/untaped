@@ -38,7 +38,6 @@ cfg dotfiles.state_dir string(format=path) default=~/.untaped/plugins/dotfiles  
 cfg dotfiles.tags string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
-cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
 cfg git.untaped_helper_only boolean default=false
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
@@ -4580,7 +4579,6 @@ contract git.Credential.verify_tls boolean|string(format=path) default=true
 contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
-contract git.git_host.proxy(url: string) -> string?  [experimental]
 contract lint.Failure(category, message, system)
 contract lint.Failure.category choice=auth
 contract lint.Failure.category choice=config
@@ -6331,6 +6329,8 @@ sdk untaped.sdk.Document(model)
 sdk untaped.sdk.Document.model
 sdk untaped.sdk.DryRun()
 sdk untaped.sdk.DryRun.field_kind class
+sdk untaped.sdk.DryRun.go_ahead()
+sdk untaped.sdk.DryRun.go_ahead(preview@1=) default=None callback(0)
 sdk untaped.sdk.DryRun.options class
 sdk untaped.sdk.DryRun.panel class
 sdk untaped.sdk.DryRunOption
@@ -7759,6 +7759,7 @@ sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
 sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]
 sdk untaped.sdk.code_version(module)
+sdk untaped.sdk.command_line(command)
 sdk untaped.sdk.committed_path(spec, name, *, root)  [experimental]
 sdk untaped.sdk.connected_client(base_url=) default=<computed>
 sdk untaped.sdk.connected_client(base_url_field=) default=base_url  [deprecated, removed in 12.0; use base_url=]
@@ -8060,6 +8061,7 @@ sdk untaped.sdk.health.Suggest.note
 sdk untaped.sdk.hint(command)
 sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.home()
+sdk untaped.sdk.http_of(model)
 sdk untaped.sdk.installed_code()
 sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
@@ -9045,12 +9047,10 @@ sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
 sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
 sdk untaped_git.api.GitHost.home() -> string?  [experimental]
-sdk untaped_git.api.GitHost.proxy(url)  [experimental]
 sdk untaped_git.api.GitUrl
-sdk untaped_git.api.HostAuth(plugin, credential, proxy)
+sdk untaped_git.api.HostAuth(plugin, credential)
 sdk untaped_git.api.HostAuth.credential
 sdk untaped_git.api.HostAuth.plugin
-sdk untaped_git.api.HostAuth.proxy
 sdk untaped_git.api.Prefetched(store)
 sdk untaped_git.api.Prefetched.run(argv)
 sdk untaped_git.api.Prefetched.run(capture=) default=true

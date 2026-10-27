@@ -2,7 +2,8 @@
 
 A plugin's own source may import ``untaped`` only as one of the SDK modules
 (``untaped.sdk``, ``untaped.sdk.contracts``, ``untaped.sdk.testing`` and
-``untaped.sdk.testing.git``), and another plugin only as that
+``untaped.sdk.testing.git``) or as ``untaped.core.api`` (the core commands a
+hint names), and another plugin only as that
 plugin's ``api`` module, and only when its distribution requires the
 other's (by default, or under an extra named after an owner it fills: the
 ``requires`` of its ``untaped.installed_plugin`` record). Which packages are plugins
@@ -43,6 +44,9 @@ SDK_MODULES = frozenset(
         "untaped.sdk.testing.git",
     }
 )
+
+#: Core's own ``api`` module: the commands a plugin names in a hint (``Set.spelled(...)``).
+CORE_API = "untaped.core.api"
 
 
 def _targets(
@@ -87,7 +91,7 @@ def _detail(
                 f"{plugin_packages[other]}'s"
             )
         return None
-    if _is_within(target, "untaped") and target not in SDK_MODULES:
+    if _is_within(target, "untaped") and target not in SDK_MODULES and target != CORE_API:
         return f"imports {target}; use {_SDK}"
     return None
 

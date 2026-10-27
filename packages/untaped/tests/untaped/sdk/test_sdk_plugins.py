@@ -50,6 +50,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Service",
         "settings_of",
         "plugin_of",
+        "http_of",
         "PluginHandle",
     ),
     "composition": (
@@ -127,6 +128,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "UntapedError",
         "UsageError",
         "attribution",
+        "command_line",
         "first_validation_error",
         "hint",
         "most_severe",

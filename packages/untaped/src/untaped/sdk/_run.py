@@ -493,6 +493,17 @@ def plugin_of(model: type[BaseModel]) -> PluginHandle:
     return PluginHandle(name=run.composition.owner_of_settings(model), home=run.home)
 
 
+def http_of(model: type[BaseModel]) -> HttpFactory:
+    """The HTTP clients of the plugin whose settings model is ``model``, wherever the code runs.
+
+    What its ``self.ctx.http`` is, for its own code another plugin's command
+    calls (git's repo store asks it for ``proxy_for``).
+    """
+    run = current_run()
+    run.composition.owner_of_settings(model)  # a model no composed plugin owns raises
+    return run.http
+
+
 def now() -> datetime:
     """The run's wall time, in UTC: the one clock a plugin reads.
 

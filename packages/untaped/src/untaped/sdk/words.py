@@ -22,6 +22,10 @@ import shlex
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from untaped.sdk.plugin import SpelledCommand
 
 _ROOT_COMMAND = "untaped"
 
@@ -59,22 +63,30 @@ def not_found(noun: str, name: object, *, known: Iterable[object] | None = None)
     return f"{message}; known: {', '.join(names) if names else 'none'}"
 
 
-def command_line(command: str) -> str:
-    """``command`` as an ``untaped …`` command line (a leading ``untaped`` is kept once)."""
-    text = command.strip()
+def command_line(command: str | SpelledCommand) -> str:
+    """``command`` as an ``untaped …`` command line (a leading ``untaped`` is kept once).
+
+    A command named by its class (``Refresh.spelled("NAME")``) is spelled as
+    this run names it, so a renamed command or key follows its class.
+    """
+    text = _spelled(command).strip()
     if text != _ROOT_COMMAND and not text.startswith(f"{_ROOT_COMMAND} "):
         text = f"{_ROOT_COMMAND} {text}"
     return text
 
 
-def command_argv(command: str | Sequence[str], *, profile: str) -> list[str]:
+def command_argv(command: str | SpelledCommand | Sequence[str], *, profile: str) -> list[str]:
     """``command`` as the argv an agent runs after ``untaped``.
 
-    A string is split like a shell would; a leading ``untaped`` is dropped.
-    ``--profile <profile>`` leads the argv unless the command already names
-    one, so it acts on the profile it was made for.
+    A string, or a command named by its class, is split like a shell would;
+    a leading ``untaped`` is dropped. ``--profile <profile>`` leads the argv
+    unless the command already names one, so it acts on the profile it was
+    made for.
     """
-    argv = shlex.split(command) if isinstance(command, str) else list(command)
+    if _is_spelled(command) or isinstance(command, str):
+        argv = shlex.split(_spelled(command))
+    else:
+        argv = list(cast("Sequence[str]", command))
     if argv[:1] == [_ROOT_COMMAND]:
         argv = argv[1:]
     named = any(arg == "--profile" or arg.startswith("--profile=") for arg in argv)
@@ -96,7 +108,28 @@ def split_profile(argv: Sequence[str]) -> tuple[str | None, list[str]]:
     return None, list(argv)
 
 
-def run_hint(command: str) -> str:
+def _is_spelled(command: object) -> bool:
+    from untaped.sdk.plugin import SpelledCommand  # noqa: PLC0415 - words stays a leaf
+
+    return isinstance(command, SpelledCommand)
+
+
+def _spelled(command: str | SpelledCommand | Sequence[str]) -> str:
+    """``command``'s text: a string as given, a command named by its class as this run spells it."""
+    if isinstance(command, str):
+        return command
+    if not _is_spelled(command):
+        raise TypeError(f"a command is a string or Command.spelled(...), not {command!r}")
+    from untaped.sdk._run import NoRunError, current_run  # noqa: PLC0415 - only spelling pays
+
+    spelled = cast("SpelledCommand", command)
+    try:
+        return current_run().composition.spell(spelled)
+    except NoRunError:  # a message built outside any run: the class's name stands in
+        return " ".join([spelled.command.__name__, *map(str, spelled.args)])
+
+
+def run_hint(command: str | SpelledCommand) -> str:
     """A hint's body naming a command to run: ``run `untaped <command>```.
 
     ``command`` may include or omit the leading ``untaped``. Print it with
@@ -105,7 +138,7 @@ def run_hint(command: str) -> str:
     return f"run `{command_line(command)}`"
 
 
-def hint(command: str) -> str:
+def hint(command: str | SpelledCommand) -> str:
     """A follow-up hint line: ``hint: run `untaped <command>``` (:func:`run_hint`'s body).
 
     Append it to an error's message on its own line
