@@ -498,7 +498,7 @@ class Graph(GraphCommand):
     target_repo: str | None = Field(None, description=TARGET_REPO)
     live: bool = Field(False, description=LIVE)
     out: Annotated[Path | None, Short("-o")] = Field(
-        None, description="Write the graph to this file instead of stdout."
+        None, description="Write the graph to this file instead of stdout (tree, mermaid or json)."
     )
     output: Output[GraphDocument] = Output(
         render={"tree": _tree, "mermaid": _mermaid, "json": _json}, format="tree"
