@@ -326,7 +326,8 @@ def _contract_fields(
             grouped[owner].append(fill.target)
     if grouped:
         fields["provides"] = {
-            owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
+            owner: partial(_instances, mount, plugin.name, tuple(targets))
+            for owner, targets in grouped.items()
         }
     return fields
 
@@ -335,9 +336,14 @@ def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:
     return tuple(resolve_target(target) for target in targets)
 
 
-def _instances(targets: Sequence[str]) -> tuple[Any, ...]:
-    """One instance of each provider class: core instantiates a provider at the first ask."""
-    return tuple(cls() for cls in _resolved(targets))
+def _instances(mount: Mount, name: str, targets: Sequence[str]) -> tuple[Any, ...]:
+    """One instance of each provider class: core instantiates a provider at the first ask.
+
+    The classes come from the plugin class's ``fills``, so a class made at run
+    time (``providing``) needs no importable name.
+    """
+    filled = {target_of(cls): cls for cls in mount.plugins[name].fills}
+    return tuple(filled[target]() for target in targets)
 
 
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:

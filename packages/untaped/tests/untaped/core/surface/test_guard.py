@@ -265,7 +265,7 @@ CASES = {
         "sdk m.Backend implement=ask\nsdk m.Backend(a)\nsdk m.Backend(b@2=) default=None",
         False,
     ),
-    "a convention goes": ("convention file fills.json", "", False),
+    "a convention goes": ("convention attribute retired_keys", "", False),
     "rename a setting, still read under its old key": (
         "cfg acme.max_age integer default=60",
         "cfg acme.caches.x.max_age_seconds integer default=60\n"

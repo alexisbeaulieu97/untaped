@@ -46,7 +46,7 @@ _MODULE_PREFIX = "untaped_lint_repo_rules"
 class Loaded:
     """The hosts a repo file's ``rules:`` directories make, and what loading them found."""
 
-    hosts: dict[str, Rules] = field(default_factory=dict)
+    hosts: dict[str, type[Rules]] = field(default_factory=dict)
     findings: list[Finding] = field(default_factory=list)
     """``rule-imports`` findings, ids bare (lint's key is the engine's to add)."""
     failures: list[Failure] = field(default_factory=list)

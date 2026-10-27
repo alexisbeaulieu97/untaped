@@ -83,7 +83,7 @@ def repo_rule(rule_id: str, *, root: Path) -> RuleFunction:
         raise LookupError(f"no {repo_file.RELATIVE} at or above {root}")
     loaded = load(repo_file.read(path))
     for host in loaded.hosts.values():
-        for function in type(host).RULES:
+        for function in host.RULES:
             if function.rule.id == rule_id:
                 return function
     problems = "; ".join(failure.message for failure in loaded.failures)

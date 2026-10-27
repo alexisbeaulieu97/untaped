@@ -12,10 +12,6 @@ verdict:
   function in its ``testing`` module, on each ready provider;
 - ``live``: one live call of each filled method taking no required
   arguments, every item round-tripped through JSON;
-- ``fills``: the ``assert_fills`` checks on the live items;
-- ``schema``: the owner schema hash the provider recorded (``fills.json``)
-  against the installed owner's; a difference is ``owner-schema-drift``,
-  reported, never failed;
 - ``unmarked-service``: a ``warn`` row when the settings say what needs
   setting up only through the legacy ``base_url``/``token`` names, so a
   plugin's ``assert_clean`` still passes.
@@ -211,21 +207,14 @@ def _provider(
 ) -> list[PluginCheckRow]:
     from untaped.runtime.contracts.registry import ready_of  # noqa: PLC0415
 
-    binding = provider.binding
-    what = f"{binding.owner}.{binding.contract.name}"
     ready = ready_of(provider)
     waiting = None
     if ready is not None:
         waiting = f"skipped: not ready: {ready.reason}" + (
             f" (set {ready.spelled})" if ready.spelled else ""
         )
-    rows = list(_conformance(provider, composed, candidates, waiting, row))
-    samples: list[object] = []
-    for line in _live(provider, waiting, samples, row):
-        rows.append(line)
-    rows.append(_fills(provider, samples, row))
-    rows.append(_schema(provider, what, row))
-    return rows
+    conformance = _conformance(provider, composed, candidates, waiting, row)
+    return [*conformance, *_live(provider, waiting, row)]
 
 
 def _conformance(
@@ -270,9 +259,7 @@ def _owner_conformance(
     return found if callable(found) else None
 
 
-def _live(
-    provider: BoundProvider, waiting: str | None, samples: list[object], row: _Row
-) -> Iterator[PluginCheckRow]:
+def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[PluginCheckRow]:
     from untaped.sdk.contracts._declare import fills  # noqa: PLC0415
 
     binding = provider.binding
@@ -287,12 +274,10 @@ def _live(
         elif waiting is not None:
             yield row("live", title, "pass", waiting)
         else:
-            yield _call(provider, name, title, samples, row)
+            yield _call(provider, name, title, row)
 
 
-def _call(
-    provider: BoundProvider, name: str, title: str, samples: list[object], row: _Row
-) -> PluginCheckRow:
+def _call(provider: BoundProvider, name: str, title: str, row: _Row) -> PluginCheckRow:
     from untaped.sdk.contracts import Errored, Ok, gather  # noqa: PLC0415
 
     binding = provider.binding
@@ -314,7 +299,6 @@ def _call(
     problems = [*answer.invalid, *_round_trips(items)]
     if problems:
         return row("live", title, "fail", "; ".join(problems))
-    samples += _samples(provider, items)
     return row("live", title, "pass", plural(len(items), "item"))
 
 
@@ -330,48 +314,6 @@ def _round_trips(items: Sequence[Any]) -> Iterator[str]:
             continue
         if back != item:
             yield f"item {index} changes in a JSON round trip"
-
-
-def _samples(provider: BoundProvider, items: Sequence[Any]) -> list[object]:
-    """The provider's own records behind ``items``: what its bridge turned into them."""
-    binding = provider.binding
-    if binding.owns_item:
-        return [item for item in items if isinstance(item, BaseModel)]
-    found: list[object] = []
-    for item in items:
-        source = getattr(item, "source", None)
-        if source is not None and source.record:
-            found.append(dict(source.record))
-    return found
-
-
-def _fills(provider: BoundProvider, samples: Sequence[object], row: _Row) -> PluginCheckRow:
-    from untaped.runtime.contracts.fills import fills_problems  # noqa: PLC0415
-
-    what = f"{provider.binding.owner}.{provider.binding.contract.name}"
-    if not samples:
-        return row("fills", what, "pass", "skipped: no live items to check")
-    problems = fills_problems(provider, samples)
-    if problems:
-        return row("fills", what, "fail", "; ".join(problems))
-    return row("fills", what, "pass", plural(len(samples), "live item"))
-
-
-def _schema(provider: BoundProvider, what: str, row: _Row) -> PluginCheckRow:
-    from untaped.runtime.contracts.fills import current_hash, recorded_hash  # noqa: PLC0415
-
-    recorded = recorded_hash(provider)
-    if recorded is None:
-        return row("schema", what, "warn", "no recorded owner schema hash; assert_fills records it")
-    if recorded != current_hash(provider):
-        return row(
-            "schema",
-            what,
-            "warn",
-            f"owner-schema-drift: tested against another {what} schema; "
-            "rerun its tests against this owner",
-        )
-    return row("schema", what, "pass", "tested against this owner's schema")
 
 
 def _message(exc: object) -> str:

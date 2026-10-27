@@ -216,9 +216,7 @@ one of these reasons:
 
 - passing: `active`, `not-configured` (it names the setting it waits for)
   and `owner-not-installed`;
-- warning: `unused-method`, `owner-schema-drift` (the provider was tested
-  against another schema of the contract than the installed owner's; see
-  [Testing contracts](#testing-contracts)) and the quarantine reasons above.
+- warning: `unused-method` and the quarantine reasons above.
 
 A `contracts` row warns about an owner whose `contracts` function fails
 (`bad-contracts`), and a `rank` row warns about a ranking it can't follow:
@@ -253,10 +251,12 @@ def test_shelf_keeps_its_surface() -> None:
 - `install(Shelf, providers={"fake": (FakeBooks,)})` composes the owner
   plus a plugin named `fake` filling the contracts its classes subclass;
   `install(Library)` composes the owners a provider declares under their
-  extras too. Outside tests, `untaped.sdk.contracts.providing(owner,
-  {"house": [...]})` does the same for an owner that loads providers from
+  extras too. Outside tests, `untaped.sdk.contracts.providing({"house":
+  (HouseRules,)})` does the same for an owner that loads providers from
   elsewhere (a repository's rule modules): the installed plugins plus a
-  plugin `house` offering each instance to `owner`. A key that is not a
+  plugin `house` whose `fills` are those classes, each filling the contract
+  it subclasses, for the block only. A class that is no provider raises
+  `TypeError` naming it. A key that is not a
   plugin name, is reserved (`untaped`, `sdk`, a core section or command
   group) or is an installed plugin's name is refused before anything is
   composed, and one the composition quarantines raises `ConfigError`.
@@ -294,19 +294,17 @@ def test_the_library_fills_the_shelf_contract() -> None:
 - `assert_fills(Provider, samples=[...])` checks that each sample (a `T`
   or a mapping of one) survives a JSON round trip, and that each bridge
   method turns it into a valid owner record whose `source` gives it back.
-  `samples=` is required when `T` is not the owner's model. Run from a
-  checkout or an editable install, it records the owner's schema hash in
-  the plugin package's `fills.json`; commit it.
+  `samples=` is required when `T` is not the owner's model. Nothing is
+  recorded: what guards a provider against an owner that moved is the
+  owner range in its `pyproject.toml` (`owner-out-of-range`), validation of
+  every answer as the owner's model, and the owner's own surface snapshot.
 - `untaped lint`, in a plugin's directory, checks the installed plugin, a
   developer's editable install included ([Lint](./lint.md)): the
   conventions and the import lint, then, composing only the plugin and the
   owners it provides for, the owner's `conformance`, one live call of each
-  filled method that takes no required argument (each item round-tripped),
-  the `assert_fills` checks on those items, and the recorded schema hash
-  against the installed owner's. A provider that isn't ready skips the live
-  checks. A different hash is `owner-schema-drift`, which warns (here and in
-  `doctor`) and never fails: rerun the provider's tests against that owner.
-  It exits 3 when a check fails. `untaped.sdk.testing.check_plugin(NAME)`
+  filled method that takes no required argument (each item round-tripped
+  and validated as the owner's model). A provider that isn't ready skips
+  the live checks. It exits 3 when a check fails. `untaped.sdk.testing.check_plugin(NAME)`
   returns the rows of these checks, without the conventions that read only
   the plugin's files, for a linter to judge; `check(install(...))` fails a
   test on any of them.

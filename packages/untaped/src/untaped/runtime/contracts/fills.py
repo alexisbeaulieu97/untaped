@@ -1,26 +1,16 @@
-"""Proving a provider fills its contract: the checks behind ``assert_fills`` and ``fills``.
+"""Proving a provider fills its contract: the checks behind ``assert_fills``.
 
 For each sample of the provider's own record type ``T``: it survives a JSON
 round trip through ``T``; it issues as the owner's model the way the SDK
 issues every answer; and each bridge (the method taking ``T`` and returning
 the owner's model) turns it into a valid owner record whose ``source`` names
 the provider and carries the sample back.
-
-The owner's schema hash the provider was checked against lives in the
-plugin package's ``fills.json`` (``{"untaped": "1", "fills": {"<owner>.<contract>":
-"<sha256>"}}``), so the plugin checks and doctor can say when the installed owner
-has changed since (``owner-schema-drift``).
 """
 
 from __future__ import annotations
 
 import json
-import site
-import sys
-import sysconfig
 from collections.abc import Sequence
-from importlib.util import find_spec
-from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -29,19 +19,8 @@ from untaped.runtime.contracts.registry import BoundProvider
 from untaped.sdk.contracts._cache import return_type
 from untaped.sdk.contracts._declare import Binding, fills, record_kind
 from untaped.sdk.contracts._gather import issue
-from untaped.sdk.contracts._schema import schema_hash
 from untaped.sdk.errors import first_validation_error
 from untaped.sdk.records import Issued, Record
-from untaped.sdk.storage._fs import atomic_write
-
-#: The file in a provider's plugin package holding the owner schema hashes it was checked against.
-FILLS_FILE = "fills.json"
-_FORMAT = "1"
-
-
-def fills_key(binding: Binding) -> str:
-    """``<owner>.<contract>``: the key of a provider's hash in ``fills.json``."""
-    return f"{binding.owner}.{binding.contract.name}"
 
 
 def fills_problems(provider: BoundProvider, samples: Sequence[object]) -> list[str]:
@@ -129,68 +108,3 @@ def _message(exc: Exception) -> str:
     if isinstance(exc, ValidationError):
         return first_validation_error(exc)
     return f"{type(exc).__name__}: {exc}" if not str(exc) else str(exc)
-
-
-def fills_path(provider: type) -> Path | None:
-    """``fills.json`` in the package defining ``provider``; ``None`` outside a package."""
-    module = sys.modules.get(provider.__module__)
-    top = (getattr(module, "__name__", None) or provider.__module__).partition(".")[0]
-    found = find_spec(top)
-    if found is None or not found.submodule_search_locations:
-        return None
-    return Path(next(iter(found.submodule_search_locations))) / FILLS_FILE
-
-
-def recorded_hash(provider: BoundProvider) -> str | None:
-    """The owner schema hash recorded for ``provider``'s contract, if any."""
-    path = fills_path(type(provider.instance))
-    if path is None:
-        return None
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return None
-    recorded = raw.get("fills") if isinstance(raw, dict) else None
-    value = recorded.get(fills_key(provider.binding)) if isinstance(recorded, dict) else None
-    return value if isinstance(value, str) else None
-
-
-def current_hash(provider: BoundProvider) -> str:
-    """The installed owner's schema hash for ``provider``'s contract."""
-    return schema_hash(provider.binding.contract)
-
-
-def record_hash(provider: BoundProvider) -> Path | None:
-    """Write the installed owner's schema hash into ``fills.json``; the file when it changed.
-
-    Only a package outside the interpreter's site-packages (a checkout, an
-    editable install) is written: an installed wheel keeps the file it
-    shipped, so a stale committed hash still shows as ``owner-schema-drift``.
-    The write is atomic, so a parallel reader never sees half a file.
-    """
-    path = fills_path(type(provider.instance))
-    if path is None or _installed(path):
-        return None
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        raw = {}
-    recorded = raw.get("fills") if isinstance(raw, dict) else None
-    entries = dict(recorded) if isinstance(recorded, dict) else {}
-    key, value = fills_key(provider.binding), current_hash(provider)
-    if entries.get(key) == value:
-        return None
-    entries[key] = value
-    body = {"untaped": _FORMAT, "fills": dict(sorted(entries.items()))}
-    atomic_write(path, json.dumps(body, indent=2) + "\n")
-    return path
-
-
-def _installed(path: Path) -> bool:
-    """Whether ``path``'s directory is in a site-packages (the file may link into a cache)."""
-    paths = sysconfig.get_paths()
-    roots = [paths["purelib"], paths["platlib"], *site.getsitepackages()]
-    if site.ENABLE_USER_SITE:
-        roots.append(site.getusersitepackages())
-    where = path.parent.resolve()
-    return any(where.is_relative_to(Path(root).resolve()) for root in roots)

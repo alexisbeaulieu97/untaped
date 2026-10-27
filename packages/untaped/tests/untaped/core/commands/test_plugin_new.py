@@ -101,7 +101,7 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     tests = _load(root / "tests" / "test_gitlab.py")
     with compose_with(_RACK, gitlab):
         tests.test_gitlab_fills_item_source()
-    assert (root / "src" / "untaped_gitlab" / "fills.json").exists()
+    assert not (root / "src" / "untaped_gitlab" / "fills.json").exists()
     tests.test_gitlab_keeps_its_surface()
     # No commands, settings or modules yet: the first run writes an empty surface.
     surface = (root / "tests" / "surface.txt").read_text(encoding="utf-8")

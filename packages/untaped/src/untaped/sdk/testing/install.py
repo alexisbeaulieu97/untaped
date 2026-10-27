@@ -246,11 +246,12 @@ def install(
     What core keeps in a section (a cache's max age) stays.
     """
     from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
+    from untaped.sdk.contracts._providing import providers_plugin  # noqa: PLC0415
 
     named = dict(names or {})
     discovered = discover_candidates()
     entries = [(cls, named.get(cls)) for cls in plugins]
-    entries += [(_providers_plugin(key, each), key) for key, each in (providers or {}).items()]
+    entries += [(providers_plugin(key, each), key) for key, each in (providers or {}).items()]
     candidates = tuple(candidate_of(cls, name, discovered) for cls, name in entries)
     candidates += _dependencies(candidates, discovered)
     models = [settings] if isinstance(settings, BaseModel) else list(settings)
@@ -268,51 +269,6 @@ def install(
     installed = Install(candidates)
     _remember(installed)
     return installed
-
-
-def _providers_plugin(name: str, classes: Sequence[type]) -> type[Plugin]:
-    """A plugin named ``name`` whose ``fills`` are ``classes``, as a test's providers compose."""
-    from pydantic import ConfigDict, create_model  # noqa: PLC0415
-
-    from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415
-    from untaped.sdk.contracts._declare import (  # noqa: PLC0415
-        Provider,
-        contract_of,
-        settings_type,
-    )
-
-    check_plugin_name(name)
-    for each in classes:
-        info = contract_of(each) if isinstance(each, type) else None
-        if info is None or info.cls is each or not issubclass(each, Provider):
-            raise TypeError(
-                f"providers[{name!r}] holds {each!r}, not a provider: subclass the contract and "
-                "Provider (Provider[S] when it reads settings)"
-            )
-    if not classes:
-        raise TypeError(f"providers[{name!r}] holds no provider class")
-    title = name.title().replace("-", "")
-    read = {settings_type(each) for each in classes} - {None}
-    if len(read) > 1:
-        names = sorted(each.__qualname__ for each in read if each is not None)
-        raise TypeError(
-            f"providers[{name!r}] read different settings ({', '.join(names)}); "
-            "a plugin has one settings model"
-        )
-    model = next(iter(read), None)
-    if model is None:
-        model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
-    plugin = type(
-        title,
-        (Plugin,),
-        {
-            "__doc__": f"The test's providers {name}.",
-            "__module__": classes[0].__module__,
-            "settings": model,
-            "fills": tuple(classes),
-        },
-    )
-    return cast("type[Plugin]", plugin)
 
 
 def _settings_model(candidate: PluginCandidate) -> type[BaseModel] | None:

@@ -6,8 +6,7 @@ in the 12.0 shape: the plugin is a class, `Library` in `plugin.py`, whose
 [`untaped-shelf`](../untaped-shelf)'s `BookSource` contract with the volumes
 listed under `library.volumes`, issuing its own `Volume` records through the
 contract's bridge. It has no commands of its own. It declares `untaped-shelf`
-under its `shelf` extra, as every provider declares its owner, and records
-the contract schema it was tested against in `fills.json`. It is not
+under its `shelf` extra, as every provider declares its owner. It is not
 published.
 
 Its tests run the pair together: install `untaped`, `untaped-shelf` and this

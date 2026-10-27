@@ -19,7 +19,6 @@ import pytest
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "plugin_check"
 SCRIPT = Path(__file__).with_name("examples_run.py")
 CONFIG = "format_version: 2\nlibrary:\n  volumes:\n    - {shelf_mark: A1, name: Dune}\n"
-_DRIFT = "owner-schema-drift: "
 
 
 def _run(home: Path) -> dict[str, Any]:
@@ -51,12 +50,7 @@ def _recorded(name: str) -> list[dict[str, str]]:
 
 def _as_finding(row: dict[str, str]) -> tuple[str, str]:
     """A recorded row as Conventions reports it: ``warn`` a warning, ``fail`` an error."""
-    if row["check"] == "conventions":
-        rule = row["title"]
-    elif row["check"] == "schema" and row["detail"].startswith(_DRIFT):
-        rule = "owner-schema-drift"
-    else:
-        rule = row["check"]
+    rule = row["title"] if row["check"] == "conventions" else row["check"]
     return f"lint.{rule}", "warning" if row["status"] == "warn" else "error"
 
 

@@ -37,6 +37,7 @@ from untaped.sdk.words import not_found, run_hint
 if TYPE_CHECKING:
     from untaped.runtime.settings import ExtensionSettings
     from untaped.sdk._run import Diag
+    from untaped.sdk.contracts._declare import ContractInfo
 
 
 #: Shown by root ``--help`` and an empty ``plugin list`` when a bare
@@ -180,7 +181,6 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
         rankings,
         unreadable_owners,
     )
-    from untaped.sdk.contracts._schema import method_stability  # noqa: PLC0415
 
     rows: list[ContractMethod] = []
     owned = owned_contracts()
@@ -201,12 +201,22 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
                         contract=f"{owner}.{info.name}",
                         method=method,
                         owner=owner,
-                        stability=method_stability(info, method),
+                        stability=_stability(info, method),
                         providers=method_providers(info, method, order),
                         ranked=order,
                     )
                 )
     return rows
+
+
+def _stability(info: ContractInfo, name: str) -> Literal["stable", "experimental", "deprecated"]:
+    """The method's own mark, else its contract's."""
+    from untaped.sdk.marks import Deprecated, Experimental, function_mark  # noqa: PLC0415
+
+    mark = function_mark(info.methods[name].function) or function_mark(info.cls)
+    if isinstance(mark, Deprecated):
+        return "deprecated"
+    return "experimental" if isinstance(mark, Experimental) else "stable"
 
 
 def _schema(kind: str, result: CompositionResult) -> dict[str, Any]:

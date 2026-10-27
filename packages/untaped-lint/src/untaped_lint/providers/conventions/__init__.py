@@ -111,9 +111,6 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("contracts", "error", "An owner's contracts function loads."),
     ("conformance", "error", "Each ready provider passes its owner's conformance checks."),
     ("live", "error", "Each filled method taking no arguments answers with valid items."),
-    ("fills", "error", "A provider's live items pass assert_fills."),
-    ("schema", "warning", "A provider records the owner schema hash it was tested against."),
-    ("owner-schema-drift", "warning", "A provider was tested against the installed owner."),
     (
         "unmarked-service",
         "warning",
@@ -130,7 +127,6 @@ UNREADABLE = _BY_ID["unreadable-file"]
 """Also a ``Tree``'s: a file a rule asked for that isn't UTF-8."""
 
 _FILE_WHERE = re.compile(r"^(?P<path>[^\s:]+\.py)(?::(?P<line>\d+))?$")
-_DRIFT = "owner-schema-drift: "
 
 
 UNCHECKED = frozenset(
@@ -191,7 +187,7 @@ def installed(candidates: Sequence[PluginCandidate] | None = None) -> list[Insta
     """Every installed plugin's record; composed from ``candidates`` when they are given."""
     if candidates is None:
         return installed_plugins()
-    with providing(KEY, {}, candidates=candidates):
+    with providing({}, candidates=candidates):
         return installed_plugins()
 
 
@@ -246,9 +242,6 @@ def _from_row(plugin: str, row: PluginCheckRow, base: Path | None) -> Finding | 
     if row.check == "conventions":
         where, _, detail = row.detail.partition(": ")
         return _finding(row.title, plugin, where, detail, severity, base)
-    if row.check == "schema" and row.detail.startswith(_DRIFT):
-        detail = f"{row.title}: {row.detail.removeprefix(_DRIFT)}"
-        return _finding("owner-schema-drift", plugin, "", detail, severity, base)
     return _finding(row.check, plugin, "", f"{row.title}: {row.detail}", severity, base)
 
 

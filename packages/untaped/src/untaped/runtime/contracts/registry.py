@@ -499,9 +499,7 @@ def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
 
     An inactive provider (not configured, or waiting for an owner that isn't
     installed) is a pass row; a quarantined offer, a method the contract no
-    longer has, a provider tested against another owner schema than the
-    installed one (``owner-schema-drift``) and a ranking naming a missing
-    contract, method or plugin warn.
+    longer has and a ranking naming a missing contract, method or plugin warn.
     ``plugins`` limits the rows to those plugins (a provider's, or an owner's).
     """
 
@@ -545,27 +543,8 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
         detail = f"{what}: {why}"
         return DoctorRow("contract-provider", entry.plugin, "pass", Reason.not_configured, detail)
     methods = ", ".join(name for name in info.methods if fills(provider, info, name))
-    if _drifted(entry):
-        detail = (
-            f"fills {what}: {methods}; tested against another {what} schema "
-            f"than the installed {entry.binding.owner}'s; {upgrade}"
-        )
-        return DoctorRow(
-            "contract-provider", entry.plugin, "warn", Reason.owner_schema_drift, detail
-        )
     detail = f"fills {what}: {methods}"
     return DoctorRow("contract-provider", entry.plugin, "pass", Reason.active, detail)
-
-
-def _drifted(provider: BoundProvider) -> bool:
-    """Whether the owner schema hash the provider recorded differs from the installed owner's."""
-    from untaped.runtime.contracts.fills import (  # noqa: PLC0415 - a cycle
-        current_hash,
-        recorded_hash,
-    )
-
-    recorded = recorded_hash(provider)
-    return recorded is not None and recorded != current_hash(provider)
 
 
 def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> list[DoctorRow]:
