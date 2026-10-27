@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from untaped.sdk import Group, Matched, Output, Parallel, Refresh, Short, UsageError, key
 from untaped_github.application import (
@@ -63,7 +63,16 @@ class _Sweep(Scoped):
     parallel: Parallel = Parallel(default=key(GithubSettings).sweep.parallel, cap=32)
 
     def query(self) -> SweepQuery:
-        query = SweepQuery(
+        """The query the predicates make; one that asks nothing is a usage error."""
+        query = self._query()
+        try:
+            query.validate()
+        except ValueError as exc:
+            raise UsageError(str(exc)) from exc
+        return query
+
+    def _query(self) -> SweepQuery:
+        return SweepQuery(
             greps=tuple(self.grep),
             not_greps=tuple(self.not_grep),
             paths=tuple(self.path),
@@ -75,11 +84,6 @@ class _Sweep(Scoped):
             word_regexp=self.word_regexp,
             refs=RefSelector(profile=self.refs, globs=tuple(self.ref)),
         )
-        try:
-            query.validate()
-        except ValueError as exc:
-            raise UsageError(str(exc)) from exc
-        return query
 
     def sweep(self, query: SweepQuery, *, owners: bool) -> SweepReport:
         """Fetch what the query needs and scan it; the footer goes to stderr."""
@@ -194,19 +198,24 @@ class Sweep(_Sweep):
     owners: bool = Field(True, description="Report CODEOWNERS for matching repos.")
     output: Output[SweepRepo]
 
-    def run(self) -> Iterator[SweepRepo]:
-        query = self.query()
+    @model_validator(mode="after")
+    def _columns(self) -> Self:
+        """A count column per predicate, named before ``run`` so ``--columns`` is checked first."""
+        query = self._query()
         # a matching ref has no hits for a negated predicate, so its column would read 0
         negated = ("not-grep:", "lacks-file:")
-        columns = [
-            "full_name",
-            *(label for label in query.labels() if not label.startswith(negated)),
-        ]
+        labels = query.labels()
+        columns = ["full_name", *(label for label in labels if not label.startswith(negated))]
         if query.refs.beyond_default():
             columns.append("refs_matched")
         if self.owners:
             columns.append("owners")
         self.output.columns[:] = columns
+        self.output.columns.offer(*(label for label in labels if label.startswith(negated)))
+        return self
+
+    def run(self) -> Iterator[SweepRepo]:
+        query = self.query()
         self.output.empty("No matching repositories found.")
         report = self.sweep(query, owners=self.owners)
         yield from report.rows

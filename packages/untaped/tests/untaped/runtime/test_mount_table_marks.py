@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from untaped.sdk import Age, Bytes, Command, Output, Plugin, Record, Spread, now
 from untaped.sdk.testing import Install, ManualClock
@@ -30,12 +30,23 @@ class Nothing(BaseModel):
     """No settings."""
 
 
+#: The commands whose ``run`` started, so a test sees a refusal came first.
+STARTED: list[str] = []
+
+
 class Copies(Command[Nothing]):
     """List the stored copies."""
 
     output: Output[Stored]
+    also: list[str] = Field(default_factory=list, description="Another key to count.")
+
+    @model_validator(mode="after")
+    def _keys(self) -> Self:
+        self.output.columns.offer("grep:a", "has-file:x", *self.also)
+        return self
 
     def run(self) -> Iterator[Stored]:
+        STARTED.append("copies")
         yield Stored(
             name="api",
             size=1536,
@@ -78,11 +89,24 @@ def test_columns_pick_one_key_of_a_spread_field(install: Installer, clock: Manua
     assert "grep:a" in header and "has-file:x" not in header
 
 
-def test_an_unknown_column_is_still_refused(install: Installer, clock: ManualClock) -> None:
+def test_an_unknown_column_is_refused_before_the_run(
+    install: Installer, clock: ManualClock
+) -> None:
     del clock
+    STARTED.clear()
     ran = install(Keeper).cli("keeper copies -c nope")
     assert ran.exit == 2
-    assert "nope" in "".join(ran.stderr)
+    assert "unknown column 'nope'" in "".join(ran.stderr)
+    assert STARTED == []
+
+
+def test_a_key_the_command_names_but_no_row_has_is_an_empty_column(
+    install: Installer, clock: ManualClock
+) -> None:
+    del clock
+    ran = install(Keeper).cli("keeper copies --also grep:b -c name,grep:b")
+    assert ran.exit == 0, ran.stderr
+    assert "grep:b" in _header(ran.stdout)
 
 
 def test_json_keeps_the_raw_values(install: Installer, clock: ManualClock) -> None:

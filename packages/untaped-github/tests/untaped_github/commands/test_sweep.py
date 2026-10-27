@@ -149,7 +149,13 @@ def test_sweep_pipe_records_per_view(
 @pytest.mark.parametrize("grep", ["needle", "absent"], ids=["rows", "no-rows"])
 @pytest.mark.parametrize(
     ("show", "fmt"),
-    [("files", "json"), ("matches", "json"), ("matches", "table"), ("repos", "json")],
+    [
+        ("files", "json"),
+        ("matches", "json"),
+        ("matches", "table"),
+        ("repos", "json"),
+        ("repos", "table"),
+    ],
 )
 def test_sweep_refuses_an_unknown_column_before_fetching(
     source_repo: SourceRepo, show: str, fmt: str, grep: str
@@ -168,25 +174,20 @@ def test_sweep_refuses_an_unknown_column_before_fetching(
     assert result.stdout == ""
 
 
-def test_sweep_repo_table_refuses_an_unknown_column_once_its_counts_are_in(
-    source_repo: SourceRepo,
+@pytest.mark.parametrize("grep", ["needle", "absent"], ids=["rows", "no-rows"])
+def test_sweep_repo_table_takes_a_predicate_s_count_column(
+    source_repo: SourceRepo, grep: str
 ) -> None:
-    """Its table has a count column per predicate, known only from the rows."""
+    """Its table has a count column per predicate, named from the options before the run."""
     source = source_repo("api", {"a.py": "needle\n"})
 
     picked, _ = _sweep(
-        ["--org", "acme", "--grep", "needle", "-c", "full_name,grep:needle"],
-        org=[_repo("acme/api", source)],
-    )
-    result, _ = _sweep(
-        ["--org", "acme", "--grep", "needle", "-c", "full_name,bogus", "--cached"],
+        ["--org", "acme", "--grep", grep, "-c", f"full_name,grep:{grep}"],
         org=[_repo("acme/api", source)],
     )
 
     assert picked.exit_code == 0, picked.output
-    assert "grep:needle" in picked.stdout
-    assert result.exit_code == 2, result.output
-    assert "unknown column 'bogus'" in result.stderr
+    assert ("acme/api" in picked.stdout) is (grep == "needle")
 
 
 def test_sweep_table_columns_follow_predicates_refs_and_owners(

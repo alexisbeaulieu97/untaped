@@ -311,10 +311,12 @@ def test_search_without_scope_uses_github_default_org() -> None:
     assert by_repo.exit_code == by_user.exit_code == 0
 
 
-@pytest.mark.parametrize("limit", ["1000", "5000"])
-def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) -> None:
-    # --limit 1000 is the documented escape hatch; above it there is no
-    # client-side max: pagination simply ends when GitHub stops sending `next`.
+@pytest.mark.parametrize(("limit", "clamped"), [("1000", False), ("5000", True)])
+def test_search_large_limit_follows_link_pages_until_github_stops(
+    limit: str, clamped: bool
+) -> None:
+    # GitHub serves at most 1000 results: a larger --limit is clamped to it,
+    # and pagination ends when GitHub stops sending `next`.
     pages = [[_repo(i) for i in range(100)], [_repo(i) for i in range(100, 200)]]
 
     result, _ = _search(["repos", "--limit", limit, "--format", "json"], pages=pages)
@@ -323,6 +325,7 @@ def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) ->
     assert [row["full_name"] for row in json.loads(result.stdout)] == [
         f"me/r{i}" for i in range(200)
     ]
+    assert ("clamped to 1000" in result.stderr) is clamped
 
 
 def test_search_limit_zero_is_a_usage_error() -> None:
@@ -339,7 +342,7 @@ def test_search_help_documents_limits_and_points_code_search_to_sweep() -> None:
 
     assert repos.exit_code == code.exit_code == 0
     assert "30" in repos.output
-    assert "1000" in repos.output
+    assert "up to 1000" in repos.output
     assert "exactly one --org" in repos.output
     assert "Use sweep for exhaustive regex, path, negation" in code.output
     assert "multi-ref queries" in code.output

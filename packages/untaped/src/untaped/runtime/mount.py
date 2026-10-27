@@ -697,6 +697,8 @@ def run_built(
 def _ran(mount: Mount, decl: CommandDecl, command: Command[Any]) -> Printed:
     """Run ``command`` under the current run, print what it returns, and say what it printed."""
     printed = Printed(decl=decl, format=_format_of(decl, command))
+    if printed.format is not None:
+        _output(decl, command)._check_named()
     watching_now = _WATCHING.get()
     if watching_now is not None:
         watching_now.append(printed)

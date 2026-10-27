@@ -1334,7 +1334,8 @@ class _CommandWalk:
                     choices=choices,
                     negative=option.negative,
                     short=option.short,
-                    help=refresh_help or option.help,  # Refresh's one flag pair, about its caches
+                    help=refresh_help
+                    or default._option_help(option),  # Refresh's one flag pair, about its caches
                     panel=block.panel,
                     block=block.field_kind,
                     default=default._option_default(option),

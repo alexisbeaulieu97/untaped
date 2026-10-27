@@ -826,6 +826,7 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph] | None = None,
+    spread_keys: Sequence[str] = (),
 ) -> None: ...
 @overload
 def emit_with(
@@ -838,6 +839,7 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph],
+    spread_keys: Sequence[str] = (),
 ) -> None: ...
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
@@ -849,10 +851,13 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph] | None = None,
+    spread_keys: Sequence[str] = (),
 ) -> None:
     """:func:`emit` rendering a ``table`` or ``tree`` through ``ui`` (``None``: the active theme).
 
     For root commands that must render even when the settings are broken.
+    ``spread_keys`` are ``Spread`` keys the command named: columns even where
+    no row has them.
     """
     _emit(
         records,
@@ -863,6 +868,7 @@ def emit_with(
         kind=kind,
         table_columns=table_columns,
         tree=tree,
+        spread_keys=spread_keys,
     )
 
 
@@ -876,6 +882,7 @@ def _emit(
     kind: str | None,
     table_columns: Sequence[str] | None,
     tree: TreeGraph | Sequence[TreeGraph] | None,
+    spread_keys: Sequence[str] = (),
 ) -> None:
     _validate_kind(kind)
     single = isinstance(records, BaseModel | Mapping)
@@ -899,8 +906,10 @@ def _emit(
         from untaped.sdk.fields import table_rows  # noqa: PLC0415 - fields import this module
 
         rows, table_columns, spread = table_rows(items, rows, table_columns)
-        if schema is not None and spread:
-            schema = [*schema, *(key for key in spread if key not in schema)]
+        if schema is not None and (spread or spread_keys):
+            # a key the command named but no row has is a column too: an empty cell
+            named = dict.fromkeys([*spread, *spread_keys])
+            schema = [*schema, *(key for key in named if key not in schema)]
     rendered = _render(
         rows,
         single=single,

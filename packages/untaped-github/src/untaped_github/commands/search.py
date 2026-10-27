@@ -48,7 +48,7 @@ class _Search(GithubCommand):
     """A search over GitHub's index, up to GitHub's 1000 results."""
 
     query: Positional[str | None] = Field(None, description=QUERY)
-    limit: Limit = Limit(default=30)
+    limit: Limit = Limit(default=30, cap=_GITHUB_SEARCH_CAP)
 
     def probe(self) -> int:
         """Ask for one row past the limit, so :meth:`cap` can tell whether more match.
@@ -103,7 +103,6 @@ class Repos(_ScopedSearch):
     ``help-wanted-issues`` (which warns), stop once ``--limit`` unique rows
     arrive, so their order holds only within a batch. An unquoted
     ``archived:`` qualifier in the query wins over ``--archived``.
-    GitHub serves at most 1000 results; ``--limit 1000`` asks for them all.
     """
 
     name: str | None = Field(None, description="Match against repo name (in:name).")
@@ -190,7 +189,7 @@ class Issues(_ScopedSearch):
     A sorted search (``--sort``, or a ``sort:FIELD[-asc|-desc]`` qualifier in
     the query) queries every batch of a large scope and merge-sorts the rows
     before the limit; an unsupported ``sort:`` field warns and keeps batch
-    order. GitHub serves at most 1000 results; ``--limit 1000`` asks for them all.
+    order.
 
     Examples
     --------
@@ -244,10 +243,7 @@ class Issues(_ScopedSearch):
 
 
 class Users(_Search):
-    """Search users and organizations (``GET /search/users``).
-
-    GitHub serves at most 1000 results; ``--limit 1000`` asks for them all.
-    """
+    """Search users and organizations (``GET /search/users``)."""
 
     kind: Literal["user", "org"] | None = Field(
         None, description="Only users or only organizations."

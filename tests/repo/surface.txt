@@ -6242,6 +6242,7 @@ sdk untaped.sdk.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
 sdk untaped.sdk.LetGo.apply  [experimental]
 sdk untaped.sdk.LetGo.preview  [experimental]
 sdk untaped.sdk.Limit()
+sdk untaped.sdk.Limit(cap=) default=None
 sdk untaped.sdk.Limit(default=) default=None
 sdk untaped.sdk.Limit.field_kind class
 sdk untaped.sdk.Limit.options class
