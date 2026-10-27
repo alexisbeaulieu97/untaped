@@ -23,7 +23,7 @@ import copy
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
@@ -571,7 +571,7 @@ def table_rows(
     """
     from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
     from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
-    from untaped.sdk.words import duration_text, size_text  # noqa: PLC0415
+    from untaped.sdk.words import ago_text, size_text  # noqa: PLC0415
 
     now = run_clock().now()
     spread_keys: dict[str, dict[str, None]] = {}
@@ -597,8 +597,7 @@ def table_rows(
             elif Bytes in marks and isinstance(value, int):
                 out[dumped] = size_text(value)
             elif Age in marks and isinstance(value, datetime):
-                aware = value if value.tzinfo else value.replace(tzinfo=UTC)
-                out[dumped] = f"{duration_text((now - aware).total_seconds())} ago"
+                out[dumped] = ago_text(value, now)
             else:
                 out[dumped] = cell
         shown.append(out)

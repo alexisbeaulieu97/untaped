@@ -64,7 +64,7 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
-from untaped.sdk._run import now, plugin_of, settings_of
+from untaped.sdk._run import PluginHandle, now, plugin_of, settings_of
 from untaped.sdk._stdin import (
     StdinInput,
     read_identifiers,
@@ -244,6 +244,7 @@ from untaped.sdk.storage.state import (
 from untaped.sdk.storage.store import Store, setting_guard
 from untaped.sdk.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, print_tree, tree_text
 from untaped.sdk.words import (
+    ago_text,
     hint,
     not_found,
     plural,
@@ -397,6 +398,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Service",
     "settings_of",
     "plugin_of",
+    "PluginHandle",
     # composition
     "PluginContext",
     "PluginSpec",
@@ -607,6 +609,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Renamed",
     "Retired",
     "UntapedDeprecationWarning",
+    "ago_text",
     "deprecated",
     "deprecated_alias",
     "deprecated_behaviour",

@@ -14,6 +14,7 @@ kit's hooks live here too (:func:`installed_clock`, :func:`recording`).
 
 from __future__ import annotations
 
+import importlib
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -125,6 +126,17 @@ class Composition:
     def kind_of(self, model: type) -> str | None:
         """The kind composition gave ``model`` (``None``: no composed plugin reaches it)."""
         return self.kinds.get(f"{model.__module__}:{model.__qualname__}")
+
+    def model_of(self, kind: str) -> type | None:
+        """The model composition gave ``kind`` (``None``: no composed plugin declares it)."""
+        target = next((each for each, given in self.kinds.items() if given == kind), None)
+        if target is None:
+            return None
+        module, _, qualname = target.partition(":")
+        found: object = importlib.import_module(module)
+        for part in qualname.split("."):
+            found = getattr(found, part)
+        return found if isinstance(found, type) else None
 
     def owner_of_module(self, module: str) -> str:
         """The plugin owning the classes defined in ``module``; :class:`LookupError` when none."""

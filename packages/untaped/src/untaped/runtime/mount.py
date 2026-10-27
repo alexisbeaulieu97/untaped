@@ -408,7 +408,7 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
 def build_app(mount: Mount, name: str) -> App:
     """The Cyclopts app of plugin ``name``: its groups and commands, from the declaration."""
     plugin = mount.declaration.plugin(name)
-    app = App(name=name, help=plugin.doc)
+    app = App(name=name, help=_node_help(plugin.doc, plugin.runs))
     add_commands(app, mount, name)
     if plugin.runs is not None:
         app.default(_command(mount, plugin.runs))
@@ -423,7 +423,7 @@ def add_commands(app: App, mount: Mount, name: str) -> None:
 def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> None:
     for node in nodes:
         if isinstance(node, GroupDecl):
-            sub = App(name=node.name, help=node.doc)
+            sub = App(name=node.name, help=_node_help(node.doc, node.runs))
             mark = _mark(node.stability)
             if mark is not None:
                 mark_app(sub, mark, source="own")
@@ -435,6 +435,15 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
         app.command(_command(mount, node), name=node.name, help=node.doc)
         for alias in node.aliases:
             deprecated_alias(app, alias.name, node.name, removed_in=alias.removed_in)
+
+
+def _node_help(doc: str, runs: CommandDecl | None) -> str:
+    """A node's help: its own words, then those of the command it runs.
+
+    The node's first line is what its parent's command list shows; its page
+    goes on with the runner's summary, body and examples.
+    """
+    return doc if runs is None or not runs.doc else f"{doc}\n\n{runs.doc}"
 
 
 _TOKENS: Mapping[str, type] = {"str": str, "int": int, "float": float, "bool": bool}

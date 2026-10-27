@@ -45,6 +45,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Service",
         "settings_of",
         "plugin_of",
+        "PluginHandle",
     ),
     "composition": (
         "PluginContext",
@@ -263,6 +264,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Renamed",
         "Retired",
         "UntapedDeprecationWarning",
+        "ago_text",
         "deprecated",
         "deprecated_alias",
         "deprecated_behaviour",
