@@ -98,11 +98,7 @@ class Provisions(WorkspaceCommand):
         )
 
     def shown(self, rows: Sequence[RepoOutcome], name: str, warnings: Sequence[str]) -> None:
-        """Say how it went on stderr: the stopped backfills, the count ready, each failure.
-
-        In table format the workspace path follows the rows on stdout: with
-        ``-q`` and nothing failed it is the only line.
-        """
+        """Say how it went on stderr: the stopped backfills, the count ready, each failure."""
         for warning in warnings:
             self.ctx.diag.warning(warning)
         if self.output.format == "table":
@@ -178,6 +174,7 @@ class Create(Provisions):
         with self.ctx.diag.progress(f"Creating workspace {name}") as progress:
             rows = provision.create(name, args, on_done=_progress_line(progress), progress=progress)
         self.shown(rows, name, warnings)
+        self.output.then(str(self.workspace_dir(name)))
         return iter(rows)
 
 

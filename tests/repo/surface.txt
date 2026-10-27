@@ -6178,6 +6178,7 @@ sdk untaped.sdk.Output.formats
 sdk untaped.sdk.Output.options class
 sdk untaped.sdk.Output.panel class
 sdk untaped.sdk.Output.requested
+sdk untaped.sdk.Output.then(line)
 sdk untaped.sdk.OutputFormat choice=json
 sdk untaped.sdk.OutputFormat choice=pipe
 sdk untaped.sdk.OutputFormat choice=raw
