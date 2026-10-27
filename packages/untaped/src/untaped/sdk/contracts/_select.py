@@ -28,16 +28,22 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from untaped.runtime.contracts.registry import BoundProvider, offers, upgrade_hint
+from untaped.runtime.contracts.registry import BoundProvider, offers, ready_of, upgrade_hint
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
-from untaped.sdk.contracts._declare import ContractInfo, method_contract
+from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract, record_kind
 from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue
 from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
-from untaped.sdk.records import kind_of, record_model
+from untaped.sdk.marks import deprecated_behaviour
+from untaped.sdk.records import record_model
+
+CONVERT = deprecated_behaviour(
+    "contracts-convert", removed_in=12, replacement="Stdin(via=Contract.bridge) and its values()"
+)
+"""``convert(bridge, envelope)``; it leaves in workspace's 12.0 move, its last caller."""
 
 
 class NotFound(UsageError):
@@ -144,35 +150,51 @@ def _one[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:
 def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
     """Read a piped record as the owner's model, through the provider whose kind it is.
 
-    ``bridge`` names the contract's bridge method (``RepoSource.to_repo``),
-    whose return type is the owner's model. A record of the owner's own kind
-    validates directly, its ``source`` as given; no provider is asked. Any
-    other kind goes to the provider whose ``T`` is the record's model or its
-    nearest base (the most derived wins), is validated as that model and runs
-    through the provider's bridge. A record without a kind, or of a kind no
-    provider reads, is a :class:`UsageError` (exit 2).
+    The 11.x reader, kept for the plugins that still read ``PipeEnvelope``;
+    a 12.0 command declares ``Stdin(via=bridge)`` and reads the same rows
+    with :meth:`~untaped.sdk.Stdin.values` (:data:`CONVERT`).
     """
-    info, method = method_contract(bridge)
-    if not method.bridge:
-        raise TypeError(
-            f"{info.cls.__qualname__}.{method.name} is not a bridge "
-            "(a method taking T and returning the owner's model)"
-        )
+    kind = envelope.kind
+    return bridged(bridge, envelope, None if kind is None else record_model(kind))
+
+
+def bridged[R](
+    bridge: Callable[..., R], envelope: PipeEnvelope, given: type[BaseModel] | None
+) -> R:
+    """``envelope`` as the owner's model, read through the provider whose kind it is.
+
+    ``bridge`` names the contract's bridge method (``RepoSource.to_repo``),
+    whose return type is the owner's model; ``given`` is the model the
+    record's kind names. A record of the owner's own kind validates directly,
+    its ``source`` as given; no provider is asked. Any other kind goes to the
+    provider whose ``T`` is the record's model or its nearest base (the most
+    derived wins), is validated as that model and runs through the provider's
+    bridge. A record without a kind, or of a kind no provider reads, is a
+    :class:`UsageError` (exit 2); a provider that isn't ready, or turns the
+    record into an invalid owner model, is a :class:`ConfigError` (exit 4).
+    """
+    info, method = bridge_of(bridge)
     model = method.hints["return"]
-    owner_kind = kind_of(model)
+    owner_kind = record_kind(model)
     kind = envelope.kind
     if kind is None:
         raise UsageError(f"line {envelope.lineno}: a piped record needs a kind to be read")
     if kind == owner_kind:
         return _read(model, envelope)  # type: ignore[no-any-return]  # R is the owner's model
-    given = record_model(kind)
     provider = None if given is None else _reader(info, given)
     if provider is None or given is None:
         raise UsageError(
             f"line {envelope.lineno}: no installed provider reads {kind} records as {owner_kind}"
         )
-    item = _read(given, envelope)
     plugin = provider.plugin
+    ready = ready_of(provider)
+    if ready is not None:
+        setting = f" (set {ready.spelled})" if ready.spelled else ""
+        raise ConfigError(
+            f"line {envelope.lineno}: {plugin} can't read {kind} records: {ready.reason}{setting}",
+            system=plugin,
+        )
+    item = _read(given, envelope)
     try:
         result = getattr(provider.instance, method.name)(item)
         return issue(provider.binding, model, result)  # type: ignore[no-any-return]  # R
@@ -185,6 +207,17 @@ def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
             system=plugin,
             hint=upgrade_hint(plugin),
         ) from None
+
+
+def bridge_of(bridge: Callable[..., Any]) -> tuple[ContractInfo, Method]:
+    """The contract and method ``bridge`` names; :class:`TypeError` when it is no bridge."""
+    info, method = method_contract(bridge)
+    if not method.bridge:
+        raise TypeError(
+            f"{info.cls.__qualname__}.{method.name} is not a bridge "
+            "(a method taking T and returning the owner's model)"
+        )
+    return info, method
 
 
 def _read(model: type[Any], envelope: PipeEnvelope) -> Any:

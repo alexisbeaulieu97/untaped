@@ -3,7 +3,8 @@
 Every kind has a bare owner line and one typed line per field (a ``choice=``
 line per Literal value), so a reader's promise is that no field goes away or
 changes type. A kind scripts write, one a command reads on ``--stdin``
-(``Stdin[R]`` names its model or a base of it) or in a file (``File[M]``),
+(``Stdin[R]`` names its model or a base of it, or ``Stdin(via=)`` reads it
+through a composed provider of the contract) or in a file (``File[M]``),
 also gets an owner line naming its required fields and a ``default=`` line
 per optional field: a new required field or a changed default fails. A
 command that accepts any kind (``Stdin[Record]``) reads only the envelope and
@@ -129,7 +130,7 @@ def _declared(
             for kind in (command.output, *command.writes):
                 if kind is not None:
                     reach(kind, mark, written=False)
-            for kind in (*command.inputs, *_read(command, known)):
+            for kind in (*command.inputs, *_read(command, known), *_through(command, mount)):
                 reach(kind, mark, written=True)
     for each in kinds.values():
         if not each.marks:
@@ -155,6 +156,30 @@ def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[st
         m for m in accepted if isinstance(m, type) and m not in (BaseModel, WireModel, Record)
     )
     return [kind for kind, model in known.items() if bases and issubclass(model, bases)]
+
+
+def _through(command: CommandDecl, mount: Mount) -> list[str]:
+    """The kinds ``Stdin(via=)`` reads: the own records of the contract's composed providers."""
+    from untaped.runtime.registry import resolve_target  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import contract_of, item_type  # noqa: PLC0415
+
+    if command.stdin_via is None:
+        return []
+    kinds = []
+    for plugin in mount.declaration.plugins:
+        for fill in plugin.fills:
+            if fill.contract != command.stdin_via:
+                continue
+            try:
+                provider = resolve_target(fill.target)
+                info = contract_of(provider)  # type: ignore[arg-type]
+                item = None if info is None else item_type(provider, info)  # type: ignore[arg-type]
+            except Exception:
+                continue
+            kind = None if item is None else mount.kind_of(item)
+            if kind is not None:
+                kinds.append(kind)
+    return kinds
 
 
 def _commands(

@@ -277,6 +277,8 @@ def test_marks_report_behaviours() -> None:
     }
     assert found == {
         "untaped.connected-client-by-name": "base_url= and bearer= values",
+        "untaped.contracts-convert": "Stdin(via=Contract.bridge) and its values()",
+        "untaped.pipe-envelope": "Stdin[R] reading the rows, as a command's field",
         "untaped.plaintext-token": "`untaped auth migrate`",
         "untaped.unmarked-service": (
             "a NeedsSetup-marked CredentialKey setting and a declared Credential"

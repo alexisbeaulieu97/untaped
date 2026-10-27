@@ -1,2 +1,6 @@
 # untaped surface 1
 cfg library.volumes VolumeEntry[] default=[]
+record library.volume
+record library.volume.name string
+record library.volume.pages integer
+record library.volume.shelf_mark string

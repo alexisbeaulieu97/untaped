@@ -32,7 +32,7 @@ from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gath
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import DuplicateKindError
+from untaped.sdk.records import DuplicateKindError, ForeignKindError, Record
 from untaped.sdk.testing import plugin_candidate
 
 
@@ -127,6 +127,18 @@ class _NoBridge(BookSource[Volume]):
         return []
 
 
+class _Kindless(Record):
+    name: str
+
+
+class _NoKind(BookSource[_Kindless]):
+    def to_book(self, item: _Kindless) -> Book:
+        return Book(title=item.name)
+
+    def books(self) -> list[Book]:
+        return []
+
+
 class _Elsewhere(Contract):
     def names(self) -> list[str]:
         raise NotImplementedError
@@ -150,6 +162,7 @@ class _WrongSettings(BookSource, Provider[_OtherSettings]):
     ("value", "reason", "detail"),
     [
         (_NoBridge(), "missing-bridge", "must fill to_book"),
+        (_NoKind(), "unresolved-item-type", "_Kindless has no kind"),
         ("not a provider", "bad-provider", "which is not a provider"),
         (_ElsewhereProvider(), "bad-provider", "which shelf does not declare"),
         (_WrongSettings(), "bad-provider", "Provider[_OtherSettings]"),
@@ -453,3 +466,11 @@ def test_an_11x_owner_s_cache_with_no_plugin_and_name_is_unreadable() -> None:
         "Unnamed.rows is cached in a cache with no plugin and name: spell it "
         "Cache('rows', 'unnamed_rows', ...) and list it on PluginSpec.caches"
     )
+
+
+def test_an_11x_provider_whose_kind_is_foreign_is_a_bad_provider() -> None:
+    def foreign() -> tuple[Contract, ...]:
+        raise ForeignKindError("kind 'shelf.loan' is declared under library's package")
+
+    compose(shelf_spec(), PluginSpec(name="library", provides={"shelf": foreign}))
+    assert _reasons() == {"library": "bad-provider"}

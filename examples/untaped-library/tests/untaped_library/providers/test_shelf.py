@@ -108,3 +108,27 @@ def test_a_failed_refresh_serves_the_cached_books_with_one_stale_warning(
     assert isinstance(stale, StaleData)
     assert (stale.plugin, stale.cache) == ("library", "shelf.book_source_books")
     assert stale.message.startswith("library: refresh failed (the catalogue is down)")
+
+
+def _volume_line(**record: object) -> str:
+    return json.dumps({"untaped": "1", "kind": "library.volume", "record": record}) + "\n"
+
+
+def test_a_piped_volume_reaches_shelf_as_a_book_through_the_library(install: Installer) -> None:
+    piped = _volume_line(shelf_mark="C3", name="Ulysses", pages=730)
+    ran = install(Library, settings=_VOLUMES).cli("shelf show --stdin -f json", input=piped)
+    assert ran.exit == 0, ran.stderr
+    [book] = json.loads(ran.stdout)
+    assert (book["title"], book["source"]["plugin"], book["source"]["kind"]) == (
+        "Ulysses",
+        "library",
+        "library.volume",
+    )
+    assert book["source"]["record"]["shelf_mark"] == "C3"
+
+
+def test_a_piped_volume_with_the_library_unready_exits_4(install: Installer) -> None:
+    piped = _volume_line(shelf_mark="C3", name="Ulysses")
+    ran = install(Library).cli("shelf show --stdin", input=piped)
+    assert ran.exit == 4
+    assert any("set library.volumes" in line for line in ran.stderr), ran.stderr

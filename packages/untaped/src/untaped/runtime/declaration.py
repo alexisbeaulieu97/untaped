@@ -93,6 +93,8 @@ class CommandDecl(_Frozen):
     formats: tuple[str, ...] = ()
     #: The targets of the models ``--stdin`` accepts (``Stdin[R]``).
     stdin: tuple[str, ...] = ()
+    #: The contract whose bridge ``Stdin(via=)`` reads its providers' own rows through.
+    stdin_via: str | None = None
     #: The kinds of the documents it reads and writes (``File[M]``).
     inputs: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()

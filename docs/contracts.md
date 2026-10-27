@@ -8,7 +8,7 @@ imports it, so a command that asks no contract pays nothing.
 
 ```python
 # the owner, in its api module
-class Book(Issued, kind="shelf.book"):
+class Book(Issued):  # kind shelf.book: its class name
     title: str
 
 
@@ -72,8 +72,11 @@ class Library(Plugin):
   listing it are both quarantined (`duplicate-offer`), and so is a plugin
   refreshing a cache of a contract no composed plugin owns (`unowned-cache`).
 - **The owner's model** is the item type parameter's default, an `Issued`
-  record with a kind (`Issued` and its `Source` are also in `untaped.sdk`, so
-  an owner's state model can hold issued records without loading contracts). A provider issuing its own record type passes it
+  record (`Issued` and its `Source` are also in `untaped.sdk`, so an owner's
+  state model can hold issued records without loading contracts). Its kind,
+  like a provider's own record's, is its class name under the plugin that
+  lists it (the owner's `offers`, the provider's `fills`), given at
+  composition. A provider issuing its own record type passes it
   (`BookSource[Volume]`) directly, never through a generic base of its own,
   and fills the bridge, which stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
@@ -112,8 +115,23 @@ class Library(Plugin):
   value is the word on the wire (`not-configured`). `progress` counts the providers on the caller's task as they
   answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding
-  provider's error, `NotFound` or `Ambiguous`;
-  `convert(Contract.bridge_method, envelope)` reads a piped record.
+  provider's error, `NotFound` or `Ambiguous`.
+- **Reading piped rows.** `stdin: Stdin[Book] = Stdin(via=BookSource.to_book)`
+  takes `shelf.book` rows and the rows of any provider's own record
+  (`library.volume`), each read through that provider's bridge, so
+  `self.stdin.values(given)` returns each argument as given, a bare
+  identifier or a `Book`, in input order. The declaration records the
+  contract, so the surface lists the providers' kinds the command reads under
+  the composed install. A row of a kind `Stdin[Book]` takes
+  reads as it would without `via`. The contract's providers are built, and
+  a provider's settings read, only when a row of a provider's kind arrives.
+  A kind no provider reads, or a line with no kind, exits 2; a provider's
+  row that doesn't validate as its record exits 1; an unready provider
+  whose row arrived, or a bridge returning an invalid `Book`, exits 4. A
+  fake given to `compose_with(provides=)` is an 11.x offer composition never
+  walks, so its own record keeps `kind=` until the kit composes fakes as
+  plugins. `convert`, the
+  11.x reader, leaves in 12.0.
   [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
   gives the rules they follow.
 
@@ -124,8 +142,7 @@ loaded on the first ask for one of its owner's contracts, once per process
 and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
-doesn't fill the bridge), `unresolved-item-type`, `duplicate-kind`,
-`foreign-kind` (a kind not under its plugin's name),
+doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
 `unserialisable-signature`, `owner-not-installed`, `owner-out-of-range` (the
 plugin's extra named like the owner requires a range of it the installed
 owner is outside), or `bad-provider` (building it raised). A class in

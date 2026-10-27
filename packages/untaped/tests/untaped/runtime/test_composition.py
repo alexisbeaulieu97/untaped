@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import itertools
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Annotated, Literal
@@ -1821,11 +1822,13 @@ def test_a_plugin_refused_for_its_name_names_no_kind_of_its_package() -> None:
     assert [kind.kind for kind in declaration.kinds] == ["dup.book", "p.book"]
 
 
-def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_wins() -> None:
-    """y reaches a class of o's package: while o is read it is o's, and clashes with o's own.
+@pytest.mark.parametrize("reacher_first", [True, False])
+def test_a_plugin_reaching_a_class_that_clashes_with_its_owner_s_own_is_refused(
+    reacher_first: bool,
+) -> None:
+    """y reaches a class of o's package, which is o's kind and clashes with o's own record.
 
-    No read set agrees (o composes only while unread), so the pass reading
-    both refuses o, first-wins, and y composes as it would alone.
+    o's own records are claimed before any plugin's reach, so y is refused in either order.
     """
 
     def book(module: str) -> type[BaseModel]:
@@ -1854,19 +1857,153 @@ def test_a_plugin_whose_package_class_clashes_only_while_read_is_refused_first_w
         _entry(plugin(lists(book("untaped_pk.other"))), "y", module="untaped_y.plugin"),
         _entry(plugin(lists(book("untaped_pk.models"))), "o", module="untaped_pk.plugin"),
     ]
-    declaration = compose(entries)  # ends
-    assert [plugin.name for plugin in declaration.plugins] == ["y"]
-    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
+    declaration = compose(entries if reacher_first else entries[::-1])
+    assert [plugin.name for plugin in declaration.plugins] == ["o"]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("o.book", "o")]
     [refused] = declaration.quarantined
-    assert refused.name == "o"
+    assert refused.name == "y"
     assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
 
 
-def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agrees() -> None:
-    """o composes only while unread (as y's test); x refreshes o's contract, another x is fine.
+@pytest.mark.parametrize("reacher_first", [True, False])
+def test_two_plugins_reaching_one_class_share_its_kind(reacher_first: bool) -> None:
+    """A borrow is no conflict: y reaches o's own record, and both compose."""
 
-    Refusing o alone leaves x's cache unowned, so the second x holds the
-    name, as composing y and it alone does, in either order.
+    class Shared(BaseModel):
+        title: Annotated[str, Key, Column]
+
+    Shared.__module__ = "untaped_pk.models"
+
+    def lists(model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List books."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        return Books
+
+    def plugin() -> type[Plugin]:
+        held = {"__doc__": "A plugin.", "settings": HelloSettings, "commands": (lists(Shared),)}
+        return type("Each", (Plugin,), held)
+
+    entries = [
+        _entry(plugin(), "y", module="untaped_y.plugin"),
+        _entry(plugin(), "o", module="untaped_pk.plugin"),
+    ]
+    declaration = compose(entries if reacher_first else entries[::-1])
+    assert sorted(plugin.name for plugin in declaration.plugins) == ["o", "y"]
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("o.shared", "o")]
+
+
+def _record(name: str, module: str) -> type[BaseModel]:
+    held = {"__annotations__": {"title": Annotated[str, Key, Column]}, "__module__": module}
+    return type(name, (BaseModel,), held)
+
+
+def _listing(*models: type[BaseModel]) -> type[Plugin]:
+    """A plugin with one command listing each of ``models``."""
+
+    def lists(index: int, model: type[BaseModel]) -> type[Command]:
+        class Books(Command):
+            """List."""
+
+            output: Output[model]  # type: ignore[valid-type]
+
+            def run(self) -> Iterator[BaseModel]:
+                yield from ()
+
+        Books.__name__ = Books.__qualname__ = f"List{index}"
+        return Books
+
+    commands = tuple(lists(index, model) for index, model in enumerate(models))
+    held = {"__doc__": "A plugin.", "settings": HelloSettings, "commands": commands}
+    return type("Each", (Plugin,), held)
+
+
+_FREE = _record("Free", "untaped_free.models")
+#: w reaches q's T4, which q's own outranks, so w is refused whatever the order;
+#: without w, x2's own K outranks x1's reach of it, though w reaching F2 first
+#: would have refused x2.
+_RIVALS = {
+    "x1": _entry(
+        _listing(_record("K", "untaped_x2.other"), _record("T3", "untaped_w.other")),
+        "x1",
+        module="untaped_x1.plugin",
+    ),
+    "w": _entry(
+        _listing(_FREE, _record("T3", "untaped_w.models"), _record("T4", "untaped_q.other")),
+        "w",
+        module="untaped_w.plugin",
+    ),
+    "x2": _entry(
+        _listing(_record("K", "untaped_x2.models"), _FREE), "x2", module="untaped_x2.plugin"
+    ),
+    "q": _entry(_listing(_record("T4", "untaped_q.models")), "q", module="untaped_q.plugin"),
+}
+
+
+@pytest.mark.parametrize("order", list(itertools.permutations(_RIVALS)))
+def test_a_refused_plugin_decides_no_other_s_kinds(order: tuple[str, ...]) -> None:
+    declaration = compose([_RIVALS[name] for name in order])
+    assert sorted(plugin.name for plugin in declaration.plugins) == ["q", "x2"]
+    assert sorted(kind.kind for kind in declaration.kinds) == ["q.t4", "x2.free", "x2.k"]
+
+
+_CYCLE = {
+    "a": _entry(
+        _listing(_record("W", "untaped_b.x"), _record("V", "untaped_c.x")),
+        "a",
+        module="untaped_a.plugin",
+    ),
+    "b": _entry(
+        _listing(
+            _record("Z", "untaped_b.models"),
+            _record("Y", "untaped_c.other"),
+            _record("W", "untaped_b.models"),
+        ),
+        "b",
+        module="untaped_b.plugin",
+    ),
+    "c": _entry(
+        _listing(
+            _record("Y", "untaped_c.models"),
+            _record("Z", "untaped_b.other"),
+            _record("V", "untaped_c.models"),
+        ),
+        "c",
+        module="untaped_c.plugin",
+    ),
+}
+
+
+@pytest.mark.parametrize("order", list(itertools.permutations(_CYCLE)))
+def test_the_first_of_a_cycle_composes_wherever_the_plugins_below_it_come(
+    order: tuple[str, ...],
+) -> None:
+    """b and c outrank each other; both outrank a, whose place in the order decides nothing."""
+    declaration = compose([_CYCLE[name] for name in order])
+    first = next(name for name in order if name in "bc")
+    assert [plugin.name for plugin in declaration.plugins] == [first]
+
+
+def test_a_name_goes_to_the_first_plugin_sound_on_its_own_before_kinds() -> None:
+    """The later x would outrank the earlier one's record, but it never holds the name."""
+    first = _entry(_listing(_record("Tag", "untaped_a.models")), "x", module="untaped_a.plugin")
+    later = _entry(_listing(_record("Tag", "untaped_a.other")), "x", module="untaped_b.plugin")
+    declaration = compose([first, later])
+    assert [plugin.target for plugin in declaration.plugins] == [first.target]
+    [refused] = declaration.quarantined
+    assert [problem.rule for problem in refused.problems] == ["duplicate-name"]
+
+
+def test_the_reaching_plugin_is_refused_so_the_owner_s_contract_stays_owned() -> None:
+    """y's reach clashes with o's own record (as above); x refreshes o's contract.
+
+    o composes in any order, so x's cache is owned and the second x is
+    refused for x's name.
     """
 
     def book(module: str) -> type[BaseModel]:
@@ -1919,19 +2056,17 @@ def test_only_the_plugin_composing_while_unread_is_refused_when_no_read_set_agre
         _entry(plugin(fills=(PagingFill,), commands=(Pages,)), "x", module="untaped_x.p"),
         _entry(plugin(), "x", module="untaped_xx.p"),
     ]
-    declaration = compose(entries)
-    assert [plugin.target for plugin in declaration.plugins] == [
-        entries[0].target,
-        entries[3].target,
-    ]
-    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("y.book", "y")]
-    assert [
-        (refused.target, [problem.rule for problem in refused.problems])
-        for refused in declaration.quarantined
-    ] == [(entries[1].target, ["duplicate-kind"]), (entries[2].target, ["unowned-cache"])]
-    # in another order the second x composes only while o is unread too, for x's sake
-    again = compose([entries[2], entries[3], entries[0], entries[1]])
-    assert [plugin.target for plugin in again.plugins] == [entries[3].target, entries[0].target]
+    for order in (entries, [entries[2], entries[3], entries[0], entries[1]]):
+        declaration = compose(order)
+        assert {plugin.target for plugin in declaration.plugins} == {
+            entries[1].target,
+            entries[2].target,
+        }
+        assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("o.book", "o")]
+        assert {
+            (refused.target, tuple(problem.rule for problem in refused.problems))
+            for refused in declaration.quarantined
+        } == {(entries[0].target, ("duplicate-kind",)), (entries[3].target, ("duplicate-name",))}
 
 
 def test_one_cache_caches_one_contract_method() -> None:

@@ -178,8 +178,7 @@ def test_the_item_type_resolves_from_the_direct_base_or_the_default() -> None:
         def books(self) -> list[Book]:
             return []
 
-    with pytest.raises(ContractError, match="declares no kind"):
-        item_type(NoKind, info)
+    assert item_type(NoKind, info) is Kindless  # its kind is composition's to give
 
 
 def test_a_required_method_must_be_filled() -> None:

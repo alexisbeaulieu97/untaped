@@ -27,11 +27,11 @@ from pydantic import TypeAdapter, ValidationError
 
 from untaped.runtime.contracts.registry import BoundProvider
 from untaped.sdk.contracts._cache import return_type
-from untaped.sdk.contracts._declare import Binding, fills
+from untaped.sdk.contracts._declare import Binding, fills, record_kind
 from untaped.sdk.contracts._gather import issue
 from untaped.sdk.contracts._schema import schema_hash
 from untaped.sdk.errors import first_validation_error
-from untaped.sdk.records import Issued, Record, kind_of
+from untaped.sdk.records import Issued, Record
 from untaped.sdk.storage._fs import atomic_write
 
 #: The file in a provider's plugin package holding the owner schema hashes it was checked against.
@@ -105,7 +105,7 @@ def _bridges(provider: BoundProvider, record: Record, label: str) -> list[str]:
         source = getattr(issued, "source", None)
         if not isinstance(issued, Issued) or source is None:
             continue
-        if source.plugin != binding.plugin or source.kind != (kind_of(type(record)) or ""):
+        if source.plugin != binding.plugin or source.kind != (record_kind(type(record)) or ""):
             problems.append(f"{call}: source names {source.plugin} {source.kind}")
             continue
         try:

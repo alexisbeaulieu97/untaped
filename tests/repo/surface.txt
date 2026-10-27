@@ -2,6 +2,8 @@
 behaviour git.nonceless-credential-helper  [deprecated, removed in 12.0]
 behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
+behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via=Contract.bridge) and its values()]
+behaviour untaped.pipe-envelope  [deprecated, removed in 12.0; use Stdin[R] reading the rows, as a command's field]
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
 behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use a NeedsSetup-marked CredentialKey setting and a declared Credential]
 cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
@@ -6793,7 +6795,6 @@ sdk untaped.sdk.contracts.Reason.active = active
 sdk untaped.sdk.contracts.Reason.bad_contracts = bad-contracts
 sdk untaped.sdk.contracts.Reason.bad_provider = bad-provider
 sdk untaped.sdk.contracts.Reason.duplicate_kind = duplicate-kind
-sdk untaped.sdk.contracts.Reason.foreign_kind = foreign-kind
 sdk untaped.sdk.contracts.Reason.invalid_item = invalid-item
 sdk untaped.sdk.contracts.Reason.missing_bridge = missing-bridge
 sdk untaped.sdk.contracts.Reason.no_cache = no-cache

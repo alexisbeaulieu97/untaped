@@ -15,12 +15,10 @@ Record values are serialized with ``json.dumps(default=str)`` (same as
 strings and do **not** round-trip to their original type — fidelity is
 JSON-native types only.
 
-Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
-(1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
-change to its shape is a major *envelope* event, not tied to the SDK major. This
-freeze lets plugin commands interoperate as long as they emit the same
-envelope version (still v1). See ``docs/reference/conventions.md#piping`` for producer and consumer
-examples.
+Pipe envelope **v1**. ``Output[R]`` writes it and ``Stdin[R]`` reads it, so a
+12.0 plugin never handles a line; ``PipeEnvelope`` and its parsers stay for
+the 11.x plugins that still do (:data:`~untaped.sdk._stdin.PIPE_ENVELOPE`). A
+change to the line's shape is a break, said in the changelog.
 """
 
 from __future__ import annotations
