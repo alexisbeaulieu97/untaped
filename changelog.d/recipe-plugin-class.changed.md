@@ -7,7 +7,7 @@ folder. `apply --stdin` reads a row of any kind an installed plugin
 declares, or of a `null` kind: its target is its absolute `target_path`,
 else its `path`, and a `.summary` row is no longer skipped. A row of a kind
 no installed plugin declares is refused, as is a row its kind's model does
-not validate (exit 1), and a row that names no target is reported as `row
+not validate (exit 1), and a row that names no target is reported as `line
 N:`. An empty pipe says `no identifiers received on stdin`. A declined
 `apply` prints no `cancelled` rows. `hooks run` prints a transform's content
 (or `--diff`) and a validate's `STATUS: MESSAGE` in its default `text`

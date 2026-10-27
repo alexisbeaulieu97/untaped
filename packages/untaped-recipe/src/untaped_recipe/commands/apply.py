@@ -257,7 +257,7 @@ class Apply(RecipeCommand):
             try:
                 targets.append(target_of(value))
             except ValueError as exc:
-                raise ValueError(f"row {number}: {exc}") from exc
+                raise ValueError(f"line {number}: {exc}") from exc
         return targets
 
     def _plan(

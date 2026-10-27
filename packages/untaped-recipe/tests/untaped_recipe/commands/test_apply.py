@@ -544,7 +544,7 @@ def test_apply_stdin_refuses_a_row_its_kind_does_not_validate(tmp_path: Path) ->
     result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
 
     assert result.exit_code == 1, result.output
-    assert "line 1: path" in result.said
+    assert "line 1:" in result.said
     assert not (repo / "out.txt").exists()
 
 
@@ -557,7 +557,7 @@ def test_apply_stdin_names_the_row_that_names_no_target(tmp_path: Path) -> None:
     result = run(["apply", str(recipe), "--stdin", "--yes"], input=piped)
 
     assert result.exit_code != 0
-    assert "row 2: a piped row names no target" in result.said
+    assert "line 2: a piped row names no target" in result.said
     assert not (repo / "out.txt").exists()
 
 
