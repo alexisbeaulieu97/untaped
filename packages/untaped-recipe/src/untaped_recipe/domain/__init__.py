@@ -4,7 +4,7 @@ from untaped_recipe.domain.plan import ApplyStatus, FileChange, TargetPlan, Verd
 from untaped_recipe.domain.recipe import (
     CopyStep,
     InputSpec,
-    Recipe,
+    RecipeFile,
     RemoveStep,
     Step,
     TemplateStep,
@@ -17,7 +17,7 @@ __all__ = [
     "CopyStep",
     "FileChange",
     "InputSpec",
-    "Recipe",
+    "RecipeFile",
     "RemoveStep",
     "Step",
     "TargetPlan",

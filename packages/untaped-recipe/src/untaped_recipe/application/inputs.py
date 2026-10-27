@@ -19,7 +19,7 @@ from untaped_recipe.domain.input_jinja import (
     derive_input_value,
     ensure_derived_value_within_bound,
 )
-from untaped_recipe.domain.recipe import InputSpec, Recipe
+from untaped_recipe.domain.recipe import InputSpec, RecipeFile
 from untaped_recipe.errors import RecipeError
 
 REDACTED = "***"
@@ -48,7 +48,7 @@ class InputResolutionResult:
 
 
 def prepare_input_resolution(
-    recipe: Recipe,
+    recipe: RecipeFile,
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
@@ -73,14 +73,14 @@ def prepare_input_resolution(
     )
 
 
-def validate_recipe_input_sources(recipe: Recipe) -> None:
+def validate_recipe_input_sources(recipe: RecipeFile) -> None:
     """Validate recipe-owned input source expressions without resolving targets."""
     for name, spec in recipe.inputs.items():
         if spec.from_:
             _compile_named_source(name, spec.from_)
 
 
-def resolve_global_values(recipe: Recipe, config: InputResolutionConfig) -> dict[str, object]:
+def resolve_global_values(recipe: RecipeFile, config: InputResolutionConfig) -> dict[str, object]:
     """Resolve invocation-global input values once before target planning."""
     values: dict[str, object] = {}
     for name, spec in recipe.inputs.items():
@@ -93,7 +93,7 @@ def resolve_global_values(recipe: Recipe, config: InputResolutionConfig) -> dict
 
 
 def resolve_target_inputs(
-    recipe: Recipe,
+    recipe: RecipeFile,
     target: Target,
     *,
     config: InputResolutionConfig,
@@ -168,7 +168,7 @@ def _resolve_one(
 
 
 def _validate_config(
-    recipe: Recipe,
+    recipe: RecipeFile,
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
@@ -188,7 +188,7 @@ def _validate_config(
 
 
 def _coerce_fixed_values(
-    recipe: Recipe,
+    recipe: RecipeFile,
     fixed_values: Mapping[str, object],
 ) -> dict[str, object]:
     typed: dict[str, object] = {}

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import sys
 import types
 import typing
 from collections import defaultdict
@@ -791,6 +792,10 @@ def _instance(
             blocks[option.field][option.flag or ""] = value
         elif value is not None:
             if option.or_stdin and value == "-" and _value_type(cls, option.field) is str:
+                from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - a dash only
+
+                if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
+                    raise UsageError(f"{option.flag or option.metavar}: - reads stdin; pipe it")
                 value = read_stdin_text()
             _put(data, cls, option.field, value)
     for path, flags in blocks.items():

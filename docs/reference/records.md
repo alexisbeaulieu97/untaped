@@ -214,14 +214,18 @@ fills what only it reads (a recipe's `description`, `inputs`, `steps` and
 writes those as null. A `recipe.pack` row's `recipes` and `hooks` are counts
 from `packs list` and `{name, description}` and `{name, exports}` lists from
 `packs get`. A `recipe.hook_run` row holds a transform's `file`, `content`
-and `diff`, or a validate's `message`, with the other's fields null.
+and `diff`, or a validate's `message`, with the other's fields null; a
+`fail` verdict also carries an `error`. `hooks run` writes the row in every
+format but its default `text`, which prints a transform's content (or diff)
+or a validate's `STATUS: MESSAGE`.
 
 `recipe packs sync --stdin` and `recipe packs remove --stdin` read pack
 names, or `recipe.pack` records from `recipe packs list --format pipe`.
 
 `recipe apply --stdin` reads target directories: path lines, or records of any
-kind that carry an absolute `target_path` (else `path`), such as
-`workspace.repo_status` or `workspace.repo_outcome`.
+kind an installed plugin declares (or of a `null` kind) that carry an
+absolute `target_path` (else `path`), such as `workspace.repo_status` or
+`workspace.repo_outcome`.
 
 ```bash
 untaped workspace status NAME --format pipe \

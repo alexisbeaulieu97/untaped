@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped_recipe.domain.recipe import Recipe, parse_recipe
+from untaped_recipe.domain.recipe import RecipeFile, parse_recipe
 from untaped_recipe.errors import PathNotFoundError
 
 
-def read_recipe_file(path: Path) -> Recipe:
+def read_recipe_file(path: Path) -> RecipeFile:
     """Load and validate one recipe YAML file."""
     return parse_recipe(path.read_text(encoding="utf-8"), source=path)
 

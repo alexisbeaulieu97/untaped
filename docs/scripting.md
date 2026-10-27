@@ -52,9 +52,11 @@ another plugin's domain fields.
   Mixing the two is an error.
 - A consumer lists the kinds it accepts. A record of another kind exits 2
   (`line N: record kind 'awx.host' is not accepted here; expected …`). A
-  record whose `kind` is `null` is accepted.
+  record whose `kind` is `null` is accepted. A consumer of any kind
+  (`recipe apply`, `ansible find`) refuses a kind no installed plugin
+  declares (`line N: no installed plugin declares the kind …`, exit 1).
 - Kinds ending in `.summary` (`<plugin>.<noun>.summary`) are summary
-  rows, not items. `recipe apply --stdin` skips them.
+  rows, not items.
 - Empty stdin is an error (`no identifiers received on stdin`), except for
   `workspace run --stdin`, where it selects no repos.
 - `--stdin` and positional arguments cannot be combined (exit 2).

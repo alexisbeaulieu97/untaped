@@ -188,6 +188,27 @@ Written = Mark("Written")
 """A ``File[M]`` option the command writes rather than reads: the model's "Starter" line."""
 
 
+class Document:
+    """A value naming a document of ``M`` that the plugin finds and reads itself.
+
+    ``recipe: Annotated[Positional[str], Document(RecipeFile)]`` takes a
+    library name or a path, as the plugin resolves them; core checks nothing
+    and reads nothing (a path read as it is given is ``File[M]``'s), it only
+    learns the model, so ``M`` is one of the command's inputs, documented as a
+    ``File[M]`` of it is.
+    """
+
+    __slots__ = ("model",)
+
+    def __init__(self, model: type[BaseModel]) -> None:
+        if not (isinstance(model, type) and issubclass(model, BaseModel)):
+            raise TypeError(f"Document takes a pydantic model class, not {model!r}")
+        self.model = model
+
+    def __repr__(self) -> str:
+        return f"Document({self.model.__name__})"
+
+
 class Short:
     """A one-letter flag for an option: ``repo: Annotated[str, Short("-r")]``.
 
@@ -905,8 +926,9 @@ class Stdin[R: BaseModel](FieldBlock):
     """What a command accepts on stdin: ``stdin: Stdin[Salutation]`` adds ``--stdin``.
 
     ``R`` is the record kind (or a union, or a base every accepted kind
-    subclasses; ``Stdin[Record]`` takes any kind); a bare line stands for
-    ``R``'s ``Key`` field. Accepting a kind never claims it.
+    subclasses; ``Stdin[Record]`` takes any installed kind, and reads a
+    row whose kind is ``null`` with every field it carries); a bare line
+    stands for ``R``'s ``Key`` field. Accepting a kind never claims it.
 
     ``Stdin(via=RepoSource.to_repo)`` also takes the rows of any provider's
     own kind and reads each through that provider's bridge, so ``R`` is the
@@ -1019,6 +1041,10 @@ class Stdin[R: BaseModel](FieldBlock):
             )
         if not self._models:
             raise TypeError("Stdin was not filled with the models it accepts")
+        if self._any:
+            from untaped.sdk.records import KindlessRow  # noqa: PLC0415 - reading only
+
+            return KindlessRow
         return self._models[0]
 
     def _through(self, envelope: PipeEnvelope) -> bool:
@@ -1128,6 +1154,26 @@ class Confirm(FieldBlock):
         filled._dry_run = flags.get("--dry-run") is True
         filled._command = " ".join(call.words)
         return filled
+
+    def ensure_answerable(self, question: str) -> None:
+        """Refuse now when ``question`` could never be answered, before work the ask would waste.
+
+        For a command that asks only after slow or side-effecting work (running
+        hooks to plan): without a terminal, ``--yes`` or ``--dry-run`` it raises
+        the :class:`NeedsYesError` (exit 2) asking would raise later; otherwise
+        nothing happens, and the command asks as usual.
+        """
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
+
+        if self._dry_run or self._yes:
+            return
+        if self._command is None:
+            raise NeedsYesError(question)
+        try:
+            with current_run().terminal().terminal():
+                pass
+        except UsageError:
+            raise NeedsYesError(question, command=self._command) from None
 
     def __call__(
         self,

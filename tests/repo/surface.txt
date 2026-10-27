@@ -67,7 +67,7 @@ cfg recipe.backup_keep integer(minimum=1)? default=unset
 cfg recipe.backup_max_age_days integer(minimum=1)? default=unset
 cfg recipe.hook_startup_timeout_seconds number(minimum=0) default=300
 cfg recipe.hook_timeout_seconds number(minimum=0) default=60
-cfg recipe.library_dir string(format=path) default=~/.untaped/plugins/recipe/library
+cfg recipe.library_dir string(format=path)? default=unset
 cfg recipe.preview_max_rows integer(minimum=0) default=50
 cfg untaped.http.ca_bundle_path string(format=path)? default=unset
 cfg untaped.http.proxy string? default=unset
@@ -4071,10 +4071,10 @@ cli untaped project remove [PROJECT]@1 default=unset  [experimental]
 cli untaped recipe
 cli untaped recipe apply --backup negative=--no-backup
 cli untaped recipe apply --backup switch default=true
-cli untaped recipe apply --check switch
+cli untaped recipe apply --check switch default=unset
 cli untaped recipe apply --columns VALUE... default=unset
 cli untaped recipe apply --columns alias=-c
-cli untaped recipe apply --dry-run switch
+cli untaped recipe apply --dry-run switch default=unset
 cli untaped recipe apply --format VALUE default=table
 cli untaped recipe apply --format alias=-f
 cli untaped recipe apply --format choice=json
@@ -4084,19 +4084,19 @@ cli untaped recipe apply --format choice=table
 cli untaped recipe apply --format choice=yaml
 cli untaped recipe apply --hook-timeout VALUE default=unset
 cli untaped recipe apply --input-from VALUE... default=unset
-cli untaped recipe apply --non-interactive switch
-cli untaped recipe apply --parallel VALUE default=1
+cli untaped recipe apply --non-interactive switch default=unset
+cli untaped recipe apply --parallel VALUE default=unset
 cli untaped recipe apply --parallel alias=-j
 cli untaped recipe apply --preview VALUE default=unset
 cli untaped recipe apply --preview choice=diff
 cli untaped recipe apply --preview choice=none
 cli untaped recipe apply --preview choice=table
 cli untaped recipe apply --recipe VALUE default=unset
-cli untaped recipe apply --stdin switch
+cli untaped recipe apply --stdin switch default=unset
 cli untaped recipe apply --var VALUE... default=unset
 cli untaped recipe apply --vars-file VALUE... default=unset
 cli untaped recipe apply --yes alias=-y
-cli untaped recipe apply --yes switch
+cli untaped recipe apply --yes switch default=unset
 cli untaped recipe apply RECIPE_REF
 cli untaped recipe apply [DIRS...]@2 default=unset
 cli untaped recipe backups
@@ -4123,7 +4123,7 @@ cli untaped recipe backups list --format choice=yaml
 cli untaped recipe backups prune
 cli untaped recipe backups prune --columns VALUE... default=unset
 cli untaped recipe backups prune --columns alias=-c
-cli untaped recipe backups prune --dry-run switch
+cli untaped recipe backups prune --dry-run switch default=unset
 cli untaped recipe backups prune --format VALUE default=table
 cli untaped recipe backups prune --format alias=-f
 cli untaped recipe backups prune --format choice=json
@@ -4134,11 +4134,11 @@ cli untaped recipe backups prune --format choice=yaml
 cli untaped recipe backups prune --keep VALUE default=unset
 cli untaped recipe backups prune --older-than VALUE default=unset
 cli untaped recipe backups prune --yes alias=-y
-cli untaped recipe backups prune --yes switch
+cli untaped recipe backups prune --yes switch default=unset
 cli untaped recipe backups restore --columns VALUE... default=unset
 cli untaped recipe backups restore --columns alias=-c
-cli untaped recipe backups restore --dry-run switch
-cli untaped recipe backups restore --force switch
+cli untaped recipe backups restore --dry-run switch default=unset
+cli untaped recipe backups restore --force switch default=unset
 cli untaped recipe backups restore --format VALUE default=table
 cli untaped recipe backups restore --format alias=-f
 cli untaped recipe backups restore --format choice=json
@@ -4147,9 +4147,9 @@ cli untaped recipe backups restore --format choice=raw
 cli untaped recipe backups restore --format choice=table
 cli untaped recipe backups restore --format choice=yaml
 cli untaped recipe backups restore --yes alias=-y
-cli untaped recipe backups restore --yes switch
+cli untaped recipe backups restore --yes switch default=unset
 cli untaped recipe backups restore BACKUP_ID
-cli untaped recipe edit REF_TEXT
+cli untaped recipe edit REF
 cli untaped recipe get --columns VALUE... default=unset
 cli untaped recipe get --columns alias=-c
 cli untaped recipe get --format VALUE default=table
@@ -4159,9 +4159,9 @@ cli untaped recipe get --format choice=pipe
 cli untaped recipe get --format choice=raw
 cli untaped recipe get --format choice=table
 cli untaped recipe get --format choice=yaml
-cli untaped recipe get REF_TEXT
+cli untaped recipe get REF
 cli untaped recipe hooks
-cli untaped recipe hooks edit REF_TEXT
+cli untaped recipe hooks edit REF
 cli untaped recipe hooks get --columns VALUE... default=unset
 cli untaped recipe hooks get --columns alias=-c
 cli untaped recipe hooks get --format VALUE default=table
@@ -4171,8 +4171,8 @@ cli untaped recipe hooks get --format choice=pipe
 cli untaped recipe hooks get --format choice=raw
 cli untaped recipe hooks get --format choice=table
 cli untaped recipe hooks get --format choice=yaml
-cli untaped recipe hooks get REF_TEXT
-cli untaped recipe hooks init --force switch
+cli untaped recipe hooks get REF
+cli untaped recipe hooks init --force switch default=unset
 cli untaped recipe hooks init --kind VALUE default=transform
 cli untaped recipe hooks init --kind choice=transform
 cli untaped recipe hooks init --kind choice=validate
@@ -4195,13 +4195,15 @@ cli untaped recipe hooks run --columns VALUE... default=unset
 cli untaped recipe hooks run --columns alias=-c
 cli untaped recipe hooks run --content VALUE default=unset
 cli untaped recipe hooks run --content-file VALUE default=unset
-cli untaped recipe hooks run --diff switch
+cli untaped recipe hooks run --diff switch default=unset
 cli untaped recipe hooks run --file VALUE default=unset
-cli untaped recipe hooks run --format VALUE default=unset
+cli untaped recipe hooks run --format VALUE default=text
 cli untaped recipe hooks run --format alias=-f
 cli untaped recipe hooks run --format choice=json
 cli untaped recipe hooks run --format choice=pipe
+cli untaped recipe hooks run --format choice=raw
 cli untaped recipe hooks run --format choice=table
+cli untaped recipe hooks run --format choice=text
 cli untaped recipe hooks run --format choice=yaml
 cli untaped recipe hooks run --hook-timeout VALUE default=unset
 cli untaped recipe hooks run --kind VALUE default=unset
@@ -4227,8 +4229,8 @@ cli untaped recipe list --format choice=yaml
 cli untaped recipe packs
 cli untaped recipe packs add --columns VALUE... default=unset
 cli untaped recipe packs add --columns alias=-c
-cli untaped recipe packs add --discard-edits switch
-cli untaped recipe packs add --force switch
+cli untaped recipe packs add --discard-edits switch default=unset
+cli untaped recipe packs add --force switch default=unset
 cli untaped recipe packs add --format VALUE default=table
 cli untaped recipe packs add --format alias=-f
 cli untaped recipe packs add --format choice=json
@@ -4266,7 +4268,7 @@ cli untaped recipe packs list --format choice=yaml
 cli untaped recipe packs remove
 cli untaped recipe packs remove --columns VALUE... default=unset
 cli untaped recipe packs remove --columns alias=-c
-cli untaped recipe packs remove --dry-run switch
+cli untaped recipe packs remove --dry-run switch default=unset
 cli untaped recipe packs remove --format VALUE default=table
 cli untaped recipe packs remove --format alias=-f
 cli untaped recipe packs remove --format choice=json
@@ -4274,16 +4276,16 @@ cli untaped recipe packs remove --format choice=pipe
 cli untaped recipe packs remove --format choice=raw
 cli untaped recipe packs remove --format choice=table
 cli untaped recipe packs remove --format choice=yaml
-cli untaped recipe packs remove --stdin switch
+cli untaped recipe packs remove --stdin switch default=unset
 cli untaped recipe packs remove --yes alias=-y
-cli untaped recipe packs remove --yes switch
+cli untaped recipe packs remove --yes switch default=unset
 cli untaped recipe packs remove [NAMES...]@1 default=unset
 cli untaped recipe packs sync
-cli untaped recipe packs sync --all switch
+cli untaped recipe packs sync --all switch default=unset
 cli untaped recipe packs sync --columns VALUE... default=unset
 cli untaped recipe packs sync --columns alias=-c
-cli untaped recipe packs sync --discard-edits switch
-cli untaped recipe packs sync --dry-run switch
+cli untaped recipe packs sync --discard-edits switch default=unset
+cli untaped recipe packs sync --dry-run switch default=unset
 cli untaped recipe packs sync --format VALUE default=table
 cli untaped recipe packs sync --format alias=-f
 cli untaped recipe packs sync --format choice=json
@@ -4291,9 +4293,9 @@ cli untaped recipe packs sync --format choice=pipe
 cli untaped recipe packs sync --format choice=raw
 cli untaped recipe packs sync --format choice=table
 cli untaped recipe packs sync --format choice=yaml
-cli untaped recipe packs sync --stdin switch
+cli untaped recipe packs sync --stdin switch default=unset
 cli untaped recipe packs sync --yes alias=-y
-cli untaped recipe packs sync --yes switch
+cli untaped recipe packs sync --yes switch default=unset
 cli untaped recipe packs sync [NAMES...]@1 default=unset
 cli untaped recipe test
 cli untaped recipe test --columns VALUE... default=unset
@@ -4305,8 +4307,8 @@ cli untaped recipe test --format choice=pipe
 cli untaped recipe test --format choice=raw
 cli untaped recipe test --format choice=table
 cli untaped recipe test --format choice=yaml
-cli untaped recipe test --update switch
-cli untaped recipe test [REF_TEXT]@1 default=unset
+cli untaped recipe test --update switch default=unset
+cli untaped recipe test [REF]@1 default=unset
 cli untaped recipe validate
 cli untaped recipe validate --columns VALUE... default=unset
 cli untaped recipe validate --columns alias=-c
@@ -4317,7 +4319,7 @@ cli untaped recipe validate --format choice=pipe
 cli untaped recipe validate --format choice=raw
 cli untaped recipe validate --format choice=table
 cli untaped recipe validate --format choice=yaml
-cli untaped recipe validate [REF_TEXT]@1 default=unset
+cli untaped recipe validate [REF]@1 default=unset
 cli untaped setup
 cli untaped setup --columns VALUE... default=unset
 cli untaped setup --columns alias=-c
@@ -5284,6 +5286,261 @@ record jira.user.display_name string?
 record jira.user.email_address string?
 record jira.user.key string?
 record jira.user.name string?
+record recipe.BackupFile
+record recipe.BackupFile.after_hash string?
+record recipe.BackupFile.backup_file string?
+record recipe.BackupFile.before_hash string?
+record recipe.BackupFile.inputs object
+record recipe.BackupFile.relative_path string
+record recipe.BackupFile.target string
+record recipe.CopyStep
+record recipe.CopyStep(dest, source, type)
+record recipe.CopyStep.args default={}
+record recipe.CopyStep.args object
+record recipe.CopyStep.dest string(format=path)
+record recipe.CopyStep.if_absent boolean
+record recipe.CopyStep.if_absent default=false
+record recipe.CopyStep.source string(format=path)
+record recipe.CopyStep.type choice=copy
+record recipe.CopyStep.type string
+record recipe.InputSpec
+record recipe.InputSpec()
+record recipe.InputSpec.default any?
+record recipe.InputSpec.default default=None
+record recipe.InputSpec.description default=""
+record recipe.InputSpec.description string
+record recipe.InputSpec.from default=[]
+record recipe.InputSpec.from string[]
+record recipe.InputSpec.items choice=bool
+record recipe.InputSpec.items choice=float
+record recipe.InputSpec.items choice=int
+record recipe.InputSpec.items choice=str
+record recipe.InputSpec.items default=None
+record recipe.InputSpec.items string?
+record recipe.InputSpec.required boolean
+record recipe.InputSpec.required default=false
+record recipe.InputSpec.scope choice=global
+record recipe.InputSpec.scope choice=target
+record recipe.InputSpec.scope default=global
+record recipe.InputSpec.scope string
+record recipe.InputSpec.sensitive boolean
+record recipe.InputSpec.sensitive default=false
+record recipe.InputSpec.type choice=bool
+record recipe.InputSpec.type choice=dict
+record recipe.InputSpec.type choice=float
+record recipe.InputSpec.type choice=int
+record recipe.InputSpec.type choice=list
+record recipe.InputSpec.type choice=str
+record recipe.InputSpec.type default=str
+record recipe.InputSpec.type string
+record recipe.InputSpec.values choice=bool
+record recipe.InputSpec.values choice=float
+record recipe.InputSpec.values choice=int
+record recipe.InputSpec.values choice=str
+record recipe.InputSpec.values default=None
+record recipe.InputSpec.values string?
+record recipe.PackHook
+record recipe.PackHook(exports, name)
+record recipe.PackHook.exports string[]
+record recipe.PackHook.name string
+record recipe.PackRecipe
+record recipe.PackRecipe(description, name)
+record recipe.PackRecipe.description string
+record recipe.PackRecipe.name string
+record recipe.RecipeInput
+record recipe.RecipeInput.default any
+record recipe.RecipeInput.description string
+record recipe.RecipeInput.name string
+record recipe.RecipeInput.required boolean
+record recipe.RecipeInput.sensitive boolean
+record recipe.RecipeInput.type string
+record recipe.RecipeStep
+record recipe.RecipeStep.exclude string[]
+record recipe.RecipeStep.files string[]
+record recipe.RecipeStep.globs string[]
+record recipe.RecipeStep.hook string
+record recipe.RecipeStep.type string
+record recipe.RemoveStep
+record recipe.RemoveStep(type)
+record recipe.RemoveStep.args default={}
+record recipe.RemoveStep.args object
+record recipe.RemoveStep.exclude default=[]
+record recipe.RemoveStep.exclude string[]
+record recipe.RemoveStep.file default=None
+record recipe.RemoveStep.file string(format=path)?
+record recipe.RemoveStep.files default=[]
+record recipe.RemoveStep.files string(format=path)[]
+record recipe.RemoveStep.globs default=[]
+record recipe.RemoveStep.globs string[]
+record recipe.RemoveStep.type choice=remove
+record recipe.RemoveStep.type string
+record recipe.TemplateStep
+record recipe.TemplateStep(dest, template, type)
+record recipe.TemplateStep.args default={}
+record recipe.TemplateStep.args object
+record recipe.TemplateStep.dest string(format=path)
+record recipe.TemplateStep.if_absent boolean
+record recipe.TemplateStep.if_absent default=false
+record recipe.TemplateStep.template string(format=path)
+record recipe.TemplateStep.type choice=template
+record recipe.TemplateStep.type string
+record recipe.TemplateStep.unknown_tokens choice=error
+record recipe.TemplateStep.unknown_tokens choice=keep
+record recipe.TemplateStep.unknown_tokens default=error
+record recipe.TemplateStep.unknown_tokens string
+record recipe.TransformStep
+record recipe.TransformStep(hook, type)
+record recipe.TransformStep.args default={}
+record recipe.TransformStep.args object
+record recipe.TransformStep.exclude default=[]
+record recipe.TransformStep.exclude string[]
+record recipe.TransformStep.file default=None
+record recipe.TransformStep.file string(format=path)?
+record recipe.TransformStep.files default=[]
+record recipe.TransformStep.files string(format=path)[]
+record recipe.TransformStep.globs default=[]
+record recipe.TransformStep.globs string[]
+record recipe.TransformStep.hook string
+record recipe.TransformStep.optional boolean
+record recipe.TransformStep.optional default=false
+record recipe.TransformStep.type choice=transform
+record recipe.TransformStep.type string
+record recipe.ValidateStep
+record recipe.ValidateStep(hook, type)
+record recipe.ValidateStep.args default={}
+record recipe.ValidateStep.args object
+record recipe.ValidateStep.hook string
+record recipe.ValidateStep.type choice=validate
+record recipe.ValidateStep.type string
+record recipe.add_outcome
+record recipe.add_outcome.action string
+record recipe.add_outcome.commit string?
+record recipe.add_outcome.detail string?
+record recipe.add_outcome.error Failure?
+record recipe.add_outcome.name string
+record recipe.add_outcome.rev string?
+record recipe.add_outcome.source string?
+record recipe.apply_outcome
+record recipe.apply_outcome.action string
+record recipe.apply_outcome.detail string?
+record recipe.apply_outcome.error Failure?
+record recipe.apply_outcome.files_changed integer
+record recipe.apply_outcome.inputs object
+record recipe.apply_outcome.recipe string
+record recipe.apply_outcome.target_path string(format=path)
+record recipe.apply_outcome.warnings string[]
+record recipe.backup
+record recipe.backup.created_at string(format=date-time)?
+record recipe.backup.files BackupFile[]?
+record recipe.backup.id string
+record recipe.backup.inputs object?
+record recipe.backup.path string
+record recipe.backup.recipe string?
+record recipe.check
+record recipe.check.detail string?
+record recipe.check.name string
+record recipe.check.path string
+record recipe.check.status choice=fail
+record recipe.check.status choice=pass
+record recipe.check.status string
+record recipe.check.type choice=hook
+record recipe.check.type choice=pack
+record recipe.check.type choice=recipe
+record recipe.check.type string
+record recipe.hook
+record recipe.hook.exports string[]?
+record recipe.hook.module string
+record recipe.hook.name string
+record recipe.hook.pack string
+record recipe.hook.path string
+record recipe.hook.ref string
+record recipe.hook_run
+record recipe.hook_run.content string?
+record recipe.hook_run.diff string?
+record recipe.hook_run.error Failure?
+record recipe.hook_run.file string?
+record recipe.hook_run.hook string
+record recipe.hook_run.kind choice=transform
+record recipe.hook_run.kind choice=validate
+record recipe.hook_run.kind string
+record recipe.hook_run.message string?
+record recipe.hook_run.status choice=fail
+record recipe.hook_run.status choice=ok
+record recipe.hook_run.status choice=pass
+record recipe.hook_run.status choice=skip
+record recipe.hook_run.status string
+record recipe.hook_run.target string
+record recipe.pack
+record recipe.pack(commit, hooks, name, path, project, recipes, rev, source, version)
+record recipe.pack.commit string
+record recipe.pack.hooks PackHook[]|integer
+record recipe.pack.manifest_name default=None
+record recipe.pack.manifest_name string?
+record recipe.pack.name string
+record recipe.pack.path string
+record recipe.pack.project string
+record recipe.pack.recipes PackRecipe[]|integer
+record recipe.pack.rev string
+record recipe.pack.source string
+record recipe.pack.version string
+record recipe.prune_outcome
+record recipe.prune_outcome.action string
+record recipe.prune_outcome.detail string?
+record recipe.prune_outcome.error Failure?
+record recipe.prune_outcome.id string
+record recipe.prune_outcome.size_bytes integer
+record recipe.recipe
+record recipe.recipe.description string?
+record recipe.recipe.hooks string[]?
+record recipe.recipe.inputs RecipeInput[]?
+record recipe.recipe.name string
+record recipe.recipe.pack string
+record recipe.recipe.path string
+record recipe.recipe.ref string
+record recipe.recipe.steps RecipeStep[]?
+record recipe.recipe_file
+record recipe.recipe_file(version)
+record recipe.recipe_file.description default=""
+record recipe.recipe_file.description string
+record recipe.recipe_file.inputs default={}
+record recipe.recipe_file.inputs object
+record recipe.recipe_file.steps (CopyStep|RemoveStep|TemplateStep|TransformStep|ValidateStep)[]
+record recipe.recipe_file.steps default=[]
+record recipe.recipe_file.version choice=1
+record recipe.recipe_file.version integer
+record recipe.remove_outcome
+record recipe.remove_outcome.action string
+record recipe.remove_outcome.commit string?
+record recipe.remove_outcome.detail string?
+record recipe.remove_outcome.error Failure?
+record recipe.remove_outcome.name string
+record recipe.remove_outcome.rev string?
+record recipe.remove_outcome.source string?
+record recipe.restore_outcome
+record recipe.restore_outcome.action string
+record recipe.restore_outcome.detail string?
+record recipe.restore_outcome.error Failure?
+record recipe.restore_outcome.files integer
+record recipe.restore_outcome.id string
+record recipe.sync_outcome
+record recipe.sync_outcome.action string
+record recipe.sync_outcome.commit string?
+record recipe.sync_outcome.detail string?
+record recipe.sync_outcome.error Failure?
+record recipe.sync_outcome.name string
+record recipe.sync_outcome.rev string?
+record recipe.sync_outcome.source string?
+record recipe.test
+record recipe.test.case string
+record recipe.test.detail string
+record recipe.test.error Failure?
+record recipe.test.pack string
+record recipe.test.recipe string
+record recipe.test.status choice=error
+record recipe.test.status choice=fail
+record recipe.test.status choice=pass
+record recipe.test.status choice=updated
+record recipe.test.status string
 record untaped.PickedProfile
 record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
@@ -5880,6 +6137,7 @@ sdk untaped.sdk.ConfigError.system class
 sdk untaped.sdk.Confirm()
 sdk untaped.sdk.Confirm.as_dry_run()
 sdk untaped.sdk.Confirm.dry_run
+sdk untaped.sdk.Confirm.ensure_answerable(question)
 sdk untaped.sdk.Confirm.field_kind class
 sdk untaped.sdk.Confirm.options class
 sdk untaped.sdk.Confirm.panel class
@@ -6069,6 +6327,8 @@ sdk untaped.sdk.DoctorResult.fix
 sdk untaped.sdk.DoctorResult.id
 sdk untaped.sdk.DoctorResult.ok
 sdk untaped.sdk.DoctorResult.warn
+sdk untaped.sdk.Document(model)
+sdk untaped.sdk.Document.model
 sdk untaped.sdk.DryRun()
 sdk untaped.sdk.DryRun.field_kind class
 sdk untaped.sdk.DryRun.options class

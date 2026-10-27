@@ -101,5 +101,5 @@ is running.
 
 Recipe hooks, and the `uv` commands `untaped` runs on a pack, get only an
 allowlist of environment variables: tokens such as `GITHUB_TOKEN` and
-`UNTAPED_*` credentials are not passed. `untaped docs recipe guides trust` lists
+`UNTAPED_*` credentials are not passed. `untaped docs recipe guides hooks` lists
 the variables that are.

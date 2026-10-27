@@ -1,4 +1,4 @@
-"""Settings for the recipe plugin."""
+"""Settings for the recipe plugin, and the library they place."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from untaped.sdk import Dir, key
+
 
 class RecipeSettings(BaseModel):
     """Profile settings for local recipe storage."""
@@ -16,9 +18,12 @@ class RecipeSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    library_dir: Path = Field(
-        default=Path("~/.untaped/plugins/recipe/library"),
-        description="Directory holding installed recipe packs.",
+    library_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Directory holding installed recipe packs and backups; "
+            "unset, `plugins/recipe/library/` under the untaped home."
+        ),
     )
     hook_timeout_seconds: float = Field(
         default=60, ge=0, description="Per-hook request timeout; `0` disables it."
@@ -39,3 +44,7 @@ class RecipeSettings(BaseModel):
         ge=0,
         description="Preview rows before `apply` collapses per-file rows; `0` is unlimited.",
     )
+
+
+#: The installed packs, ``packs.toml`` and ``backups/``.
+LIBRARY = Dir(at=key(RecipeSettings).library_dir)

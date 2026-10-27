@@ -7,9 +7,9 @@ changes type. A kind scripts write, one a command reads on ``--stdin``
 through a composed provider of the contract) or in a file (``File[M]``),
 also gets an owner line naming its required fields and a ``default=`` line
 per optional field: a new required field or a changed default fails. A
-command that accepts any kind (``Stdin[Record]``) reads only the envelope and
-promises no fields. A kind takes the mark of the commands that reach it,
-stable when any stable one does.
+command that accepts any kind (``Stdin[Record]``) promises no fields. A
+kind takes the mark of the commands that reach it, stable when any stable
+one does.
 
 The models a kind's fields reach get the same lines, as
 ``record <owner>.<ClassName>``, written when a written kind reaches them.
@@ -140,7 +140,7 @@ def _declared(
 def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[str]:
     """The kinds ``command``'s ``Stdin[R]`` names: ``R``'s models and their subclasses.
 
-    A record base (``Stdin[Record]``) accepts any kind but reads only the envelope.
+    A record base (``Stdin[Record]``) accepts any kind and promises no fields.
     """
     from untaped.runtime.registry import resolve_target  # noqa: PLC0415
     from untaped.sdk.diagnostic import WireModel  # noqa: PLC0415

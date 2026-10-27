@@ -46,7 +46,7 @@ from typing import (
     Literal,
 )
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue
 
 from untaped.sdk.diagnostic import (
     DuplicateKindError,
@@ -232,6 +232,16 @@ class Source(BaseModel):
     plugin: str
     kind: str
     record: dict[str, Any] = {}
+
+
+class KindlessRow(Record):
+    """A piped row whose ``kind`` is ``null``, as a ``Stdin[Record]`` reader gets it.
+
+    It keeps every field it was given, since no model says which it has.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="allow")
+    __pydantic_extra__: dict[str, JsonValue] = Field(init=False)
 
 
 class Issued(Record):

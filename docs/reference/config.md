@@ -133,7 +133,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `recipe.library_dir` | path | `~/.untaped/plugins/recipe/library` | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs. |
+| `recipe.library_dir` | path (optional) | unset | `UNTAPED_RECIPE__LIBRARY_DIR` | Directory holding installed recipe packs and backups; unset, `plugins/recipe/library/` under the untaped home. |
 | `recipe.hook_timeout_seconds` | number | `60` | `UNTAPED_RECIPE__HOOK_TIMEOUT_SECONDS` | Per-hook request timeout; `0` disables it. 0 or more. |
 | `recipe.hook_startup_timeout_seconds` | number | `300` | `UNTAPED_RECIPE__HOOK_STARTUP_TIMEOUT_SECONDS` | Timeout for preparing a hook environment. 0 or more. |
 | `recipe.backup_keep` | integer (optional) | unset | `UNTAPED_RECIPE__BACKUP_KEEP` | `backups prune` keeps this many newest bundles by default. 1 or more. |

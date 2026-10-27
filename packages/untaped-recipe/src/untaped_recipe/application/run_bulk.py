@@ -18,7 +18,7 @@ from untaped_recipe.application.inputs import (
 from untaped_recipe.application.ports import PromptFunc
 from untaped_recipe.application.targets import Target, dedupe_targets
 from untaped_recipe.domain.plan import TargetPlan
-from untaped_recipe.domain.recipe import Recipe
+from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
 
 SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
@@ -38,7 +38,7 @@ class ResolvedTarget:
 
 
 def resolve_targets(
-    recipe: Recipe,
+    recipe: RecipeFile,
     targets: list[Target],
     *,
     inputs: dict[str, object],
@@ -78,7 +78,7 @@ class RunBulkApply:
     def plan(
         self,
         *,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         local_hook_project: Path | None,
         targets: list[Target],
@@ -103,7 +103,7 @@ class RunBulkApply:
     def plan_resolved(
         self,
         *,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         local_hook_project: Path | None,
         resolved: list[ResolvedTarget],
@@ -128,7 +128,7 @@ class RunBulkApply:
 
     def _plan_one(
         self,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         local_hook_project: Path | None,
         item: ResolvedTarget,
@@ -175,7 +175,7 @@ def _failure(exc: Exception, *, message: str | None = None) -> RecipeError:
 
 
 def _suppress_sensitive_diagnostics(
-    recipe: Recipe,
+    recipe: RecipeFile,
     plan: TargetPlan,
 ) -> TargetPlan:
     if not has_sensitive_inputs(recipe.inputs, plan.display_inputs):

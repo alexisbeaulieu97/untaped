@@ -12,7 +12,7 @@ from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange, TargetPlan
 from untaped_recipe.domain.recipe import (
     CopyStep,
     InputSpec,
-    Recipe,
+    RecipeFile,
     RemoveStep,
     TemplateStep,
     TransformStep,
@@ -35,7 +35,7 @@ class ApplyRecipe:
     def __call__(
         self,
         *,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         target: Path,
         inputs: dict[str, object],
@@ -129,7 +129,7 @@ class ApplyRecipe:
     def _plan_template(
         self,
         step: TemplateStep,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         target: Path,
         inputs: dict[str, object],
@@ -151,7 +151,7 @@ class ApplyRecipe:
     def _plan_copy(
         self,
         step: CopyStep,
-        recipe: Recipe,
+        recipe: RecipeFile,
         recipe_dir: Path,
         target: Path,
         inputs: dict[str, object],
@@ -171,7 +171,7 @@ class ApplyRecipe:
     def _plan_remove(
         self,
         step: RemoveStep,
-        recipe: Recipe,
+        recipe: RecipeFile,
         target: Path,
         inputs: dict[str, object],
         buffer: dict[Path, str | None],
@@ -185,7 +185,7 @@ class ApplyRecipe:
     def _plan_transform(
         self,
         step: TransformStep,
-        recipe: Recipe,
+        recipe: RecipeFile,
         local_hook_project: Path | None,
         target: Path,
         inputs: dict[str, object],
@@ -254,7 +254,7 @@ class ApplyRecipe:
 
 def _step_files(
     step: TransformStep | RemoveStep,
-    recipe: Recipe,
+    recipe: RecipeFile,
     target: Path,
     inputs: dict[str, object],
     warnings: list[str],
