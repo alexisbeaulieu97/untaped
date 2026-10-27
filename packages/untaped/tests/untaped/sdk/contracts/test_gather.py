@@ -141,6 +141,43 @@ def test_plugins_picks_a_provider_class_exactly_and_refuses_a_bare_name() -> Non
         gather(BookSource.books, plugins="shop")
 
 
+def test_a_class_never_widens_to_its_plugins_other_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from untaped.sdk.contracts import _gather
+
+    class Branch(Shop):
+        pass
+
+    monkeypatch.setattr(_gather, "_plugin_of", lambda _: "shop")
+    compose(shelf_spec(), shop_spec())
+    with pytest.raises(NoProviderReady):
+        gather(BookSource.books, plugins=[Branch])()
+
+
+def test_a_field_named_like_its_section_is_still_a_field() -> None:
+    from untaped.sdk.contracts import Provider
+    from untaped.sdk.contracts._declare import _key_at
+    from untaped.sdk.fields import SettingKey
+
+    class Inner(BaseModel):
+        port: int = 0
+
+    class GitSettings(BaseModel):
+        git: Inner = Field(default_factory=Inner)
+        port: int = 0
+
+    class Git(Provider[GitSettings]):
+        pass
+
+    def path(loc: tuple[int | str, ...]) -> object:
+        found = _key_at(Git, "git", loc)
+        return found and SettingKey.path_of(found)
+
+    assert path(("git", "port")) == path(("port",)) == ("port",)
+    assert path(("git", "git", "port")) == ("git", "port")
+
+
 def test_an_invalid_setting_names_its_key_in_full() -> None:
     compose(shelf_spec(), library_spec())
     write_config("format_version: 2\nlibrary:\n  catalog: x\n  volumes: 5\n")

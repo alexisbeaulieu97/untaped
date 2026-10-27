@@ -86,7 +86,7 @@ class NotReady:
 
     reason: str
     setting: SettingKey | None = None
-    spelled: str | None = field(default=None, init=False)
+    spelled: str | None = field(default=None, init=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.setting is not None and not isinstance(self.setting, SettingKey):
@@ -377,22 +377,25 @@ class Provider[S: BaseModel]:
             cause = exc.__cause__
             setting = None
             if isinstance(cause, ValidationError) and cause.errors():
-                setting = _key_at(type(self), cause.errors()[0]["loc"])
+                binding = binding_of(self)
+                section = binding.plugin if binding is not None else None
+                setting = _key_at(type(self), section, cause.errors()[0]["loc"])
             return NotReady(str(exc), setting)
         return None
 
 
-def _key_at(provider: type, loc: tuple[int | str, ...]) -> SettingKey | None:
+def _key_at(provider: type, section: str | None, loc: tuple[int | str, ...]) -> SettingKey | None:
     """The settings key at a validation error's ``loc``, as far as it names fields.
 
-    The section loader's ``loc`` starts with the section's name, which is no
-    field of the model: it is skipped.
+    The section loader's ``loc`` starts with the section's name, unless the
+    whole section failed its default: a leading ``section`` is dropped, even
+    when a field shares the name.
     """
     model = settings_type(provider)
     if model is None:
         return None
     found = setting_key(model)
-    if loc and loc[0] not in model.model_fields:
+    if loc and loc[0] == section:
         loc = loc[1:]
     for part in loc:
         if not isinstance(part, str):

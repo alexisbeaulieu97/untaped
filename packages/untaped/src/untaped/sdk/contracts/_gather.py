@@ -317,10 +317,14 @@ def _picked(
         raise TypeError(f"plugins= takes a collection of names or classes, not {plugins!r}")
     names = {each for each in plugins if isinstance(each, str)}
     classes = {each for each in plugins if isinstance(each, type)}
-    names |= {plugin for each in classes if (plugin := _plugin_of(each)) is not None}
+    quarantined = {plugin for each in classes if (plugin := _plugin_of(each)) is not None}
     return lambda entry: (
         entry.plugin in names
-        or (isinstance(entry, BoundProvider) and type(entry.instance) in classes)
+        or (
+            type(entry.instance) in classes
+            if isinstance(entry, BoundProvider)
+            else entry.plugin in quarantined
+        )
     )
 
 
