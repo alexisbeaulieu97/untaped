@@ -42,6 +42,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "ObjectName",
         "Spread",
         "Status",
+        "table_row",
         "key",
         "SettingKey",
         "System",

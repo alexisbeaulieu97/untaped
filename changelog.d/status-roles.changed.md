@@ -2,4 +2,7 @@
 column is named `status`, `action`, `result`, `state` or `job_status`: it
 colours the words its field's `Status` names, and core's outcome and check
 records name theirs. A record still declaring `kind=` keeps the old word
-list until its plugin moves to a plugin class.
+list until its plugin moves to a plugin class. A row printed as a plain
+`dict` (through `emit` or `render_rows`) has no fields, so its words are no
+longer coloured, and free-text fields such as a jira issue's `status` stay
+plain.

@@ -25,6 +25,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
+from enum import Enum
 from functools import cache
 from pathlib import Path
 from types import UnionType
@@ -142,8 +143,14 @@ class Status:
 
 
 def _word(value: object) -> str:
-    """A status value as the word a row holds: an enum member's value, else its text."""
-    return str(getattr(value, "value", value))
+    """A status value as the word a row holds: a ``str``, or a member of an enum of words.
+
+    Anything else (an enum of numbers) is refused: its cell holds no word to draw.
+    """
+    word = value.value if isinstance(value, Enum) else value
+    if not isinstance(word, str):
+        raise TypeError(f"Status takes words (str values), not {value!r}")
+    return word
 
 
 class Roled(str):
@@ -717,7 +724,9 @@ def table_row(record: BaseModel, row: Mapping[str, object] | None = None) -> dic
     """``row`` (``record``'s dump by default) as a table shows it: marked cells, roled words.
 
     For a view a command builds from a record (a ``fix`` argv as the line to
-    type) and renders itself; a key ``record`` has no field for stays as it is.
+    type, warnings joined into one cell) and prints itself: a plain ``dict`` row
+    has no fields, so a table draws its words in no role. A key ``record`` has
+    no field for stays as it is.
     """
     shown = dict(record.model_dump(mode="json") if row is None else row)
     [out], _, _ = table_rows([record], [shown], None)
@@ -741,9 +750,12 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
 
 def _role(words: Mapping[str, str] | None, value: object, *, seam: bool) -> str | None:
     """The role ``value``'s word is drawn in: its field's ``Status``, else the 11.x seam's."""
-    role = words.get(_word(value)) if words else None
-    if role is None and seam and isinstance(value, str):
-        role = _SEAM_ROLES.get(value.lower())
+    word = value.value if isinstance(value, Enum) else value
+    if not isinstance(word, str):
+        return None  # a number, a list, ``None``: no word to draw
+    role = words.get(word) if words else None
+    if role is None and seam:
+        role = _SEAM_ROLES.get(word.lower())
     return role
 
 

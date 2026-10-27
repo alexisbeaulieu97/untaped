@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
+from enum import IntEnum, StrEnum
 from typing import Annotated, ClassVar, Self
 
 import pytest
@@ -26,7 +27,7 @@ from untaped.sdk import (
     Status,
     now,
 )
-from untaped.sdk.fields import status_roles, table_rows
+from untaped.sdk.fields import status_roles, table_row, table_rows
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -238,6 +239,17 @@ class Plain(Record):
     status: str
 
 
+class Phase(StrEnum):
+    READY = "ready"
+    BROKEN = "broken"
+
+
+class Phased(Record):
+    """An optional enum field whose ``Status`` names its members."""
+
+    phase: Annotated[Phase, Status(success=(Phase.READY,), error=(Phase.BROKEN,))] | None = None
+
+
 def _roles(record: BaseModel) -> dict[str, str | None]:
     [shown], _, _ = table_rows([record], [record.model_dump()], None)
     return {key: getattr(cell, "role", None) for key, cell in shown.items()}
@@ -252,6 +264,8 @@ def _roles(record: BaseModel) -> dict[str, str | None]:
         (Cloned(action="partial"), {"action": "error"}),  # core's, kept
         (Cloned(action="created"), {"action": "warning"}),  # the nearest class wins
         (Plain(status="failed"), {"status": None}),
+        (Phased(phase=Phase.BROKEN), {"phase": "error"}),  # an enum, inside ``X | None``
+        (Phased(), {"phase": None}),
         (Spelled(action="removed"), {"action": "success", "status": "warning"}),
     ],
 )
@@ -270,3 +284,19 @@ def test_check_records_draw_core_s_check_words() -> None:
         "fail": "error",
         "error": "error",
     }
+
+
+def test_a_status_takes_words_only() -> None:
+    class Level(IntEnum):
+        LOW = 1
+
+    with pytest.raises(TypeError, match="takes words"):
+        Status(success=(Level.LOW,))
+
+
+def test_a_view_built_with_table_row_keeps_its_record_s_roles(clock: ManualClock) -> None:
+    del clock
+    record = OutcomeRecord(action="failed")
+    shown = table_row(record, {"action": "failed", "note": "joined"})
+    assert getattr(shown["action"], "role", None) == "error"
+    assert shown["note"] == "joined"
