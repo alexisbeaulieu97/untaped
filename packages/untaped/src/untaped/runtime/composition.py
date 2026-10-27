@@ -146,7 +146,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
 
     ``taken`` are names a plugin may not have: config.yml's own top-level
     keys and the root commands not on a plugin class. A plugin whose name is
-    taken, by those, by an earlier entry sound on its own or by a root entry's commands (core
+    taken, by those, by an earlier entry sound on its own or by such a root entry's commands (core
     composes first and wins), or whose walk finds any problem, is quarantined
     with every problem named. A record a command reaches belongs to the
     plugin whose package defines it, whichever plugins reach it and in
@@ -157,8 +157,9 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     to the plugin whose ``fills`` lists the provider. A record has one kind,
     and a kind one record: kinds are claimed in :data:`_PHASES` across every
     plugin, a plugin's own records before another's reach of its package, so
-    a clash refuses the plugin claiming later (``duplicate-kind``), entry
-    order deciding only within a phase. A plugin refused claims no kind; a
+    a plugin is refused (``duplicate-kind``) when a composing plugin's claim
+    outranks its clashing one; entry order decides only within a phase and in
+    a cycle of plugins outranking each other. A plugin refused claims no kind; a
     name goes to the first plugin sound on its own, before kinds are settled.
     Two entry points in one top-level package share it, the first not
     quarantined owning its classes, as :meth:`Declaration.owner_of` reads
@@ -394,10 +395,11 @@ def _names(
     return before, named
 
 
-#: The order kinds are claimed in, across every plugin, so no entry order decides
-#: between them: the models offered contracts own, the records a command reaches
-#: from its plugin's own package (or one no composed plugin owns), those it reaches
-#: from another plugin's package, then the records only a provider reaches.
+#: How a claim of a kind ranks, best first, across every plugin, so no entry order
+#: decides between them: the models offered contracts own, the records a command
+#: reaches from its plugin's own package (or one no composed plugin owns), those it
+#: reaches from another plugin's package; the records only a provider reaches are
+#: claimed last and refuse nothing.
 _PHASES = ("offered", "own", "reached", "provided")
 
 
@@ -445,11 +447,12 @@ def _settle(
 ) -> tuple[dict[int, dict[str, KindDecl]], dict[int, list[Problem]]]:
     """The kinds each of ``walks`` holds, and the kind clashes of those refused, by index.
 
-    Each plugin's own claims agree (see :func:`_own_clashes`). Of two plugins
-    whose claims clash, the one claiming in the earlier phase (entry order within a phase)
-    outranks the other. A plugin composes when no plugin outranking it
-    composes, so a refused plugin decides nothing; when every plugin left is
-    outranked by another left (a cycle), the first in entry order composes.
+    Each plugin's own claims agree (see :func:`_own_clashes`). When two
+    plugins' claims clash, the better-ranked claim's plugin (:data:`_PHASES`,
+    then entry order) outranks the other; each may outrank the other through
+    two clashes. A plugin composes when no composing plugin outranks it, so a
+    refused plugin decides nothing; when plugins outrank each other in a
+    cycle no other plugin outranks, the first of it in entry order composes.
     A record only a provider reaches refuses nothing: it keeps the kind
     another plugin gave the class, or, two classes one kind, the later has none.
     """
@@ -459,8 +462,7 @@ def _settle(
     remaining = list(claims)
     composing: list[int] = []
     while remaining:
-        free = [index for index in remaining if not outranked[index] & set(remaining)]
-        pick = (free or remaining)[0]
+        pick = _unbeaten(remaining, outranked)
         composing.append(pick)
         remaining.remove(pick)
         for index in [each for each in remaining if pick in against[each]]:
@@ -486,17 +488,44 @@ def _settle(
     }, clashes
 
 
+def _unbeaten(remaining: list[int], outranked: dict[int, set[int]]) -> int:
+    """The first of ``remaining`` that nothing remaining outranks, or else, when each is,
+    the first whose every remaining rival above it is also below it (a cycle no other
+    plugin outranks)."""
+    left = set(remaining)
+
+    def above(index: int) -> set[int]:
+        found: set[int] = set()
+        todo = [index]
+        while todo:
+            for each in outranked[todo.pop()] & left:
+                if each not in found:
+                    found.add(each)
+                    todo.append(each)
+        return found
+
+    free = [index for index in remaining if not outranked[index] & left]
+    if free:
+        return free[0]
+    return next(index for index in remaining if all(index in above(each) for each in above(index)))
+
+
 def _rivals(
     claims: dict[int, list[_Claim]],
 ) -> tuple[dict[int, dict[int, list[Problem]]], dict[int, set[int]]]:
     """Each plugin's claims clashing with another's, by both; and who outranks each plugin."""
     against: dict[int, dict[int, list[Problem]]] = {index: {} for index in claims}
     outranked: dict[int, set[int]] = {index: set() for index in claims}
+    by_kind: dict[str, list[tuple[int, _Claim]]] = {}
+    by_target: dict[str, list[tuple[int, _Claim]]] = {}
+    for index, ours in claims.items():
+        for claim in ours:
+            by_kind.setdefault(claim.kind, []).append((index, claim))
+            by_target.setdefault(claim.target, []).append((index, claim))
     for b, theirs in claims.items():
-        for a, ours in claims.items():
-            pairs = [(claim, other) for claim in theirs for other in ours if a != b]
-            for claim, other in pairs:
-                if (why := _clash(claim, other)) is not None:
+        for claim in theirs:
+            for a, other in [*by_kind[claim.kind], *by_target[claim.target]]:
+                if a != b and (why := _clash(claim, other)) is not None:
                     problem = Problem(rule="duplicate-kind", where=claim.where, detail=why)
                     against[b].setdefault(a, []).append(problem)
                     if other.rank < claim.rank:

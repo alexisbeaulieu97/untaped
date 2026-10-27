@@ -1952,6 +1952,43 @@ def test_a_refused_plugin_decides_no_other_s_kinds(order: tuple[str, ...]) -> No
     assert sorted(kind.kind for kind in declaration.kinds) == ["q.t4", "x2.free", "x2.k"]
 
 
+_CYCLE = {
+    "a": _entry(
+        _listing(_record("W", "untaped_b.x"), _record("V", "untaped_c.x")),
+        "a",
+        module="untaped_a.plugin",
+    ),
+    "b": _entry(
+        _listing(
+            _record("Z", "untaped_b.models"),
+            _record("Y", "untaped_c.other"),
+            _record("W", "untaped_b.models"),
+        ),
+        "b",
+        module="untaped_b.plugin",
+    ),
+    "c": _entry(
+        _listing(
+            _record("Y", "untaped_c.models"),
+            _record("Z", "untaped_b.other"),
+            _record("V", "untaped_c.models"),
+        ),
+        "c",
+        module="untaped_c.plugin",
+    ),
+}
+
+
+@pytest.mark.parametrize("order", list(itertools.permutations(_CYCLE)))
+def test_the_first_of_a_cycle_composes_wherever_the_plugins_below_it_come(
+    order: tuple[str, ...],
+) -> None:
+    """b and c outrank each other; both outrank a, whose place in the order decides nothing."""
+    declaration = compose([_CYCLE[name] for name in order])
+    first = next(name for name in order if name in "bc")
+    assert [plugin.name for plugin in declaration.plugins] == [first]
+
+
 def test_a_name_goes_to_the_first_plugin_sound_on_its_own_before_kinds() -> None:
     """The later x would outrank the earlier one's record, but it never holds the name."""
     first = _entry(_listing(_record("Tag", "untaped_a.models")), "x", module="untaped_a.plugin")
