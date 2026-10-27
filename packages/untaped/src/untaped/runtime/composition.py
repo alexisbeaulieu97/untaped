@@ -317,6 +317,7 @@ def _compose(
     kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
     refused: dict[int, tuple[Problem, ...]] = {}
+    walks: list[tuple[int, PluginEntry, _PluginWalk, list[Problem]]] = []
     for index, entry in enumerate(entries):
         if index in withdrawn:
             quarantined.append(
@@ -334,19 +335,33 @@ def _compose(
                     detail="the name is taken by a root command, a config key or another plugin",
                 ),
             )
-        claimed = _claim(walk, kinds, problems)
+        walks.append((index, entry, walk, problems))
+        if not problems and walk.decl is not None:
+            names.add(entry.name)
+            if entry.root:
+                names.update(walk.decl.command_words())
+    # Kinds are claimed in phases across every plugin, so no entry order decides between
+    # phases: the models offered contracts own, then the records commands reach, then the
+    # records only a provider reaches (left kind-less on a clash).
+    held: dict[int, dict[str, KindDecl]] = {index: {} for index, *_ in walks}
+    for phase in ("offered", "commands", "provided"):
+        for index, _, walk, problems in walks:
+            if not problems:
+                claimed = _claim(walk, kinds, problems, phase)
+                kinds.update(claimed)
+                held[index].update(claimed)
+    kinds = {}
+    for index, entry, walk, problems in walks:
         if problems or walk.decl is None:
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
             )
             refused[index] = tuple(problems)
             continue
-        names.add(entry.name)
         if entry.root:
-            names.update(walk.decl.command_words())
             walk.decl = walk.decl.model_copy(update={"root": True})
         plugins.append(walk.decl)
-        kinds.update(claimed)
+        kinds.update(held[index])
     declaration = Declaration(
         plugins=tuple(plugins),
         kinds=tuple(sorted(kinds.values(), key=lambda kind: kind.kind)),
@@ -361,21 +376,25 @@ def _package(target: str) -> str:
 
 
 def _claim(
-    walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem]
+    walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem], phase: str
 ) -> dict[str, KindDecl]:
-    """The kinds ``walk`` reaches; two classes one kind, or one class two kinds, are a problem.
+    """The kinds of ``phase`` ``walk`` reaches; two classes one kind, or one class two, refuse it.
 
-    A record only a provider in ``fills`` reaches is left kind-less instead,
-    so the registry quarantines that provider alone.
+    A record only a provider in ``fills`` reaches refuses nothing: it keeps
+    the kind another plugin gave the class (rows of it then go to the most
+    derived reader, a tie being ``duplicate-kind``), or has none, and the
+    registry quarantines that provider alone.
     """
     claimed: dict[str, KindDecl] = {}
     held_as = {decl.target: decl.kind for decl in kinds.values()}
-    for cls, kind in sorted(walk.kinds.items(), key=lambda pair: pair[0] in walk.provided):
+    for cls, kind in walk.kinds.items():
+        if walk.phase_of(cls) != phase:
+            continue
         target = target_of(cls)
         held = claimed.get(kind) or kinds.get(kind)
         if held is not None and held.target != target:
             detail = f"would be the kind {kind}, which {held.target} is: rename one"
-        elif held is None and (other := held_as.get(target)) is not None:
+        elif (other := held_as.get(target)) is not None and other != kind:
             detail = f"would be the kind {kind}, but it is {other}: a record has one kind"
         else:
             claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
@@ -420,9 +439,11 @@ class _PluginWalk:
         self.offering = offering
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
-        #: Providers' own records: a kind another record holds leaves one kind-less, so
-        #: the registry quarantines that provider alone.
+        #: Providers' own records no command of the plugin reaches: a clash refuses
+        #: nothing (see :func:`_claim`).
         self.provided: set[type] = set()
+        #: The owner models of the contracts it offers.
+        self.offered: set[type] = set()
         self.decl: PluginDecl | None = None
         self.settings: type[BaseModel] | None = None
         if getattr(sys.modules.get(module), "__path__", None) is not None:
@@ -447,6 +468,12 @@ class _PluginWalk:
         self.provided.discard(model)  # a command reaches it: a clash is the plugin's problem
         owner = self.owners.get(model.__module__.partition(".")[0], self.name)
         return self.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
+
+    def phase_of(self, cls: type) -> str:
+        """When composition claims ``cls``'s kind: ``offered``, ``commands`` or ``provided``."""
+        if cls in self.offered:
+            return "offered"
+        return "provided" if cls in self.provided else "commands"
 
     def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
         """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""
@@ -552,6 +579,7 @@ class _PluginWalk:
             self._answer_caches(cls, info)
             if info.item is not None:
                 self.kinds.setdefault(info.item, f"{self.name}.{snake(info.item.__name__)}")
+                self.offered.add(info.item)
         for filled in self.fills:
             info = contract_of(filled) if isinstance(filled, type) else None
             if info is None or info.cls is filled:

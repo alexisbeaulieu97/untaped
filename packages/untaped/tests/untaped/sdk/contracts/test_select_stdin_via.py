@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
@@ -403,3 +406,157 @@ def test_two_providers_of_one_record_give_it_one_kind() -> None:
     assert [kind.kind for kind in declaration.kinds if kind.target == target_of(Loan)] == [
         "archive.loan"
     ]
+
+
+#: Three plugins in three top-level packages: a kind's plugin part is read from a
+#: record's package or from the plugin listing it, never from the order entries come in.
+_PRINTER = """
+from __future__ import annotations
+from pydantic import BaseModel
+from untaped.sdk import Command, Output, Plugin
+from untaped.sdk.contracts import Issued, Record
+
+class Plain(BaseModel):
+    \"\"\"No settings.\"\"\"
+
+class Loan(Record):
+    name: str
+
+class Tag(Issued):
+    name: str
+
+class PrintLoan(Command[Plain]):
+    \"\"\"Print a loan.\"\"\"
+    output: Output[Loan]
+    def run(self) -> Loan:
+        return Loan(name="x")
+
+class PrintTag(Command[Plain]):
+    \"\"\"Print a tag.\"\"\"
+    output: Output[Tag]
+    def run(self) -> Tag:
+        return Tag(name="x")
+
+class Printer(Plugin):
+    \"\"\"Print loans.\"\"\"
+    settings = Plain
+    commands = (PrintLoan,)
+
+class Tagger(Plugin):
+    \"\"\"Print tags.\"\"\"
+    settings = Plain
+    commands = (PrintTag,)
+"""
+
+_OWNER = """
+from __future__ import annotations
+from abc import abstractmethod
+from pydantic import BaseModel
+from untaped.sdk import Plugin, experimental
+from untaped.sdk.contracts import Contract, Issued, Record
+from kinds_printer import Tag
+
+class Plain(BaseModel):
+    \"\"\"No settings.\"\"\"
+
+class Note(Issued):
+    text: str
+
+@experimental
+class Notes[T: Record = Note](Contract):
+    \"\"\"Notes.\"\"\"
+    def to_note(self, item: T) -> Note:
+        \"\"\"A provider's record as a note.\"\"\"
+        raise NotImplementedError
+    @abstractmethod
+    def notes(self) -> list[Note]:
+        \"\"\"Every note.\"\"\"
+
+@experimental
+class Tags[T: Record = Tag](Contract):
+    \"\"\"Tags, whose model another plugin's package defines.\"\"\"
+    def to_tag(self, item: T) -> Tag:
+        \"\"\"A provider's record as a tag.\"\"\"
+        raise NotImplementedError
+    @abstractmethod
+    def tags(self) -> list[Tag]:
+        \"\"\"Every tag.\"\"\"
+
+class NoteOwner(Plugin):
+    \"\"\"Own notes.\"\"\"
+    settings = Plain
+    offers = (Notes,)
+
+class TagOwner(Plugin):
+    \"\"\"Own tags.\"\"\"
+    settings = Plain
+    offers = (Tags,)
+"""
+
+_LENDER = """
+from __future__ import annotations
+from pydantic import BaseModel
+from untaped.sdk import Plugin
+from untaped.sdk.contracts import Provider
+from kinds_owner import Note, Notes
+from kinds_printer import Loan
+
+class Plain(BaseModel):
+    \"\"\"No settings.\"\"\"
+
+class LoanNotes(Notes[Loan], Provider[Plain]):
+    def to_note(self, item: Loan) -> Note:
+        return Note(text=item.name)
+    def notes(self) -> list[Note]:
+        return []
+
+class Lender(Plugin):
+    \"\"\"Lend loans as notes.\"\"\"
+    settings = Plain
+    fills = (LoanNotes,)
+"""
+
+
+@pytest.fixture
+def packages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
+    for name, text in (("printer", _PRINTER), ("owner", _OWNER), ("lender", _LENDER)):
+        (tmp_path / f"kinds_{name}.py").write_text(text, encoding="utf-8")
+    monkeypatch.syspath_prepend(tmp_path)
+
+    def composed(*named: tuple[str, str]) -> Any:
+        entries = []
+        for name, target in named:
+            module, _, attr = target.partition(":")
+            plugin = getattr(importlib.import_module(module), attr)
+            entries.append(PluginEntry(name=name, target=target, plugin=plugin))
+        return compose(entries)
+
+    yield composed
+    for name in ("printer", "owner", "lender"):
+        sys.modules.pop(f"kinds_{name}", None)
+
+
+@pytest.mark.parametrize("printer_first", [True, False])
+def test_a_command_s_record_wins_over_a_provider_s_in_any_order(
+    packages: Callable[..., Any], printer_first: bool
+) -> None:
+    named = [("printer", "kinds_printer:Printer"), ("lend", "kinds_lender:Lender")]
+    declaration = packages(
+        ("notes", "kinds_owner:NoteOwner"), *(named if printer_first else named[::-1])
+    )
+    assert sorted(plugin.name for plugin in declaration.plugins) == ["lend", "notes", "printer"]
+    assert [kind.kind for kind in declaration.kinds if kind.target == "kinds_printer:Loan"] == [
+        "printer.loan"
+    ]
+
+
+@pytest.mark.parametrize("owner_first", [True, False])
+def test_the_offering_plugin_names_its_model_in_any_order(
+    packages: Callable[..., Any], owner_first: bool
+) -> None:
+    named = [("tags", "kinds_owner:TagOwner"), ("tagger", "kinds_printer:Tagger")]
+    declaration = packages(*(named if owner_first else named[::-1]))
+    assert [plugin.name for plugin in declaration.plugins] == ["tags"]
+    [refused] = declaration.quarantined
+    assert refused.name == "tagger"
+    assert "but it is tags.tag" in refused.problems[0].detail
