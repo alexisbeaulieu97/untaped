@@ -481,3 +481,12 @@ def test_search_tables_show_curated_default_columns(kind: str, expected: set[str
     assert result.exit_code == 0, result.output
     starred = {line.split()[0] for line in result.stderr.splitlines() if line.endswith(" *")}
     assert starred == expected
+
+
+@pytest.mark.usefixtures("default_org")
+def test_search_refuses_an_empty_pipe_rather_than_searching_the_default_org() -> None:
+    result, route = _search(["repos", "--stdin"], input="")
+
+    assert result.exit_code == 1, result.output
+    assert "no identifiers received on stdin" in result.stderr
+    assert not route.called

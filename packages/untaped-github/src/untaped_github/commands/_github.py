@@ -169,7 +169,7 @@ class Scoped(GithubCommand):
             return (), ()
         names: list[str] = []
         items: list[Repo] = []
-        for value in self.stdin.values(allow_empty=True):
+        for value in self.stdin.values():
             if isinstance(value, str):
                 names.append(value)
             elif value.default_branch and (value.clone_url or value.html_url):

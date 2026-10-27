@@ -7,6 +7,7 @@ composing git and github.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -150,3 +151,36 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
             "https://github.com/acme/api.git", plugin="github", error=GitCorpusError
         )
         assert not store.private_file.exists()
+
+
+@pytest.mark.parametrize(
+    ("verify", "bundle", "expected"),
+    [
+        (True, None, True),
+        (True, "ca.pem", "ca.pem"),
+        (False, "ca.pem", False),
+        ("ghe.pem", "ca.pem", "ghe.pem"),
+    ],
+    ids=["os-store", "untaped-bundle", "off", "server-bundle"],
+)
+def test_the_credential_carries_the_server_s_tls_setting(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    verify: bool | str,
+    bundle: str | None,
+    expected: bool | str,
+) -> None:
+    """``verify_tls: true`` is untaped's trust (its CA bundle when set); else the server's own."""
+    for name in ("ca.pem", "ghe.pem"):
+        (tmp_path / name).write_text("pem\n")
+    monkeypatch.setenv("GH_TOKEN", "ghp_secret")
+    settings["server"] = {"verify_tls": verify if isinstance(verify, bool) else tmp_path / verify}
+    if bundle is not None:
+        monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__CA_BUNDLE_PATH", str(tmp_path / bundle))
+
+    credential = ask(GitHost.credential, "https://github.com/acme/api.git")
+
+    assert credential is not None
+    want = expected if isinstance(expected, bool) else tmp_path / expected
+    assert credential.verify_tls == want

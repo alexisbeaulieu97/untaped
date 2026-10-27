@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
@@ -13,14 +12,12 @@ from github_test_support import Result, run
 
 
 def _whoami(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     args: list[str],
     *,
     theme: str | None = None,
     response: httpx.Response | None = None,
 ) -> Result:
-    del tmp_path
     if theme is not None:
         monkeypatch.setenv("UNTAPED_UNTAPED__UI__THEME", theme)
     reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})
@@ -29,13 +26,11 @@ def _whoami(
         return run(["whoami", *args])
 
 
-def test_whoami_renders_one_user_record_per_format(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    raw = _whoami(tmp_path, monkeypatch, ["--format", "raw"])
-    as_json = _whoami(tmp_path, monkeypatch, ["--format", "json"])
-    pipe = _whoami(tmp_path, monkeypatch, ["--format", "pipe"])
-    table = _whoami(tmp_path, monkeypatch, ["--format", "table"])
+def test_whoami_renders_one_user_record_per_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw = _whoami(monkeypatch, ["--format", "raw"])
+    as_json = _whoami(monkeypatch, ["--format", "json"])
+    pipe = _whoami(monkeypatch, ["--format", "pipe"])
+    table = _whoami(monkeypatch, ["--format", "table"])
 
     assert raw.stdout.strip() == "octocat"
     # A single entity is a bare JSON object and a vertical detail view.
@@ -46,10 +41,8 @@ def test_whoami_renders_one_user_record_per_format(
     assert "│" not in table.stdout
 
 
-def test_whoami_raw_ignores_invalid_ui_theme(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    result = _whoami(tmp_path, monkeypatch, ["--format", "raw"], theme="missing")
+def test_whoami_raw_ignores_invalid_ui_theme(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(monkeypatch, ["--format", "raw"], theme="missing")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "octocat"
@@ -58,24 +51,20 @@ def test_whoami_raw_ignores_invalid_ui_theme(
 
 @pytest.mark.parametrize("token", [None, "   "])
 def test_whoami_without_a_token_fails_naming_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str | None
+    monkeypatch: pytest.MonkeyPatch, token: str | None
 ) -> None:
     if token is None:
         monkeypatch.delenv("GH_TOKEN")
     else:
         monkeypatch.setenv("GH_TOKEN", token)
-    result = _whoami(tmp_path, monkeypatch, [])
+    result = _whoami(monkeypatch, [])
 
     assert result.exit_code == 4  # local setup needs fixing
     assert "token" in result.stderr
 
 
-def test_whoami_rejected_token_hints_at_setting_a_new_one(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    result = _whoami(
-        tmp_path, monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"})
-    )
+def test_whoami_rejected_token_hints_at_setting_a_new_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"}))
 
     assert result.exit_code == 4
     assert result.stderr.endswith(
@@ -84,13 +73,9 @@ def test_whoami_rejected_token_hints_at_setting_a_new_one(
     )
 
 
-def test_rejected_token_is_an_auth_diagnostic_under_json(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    result = _whoami(
-        tmp_path, monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"})
-    )
+    result = _whoami(monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"}))
 
     assert result.exit_code == 4
     record = json.loads(result.stderr.splitlines()[-1])
@@ -109,10 +94,10 @@ def test_rejected_token_is_an_auth_diagnostic_under_json(
 )
 @pytest.mark.usefixtures("clock")  # the back-off waits on it
 def test_rate_limit_is_retryable_and_exits_five(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: httpx.Response
+    monkeypatch: pytest.MonkeyPatch, response: httpx.Response
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    result = _whoami(tmp_path, monkeypatch, [], response=response)
+    result = _whoami(monkeypatch, [], response=response)
 
     assert result.exit_code == 5, result.output
     record = json.loads(result.stderr.splitlines()[-1])
@@ -123,9 +108,8 @@ def test_rate_limit_is_retryable_and_exits_five(
     )
 
 
-def test_forbidden_is_a_permission_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_forbidden_is_a_permission_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _whoami(
-        tmp_path,
         monkeypatch,
         [],
         response=httpx.Response(403, json={"message": "Resource not accessible"}),

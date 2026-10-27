@@ -196,7 +196,7 @@ class SweepRepo(Repo):
 
 
 class SweepFile(Record):
-    """One file a sweep matched in one repository (``sweep --show files``).
+    """One file a sweep matched in one repository (``sweep files``).
 
     ``refs`` are the refs it matched on; ``hits`` counts its matching lines.
     """
@@ -208,7 +208,7 @@ class SweepFile(Record):
 
 
 class SweepMatch(Record):
-    """One deduped content match, possibly reachable from several refs (``--show matches``)."""
+    """One deduped content match, possibly reachable from several refs (``sweep matches``)."""
 
     # A match line reads whole: the table shows every field.
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "refs", "path", "line", "text")

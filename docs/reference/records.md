@@ -94,7 +94,7 @@ a step that asks for or reveals a secret, else `agent`.
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `github search repos/code/issues --stdin`, `github sweep [files|matches] --stdin`, `github cache sync --stdin` | `github.repo`, `github.sweep_repo`, `github.corpus_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use the record as-is, without an API call) |
+| `github search repos/code/issues --stdin`, `github sweep --stdin` (and `sweep files`, `sweep matches`), `github cache sync --stdin` | `github.repo`, `github.sweep_repo`, `github.corpus_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use the record as-is, without an API call) |
 
 ## jira
 

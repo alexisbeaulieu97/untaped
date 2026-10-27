@@ -88,7 +88,7 @@ class _ScopedSearch(_Search):
         """``--repo`` values, then the repos ``--stdin`` names."""
         if not self.stdin.requested:
             return tuple(self.repo)
-        return (*self.repo, *self.stdin.identifiers(allow_empty=True))
+        return (*self.repo, *self.stdin.identifiers())
 
     def scoped_orgs(self, repos: tuple[str, ...]) -> tuple[str, ...]:
         return self.orgs(self.scope, scoped=bool(self.user or self.scope.team or repos))

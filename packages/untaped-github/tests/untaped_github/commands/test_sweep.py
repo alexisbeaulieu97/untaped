@@ -439,3 +439,25 @@ def test_sweep_table_leaves_out_negated_predicate_counts(source_repo: SourceRepo
     # -c +name edits the curated defaults instead of replacing them.
     assert "grep:needle" in edited.stdout
     assert "not-grep:hay" in edited.stdout
+
+
+@pytest.mark.usefixtures("default_org")
+@pytest.mark.parametrize("words", [["sweep"], ["cache", "sync"]], ids=["sweep", "cache-sync"])
+def test_an_empty_pipe_is_refused_rather_than_widened_to_the_default_org(
+    source_repo: SourceRepo, words: list[str]
+) -> None:
+    """``--stdin`` names the scope: an empty pipe never falls back to ``github.default_org``."""
+    source = source_repo("api", {"a.py": "needle\n"})
+    args = [*words, "--stdin"] + (["--grep", "needle"] if words == ["sweep"] else [])
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(200, json=[_repo("acme/api", source)])
+        )
+        result = run(args, input="")
+        requested = [call.request.url.path for call in mock.calls]
+
+    assert result.exit_code == 1, result.output
+    assert "no identifiers received on stdin" in result.stderr
+    assert requested == []
+    assert result.stdout == ""
