@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
@@ -206,7 +207,7 @@ def _check_positionals(name: str | None, command: str, *, stdin: bool) -> None:
 def _echo_block(row: RunOutcome) -> None:
     """One finished repo's output: a header (with the reason unless it ran), stdout, stderr.
 
-    Skipped rows print nothing (the summary counts them); each line is
+    Skipped rows print nothing (the summary counts them); each block is
     flushed, so blocks stream through pipes.
     """
     if row.action == "skipped":
@@ -216,6 +217,7 @@ def _echo_block(row: RunOutcome) -> None:
     for text in (row.stdout, row.stderr):
         if text:
             echo(text.rstrip("\n"))
+    sys.stdout.flush()
 
 
 @contextmanager

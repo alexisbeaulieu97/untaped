@@ -3,7 +3,9 @@
 `workspace.status`); the other kinds keep their names. Active workspaces are
 kept as the `workspace.workspaces` rows (was `workspace.active`), and a
 workspace's lock lives under `plugins/workspace/checkouts.locks/` in the
-untaped home. The `untaped agents workspace lifecycle` page is gone: the
+untaped home, so two homes sharing one `workspaces_dir`, or two names that
+differ only in case on a case-insensitive disk, no longer wait for each
+other. The `untaped agents workspace lifecycle` page is gone: the
 guide is `untaped workspace --help`. `workspace run --stdin` reads whole
 records only, so a piped row missing a field is refused before anything
 runs. Retired settings `workspace.cache_dir` and `workspace.protocol` are no

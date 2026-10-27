@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, OutcomeRecord, Output, Plugin, Positional
+from untaped.sdk import Command, Failed, OutcomeRecord, Output, Plugin, Positional
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -28,13 +28,18 @@ class Make(Command[Nothing]):
 
     names: Positional[list[str]] = Field(description="Folders to make.")
     fail: bool = Field(False, description="Fail the last one.")
+    stop: bool = Field(False, description="Fail the run after the rows.")
+    bare: bool = Field(False, description="Print no closing line.")
     output: Output[Made]
 
     def run(self) -> Iterator[Made]:
-        self.output.then(f"/made/{self.names[-1]}")
+        if not self.bare:
+            self.output.then(f"/made/{self.names[-1]}")
         for name in self.names:
             failed = self.fail and name == self.names[-1]
             yield Made(name=name, action="failed" if failed else "created")
+        if self.stop:
+            raise Failed
 
 
 class Maker(Plugin):
@@ -67,3 +72,16 @@ def test_quiet_with_a_failed_row_keeps_the_rows(install: Installer) -> None:
 def test_other_formats_print_the_records_only(install: Installer) -> None:
     ran = install(Maker).cli("maker make a b --format json")
     assert [row["name"] for row in json.loads(ran.stdout)] == ["a", "b"]
+
+
+def test_a_run_that_fails_after_its_rows_prints_no_line(install: Installer) -> None:
+    ran = install(Maker).cli("maker make a b --stop")
+    assert ran.exit == 1
+    assert "/made/b" not in ran.stdout
+    assert "created" in ran.stdout
+
+
+def test_the_line_is_one_runs_and_not_the_next(install: Installer) -> None:
+    installed = install(Maker)
+    assert installed.cli("maker make a").stdout.endswith("/made/a\n")
+    assert "/made/" not in installed.cli("maker make b --bare").stdout

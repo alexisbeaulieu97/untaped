@@ -910,7 +910,7 @@ def test_apply_stdin_requires_yes_and_resolves_workspace_status_pipe(tmp_path: P
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.status",
+            "kind": "workspace.repo_status",
             "record": {"path": str(workspace), "target_path": str(repo), "repo": "api"},
         }
     )
@@ -1941,7 +1941,7 @@ def test_apply_derives_inputs_from_pipe_record_and_input_from_override(
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.status",
+            "kind": "workspace.repo_status",
             "record": {
                 "path": str(workspace),
                 "target_path": str(target),
@@ -1992,7 +1992,7 @@ def test_apply_derives_structured_input_from_pipe_record(
     payload = json.dumps(
         {
             "untaped": "1",
-            "kind": "workspace.status",
+            "kind": "workspace.repo_status",
             "record": {
                 "path": str(workspace),
                 "target_path": str(target),

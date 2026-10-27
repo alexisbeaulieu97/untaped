@@ -45,7 +45,7 @@ class WorkspaceRecord(BaseModel):
 
 
 class ArchivedRecord(WorkspaceRecord):
-    """A workspace after ``archive``: its worktrees are gone, its record stays.
+    """An archived workspace: its worktrees are gone, its record stays.
 
     The archived rows are a list, not keyed: ``archive`` may keep a name twice.
     """

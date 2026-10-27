@@ -156,7 +156,7 @@ Kept in `~/.untaped/plugins/workspace/state.yml`.
 | Key | Type | Description |
 |---|---|---|
 | `workspace.workspaces` | list | An active workspace as the plugin's state keeps it, one row per name. |
-| `workspace.archived` | list | A workspace after ``archive``: its worktrees are gone, its record stays. |
+| `workspace.archived` | list | An archived workspace: its worktrees are gone, its record stays. |
 
 ## Renamed settings
 

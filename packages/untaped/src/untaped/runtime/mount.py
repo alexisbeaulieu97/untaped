@@ -934,18 +934,24 @@ def _print(
         rows.extend(cast("Iterable[BaseModel]", result))
     except UntapedError as exc:  # ``raise Failed()`` after the rows: they are printed first
         if rows or isinstance(exc, Failed | Matched):  # ``[]`` in JSON: the run finished
-            _print_rows(mount, decl, command, rows)
+            _print_rows(mount, decl, command, rows, finished=False)
         raise
     _print_rows(mount, decl, command, rows)
 
 
 def _print_rows(
-    mount: Mount, decl: CommandDecl, command: Command[Any], records: BaseModel | list[BaseModel]
+    mount: Mount,
+    decl: CommandDecl,
+    command: Command[Any],
+    records: BaseModel | list[BaseModel],
+    *,
+    finished: bool = True,
 ) -> None:
     rows = [records] if isinstance(records, BaseModel) else records
     # a row of a subclass no plugin declares is the command's kind
     kinds = {mount.kind_of(type(row)) or decl.output for row in rows} or {decl.output}
-    _output(decl, command)._print(records, kind=kinds.pop() if len(kinds) == 1 else None)
+    kind = kinds.pop() if len(kinds) == 1 else None
+    _output(decl, command)._print(records, kind=kind, finished=finished)
 
 
 def _output(decl: CommandDecl, command: Command[Any]) -> Output[Any]:

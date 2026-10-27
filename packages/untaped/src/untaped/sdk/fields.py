@@ -467,11 +467,16 @@ class Output[R: BaseModel](FieldBlock):
             check_columns(model, columns=filled._requested, fmt=fmt)
         return filled
 
-    def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
-        """Print ``records`` as this run asked, then the closing line a table has."""
+    def _print(
+        self, records: BaseModel | list[BaseModel], *, kind: str | None, finished: bool = True
+    ) -> None:
+        """Print ``records`` as this run asked, then the closing line a table has.
+
+        A run that raised after its rows is not ``finished``: its rows print, its line does not.
+        """
         from untaped.sdk._ui import ui_context  # noqa: PLC0415 - rendering is heavy
 
-        closing = self._then if self.format == "table" else None
+        closing = self._then if finished and self.format == "table" else None
         rows = [records] if isinstance(records, BaseModel) else records
         if closing is None or not ui_context(strict=False).quiet or any(map(_failed, rows)):
             self._print_records(records, kind=kind)
