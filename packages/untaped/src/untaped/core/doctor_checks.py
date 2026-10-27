@@ -2,7 +2,7 @@
 
 ``Core`` holds each :class:`~untaped.sdk.DoctorCheck` as an attribute, so its
 row is ``untaped.<attribute>`` in kebab case (``untaped.config-permissions``),
-run like any plugin's check; a body reads its id from its block. Each reads
+run like any plugin's check, whose result names no id. Each reads
 the config file itself when it runs; when the file doesn't load, the ``load
 config file`` row fails and these report ``not checked``. Rows doctor derives
 for every plugin (settings, state, setup, contracts, caches, skills) stay in
@@ -45,15 +45,14 @@ def _raw() -> dict[str, Any] | None:
 def _config_permissions(ctx: PluginContext) -> DoctorResult:
     """Warn when other users can read or write the config file (it may hold tokens)."""
     del ctx
-    check = CONFIG_PERMISSIONS.id
     path = resolve_config_path()
     if os.name == "nt" or not path.is_file():
-        return DoctorResult(id=check, ok=True, detail="not checked")
+        return DoctorResult(ok=True, detail="not checked")
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         detail = f"{path} has mode {mode:04o}; restrict it with `chmod 600 {path}`"
-        return DoctorResult(id=check, ok=True, warn=True, detail=detail)
-    return DoctorResult(id=check, ok=True, detail=f"mode {mode:04o}")
+        return DoctorResult(ok=True, warn=True, detail=detail)
+    return DoctorResult(ok=True, detail=f"mode {mode:04o}")
 
 
 def _unknown_keys(ctx: PluginContext) -> DoctorResult:
@@ -63,10 +62,9 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
     (``log_level``, an uninstalled plugin's section) is flagged, not moved.
     """
     del ctx
-    check = UNKNOWN_KEYS.id
     raw = _raw()
     if raw is None:
-        return DoctorResult(id=check, ok=True, detail=_NOT_CHECKED)
+        return DoctorResult(ok=True, detail=_NOT_CHECKED)
     model = get_profile_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
     # Old keys are the deprecated-keys row's to report; deleted ones are listed below.
@@ -87,9 +85,8 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
     ]
     parts = ([f"ignored: {', '.join(unknown)}{_other_readers()}"] if unknown else []) + deleted
     if not parts:
-        return DoctorResult(id=check, ok=True, detail="no unknown keys")
+        return DoctorResult(ok=True, detail="no unknown keys")
     return DoctorResult(
-        id=check,
         ok=True,
         warn=True,
         detail="; ".join(parts),
@@ -105,10 +102,9 @@ def _token_store(ctx: PluginContext) -> DoctorResult:
     installing ``pass`` alone fails nothing.
     """
     del ctx
-    check = TOKEN_STORE.id
     raw = _raw()
     if raw is None:
-        return DoctorResult(id=check, ok=True, detail=_NOT_CHECKED)
+        return DoctorResult(ok=True, detail=_NOT_CHECKED)
     layout = active_settings_layout()
     uses_pass = any(
         isinstance(node, dict)
@@ -119,10 +115,10 @@ def _token_store(ctx: PluginContext) -> DoctorResult:
         for node in (layout.profile_data(raw, profile) or {}).values()
     )
     if not uses_pass:
-        return DoctorResult(id=check, ok=True, detail="no token_command runs pass")
+        return DoctorResult(ok=True, detail="no token_command runs pass")
     if (problem := pass_problem()) is not None:
-        return DoctorResult(id=check, ok=False, detail=problem)
-    return DoctorResult(id=check, ok=True, detail="gpg holds a key for the password store")
+        return DoctorResult(ok=False, detail=problem)
+    return DoctorResult(ok=True, detail="gpg holds a key for the password store")
 
 
 CONFIG_PERMISSIONS = DoctorCheck(title="config file permissions", run=_config_permissions)

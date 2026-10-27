@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import ssl
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -101,11 +101,15 @@ class DoctorResult:
     ``--yes`` it needs itself. It also asks for and prints no secret, so an
     agent may run it. Doctor fails the row when an automatic fix is missing
     or has a placeholder.
+
+    The row's id is its check's: core names the row after the ``DoctorCheck``
+    the body belongs to, so a body leaves ``id`` out. An 11.x body passes its
+    check's ``id``, and a different one fails the row.
     """
 
-    id: str
     ok: bool
     detail: str
+    id: str | None = field(default=None, kw_only=True)
     warn: bool = False
     fix: str | list[str] | None = None
     automatic: bool = False
