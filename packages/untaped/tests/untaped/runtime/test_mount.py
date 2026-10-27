@@ -301,6 +301,13 @@ def test_a_text_or_stdin_value_of_dash_reads_stdin() -> None:
     assert _run("hello", "echo", "given").stdout == "given\n"
 
 
+def test_a_dash_with_nothing_piped_is_refused_not_read_as_empty() -> None:
+    root = build_root_app(candidates=[HELLO])
+    result = CliInvoker().invoke(root.meta, ["hello", "echo", "-"], interactive=True)
+    assert result.exit_code == 2
+    assert "error: TEXT: - reads stdin; pipe it" in result.stderr
+
+
 def test_one_record_is_the_detail_view_and_none_prints_nothing() -> None:
     shown = _run("hello", "show", "ada", "--format", "json")
     assert json.loads(shown.stdout)["name"] == "ada"

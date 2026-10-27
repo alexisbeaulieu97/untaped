@@ -71,6 +71,18 @@ class Sweep(Command):
         return f"{'swept' if go else 'planned'} {self.confirm.dry_run}"
 
 
+class Purge(Command):
+    """Purge a thing after a scan, refusing before the scan when nobody could answer."""
+
+    name: Positional[str] = Field(description="The thing to purge.")
+    confirm: Confirm
+
+    def run(self) -> str:
+        self.confirm.ensure_answerable(f"Purge {self.name}?")
+        self.ctx.diag.info("scanned")
+        return "purged" if self.confirm(f"Purge {self.name}?") else "planned"
+
+
 class Fetch(Command):
     """Print what the refresh flags said."""
 
@@ -132,7 +144,7 @@ class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Fetch, Work, Spread, Page, Check)
+    commands = (Delete, Tidy, Sweep, Purge, Fetch, Work, Spread, Page, Check)
     motd = MOTD
 
 
@@ -175,6 +187,22 @@ def test_as_dry_run_previews_without_asking_and_leaves_the_field_as_filled() -> 
     assert (checked.exit_code, checked.stdout) == (0, "planned False\n")
     assert "would sweep x" in checked.stderr
     assert _run("tool", "sweep", "x", "--yes").stdout == "swept False\n"
+
+
+def test_an_unanswerable_question_refuses_before_the_work_it_follows() -> None:
+    refused = _run("tool", "purge", "x")
+    assert refused.exit_code == 2
+    assert 'untaped tool purge requires --yes when not interactive: it asks "Purge x?"' in (
+        refused.stderr
+    )
+    assert "scanned" not in refused.stderr
+    for flag in ("--yes", "--dry-run"):
+        assert _run("tool", "purge", "x", flag).exit_code == 0
+    asked = _run(
+        "tool", "purge", "x", terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
+    )
+    assert (asked.exit_code, asked.stdout) == (0, "purged\n")
+    assert "scanned" in asked.stderr
 
 
 def test_a_question_not_needed_goes_ahead_without_a_terminal() -> None:

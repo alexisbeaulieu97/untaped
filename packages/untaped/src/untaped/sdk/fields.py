@@ -189,7 +189,7 @@ Written = Mark("Written")
 
 
 class Document:
-    """A value naming a document of ``M`` the plugin finds and reads itself: ``Document(RecipeFile)``.
+    """A value naming a document of ``M`` that the plugin finds and reads itself.
 
     ``recipe: Annotated[Positional[str], Document(RecipeFile)]`` takes a
     library name or a path, as the plugin resolves them; core checks nothing
@@ -1149,6 +1149,26 @@ class Confirm(FieldBlock):
         filled._dry_run = flags.get("--dry-run") is True
         filled._command = " ".join(call.words)
         return filled
+
+    def ensure_answerable(self, question: str) -> None:
+        """Refuse now when ``question`` could never be answered, before work the ask would waste.
+
+        For a command that asks only after slow or side-effecting work (running
+        hooks to plan): without a terminal, ``--yes`` or ``--dry-run`` it raises
+        the :class:`NeedsYesError` (exit 2) asking would raise later; otherwise
+        nothing happens, and the command asks as usual.
+        """
+        from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
+
+        if self._dry_run or self._yes:
+            return
+        if self._command is None:
+            raise NeedsYesError(question)
+        try:
+            with current_run().terminal().terminal():
+                pass
+        except UsageError:
+            raise NeedsYesError(question, command=self._command) from None
 
     def __call__(
         self,
