@@ -350,6 +350,14 @@ def test_a_group_runs_its_command_beside_its_subcommands() -> None:
     assert "whoami" in listing
 
 
+def test_a_node_s_page_goes_on_with_the_words_of_the_command_it_runs() -> None:
+    page = " ".join(_run("hello", "friends", "--help").stdout.split())
+    assert "Friends you greet. Count your friends: what untaped hello friends runs" in page
+    listing = _run("hello", "--help").stdout
+    assert "Friends you greet." in listing and "Count your friends" not in listing
+    assert "Print the status" in _run("hello", "--help").stdout
+
+
 def test_the_stub_skill_and_status_reach_the_plugin_listing() -> None:
     rows = json.loads(_run("plugin", "list", "--format", "json").stdout)
     assert {row["name"]: row["status"] for row in rows}["hello"] == "ready"

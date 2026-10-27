@@ -826,6 +826,7 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph] | None = None,
+    spread_keys: Sequence[str] | None = None,
 ) -> None: ...
 @overload
 def emit_with(
@@ -838,6 +839,7 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph],
+    spread_keys: Sequence[str] | None = None,
 ) -> None: ...
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
@@ -849,10 +851,13 @@ def emit_with(
     kind: str | None = None,
     table_columns: Sequence[str] | None = None,
     tree: TreeGraph | Sequence[TreeGraph] | None = None,
+    spread_keys: Sequence[str] | None = None,
 ) -> None:
     """:func:`emit` rendering a ``table`` or ``tree`` through ``ui`` (``None``: the active theme).
 
     For root commands that must render even when the settings are broken.
+    ``spread_keys`` are the ``Spread`` keys the command named, which are the
+    columns ``--columns`` picks among (``None``: the keys the rows have).
     """
     _emit(
         records,
@@ -863,6 +868,7 @@ def emit_with(
         kind=kind,
         table_columns=table_columns,
         tree=tree,
+        spread_keys=spread_keys,
     )
 
 
@@ -876,6 +882,7 @@ def _emit(
     kind: str | None,
     table_columns: Sequence[str] | None,
     tree: TreeGraph | Sequence[TreeGraph] | None,
+    spread_keys: Sequence[str] | None = None,
 ) -> None:
     _validate_kind(kind)
     single = isinstance(records, BaseModel | Mapping)
@@ -894,8 +901,18 @@ def _emit(
     if table_columns is None and not single:
         table_columns = _record_table_columns(items)
     schema = _model_schema(records)
+    rows = [_as_row(item) for item in items]
+    if fmt == "table":
+        from untaped.sdk.fields import table_rows  # noqa: PLC0415 - fields import this module
+
+        rows, table_columns, spread = table_rows(items, rows, table_columns)
+        # the keys a command named are its columns (a key no row has is an empty
+        # cell); without them, the keys the rows have
+        named = spread if spread_keys is None else spread_keys
+        if schema is not None and named:
+            schema = [*schema, *(key for key in dict.fromkeys(named) if key not in schema)]
     rendered = _render(
-        [_as_row(item) for item in items],
+        rows,
         single=single,
         fmt=fmt,
         columns=columns,

@@ -1,0 +1,213 @@
+"""End-to-end CLI tests for ``untaped github repos``."""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+import respx
+
+from github_test_support import Result, run
+from untaped.sdk.testing import progress_clock
+
+
+def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict[str, object]:
+    return {
+        "full_name": full_name,
+        "name": full_name.rsplit("/", 1)[1],
+        "html_url": f"https://github.com/{full_name}",
+        "url": f"https://api.github.com/repos/{full_name}",
+        "clone_url": f"https://github.com/{full_name}.git",
+        "ssh_url": f"git@github.com:{full_name}.git",
+        "default_branch": "main",
+        "archived": archived,
+        "fork": fork,
+    }
+
+
+LISTINGS = {
+    "/orgs/acme/repos": [
+        _repo("acme/zeta"),
+        _repo("acme/play-api"),
+        _repo("acme/play-old", archived=True),
+        _repo("acme/play-fork", fork=True),
+    ],
+    "/orgs/acme/teams/backend/repos": [_repo("acme/play-team")],
+    "/orgs/platform/teams/ops/repos": [_repo("platform/play-role"), _repo("acme/play-api")],
+}
+
+
+def _list(*args: str) -> Result:
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        for path, repos in LISTINGS.items():
+            mock.get(path).mock(return_value=httpx.Response(200, json=repos))
+        return run(["repos", "list", *args, "--format", "raw", "-c", "full_name"])
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (
+            [
+                "play*",
+                "--org",
+                "acme",
+                "--team",
+                "platform/ops",
+                "--archived",
+                "exclude",
+                "--fork",
+                "exclude",
+            ],
+            ["acme/play-api", "platform/play-role"],
+        ),
+        (["play*", "--team", "acme/backend"], ["acme/play-team"]),
+        # A bare team with exactly one --org adds that team's repos to the org's.
+        (
+            [
+                "play*",
+                "--org",
+                "acme",
+                "--team",
+                "backend",
+                "--fork",
+                "exclude",
+                "--archived",
+                "include",
+            ],
+            ["acme/play-api", "acme/play-old", "acme/play-team"],
+        ),
+        (["--org", "acme", "--limit", "2"], ["acme/play-api", "acme/play-fork"]),
+    ],
+    ids=["scopes-and-filters", "qualified-team", "bare-team-is-additive", "limit-after-sort"],
+)
+def test_repos_list_combines_scopes_and_filters_into_sorted_rows(
+    args: list[str], expected: list[str]
+) -> None:
+    result = _list(*args)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == expected
+
+
+def test_repos_list_reports_progress_while_it_waits() -> None:
+    with (
+        progress_clock() as clock,
+        respx.mock(base_url="https://api.github.com") as mock,
+    ):
+
+        def slow(request: httpx.Request) -> httpx.Response:
+            clock.advance(2)  # a slow listing passes the quiet period
+            return httpx.Response(200, json=LISTINGS["/orgs/acme/repos"])
+
+        mock.get("/orgs/acme/repos").mock(side_effect=slow)
+        result = run(["repos", "list", "--org", "acme", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert "Listing repositories" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("archived", "expected"),
+    [
+        ([], ["acme/play-api", "acme/play-fork", "acme/zeta"]),
+        (["--archived", "exclude"], ["acme/play-api", "acme/play-fork", "acme/zeta"]),
+        (
+            ["--archived", "include"],
+            ["acme/play-api", "acme/play-fork", "acme/play-old", "acme/zeta"],
+        ),
+        (["--archived", "only"], ["acme/play-old"]),
+    ],
+    ids=["default-excludes", "exclude", "include", "only"],
+)
+def test_repos_list_archived_is_include_exclude_or_only(
+    archived: list[str], expected: list[str]
+) -> None:
+    result = _list("--org", "acme", *archived)
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == expected
+
+
+def test_repos_list_limit_prints_a_truncation_notice_on_stderr() -> None:
+    truncated = _list("--org", "acme", "--limit", "2")
+    complete = _list("--org", "acme", "--limit", "3")
+
+    assert truncated.stdout.splitlines() == ["acme/play-api", "acme/play-fork"]
+    assert "showing 2 of 3 repositories; omit --limit to list all" in truncated.stderr
+    assert "showing" not in complete.stderr
+
+
+@pytest.mark.usefixtures("default_org")
+def test_repos_list_falls_back_to_github_default_org() -> None:
+    unscoped = _list("play*")
+    team_only = _list("play*", "--team", "acme/backend")
+
+    assert unscoped.stdout.splitlines() == ["acme/play-api", "acme/play-fork"]
+    # Any explicit scope replaces the default org rather than adding to it.
+    assert team_only.stdout.splitlines() == ["acme/play-team"]
+
+
+def test_repos_list_pipe_record_carries_kind_urls_and_full_name() -> None:
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[_repo("acme/a")]))
+        result = run(["repos", "list", "--org", "acme", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
+    record = envelope["record"]
+    assert (envelope["untaped"], envelope["kind"]) == ("1", "github.repo")
+    assert (record["full_name"], record["name"]) == ("acme/a", "a")
+    assert record["html_url"] == "https://github.com/acme/a"
+    assert record["clone_url"] == "https://github.com/acme/a.git"
+    assert record["ssh_url"] == "git@github.com:acme/a.git"
+    # GitHub's API link never stands in for the web URL, and the old ``repo`` alias is gone.
+    assert not {"url", "repo"} & set(record)
+
+
+def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
+    listed = [{**_repo("acme/a"), "pushed_at": "2026-07-01T00:00:00Z", "description": "API"}]
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
+        table = run(["repos", "list", "--org", "acme"])
+        listing = run(["repos", "list", "--org", "acme", "--columns", "?"])
+        as_json = run(["repos", "list", "--org", "acme", "-f", "json"])
+
+    assert table.exit_code == listing.exit_code == 0, table.output + listing.output
+    assert "acme/a" in table.stdout
+    assert "ssh_url" not in table.stdout
+    assert "html_url" not in table.stdout
+    starred = {line.split()[0] for line in listing.stderr.splitlines() if line.endswith(" *")}
+    assert starred == {"full_name", "default_branch", "private", "pushed_at", "description"}
+    [row] = json.loads(as_json.stdout)
+    assert row["pushed_at"] == "2026-07-01T00:00:00Z"
+    assert row["description"] == "API"
+
+
+@pytest.mark.parametrize(
+    ("args", "messages"),
+    [
+        (["play*"], ["requires --org or --team", "github.default_org"]),
+        (["--org", "acme", "--regex"], ["--regex requires PATTERN"]),
+        (["[", "--org", "acme", "--regex"], ["invalid regular expression"]),
+        (["--team", "backend"], ["ORG/SLUG"]),
+        (["--team", "acme/backend/extra"], ["ORG/SLUG unless exactly one --org"]),
+        (["--team", "/backend"], ["ORG/SLUG unless exactly one --org"]),
+        (["--team", "acme/"], ["ORG/SLUG unless exactly one --org"]),
+        (["--org", "acme", "--org", "platform", "--team", "backend"], ["exactly one --org"]),
+    ],
+)
+def test_repos_list_usage_errors_exit_2(args: list[str], messages: list[str]) -> None:
+    result = run(["repos", "list", *args])
+
+    assert result.exit_code == 2
+    assert all(message in result.output for message in messages)
+
+
+def test_repos_list_help_documents_pattern_targeting() -> None:
+    result = run(["repos", "list", "--help"])
+
+    assert result.exit_code == 0, result.output
+    for phrase in ("glob", "owner/name", "unanchored", "additive", "exactly one --org", "--regex"):
+        assert phrase in result.output

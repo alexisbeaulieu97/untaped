@@ -100,9 +100,9 @@ class Spread(Command[ToolSettings]):
 
 
 class Page(Command):
-    """Print how many results at most, fifty unless asked."""
+    """Print how many results at most, fifty unless asked, a hundred at most."""
 
-    limit: Limit = Limit(default=50)
+    limit: Limit = Limit(default=50, cap=100)
 
     def run(self) -> str:
         return str(self.limit.value)
@@ -286,6 +286,17 @@ def test_a_limit_a_command_sets_is_its_default_in_help_and_on_the_surface() -> N
     lines = {line.text for line in plugin_lines(TOOL)}
     assert "cli untaped tool page --limit VALUE default=50" in lines
     assert "cli untaped tool work --limit VALUE default=unset" in lines
+
+
+def test_a_limit_above_its_cap_is_clamped_and_help_says_the_cap() -> None:
+    capped = _run("tool", "page", "--limit", "500")
+    shown = " ".join(_run("tool", "page", "--help").stdout.replace("│", " ").split())
+
+    assert capped.exit_code == 0, capped.stderr
+    assert capped.stdout.strip() == "100"
+    assert capped.stderr.count("--limit 500 clamped to 100 (this command's cap)") == 1
+    assert "Return at most this many results, up to 100." in shown
+    assert "up to" not in " ".join(_run("tool", "work", "--help").stdout.split())
 
 
 @pytest.mark.parametrize(("flag", "repeated"), [("--suite", False), ("--more", True)])

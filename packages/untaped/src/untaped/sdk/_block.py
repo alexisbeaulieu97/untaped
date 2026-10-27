@@ -284,6 +284,10 @@ class FieldBlock:
         del option
         return None
 
+    def _option_help(self, option: FieldOption) -> str:
+        """The help this instance shows for ``option`` (a cap it states); its own by default."""
+        return option.help
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Self:
         """This field for one invocation, from its flags (``{"--format": "json"}``).
 

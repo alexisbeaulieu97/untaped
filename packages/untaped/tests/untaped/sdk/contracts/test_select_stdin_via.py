@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import target_of
 from untaped.sdk import Command, Key, Output, Plugin, Positional, Stdin, experimental, key
-from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record, gather
+from untaped.sdk._pipe import PipeEnvelope
+from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record, convert, gather
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -174,6 +175,15 @@ def test_a_provider_row_is_read_through_its_bridge(install: Installer) -> None:
         "record": {"shelf_mark": "A1", "name": "Dune"},
     }
     assert "source" not in rows[1] or rows[1]["source"] is None
+
+
+def test_convert_reads_a_provider_row_whose_kind_composition_named(install: Installer) -> None:
+    """A provider's record names no ``kind=``: ``convert`` finds its model by the composed kind."""
+    envelope = PipeEnvelope(kind=LOAN, record={"shelf_mark": "A1", "name": "Dune"}, lineno=1)
+    with _counter(install).running():
+        card = convert(Cards.to_card, envelope)
+    assert card.title == "Dune (north)"
+    assert card.source is not None and card.source.kind == LOAN
 
 
 def test_a_row_stdin_r_takes_reads_without_the_bridge(install: Installer) -> None:

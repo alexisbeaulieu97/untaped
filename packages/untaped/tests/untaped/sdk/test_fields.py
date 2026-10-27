@@ -429,3 +429,16 @@ def test_unfilled_refresh_parallel_and_limit_read_their_defaults() -> None:
     with pytest.raises(UsageError, match="--limit: must be at least 1"):
         Limit()._fill({"--limit": 0}, _call(Limit))
     assert (Limit().value, Limit(default=5).value) == (None, 5)
+    assert Limit(default=5, cap=9)._fill({"--limit": 9}, _call(Limit)).value == 9
+
+
+@pytest.mark.parametrize(
+    "knobs",
+    [{"default": 0}, {"cap": 0}, {"default": 10, "cap": 9}, {"cap": True}],
+    ids=["default-0", "cap-0", "default-over-cap", "boolean"],
+)
+def test_a_limit_s_default_and_cap_are_numbers_the_default_within_the_cap(
+    knobs: dict[str, int],
+) -> None:
+    with pytest.raises(ValueError, match="Limit's"):
+        Limit(**knobs)

@@ -101,8 +101,6 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 |---|---|---|---|---|
 | `github.server.url` | URL | `https://api.github.com/` | `UNTAPED_GITHUB__SERVER__URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
 | `github.server.verify_tls` | boolean or path | `true` | `UNTAPED_GITHUB__SERVER__VERIFY_TLS` | Check the server's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
-| `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Deprecated: removed in untaped-github 12.0; use `untaped auth login github`. |
-| `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token. Deprecated: removed in untaped-github 12.0; use `untaped auth login github`. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
@@ -175,13 +173,15 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.index.max_age_seconds |
 | `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | renamed |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
-| `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | renamed |
-| `github.sweep.max_age_seconds` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `github.caches.sweep.max_age_seconds` | renamed |
+| `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
 | `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
+| `github.sweep.max_age_seconds` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | none | deleted in 12.0; use github.caches.sweep.max_age_seconds |
+| `github.token` | `UNTAPED_GITHUB__TOKEN` | none | deleted in 12.0; store the token with `untaped auth login github` |
+| `github.token_command` | `UNTAPED_GITHUB__TOKEN_COMMAND` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
 | `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
 | `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |

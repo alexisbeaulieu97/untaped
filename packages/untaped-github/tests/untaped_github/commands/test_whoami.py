@@ -1,0 +1,118 @@
+"""End-to-end CLI tests for ``untaped github whoami`` and token errors."""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+import pytest
+import respx
+
+from github_test_support import Result, run
+
+
+def _whoami(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    *,
+    theme: str | None = None,
+    response: httpx.Response | None = None,
+) -> Result:
+    if theme is not None:
+        monkeypatch.setenv("UNTAPED_UNTAPED__UI__THEME", theme)
+    reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/user").mock(return_value=reply)
+        return run(["whoami", *args])
+
+
+def test_whoami_renders_one_user_record_per_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw = _whoami(monkeypatch, ["--format", "raw"])
+    as_json = _whoami(monkeypatch, ["--format", "json"])
+    pipe = _whoami(monkeypatch, ["--format", "pipe"])
+    table = _whoami(monkeypatch, ["--format", "table"])
+
+    assert raw.stdout.strip() == "octocat"
+    # A single entity is a bare JSON object and a vertical detail view.
+    assert json.loads(as_json.stdout) == {"login": "octocat", "id": 1, "name": None, "email": None}
+    envelope = json.loads(pipe.stdout.splitlines()[0])
+    assert (envelope["kind"], envelope["record"]["login"]) == ("github.user", "octocat")
+    assert "login: octocat" in table.stdout
+    assert "│" not in table.stdout
+
+
+def test_whoami_raw_ignores_invalid_ui_theme(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(monkeypatch, ["--format", "raw"], theme="missing")
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "octocat"
+    assert "unknown UI theme" not in result.output
+
+
+@pytest.mark.parametrize("token", [None, "   "])
+def test_whoami_without_a_token_fails_naming_it(
+    monkeypatch: pytest.MonkeyPatch, token: str | None
+) -> None:
+    if token is None:
+        monkeypatch.delenv("GH_TOKEN")
+    else:
+        monkeypatch.setenv("GH_TOKEN", token)
+    result = _whoami(monkeypatch, [])
+
+    assert result.exit_code == 4  # local setup needs fixing
+    assert "token" in result.stderr
+
+
+def test_whoami_rejected_token_hints_at_setting_a_new_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"}))
+
+    assert result.exit_code == 4
+    assert result.stderr.endswith(
+        "error: GitHub rejected the configured token (HTTP 401)\n"
+        "hint (your step): run `untaped auth login github`\n"
+    )
+
+
+def test_rejected_token_is_an_auth_diagnostic_under_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    result = _whoami(monkeypatch, [], response=httpx.Response(401, json={"message": "Bad"}))
+
+    assert result.exit_code == 4
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert (record["category"], record["system"]) == ("auth", "github")
+    assert record["message"] == "GitHub rejected the configured token (HTTP 401)"
+    assert record["hint"] == "run `untaped auth login github`"
+    assert record["details"]["status"] == 401
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(429, json={"message": "Too many requests"}),
+        httpx.Response(403, json={"message": "API rate limit exceeded for user ID 1."}),
+    ],
+)
+@pytest.mark.usefixtures("clock")  # the back-off waits on it
+def test_rate_limit_is_retryable_and_exits_five(
+    monkeypatch: pytest.MonkeyPatch, response: httpx.Response
+) -> None:
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    result = _whoami(monkeypatch, [], response=response)
+
+    assert result.exit_code == 5, result.output
+    record = json.loads(result.stderr.splitlines()[-1])
+    assert (record["category"], record["system"], record["retryable"]) == (
+        "unavailable",
+        "github",
+        True,
+    )
+
+
+def test_forbidden_is_a_permission_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _whoami(
+        monkeypatch,
+        [],
+        response=httpx.Response(403, json={"message": "Resource not accessible"}),
+    )
+
+    assert result.exit_code == 4, result.output

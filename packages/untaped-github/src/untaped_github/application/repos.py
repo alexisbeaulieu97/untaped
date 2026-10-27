@@ -13,7 +13,7 @@ from untaped_github.application.ports import GithubRepositoryInventoryService
 from untaped_github.application.scopes import TeamScope
 from untaped_github.domain import ArchivedMode, archived_allows
 from untaped_github.domain.repo_filters import compile_repo_pattern
-from untaped_github.records import GithubRepo
+from untaped_github.records import Repo
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class ListRepos:
         *,
         orgs: tuple[str, ...] = (),
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[GithubRepo]:
+    ) -> Iterator[Repo]:
         rows = ResolveRepositoryInventory(self._repos)(
             RepositoryInventoryScope(orgs=orgs, teams=team_scopes)
         )
@@ -50,10 +50,10 @@ class ListRepos:
 
 
 def _matches(
-    row: GithubRepo,
+    row: Repo,
     *,
     filters: RepoListFilters,
-    matcher: Callable[[GithubRepo], bool] | None,
+    matcher: Callable[[Repo], bool] | None,
 ) -> bool:
     if not archived_allows(filters.archived, row.archived):
         return False
@@ -62,7 +62,7 @@ def _matches(
     return matcher(row) if matcher is not None else True
 
 
-def _compile_matcher(filters: RepoListFilters) -> Callable[[GithubRepo], bool] | None:
+def _compile_matcher(filters: RepoListFilters) -> Callable[[Repo], bool] | None:
     pattern = filters.pattern
     if not pattern:
         return None

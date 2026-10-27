@@ -21,8 +21,6 @@ _CONFIG = """\
 format_version: 2
 awx:
   base_url: https://aap.example.com
-github:
-  token: ghp_test
 jira:
   server: {url: https://jira.example.com}
 """
@@ -30,8 +28,9 @@ jira:
 
 @pytest.fixture(autouse=True)
 def _tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    """awx's and jira's tokens: a credential reads no config setting."""
+    """The tokens: a credential reads no config setting."""
     monkeypatch.setenv("UNTAPED_AWX__TOKEN", "awx-token")
+    monkeypatch.setenv("GH_TOKEN", "ghp_test")
     monkeypatch.setenv("UNTAPED_JIRA__TOKEN", "jira-token")
 
 

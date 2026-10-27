@@ -154,8 +154,14 @@ def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
     a 12.0 command declares ``Stdin(via=bridge)`` and reads the same rows
     with :meth:`~untaped.sdk.Stdin.values` (:data:`CONVERT`).
     """
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the SDK
+
     kind = envelope.kind
-    return bridged(bridge, envelope, None if kind is None else record_model(kind))
+    run = run_or_none()
+    given = None if kind is None else record_model(kind)
+    if given is None and kind is not None and run is not None:
+        given = run.composition.model_of(kind)  # a plugin class's kind
+    return bridged(bridge, envelope, given)
 
 
 def bridged[R](

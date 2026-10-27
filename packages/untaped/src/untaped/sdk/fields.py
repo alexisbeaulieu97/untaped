@@ -23,6 +23,7 @@ import copy
 import json
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
@@ -84,6 +85,30 @@ Key = Mark("Key")
 
 Following = Mark("Following")
 """A list-of-models field a table prints as a second table after the first."""
+
+Bytes = Mark("Bytes")
+"""An ``int`` count of bytes a table shows in words (``1.5 KiB``): ``Annotated[int, Bytes]``.
+
+Only the table changes: json, yaml, raw and pipe keep the number.
+"""
+
+Age = Mark("Age")
+"""A ``datetime`` a table shows as how long ago it was (``3 h ago``), by the run's clock.
+
+Only the table changes: json, yaml, raw and pipe keep the timestamp.
+"""
+
+Spread = Mark("Spread")
+"""A ``dict[str, scalar]`` field a table shows as one column per key, named by the key.
+
+``--columns KEY`` picks one in a table; where the field is a default column its
+keys are. The command names its keys as columns once it is built (a model
+validator calling ``self.output.columns.add(...)``, or ``.offer(...)`` for a key
+hidden by default), so ``--columns`` is checked before ``run``; a named key a
+row lacks is an empty cell, and a key it did not name shows by default but is
+not a column ``--columns`` picks. Only the table changes: json, yaml, raw and
+pipe keep the mapping.
+"""
 
 Written = Mark("Written")
 """A ``File[M]`` option the command writes rather than reads: the model's "Starter" line."""
@@ -450,10 +475,40 @@ class Output[R: BaseModel](FieldBlock):
         if filled.format in self.render and filled.format != "table":
             if filled._requested is not None:
                 raise UsageError(f"--columns does not apply to --format {filled.format}")
-        elif model is not None:
+        elif model is not None and not (filled.format == "table" and spreads(model)):
+            # a ``Spread`` field's keys are columns the command names: checked once it is built
             fmt = cast("OutputFormat", filled.format)
             check_columns(model, columns=filled._requested, fmt=fmt)
         return filled
+
+    def _check_named(self) -> None:
+        """Refuse a ``--columns`` name a ``Spread`` table neither has nor was given, before ``run``.
+
+        The command names its ``Spread`` keys as columns when it is built (a
+        validator calling ``self.output.columns.add("grep:x")`` or ``.offer``),
+        so they count as ``R``'s fields; a key no row then has is an empty cell.
+        """
+        from untaped.sdk._cli import _check_columns, _column_names, _model_fields  # noqa: PLC0415
+
+        model = self._model
+        requested = self._requested
+        if model is None or self.format != "table" or not spreads(model):
+            return
+        if requested is None or requested == ["?"]:
+            return
+        schema = [*_model_fields(model), *(self._spread_keys() or ())]
+        names = [name.lstrip("+-") for name in _column_names(requested)]
+        _check_columns(names, [], fmt="table", schema=schema, strict=True)
+
+    def _spread_keys(self) -> list[str] | None:
+        """The ``Spread`` keys the command named: its columns and offers past ``R``'s fields."""
+        if self._model is None or not spreads(self._model):
+            return None
+        from untaped.sdk._cli import _model_fields  # noqa: PLC0415 - rendering is heavy
+
+        known = set(_model_fields(self._model))
+        named = dict.fromkeys([*self.columns, *self.columns.offered])
+        return [name for name in named if name not in known]
 
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
@@ -504,6 +559,7 @@ class Output[R: BaseModel](FieldBlock):
             empty=self._empty,
             kind=kind,
             table_columns=table_columns,
+            spread_keys=self._spread_keys(),
         )
         for name, item in following.items():
             words = name.replace("_", " ")
@@ -532,9 +588,72 @@ def _named(row: BaseModel, number: int) -> str:
 class Columns(list[str]):
     """A command's default table columns for one run: ``self.output.columns.add("url")``."""
 
+    def __init__(self, names: Iterable[str] = ()) -> None:
+        super().__init__(names)
+        #: ``Spread`` keys ``--columns`` may pick that the table hides by default.
+        self.offered: list[str] = []
+
     def add(self, *names: str) -> None:
         """Show ``names`` too, after the columns already shown."""
         self.extend(name for name in names if name not in self)
+
+    def offer(self, *names: str) -> None:
+        """Let ``--columns`` pick the ``Spread`` keys ``names`` without showing them by default."""
+        self.offered.extend(name for name in names if name not in self.offered)
+
+
+def table_rows(
+    records: Sequence[BaseModel | Mapping[str, object]],
+    rows: list[dict[str, object]],
+    columns: Sequence[str] | None,
+) -> tuple[list[dict[str, object]], list[str] | None, list[str]]:
+    """``rows`` as a table shows them, its default ``columns``, and the keys ``Spread`` added.
+
+    A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
+    ago it was by :func:`untaped.sdk.now`'s clock, and a ``Spread`` field gives
+    way to a column per key (a key a row already has keeps the row's value).
+    """
+    from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
+    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
+    from untaped.sdk.words import ago_text, size_text  # noqa: PLC0415
+
+    now = run_clock().now()
+    spread_keys: dict[str, dict[str, None]] = {}
+    shown: list[dict[str, object]] = []
+    for record, row in zip(records, rows, strict=True):
+        if not isinstance(record, BaseModel):
+            shown.append(row)
+            continue
+        fields = {
+            dumped: (name, _marks(type(record).model_fields[name]))
+            for name, dumped in dumped_names(type(record)).items()
+        }
+        out: dict[str, object] = {}
+        for dumped, cell in row.items():  # the dump's order is the table's
+            name, marks = fields.get(dumped, (None, []))
+            value = getattr(record, name) if name is not None else cell
+            if Spread in marks and isinstance(value, Mapping):
+                keys = spread_keys.setdefault(dumped, {})
+                for key, item in value.items():
+                    keys[str(key)] = None
+                    if str(key) not in row:
+                        out[str(key)] = item
+            elif Bytes in marks and isinstance(value, int):
+                out[dumped] = size_text(value)
+            elif Age in marks and isinstance(value, datetime):
+                out[dumped] = ago_text(value, now)
+            else:
+                out[dumped] = cell
+        shown.append(out)
+    if columns is not None and spread_keys:
+        columns = [key for name in columns for key in (spread_keys.get(name) or [name])]
+    added = [key for keys in spread_keys.values() for key in keys]
+    return shown, None if columns is None else list(columns), added
+
+
+def spreads(model: type[BaseModel]) -> bool:
+    """Whether ``model`` has a ``Spread`` field, whose keys a run names as columns."""
+    return any(Spread in _marks(info) for info in model.model_fields.values())
 
 
 def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
@@ -1065,29 +1184,62 @@ class Parallel(FieldBlock):
 
 
 class Limit(FieldBlock):
-    """``--limit N``: return at most this many results (unset: no limit)."""
+    """``--limit N``: return at most this many results (unset: no limit).
+
+    ``cap`` is the most a command can return (``Limit(default=30, cap=1000)``):
+    a larger ``--limit`` is clamped with a warning, and help says the cap.
+    """
 
     field_kind = "limit"
     options = (FieldOption("--limit", "int", "Return at most this many results."),)
 
-    def __init__(self, *, default: int | None = None) -> None:
+    def __init__(self, *, default: int | None = None, cap: int | None = None) -> None:
+        if isinstance(default, bool) or isinstance(cap, bool):
+            raise ValueError("Limit's default and cap are numbers, not booleans")
+        if default is not None and default < 1:
+            raise ValueError("Limit's default is at least 1")
+        if cap is not None and cap < 1:
+            raise ValueError("Limit's cap is at least 1")
+        if default is not None and cap is not None and default > cap:
+            raise ValueError("Limit's default is at most its cap")
         self.default = default
-        self._value = default
+        self.cap = cap
+        self._requested: int | None = None
+        self._clamped = False
 
     @property
     def value(self) -> int | None:
-        """At most this many results; ``None`` is no limit."""
-        return self._value
+        """At most this many results; ``None`` is no limit.
+
+        A ``--limit`` above ``cap`` is the cap, with a warning once per
+        invocation.
+        """
+        if self._requested is None:
+            return self.default
+        if self.cap is None or self._requested <= self.cap:
+            return self._requested
+        if not self._clamped:
+            from untaped.sdk._run import current_run  # noqa: PLC0415 - only a clamp pays
+
+            current_run().diag.warning(
+                f"--limit {self._requested} clamped to {self.cap} (this command's cap)"
+            )
+            self._clamped = True
+        return self.cap
 
     def _option_default(self, option: FieldOption) -> str | int | None:
         return self.default if option.flag == "--limit" else None
 
+    def _option_help(self, option: FieldOption) -> str:
+        if self.cap is None or option.flag != "--limit":
+            return option.help
+        return f"{option.help.removesuffix('.')}, up to {self.cap}."
+
     def _fill(self, flags: Mapping[str, object], call: Invocation) -> Limit:
         """A copy for one invocation, from ``--limit``; below 1 is a usage error."""
         del call
-        requested = _count(flags, "--limit")
         filled = _copy(self)
-        filled._value = self.default if requested is None else requested
+        filled._requested, filled._clamped = _count(flags, "--limit"), False
         return filled
 
 

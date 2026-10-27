@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping
 from datetime import timedelta
-from typing import Annotated, Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from untaped.sdk import (  # type: ignore[deprecated]
-    Cache,
-    Credential,
-    CredentialKey,
-    Renamed,
-    Retired,
-    Suggest,
-    TlsVerify,
-    TokenCommand,
-    TokenSources,
-    deprecated,
-    deprecated_behaviour,
-)
+from untaped.sdk import Cache, Credential, CredentialKey, Retired, Suggest, TlsVerify
 
 #: The GitHub CLI's token variables, in its order.
 _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
@@ -29,29 +16,11 @@ _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
 #: github's default API URL: github.com's.
 DEFAULT_URL = "https://api.github.com"
 
-#: ``GithubSettings(base_url=...)`` and ``.base_url``, 11.0's spelling of ``server.url``.
-BASE_URL_ALIAS = deprecated_behaviour(
-    "base-url-alias", removed_in=12, replacement="GithubSettings.server.url"
-)
-
-with warnings.catch_warnings(action="ignore", category=DeprecationWarning):
-    # 11.0 api surface, deprecated with TokenSources; GH names the variables now.
-    _TOKEN_SOURCES = TokenSources(env=_TOKEN_ENV)
-
-
 #: Each repo's stored copy the sweep and ``cache sync`` read, keyed by its store repo's
 #: path. Its data is the store repo and its ``untaped-github.json``, shared by every
-#: profile; the cache keeps when each copy was last checked. Setting:
-#: ``github.caches.sweep.max_age_seconds``.
-SWEEP = Cache(
-    "github",
-    "sweep",
-    label="repo data",
-    max_age=timedelta(hours=1),
-    renamed_from=("sweep.max_age_seconds",),
-    removed_in=12,
-    split="none",
-)
+#: profile; the cache keeps when each copy was last checked. The plugin class holds
+#: it as ``sweep``; setting: ``github.caches.sweep.max_age_seconds``.
+SWEEP = Cache(label="repo data", max_age=timedelta(hours=1), split="none")
 
 
 class SweepSettings(BaseModel):
@@ -87,6 +56,8 @@ class InventorySettings(BaseModel):
     )
 
 
+_TOKEN_NOTE = "deleted in 12.0; store the token with `untaped auth login github`"
+
 _INVENTORY_NOTE = (
     "deleted in 11.0; workspace keeps the repos github lists for "
     "workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default "
@@ -113,12 +84,14 @@ class GithubServer(CredentialKey):
 class GithubSettings(BaseModel):
     """GitHub API settings."""
 
-    # 11.0 api surface until 12.0; GH declares the variables.
-    token_sources: ClassVar[TokenSources] = _TOKEN_SOURCES
-    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
-        "base_url": Renamed("server.url", removed_in=12)
-    }
+    #: Gone: read only to name a successor or say what to do instead.
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
+        "base_url": "server.url",
+        "token": Retired(note=_TOKEN_NOTE),
+        "token_command": Retired(note=_TOKEN_NOTE),
+        "sweep.max_age_seconds": Retired(
+            note="deleted in 12.0; use github.caches.sweep.max_age_seconds"
+        ),
         "corpus_path": "cache_dir",
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
         "sweep.sync_concurrency": "sweep.parallel",
@@ -134,22 +107,6 @@ class GithubSettings(BaseModel):
             "The GitHub API: its `url` and `verify_tls`. Its token is stored with "
             "`untaped auth login github`."
         ),
-    )
-    # 11.0 api surface until 12.0: 11.0's fallbacks still fill `token` from
-    # `token_command` and GH's variables; a stored login is read with `GH`.
-    token: Annotated[
-        SecretStr | None,
-        deprecated(removed_in=12, replacement="untaped auth login github"),
-    ] = Field(
-        default=None,
-        description=("GitHub token for API calls and Git fetches."),
-    )
-    token_command: Annotated[
-        TokenCommand,
-        deprecated(removed_in=12, replacement="untaped auth login github"),
-    ] = Field(
-        default=None,
-        description="Command (argv list, no shell) that prints the token.",
     )
     default_org: str | None = Field(
         default=None,
@@ -170,30 +127,10 @@ class GithubSettings(BaseModel):
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _base_url_keyword(cls, data: Any) -> Any:
-        """``GithubSettings(base_url=...)``, 11.0's spelling, read as ``server.url``."""
-        if not isinstance(data, dict) or "base_url" not in data:
-            return data
-        BASE_URL_ALIAS.warn("GithubSettings(base_url=...)", stacklevel=4)
-        data = dict(data)
-        url = data.pop("base_url")
-        server = data.get("server")
-        server = dict(server) if isinstance(server, Mapping) else {}
-        server.setdefault("url", url)
-        return {**data, "server": server}
-
     @property
     def api_url(self) -> str:
         """The API URL as text, without the trailing slash of a bare host."""
         return api_text(self.server.url)
-
-    @property
-    def base_url(self) -> str:
-        """11.0's name for :attr:`api_url` (:data:`BASE_URL_ALIAS`)."""
-        BASE_URL_ALIAS.warn("GithubSettings.base_url", stacklevel=3)
-        return self.api_url
 
 
 def api_text(url: HttpUrl) -> str:
@@ -203,10 +140,9 @@ def api_text(url: HttpUrl) -> str:
 
 
 #: The token for the GitHub API and its Git host, filed per server by
-#: ``untaped auth login github``; ``gh``'s variables are tried last.
-GH = Credential(
-    "github",
-    "token",
+#: ``untaped auth login github``; ``gh``'s variables are tried last. The plugin
+#: class holds it as ``token``.
+TOKEN = Credential(
     key=GithubServer,
     env=_TOKEN_ENV,
     suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),

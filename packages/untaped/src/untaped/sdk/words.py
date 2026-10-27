@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 _ROOT_COMMAND = "untaped"
@@ -198,6 +199,12 @@ def duration_text(seconds: float) -> str:
     return f"{whole} s"
 
 
+def ago_text(at: datetime, now: datetime) -> str:
+    """How long before ``now`` ``at`` was: ``3 h ago``; a naive ``at`` is UTC."""
+    aware = at if at.tzinfo else at.replace(tzinfo=UTC)
+    return f"{duration_text((now - aware).total_seconds())} ago"
+
+
 def summary(operation: str, counts: Mapping[str, int]) -> str:
     """A batch summary line: ``<operation>: 2 cloned, 1 failed``.
 
@@ -210,6 +217,7 @@ def summary(operation: str, counts: Mapping[str, int]) -> str:
 
 __all__ = [
     "EXPERIMENTAL_LINE",
+    "ago_text",
     "command_argv",
     "command_line",
     "deprecated_ignored_message",

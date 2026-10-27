@@ -408,7 +408,7 @@ def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
 def build_app(mount: Mount, name: str) -> App:
     """The Cyclopts app of plugin ``name``: its groups and commands, from the declaration."""
     plugin = mount.declaration.plugin(name)
-    app = App(name=name, help=plugin.doc)
+    app = App(name=name, help=_node_help(plugin.doc, plugin.runs))
     add_commands(app, mount, name)
     if plugin.runs is not None:
         app.default(_command(mount, plugin.runs))
@@ -423,7 +423,7 @@ def add_commands(app: App, mount: Mount, name: str) -> None:
 def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> None:
     for node in nodes:
         if isinstance(node, GroupDecl):
-            sub = App(name=node.name, help=node.doc)
+            sub = App(name=node.name, help=_node_help(node.doc, node.runs))
             mark = _mark(node.stability)
             if mark is not None:
                 mark_app(sub, mark, source="own")
@@ -435,6 +435,15 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
         app.command(_command(mount, node), name=node.name, help=node.doc)
         for alias in node.aliases:
             deprecated_alias(app, alias.name, node.name, removed_in=alias.removed_in)
+
+
+def _node_help(doc: str, runs: CommandDecl | None) -> str:
+    """A node's help: its own words, then those of the command it runs.
+
+    The node's first line is what its parent's command list shows; its page
+    goes on with the runner's summary, body and examples.
+    """
+    return doc if runs is None or not runs.doc else f"{doc}\n\n{runs.doc}"
 
 
 _TOKENS: Mapping[str, type] = {"str": str, "int": int, "float": float, "bool": bool}
@@ -688,6 +697,8 @@ def run_built(
 def _ran(mount: Mount, decl: CommandDecl, command: Command[Any]) -> Printed:
     """Run ``command`` under the current run, print what it returns, and say what it printed."""
     printed = Printed(decl=decl, format=_format_of(decl, command))
+    if printed.format is not None:
+        _output(decl, command)._check_named()
     watching_now = _WATCHING.get()
     if watching_now is not None:
         watching_now.append(printed)
@@ -745,7 +756,11 @@ def _refill(
         else:
             values[part] = _refill(mount, decl, _bundle_model(info.annotation), node)
     if isinstance(holder, BaseModel):
-        return holder.model_copy(update=values)
+        # validated again, so a validator reading a core field (a command naming its
+        # columns) sees the filled one, as a parsed command's does
+        kept = {name: getattr(holder, name) for name in cls.model_fields}
+        given = {**kept, **values}
+        return cls.model_validate({_keys(cls, name)[0]: v for name, v in given.items()})
     try:
         return holder.model_validate({_keys(holder, part)[0]: v for part, v in values.items()})
     except ValidationError as exc:

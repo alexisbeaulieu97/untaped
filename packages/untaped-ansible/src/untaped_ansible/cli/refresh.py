@@ -19,7 +19,6 @@ from untaped.sdk import (
     NO_PROGRESS,
     Diagnostics,
     Failure,
-    HttpSettings,
     ProgressHandle,
     Served,
     UntapedError,
@@ -81,7 +80,6 @@ class RefreshWiring:
     aliases: dict[str, str]
     settings: AnsibleSettings
     github_settings: GithubSettings
-    http: HttpSettings
     concurrency: int
     backend: Backend | None = None
 
@@ -171,7 +169,6 @@ def _filler(
             aliases=wiring.aliases,
             settings=wiring.settings,
             github_settings=wiring.github_settings,
-            http=wiring.http,
             concurrency=wiring.concurrency,
             backend=wiring.backend,
             progress=progress,
@@ -278,7 +275,6 @@ def refresh_source(
     aliases: dict[str, str],
     settings: AnsibleSettings,
     github_settings: GithubSettings,
-    http: HttpSettings,
     concurrency: int,
     backend: Backend | None = None,
     progress: ProgressHandle = NO_PROGRESS,
@@ -286,7 +282,7 @@ def refresh_source(
     """Run a git-backed source refresh with fully wired adapters."""
     # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
     protocol = github_settings.git_protocol
-    with GithubClient(github_settings, http=http) as github:
+    with GithubClient(github_settings) as github:
         git = GitSourceStore()
         selected_backend = backend or settings.source_refresh_backend
         graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)

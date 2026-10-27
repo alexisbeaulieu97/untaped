@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         LocalRef,
         RefSelector,
     )
-    from untaped_github.records import CorpusRepoResult, WorktreeResult
+    from untaped_github.records import CorpusRepo, Worktree
 
 
 class GithubMeService(Protocol):
@@ -87,7 +87,7 @@ class GitCorpus(Protocol):
         *,
         selector: RefSelector,
         progress: ProgressHandle = NO_PROGRESS,
-    ) -> CorpusRepoResult: ...
+    ) -> CorpusRepo: ...
 
     def repo_freshness(self, repo: CorpusRepoTarget) -> CorpusFreshness | None: ...
 
@@ -125,14 +125,12 @@ class GitCorpus(Protocol):
         self, *, pattern: str, paths: tuple[str, ...], fixed_strings: bool
     ) -> str | None: ...
 
-    def list_repos(self) -> tuple[CorpusRepoResult, ...]: ...
+    def list_repos(self) -> tuple[CorpusRepo, ...]: ...
 
     def get_repo(self, repo: str) -> CorpusRepoTarget | None: ...
 
-    def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:
+    def clean_repo(self, repo: CorpusRepo) -> CorpusRepo:
         """Release ``repo``: ``removed`` with the bytes freed, or ``released`` and who kept it."""
         ...
 
-    def materialize_worktree(
-        self, repo: CorpusRepoTarget, *, ref: str | None
-    ) -> WorktreeResult: ...
+    def materialize_worktree(self, repo: CorpusRepoTarget, *, ref: str | None) -> Worktree: ...

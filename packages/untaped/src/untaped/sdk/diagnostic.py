@@ -72,7 +72,7 @@ from pydantic_core import to_jsonable_python
 from untaped.runtime.redaction import redact_url_password
 from untaped.sdk._run import is_verbose
 from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
-from untaped.sdk.words import duration_text
+from untaped.sdk.words import ago_text, duration_text
 
 # --------------------------------------------------------------------------- #
 # Timestamps
@@ -875,7 +875,7 @@ def _stale_cause(
     if error is None:
         return "cached data from "
     ago = (
-        f" {duration_text((now - attempted_at).total_seconds())} ago"
+        f" {ago_text(attempted_at, now)}"
         if attempted_at is not None and now - attempted_at >= timedelta(minutes=1)
         else ""
     )

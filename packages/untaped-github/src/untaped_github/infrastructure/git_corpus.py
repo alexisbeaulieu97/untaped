@@ -1,7 +1,7 @@
 """The sweep's local Git corpus, kept in the git plugin's repo store.
 
 Each repo the sweep and the ``cache`` commands use is a store repo
-(``RepoStore.for_url(url, plugin=SPEC)``), which other plugins may share:
+(``RepoStore.for_url(url, plugin=...)``), which other plugins may share:
 github's refs live in its own namespace, ``refs/untaped/github/heads/*`` and
 ``refs/untaped/github/tags/*``, its fetch metadata in the repo's
 ``untaped-github.json`` (a :class:`CorpusMeta`; when it was fetched is the
@@ -38,15 +38,14 @@ from untaped.sdk import (
     Diagnostics,
     GitCommandError,
     GitResult,
+    PluginHandle,
     ProgressHandle,
     UntapedError,
     attribution,
-    plugin_dir,
     run_git,
     safe_path_segment,
 )
 from untaped_git.api import Removed, RepoStore, ls_remote, store_key
-from untaped_github import SPEC
 from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoTarget,
@@ -58,7 +57,7 @@ from untaped_github.domain import (
     profile_join,
 )
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepoResult, WorktreeResult
+from untaped_github.records import CorpusRepo, Worktree
 
 DEFAULT_TIMEOUT = 60.0
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
@@ -76,17 +75,21 @@ class GitCorpusCache:
 
     ``web_host`` is the Git host of ``github.server.url``; with ``protocol``
     ``ssh`` a repo on it is fetched over ``git@<web_host>:<owner>/<name>.git``
-    (the store keeps one repo for both spellings). ``warn`` hears a corrupt
-    metadata file that listing skips.
+    (the store keeps one repo for both spellings). ``plugin`` is github as
+    the run names it (``self.ctx.plugin``): the store keeps its refs apart, and
+    its worktrees live in its folder. ``warn`` hears a corrupt metadata file
+    that listing skips.
     """
 
     def __init__(
         self,
         *,
+        plugin: PluginHandle,
         web_host: str | None = None,
         protocol: GitProtocol = "https",
         warn: Callable[[str], None] | None = None,
     ) -> None:
+        self._plugin = plugin
         self._web_host = web_host
         self._protocol = protocol
         self._warn = warn or _diag.warning
@@ -97,7 +100,7 @@ class GitCorpusCache:
         *,
         selector: RefSelector,
         progress: ProgressHandle = NO_PROGRESS,
-    ) -> CorpusRepoResult:
+    ) -> CorpusRepo:
         """Fetch the requested ref profile, widened by what was fetched before, into the store."""
         url = self._remote_url(repo)
         branch = _default_branch(repo)
@@ -123,14 +126,13 @@ class GitCorpusCache:
             pushed_at=repo.pushed_at or (stored.pushed_at if stored else None),
         )
         store.write_private(meta, refreshed_at=fetched)
-        fetched_at = fetched.isoformat()
-        return CorpusRepoResult(
+        return CorpusRepo(
             full_name=repo.full_name,
             ref=branch,
             path=str(store.path),
             clone_url=url,
             status="synced",
-            fetched_at=fetched_at,
+            fetched_at=fetched,
             profile=effective.profile,
             ref_globs=effective.globs,
             archived=repo.archived,
@@ -270,7 +272,7 @@ class GitCorpusCache:
         self, *, pattern: str, paths: tuple[str, ...], fixed_strings: bool
     ) -> str | None:
         """Validate one grep pattern and its pathspecs against an empty scratch directory."""
-        scratch_root = plugin_dir(SPEC)
+        scratch_root = self._plugin.dir
         try:
             scratch_root.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -298,16 +300,16 @@ class GitCorpusCache:
             return None
         return result.stderr.strip()
 
-    def list_repos(self) -> tuple[CorpusRepoResult, ...]:
+    def list_repos(self) -> tuple[CorpusRepo, ...]:
         """List the store repos github has synced, sorted by name."""
         rows = [
-            CorpusRepoResult(
+            CorpusRepo(
                 full_name=meta.repo,
                 ref=meta.ref,
                 path=str(store.path),
                 clone_url=meta.clone_url,
                 status="cached",
-                fetched_at=refreshed_at.isoformat() if refreshed_at else None,
+                fetched_at=refreshed_at,
                 profile=meta.profile,
                 ref_globs=meta.ref_globs,
                 archived=meta.archived,
@@ -337,7 +339,7 @@ class GitCorpusCache:
         at ``store_key`` of its recorded ``clone_url`` (moved by hand, say) is
         not listed: no command could use it.
         """
-        for store in RepoStore.owned_by(SPEC, error=GitCorpusError):
+        for store in RepoStore.owned_by(self._plugin, error=GitCorpusError):
             read = self._read(store)
             if read is None or read[0].clone_url is None:
                 continue
@@ -371,7 +373,7 @@ class GitCorpusCache:
             )
         return None
 
-    def clean_repo(self, repo: CorpusRepoResult) -> CorpusRepoResult:
+    def clean_repo(self, repo: CorpusRepo) -> CorpusRepo:
         """Release one repo: it goes when nobody else uses it, else github's part of it goes.
 
         The row says ``removed`` with the bytes freed in ``disk_bytes``, or
@@ -388,7 +390,7 @@ class GitCorpusCache:
             update={"status": "released", "kept": outcome.kept(), "disk_bytes": 0}
         )
 
-    def materialize_worktree(self, repo: CorpusRepoTarget, *, ref: str | None) -> WorktreeResult:
+    def materialize_worktree(self, repo: CorpusRepoTarget, *, ref: str | None) -> Worktree:
         """Check one stored ref out in a worktree github owns, detached."""
         branch = _default_branch(repo)
         selected_ref = ref or branch
@@ -399,7 +401,7 @@ class GitCorpusCache:
                 f"ref is not cached: {selected_ref}; run a sweep that fetches it",
                 category="not_found",
             )
-        worktree = _worktree_path(repo.full_name, selected_ref)
+        worktree = _worktree_path(self._plugin.dir, repo.full_name, selected_ref)
         if worktree.exists() and not (worktree / ".git").exists():
             raise GitCorpusError(f"worktree path exists and is not a git worktree: {worktree}")
         if worktree.exists():
@@ -412,7 +414,7 @@ class GitCorpusCache:
                     f"could not create {worktree.parent}: {exc.strerror or exc}", system="local"
                 ) from exc
             store.worktree_add(worktree, target)
-        return WorktreeResult(
+        return Worktree(
             target_path=worktree.absolute(),
             path=str(worktree),
             repo=repo.full_name,
@@ -420,7 +422,7 @@ class GitCorpusCache:
         )
 
     def _store(self, url: str) -> RepoStore:
-        return RepoStore.for_url(url, plugin=SPEC, error=GitCorpusError)
+        return RepoStore.for_url(url, plugin=self._plugin, error=GitCorpusError)
 
     def _existing(self, repo: CorpusRepoTarget) -> RepoStore:
         """The store repo of ``repo``; ``not_found`` when it has never been synced."""
@@ -621,11 +623,11 @@ def _read_until(payload: bytes, cursor: int, delimiter: bytes) -> tuple[bytes, i
     return payload[cursor:end], end + len(delimiter)
 
 
-def _worktree_path(repo: str, ref: str) -> Path:
+def _worktree_path(folder: Path, repo: str, ref: str) -> Path:
     digest = hashlib.sha256(f"{repo}@{ref}".encode()).hexdigest()[:12]
     name = f"{safe_path_segment(f'{repo}-{ref}')}-{digest}"  # one capped segment
-    return plugin_dir(SPEC) / "worktrees" / name
+    return folder / "worktrees" / name
 
 
-def _by_name(row: CorpusRepoResult) -> tuple[str, str]:
+def _by_name(row: CorpusRepo) -> tuple[str, str]:
     return (row.full_name, row.path)

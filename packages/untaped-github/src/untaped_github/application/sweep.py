@@ -43,10 +43,10 @@ from untaped_github.domain import (
 )
 from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusSyncOutcome, GithubRepo, RepoSweepOutcome, SweepMatch
+from untaped_github.records import Repo, SweepMatch, SweepRepo, SyncOutcome
 from untaped_github.settings import SWEEP
 
-InventoryResolver = Callable[[RepositoryInventoryScope], tuple[GithubRepo, ...]]
+InventoryResolver = Callable[[RepositoryInventoryScope], tuple[Repo, ...]]
 # Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
 _API_CONCURRENCY = 4
 
@@ -64,7 +64,7 @@ class SweepOptions:
     parallel: int
     owners: bool
     # Piped records complete enough to skip the per-repo API lookup.
-    stdin_items: tuple[GithubRepo, ...] = ()
+    stdin_items: tuple[Repo, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,14 +77,14 @@ class CorpusSyncOptions:
     refs: RefSelector
     refresh: bool
     parallel: int
-    stdin_items: tuple[GithubRepo, ...] = ()
+    stdin_items: tuple[Repo, ...] = ()
 
 
 @dataclass(frozen=True)
 class SweepReport:
     """Result of a repository sweep."""
 
-    rows: tuple[RepoSweepOutcome, ...]
+    rows: tuple[SweepRepo, ...]
     matches: tuple[SweepMatch, ...]
     unscanned: tuple[CorpusFailure, ...]
     scanned: int
@@ -105,7 +105,7 @@ class _ReadyRepo:
 
 @dataclass(frozen=True)
 class _RepoScan:
-    outcome: RepoSweepOutcome | None
+    outcome: SweepRepo | None
     matches: tuple[_ContentMatch, ...]
 
 
@@ -392,7 +392,7 @@ class Sweep(_CorpusUseCase):
 
         owners = self._owners_for(ready.repo, paths=owner_paths) if options.owners else ()
         return _RepoScan(
-            outcome=RepoSweepOutcome(
+            outcome=SweepRepo(
                 full_name=ready.repo.full_name,
                 clone_url=ready.repo.clone_url,
                 html_url=ready.repo.html_url,
@@ -403,7 +403,7 @@ class Sweep(_CorpusUseCase):
                 refs_matched=tuple(refs_matched),
                 hits=aggregate_hits,
                 owners=owners,
-                fetched_at=ready.fetched_at.isoformat() if ready.fetched_at else None,
+                fetched_at=ready.fetched_at,
             ),
             matches=tuple(matches),
         )
@@ -436,12 +436,12 @@ def _resolve_online_scope(
     *,
     scope: RepositoryInventoryScope,
     stdin_repos: tuple[str, ...],
-    stdin_items: tuple[GithubRepo, ...],
+    stdin_items: tuple[Repo, ...],
     archived: ArchivedMode,
     parallel: int,
 ) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
     """Expand scopes through the API into sorted corpus targets plus per-name failures."""
-    items: dict[str, GithubRepo] = {}
+    items: dict[str, Repo] = {}
     if scope.orgs or scope.teams:
         listed = RepositoryInventoryScope(orgs=scope.orgs, teams=scope.teams)
         for item in inventory(listed):
@@ -454,7 +454,7 @@ def _resolve_online_scope(
     failures: list[CorpusFailure] = []
     names = tuple(dict.fromkeys((*scope.repos, *stdin_repos)))
 
-    def resolve_one(name: str) -> tuple[GithubRepo, ...] | CorpusFailure:
+    def resolve_one(name: str) -> tuple[Repo, ...] | CorpusFailure:
         try:
             return inventory(RepositoryInventoryScope(repos=(name,)))
         except UntapedError as exc:
@@ -462,7 +462,7 @@ def _resolve_online_scope(
                 raise
             return CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__, cause=exc)
 
-    def record(_name: str, resolved: tuple[GithubRepo, ...] | CorpusFailure) -> None:
+    def record(_name: str, resolved: tuple[Repo, ...] | CorpusFailure) -> None:
         if isinstance(resolved, CorpusFailure):
             failures.append(resolved)
         else:
@@ -480,7 +480,7 @@ def _resolve_online_scope(
     return tuple(_target(item) for item in rows), tuple(failures)
 
 
-def _target(item: GithubRepo) -> CorpusRepoTarget:
+def _target(item: Repo) -> CorpusRepoTarget:
     return CorpusRepoTarget(
         full_name=item.full_name,
         default_branch=item.default_branch,
@@ -505,7 +505,7 @@ class SyncCorpus(_CorpusUseCase):
 
     def __call__(
         self, options: CorpusSyncOptions, *, progress: ProgressHandle = NO_PROGRESS
-    ) -> tuple[CorpusSyncOutcome, ...]:
+    ) -> tuple[SyncOutcome, ...]:
         progress.update(phase="resolving repositories")
         repos, failures = _resolve_online_scope(
             self._inventory,
@@ -516,7 +516,7 @@ class SyncCorpus(_CorpusUseCase):
             parallel=options.parallel,
         )
         outcomes = [
-            CorpusSyncOutcome(
+            SyncOutcome(
                 repo=failure.repo,
                 action="failed",
                 detail=failure.reason,
@@ -556,16 +556,16 @@ class SyncCorpus(_CorpusUseCase):
         return tuple(sorted(outcomes, key=lambda outcome: outcome.repo))
 
 
-def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> CorpusSyncOutcome:
+def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> SyncOutcome:
     if isinstance(result, CorpusFailure):
-        return CorpusSyncOutcome(
+        return SyncOutcome(
             repo=repo.full_name,
             action="failed",
             detail=result.reason,
             error=_failure_error(result),
         )
     if result.refresh_error is not None:
-        return CorpusSyncOutcome(
+        return SyncOutcome(
             repo=repo.full_name,
             action="failed",
             fetched_at=result.fetched_at,
@@ -573,7 +573,7 @@ def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) ->
             error=_failure_error(result.refresh_error),
         )
     action = "synced" if result.refreshed else "unchanged" if result.unchanged else "skipped"
-    return CorpusSyncOutcome(repo=repo.full_name, action=action, fetched_at=result.fetched_at)
+    return SyncOutcome(repo=repo.full_name, action=action, fetched_at=result.fetched_at)
 
 
 class _Fetched(Filled):
@@ -743,7 +743,7 @@ def _filler(
         except OSError as exc:
             failed.append(GitCorpusError(str(exc) or type(exc).__name__, system="local"))
             raise failed[-1] from exc
-        return _Fetched(fetched_at=_parse_datetime(result.fetched_at))
+        return _Fetched(fetched_at=result.fetched_at)
 
     return fill
 
@@ -799,15 +799,6 @@ def _positive_labels(query: SweepQuery) -> tuple[str, ...]:
         *(f"grep:{pattern}" for pattern in query.greps),
         *(f"has-file:{glob}" for glob in query.has_files),
     )
-
-
-def _parse_datetime(value: str | None) -> datetime | None:
-    if value is None:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 def _matching_paths(paths: tuple[str, ...], glob: str) -> tuple[str, ...]:

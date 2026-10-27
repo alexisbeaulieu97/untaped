@@ -457,7 +457,6 @@ def source_refresh_command(
     ```
     """
     with report_errors():
-        ctx = app_context()
         source_repo = SourceRepository()
         source = source_repo.get(name)
         if source is None:
@@ -469,7 +468,6 @@ def source_refresh_command(
             aliases=AliasRepository().entries(),
             settings=settings,
             github_settings=github_settings(),
-            http=ctx.http,
             concurrency=clamp_parallel(
                 parallel or settings.git_fetch_parallel,
                 cap=GIT_PARALLEL_CAP,

@@ -8,13 +8,15 @@ sends the bearer to its own origin only, and a blank URL is that plugin's
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, Credential, CredentialKey, Plugin
+from untaped.sdk import Command, ConfigError, Credential, CredentialKey, Plugin
+from untaped.sdk.network.http import HttpFactory, HttpSettings
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -136,3 +138,38 @@ def test_a_provider_and_the_run_build_the_same_plugin_s_clients(install: Install
             ),  # doctor reaches it outside a command
         )
     assert [client.system for client in built] == ["locked", "locked"]
+
+
+def _factory(
+    monkeypatch: pytest.MonkeyPatch, http: HttpSettings, leaves: dict[tuple[str, ...], str]
+) -> HttpFactory:
+    monkeypatch.setattr("untaped.sdk.network.http.load_core_part", lambda part: http)
+    monkeypatch.setattr("untaped.sdk.network.credentials.folder_leaves", lambda: leaves)
+    return HttpFactory(lambda model: "desk")
+
+
+def test_proxy_for_and_trust_are_untapeds_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    bundle = tmp_path / "ca.pem"
+    http = HttpSettings(proxy="http://proxy.example.com:3128", ca_bundle_path=bundle)
+    factory = _factory(monkeypatch, http, {})
+    assert factory.proxy_for("https://git.example.com/a.git") == "http://proxy.example.com:3128"
+    assert factory.trust == bundle
+    assert _factory(monkeypatch, HttpSettings(), {}).trust is True
+    assert _factory(monkeypatch, HttpSettings(), {}).proxy_for(_URL) is None
+
+
+def test_a_folders_proxy_or_trust_is_refused_as_a_client_refuses_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    proxied = HttpSettings(proxy="http://proxy.example.com:3128")
+    folder = {("untaped", "http", "proxy"): "/work/.untaped.yml"}
+    factory = _factory(monkeypatch, proxied, folder)
+    assert factory.proxy_for("https://git.example.com/a.git") is not None
+    with pytest.raises(ConfigError, match="through a folder's proxy"):
+        factory.proxy_for("http://git.example.com/a.git")
+    trusted = HttpSettings(ca_bundle_path=tmp_path / "ca.pem")
+    folder = {("untaped", "http", "ca_bundle_path"): "/work/.untaped.yml"}
+    with pytest.raises(ConfigError, match="under a trust setting"):
+        _ = _factory(monkeypatch, trusted, folder).trust

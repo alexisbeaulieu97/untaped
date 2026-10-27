@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import HttpSettings, connected_client
+from untaped.sdk import connected_client
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -14,31 +14,46 @@ from untaped_github.infrastructure.graphql import (
     graphql_endpoint,
 )
 from untaped_github.infrastructure.pagination import paginate_list, paginate_search
-from untaped_github.settings import GH, GithubSettings
+from untaped_github.settings import TOKEN, GithubSettings
+
+if TYPE_CHECKING:
+    from untaped.sdk import HttpFactory
 
 
 class GithubClient:
     """Talks to ``api.github.com`` (or a GHE base) using the server's stored token.
 
-    Connection wiring (bearer auth, TLS, base-URL normalization) is delegated
-    to core's ``connected_client``; a missing token fails fast with
-    ``NoCredential``, naming ``untaped auth login github``.
+    ``http`` is the caller's ``self.ctx.http``, which adds untaped's proxy,
+    trust, timeout and retries; a missing token fails fast with
+    ``NoCredential``, naming ``untaped auth login github``. Without ``http``
+    (ansible's commands, until they move to the 12.0 shape) core's
+    ``connected_client`` builds the same client.
     """
 
-    def __init__(self, config: GithubSettings, *, http: HttpSettings | None = None) -> None:
+    def __init__(self, config: GithubSettings, *, http: HttpFactory | None = None) -> None:
         server = config.server
-        self._http = connected_client(
-            config,
-            section="github",
-            base_url=config.api_url,
-            bearer=GH.get(server),
-            verify=server.verify_tls,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            http=http,
-        )
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        bearer = TOKEN.get(server)
+        if http is None:
+            self._http = connected_client(
+                config,
+                section="github",
+                base_url=config.api_url,
+                bearer=bearer,
+                verify=server.verify_tls,
+                headers=headers,
+            )
+        else:
+            self._http = http.client(
+                config,
+                base_url=config.api_url,
+                bearer=bearer,
+                verify=server.verify_tls,
+                headers=headers,
+            )
         self._graphql_endpoint = graphql_endpoint(config.api_url)
 
     def me(self) -> dict[str, Any]:

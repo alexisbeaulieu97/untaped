@@ -782,6 +782,44 @@ class HttpFactory:
             headers=headers,
         )
 
+    def proxy_for(self, url: str, *, verified: bool = True) -> str | None:
+        """The proxy untaped sends ``url``'s requests through (``untaped.http.proxy``), or ``None``.
+
+        For a tool core doesn't build the client of (``git``). A proxy a
+        folder's file set is refused, as :meth:`client` refuses it, unless
+        ``url`` is https and ``verified``.
+        """
+        http = load_core_part("http")
+        if http.proxy:
+            _refuse_folder_transport(
+                http, url, verified=verified, section=_origin_name(url), proxy_only=True
+            )
+        return http.proxy or None
+
+    @property
+    def trust(self) -> Path | Literal[True]:
+        """untaped's CA bundle (``untaped.http.ca_bundle_path``, absolute), else ``True``.
+
+        ``True`` is the OS store, as :meth:`client` trusts. For a tool core
+        doesn't build the client of (``git``); a bundle a folder's file set
+        is refused, as :meth:`client` refuses it.
+        """
+        http = load_core_part("http")
+        if http.ca_bundle_path is None:
+            return True
+        _refuse_folder_transport(http, "", verified=True, section="untaped")
+        return http.ca_bundle_path.expanduser().absolute()
+
+
+def _origin_name(url: str) -> str:
+    """``url``'s host, naming a refused request (``untaped`` when it has none)."""
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    try:
+        return urlparse(url).hostname or "untaped"
+    except ValueError:
+        return "untaped"
+
 
 def _key_verify(verify: bool | Path) -> VerifyTypes | None:
     """A key's TLS as httpx takes it; ``None`` for untaped's own trust (``True``)."""
@@ -820,12 +858,12 @@ def _bound_origin(bearer: object, url: str, *, section: str) -> str:
 
 
 def _refuse_folder_transport(
-    http: HttpSettings, base: str, *, verified: bool, section: str
+    http: HttpSettings, base: str, *, verified: bool, section: str, proxy_only: bool = False
 ) -> None:
     """Refuse to send a credential under a proxy or trust setting a folder's file chose.
 
     A proxy is allowed over verified https (it can't read or change the
-    request); a CA bundle never is.
+    request); a CA bundle never is. ``proxy_only`` checks the proxy alone.
     """
     from untaped.sdk.network.credentials import folder_leaves  # noqa: PLC0415
 
@@ -833,7 +871,7 @@ def _refuse_folder_transport(
     if not leaves:
         return
     bundle = ("untaped", "http", "ca_bundle_path")
-    if bundle in leaves:
+    if bundle in leaves and not proxy_only:
         raise ConfigError(
             f"{leaves[bundle]} sets untaped.http.ca_bundle_path; untaped won't send a credential "
             "under a trust setting a folder chose",

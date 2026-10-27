@@ -14,43 +14,39 @@ from urllib.parse import urlparse
 
 from pydantic import SecretStr
 
-from untaped.sdk import app_context, get_config_section
+from untaped.sdk.contracts import Provider
 from untaped_git.api import Credential, GitHost
 from untaped_github.domain.hosts import github_web_host
-from untaped_github.settings import GH, GithubSettings
+from untaped_github.settings import TOKEN, GithubSettings
 
 #: The username GitHub expects beside a token in HTTPS Git requests.
 TOKEN_USERNAME = "x-access-token"
 
 
-class GithubHost(GitHost):
+class GithubHost(GitHost, Provider[GithubSettings]):
     """GitHub's credentials and proxy for URLs on the Git host of ``github.server.url``."""
 
     def home(self) -> str | None:
-        return github_web_host(_settings().api_url)
+        return github_web_host(self.settings.api_url)
 
     def credential(self, url: str) -> Credential | None:
-        settings = _settings()
-        if not _on_host(url, github_web_host(settings.api_url)):
+        settings = self.settings
+        if not _on_host(url, self.home()):
             return None
         # The API's token also serves its Git host, which is another origin.
-        found = GH.find(settings.server)
+        found = TOKEN.find(settings.server)
         token = "" if found is None else found.get_secret_value().strip()
         if not token:
             return None
         verify = settings.server.verify_tls
         if verify is True:  # untaped's trust: untaped.http.ca_bundle_path, when one is set
-            verify = app_context().http.ca_bundle_path or True
+            verify = self.ctx.http.trust
         return Credential(username=TOKEN_USERNAME, password=SecretStr(token), verify_tls=verify)
 
     def proxy(self, url: str) -> str | None:
         if not _on_host(url, self.home()):
             return None
-        return app_context().http.proxy or None
-
-
-def _settings() -> GithubSettings:
-    return get_config_section("github", GithubSettings)
+        return self.ctx.http.proxy_for(url, verified=self.settings.server.verify_tls is not False)
 
 
 def _on_host(url: str, host: str | None) -> bool:
