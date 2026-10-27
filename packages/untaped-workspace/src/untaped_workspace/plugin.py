@@ -28,6 +28,10 @@ class WorkspacePlugin(Plugin):
     branches stay), then `remove` (the records go and the repo store releases
     the repos).
 
+    One `workspaces_dir` belongs to one untaped home: the home holds the
+    workspaces' locks, so two homes sharing the folder would not wait for each
+    other.
+
     ## Names
 
     - A workspace name is one path segment: letters, digits, `.`, `_` and `-`,

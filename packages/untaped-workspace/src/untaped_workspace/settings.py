@@ -18,7 +18,10 @@ class WorkspaceSettings(BaseModel):
 
     workspaces_dir: Path = Field(
         default=Path("~/.untaped/workspaces"),
-        description="Parent directory of every workspace (`<workspaces_dir>/NAME`).",
+        description=(
+            "Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one "
+            "untaped home, which holds its workspaces' locks."
+        ),
     )
     parallel: int | None = Field(
         default=None,

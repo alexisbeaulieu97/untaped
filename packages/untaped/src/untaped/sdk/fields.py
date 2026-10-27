@@ -798,6 +798,10 @@ class Stdin[R: BaseModel](FieldBlock):
             for value in self._read(given, allow_empty=allow_empty)
         ]
 
+    def kind(self, row: BaseModel) -> str | None:
+        """The kind ``row`` was read as (``None``: a kind this command does not read)."""
+        return next((kind for kind, model in self._kinds.items() if model is type(row)), None)
+
     def rows(self, given: Sequence[str] = (), *, allow_empty: bool = False) -> list[R]:
         """Whole validated rows from stdin; a bare identifier is a usage error."""
         rows: list[R] = []

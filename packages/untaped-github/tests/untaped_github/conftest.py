@@ -15,6 +15,7 @@ import pytest
 
 from github_test_support import Settings, installed, using
 from untaped.sdk import GitResult
+from untaped.sdk.testing import Running
 from untaped_git import remote as remote_module
 from untaped_git import store as store_module
 
@@ -36,12 +37,13 @@ def _github(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
 
 
 @pytest.fixture
-def composed(settings: Settings) -> Iterator[None]:
+def composed(settings: Settings) -> Iterator[Running]:
     """A run composing git and github, as an invocation of both has: the repo store reads git's
-    settings from it, and a store fetch from a host asks its ``GitHost`` providers."""
+    settings from it, a store fetch from a host asks its ``GitHost`` providers, and its
+    ``http`` builds the clients a command's ``self.ctx.http`` would."""
     del settings  # written by now, as a command's run reads them
-    with installed().running():
-        yield
+    with installed().running() as running:
+        yield running
 
 
 def _git_dir(cwd: Path) -> list[str]:

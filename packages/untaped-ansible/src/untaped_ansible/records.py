@@ -1,9 +1,7 @@
-"""The records ansible's commands write, each declaring its ``ansible.*`` kind.
+"""The records ansible's commands write; each one's kind is ``ansible.`` and its class name.
 
-Every command module that writes one imports it from here, so building the
-plugin's app registers every kind before any command runs (``plugin schema``
-finds each one). Models only: the domain code that fills them imports them.
-Field order matches the rows these models replaced.
+Models only: the domain code that fills them imports them. A model's fields,
+in order, are its rows' keys on the wire.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
 
 
-class Source(Record, kind="ansible.source"):
+class Source(Record):
     """A saved source (``source list``, ``source get``): the GitHub scope a refresh scans.
 
     ``ref_scan_default`` is ``null`` when the source leaves it to the setting
@@ -45,28 +43,28 @@ class Source(Record, kind="ansible.source"):
     ref_scan_default: Literal["all", "default_branch"] | None = None
 
 
-class SourceAlias(Record, kind="ansible.source_alias"):
+class SourceAlias(Record):
     """A role or Galaxy name mapped to the GitHub repo it stands for (``source-alias list``)."""
 
     alias: str
     repo: str
 
 
-class AliasOutcome(OutcomeRecord, kind="ansible.source_alias_outcome"):
+class SourceAliasOutcome(OutcomeRecord):
     """What ``source-alias set`` or ``remove`` did to one alias."""
 
     alias: str
     repo: str
 
 
-class SourceOutcome(OutcomeRecord, kind="ansible.source_outcome"):
+class SourceOutcome(OutcomeRecord):
     """What ``source set``, ``patch`` or ``remove`` did to one source; ``changes`` says what."""
 
     name: str
     changes: list[str] = Field(default_factory=list)
 
 
-class SourceStatus(FreshnessRecord, kind="ansible.source_status"):
+class SourceStatus(FreshnessRecord):
     """One row of ``source status``.
 
     Its freshness (``refreshed_at``, ``stale``, ``partial``, ``retry_at``…)
@@ -80,7 +78,7 @@ class SourceStatus(FreshnessRecord, kind="ansible.source_status"):
     source_key: str
     state: Literal["fresh", "stale", "not_refreshed", "missing_source"] = Field(
         description=(
-            "stale when past ansible.caches.index.max_age_seconds, made by another untaped "
+            "stale when past ansible.caches.source_data.max_age_seconds, made by another untaped "
             "version, or after a failed or partial refresh; not_refreshed when never "
             "refreshed; fresh otherwise, with zero counts for an empty source. "
             "missing_source is reserved."
@@ -93,7 +91,7 @@ class SourceStatus(FreshnessRecord, kind="ansible.source_status"):
     edges: int = 0
 
 
-class DependencyMatch(Record, kind="ansible.dependency_match"):
+class DependencyMatch(Record):
     """One wanted repository reached from one root (``find``).
 
     A root read from a pipe record carries that record's kind, ``id`` and
@@ -129,7 +127,7 @@ class DependencyMatch(Record, kind="ansible.dependency_match"):
 
 
 class ReachedRow(Record):
-    """One repository reached from a root in one direction: kind-less, see its two kinds.
+    """One repository reached from a root in one direction: a base, see its two records.
 
     ``path`` reads in dependency order (each label requires the next).
     ``root_ref`` is the ref of the root it was reached from; ``stopped`` says
@@ -166,15 +164,15 @@ class ReachedRow(Record):
     )
 
 
-class ReachedDependency(ReachedRow, kind="ansible.dependency"):
+class Dependency(ReachedRow):
     """A repository the root depends on, directly or not (``deps``); the path starts at the root."""
 
 
-class ReachedDependent(ReachedRow, kind="ansible.dependent"):
+class Dependent(ReachedRow):
     """A repository that depends on the root, directly or not (``impact``); the path ends there."""
 
 
-class Dependent(BaseModel):
+class FoundIn(BaseModel):
     """The dependent a hit was found in: its repo and ref, and its path to the role."""
 
     model_config = ConfigDict(frozen=True)
@@ -187,7 +185,7 @@ class Dependent(BaseModel):
 class VariableUse(Record):
     """Where one variable is defined, set or read in one repo at one ref.
 
-    Kind-less until ``vars where`` registers ``ansible.variable_use``.
+    A base: no command prints it as it is.
     ``key_path`` is the YAML key path as segments (``int`` for list items),
     empty for a read in a template file.
     """
@@ -201,27 +199,27 @@ class VariableUse(Record):
         description="YAML key segments (int for list items); empty for a template file's read."
     )
     how: How = Field(
-        description="Whether this place defines, sets or reads the variable (see impact --uses)."
+        description="Whether this place defines, sets or reads the variable (see impact uses)."
     )
 
 
-class VariableUseHit(VariableUse, kind="ansible.variable_use_hit"):
-    """A :class:`VariableUse` in a dependent of the role ``impact --uses`` was asked about."""
+class VariableUseHit(VariableUse):
+    """A :class:`VariableUse` in a dependent of the role ``impact uses`` was asked about."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "file", "line", "key_path", "how")
 
-    dependent: Dependent
+    dependent: FoundIn
 
 
 __all__ = [
-    "AliasOutcome",
+    "Dependency",
     "DependencyMatch",
     "Dependent",
-    "ReachedDependency",
-    "ReachedDependent",
+    "FoundIn",
     "ReachedRow",
     "Source",
     "SourceAlias",
+    "SourceAliasOutcome",
     "SourceOutcome",
     "SourceStatus",
     "VariableUse",

@@ -1,16 +1,15 @@
-"""Settings and state models for the Ansible plugin."""
+"""Settings, state rows and the source data blocks of the Ansible plugin."""
 
 from __future__ import annotations
 
-import importlib.util
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Cache, Retired, Store, code_version, setting_guard
+from untaped.sdk import Cache, Dir, Key, Retired, StateRows, installed_code, key
 from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -31,7 +30,7 @@ class SourceDefinition(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: Annotated[str, Key]
     orgs: list[str] = Field(default_factory=list)
     teams: list[str] = Field(default_factory=list)
     repos: list[str] = Field(default_factory=list)
@@ -67,7 +66,15 @@ class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
-        "stale_after": Retired(note="deleted in 11.0; use ansible.caches.index.max_age_seconds"),
+        "stale_after": Retired(
+            note="deleted in 11.0; use ansible.caches.source_data.max_age_seconds"
+        ),
+        "stale_after_seconds": Retired(
+            note="deleted in 12.0; use ansible.caches.source_data.max_age_seconds"
+        ),
+        "index_path": Retired(
+            note="deleted in 12.0; ansible.index_dir names the folder that holds the index"
+        ),
         "repo_cache_path": "cache_dir",
         "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
         "git_fetch_depth": Retired(note="deleted in 11.0; the repo store fetches full history"),
@@ -81,12 +88,12 @@ class AnsibleSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    index_path: Path = Field(
-        default=Path("~/.untaped/plugins/ansible/index.sqlite3"),
+    index_dir: Path | None = Field(
+        default=None,
         description=(
-            "SQLite cache of refreshed source data. At this default the file is "
-            "`index.v<layout>.sqlite3` beside it, one per layout; a path you set is "
-            "used as it is."
+            "Folder of the SQLite index of refreshed source data, an absolute path; the "
+            "file in it is `index.v<layout>.sqlite3`, one per layout. Unset: "
+            "`plugins/ansible/index/` under the untaped home."
         ),
     )
     default_source: str | None = Field(
@@ -123,96 +130,61 @@ class AnsibleSettings(BaseModel):
     )
 
 
-class AnsibleState(BaseModel):
-    """The Ansible plugin's state: its saved sources and aliases."""
+class Alias(BaseModel):
+    """A role or Galaxy name and the GitHub ``owner/repo`` it stands for."""
 
     model_config = ConfigDict(frozen=True)
 
-    sources: list[SourceDefinition] = Field(
-        default_factory=list, description="Saved sources. Managed by `ansible source` commands."
-    )
-    aliases: dict[str, str] = Field(
-        default_factory=dict,
-        description=(
-            "Role or Galaxy name to `owner/repo` aliases. Managed by `ansible "
-            "source-alias` commands."
-        ),
-    )
+    alias: Annotated[str, Key]
+    repo: str
 
 
-def default_index_path() -> Path:
-    """``ansible.index_path``'s declared default: the base the index's layouts sit beside."""
-    default: Path = AnsibleSettings.model_fields["index_path"].default
-    return default.expanduser()
+#: Saved sources, one row per name. Managed by `ansible source` commands.
+SOURCES = StateRows[SourceDefinition](omit_none=True)
+#: Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands.
+ALIASES = StateRows[Alias]()
 
+#: The dependency index: ``<ansible.index_dir>/index.v4.sqlite3``, or
+#: ``plugins/ansible/index/`` under the home when the setting is unset. The
+#: layout is ``sqlite_schema.ADDITIVE_SINCE`` (a test holds them equal;
+#: importing the schema here would load the plugin's infrastructure at
+#: startup), not the schema version: an additive schema change keeps sharing
+#: the layout's file.
+INDEX_DIR = Dir(at=key(AnsibleSettings).index_dir, layout=4, file="index.sqlite3")
 
-#: The dependency index file at the default path, one file per layout
-#: (``index.v4.sqlite3``). The layout is ``sqlite_schema.ADDITIVE_SINCE``
-#: (a test holds them equal; importing the schema here would load the
-#: plugin's infrastructure at startup), not the schema version: an additive
-#: schema change keeps sharing the layout's file. A layout any profile
-#: points ``ansible.index_path`` at is that profile's index: it stays.
-INDEX_PATH_GUARD = setting_guard("ansible", "index_path")
-INDEX_STORE = Store("ansible", "index", base=default_index_path, layout=4, keep=INDEX_PATH_GUARD)
+#: The version of what a ref's dependency edges are made by: the parser and
+#: identity code, the models they build and PyYAML. Folded into the dependency
+#: paths fingerprint, so an edit to any of them (or a PyYAML upgrade) re-parses
+#: every ref: there is no number to forget to bump.
+parser_version = installed_code(
+    "untaped_ansible.domain.parser",
+    "untaped_ansible.domain.identity",
+    "untaped_ansible.domain.models",
+    "yaml",
+)
 
-
-def parser_version() -> str:
-    """The version of what a ref's dependency edges are made by: the parser and identity code.
-
-    Folded into the dependency paths fingerprint, so an edit to the parser,
-    identity or the models they build (or a PyYAML upgrade) re-parses every
-    ref: there is no number to forget to bump. The parser uses PyYAML's pure
-    Python loader, so libyaml does not count.
-    """
-    return ":".join(
-        (
-            code_version("untaped_ansible.domain.parser", distributions=("PyYAML",)),
-            code_version("untaped_ansible.domain.identity"),
-            code_version("untaped_ansible.domain.models"),
-        )
-    )
-
-
-def analyser_version() -> str:
-    """The version of the variable analysis: its modules, jinja2 and PyYAML (with libyaml or not).
-
-    The analyser imports nothing first-party but its data types (a test
-    holds it), so the two modules' text and those libraries are everything
-    that decides its facts.
-    """
-    return ":".join(
-        (
-            code_version(
-                "untaped_ansible.domain.variables",
-                distributions=("jinja2", "PyYAML"),
-                extra=(_libyaml(),),
-            ),
-            code_version("untaped_ansible.domain.variable_models"),
-        )
-    )
-
-
-def _libyaml() -> str:
-    """Whether PyYAML's C loader is present, found without importing it."""
-    return f"libyaml={importlib.util.find_spec('yaml._yaml') is not None}"
+#: The version of the variable analysis: its modules, Jinja2 and PyYAML (its
+#: files, so whether libyaml is built in counts too). The analyser imports
+#: nothing first-party but its data types (a test holds it), so these are
+#: everything that decides its facts.
+analyser_version = installed_code(
+    "untaped_ansible.domain.variables",
+    "untaped_ansible.domain.variable_models",
+    "jinja2",
+    "yaml",
+)
 
 
 def _index_version() -> str:
     return f"{parser_version()}:{analyser_version()}"
 
 
-#: The dependency index: each source's refs, edges and variable facts,
-#: refreshed past a day, and again when the code that filled a source
-#: (the dependency parser or the variable analysis) changed.
-INDEX = Cache(
-    "ansible",
-    "index",
-    label="source data",
-    max_age=timedelta(days=1),
-    renamed_from=("stale_after_seconds",),
-    removed_in=12,
-    version=_index_version,
-    store=INDEX_STORE,
+#: Each source's refs, edges and variable facts in the index, refreshed past
+#: a day, and again when the code that filled a source (the dependency parser
+#: or the variable analysis) changed. The plugin class holds it as
+#: ``source_data``; setting: ``ansible.caches.source_data.max_age_seconds``.
+SOURCE_DATA = Cache(
+    label="source data", max_age=timedelta(days=1), version=_index_version, follows=INDEX_DIR
 )
 
 

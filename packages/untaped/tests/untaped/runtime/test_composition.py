@@ -12,7 +12,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from core_test_support.contracts.support import BOOKS, Book, BookSource, Shop
-from untaped.runtime.composition import PluginEntry, compose, kebab, snake, words
+from untaped.runtime.composition import PluginEntry, bundle_panel, compose, kebab, snake, words
 from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
 from untaped.sdk import (
     Cache,
@@ -224,6 +224,18 @@ def test_options_carry_what_the_parser_and_help_need(declaration: Declaration) -
     assert {"--format", "--columns", "--stdin", "--yes", "--dry-run"} <= flags
     fmt = next(option for option in say.options if option.flag == "--format")
     assert (fmt.block, fmt.panel, fmt.short) == ("output", "Output", "-f")
+
+
+def test_a_bundle_s_panel_is_its_class_name_as_words() -> None:
+    class SourceData(BaseModel):
+        pass
+
+    class HTTPProxy(BaseModel):
+        pass
+
+    assert bundle_panel(SourceData) == "Source data"
+    assert bundle_panel(HTTPProxy) == "HTTP proxy"
+    assert bundle_panel(Selection) == "Selection"
 
 
 def test_kinds_are_the_plugin_and_the_snake_case_class(declaration: Declaration) -> None:

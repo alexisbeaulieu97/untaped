@@ -6,7 +6,6 @@ from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import connected_client
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -25,35 +24,22 @@ class GithubClient:
 
     ``http`` is the caller's ``self.ctx.http``, which adds untaped's proxy,
     trust, timeout and retries; a missing token fails fast with
-    ``NoCredential``, naming ``untaped auth login github``. Without ``http``
-    (ansible's commands, until they move to the 12.0 shape) core's
-    ``connected_client`` builds the same client.
+    ``NoCredential``, naming ``untaped auth login github``.
     """
 
-    def __init__(self, config: GithubSettings, *, http: HttpFactory | None = None) -> None:
+    def __init__(self, config: GithubSettings, *, http: HttpFactory) -> None:
         server = config.server
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        bearer = TOKEN.get(server)
-        if http is None:
-            self._http = connected_client(
-                config,
-                section="github",
-                base_url=config.api_url,
-                bearer=bearer,
-                verify=server.verify_tls,
-                headers=headers,
-            )
-        else:
-            self._http = http.client(
-                config,
-                base_url=config.api_url,
-                bearer=bearer,
-                verify=server.verify_tls,
-                headers=headers,
-            )
+        self._http = http.client(
+            config,
+            base_url=config.api_url,
+            bearer=TOKEN.get(server),
+            verify=server.verify_tls,
+            headers=headers,
+        )
         self._graphql_endpoint = graphql_endpoint(config.api_url)
 
     def me(self) -> dict[str, Any]:

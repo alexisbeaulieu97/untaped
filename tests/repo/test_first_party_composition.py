@@ -193,7 +193,8 @@ def test_a_plugin_section_lists_before_global_options(
 
     panels = _panels(CliInvoker().invoke(root.meta, ["ansible", "graph", "--help"]).stdout)
 
-    assert list(panels)[-2:] == ["Source Data", "Global options"]
+    assert next(iter(panels)) == "Source data"
+    assert list(panels)[-1] == "Global options"
 
 
 def test_the_deprecated_flag_adds_the_deprecated_panel_before_global_options(

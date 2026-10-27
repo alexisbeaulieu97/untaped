@@ -1,64 +1,39 @@
-"""State-file repositories for Ansible aliases and sources.
+"""The plugin's saved sources and aliases, read and written through its state rows.
 
-Aliases and sources are the plugin-managed ``ansible`` *state*: the ``aliases``
-map and ``sources`` list live under the ``ansible`` section of ``state.yml``.
-Writes go through the SDK's strict state wrappers rather than reaching into
-file internals: the shared state file is co-owned by every untaped
-plugin, so a write must only touch this plugin's section and never clobber
-another's.
+Both live in ansible's own ``plugins/ansible/state.yml`` (``SOURCES`` and
+``ALIASES``, held by the plugin class); these wrappers give the commands and
+the refresh the shapes they read: aliases as a name → ``owner/repo`` map.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import ValidationError
-
-from untaped.sdk import ConfigError, StateCollection, StateMap, first_validation_error
-from untaped_ansible.settings import SourceDefinition
-
-_SECTION = "ansible"
-_ALIASES_KEY = "aliases"
-_SOURCES_KEY = "sources"
-_ALIASES = StateMap(_SECTION, _ALIASES_KEY)
-_SOURCES = StateCollection(_SECTION, _SOURCES_KEY, id_field="name")
+from untaped_ansible.settings import ALIASES, SOURCES, Alias, SourceDefinition
 
 
 class AliasRepository:
-    """Read/write Ansible dependency aliases in ``~/.untaped/state.yml``."""
+    """Read and write the aliases that map role or Galaxy names to GitHub repos."""
 
     def entries(self) -> dict[str, str]:
-        return _ALIASES.entries()
+        return {row.alias: row.repo for row in ALIASES.all()}
 
     def set(self, alias: str, repo: str) -> None:
-        _ALIASES.set(alias, repo)
+        ALIASES.put(Alias(alias=alias, repo=repo))
 
     def remove(self, alias: str) -> bool:
-        return _ALIASES.remove(alias)
+        return ALIASES.delete(alias) > 0
 
 
 class SourceRepository:
-    """Read/write named repository sources in ``~/.untaped/state.yml``."""
+    """Read and write the saved sources, one per name."""
 
     def entries(self) -> list[SourceDefinition]:
-        return [_source_from_raw(raw) for raw in _SOURCES.entries()]
+        return SOURCES.all()
 
     def get(self, name: str) -> SourceDefinition | None:
-        raw = _SOURCES.get(name)
-        if raw is None:
-            return None
-        return _source_from_raw(raw)
+        return SOURCES.get(name)
 
     def upsert(self, source: SourceDefinition) -> None:
-        _SOURCES.upsert(source.model_dump(exclude_none=True))
+        SOURCES.put(source)
 
     def remove(self, name: str) -> bool:
-        return _SOURCES.remove(name)
-
-
-def _source_from_raw(raw: dict[str, Any]) -> SourceDefinition:
-    try:
-        return SourceDefinition.model_validate(raw)
-    except ValidationError as exc:
-        name = raw.get("name", "<unknown>")
-        raise ConfigError(f"invalid source {name!r}: {first_validation_error(exc)}") from exc
+        return SOURCES.delete(name) > 0

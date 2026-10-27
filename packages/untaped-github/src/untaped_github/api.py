@@ -9,7 +9,7 @@ closed :data:`__all__` keeps the boundary explicit; everything else under
 
 from __future__ import annotations
 
-from untaped.sdk import get_config_section
+from untaped.sdk import settings_of
 from untaped_github.application.inventory import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
@@ -48,12 +48,12 @@ __all__ = [
 
 
 def github_settings() -> GithubSettings:
-    """Return the active profile's ``github`` settings (server, default org, sweep).
+    """The run's ``github`` settings (server, default org, sweep).
 
     Ansible calls this instead of reading the ``github`` config section itself,
     so the GitHub plugin stays the only reader of its section.
     """
-    return get_config_section("github", GithubSettings)
+    return settings_of(GithubSettings)
 
 
 def github_token_found() -> bool:

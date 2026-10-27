@@ -1,6 +1,6 @@
 """Ansible's dependency sources in the git plugin's repo store.
 
-Each source repo is a store repo (``RepoStore.for_url(url, plugin=SPEC)``),
+Each source repo is a store repo (``RepoStore.for_url(url, plugin=...)``),
 which workspace and github may share: ansible's refs live in its own
 namespace, ``refs/untaped/ansible/heads/*`` and ``refs/untaped/ansible/tags/*``,
 and its private file is the repo's ``untaped-ansible.json``. The store fetches
@@ -21,6 +21,7 @@ from pathlib import Path
 
 from untaped.sdk import (
     GitCommandError,
+    PluginHandle,
     UntapedError,
     attribution,
     git_toplevel,
@@ -43,7 +44,14 @@ PER_FILE_READ_TIMEOUT = 1.0
 
 
 class GitSourceStore:
-    """Fetch source refs into the repo store and read dependency files from them."""
+    """Fetch source refs into the repo store and read dependency files from them.
+
+    ``plugin`` is ansible's own (a command's ``self.ctx.plugin``): its refs'
+    namespace and private file in each store repo.
+    """
+
+    def __init__(self, *, plugin: PluginHandle) -> None:
+        self._plugin = plugin
 
     def fetch(self, url: str, refs: Sequence[GitRef]) -> None:
         """Bring ``refs`` (each at its probed commit) into ansible's namespace of ``url``.
@@ -166,9 +174,7 @@ class GitSourceStore:
         return _parse_cat_file_batch(result.stdout, wanted)
 
     def _store(self, url: str) -> RepoStore:
-        from untaped_ansible import SPEC  # noqa: PLC0415  # the package imports this module
-
-        return RepoStore.for_url(url, plugin=SPEC, error=RepoStoreError)
+        return RepoStore.for_url(url, plugin=self._plugin, error=RepoStoreError)
 
 
 def _peeled_refs(store: RepoStore) -> dict[str, str]:

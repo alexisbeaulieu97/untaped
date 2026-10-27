@@ -559,8 +559,7 @@ sdk untaped_github.api.BatchRepoRefsResult.rate_limit_cost
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_remaining
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_reset_at
 sdk untaped_github.api.BatchRepoRefsResult.repos
-sdk untaped_github.api.GithubClient(config)
-sdk untaped_github.api.GithubClient(http=) default=None
+sdk untaped_github.api.GithubClient(config, *, http)
 sdk untaped_github.api.GithubClient.batch_default_branch_refs(chunk_size=) default=200
 sdk untaped_github.api.GithubClient.batch_default_branch_refs(repos)
 sdk untaped_github.api.GithubClient.batch_repo_refs(chunk_size=) default=50
