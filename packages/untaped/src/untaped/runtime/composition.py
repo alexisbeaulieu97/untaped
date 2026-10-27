@@ -78,7 +78,7 @@ if TYPE_CHECKING:
 
     from pydantic.fields import FieldInfo
 
-    from untaped.sdk.contracts._declare import ContractInfo
+    from untaped.sdk.contracts._declare import Contract, ContractInfo
 
 #: Field names core or pydantic reserves on a command; ``run_`` still spells ``--run``.
 RESERVED_FIELDS: frozenset[str] = frozenset(
@@ -600,7 +600,7 @@ class _PluginWalk:
             )
         info = contract_of(filled)
         try:
-            item = None if info is None else item_type(filled, info)
+            item = None if info is None else item_type(typing.cast("type[Contract]", filled), info)
         except ContractError:
             return  # the registry quarantines the offer, naming why
         if item is not None and info is not None and item is not info.item:
