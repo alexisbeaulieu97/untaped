@@ -5,4 +5,4 @@ and its sections, and `untaped docs PLUGIN commands|inputs|outputs|settings|
 extensions|guides [NAME]` one page each. `--search TEXT` prints every
 matching line with its page's address; an unknown address exits 2 naming
 the page that lists what exists. Pages render at a terminal and are raw
-Markdown when piped. It is experimental.
+Markdown when piped.

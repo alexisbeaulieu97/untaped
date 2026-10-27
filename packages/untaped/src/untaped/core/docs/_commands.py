@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from untaped.core.docs._docstring import describe, markdown
 from untaped.core.docs._models import address as kind_address
 from untaped.core.docs._models import field_lines
-from untaped.core.docs._site import ORGANIZED, Site
+from untaped.core.docs._site import CORE, ORGANIZED, Site
 from untaped.runtime.declaration import (
     CommandDecl,
     GroupDecl,
@@ -24,6 +24,8 @@ from untaped.runtime.declaration import (
     PluginDecl,
     StabilityDecl,
 )
+from untaped.sdk.marks import owner, removal_text
+from untaped.sdk.words import deprecated_line
 
 #: What each return shape prints, as the ``## Outputs`` section words it.
 _RETURNS = {
@@ -36,19 +38,23 @@ _LINES = {"line": "A line of text.", "line-or-none": "A line of text, or nothing
 
 
 def mark(stability: StabilityDecl | None, inherited: StabilityDecl | None = None) -> str:
-    """`` [experimental]`` after a title or a line, unless ``inherited`` already says it."""
-    marked = stability is not None and stability.stability == "experimental"
-    said = inherited is not None and inherited.stability == "experimental"
-    return " [experimental]" if marked and not said else ""
+    """`` [experimental]`` or `` [deprecated]`` after a title or line, unless ``inherited`` is."""
+    if stability is None or (inherited is not None and inherited.stability == stability.stability):
+        return ""
+    return f" [{stability.stability}]"
+
+
+def _deprecation(plugin: PluginDecl, stability: StabilityDecl | None) -> list[str]:
+    """The line ``--help`` ends a deprecated command with: when it goes, and what replaces it."""
+    if stability is None or stability.stability != "deprecated":
+        return []
+    distribution = None if plugin.name == CORE else owner(plugin.name)
+    removal = removal_text(stability.removed_in, distribution)
+    return ["", deprecated_line(stability.replacement, removal)]
 
 
 def _hidden(node: CommandDecl | GroupDecl) -> bool:
     return node.stability is not None and node.stability.stability == "deprecated"
-
-
-def address(site: Site, node: CommandDecl | GroupDecl) -> str:
-    """``untaped docs PLUGIN commands WORDS...``: where a command's or group's page is."""
-    return " ".join(("untaped docs", node.path[0], "commands", *node.path[1:]))
 
 
 # --- the list ----------------------------------------------------------------------
@@ -132,6 +138,7 @@ def page(site: Site, plugin: PluginDecl, node: CommandDecl | GroupDecl) -> list[
     if isinstance(node, CommandDecl) and node.asks_first:
         summary = f"{summary} (asks first)".strip()
     lines += ["", summary] if summary else []
+    lines += _deprecation(plugin, node.stability)
     lines += ["", described.body] if described.body else []
     examples = described.examples
     if runs is not None and runs is not node:
@@ -167,14 +174,9 @@ def _inherited(plugin: PluginDecl, node: CommandDecl | GroupDecl) -> StabilityDe
 def command_body(site: Site, command: CommandDecl) -> list[str]:
     """What a command's page shows of its declaration: read first, usage, inputs, outputs."""
     lines: list[str] = []
-    read_first = [site.guide(target) for target in command.guides]
-    if read_first:
-        lines.append("")
-        lines += [
-            f"Read first: `untaped docs {guide.plugin} guides {guide.name}`."
-            for guide in read_first
-            if guide is not None
-        ]
+    read_first = [guide for target in command.guides if (guide := site.guide(target))]
+    lines += [""] if read_first else []
+    lines += [f"Read first: `untaped docs {g.plugin} guides {g.name}`." for g in read_first]
     lines += ["", "## Usage", f"`{usage(site, command)}`", *option_lines(command.options)]
     lines += _files(site, "Inputs", command.inputs)
     lines += _files(site, "Writes", command.writes)
@@ -211,7 +213,8 @@ def option_lines(options: Sequence[OptionDecl]) -> list[str]:
     lines: list[str] = []
     for panel, unsorted in panels.items():
         listed = sorted(unsorted, key=lambda option: not option.positional)
-        lines += ["", f"### {panel}"] if panel != "Options" else [""]
+        # Options heads its panel only after another panel, as --help titles every one.
+        lines += ["", f"### {panel}"] if panel != "Options" or lines else [""]
         lines += [option_line(option) for option in listed]
     return lines
 
@@ -225,10 +228,11 @@ def option_line(option: OptionDecl) -> str:
         spelled = [option.flag, option.negative, option.short]
         names = ", ".join(f"`{name}`" for name in spelled if name)
     text = markdown(" ".join(option.help.split()))
+    says_default = "default" in text.lower()  # the help names it already
     if option.choices:
         text = _sentence(text, "One of " + ", ".join(f"`{choice}`" for choice in option.choices))
     default = _default(option)
-    if default is not None and "default" not in text.lower():
+    if default is not None and not says_default:
         text = _sentence(text, f"Default: `{default}`")
     return f"- {names}{mark(option.stability)}: {text}" if text else f"- {names}"
 

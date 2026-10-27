@@ -63,7 +63,8 @@ def test_every_page_renders_titled_with_its_address(
     seen = 0
     for address, text in _pages(root):
         title, header, *_ = text.splitlines()
-        assert title.removesuffix(" [experimental]") == "# " + " ".join(address or ("untaped",))
+        title = title.removesuffix(" [experimental]").removesuffix(" [deprecated]")
+        assert title == "# " + " ".join(address or ("untaped",))
         assert header.startswith("untaped "), address
         seen += 1
     assert seen > 100, "the walk found too few pages"

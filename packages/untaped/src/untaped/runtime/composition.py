@@ -42,9 +42,17 @@ from untaped.runtime.declaration import (
     Quarantined,
     Returns,
     StabilityDecl,
+    TypeDecl,
     target_of,
 )
-from untaped.runtime.describe import fields_of, first_paragraph, jsonable, method_decl, prose
+from untaped.runtime.describe import (
+    fields_of,
+    first_paragraph,
+    jsonable,
+    method_decl,
+    models_in,
+    prose,
+)
 from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
 from untaped.sdk.fields import (
@@ -860,10 +868,29 @@ class _PluginWalk:
                         method_decl(method.name, method.function, method.hints)
                         for method in info.methods.values()
                     ),
-                    item=None if info.item is None else self.kinds.get(info.item),
+                    types=self._types(info),
                 )
             )
         return tuple(points)
+
+    def _types(self, info: ContractInfo) -> tuple[TypeDecl, ...]:
+        """The models a point's page lists: the contract's own, then each its methods name."""
+        named: list[type[BaseModel]] = [] if info.item is None else [info.item]
+        named += [
+            model
+            for method in info.methods.values()
+            for hint in method.hints.values()
+            for model in models_in(hint)
+        ]
+        return tuple(
+            TypeDecl(
+                name=model.__name__,
+                summary=first_paragraph(prose(model)[1]),
+                kind=self.kinds.get(model),
+                fields=fields_of(model),
+            )
+            for model in dict.fromkeys(named)
+        )
 
     def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
         if not cls.fills:

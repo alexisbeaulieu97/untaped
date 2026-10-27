@@ -3,8 +3,9 @@
 The first line is the summary; the rest of the description is the behaviour.
 An ``Examples`` section (NumPy style) is the one place an author writes
 examples: ``--help`` leaves it out and the page prints it, with Markdown
-``console`` fences passed through as written. RST double backticks become
-Markdown ones.
+``console`` fences passed through as written; bare ``$`` lines (Google
+style, as core's own commands write them) are fenced, so a terminal keeps
+one per line. RST double backticks become Markdown ones.
 """
 
 from __future__ import annotations
@@ -47,5 +48,22 @@ def describe(doc: str | None) -> Described:
     return Described(
         summary=markdown(" ".join(summary.split())),
         body=markdown(body.strip()),
-        examples=examples_in(text),
+        examples=_fenced(examples_in(text)),
     )
+
+
+def _fenced(examples: str) -> str:
+    """``examples`` with each run of bare ``$`` lines in a ``console`` fence."""
+    if "```" in examples:
+        return examples
+    lines: list[str] = []
+    run: list[str] = []
+    for line in [*examples.splitlines(), ""]:
+        if line.startswith("$ "):
+            run.append(line)
+            continue
+        if run:
+            lines += ["```console", *run, "```"]
+            run = []
+        lines.append(line)
+    return "\n".join(lines).rstrip()

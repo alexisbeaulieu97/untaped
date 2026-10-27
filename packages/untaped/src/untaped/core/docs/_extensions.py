@@ -60,12 +60,17 @@ def page(site: Site, plugin: PluginDecl, point: PointDecl) -> list[str]:
             need = "required" if method.required else "optional"
             text = f": {markdown(method.summary)}" if method.summary else ""
             lines.append(f"- `{method.signature}` ({need}){text}")
-    kind = None if point.item is None else site.kind(point.item)
-    if kind is not None:
-        lines += ["", "## Types", "", f"`{kind.kind}`: {markdown(kind.summary)}"]
-        if site.printers(kind.kind):
-            lines.append(f"Its page: `{kind_address(kind, 'outputs')}`.")
-        lines += tables(kind.fields)
+    if point.types:
+        lines += ["", "## Types"]
+    for each in point.types:
+        lines += ["", f"### `{each.name}`"]
+        lines += ["", markdown(each.summary)] if each.summary else []
+        kind = None if each.kind is None else site.kind(each.kind)
+        if kind is not None and site.printers(kind.kind):
+            lines += ["", f"Kind: `{kind.kind}`; its page: `{kind_address(kind, 'outputs')}`."]
+        elif each.kind is not None:
+            lines += ["", f"Kind: `{each.kind}`."]
+        lines += tables(each.fields, f"{each.name}.")
     if described.examples:
         lines += ["", "## Examples", "", described.examples]
     return lines

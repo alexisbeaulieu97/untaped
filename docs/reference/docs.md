@@ -150,7 +150,8 @@ overview.
 
 ## Stability
 
-`untaped docs` is experimental: its addresses, and what the pages say and
-how they lay it out, may change in a minor release. Installed stub skills
-call it: a release that changes how they call it refreshes the stubs in the
-home folder, and a project's stubs need `untaped skills update`.
+`untaped docs` and its addresses follow [Versioning](../versioning.md);
+what the pages say and how they lay it out may change in any release.
+Installed stub skills call it: a release that changes how they call it
+refreshes the stubs in the home folder, and a project's stubs need
+`untaped skills update`.

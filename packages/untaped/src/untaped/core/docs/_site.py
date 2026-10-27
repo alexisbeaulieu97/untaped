@@ -92,10 +92,6 @@ class Site:
 
     # --- what a plugin's pages list ----------------------------------------------------
 
-    def commands(self, plugin: PluginDecl) -> list[CommandDecl]:
-        """The plugin's commands, depth first, its own (``runs``) first."""
-        return [c for c in self.declaration.commands() if c.path[0] == plugin.name]
-
     def guides(self, name: str) -> list[GuideDecl]:
         """The guides living under ``name``: those of its classes, whichever plugin links them."""
         found: dict[str, GuideDecl] = {}

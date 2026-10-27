@@ -13,6 +13,7 @@ Read first: `untaped docs acme guides finish`.
 
 - `PLANS...`: The plans to add.
 - `--finish`: The finish each widget gets. One of `matte`, `gloss`. Default: `matte`.
+- `--rack`: The rack to add to. One of `default`, `spare`. Default: `default`.
 
 ### Output
 - `--format`, `-f`: The output format. One of `table`, `json`, `yaml`, `pipe`, `raw`.

@@ -29,8 +29,8 @@ them. For two installs that disagree about a renamed setting, see
   [experimental](#experimental) objects listed below.
 - Spellings `untaped` writes outside its own process, such as the Git
   credential helper (`untaped git credential`, with `--profile` before it)
-  in the worktrees it creates, even if hidden, except `untaped docs`,
-  which the stub skills call and which is [experimental](#experimental).
+  in the worktrees it creates, and the `untaped docs` addresses the stub
+  skills name, even if hidden.
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
 application majors.
@@ -67,9 +67,6 @@ changelog entry that says so. An SDK object (a class or function, not a
 command) is marked with `@experimental` in the code and listed here, not in a
 `--help` panel. Currently experimental:
 
-- `docs`: `untaped docs`, its addresses and the pages it prints.
-  See [untaped docs](./reference/docs.md#stability) for what that
-  means for installed stub skills.
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
   `awx.test_result` records, and the `awx.test_timeout_seconds` and
   `awx.test_parallel` settings with their environment variables.

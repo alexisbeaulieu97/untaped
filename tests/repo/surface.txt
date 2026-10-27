@@ -3057,9 +3057,9 @@ cli untaped config unset --format choice=raw
 cli untaped config unset --format choice=table
 cli untaped config unset --format choice=yaml
 cli untaped config unset KEY
-cli untaped docs  [experimental]
-cli untaped docs --search VALUE default=unset  [experimental]
-cli untaped docs [ADDRESS...]@1 default=unset  [experimental]
+cli untaped docs
+cli untaped docs --search VALUE default=unset
+cli untaped docs [ADDRESS...]@1 default=unset
 cli untaped doctor
 cli untaped doctor --columns VALUE... default=unset
 cli untaped doctor --columns alias=-c

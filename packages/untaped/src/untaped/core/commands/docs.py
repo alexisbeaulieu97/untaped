@@ -14,7 +14,6 @@ from pydantic import Field
 from untaped.core.settings import CoreSettings
 from untaped.sdk._cli import echo
 from untaped.sdk.fields import Positional
-from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command
 
 
@@ -36,8 +35,6 @@ class Docs(Command[CoreSettings]):
     $ untaped docs untaped --search profile
     ```
     """
-
-    stability = experimental
 
     address: Positional[list[str]] = Field(
         default_factory=list,

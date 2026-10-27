@@ -220,6 +220,17 @@ class MethodDecl(_Frozen):
     required: bool = False
 
 
+class TypeDecl(_Frozen):
+    """A model an extension point's methods take or return, as its page lists it."""
+
+    #: The class name, as the methods' signatures spell it.
+    name: str
+    summary: str = ""
+    #: Its kind, when a command reads or prints it too.
+    kind: str | None = None
+    fields: tuple[FieldDecl, ...] = ()
+
+
 class PointDecl(_Frozen):
     """An extension point: a contract a plugin ``offers``, with what filling it takes."""
 
@@ -230,8 +241,8 @@ class PointDecl(_Frozen):
     doc: str
     stability: StabilityDecl | None = None
     methods: tuple[MethodDecl, ...] = ()
-    #: The kind of the contract's own model (``T``'s default), if it has one.
-    item: str | None = None
+    #: The contract's own model (``T``'s default) first, then each model a method names.
+    types: tuple[TypeDecl, ...] = ()
 
 
 class FillDecl(_Frozen):

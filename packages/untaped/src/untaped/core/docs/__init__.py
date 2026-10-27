@@ -57,7 +57,7 @@ def search(root: App, result: CompositionResult, words: Sequence[str], text: str
     _lines(site, under)  # an unknown address fails as its page would
     wanted = text.casefold()
     hits = [
-        f"untaped docs {' '.join(address)}: {line}".replace("untaped docs : ", "untaped docs: ")
+        f"{' '.join(('untaped docs', *address))}: {line}"
         for address in addresses(site, under)
         for line in _text(_lines(site, address)).splitlines()
         if wanted in line.casefold()

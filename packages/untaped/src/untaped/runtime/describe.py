@@ -14,13 +14,15 @@ import collections.abc
 import datetime
 import enum
 import inspect
+import json
 import re
 import types
 import typing
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import Any, Literal, get_args, get_origin
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, JsonValue, SecretStr
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from untaped.runtime.declaration import FieldDecl, MethodDecl
@@ -41,6 +43,7 @@ _NAMED: dict[object, str] = {
     datetime.timedelta: "duration",
     Any: "any value",
     object: "any value",
+    JsonValue: "any JSON value",
 }
 #: The ``holds`` of a field holding models, by the shape holding them.
 type Holds = Literal["", "[]", ".NAME"]
@@ -60,31 +63,33 @@ def first_paragraph(doc: str) -> str:
 
 def noun(cls: type) -> str:
     """A class name as a reader says it: ``TestResult`` is ``test result``."""
-    return " ".join(word.lower() for word in _WORDS.findall(cls.__name__))
+    return _spoken(cls.__name__)
 
 
-def type_text(annotation: object) -> str:
-    """``annotation`` in a reader's words; ``None`` in a union reads ``or null``."""
-    annotation = _peel(annotation)
+def _spoken(name: str) -> str:
+    return " ".join(word.lower() for word in _WORDS.findall(name))
+
+
+def type_text(annotation: object, expanding: frozenset[object] = frozenset()) -> str:
+    """``annotation`` in a reader's words; ``None`` in a union reads ``or null``.
+
+    A ``type`` alias met again inside itself (``type Tree = dict[str, Tree]``)
+    reads as its name, so a recursive type ends.
+    """
+    annotation, expanding = _unwrapped(annotation, expanding)
+    if isinstance(annotation, _Word):
+        return annotation.text
     if _is_union(annotation):
-        parts = [arg for arg in get_args(annotation) if arg is not type(None)]
-        nullable = len(parts) < len(get_args(annotation))
-        if all(_choices(part) for part in parts):
-            text = ", ".join(f"`{choice}`" for part in parts for choice in _choices(part))
-            return f"{text}, or null" if nullable else text
-        text = " or ".join(type_text(part) for part in parts)
-        return f"{text} or null" if nullable else text
+        return _union_text(annotation, expanding)
     choices = _choices(annotation)
     if choices:
         return ", ".join(f"`{choice}`" for choice in choices)
     origin = get_origin(annotation)
     args = get_args(annotation)
     if origin in _LISTS:
-        return f"list of {type_text(args[0])}" if args else "list"
+        return f"list of {type_text(args[0], expanding)}" if args else "list"
     if origin in _MAPS:
-        return f"map of name to {type_text(args[1])}" if len(args) == 2 else "map"
-    if annotation in _NAMED:
-        return _NAMED[annotation]
+        return f"map of name to {type_text(args[1], expanding)}" if len(args) == 2 else "map"
     if isinstance(annotation, type):
         if issubclass(annotation, BaseModel):
             return noun(annotation)
@@ -93,6 +98,48 @@ def type_text(annotation: object) -> str:
                 return name
         return noun(annotation)
     return str(annotation)
+
+
+@dataclass(frozen=True)
+class _Word:
+    """What an annotation reads as once unwrapped, when it reads as a word of its own."""
+
+    text: str
+
+
+def _unwrapped(
+    annotation: object, expanding: frozenset[object]
+) -> tuple[object, frozenset[object]]:
+    """``annotation`` without ``Annotated`` and aliases, or the word it reads as on the way."""
+    while (named := _named(annotation)) is None:
+        if isinstance(annotation, typing.TypeAliasType):
+            if annotation in expanding:
+                return _Word(_spoken(annotation.__name__)), expanding
+            expanding |= {annotation}
+            annotation = annotation.__value__
+        elif get_origin(annotation) is typing.Annotated:
+            annotation = get_args(annotation)[0]
+        else:
+            return annotation, expanding
+    return _Word(named), expanding
+
+
+def _union_text(annotation: object, expanding: frozenset[object]) -> str:
+    parts = [arg for arg in get_args(annotation) if _peel(arg) is not type(None)]
+    nullable = len(parts) < len(get_args(annotation))
+    if all(_choices(part) for part in parts):
+        text = ", ".join(f"`{choice}`" for part in parts for choice in _choices(part))
+        return f"{text}, or null" if nullable else text
+    text = " or ".join(type_text(part, expanding) for part in parts)
+    return f"{text} or null" if nullable else text
+
+
+def _named(annotation: object) -> str | None:
+    """The reader's word for ``annotation`` when it has one of its own (``text``, ``path``)."""
+    try:
+        return _NAMED.get(annotation)
+    except TypeError:  # an unhashable annotation, such as one carrying a mutable mark
+        return None
 
 
 def fields_of(model: type[BaseModel], seen: frozenset[type] = frozenset()) -> tuple[FieldDecl, ...]:
@@ -120,6 +167,14 @@ def fields_of(model: type[BaseModel], seen: frozenset[type] = frozenset()) -> tu
             )
         )
     return tuple(found)
+
+
+def models_in(annotation: object) -> list[type[BaseModel]]:
+    """The models ``annotation`` names, outermost first: ``list[Book] | None`` is ``[Book]``."""
+    annotation = _peel(annotation)
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return [annotation]
+    return [model for arg in get_args(annotation) for model in models_in(arg)]
 
 
 def method_decl(name: str, function: object, hints: typing.Mapping[str, Any]) -> MethodDecl:
@@ -188,10 +243,15 @@ def _choices(annotation: object) -> tuple[str, ...]:
     """The values a ``Literal`` or an enum allows, as a file spells them; ``()`` otherwise."""
     annotation = _peel(annotation)
     if get_origin(annotation) is Literal:
-        return tuple(str(jsonable(value)) for value in get_args(annotation))
+        return tuple(_spelled(jsonable(value)) for value in get_args(annotation))
     if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
         return tuple(str(member.value) for member in annotation)
     return ()
+
+
+def _spelled(value: object) -> str:
+    """A choice as a file spells it: ``true``, ``null``, ``3``, ``pass``."""
+    return value if isinstance(value, str) else json.dumps(value)
 
 
 def jsonable(value: object) -> Any:

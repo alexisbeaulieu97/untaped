@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator
 from importlib import metadata
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pytest
 from cyclopts import App
@@ -43,6 +43,7 @@ from untaped.sdk import (
     Plugin,
     Positional,
     Written,
+    deprecated,
     experimental,
 )
 from untaped.sdk._cli import create_app
@@ -149,6 +150,7 @@ class Show(Command[AcmeSettings]):
     """
 
     selection: Selection
+    limit: int = Field(10, description="Show at most this many.")
     output: Output[Widget]
 
     def run(self) -> Iterator[Widget]:
@@ -165,6 +167,7 @@ class Add(Command[AcmeSettings]):
         default_factory=list, description="The plans to add."
     )
     finish: Finish = Field(Finish.MATTE, description="The finish each widget gets.")
+    rack: Literal["default", "spare"] = Field("default", description="The rack to add to.")
     output: Output[Widget]
     confirm: Confirm
 
@@ -181,10 +184,19 @@ class Start(Command[AcmeSettings]):
         return None
 
 
+class Drop(Command[AcmeSettings]):
+    """Drop a widget for good."""
+
+    stability = deprecated(removed_in=99, replacement="untaped acme widgets add")
+
+    def run(self) -> None:
+        return None
+
+
 class Widgets(Group):
     """Widgets one by one."""
 
-    commands = (Show, Add, Start)
+    commands = (Show, Add, Start, Drop)
 
 
 class Beta(Command[AcmeSettings]):
@@ -310,7 +322,33 @@ def test_a_command_page_shows_every_option_help_shows_in_its_order(acme: Install
     _, page, _ = _docs(acme, "acme", "commands", "widgets", "show")
     usage = page.split("## Usage", 1)[1]
     shown = re.findall(r"^- `(--[\w-]+)", usage, re.MULTILINE)
-    assert shown[:2] == ["--every", "--names"]
+    assert shown == ["--every", "--names", "--limit", "--format", "--columns"]
+
+
+def test_the_options_panel_is_headed_after_another_panel(acme: Install) -> None:
+    _, page, _ = _docs(acme, "acme", "commands", "widgets", "show")
+    assert "### Selection\n- `--every`" in page
+    assert "### Options\n- `--limit`: Show at most this many. Default: `10`." in page
+
+
+def test_a_default_that_is_a_choice_still_shows(acme: Install) -> None:
+    _, page, _ = _docs(acme, "acme", "commands", "widgets", "add")
+    assert "One of `default`, `spare`. Default: `default`." in page
+
+
+def test_a_deprecated_command_is_left_out_of_lists_and_its_page_says_so(acme: Install) -> None:
+    _, listed, _ = _docs(acme, "acme", "commands")
+    code, page, _ = _docs(acme, "acme", "commands", "widgets", "drop")
+    assert "drop" not in listed
+    assert code == 0
+    assert page.startswith("# acme commands widgets drop [deprecated]\n")
+    assert "\nDeprecated: removed in untaped-acme 99.0; use untaped acme widgets add.\n" in page
+
+
+def test_bare_example_lines_are_fenced(acme: Install) -> None:
+    _, page, _ = _docs(acme, "untaped", "commands", "config", "get")
+    examples = page.split("## Examples\n", 1)[1]
+    assert examples.startswith("\n```console\n$ untaped config get ")
 
 
 # --- search ----------------------------------------------------------------------

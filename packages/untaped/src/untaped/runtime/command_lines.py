@@ -1,10 +1,11 @@
 """Whether an ``untaped …`` command line parses against the composed root.
 
 Shared by the plugin checks' conventions (a docstring's ``Examples`` section;
-a plugin's guides), the command's agent page, which reads ``Examples``
-here too, and the repository's docs and skill tests. Synopsis notation is read the obvious way
-(``[--flag X]`` is optional text, ``a|b`` takes ``a``, ``...`` repeats) and
-placeholders (``NAME``, ``<recipe>``) bind without being converted.
+a plugin's guides), the command's ``untaped docs`` page, which reads
+``Examples`` here too, and the repository's docs and skill tests. Synopsis
+notation is read the obvious way (``[--flag X]`` is optional text, ``a|b``
+takes ``a``, ``...`` repeats) and placeholders (``NAME``, ``<recipe>``) bind
+without being converted.
 """
 
 from __future__ import annotations

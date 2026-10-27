@@ -13,6 +13,9 @@ Read first: `untaped docs acme guides selection`.
 - `--every`: Every widget on the rack.
 - `--names`: The widgets named.
 
+### Options
+- `--limit`: Show at most this many. Default: `10`.
+
 ### Output
 - `--format`, `-f`: The output format. One of `table`, `json`, `yaml`, `pipe`, `raw`.
 - `--columns`, `-c`: Table columns: a list, or +NAME to add.
