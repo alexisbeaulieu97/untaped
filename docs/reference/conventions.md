@@ -275,9 +275,11 @@ The sections above name the helper for each rule. Beyond those:
   [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
-- To keep a repository, use `RepoStore.for_url(url, plugin=SPEC, error=...)`
-  from `untaped_git.api`, not a bare repo or a root setting of your own; read
-  blobs through `store.prefetched(...).run(...)` (the `blob-reader` rule).
+- To keep a repository, use `RepoStore.for_url(url, plugin=..., error=...)`
+  from `untaped_git.api`, not a bare repo or a root setting of your own:
+  `plugin=` takes your plugin's name or what names it (a command's
+  `self.ctx.plugin`, an 11.x `SPEC`). Read blobs through
+  `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
 A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
 its records declare their kind:
