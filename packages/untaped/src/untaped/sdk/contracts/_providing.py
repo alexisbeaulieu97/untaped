@@ -1,47 +1,53 @@
-"""Composing provider instances as a plugin of their own: ``providing``.
+"""Composing provider classes as a plugin of their own: ``providing``.
 
 An owner that loads providers from somewhere other than an installed
 distribution (lint's rule modules in a repository) composes them through
-the one path every provider takes: validated, stamped with the plugin they
-are offered as, routed by ``gather(plugins=)`` and failure-accounted.
-``untaped.sdk.testing.compose_with(provides=)`` builds its fakes the same way.
+the one path every provider takes: a plugin whose ``fills`` are the
+classes, validated, stamped with the plugin they are offered as, routed by
+``gather(plugins=)`` and failure-accounted. The testing kit's
+``install(providers=)`` builds its plugins the same way.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from untaped.sdk.errors import ConfigError
 
 if TYPE_CHECKING:
     from untaped.runtime.registry import CompositionResult, PluginCandidate
-    from untaped.sdk.contracts._declare import Contract
+    from untaped.sdk.plugin import Plugin
 
 
 @contextmanager
 def providing(
-    owner: str,
-    offered: Mapping[str, Sequence[Contract]],
+    offered: Mapping[str, Sequence[type]],
     *,
     candidates: Sequence[PluginCandidate] | None = None,
 ) -> Iterator[CompositionResult]:
     """Compose the installed plugins plus one plugin per key of ``offered``; restore after.
 
-    ``providing("lint", {"house": [HouseRules()]})`` composes a plugin named
-    ``house`` offering each instance to ``owner``'s contract it subclasses,
-    so ``gather`` asks it like any provider and its answers' ``plugin`` is
-    ``house``. ``candidates`` replaces entry-point discovery. A key that is
-    not a valid plugin name or is already a candidate's name raises
+    ``providing({"house": (HouseRules,)})`` composes a plugin named
+    ``house`` whose ``fills`` are those provider classes, each filling the
+    contract it subclasses (its owner read from the contract, as ``fills``
+    reads it), so ``gather`` asks it like any provider and its answers'
+    ``plugin`` is ``house``. ``candidates`` replaces entry-point discovery.
+    A class that is no provider raises :class:`TypeError` naming it; a key
+    that is not a valid plugin name or is already a candidate's name raises
     :class:`ConfigError` before anything is composed, so a composed plugin
     can never shadow an installed one; a key the composition quarantines (one
     taken by core: ``untaped``, a root command, a config key) raises
-    :class:`ConfigError` too, once the composition is restored.
+    :class:`ConfigError` too, once the composition is restored. The plugin
+    lives in a package of its own (``untaped_providing_<key>``), so it never
+    takes over the package, and the kinds, of the plugin defining its classes.
+    A class whose contract no composed plugin offers is not asked.
     Composing is refused inside a contract call, as every composition is.
     """
     from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
     from untaped.runtime.registry import (  # noqa: PLC0415
+        PluginCandidate,
         check_plugin_name,
         discover_candidates,
     )
@@ -52,7 +58,16 @@ def providing(
         check_plugin_name(key)
         if key in held:
             raise ConfigError(f"{key!r} is the name of an installed plugin; pick another name")
-    built = offering_candidates(offered, base, owner=owner)
+    built = [
+        PluginCandidate(
+            distribution=f"untaped-{key}",
+            name=key,
+            target=providers_plugin(
+                key, classes, module=f"untaped_providing_{key.replace('-', '_')}"
+            ),
+        )
+        for key, classes in offered.items()
+    ]
     with bootstrap.composed_with([*base, *built]) as result:
         refused = [record for record in result.quarantine if record.name in offered]
         if refused:
@@ -62,56 +77,55 @@ def providing(
         yield result
 
 
-def offering_candidates(
-    offered: Mapping[str, Sequence[Contract]],
-    base: Sequence[PluginCandidate],
-    *,
-    owner: str | None = None,
-) -> list[PluginCandidate]:
-    """One candidate per key of ``offered``, offering its instances to their contracts' owners.
+def providers_plugin(
+    name: str, classes: Sequence[type], *, module: str | None = None
+) -> type[Plugin]:
+    """A plugin named ``name`` whose ``fills`` are the provider ``classes``.
 
-    Each instance's owner is the composed plugin declaring its contract,
-    among ``base`` (composed once); with ``owner`` set, every instance must
-    fill one of that plugin's contracts.
+    It lives in ``module`` (by default the first class's, as a test's
+    providers do). Its settings are the classes' ``Provider[S]`` (one model
+    for all of them), else an empty model. A class that is no provider of a
+    contract, two settings models, or no class at all raise :class:`TypeError`.
     """
-    from untaped.runtime.registry import (  # noqa: PLC0415
-        PluginCandidate,
-        PluginSpec,
-        compose,
-        owns_contracts,
+    from pydantic import ConfigDict, create_model  # noqa: PLC0415
+
+    from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import (  # noqa: PLC0415
+        Provider,
+        contract_of,
+        settings_type,
     )
-    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
+    from untaped.sdk.plugin import Plugin  # noqa: PLC0415
 
-    if not offered:
-        return []
-    owners: dict[type, str] = {}
-    for plugin in compose(base).plugins:
-        if owns_contracts(plugin.spec):
-            owners.update(dict.fromkeys(plugin.spec.contracts(), plugin.spec.name))
-    built: list[PluginCandidate] = []
-    for name, instances in offered.items():
-        grouped: dict[str, list[Contract]] = {}
-        for instance in instances:
-            info = contract_of(type(instance))
-            if info is None or info.cls is type(instance):
-                raise TypeError(
-                    f"{instance!r} is not a provider (an instance of a contract subclass)"
-                )
-            if info.cls not in owners:
-                raise LookupError(f"no composed plugin declares {info.cls.__qualname__}")
-            if owner is not None and owners[info.cls] != owner:
-                raise LookupError(
-                    f"{info.cls.__qualname__} is {owners[info.cls]}'s contract, not {owner}'s"
-                )
-            grouped.setdefault(owners[info.cls], []).append(instance)
-        provides = {each: _offer(tuple(group)) for each, group in grouped.items()}
-        spec = PluginSpec(name=name, provides=provides)
-        built.append(PluginCandidate(distribution=f"untaped-{name}", name=name, target=spec))
-    return built
-
-
-def _offer(instances: tuple[Contract, ...]) -> Callable[[], Sequence[Contract]]:
-    def offer() -> tuple[Contract, ...]:
-        return instances
-
-    return offer
+    check_plugin_name(name)
+    for each in classes:
+        info = contract_of(each) if isinstance(each, type) else None
+        if info is None or info.cls is each or not issubclass(each, Provider):
+            raise TypeError(
+                f"providers[{name!r}] holds {each!r}, not a provider: subclass the contract and "
+                "Provider (Provider[S] when it reads settings)"
+            )
+    if not classes:
+        raise TypeError(f"providers[{name!r}] holds no provider class")
+    title = name.title().replace("-", "")
+    read = {settings_type(each) for each in classes} - {None}
+    if len(read) > 1:
+        names = sorted(each.__qualname__ for each in read if each is not None)
+        raise TypeError(
+            f"providers[{name!r}] read different settings ({', '.join(names)}); "
+            "a plugin has one settings model"
+        )
+    model = next(iter(read), None)
+    if model is None:
+        model = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
+    plugin = type(
+        title,
+        (Plugin,),
+        {
+            "__doc__": f"The providers {name}.",
+            "__module__": module or classes[0].__module__,
+            "settings": model,
+            "fills": tuple(classes),
+        },
+    )
+    return cast("type[Plugin]", plugin)

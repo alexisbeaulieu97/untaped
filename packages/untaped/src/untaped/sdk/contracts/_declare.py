@@ -348,7 +348,7 @@ def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
     return value
 
 
-class Provider[S: BaseModel]:
+class Provider[S: BaseModel = BaseModel]:
     """Base of a provider beside the contract it fills, as a command is ``Command[S]``.
 
     ``S`` is the providing plugin's settings model, read in a method as

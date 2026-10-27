@@ -482,6 +482,6 @@ def test_plugin_check_reports_a_stale_answer_as_its_failed_row_alone() -> None:
     gather(BookSource.books)()
     Library.error = DOWN
     with recording() as emitted, invocation():
-        row = _call(_library_provider(), "books", "shelf.book_source.books", [], lambda *a: a)
+        row = _call(_library_provider(), "books", "shelf.book_source.books", lambda *a: a)
     assert row == ("live", "shelf.book_source.books", "fail", "served a cached answer: HTTP 503")
     assert _stale(emitted) == []

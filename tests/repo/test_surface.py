@@ -35,7 +35,6 @@ from repo.support import (
 from untaped.core.plugin_check import check as plugin_check
 from untaped.core.surface import DeprecatedMark, Line, LineMark, parse, removed
 from untaped.core.surface._lists import CONVENTIONS
-from untaped.runtime.contracts.fills import FILLS_FILE
 from untaped.runtime.registry import PLUGINS_ENTRY_POINT_GROUP
 from untaped.sdk.git import GitCommandError
 from untaped.sdk.health.deprecated_keys import DECLARATIONS
@@ -314,7 +313,6 @@ def test_conventions_are_real() -> None:
         is not None,
         "module <owner>.testing.conformance": 'f"{package}.testing"' in conformance
         and '"conformance"' in conformance,
-        f"file {FILLS_FILE}": True,
         "attribute renamed_keys": "renamed_keys" in DECLARATIONS,
         "attribute retired_keys": "retired_keys" in DECLARATIONS,
         "attribute token_sources": 'getattr(model, "token_sources"' in auth,

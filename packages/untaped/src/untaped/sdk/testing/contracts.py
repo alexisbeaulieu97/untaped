@@ -8,7 +8,7 @@ schemas with :func:`untaped.sdk.testing.assert_surface`. Nothing here imports
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, cast
@@ -41,10 +41,9 @@ def compose_with(
         bootstrap,
     )
     from untaped.runtime.run import build_run, entered  # noqa: PLC0415
-    from untaped.sdk.contracts._providing import offering_candidates  # noqa: PLC0415
 
     base = _candidates(plugins)
-    fakes = offering_candidates(provides or {}, base)
+    fakes = _offering_candidates(provides or {}, base)
     with (
         bootstrap.composed_with([*base, *fakes]) as result,
         entered(build_run(result.mount.declaration, result.mount.settings)),
@@ -54,6 +53,53 @@ def compose_with(
             yield result
         finally:
             _ACTIVE.reset(token)
+
+
+def _offering_candidates(
+    offered: Mapping[str, Sequence[Contract]], base: Sequence[PluginCandidate]
+) -> list[PluginCandidate]:
+    """One candidate per key of ``offered``, offering its instances to their contracts' owners.
+
+    Each instance's owner is the composed plugin declaring its contract,
+    among ``base`` (composed once).
+    """
+    from untaped.runtime.registry import (  # noqa: PLC0415
+        PluginCandidate,
+        PluginSpec,
+        compose,
+        owns_contracts,
+    )
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
+
+    if not offered:
+        return []
+    owners: dict[type, str] = {}
+    for plugin in compose(base).plugins:
+        if owns_contracts(plugin.spec):
+            owners.update(dict.fromkeys(plugin.spec.contracts(), plugin.spec.name))
+    built: list[PluginCandidate] = []
+    for name, instances in offered.items():
+        grouped: dict[str, list[Contract]] = {}
+        for instance in instances:
+            info = contract_of(type(instance))
+            if info is None or info.cls is type(instance):
+                raise TypeError(
+                    f"{instance!r} is not a provider (an instance of a contract subclass)"
+                )
+            if info.cls not in owners:
+                raise LookupError(f"no composed plugin declares {info.cls.__qualname__}")
+            grouped.setdefault(owners[info.cls], []).append(instance)
+        provides = {each: _offer(tuple(group)) for each, group in grouped.items()}
+        spec = PluginSpec(name=name, provides=provides)
+        built.append(PluginCandidate(distribution=f"untaped-{name}", name=name, target=spec))
+    return built
+
+
+def _offer(instances: tuple[Contract, ...]) -> Callable[[], Sequence[Contract]]:
+    def offer() -> tuple[Contract, ...]:
+        return instances
+
+    return offer
 
 
 def _candidates(plugins: Sequence[str | PluginSpec | PluginCandidate]) -> list[PluginCandidate]:
@@ -91,10 +137,7 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     ``source`` names the provider and gives the sample back.
     ``samples=`` is required when ``T`` isn't the owner's model. The provider
     is the one an enclosing :func:`compose_with` offers, else the installed
-    plugin's. Records the owner's schema hash in the plugin package's
-    ``fills.json`` (unless the package is installed in site-packages), which
-    the plugin checks and ``untaped doctor`` compare with the installed
-    owner's (``owner-schema-drift``).
+    plugin's.
     """
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
 
@@ -110,7 +153,7 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
 
 
 def _assert_bound(cls: type, samples: Sequence[object]) -> None:
-    from untaped.runtime.contracts.fills import fills_problems, record_hash  # noqa: PLC0415
+    from untaped.runtime.contracts.fills import fills_problems  # noqa: PLC0415
 
     bound = _bound(cls)
     if not bound.binding.owns_item and not samples:
@@ -123,7 +166,6 @@ def _assert_bound(cls: type, samples: Sequence[object]) -> None:
     assert not problems, f"{cls.__qualname__} doesn't fill {bound.binding.contract.name}:\n" + (
         "\n".join(f"  {line}" for line in problems)
     )
-    record_hash(bound)
 
 
 def _bound(cls: type) -> BoundProvider:

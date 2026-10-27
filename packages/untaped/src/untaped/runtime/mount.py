@@ -318,15 +318,16 @@ def _contract_fields(
     if plugin.offers:
         fields["contracts"] = partial(_resolved, plugin.offers)
     owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
-    grouped: dict[str, list[str]] = defaultdict(list)
-    for fill in plugin.fills:
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for index, fill in enumerate(plugin.fills):
         package = fill.contract.partition(":")[0].partition(".")[0]
         owner = owners.get(fill.contract) or packages().get(package)
         if owner is not None:
-            grouped[owner].append(fill.target)
+            grouped[owner].append(index)
     if grouped:
         fields["provides"] = {
-            owner: partial(_instances, tuple(targets)) for owner, targets in grouped.items()
+            owner: partial(_instances, mount, plugin.name, tuple(indexes))
+            for owner, indexes in grouped.items()
         }
     return fields
 
@@ -335,9 +336,15 @@ def _resolved(targets: Sequence[str]) -> tuple[Any, ...]:
     return tuple(resolve_target(target) for target in targets)
 
 
-def _instances(targets: Sequence[str]) -> tuple[Any, ...]:
-    """One instance of each provider class: core instantiates a provider at the first ask."""
-    return tuple(cls() for cls in _resolved(targets))
+def _instances(mount: Mount, name: str, indexes: Sequence[int]) -> tuple[Any, ...]:
+    """One instance of each provider class: core instantiates a provider at the first ask.
+
+    The classes are the plugin class's ``fills``, in the declaration's order,
+    so a class made at run time (``providing``) needs no importable name and
+    two such classes sharing one never stand for each other.
+    """
+    filled = mount.plugins[name].fills
+    return tuple(filled[index]() for index in indexes)
 
 
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:

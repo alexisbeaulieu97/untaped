@@ -19,7 +19,7 @@ from typing import ClassVar, cast
 from pydantic import ValidationError
 
 from untaped.sdk import Failure, Record, experimental, kind_of
-from untaped.sdk.contracts import Contract
+from untaped.sdk.contracts import Contract, Provider
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree
 
@@ -113,7 +113,7 @@ def finding(
     )
 
 
-class Rules(Linter):
+class Rules(Linter, Provider):
     """The stock ``Linter``: hosts ``RULES`` plus its own ``@rule`` methods.
 
     ``class AcmeRules(Rules): RULES = (no_print, ...)``. A rule that raises
@@ -124,8 +124,8 @@ class Rules(Linter):
     RULES: ClassVar[tuple[RuleFunction, ...]] = ()
 
     @classmethod
-    def from_module(cls, *modules: ModuleType) -> Rules:
-        """A host for the ``@rule`` functions ``modules`` define (not ones they import)."""
+    def from_module(cls, *modules: ModuleType) -> type[Rules]:
+        """A host class for the ``@rule`` functions ``modules`` define (not ones they import)."""
         functions = tuple(
             cast("RuleFunction", value)
             for module in modules
@@ -135,7 +135,7 @@ class Rules(Linter):
             and isinstance(getattr(value, "rule", None), Rule)
         )
         host = type("ModuleRules", (cls,), {"RULES": functions, "__module__": cls.__module__})
-        return cast("Rules", host())
+        return cast("type[Rules]", host)
 
     def rules(self) -> list[Rule]:
         return [function.rule for function in self._functions()]

@@ -183,7 +183,7 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
         _row("conventions", "conventions", "pass", "no violations"),
         _row("live", "rack.item_source.items", "pass", "1 item"),
         _row("live", "rack.item_source.items", "fail", "NotImplementedError"),
-        _row("schema", "rack.item_source", "warn", "no recorded owner schema hash"),
+        _row("unmarked-service", "rack", "warn", "base_url names no NeedsSetup"),
     ]
     monkeypatch.setattr(conventions, "check_plugin", lambda name, candidates=None: rows)
     plugin = InstalledPlugin(
@@ -192,7 +192,7 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
     found = Conventions().findings(plugin)
     assert [(each.rule, each.severity, each.message) for each in found] == [
         ("live", "error", "rack.item_source.items: NotImplementedError"),
-        ("schema", "warning", "rack.item_source: no recorded owner schema hash"),
+        ("unmarked-service", "warning", "rack: base_url names no NeedsSetup"),
     ]
 
 

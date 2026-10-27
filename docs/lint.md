@@ -18,8 +18,7 @@ Each plugin is checked against:
 - what core can only tell from the composed root: names, the provider's
   requirements, the help tree, guides and map lines, stability marks, error
   and settings classes, and each contract it fills, called live
-  (`lint.registration`, `lint.conformance`, `lint.live`, `lint.fills`,
-  `lint.schema`, `lint.owner-schema-drift`, `lint.contracts`), and a
+  (`lint.registration`, `lint.conformance`, `lint.live`, `lint.contracts`), and a
   deprecation warning for settings that leave
   `untaped` to guess what needs setting up from the names `base_url` and
   `token` instead of a marked server and a declared credential

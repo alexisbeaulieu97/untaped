@@ -1,9 +1,8 @@
-"""The plugin checks: conventions, conformance, a live call, fills and the schema hash."""
+"""The plugin checks: conventions, conformance and a live call."""
 
 from __future__ import annotations
 
 import importlib
-import json
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,6 @@ import pytest
 from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
 from untaped.core.plugin_check.check import PluginCheckRow, check_plugins
 from untaped.runtime import bootstrap
-from untaped.runtime.contracts.registry import doctor_rows
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 
@@ -32,35 +30,16 @@ def _bin() -> type:
     return importlib.import_module("untaped_bin.providers.rack").BinSource
 
 
-def _record(site: Path, value: str) -> None:
-    (site / "untaped_bin" / "fills.json").write_text(
-        json.dumps({"untaped": "1", "fills": {"rack.item_source": value}}), encoding="utf-8"
-    )
-
-
-def _current_hash() -> str:
-    from untaped.sdk.contracts._declare import contract_of
-    from untaped.sdk.contracts._schema import schema_hash
-
-    info = contract_of(importlib.import_module("untaped_rack.api").ItemSource)
-    assert info is not None
-    return schema_hash(info)
-
-
 def test_a_provider_that_fills_its_contract_passes_every_check(contract_plugins_site: Path) -> None:
-    _record(contract_plugins_site, _current_hash())
     assert _rows(_check()) == [
         ("conventions", "conventions", "pass", "no violations"),
         ("conformance", "rack.item_source", "pass", "rack's conformance checks pass"),
         ("live", "rack.item_source.items", "pass", "2 items"),
         ("live", "rack.item_source.named", "pass", "skipped: it needs arguments"),
-        ("fills", "rack.item_source", "pass", "2 live items"),
-        ("schema", "rack.item_source", "pass", "tested against this owner's schema"),
     ]
 
 
 def test_without_a_name_every_installed_plugin_is_checked(contract_plugins_site: Path) -> None:
-    _record(contract_plugins_site, _current_hash())
     rows = _check(None)
     assert sorted({row.plugin for row in rows}) == ["bin", "rack"]
     assert ("contracts", "rack", "pass", "declares item_source") in _rows(
@@ -75,22 +54,13 @@ def test_an_unknown_plugin_is_a_usage_error(contract_plugins_site: Path) -> None
         _check("nowhere")
 
 
-def test_failures_are_reported_and_drift_is_a_warning(contract_plugins_site: Path) -> None:
-    _record(contract_plugins_site, "0" * 64)
+def test_failures_are_reported(contract_plugins_site: Path) -> None:
     _bin().nonconforming = True
     _bin().broken = True
     rows = _rows(_check())
     assert ("conformance", "rack.item_source", "fail", "items must be sorted") in rows
     assert ("live", "rack.item_source.items", "fail", "RuntimeError: the bin is locked") in rows
-    assert ("fills", "rack.item_source", "pass", "skipped: no live items to check") in rows
-    schema = next(row for row in rows if row[0] == "schema")
-    assert schema[2] == "warn"
-    assert schema[3].startswith("owner-schema-drift: ")
-
-
-def test_no_recorded_hash_is_a_warning(contract_plugins_site: Path) -> None:
-    schema = next(row for row in _rows(_check()) if row[0] == "schema")
-    assert schema[2:] == ("warn", "no recorded owner schema hash; assert_fills records it")
+    assert not [row for row in rows if row[0] in {"fills", "schema"}]
 
 
 def test_an_owner_that_is_not_installed_skips_the_offer(contract_plugins_site: Path) -> None:
@@ -115,16 +85,6 @@ def test_the_check_is_hermetic_and_keeps_the_composition(contract_plugins_site: 
     result = bootstrap.compose_root(candidates=found)
     check_plugins(result, found, "bin")
     assert bootstrap.composition() is result
-
-
-def test_doctor_reports_owner_schema_drift(contract_plugins_site: Path) -> None:
-    _record(contract_plugins_site, "0" * 64)
-    bootstrap.compose_root(candidates=candidates())
-    drift = [row for row in doctor_rows() if row.title == "owner-schema-drift"]
-    assert len(drift) == 1
-    assert drift[0].status == "warn"
-    _record(contract_plugins_site, _current_hash())
-    assert not [row for row in doctor_rows() if row.title == "owner-schema-drift"]
 
 
 def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Path) -> None:
@@ -167,15 +127,14 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
         assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack", "untaped"]
     box = importlib.import_module("untaped_bin.providers.rack").Box
     assert_fills(_bin(), samples=[box(id=3, label="pens")])
-    recorded = json.loads((contract_plugins_site / "untaped_bin" / "fills.json").read_text("utf-8"))
-    assert recorded["fills"] == {"rack.item_source": _current_hash()}
+    assert not (contract_plugins_site / "untaped_bin" / "fills.json").exists()
 
 
 def test_a_provider_fails_when_its_owner_cannot_be_read(contract_plugins_site: Path) -> None:
     importlib.import_module("untaped_rack").BROKEN = True
     rows = _rows(_check())
     assert ("registration", "rack", "fail", "rack's contracts function fails; see doctor") in rows
-    assert not [row for row in rows if row[0] in {"live", "fills", "schema"}]
+    assert not [row for row in rows if row[0] == "live"]
 
 
 def test_a_provider_fails_when_its_owner_is_quarantined(contract_plugins_site: Path) -> None:
@@ -211,7 +170,6 @@ def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
     result = bootstrap.compose_root(candidates=found)
     rows = _rows(check_plugins(result, found, "shelf"))
     assert ("live", "rack.item_source.items", "pass", "1 item") in rows
-    assert ("fills", "rack.item_source", "pass", "1 live item") in rows
 
 
 def test_assert_fills_names_an_owner_whose_contracts_fail(contract_plugins_site: Path) -> None:

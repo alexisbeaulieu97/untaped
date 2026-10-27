@@ -41,8 +41,6 @@ class Reason(StrEnum):
     """A doctor row's title for a provider that answers; goes with the 11.x reader."""
     bad_contracts = "bad-contracts"
     """An 11.x owner whose contracts can't be read; goes with the 11.x owner reader."""
-    owner_schema_drift = "owner-schema-drift"
-    """A provider tested against another owner schema; goes with ``fills.json``."""
 
 
 #: Why the registry set a provider's offer aside at composition.
@@ -77,7 +75,6 @@ DoctorReason = (
         Reason.not_configured,
         Reason.unused_method,
         Reason.bad_contracts,
-        Reason.owner_schema_drift,
         Reason.rank_unknown_method,
         Reason.rank_not_installed,
     ]

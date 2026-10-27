@@ -4527,7 +4527,6 @@ convention attribute renamed_keys
 convention attribute retired_keys
 convention attribute token_sources
 convention entry-point untaped.plugins
-convention file fills.json
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
 record jira.IssueLink
@@ -6801,7 +6800,6 @@ sdk untaped.sdk.contracts.Reason.no_cache = no-cache
 sdk untaped.sdk.contracts.Reason.not_configured = not-configured
 sdk untaped.sdk.contracts.Reason.owner_not_installed = owner-not-installed
 sdk untaped.sdk.contracts.Reason.owner_out_of_range = owner-out-of-range
-sdk untaped.sdk.contracts.Reason.owner_schema_drift = owner-schema-drift
 sdk untaped.sdk.contracts.Reason.raised = raised
 sdk untaped.sdk.contracts.Reason.rank_not_installed = rank-not-installed
 sdk untaped.sdk.contracts.Reason.rank_unknown_method = rank-unknown-method
@@ -6833,7 +6831,7 @@ sdk untaped.sdk.contracts.gather(plugins=) default=None
 sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
 sdk untaped.sdk.contracts.gather(refresh=) default=None
 sdk untaped.sdk.contracts.providing(candidates=) default=None
-sdk untaped.sdk.contracts.providing(owner, offered)
+sdk untaped.sdk.contracts.providing(offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
 sdk untaped.sdk.create_app(*, name)
 sdk untaped.sdk.create_app(help=) default=""
@@ -8275,6 +8273,7 @@ sdk untaped_lint.api.RuleFunction  [experimental]
 sdk untaped_lint.api.RuleFunction.model  [experimental]
 sdk untaped_lint.api.RuleFunction.rule  [experimental]
 sdk untaped_lint.api.Rules base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_lint.api.Rules base=untaped.sdk.contracts.Provider  [experimental]
 sdk untaped_lint.api.Rules base=untaped_lint.api.Linter  [experimental]
 sdk untaped_lint.api.Rules implement=  [experimental]
 sdk untaped_lint.api.Rules.RULES class  [experimental]

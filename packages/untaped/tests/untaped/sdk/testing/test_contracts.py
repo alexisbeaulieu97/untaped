@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from abc import abstractmethod
 from collections.abc import Iterator
@@ -26,12 +25,9 @@ from core_test_support.contracts.support import (
     shelf_spec,
 )
 from untaped.runtime import bootstrap
-from untaped.runtime.contracts import fills as _fills
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Plugin, deprecated, experimental
 from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
-from untaped.sdk.contracts._declare import contract_of
-from untaped.sdk.contracts._schema import schema_hash
 from untaped.sdk.storage import Cache
 from untaped.sdk.testing import assert_fills, assert_surface, compose_with
 
@@ -40,14 +36,6 @@ from untaped.sdk.testing import assert_fills, assert_surface, compose_with
 def _fresh_providers() -> Iterator[None]:
     with fresh_providers():
         yield
-
-
-@pytest.fixture
-def fills_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Where ``assert_fills`` records hashes: a temp file, never the test package."""
-    path = tmp_path / "fills.json"
-    monkeypatch.setattr(_fills, "fills_path", lambda provider: path)
-    return path
 
 
 def test_compose_with_offers_a_fake_to_the_owner_and_restores_the_composition() -> None:
@@ -72,13 +60,9 @@ def test_compose_with_refuses_what_it_cannot_compose() -> None:
         compose_with(shelf_spec(), provides={"fake": [object()]}).__enter__()  # type: ignore[list-item]
 
 
-def test_assert_fills_passes_for_a_bridging_provider_and_records_the_hash(fills_file: Path) -> None:
+def test_assert_fills_passes_for_a_bridging_provider() -> None:
     with compose_with(shelf_spec(), library_spec()):
         assert_fills(Library, samples=[Volume(id=1, name="Dune"), {"id": 2, "name": "Emma"}])
-    recorded = json.loads(fills_file.read_text(encoding="utf-8"))
-    info = contract_of(BookSource)
-    assert info is not None
-    assert recorded == {"untaped": "1", "fills": {"shelf.book_source": schema_hash(info)}}
 
 
 def test_assert_fills_needs_samples_when_the_provider_has_its_own_records() -> None:
@@ -89,12 +73,11 @@ def test_assert_fills_needs_samples_when_the_provider_has_its_own_records() -> N
         assert_fills(Library())
 
 
-def test_assert_fills_of_the_owners_model_needs_no_samples(fills_file: Path) -> None:
+def test_assert_fills_of_the_owners_model_needs_no_samples() -> None:
     spec = PluginSpec(name="shop", provides={"shelf": lambda: (Shop(),)})
     with compose_with(shelf_spec(), spec):
         assert_fills(Shop)
         assert_fills(Shop, samples=[Book(title="Dune")])
-    assert fills_file.exists()
 
 
 class Leaky(Volume, kind="library.leaky"):
@@ -113,7 +96,7 @@ class Forger(BookSource[Leaky]):
         return []
 
 
-def test_assert_fills_lists_every_problem(fills_file: Path) -> None:
+def test_assert_fills_lists_every_problem() -> None:
     spec = PluginSpec(name="forge", provides={"shelf": lambda: (Forger(),)})
     with compose_with(shelf_spec(), spec), pytest.raises(AssertionError) as failed:
         assert_fills(
@@ -129,7 +112,6 @@ def test_assert_fills_lists_every_problem(fills_file: Path) -> None:
     assert "sample 1 doesn't read back from JSON" in message
     assert "to_book(sample 3): title: Input should be a valid string" in message
     assert "sample 2 is not a Leaky" in message
-    assert not fills_file.exists()
 
 
 def test_assert_fills_names_a_quarantined_offer() -> None:
@@ -154,21 +136,6 @@ def test_assert_fills_asks_for_an_owner_that_is_not_composed() -> None:
         pytest.raises(LookupError, match=r"Library fills book_source, whose owner isn't composed"),
     ):
         assert_fills(Library, samples=[Volume(id=1, name="Dune")])
-
-
-def test_a_package_in_site_packages_keeps_its_fills_even_through_a_link(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    site, cache = tmp_path / "site", tmp_path / "cache"
-    (site / "untaped_acme").mkdir(parents=True)
-    cache.mkdir()
-    (cache / "fills.json").write_text("{}", encoding="utf-8")
-    linked = site / "untaped_acme" / "fills.json"
-    linked.symlink_to(cache / "fills.json")
-    paths = {"purelib": str(site), "platlib": str(site)}
-    monkeypatch.setattr(_fills.sysconfig, "get_paths", lambda: paths)
-    assert _fills._installed(linked)
-    assert not _fills._installed(cache / "fills.json")
 
 
 def test_assert_fills_refuses_a_contract_and_an_uncomposed_provider() -> None:
@@ -355,7 +322,7 @@ class _Stockist(Plugin):
 
 
 def test_assert_fills_composes_an_installed_plugin_class_with_the_owner_it_fills(
-    fills_file: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from untaped.runtime import registry
 
@@ -366,4 +333,3 @@ def test_assert_fills_composes_an_installed_plugin_class_with_the_owner_it_fills
     installed = (candidate("stockist", _Stockist), candidate("shelf", _Shelf))
     monkeypatch.setattr(registry, "discover_candidates", lambda: installed)
     assert_fills(_Stocked)
-    assert json.loads(fills_file.read_text())  # the owner's hash, recorded

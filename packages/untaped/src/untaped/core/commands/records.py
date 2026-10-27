@@ -270,7 +270,7 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
     plugin: str
     check: str = Field(
         description=(
-            "`conventions`, `registration`, `conformance`, `live`, `fills`, `schema` or "
+            "`conventions`, `registration`, `conformance`, `live`, `unmarked-service` or "
             "`contracts`."
         )
     )

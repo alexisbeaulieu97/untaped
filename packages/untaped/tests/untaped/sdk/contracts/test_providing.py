@@ -1,36 +1,84 @@
-"""``providing``: provider instances composed as a plugin of their own (S3)."""
+"""``providing``: provider classes composed as a plugin of their own (S3)."""
 
 from __future__ import annotations
 
+from abc import abstractmethod
+
 import pytest
+from pydantic import BaseModel
 
-from core_test_support.contracts.support import Book, BookSource, compose, shelf_spec, shop_spec
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate
-from untaped.sdk.contracts import Ok, gather, providing
+from untaped.runtime.contracts.registry import reset
+from untaped.runtime.registry import CompositionResult, PluginCandidate
+from untaped.sdk import Plugin, experimental
+from untaped.sdk.contracts import Contract, Issued, Ok, Provider, gather, providing
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.testing import plugin_candidate
 
 
-class _House(BookSource):
-    def books(self) -> list[Book]:
-        return [Book(title="Dune")]
+class Title(Issued):
+    name: str
+
+
+@experimental
+class Titles(Contract):
+    """Every title a plugin holds."""
+
+    @abstractmethod
+    def titles(self) -> list[Title]:
+        """Every title."""
+
+
+class _Plain(BaseModel):
+    """No settings."""
+
+
+class _Shelf(Plugin):
+    """Own the titles."""
+
+    settings = _Plain
+    offers = (Titles,)
+
+
+class _Shop(Titles, Provider):
+    def titles(self) -> list[Title]:
+        return [Title(name="Emma")]
+
+
+class _Store(Plugin):
+    """Sell titles."""
+
+    settings = _Plain
+    fills = (_Shop,)
+
+
+class _House(Titles, Provider):
+    def titles(self) -> list[Title]:
+        return [Title(name="Dune")]
 
 
 def _installed() -> list[PluginCandidate]:
-    return [plugin_candidate(shelf_spec()), plugin_candidate(shop_spec())]
+    return [
+        PluginCandidate(distribution="untaped-shelf", name="shelf", target=_Shelf),
+        PluginCandidate(distribution="untaped-shop", name="shop", target=_Store),
+    ]
 
 
-def test_the_instances_answer_as_the_named_plugin_and_the_composition_comes_back() -> None:
-    before = compose(shelf_spec(), shop_spec())
-    with providing("shelf", {"house": [_House()]}, candidates=_installed()):
-        answers = gather(BookSource.books)()
+def _composed() -> CompositionResult:
+    reset()
+    return bootstrap.compose_root(candidates=_installed())
+
+
+def test_the_classes_answer_as_the_named_plugin_for_the_block_only() -> None:
+    before = _composed()
+    with providing({"house": (_House,)}, candidates=_installed()):
+        answers = gather(Titles.titles)()
         house = next(answer for answer in answers if answer.plugin == "house")
         assert isinstance(house, Ok)
-        [book] = house.value
-        assert book.source is not None and book.source.plugin == "house"
+        [title] = house.value
+        assert title.source is not None and title.source.plugin == "house"
         assert {answer.plugin for answer in answers} == {"house", "shop"}
     assert bootstrap.composition() is before
+    assert {answer.plugin for answer in gather(Titles.titles)()} == {"shop"}
 
 
 @pytest.mark.parametrize(
@@ -43,20 +91,26 @@ def test_the_instances_answer_as_the_named_plugin_and_the_composition_comes_back
 def test_a_key_that_could_shadow_a_plugin_is_refused_before_composing(
     key: str, message: str
 ) -> None:
-    before = compose(shelf_spec(), shop_spec())
+    before = _composed()
     with (
         pytest.raises(ConfigError, match=message),
-        providing("shelf", {key: [_House()]}, candidates=_installed()),
+        providing({key: (_House,)}, candidates=_installed()),
     ):
         pass
     assert bootstrap.composition() is before
 
 
-def test_an_instance_of_another_owners_contract_is_refused() -> None:
-    compose(shelf_spec())
+class _Loose(Titles):
+    def titles(self) -> list[Title]:
+        return []
+
+
+@pytest.mark.parametrize("given", [_Loose, Titles, Title])
+def test_a_class_that_is_no_provider_is_refused_naming_it(given: type) -> None:
+    _composed()
     with (
-        pytest.raises(LookupError, match="not lint's"),
-        providing("lint", {"house": [_House()]}, candidates=_installed()),
+        pytest.raises(TypeError, match=rf"holds .*{given.__qualname__}.*, not a provider"),
+        providing({"house": (given,)}, candidates=_installed()),
     ):
         pass
 
@@ -68,10 +122,57 @@ def test_an_instance_of_another_owners_contract_is_refused() -> None:
 def test_a_key_the_composition_quarantines_is_refused_and_the_composition_comes_back(
     key: str, taken_by: str
 ) -> None:
-    before = compose(shelf_spec(), shop_spec())
+    before = _composed()
     with (
         pytest.raises(ConfigError, match=f"{key}: duplicate-name: .* is taken by {taken_by}"),
-        providing("shelf", {key: [_House()]}, candidates=_installed()),
+        providing({key: (_House,)}, candidates=_installed()),
     ):
         pass
     assert bootstrap.composition() is before
+
+
+def test_the_plugin_never_takes_over_the_package_of_its_classes() -> None:
+    """``house`` sorts before ``shelf``, whose package defines ``_House``: shelf keeps it."""
+    _composed()
+    with providing({"house": (_House,)}, candidates=_installed()) as result:
+        declaration = result.mount.declaration
+        assert declaration.plugin("house").target.startswith("untaped_providing_house:")
+        assert declaration.owner_of(__name__) == "shelf"
+
+
+@experimental
+class Authors(Contract):
+    """Every author a plugin holds."""
+
+    @abstractmethod
+    def authors(self) -> list[Title]:
+        """Every author."""
+
+
+class _Authors(Plugin):
+    """Own the authors."""
+
+    settings = _Plain
+    offers = (Authors,)
+
+
+def _fake(contract: type[Contract]) -> type:
+    class Fake(contract, Provider):  # type: ignore[misc,valid-type]
+        def titles(self) -> list[Title]:
+            return [Title(name="Dune")]
+
+        def authors(self) -> list[Title]:
+            return [Title(name="Herbert")]
+
+    return Fake
+
+
+def test_two_classes_of_one_name_each_answer() -> None:
+    installed = [
+        *_installed(),
+        PluginCandidate(distribution="untaped-authors", name="authors", target=_Authors),
+    ]
+    with providing({"house": (_fake(Titles), _fake(Authors))}, candidates=installed):
+        for method in (Titles.titles, Authors.authors):
+            answers = [answer for answer in gather(method)() if answer.plugin == "house"]
+            assert [type(answer) for answer in answers] == [Ok]

@@ -203,8 +203,8 @@ def _composed(
     """The repository's rule hosts composed beside the installed providers, rules loaded."""
     loaded = load(repo) if repo is not None else Loaded()
     report.failures.extend(loaded.failures)
-    offered = {key: [host] for key, host in loaded.hosts.items()}
-    composing = providing(KEY, offered, candidates=candidates) if offered else nullcontext()
+    offered = {key: (host,) for key, host in loaded.hosts.items()}
+    composing = providing(offered, candidates=candidates) if offered else nullcontext()
     with composing:
         yield _load(report), loaded
 
