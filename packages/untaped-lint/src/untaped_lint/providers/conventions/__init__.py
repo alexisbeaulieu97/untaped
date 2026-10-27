@@ -73,7 +73,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("exception-base", "error", "A plugin's exceptions derive from UntapedError."),
     ("exception-name", "error", "A plugin's exception classes end in Error."),
     ("error-system", "error", "A plugin's error classes name the system responsible."),
-    ("protocol-location", "error", "Ports (Protocols) live in the domain layer."),
+    ("protocol-location", "error", "Ports (Protocols) live in a ports module."),
     ("port-adapter-clash", "error", "A port and an adapter never share a name."),
     ("settings-not-frozen", "error", "Settings models are frozen."),
     ("settings-naming", "error", "Setting names follow the naming rules (_dir, _path, parallel)."),
