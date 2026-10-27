@@ -29,7 +29,7 @@ from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Plugin, deprecated, experimental
 from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
 from untaped.sdk.storage import Cache
-from untaped.sdk.testing import assert_fills, assert_surface, compose_with
+from untaped.sdk.testing import assert_fills, assert_surface, compose_with, plugin_candidate
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +49,24 @@ def test_compose_with_offers_a_fake_to_the_owner_and_restores_the_composition() 
         assert [book.title for book in answer.value] == ["Dune"]
         assert answer.value[0].source == Source(plugin="fake", kind="shelf.book")
     assert bootstrap.composition() is before
+
+
+class _Settings(BaseModel):
+    pass
+
+
+class Acme(Plugin):
+    """A plugin class an 11.x plugin's tests compose beside their spec."""
+
+    settings = _Settings
+
+
+def test_compose_with_and_plugin_candidate_take_a_plugin_class() -> None:
+    with compose_with(Acme, shelf_spec()) as result:
+        assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "acme", "shelf"]
+    assert plugin_candidate(Acme).target is Acme
+    with pytest.raises(TypeError, match="installed distribution"):
+        plugin_candidate(Acme, distribution="untaped-other")
 
 
 def test_compose_with_refuses_what_it_cannot_compose() -> None:
