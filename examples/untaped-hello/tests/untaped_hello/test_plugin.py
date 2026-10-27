@@ -77,10 +77,11 @@ def test_hello_s_pages_import_no_command() -> None:
     """After the first start, ``untaped docs`` reads the composed declaration, not the plugin."""
     code = (
         "import sys; from untaped.sdk.testing import invoke_root; "
-        "r = invoke_root(['docs', 'hello', 'commands', 'say']); "
-        "print(r.exit_code, '# hello commands say' in r.stdout, "
+        "lines = ['docs', 'docs hello', 'docs hello commands say', 'docs hello settings', "
+        "'docs hello outputs salutation', 'docs --search greeting']; "
+        "print(*(invoke_root(line.split()).exit_code for line in lines), "
         "any(m.startswith('untaped_hello.commands') for m in sys.modules))"
     )
     subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
-    assert out.stdout.split() == ["0", "True", "False"]
+    assert out.stdout.split() == ["0"] * 6 + ["False"]

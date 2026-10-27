@@ -41,9 +41,7 @@ def settings(site: Site, name: str) -> list[Setting]:
     strip = f"{name}."
     inherited = site.result_plugin(name).spec.stability
     rows: list[Setting] = []
-    for section in sections(site.result, extensions=False, owner=name):
-        if section.is_state:
-            continue
+    for section in sections(site.result, extensions=False, owner=name, settings_only=True):
         for leaf in setting_leaves(section):
             if isinstance(leaf.mark, Deprecated):
                 continue
