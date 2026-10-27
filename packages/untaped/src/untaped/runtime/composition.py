@@ -146,7 +146,7 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
 
     ``taken`` are names a plugin may not have: config.yml's own top-level
     keys and the root commands not on a plugin class. A plugin whose name is
-    taken, by those, by an earlier entry or by a root entry's commands (core
+    taken, by those, by an earlier entry sound on its own or by a root entry's commands (core
     composes first and wins), or whose walk finds any problem, is quarantined
     with every problem named. A record a command reaches belongs to the
     plugin whose package defines it, whichever plugins reach it and in
@@ -158,8 +158,8 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     and a kind one record: kinds are claimed in :data:`_PHASES` across every
     plugin, a plugin's own records before another's reach of its package, so
     a clash refuses the plugin claiming later (``duplicate-kind``), entry
-    order deciding only within a phase. A plugin refused claims no kind and
-    holds no name.
+    order deciding only within a phase. A plugin refused claims no kind; a
+    name goes to the first plugin sound on its own, before kinds are settled.
     Two entry points in one top-level package share it, the first not
     quarantined owning its classes, as :meth:`Declaration.owner_of` reads
     it. A contract belongs to the one plugin whose ``offers`` lists it; two
@@ -213,8 +213,8 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
         elif composed & readable < readable:
             read = composed & readable  # a set seen before: only shrink, so this ends
         else:
-            # a plugin composes only while it isn't read (a class of its package
-            # that another reaches then clashes with its own): no read set
+            # a plugin composes only while it isn't read (reading it changes the
+            # kinds or contract owners the others see): no read set
             # agrees, so the first plugin refused once read beside those read
             # is refused as it was when read, first-wins, and the rest compose
             # without it (one composing only while unread for another's sake waits)
@@ -327,21 +327,15 @@ def _compose(
                 entry,
                 _PluginWalk(entry, owners, _view(entries, index, offering, readable)),
             )
-    clean = [
+    for _, walk in walks.values():
+        walk.problems.extend(_own_clashes(walk))
+    sound = [
         index for index, (_, walk) in walks.items() if not walk.problems and walk.decl is not None
     ]
-    # Kinds first, among the plugins sound on their own, then names among those
-    # whose kinds hold; a plugin refused for its name claims no kind, so settle again.
-    unnamed: set[int] = set()
-    clash: int | None = -1
-    while clash is not None:
-        held, clashes = _settle(
-            [(index, walks[index][1]) for index in clean if index not in unnamed]
-        )
-        admitted = {index for index in clean if index not in clashes and index not in unnamed}
-        before, clash = _names(walks, admitted, taken)
-        if clash is not None:
-            unnamed.add(clash)
+    # Names first, in entry order among the plugins sound on their own, then kinds
+    # among those holding their name.
+    before, named = _names(walks, sound, taken)
+    held, clashes = _settle({index: walks[index][1] for index in named})
     kinds: dict[str, KindDecl] = {}
     for index, entry in enumerate(entries):
         if index in withdrawn:
@@ -384,20 +378,20 @@ def _package(target: str) -> str:
 
 
 def _names(
-    walks: dict[int, tuple[PluginEntry, _PluginWalk]], admitted: set[int], taken: frozenset[str]
-) -> tuple[dict[int, frozenset[str]], int | None]:
-    """The names taken before each entry, and the first ``admitted`` one whose name is taken."""
+    walks: dict[int, tuple[PluginEntry, _PluginWalk]], sound: list[int], taken: frozenset[str]
+) -> tuple[dict[int, frozenset[str]], list[int]]:
+    """The names taken before each entry, and the ``sound`` entries holding their name."""
     names = set(taken)
     before: dict[int, frozenset[str]] = {}
+    named: list[int] = []
     for index, (entry, walk) in walks.items():
         before[index] = frozenset(names)
-        if index in admitted:
-            if entry.name in names:
-                return before, index
+        if index in sound and entry.name not in names:
+            named.append(index)
             names.add(entry.name)
             if entry.root and walk.decl is not None:
                 names.update(walk.decl.command_words())
-    return before, None
+    return before, named
 
 
 #: The order kinds are claimed in, across every plugin, so no entry order decides
@@ -407,79 +401,107 @@ def _names(
 _PHASES = ("offered", "own", "reached", "provided")
 
 
+@dataclass(frozen=True)
+class _Claim:
+    """A plugin's claim of ``kind`` for the class ``target``, ranked by phase, then entry."""
+
+    rank: tuple[int, int]
+    kind: str
+    target: str
+    where: str
+
+
+def _clash(claim: _Claim, other: _Claim) -> str | None:
+    """Why ``claim`` cannot stand beside ``other``: two classes one kind, or one class two."""
+    if claim.kind == other.kind and claim.target != other.target:
+        return f"would be the kind {claim.kind}, which {other.target} is: rename one"
+    if claim.target == other.target and claim.kind != other.kind:
+        return f"would be the kind {claim.kind}, but it is {other.kind}: a record has one kind"
+    return None
+
+
+def _claims(index: int, walk: _PluginWalk) -> list[_Claim]:
+    """The kinds entry ``index`` claims for the records its commands and offers reach."""
+    return [
+        _Claim((_PHASES.index(phase), index), kind, target_of(cls), cls.__qualname__)
+        for cls, kind in walk.kinds.items()
+        if (phase := walk.phase_of(cls)) != "provided"
+    ]
+
+
+def _own_clashes(walk: _PluginWalk) -> list[Problem]:
+    """Two of ``walk``'s records of one kind: the plugin is broken on its own."""
+    problems: list[Problem] = []
+    first: dict[str, _Claim] = {}
+    for claim in _claims(0, walk):
+        why = _clash(claim, first.setdefault(claim.kind, claim))
+        if why is not None:
+            problems.append(Problem(rule="duplicate-kind", where=claim.where, detail=why))
+    return problems
+
+
 def _settle(
-    walks: Sequence[tuple[int, _PluginWalk]],
+    walks: dict[int, _PluginWalk],
 ) -> tuple[dict[int, dict[str, KindDecl]], dict[int, list[Problem]]]:
     """The kinds each of ``walks`` holds, and the kind clashes of those refused, by index.
 
-    A plugin refused for a clash holds no kind, so the others claim again without
-    it; one refused only beside it is then admitted again. Two plugins claiming
-    in one phase are settled by entry order: two classes one kind
-    (``duplicate-kind``) refuse the later.
+    Each plugin's own claims agree (see :func:`_own_clashes`). Of two plugins
+    whose claims clash, the one claiming in the earlier phase (entry order within a phase)
+    outranks the other. A plugin composes when no plugin outranking it
+    composes, so a refused plugin decides nothing; when every plugin left is
+    outranked by another left (a cycle), the first in entry order composes.
+    A record only a provider reaches refuses nothing: it keeps the kind
+    another plugin gave the class, or, two classes one kind, the later has none.
     """
-
-    def run(
-        active: Sequence[tuple[int, _PluginWalk]],
-    ) -> tuple[dict[int, dict[str, KindDecl]], tuple[int, list[Problem]] | None]:
-        kinds: dict[str, KindDecl] = {}
-        held: dict[int, dict[str, KindDecl]] = {index: {} for index, _ in active}
-        for phase in _PHASES:
-            for index, walk in active:
-                problems: list[Problem] = []
-                claimed = _claim(walk, kinds, problems, phase)
-                if problems:
-                    return held, (index, problems)
-                kinds.update(claimed)
-                held[index].update(claimed)
-        return held, None
-
+    claims = {index: _claims(index, walk) for index, walk in walks.items()}
+    against, outranked = _rivals(claims)
     clashes: dict[int, list[Problem]] = {}
-    active = list(walks)
-    held, clash = run(active)
-    while clash is not None:
-        clashes[clash[0]] = clash[1]
-        active = [each for each in active if each[0] != clash[0]]
-        held, clash = run(active)
-    admitted = True
-    while admitted:
-        admitted = False
-        for each in walks:
-            if each[0] in clashes:
-                trial = sorted([*active, each], key=lambda pair: pair[0])
-                tried, clash = run(trial)
-                if clash is None:
-                    active, held, admitted = trial, tried, True
-                    del clashes[each[0]]
-    return held, clashes
+    remaining = list(claims)
+    composing: list[int] = []
+    while remaining:
+        free = [index for index in remaining if not outranked[index] & set(remaining)]
+        pick = (free or remaining)[0]
+        composing.append(pick)
+        remaining.remove(pick)
+        for index in [each for each in remaining if pick in against[each]]:
+            clashes[index] = against[index][pick]
+            remaining.remove(index)
+    kinds = {claim.kind: claim for index in composing for claim in claims[index]}
+    held: dict[int, list[_Claim]] = {index: list(claims[index]) for index in sorted(composing)}
+    for index, holding in held.items():
+        walk = walks[index]
+        for cls in [each for each in walk.kinds if each in walk.provided]:
+            claim = _Claim((len(_PHASES), index), walk.kinds[cls], target_of(cls), "")
+            if not any(_clash(claim, other) for other in kinds.values()):
+                kinds[claim.kind] = claim
+                holding.append(claim)
+    return {
+        index: {
+            claim.kind: KindDecl(
+                kind=claim.kind, target=claim.target, plugin=claim.kind.partition(".")[0]
+            )
+            for claim in holding
+        }
+        for index, holding in held.items()
+    }, clashes
 
 
-def _claim(
-    walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem], phase: str
-) -> dict[str, KindDecl]:
-    """The kinds of ``phase`` ``walk`` reaches; two classes one kind, or one class two, refuse it.
-
-    A record only a provider in ``fills`` reaches refuses nothing: it keeps
-    the kind another plugin gave the class (rows of it then go to the most
-    derived reader, a tie being ``duplicate-kind``), or has none, and the
-    registry quarantines that provider alone.
-    """
-    claimed: dict[str, KindDecl] = {}
-    held_as = {decl.target: decl.kind for decl in kinds.values()}
-    for cls, kind in walk.kinds.items():
-        if walk.phase_of(cls) != phase:
-            continue
-        target = target_of(cls)
-        held = claimed.get(kind) or kinds.get(kind)
-        if held is not None and held.target != target:
-            detail = f"would be the kind {kind}, which {held.target} is: rename one"
-        elif (other := held_as.get(target)) is not None and other != kind:
-            detail = f"would be the kind {kind}, but it is {other}: a record has one kind"
-        else:
-            claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
-            continue
-        if cls not in walk.provided:
-            problems.append(Problem(rule="duplicate-kind", where=cls.__qualname__, detail=detail))
-    return claimed
+def _rivals(
+    claims: dict[int, list[_Claim]],
+) -> tuple[dict[int, dict[int, list[Problem]]], dict[int, set[int]]]:
+    """Each plugin's claims clashing with another's, by both; and who outranks each plugin."""
+    against: dict[int, dict[int, list[Problem]]] = {index: {} for index in claims}
+    outranked: dict[int, set[int]] = {index: set() for index in claims}
+    for b, theirs in claims.items():
+        for a, ours in claims.items():
+            pairs = [(claim, other) for claim in theirs for other in ours if a != b]
+            for claim, other in pairs:
+                if (why := _clash(claim, other)) is not None:
+                    problem = Problem(rule="duplicate-kind", where=claim.where, detail=why)
+                    against[b].setdefault(a, []).append(problem)
+                    if other.rank < claim.rank:
+                        outranked[b].add(a)
+    return against, outranked
 
 
 def _stability(mark: object) -> StabilityDecl | None:
@@ -518,7 +540,7 @@ class _PluginWalk:
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
         #: Providers' own records no command of the plugin reaches: a clash refuses
-        #: nothing (see :func:`_claim`).
+        #: nothing (see :func:`_settle`).
         self.provided: set[type] = set()
         #: The owner models of the contracts it offers.
         self.offered: set[type] = set()
