@@ -45,9 +45,10 @@ _HEADER = """\
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `<section>` in `~/.untaped/config.yml` (a named profile's
 under `profiles.<name>.<section>`);
-state lives in `~/.untaped/state.yml` and is written only by the owning
-plugin's commands. See [Configuration](../configuration.md) for the file
-layout, profiles and precedence.
+state lives in `~/.untaped/state.yml`, or the file its section names, and
+is written only by the owning plugin's commands. See
+[Configuration](../configuration.md) for the file layout, profiles and
+precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (a token:
 `untaped auth login SECTION`; how values are parsed is in
@@ -137,9 +138,10 @@ def _first_party() -> tuple[PluginCandidate, ...]:
 
 
 def collect_sections() -> list[Section]:
-    """``(title, prefix, model, is_state, stability, rows)``: core and each first-party plugin.
+    """Core's sections and each first-party plugin's, as :class:`Section`.
 
-    ``stability`` is the owning plugin's mark; ``rows`` its typed state rows. Plugins follow in name
+    ``stability`` is the owning plugin's mark; ``rows`` its typed state rows,
+    ``file`` the state file of a plugin class's rows. Plugins follow in name
     order. Raises :class:`RuntimeError` naming every quarantined first-party
     plugin rather than drop its section.
     """
@@ -223,7 +225,7 @@ def _renamed_table() -> list[str]:
     from untaped.sdk.health.deprecated_keys import key_mappings  # noqa: PLC0415
 
     rows: list[str] = []
-    for _, prefix, model, is_state, _, _ in collect_sections():
+    for _, prefix, model, is_state, *_ in collect_sections():
         if is_state:
             continue
         for section, section_model in {prefix: model}.items():
@@ -258,6 +260,8 @@ def render() -> str:
         if not rows:
             continue
         parts.append(f"## {section.title}\n")
+        if section.file is not None:
+            parts.append(f"Kept in `{section.file}`.\n")
         if section.is_state:
             parts.append("| Key | Type | Description |\n|---|---|---|")
             for row in rows:
