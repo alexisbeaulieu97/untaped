@@ -729,14 +729,6 @@ def _samples() -> dict[str, WireModel]:
             tests_dir=Path("/tests"),
         ),
     ]
-    if "untaped_git" in _SHIPPED:  # the core-only job installs no plugin
-        from untaped_git.domain.records import GitHostRecord, StoreReport, TreeEntry
-
-        rows += [
-            GitHostRecord(host="github.com", plugins=["github"], credential=True),
-            StoreReport(store_dir="/s", repos=1, size_bytes=2, filter_ignored={"git.example": 1}),
-            TreeEntry(mode="100644", type="blob", oid="0" * 40, path="a.yml"),
-        ]
     if "untaped_workspace" in _SHIPPED:
         from untaped_workspace.api import Repo
         from untaped_workspace.records import (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +13,10 @@ from untaped.runtime.registry import section_settings
 from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk import GitResult, home
 from untaped.sdk.network.credentials import bind_credentials
-from untaped_git.infrastructure import remote as remote_module
-from untaped_git.infrastructure import store as store_module
+from untaped.sdk.testing import compose_with
+from untaped_git import remote as remote_module
+from untaped_git import store as store_module
+from untaped_git.plugin import Git
 from untaped_github import SPEC
 from untaped_github.settings import GithubSettings
 
@@ -25,6 +27,14 @@ def _github_settings() -> None:
     # composition registers the section with the ``caches`` key SPEC.caches adds.
     register_profile_settings("github", section_settings(SPEC) or GithubSettings)
     bind_credentials({SPEC.name: SPEC.credentials})
+
+
+@pytest.fixture
+def composed() -> Iterator[None]:
+    """A run composing git and github, as an invocation of both has: the repo store reads git's
+    settings from it, and a store fetch from a host asks its ``GitHost`` providers."""
+    with compose_with(Git, SPEC):
+        yield
 
 
 def _git_dir(cwd: Path) -> list[str]:

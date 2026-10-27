@@ -374,7 +374,8 @@ class Output[R: BaseModel](FieldBlock):
     ``Output(columns=("key", "summary"))`` gives this command its own default
     columns (a one-record table shows them even when empty),
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
-    (one named after a core format replaces it), and ``Output(format="raw")`` makes another
+    (one named after a core format replaces it, though ``--columns`` still
+    prints core's table), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
     ``untaped.ui.format``).
     """
@@ -446,7 +447,7 @@ class Output[R: BaseModel](FieldBlock):
         filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None
         filled._model = model
-        if filled.format in self.render:
+        if filled.format in self.render and filled.format != "table":
             if filled._requested is not None:
                 raise UsageError(f"--columns does not apply to --format {filled.format}")
         elif model is not None:
@@ -468,6 +469,8 @@ class Output[R: BaseModel](FieldBlock):
 
         count_failed_actions([records] if isinstance(records, BaseModel) else records)
         renderer = self.render.get(self.format)
+        if self.format == "table" and self._requested is not None:
+            renderer = None  # --columns asks for core's table, whatever replaced it
         if renderer is not None:
             count_row_failures([records] if isinstance(records, BaseModel) else records)
             renderer(records)
@@ -749,9 +752,19 @@ class Stdin[R: BaseModel](FieldBlock):
 
 
 class Lines(FieldBlock):
-    """Raw stdin lines with no flag, for a command whose stdin is its protocol."""
+    """Raw stdin lines with no flag, for a command whose stdin is its protocol.
+
+    ``lines: Lines`` is read in ``run`` as ``for line in self.lines``: each
+    line stripped, blank lines skipped, and nothing from a terminal (it never
+    waits for typing).
+    """
 
     field_kind = "lines"
+
+    def __iter__(self) -> Iterator[str]:
+        from untaped.sdk._stdin import read_stdin  # noqa: PLC0415 - read only when iterated
+
+        return iter(read_stdin())
 
 
 class Confirm(FieldBlock):

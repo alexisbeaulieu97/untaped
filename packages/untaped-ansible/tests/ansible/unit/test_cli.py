@@ -668,6 +668,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
     assert "repo must be owner/name" in result.output
 
 
+@pytest.mark.usefixtures("composed")
 @pytest.mark.parametrize(
     ("args", "kept"),
     [

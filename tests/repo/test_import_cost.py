@@ -203,9 +203,11 @@ _UNTAPED_BUDGET = 141
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, so each move raises these: with jira moved, 181 and 734,
 #: 2026-10-26; with dotfiles moved (its whole package, 28 modules), 205 and
-#: 758, 2026-10-27, while the kept start drops to 137 and 690.
-_FRESH_TOTAL_BUDGET = 761
-_FRESH_UNTAPED_BUDGET = 208
+#: 758, 2026-10-27, while the kept start drops to 137 and 690; with git moved
+#: (its package, and the contracts group its ``GitHost`` offer imports), 230
+#: and 785, 2026-10-27, the kept start unchanged.
+_FRESH_TOTAL_BUDGET = 788
+_FRESH_UNTAPED_BUDGET = 233
 
 
 @pytest.mark.parametrize("flag", ["--help", "--version"])
@@ -241,15 +243,21 @@ def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:
     assert "httpx" not in _loaded_heavy_modules(snippet)
 
 
-def test_contracts_load_only_when_asked() -> None:
-    """``untaped.sdk.contracts`` is a group of its own: the SDK and ``--help`` never load it."""
+def test_contracts_load_only_when_asked(tmp_path: Path) -> None:
+    """``untaped.sdk.contracts`` is a group of its own: the SDK and a kept ``--help`` never load it.
+
+    A start composing afresh imports each 12.0 plugin class, and a class
+    offering a contract imports the group, so the second start is the one held.
+    """
+    env = {**os.environ, "UNTAPED_HOME": str(tmp_path)}
+    _loaded_heavy_modules(_DISPATCH_PROBE.format(argv=["--help"]), env)
     snippet = (
         "import untaped.sdk\n"
         "assert 'untaped.sdk.contracts' not in sys.modules\n"
         + _DISPATCH_PROBE.format(argv=["--help"])
         + "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
     )
-    assert "httpx" not in _loaded_heavy_modules(snippet)
+    assert "httpx" not in _loaded_heavy_modules(snippet, env)
 
 
 def test_testing_helpers_load_contracts_only_when_called() -> None:

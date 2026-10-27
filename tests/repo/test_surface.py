@@ -38,7 +38,7 @@ from untaped.core.surface._lists import CONVENTIONS
 from untaped.runtime.registry import PLUGINS_ENTRY_POINT_GROUP
 from untaped.sdk.git import GitCommandError
 from untaped.sdk.health.deprecated_keys import DECLARATIONS
-from untaped_git.infrastructure import worktree_config
+from untaped_git import worktree_config
 
 REGENERATE = "uv run python scripts/gen_surface.py"
 

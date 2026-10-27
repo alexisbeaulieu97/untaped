@@ -350,6 +350,17 @@ def test_a_renderer_named_after_a_core_format_replaces_it(
     assert capsys.readouterr().out == "<a>\n"
 
 
+def test_columns_print_core_s_table_where_a_renderer_replaced_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output: Output[Row] = Output(render={"table": lambda row: print(f"<{row.name}>")})
+    output._fill({}, _call(Output[Row]))._print(Row(name="a"), kind=None)
+    assert capsys.readouterr().out == "<a>\n"
+    output._fill({"--columns": ["name"]}, _call(Output[Row]))._print(Row(name="a"), kind=None)
+    printed = capsys.readouterr().out
+    assert "<a>" not in printed and "a" in printed
+
+
 def test_an_unknown_column_is_refused_when_filled(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exited:
         Output()._fill({"--columns": ["nope"]}, _call(Output[Row]))

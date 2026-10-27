@@ -588,6 +588,7 @@ def test_a_rebuilt_index_is_refreshed_not_served_empty(
     assert fill.keys == ["source:prod"]
 
 
+@pytest.mark.usefixtures("composed")
 def test_source_remove_forgets_the_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
 ) -> None:

@@ -11,10 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker, invoke_root
 from untaped.sdk.testing.git import GitRemote, git_remote, git_shim, global_config, trace2_events
 from untaped_git.api import RepoStore
-from untaped_git.cli import app as git_app
 from untaped_workspace.cli import app
 from untaped_workspace.errors import WorkspaceError
 from workspace.conftest import commit_in, git, store_repo
@@ -178,7 +177,7 @@ def test_a_stalled_backfill_warns_and_status_fetch_resumes_it(
     marker = tmp_path / "stall"
     marker.write_text("1")  # the checkout's own lazy fetch of its tip goes through
     git_shim(tmp_path / "bin", monkeypatch, stall_stdin_fetch=marker)
-    monkeypatch.setattr("untaped_git.infrastructure.store.SLOW_TIMEOUT", 2.0)
+    monkeypatch.setattr("untaped_git.store.SLOW_TIMEOUT", 2.0)
 
     created = run(app, ["create", "J-1", "--repo", remote.url])
 
@@ -319,7 +318,7 @@ def test_a_stash_keeps_its_branch_and_the_repo(
     assert (rows[0]["action"], rows[0]["detail"]) == ("released", "kept: branch b1, a stash")
     assert _refs(repo) == ["refs/heads/b1", "refs/stash"]
     assert not (repo / "untaped-workspace.json").exists()
-    store = json.loads(run(git_app, ["store", "--format", "json"]).stdout)
+    store = json.loads(invoke_root(["git", "store", "--format", "json"]).stdout)
     assert store["held_by_branches"]["repos"] == 1
     assert store["unowned"]["repos"] == 0
 

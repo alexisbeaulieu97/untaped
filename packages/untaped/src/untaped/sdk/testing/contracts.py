@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import BoundProvider
     from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
     from untaped.sdk.contracts import Contract
+    from untaped.sdk.plugin import Plugin
 
 #: The composition an enclosing :func:`compose_with` made, if any.
 _ACTIVE: ContextVar[CompositionResult | None] = ContextVar("untaped_compose_with", default=None)
@@ -24,13 +25,13 @@ _ACTIVE: ContextVar[CompositionResult | None] = ContextVar("untaped_compose_with
 
 @contextmanager
 def compose_with(
-    *plugins: str | PluginSpec | PluginCandidate,
+    *plugins: str | PluginSpec | type[Plugin] | PluginCandidate,
     provides: Mapping[str, Sequence[Contract]] | None = None,
 ) -> Iterator[CompositionResult]:
     """Compose ``plugins`` and fake providers for the block; restore the composition after.
 
-    ``plugins`` are installed plugin names, ``PluginSpec`` objects or
-    candidates; with none, every installed plugin is composed.
+    ``plugins`` are installed plugin names, ``PluginSpec`` objects, plugin
+    classes or candidates; with none, every installed plugin is composed.
     ``provides={"fake": [FakeRepos()]}`` adds a plugin named ``fake`` that
     offers each instance to the plugin declaring its contract, so an owner
     tests ``gather`` against a provider it controls (a fake reads no
@@ -102,7 +103,9 @@ def _offer(instances: tuple[Contract, ...]) -> Callable[[], Sequence[Contract]]:
     return offer
 
 
-def _candidates(plugins: Sequence[str | PluginSpec | PluginCandidate]) -> list[PluginCandidate]:
+def _candidates(
+    plugins: Sequence[str | PluginSpec | type[Plugin] | PluginCandidate],
+) -> list[PluginCandidate]:
     from untaped.runtime.registry import (  # noqa: PLC0415
         PluginCandidate,
         PluginSpec,
@@ -117,7 +120,7 @@ def _candidates(plugins: Sequence[str | PluginSpec | PluginCandidate]) -> list[P
     for each in plugins:
         if isinstance(each, PluginCandidate):
             found.append(each)
-        elif isinstance(each, PluginSpec):
+        elif isinstance(each, PluginSpec | type):
             found.append(plugin_candidate(each))
         else:
             if installed is None:

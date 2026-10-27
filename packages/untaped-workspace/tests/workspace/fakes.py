@@ -1,6 +1,6 @@
 """Fake plugins filling workspace's ``RepoSource`` (and git's ``GitHost``) for the tests.
 
-Compose them with ``untaped.sdk.testing.compose_with(GIT, WORKSPACE, provides={"github": [...]})``:
+Compose them with ``untaped.sdk.testing.compose_with(Git, WORKSPACE, provides={"github": [...]})``:
 the fake plugin's name is the ``provides`` key, so ``github`` and ``gitlab`` here are fakes
 workspace knows nothing about, as it knows nothing about the real ones.
 """

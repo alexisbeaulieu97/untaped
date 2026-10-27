@@ -17,7 +17,7 @@ from untaped.sdk._run import recording  # untaped: allow private-test-import
 from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped, Source
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.testing import compose_with
-from untaped_git import SPEC as GIT
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo
 from untaped_workspace.domain.models import RepoArg, StoredRepo
@@ -291,7 +291,7 @@ def test_the_real_providers_first_pass_serves_stored_answers_then_the_refresh_as
     first pass); after a refresh github's stored answer stands in for its failed call."""
     github = Listing(API)
     gitlab = Listing(repo("infra/web", "gitlab.example"))
-    with compose_with(GIT, WORKSPACE, provides={"github": [github], "gitlab": [gitlab]}):
+    with compose_with(Git, WORKSPACE, provides={"github": [github], "gitlab": [gitlab]}):
         source = RepoPickSource(git=FakeGit())  # type: ignore[arg-type]
         first = source.catalog(refresh=False)
         assert first.note == "github: not listed yet · gitlab: not listed yet"
@@ -314,7 +314,7 @@ def test_the_real_providers_first_pass_serves_stored_answers_then_the_refresh_as
 def test_the_first_pass_drops_its_stale_line_and_a_failed_refresh_says_its_own() -> None:
     """The footer says a listing is old; the line after the picker is the refresh's."""
     github = Listing(API)
-    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+    with compose_with(Git, WORKSPACE, provides={"github": [github]}):
         source = RepoPickSource(git=FakeGit())  # type: ignore[arg-type]
         source.catalog(refresh=True)
         age_answers(timedelta(hours=7))

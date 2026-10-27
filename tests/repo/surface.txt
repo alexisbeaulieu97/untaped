@@ -1,5 +1,4 @@
 # untaped surface 2
-behaviour git.nonceless-credential-helper  [deprecated, removed in 12.0]
 behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via=Contract.bridge) and its values()]
@@ -4727,6 +4726,29 @@ record dotfiles.sync_outcome.state choice=orphan  [experimental]
 record dotfiles.sync_outcome.state choice=pending  [experimental]
 record dotfiles.sync_outcome.state string?  [experimental]
 record dotfiles.sync_outcome.target_path string(format=path)  [experimental]
+record git.RepoCount
+record git.RepoCount.repos integer
+record git.RepoCount.size_bytes integer
+record git.host
+record git.host.credential boolean
+record git.host.helpers_first string[]
+record git.host.host string
+record git.host.missing_helper string?
+record git.host.plugins string[]
+record git.store_report
+record git.store_report.exclusive_bytes object
+record git.store_report.filter_ignored object
+record git.store_report.gc_log string[]
+record git.store_report.git_version string?
+record git.store_report.held_by_branches RepoCount
+record git.store_report.loose_objects integer
+record git.store_report.packs_max integer
+record git.store_report.packs_median number
+record git.store_report.repos integer
+record git.store_report.size_bytes integer
+record git.store_report.store_dir string
+record git.store_report.unowned RepoCount
+record git.store_report.used_by object
 record jira.IssueLink
 record jira.IssueLink(key)
 record jira.IssueLink.direction default=""
