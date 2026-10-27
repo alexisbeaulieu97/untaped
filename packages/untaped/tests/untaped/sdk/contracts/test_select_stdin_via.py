@@ -6,7 +6,7 @@ import json
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel, Field
@@ -97,11 +97,23 @@ class Titles(Command[Desk]):
         return ",".join(self.stdin.identifiers(self.titles))
 
 
+class Aside(Command[Desk]):
+    """Print every card, asking from a thread that doesn't see the run."""
+
+    output: Output[Card]
+
+    def run(self) -> Iterator[Card]:
+        with ThreadPoolExecutor(1) as pool:
+            answers = pool.submit(lambda: gather(Cards.cards)()).result()
+        for ok in answers.ok:
+            yield from ok.value
+
+
 class Counter(Plugin):
     """Show cards."""
 
     settings = Desk
-    commands = (Show, Big, Every, Titles)
+    commands = (Show, Big, Every, Titles, Aside)
     offers = (Cards,)
 
 
@@ -174,6 +186,22 @@ def test_a_bridge_called_off_the_run_s_thread_still_names_its_kind(install: Inst
     assert ran.exit == 0, ran.stderr
     [row] = json.loads(ran.stdout)
     assert (row["source"]["plugin"], row["source"]["kind"]) == ("lend", LOAN)
+
+
+class Kept(Cards, Provider):
+    def cards(self) -> list[Card]:
+        return [Card(title="Kept")]
+
+
+def test_a_first_ask_off_the_run_s_thread_binds_the_same_kinds(install: Installer) -> None:
+    counter = install(
+        Counter, providers={"lend": (Loans,), "keep": (Kept,)}, settings=[Lending(branch="n")]
+    )
+    ran = counter.cli("counter aside -f json")
+    assert ran.exit == 0, ran.stderr
+    sources = {row["title"]: row["source"] for row in json.loads(ran.stdout)}
+    assert sources["Dune (n)"]["kind"] == LOAN
+    assert sources["Kept"] == {"plugin": "keep", "kind": "counter.card", "record": {}}
 
 
 def test_identifiers_of_a_provider_row_are_its_bridged_key(install: Installer) -> None:
@@ -305,4 +333,73 @@ def test_a_provider_record_whose_kind_is_taken_leaves_the_plugin_composed() -> N
     assert [plugin.name for plugin in declaration.plugins] == ["lender"]
     assert [(kind.kind, kind.target) for kind in declaration.kinds] == [
         ("lender.loan", target_of(Loan))
+    ]
+
+
+def _composed(*plugins: tuple[str, type[Plugin]]) -> Any:
+    return compose(
+        [PluginEntry(name=name, target=target_of(cls), plugin=cls) for name, cls in plugins]
+    )
+
+
+class Taken(Record):
+    note: str
+
+
+Taken.__name__ = "Loan"  # snake-cased like Loan: the same kind under one plugin
+
+
+def test_a_provider_record_a_command_also_prints_must_not_clash() -> None:
+    class Mine(Command[Lending]):
+        """Print a loan."""
+
+        output: Output[Loan]
+
+        def run(self) -> Loan:
+            raise NotImplementedError
+
+    class Theirs(Command[Lending]):
+        """Print the other loan."""
+
+        output: Output[Taken]
+
+        def run(self) -> Taken:
+            raise NotImplementedError
+
+    class Clash(Cards[Taken], Provider[Lending]):
+        def to_card(self, item: Taken) -> Card:
+            return Card(title="x")
+
+        def cards(self) -> list[Card]:
+            return []
+
+    class Lender(Plugin):
+        """Lend and print loans."""
+
+        settings = Lending
+        commands = (Mine, Theirs)
+        fills = (Clash,)
+
+    [refused] = _composed(("lender", Lender)).quarantined
+    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
+
+
+def test_two_providers_of_one_record_give_it_one_kind() -> None:
+    class Again(Cards[Loan], Provider[Lending]):
+        def to_card(self, item: Loan) -> Card:
+            return Card(title=item.name)
+
+        def cards(self) -> list[Card]:
+            return []
+
+    class Archive(Plugin):
+        """Lend the same loans."""
+
+        settings = Lending
+        fills = (Again,)
+
+    declaration = _composed(("archive", Archive), ("lend", Lend))
+    assert [plugin.name for plugin in declaration.plugins] == ["archive", "lend"]
+    assert [kind.kind for kind in declaration.kinds if kind.target == target_of(Loan)] == [
+        "archive.loan"
     ]

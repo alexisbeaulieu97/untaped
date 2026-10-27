@@ -148,13 +148,15 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     keys and the root commands not on a plugin class. A plugin whose name is
     taken, by those, by an earlier entry or by a root entry's commands (core
     composes first and wins), or whose walk finds any problem, is quarantined
-    with every problem named. A record class
-    belongs to the plugin whose package defines it, whichever plugins reach
-    it and in whatever order (shelf's ``Book``, which library's provider also
-    returns, is ``shelf.book``); a class no composed plugin's package defines
-    belongs to the plugin that reaches it. Two entry points in one top-level
-    package share it, the first not quarantined owning its classes, as
-    :meth:`Declaration.owner_of` reads it. A contract belongs to the one
+    with every problem named. A record a command reaches belongs to the
+    plugin whose package defines it, whichever plugins reach it and in
+    whatever order; a class no composed plugin's package defines belongs to
+    the plugin that reaches it. A contract's records belong to the plugin
+    that lists them: the owner's model to the plugin that ``offers`` the
+    contract (shelf's ``Book`` is ``shelf.book``), a provider's own record
+    to the plugin whose ``fills`` lists the provider. A record has one kind.
+    Two entry points in one top-level package share it, the first not
+    quarantined owning its classes, as :meth:`Declaration.owner_of` reads it. A contract belongs to the one
     plugin whose ``offers`` lists it; two plugins listing it are both
     refused (``duplicate-offer``), as a fill or refresh of a contract no
     composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
@@ -361,23 +363,25 @@ def _package(target: str) -> str:
 def _claim(
     walk: _PluginWalk, kinds: dict[str, KindDecl], problems: list[Problem]
 ) -> dict[str, KindDecl]:
-    """The kinds ``walk`` reaches; two classes that would be one kind are a problem."""
+    """The kinds ``walk`` reaches; two classes one kind, or one class two kinds, are a problem.
+
+    A record only a provider in ``fills`` reaches is left kind-less instead,
+    so the registry quarantines that provider alone.
+    """
     claimed: dict[str, KindDecl] = {}
+    held_as = {decl.target: decl.kind for decl in kinds.values()}
     for cls, kind in sorted(walk.kinds.items(), key=lambda pair: pair[0] in walk.provided):
         target = target_of(cls)
         held = claimed.get(kind) or kinds.get(kind)
         if held is not None and held.target != target:
-            if cls in walk.provided:
-                continue  # the provider's binding finds no kind and is quarantined alone
-            problems.append(
-                Problem(
-                    rule="duplicate-kind",
-                    where=cls.__qualname__,
-                    detail=f"would be the kind {kind}, which {held.target} is: rename one",
-                )
-            )
+            detail = f"would be the kind {kind}, which {held.target} is: rename one"
+        elif held is None and (other := held_as.get(target)) is not None:
+            detail = f"would be the kind {kind}, but it is {other}: a record has one kind"
+        else:
+            claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
             continue
-        claimed[kind] = KindDecl(kind=kind, target=target, plugin=kind.partition(".")[0])
+        if cls not in walk.provided:
+            problems.append(Problem(rule="duplicate-kind", where=cls.__qualname__, detail=detail))
     return claimed
 
 
@@ -440,6 +444,7 @@ class _PluginWalk:
 
     def kind(self, model: type[BaseModel]) -> str:
         """``model``'s kind: its class name under the plugin whose package defines it."""
+        self.provided.discard(model)  # a command reaches it: a clash is the plugin's problem
         owner = self.owners.get(model.__module__.partition(".")[0], self.name)
         return self.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
 

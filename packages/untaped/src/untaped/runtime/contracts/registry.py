@@ -45,16 +45,17 @@ from untaped.sdk.contracts._declare import (
     contract_of,
     fills,
     item_type,
-    record_kind,
     settings_type,
     unused_methods,
 )
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import SettingKey
-from untaped.sdk.records import DuplicateKindError, KindError
+from untaped.sdk.records import DuplicateKindError, KindError, kind_of
 
 if TYPE_CHECKING:
+    from pydantic import BaseModel
+
     from untaped.sdk.storage.cache import Cache
 
 _LOG = logging.getLogger("untaped.contracts")
@@ -268,7 +269,7 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
     entries: list[BoundProvider | Quarantined] = []
     seen: dict[type[Contract], int] = {}
     for value in values:
-        entry = _check(spec, owner, owned, value, state.profile)
+        entry = _check(spec, owner, owned, value, state.profile, _kinds(state))
         if isinstance(entry, BoundProvider):
             contract = entry.binding.contract.cls
             if contract in seen:
@@ -303,8 +304,23 @@ def _out_of_range(state: _State, spec: PluginSpec, owner: str) -> str | None:
     )
 
 
+def _kinds(state: _State) -> Callable[[type[BaseModel]], str]:
+    """Each model's kind as the composition gave it, else its 11.x ``kind=`` (``""``: none).
+
+    Read from the composition the registry holds, not the run, so a first ask
+    from a thread that doesn't see the run binds the same kinds.
+    """
+    mount = state.composition.mount
+    return lambda model: mount.kind_of(model) or kind_of(model) or ""
+
+
 def _check(
-    spec: PluginSpec, owner: str, owned: set[type[Contract]], value: object, profile: str
+    spec: PluginSpec,
+    owner: str,
+    owned: set[type[Contract]],
+    value: object,
+    profile: str,
+    kinds: Callable[[type[BaseModel]], str],
 ) -> BoundProvider | Quarantined:
     def quarantined(
         reason: QuarantineReason, detail: str, contract: type[Contract] | None = None
@@ -333,14 +349,14 @@ def _check(
         contract=info,
         item=item,
         profile=profile,
-        item_kind=(item and record_kind(item)) or "",
-        owner_kind=(info.item and record_kind(info.item)) or "",
+        item_kind="" if item is None else kinds(item),
+        owner_kind="" if info.item is None else kinds(info.item),
     )
     if not binding.owns_item and item is not None and not binding.item_kind:
         return quarantined(
             Reason.unresolved_item_type,
-            f"{provider.__qualname__}: {item.__qualname__} has no kind (its class name may "
-            "be another record's kind), so a piped record can't find its way back to it",
+            f"{provider.__qualname__}: {item.__qualname__} has no kind, "
+            "so a piped record can't find its way back to it",
             info.cls,
         )
     if not binding.owns_item:
