@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import Confirm, Group, Output, Positional, UsageError, not_found, q
+from untaped.sdk import Confirm, Group, Output, Positional, UsageError, command_line, not_found, q
 from untaped_ansible.commands._ansible import AnsibleCommand
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.records import SourceAlias, SourceAliasOutcome
@@ -50,7 +50,7 @@ class List(AnsibleCommand):
     def run(self) -> Iterator[SourceAlias]:
         self.output.empty(
             "No source aliases configured. Map one with "
-            "`untaped ansible source-alias set NAME OWNER/REPO`."
+            f"`{command_line(Set.spelled('NAME', 'OWNER/REPO'))}`."
         )
         for alias, repo in sorted(alias_map().items()):
             yield SourceAlias(alias=alias, repo=repo)

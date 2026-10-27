@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
+from untaped.sdk import command_line
 from untaped_ansible.errors import DependencyIndexError
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
@@ -178,7 +179,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
         raise DependencyIndexError(
             f"index schema version {version} was written by a newer untaped release "
             f"(this release reads version {SCHEMA_VERSION}); upgrade untaped, or delete "
-            f"{path} and re-run 'untaped ansible source refresh <name>'",
+            f"{path} and re-run `{_refresh_line()}`",
             category="config",
         )
     if ADDITIVE_SINCE <= version < SCHEMA_VERSION:
@@ -191,7 +192,7 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
         warn(
             f"rebuilt the outdated dependency index at {path} (schema version "
             f"{version}, expected {SCHEMA_VERSION}); re-run "
-            "'untaped ansible source refresh <name>' for each saved source",
+            f"`{_refresh_line()}` for each saved source",
         )
     _bootstrap(db)
 
@@ -254,3 +255,10 @@ def _drop_tables(db: sqlite3.Connection) -> None:
 def _has_tables(db: sqlite3.Connection) -> bool:
     row = db.execute("select count(*) from sqlite_master where type = 'table'").fetchone()
     return int(row[0]) > 0
+
+
+def _refresh_line() -> str:
+    """The command line refreshing a saved source, as this run spells it."""
+    from untaped_ansible.commands.source import Refresh  # noqa: PLC0415 - import cycle
+
+    return command_line(Refresh.spelled("NAME"))

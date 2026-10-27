@@ -16,6 +16,7 @@ from untaped.sdk import (
     Parallel,
     Positional,
     UntapedError,
+    command_line,
     key,
     most_severe,
     not_found,
@@ -145,7 +146,9 @@ class List(AnsibleCommand):
     output: Output[Source]
 
     def run(self) -> Iterator[Source]:
-        self.output.empty("No sources configured. Add one with `untaped ansible source set NAME`.")
+        self.output.empty(
+            f"No sources configured. Add one with `{command_line(Set.spelled('NAME'))}`."
+        )
         for source in SOURCES.all():
             yield _source_row(source)
 
@@ -203,7 +206,7 @@ class Remove(AnsibleCommand):
         for repo, failure in failures:
             self.ctx.diag.failure(failure, item=repo)
         if failures:
-            self.ctx.diag.hint(run_hint(f"ansible source remove {shlex.quote(self.name)}"))
+            self.ctx.diag.hint(run_hint(Remove.spelled(shlex.quote(self.name))))
         action = "planned" if dry_run else "failed" if failures else "deleted"
         error = (
             Failure.from_exception(
@@ -232,7 +235,7 @@ class Status(AnsibleCommand):
             raise AnsibleError(
                 not_found("source", self.name, known=sorted(configured)), category="not_found"
             )
-        self.output.empty("No sources scanned yet. Run `untaped ansible source refresh NAME`.")
+        self.output.empty(f"No sources scanned yet. Run `{command_line(Refresh.spelled('NAME'))}`.")
         for name in [self.name] if self.name is not None else sorted(configured):
             yield _status_row(name, index=index, configured=name in configured)
 
@@ -301,7 +304,7 @@ class Refresh(AnsibleCommand):
             if exc.details.get("key") == key:
                 # serve() raised what the run this one waited on left (partial, failed)
                 self.ctx.diag.info(self._refreshed_meanwhile())
-                exc.hint = f"rerun `untaped ansible source refresh {shlex.quote(name)}` to retry"
+                exc.hint = f"rerun `{command_line(Refresh.spelled(shlex.quote(name)))}` to retry"
             raise  # else no fill ran: the lock never came
         if key not in served.filled:
             # the lock's last holder refreshed it while this run waited: serve() kept that
@@ -324,7 +327,7 @@ class Refresh(AnsibleCommand):
             self.ctx.diag.failure(error, item=failure.repo)
         if any(is_transient_ref_probe_failure(failure.reason) for failure in result.failures):
             self.ctx.diag.hint(
-                f"rerun `untaped ansible source refresh {shlex.quote(self.name)}`; "
+                f"rerun `{command_line(Refresh.spelled(shlex.quote(self.name)))}`; "
                 "unchanged repos skip Git fetch and dependency scan work"
             )
 

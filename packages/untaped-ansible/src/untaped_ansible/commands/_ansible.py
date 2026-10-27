@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from untaped.sdk import Command, UsageError, first_validation_error, not_found
+from untaped.sdk import Command, UsageError, command_line, first_validation_error, not_found
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
 from untaped_ansible.refresh import Backend, RefreshWiring
@@ -70,7 +70,9 @@ class AnsibleCommand(Command[AnsibleSettings]):
         names = [source.name for source in SOURCES.all()]
         if not names:
             return
-        commands = ", ".join(f"`untaped ansible source refresh {name}`" for name in names)
+        from untaped_ansible.commands.source import Refresh  # noqa: PLC0415 - import cycle
+
+        commands = ", ".join(f"`{command_line(Refresh.spelled(name))}`" for name in names)
         self.ctx.diag.warning(
             "cached source data resolves aliases at refresh time; "
             f"run {commands} for this change to affect cached graphs",

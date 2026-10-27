@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, q
+from untaped.sdk import Failure, UntapedError, q, run_hint
 from untaped_dotfiles.errors import DotfilesError, GitError
 from untaped_dotfiles.models import AppliedRecord, RepoRecord
 from untaped_dotfiles.records import PlaceAction, PlaceOutcome, RepoOutcome
@@ -184,7 +184,9 @@ class Applier:
         state = found.state
         if state in ("behind", "pending", "foreign"):
             lead = found.detail or f"{state}"
-            return f"{lead}; run `untaped dotfiles apply {placement.item}`"
+            from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - import cycle
+
+            return f"{lead}; {run_hint(Apply.spelled(placement.item))}"
         return found.detail
 
     # -- executing -----------------------------------------------------------

@@ -462,6 +462,7 @@ def test_fresh_index_stamps_current_schema_version(tmp_path) -> None:
 
 
 @pytest.mark.parametrize("version", [1, None])
+@pytest.mark.usefixtures("composed")  # the warning spells source refresh as the run names it
 def test_outdated_or_versionless_schema_is_rebuilt_as_empty_cache(
     tmp_path, capsys: pytest.CaptureFixture[str], version: int | None
 ) -> None:

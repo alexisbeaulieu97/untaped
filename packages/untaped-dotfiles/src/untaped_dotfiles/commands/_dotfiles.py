@@ -11,7 +11,16 @@ from typing import Annotated
 
 from pydantic import Field
 
-from untaped.sdk import Command, ConfigError, Positional, Short, UntapedError, UsageError
+from untaped.sdk import (
+    Command,
+    ConfigError,
+    Positional,
+    Short,
+    UntapedError,
+    UsageError,
+    key,
+    run_hint,
+)
 from untaped_dotfiles.applier import Applier
 from untaped_dotfiles.choices import Catalog
 from untaped_dotfiles.git_repos import LocalGitRepos
@@ -38,9 +47,11 @@ def detect_os(settings: DotfilesSettings) -> OsName:
         return settings.os
     found = _OS.get(platform.system().lower())
     if found is None:
+        from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
+
         raise ConfigError(
             f"unknown operating system {platform.system()!r}",
-            hint="run `untaped config set dotfiles.os linux` (or macos, windows)",
+            hint=f"{run_hint(Set.spelled(key(DotfilesSettings).os, 'linux'))} (or macos, windows)",
         )
     return found
 

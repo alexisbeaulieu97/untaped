@@ -18,6 +18,7 @@ from untaped.sdk import (
     Stdin,
     UntapedError,
     UsageError,
+    command_line,
     not_found,
     plural,
     q,
@@ -388,7 +389,8 @@ def _fetch(
 ) -> _SyncPlan:
     """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
     if not pack.source:
-        raise ValueError("no recorded source; reinstall the pack with `untaped recipe packs add`")
+        again = command_line(Add.spelled())
+        raise ValueError(f"no recorded source; reinstall the pack with `{again}`")
     commit = None
     if is_git_url(pack.source):
         source_dir = fetch_pack_source(

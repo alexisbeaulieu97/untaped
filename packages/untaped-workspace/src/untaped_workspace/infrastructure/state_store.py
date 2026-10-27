@@ -51,10 +51,12 @@ class StateWorkspaceStore:
         try:
             WORKSPACES.add(record)
         except RowExists:
+            from untaped_workspace.commands.create import Add  # noqa: PLC0415 - import cycle
+
             raise WorkspaceError(
                 f"workspace {q(record.name)} already exists",
                 category="conflict",
-                hint=f"run `untaped workspace add {record.name} --repo REPO`",
+                hint=Add.spelled(record.name, "--repo", "REPO"),
             ) from None
 
     def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:

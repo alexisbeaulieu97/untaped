@@ -153,9 +153,11 @@ def pick_enabled(
     for name in names:
         matches = [c for c in choices if c.name == name]
         if not matches:
+            from untaped_dotfiles.commands.items import Enable  # noqa: PLC0415 - import cycle
+
             raise ItemNotFoundError(
                 not_found("enabled item", name, known=sorted({c.name for c in choices})),
-                hint=f"run `untaped dotfiles enable {name}`",
+                hint=Enable.spelled(name),
             )
         if len(matches) > 1:
             raise UsageError(
