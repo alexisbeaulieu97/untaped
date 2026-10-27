@@ -9,7 +9,7 @@ import pytest
 
 from untaped.sdk import home
 from untaped.sdk.testing import compose_with
-from untaped_git import SPEC as GIT
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import RepoSource
 from untaped_workspace.testing import conformance
@@ -18,7 +18,7 @@ from workspace.fakes import Listing, repo
 
 def test_a_provider_listing_distinct_names_conforms() -> None:
     github = Listing(repo("acme/api"), repo("acme/web"), repo("other/api"))
-    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+    with compose_with(Git, WORKSPACE, provides={"github": [github]}):
         conformance(github)
 
 
@@ -27,7 +27,7 @@ def test_a_provider_listing_one_name_twice_does_not_conform() -> None:
     apart."""
     github = Listing(repo("acme/api"), repo("ACME/API", "mirror.example"), repo("acme/web"))
     with (
-        compose_with(GIT, WORKSPACE, provides={"github": [github]}),
+        compose_with(Git, WORKSPACE, provides={"github": [github]}),
         pytest.raises(AssertionError, match="repos share a name: acme/api"),
     ):
         conformance(github)
@@ -59,7 +59,7 @@ def test_a_max_age_of_zero_asks_the_providers_every_time(
         )
     get_settings.cache_clear()
     github = Listing(repo("acme/api"))
-    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+    with compose_with(Git, WORKSPACE, provides={"github": [github]}):
         gather(RepoSource.repos)()
         gather(RepoSource.repos)()
     assert github.calls == 2

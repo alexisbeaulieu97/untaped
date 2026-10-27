@@ -14,9 +14,6 @@ from typing import Any
 
 import pytest
 
-from untaped.runtime import bootstrap
-from untaped.sdk.testing import plugin_candidate
-from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import Prefetched, RepoStore
 from untaped_github import SPEC
 from untaped_github.domain import (
@@ -30,6 +27,8 @@ from untaped_github.domain import (
 from untaped_github.errors import GitCorpusError
 from untaped_github.infrastructure.git_corpus import GitCorpusCache, prefetch_paths
 from untaped_github.records import CorpusRepoResult
+
+pytestmark = pytest.mark.usefixtures("composed")
 
 Git = Callable[..., str]
 Commit = Callable[..., None]
@@ -83,12 +82,6 @@ def corpus(source_repo: Callable[[str, dict[str, str | bytes]], Path]) -> Callab
         return _Corpus(source_repo("source", files), GitCorpusCache(**cache_options))
 
     return create
-
-
-@pytest.fixture
-def composed(fresh_composition: None) -> None:
-    """Compose git and github: a store fetch from a host asks the ``GitHost`` providers."""
-    bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])
 
 
 def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None:
@@ -767,7 +760,6 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
     )
 
 
-@pytest.mark.usefixtures("composed")
 def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
     corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:
@@ -795,7 +787,6 @@ def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
     ],
     ids=["github", "enterprise", "other-host-unchanged"],
 )
-@pytest.mark.usefixtures("composed")
 def test_ssh_protocol_fetches_the_github_host_over_ssh(
     corpus: Callable[..., _Corpus],
     rewrite_to: Rewrite,
@@ -814,7 +805,6 @@ def test_ssh_protocol_fetches_the_github_host_over_ssh(
     assert listed.clone_url == fetched
 
 
-@pytest.mark.usefixtures("composed")
 def test_a_repo_named_with_a_leading_dot_is_listed(
     corpus: Callable[..., _Corpus], rewrite_to: Rewrite
 ) -> None:

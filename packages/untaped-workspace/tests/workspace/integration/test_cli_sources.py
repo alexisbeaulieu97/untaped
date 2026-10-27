@@ -18,7 +18,7 @@ from untaped.sdk import UntapedError, key
 from untaped.sdk.contracts import Contract, NotReady, Source
 from untaped.sdk.testing import CliInvoker, CliResult, compose_with
 from untaped.sdk.testing.git import GitRemote
-from untaped_git import SPEC as GIT
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo
 from untaped_workspace.cli import app
@@ -45,7 +45,7 @@ GITHUB = Source(plugin="github", kind="workspace.repo")
 @contextmanager
 def providers(**plugins: Sequence[Contract]) -> Iterator[None]:
     """Git and workspace composed with fake plugins, each offering its providers."""
-    with compose_with(GIT, WORKSPACE, provides={name: list(p) for name, p in plugins.items()}):
+    with compose_with(Git, WORKSPACE, provides={name: list(p) for name, p in plugins.items()}):
         yield
 
 

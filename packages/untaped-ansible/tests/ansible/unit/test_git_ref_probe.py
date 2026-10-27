@@ -180,6 +180,7 @@ def test_git_probe_validates_construction_arguments() -> None:
         GitRemoteRefProbe(git, clone_protocol="https", concurrency=0)
 
 
+@pytest.mark.usefixtures("composed")
 def test_git_probe_uses_real_local_ls_remote_subprocess(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

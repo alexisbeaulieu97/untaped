@@ -23,7 +23,7 @@ from untaped.sdk._run import recording  # untaped: allow private-test-import
 from untaped.sdk.contracts import Ambiguous, Contract, NotReady, Source, gather
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.testing import compose_with
-from untaped_git import SPEC as GIT
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.infrastructure.catalog import RepoSources
@@ -46,7 +46,7 @@ NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
 @contextmanager
 def providers(**plugins: Sequence[Contract]) -> Iterator[None]:
     """Git and workspace composed with fake plugins, each offering its providers."""
-    with compose_with(GIT, WORKSPACE, provides={name: list(p) for name, p in plugins.items()}):
+    with compose_with(Git, WORKSPACE, provides={name: list(p) for name, p in plugins.items()}):
         yield
 
 

@@ -12,7 +12,7 @@ from untaped.sdk import Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.contracts import Source, gather
 from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, compose_with
 from untaped.sdk.testing.git import GitRemote, global_config
-from untaped_git import SPEC as GIT
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.cli import app
@@ -317,7 +317,7 @@ def test_a_pick_dropped_by_a_refresh_uses_its_remembered_repo(
 ) -> None:
     url = make_upstream("api").url
     github = Listing(Repo(name="acme/api", url=url, default_branch="main"))
-    with compose_with(GIT, WORKSPACE, provides={"github": [github]}):
+    with compose_with(Git, WORKSPACE, provides={"github": [github]}):
         gather(RepoSource.repos)()  # github's answer is stored: the picker's first pass shows it
         github.rows = []  # and the refresh drops it
         backend = _RefreshThenPick(_pick("J-1", "acme/api"))

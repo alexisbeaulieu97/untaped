@@ -9,12 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from untaped.runtime import bootstrap
 from untaped.runtime.settings import get_settings
-from untaped.sdk.testing import plugin_candidate
+from untaped.sdk.testing.contracts import compose_with
 from untaped.sdk.testing.git import GitRemote, git_remote
-from untaped_git import SPEC as GIT
 from untaped_git.api import store_key
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 
 
@@ -51,8 +50,8 @@ def make_upstream(tmp_path: Path) -> Callable[..., GitRemote]:
 
 
 @pytest.fixture
-def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Point the repo store (``git.store_dir``) at tmp; return its root."""
+def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, composed: None) -> Iterator[Path]:
+    """Point the repo store (``git.store_dir``) at tmp, under a run composing git; its root."""
     root = tmp_path / "store"
     monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(root))
     get_settings.cache_clear()
@@ -61,10 +60,11 @@ def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path
 
 
 @pytest.fixture
-def composed(fresh_composition: None) -> None:
-    """A root composed of the git and workspace plugins: a store fetch of a hosted URL asks
+def composed() -> Iterator[None]:
+    """A run composed of the git and workspace plugins: a store fetch of a hosted URL asks
     the plugins filling ``GitHost`` (none here) for credentials."""
-    bootstrap.compose_root(candidates=[plugin_candidate(GIT), plugin_candidate(WORKSPACE)])
+    with compose_with(Git, WORKSPACE):
+        yield
 
 
 def store_repo(root: Path, url: str) -> Path:

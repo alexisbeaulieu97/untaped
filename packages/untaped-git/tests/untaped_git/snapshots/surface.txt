@@ -1,0 +1,179 @@
+# untaped surface 1
+cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
+cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
+cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
+cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
+cfg git.untaped_helper_only boolean default=false
+cli untaped git
+cli untaped git credential --nonce VALUE default=unset
+cli untaped git credential ACTION
+cli untaped git credential ACTION choice=erase
+cli untaped git credential ACTION choice=get
+cli untaped git credential ACTION choice=store
+cli untaped git hosts
+cli untaped git hosts --columns VALUE... default=unset
+cli untaped git hosts --columns alias=-c
+cli untaped git hosts --format VALUE default=table
+cli untaped git hosts --format alias=-f
+cli untaped git hosts --format choice=json
+cli untaped git hosts --format choice=pipe
+cli untaped git hosts --format choice=raw
+cli untaped git hosts --format choice=table
+cli untaped git hosts --format choice=yaml
+cli untaped git store
+cli untaped git store --columns VALUE... default=unset
+cli untaped git store --columns alias=-c
+cli untaped git store --format VALUE default=table
+cli untaped git store --format alias=-f
+cli untaped git store --format choice=json
+cli untaped git store --format choice=pipe
+cli untaped git store --format choice=raw
+cli untaped git store --format choice=table
+cli untaped git store --format choice=yaml
+contract git.Credential(password, username)
+contract git.Credential.password string(format=password)
+contract git.Credential.username string
+contract git.Credential.verify_tls boolean|string(format=path) default=true
+contract git.git_host abstract=credential,home  [experimental]
+contract git.git_host.credential(url: string) -> Credential?  [experimental]
+contract git.git_host.home() -> string?  [experimental]
+contract git.git_host.proxy(url: string) -> string?  [experimental]
+record git.RepoCount
+record git.RepoCount.repos integer
+record git.RepoCount.size_bytes integer
+record git.host
+record git.host.credential boolean
+record git.host.helpers_first string[]
+record git.host.host string
+record git.host.missing_helper string?
+record git.host.plugins string[]
+record git.store_report
+record git.store_report.exclusive_bytes object
+record git.store_report.filter_ignored object
+record git.store_report.gc_log string[]
+record git.store_report.git_version string?
+record git.store_report.held_by_branches RepoCount
+record git.store_report.loose_objects integer
+record git.store_report.packs_max integer
+record git.store_report.packs_median number
+record git.store_report.repos integer
+record git.store_report.size_bytes integer
+record git.store_report.store_dir string
+record git.store_report.unowned RepoCount
+record git.store_report.used_by object
+sdk untaped_git.api.Credential(*, username, password)
+sdk untaped_git.api.Credential(verify_tls=) default=true
+sdk untaped_git.api.Credential.password
+sdk untaped_git.api.Credential.username
+sdk untaped_git.api.Credential.verify_tls
+sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_git.api.GitHost implement=credential,home  [experimental]
+sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
+sdk untaped_git.api.GitHost.home() -> string?  [experimental]
+sdk untaped_git.api.GitHost.proxy(url)  [experimental]
+sdk untaped_git.api.GitUrl
+sdk untaped_git.api.HostAuth(plugin, credential, proxy)
+sdk untaped_git.api.HostAuth.credential
+sdk untaped_git.api.HostAuth.plugin
+sdk untaped_git.api.HostAuth.proxy
+sdk untaped_git.api.Prefetched(store)
+sdk untaped_git.api.Prefetched.run(argv)
+sdk untaped_git.api.Prefetched.run(capture=) default=true
+sdk untaped_git.api.Prefetched.run(check=) default=true
+sdk untaped_git.api.Prefetched.run(locale_c=) default=true
+sdk untaped_git.api.Prefetched.run(stdin=) default=None
+sdk untaped_git.api.Prefetched.run(timeout=) default=None
+sdk untaped_git.api.RefDelta()
+sdk untaped_git.api.RefDelta(added@1=) default=<computed>
+sdk untaped_git.api.RefDelta(moved@2=) default=<computed>
+sdk untaped_git.api.RefDelta(pruned@3=) default=<computed>
+sdk untaped_git.api.RefDelta.added
+sdk untaped_git.api.RefDelta.moved
+sdk untaped_git.api.RefDelta.pruned
+sdk untaped_git.api.RefMove(old, new)
+sdk untaped_git.api.RefMove.new
+sdk untaped_git.api.RefMove.old
+sdk untaped_git.api.Released()
+sdk untaped_git.api.Released(branches@3=) default=[]
+sdk untaped_git.api.Released(foreign_worktrees@2=) default=[]
+sdk untaped_git.api.Released(plugins@1=) default=<computed>
+sdk untaped_git.api.Released(stash@4=) default=false
+sdk untaped_git.api.Released.branches
+sdk untaped_git.api.Released.foreign_worktrees
+sdk untaped_git.api.Released.kept()
+sdk untaped_git.api.Released.plugins
+sdk untaped_git.api.Released.stash
+sdk untaped_git.api.Removed()
+sdk untaped_git.api.Removed(freed_bytes@1=) default=0
+sdk untaped_git.api.Removed.freed_bytes
+sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
+sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
+sdk untaped_git.api.RepoStore.checkout(worktree, ref)
+sdk untaped_git.api.RepoStore.delete_refs(names)
+sdk untaped_git.api.RepoStore.exists()
+sdk untaped_git.api.RepoStore.fetch()
+sdk untaped_git.api.RepoStore.fetch(branches=) default=[]
+sdk untaped_git.api.RepoStore.fetch(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoStore.fetch(prune=) default=false
+sdk untaped_git.api.RepoStore.fetch(tags=) default=[]
+sdk untaped_git.api.RepoStore.for_url(map_error=) default=None callback(1)
+sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
+sdk untaped_git.api.RepoStore.has_part()
+sdk untaped_git.api.RepoStore.lock_worktree(worktree, *, reason)
+sdk untaped_git.api.RepoStore.ls_tree(paths@2=) default=[]
+sdk untaped_git.api.RepoStore.ls_tree(tree)
+sdk untaped_git.api.RepoStore.owned_by(map_error=) default=None callback(1)
+sdk untaped_git.api.RepoStore.owned_by(plugin, *, error)
+sdk untaped_git.api.RepoStore.path
+sdk untaped_git.api.RepoStore.prefetch()
+sdk untaped_git.api.RepoStore.prefetch(blobs=) default=[]
+sdk untaped_git.api.RepoStore.prefetch(history=) default=[]
+sdk untaped_git.api.RepoStore.prefetch(paths=) default=[]
+sdk untaped_git.api.RepoStore.prefetch(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoStore.prefetch(trees=) default=[]
+sdk untaped_git.api.RepoStore.prefetched()
+sdk untaped_git.api.RepoStore.prefetched(blobs=) default=[]
+sdk untaped_git.api.RepoStore.prefetched(paths=) default=[]
+sdk untaped_git.api.RepoStore.prefetched(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoStore.prefetched(trees=) default=[]
+sdk untaped_git.api.RepoStore.private_file
+sdk untaped_git.api.RepoStore.read_private(model)  [experimental]
+sdk untaped_git.api.RepoStore.ref(name)
+sdk untaped_git.api.RepoStore.refs()
+sdk untaped_git.api.RepoStore.relative(ref)
+sdk untaped_git.api.RepoStore.release()
+sdk untaped_git.api.RepoStore.release(branches=) default=[]
+sdk untaped_git.api.RepoStore.release(unless_in_use=) default=false
+sdk untaped_git.api.RepoStore.repair_worktree(worktree)
+sdk untaped_git.api.RepoStore.roots
+sdk untaped_git.api.RepoStore.run(argv)
+sdk untaped_git.api.RepoStore.run(capture=) default=false
+sdk untaped_git.api.RepoStore.run(check=) default=true
+sdk untaped_git.api.RepoStore.run(locale_c=) default=true
+sdk untaped_git.api.RepoStore.run(stdin=) default=None
+sdk untaped_git.api.RepoStore.run(timeout=) default=None
+sdk untaped_git.api.RepoStore.url
+sdk untaped_git.api.RepoStore.worktree_add(branch=) default=None
+sdk untaped_git.api.RepoStore.worktree_add(lock_reason=) default=None
+sdk untaped_git.api.RepoStore.worktree_add(path, ref)
+sdk untaped_git.api.RepoStore.worktree_owners()
+sdk untaped_git.api.RepoStore.worktrees_under(path)
+sdk untaped_git.api.RepoStore.write_private()  [experimental]
+sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
+sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
+sdk untaped_git.api.RepoStore.write_worktree_config(worktree, *, profile)
+sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
+sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
+sdk untaped_git.api.TreeEntry.mode
+sdk untaped_git.api.TreeEntry.oid
+sdk untaped_git.api.TreeEntry.path
+sdk untaped_git.api.TreeEntry.table_columns class
+sdk untaped_git.api.TreeEntry.type
+sdk untaped_git.api.check_names(names)
+sdk untaped_git.api.default_branch(url)
+sdk untaped_git.api.ls_remote(patterns@2=) default=[]
+sdk untaped_git.api.ls_remote(url)
+sdk untaped_git.api.repo_url_parts(url)
+sdk untaped_git.api.store_key(url)
+sdk untaped_git.api.store_root()
+sdk untaped_git.api.validate_git_url(value)

@@ -6,10 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import deprecated_behaviour, get_config_section
-
-NONCELESS_HELPER = deprecated_behaviour("nonceless-credential-helper", removed_in=12)
-"""``git credential get`` answering a helper line without ``--nonce`` (11.0 wrote them)."""
+from untaped.sdk import settings_of
 
 
 class GitSettings(BaseModel):
@@ -39,7 +36,7 @@ def git_settings() -> GitSettings:
     The repo store is called from other plugins' code, so it resolves its own
     settings rather than receiving them from a command.
     """
-    return get_config_section("git", GitSettings)
+    return settings_of(GitSettings)
 
 
 def store_root() -> Path:

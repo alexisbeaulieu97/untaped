@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from contextlib import AbstractContextManager
 
 import pytest
 import yaml
 from pydantic import SecretStr
 
-from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import ConfigError, home
-from untaped.sdk.testing import invoke_cli, plugin_candidate
-from untaped_git import SPEC as GIT_SPEC
+from untaped.sdk.testing import compose_with, invoke_cli
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
-from untaped_git.domain.hosts import resolve_host
+from untaped_git.hosts import resolve_host
+from untaped_git.plugin import Git
 from untaped_github import SPEC
 from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
@@ -45,14 +44,9 @@ class OtherForge(GitHost):
         return None
 
 
-def compose(*extra: PluginSpec) -> None:
-    specs = [GIT_SPEC, SPEC, *extra]
-    bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
-
-
-@pytest.fixture(autouse=True)
-def _composition(fresh_composition: None) -> Iterator[None]:
-    yield
+def composed(*extra: PluginSpec) -> AbstractContextManager[object]:
+    """A run of git, github and ``extra``, as one invocation of them has."""
+    return compose_with(Git, SPEC, *extra)
 
 
 @pytest.mark.parametrize(
@@ -123,16 +117,15 @@ def test_no_http_proxy_leaves_git_to_its_own_config() -> None:
 def test_the_store_asks_github_for_its_host() -> None:
     configure({}, http={"proxy": "http://proxy.example:3128"})
     GH.store(GithubServer(), token="ghp_secret")
-    compose()
-
-    auth = resolve_host("https://github.com/acme/api.git")
+    with composed():
+        auth = resolve_host("https://github.com/acme/api.git")
+        assert resolve_host("https://gitlab.example/acme/api.git") is None
 
     assert auth == HostAuth(
         "github",
         Credential(username="x-access-token", password=SecretStr("ghp_secret")),
         "http://proxy.example:3128",
     )
-    assert resolve_host("https://gitlab.example/acme/api.git") is None
 
 
 def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
@@ -141,25 +134,27 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
     """S5: two plugins fill GitHost for github.com; a store fetch names both, exit 4."""
     configure({})
     monkeypatch.setenv("GH_TOKEN", "ghp_secret")
-    compose(PluginSpec(name="other", provides={"git": lambda: (OtherForge(),)}))
-    record = {
-        "full_name": "acme/api",
-        "clone_url": "https://github.com/acme/api.git",
-        "default_branch": "main",
-    }
-    envelope = {"untaped": "1", "kind": "github.repo", "record": record}
+    with composed(PluginSpec(name="other", provides={"git": lambda: (OtherForge(),)})):
+        record = {
+            "full_name": "acme/api",
+            "clone_url": "https://github.com/acme/api.git",
+            "default_branch": "main",
+        }
+        envelope = {"untaped": "1", "kind": "github.repo", "record": record}
 
-    result = invoke_cli(app, ["cache", "sync", "--stdin"], input=json.dumps(envelope) + "\n")
+        result = invoke_cli(app, ["cache", "sync", "--stdin"], input=json.dumps(envelope) + "\n")
 
-    assert result.exit_code == 4, result.output
-    assert "error: github, other all supply credentials for github.com" in result.stderr
-    assert "hint: untaped plugin rank git.git_host credential github other" in result.stderr
-    with pytest.raises(ConfigError) as caught:
-        ls_remote("https://github.com/acme/api.git")
-    assert caught.value.details == {
-        "contract": "git.git_host",
-        "method": "credential",
-        "providers": ["github", "other"],
-    }
-    store = RepoStore.for_url("https://github.com/acme/api.git", plugin=SPEC, error=GitCorpusError)
-    assert not store.private_file.exists()
+        assert result.exit_code == 4, result.output
+        assert "error: github, other all supply credentials for github.com" in result.stderr
+        assert "hint: untaped plugin rank git.git_host credential github other" in result.stderr
+        with pytest.raises(ConfigError) as caught:
+            ls_remote("https://github.com/acme/api.git")
+        assert caught.value.details == {
+            "contract": "git.git_host",
+            "method": "credential",
+            "providers": ["github", "other"],
+        }
+        store = RepoStore.for_url(
+            "https://github.com/acme/api.git", plugin=SPEC, error=GitCorpusError
+        )
+        assert not store.private_file.exists()

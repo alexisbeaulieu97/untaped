@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import shutil
 import threading
 from collections.abc import Callable
@@ -244,7 +245,7 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
         with archive.hold("J-1") as held:
             archive(held, force=False)
 
-    archiver = threading.Thread(target=archive_held)
+    archiver = threading.Thread(target=contextvars.copy_context().run, args=(archive_held,))
     archiver.start()
     assert gated.removing.wait(10)
     errors: list[BaseException] = []
@@ -255,7 +256,7 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
         except BaseException as exc:
             errors.append(exc)
 
-    adder = threading.Thread(target=add)
+    adder = threading.Thread(target=contextvars.copy_context().run, args=(add,))
     adder.start()
     adder.join(0.5)  # time enough for an unserialised add to check out
     gated.release.set()

@@ -9,26 +9,26 @@ and the next ``status --fetch``.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import stat
 import subprocess
 from collections.abc import Iterator
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import ClassVar
 
 import pytest
 from pydantic import SecretStr
 
-from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import get_settings
-from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk.testing import CliInvoker, compose_with
 from untaped.sdk.testing.git import GitRemote, git_remote, global_config
-from untaped_git import SPEC as GIT
 from untaped_git.api import Credential, GitHost
-from untaped_git.cli import app as git_app
+from untaped_git.helpers import user_helpers
+from untaped_git.host_rows import list_hosts
+from untaped_git.plugin import Git
 from untaped_workspace import SPEC as WORKSPACE
 from untaped_workspace.cli import app
 
@@ -51,12 +51,20 @@ class Forge(GitHost):
         return Credential(username="x-access-token", password=SecretStr("forge-token"))
 
 
+def with_forge() -> AbstractContextManager[object]:
+    """A run of git, workspace and the forge, as one invocation has: its settings read anew."""
+    return compose_with(Git, WORKSPACE, PluginSpec(name="forge", provides={"git": _forge}))
+
+
+def _forge() -> tuple[Forge]:
+    return (Forge(),)
+
+
 @pytest.fixture
-def forge(fresh_composition: None) -> Iterator[type[Forge]]:
+def forge() -> Iterator[type[Forge]]:
     Forge.asked = []
-    spec = PluginSpec(name="forge", provides={"git": lambda: (Forge(),)})
-    bootstrap.compose_root(candidates=[plugin_candidate(s) for s in (GIT, WORKSPACE, spec)])
-    yield Forge
+    with with_forge():
+        yield Forge
 
 
 @pytest.fixture
@@ -131,12 +139,13 @@ def test_helper_only_puts_a_stale_helper_behind_untaped_in_its_worktrees_only(
 
     # The user's own helper is asked first, and `git hosts` says so.
     assert fill(wt)["password"] == "stale"
-    hosts = json.loads(run(git_app, ["hosts", "--format", "json"]).stdout)
-    assert [(row["host"], row["helpers_first"]) for row in hosts] == [("git.example", [stale])]
+    hosts = list_hosts(helpers_for=lambda host: user_helpers(host, cwd=mine), missing_helper=None)
+    assert [(row.host, row.helpers_first) for row in hosts] == [("git.example", [stale])]
 
     monkeypatch.setenv("UNTAPED_GIT__UNTAPED_HELPER_ONLY", "true")
     get_settings.cache_clear()
-    assert run(app, ["status", "--fetch", "J-1"]).exit_code == 0
+    with with_forge():
+        assert run(app, ["status", "--fetch", "J-1"]).exit_code == 0
 
     assert fill(wt)["password"] == "untaped-token"
     assert fill(mine)["password"] == "stale"  # not untaped's: untouched

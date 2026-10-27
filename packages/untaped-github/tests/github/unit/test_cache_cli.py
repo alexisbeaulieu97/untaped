@@ -14,20 +14,19 @@ import httpx
 import pytest
 import respx
 
-from untaped.runtime import bootstrap
 from untaped.sdk import plugin_path
 from untaped.sdk.testing import (
     CliInvoker,
     CliResult,
     assert_destructive_contract,
     invoke_root,
-    plugin_candidate,
 )
-from untaped_git import SPEC as GIT_SPEC
 from untaped_git.api import RepoStore
 from untaped_github import SPEC
 from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
+
+pytestmark = pytest.mark.usefixtures("composed")
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 #: ``github.caches.sweep.max_age_seconds: 0``: every run checks every repo.
@@ -171,7 +170,6 @@ def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
     assert actions == ["unchanged", "unchanged"]
 
 
-@pytest.mark.usefixtures("fresh_composition")
 def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     _config: Path,
     source_repo: SourceRepo,
@@ -181,7 +179,6 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
     _config.write_text(_config.read_text() + "  base_url: https://ghe.example/api/v3\n")
     origin = source_repo("origin", {"README.md": "hello\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
-    bootstrap.compose_root(candidates=[plugin_candidate(GIT_SPEC), plugin_candidate(SPEC)])
     records = [
         {"untaped": "1", "kind": "github.repo", "record": {**row, "default_branch": "main"}}
         for row in (

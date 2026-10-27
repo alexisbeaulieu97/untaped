@@ -12,15 +12,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped_git.domain.delta import RefDelta, RefMove
-from untaped_git.domain.hosts import Credential, GitHost, HostAuth, resolve_host
-from untaped_git.domain.namespace import check_names
-from untaped_git.domain.records import TreeEntry
-from untaped_git.domain.release import Released, Removed
-from untaped_git.domain.url import GitUrl, repo_url_parts, store_key, validate_git_url
-from untaped_git.infrastructure import remote
-from untaped_git.infrastructure.store import Prefetched, RepoStore
+from untaped_git import remote
+from untaped_git.delta import RefDelta, RefMove
+from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
+from untaped_git.namespace import check_names
+from untaped_git.records import TreeEntry
+from untaped_git.release import Released, Removed
 from untaped_git.settings import store_root
+from untaped_git.store import Prefetched, RepoStore
+from untaped_git.url import GitUrl, repo_url_parts, store_key, validate_git_url
 
 __all__ = [
     "Credential",

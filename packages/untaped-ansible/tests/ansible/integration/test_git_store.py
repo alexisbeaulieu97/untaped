@@ -18,10 +18,9 @@ from typing import Any
 import pytest
 import yaml
 
-from untaped.runtime import bootstrap
 from untaped.runtime.settings import get_settings
 from untaped.sdk import ErrorCategory, GitCommandError, GitResult, home
-from untaped.sdk.testing import CliInvoker, plugin_candidate
+from untaped.sdk.testing import CliInvoker, compose_with
 from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_ansible import SPEC as ANSIBLE
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
@@ -30,10 +29,10 @@ from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
-from untaped_git import SPEC as GIT
+from untaped_git import remote as remote_module
+from untaped_git import store as store_module
 from untaped_git.api import Released, RepoStore, store_key
-from untaped_git.infrastructure import remote as remote_module
-from untaped_git.infrastructure import store as store_module
+from untaped_git.plugin import Git
 from untaped_github import SPEC as GITHUB
 
 _REQS = "roles/requirements.yml"
@@ -80,9 +79,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[Call]:
 
 
 @pytest.fixture
-def store_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fresh_composition: None
-) -> Iterator[Path]:
+def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     """A temp store root, a github token in the profile, and git + github + ansible composed."""
     root = tmp_path / "store"
     config = home().expanduser() / "config.yml"
@@ -90,8 +87,8 @@ def store_root(
     profile = {"github": {"token": _TOKEN}, "git": {"store_dir": str(root)}}
     config.write_text(yaml.safe_dump({"format_version": 2, **profile}), encoding="utf-8")
     get_settings.cache_clear()
-    bootstrap.compose_root(candidates=[plugin_candidate(s) for s in (GIT, GITHUB, ANSIBLE)])
-    yield root
+    with compose_with(Git, GITHUB, ANSIBLE):
+        yield root
     get_settings.cache_clear()
 
 

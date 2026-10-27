@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import shutil
@@ -272,7 +273,10 @@ def test_parallel_checkouts_of_one_repo(
         except BaseException as exc:
             errors.append(exc)
 
-    threads = [threading.Thread(target=run, args=(f"w{i}",)) for i in range(4)]
+    threads = [
+        threading.Thread(target=contextvars.copy_context().run, args=(run, f"w{i}"))
+        for i in range(4)
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:

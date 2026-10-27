@@ -158,6 +158,7 @@ Core.unknown_keys
 Core.token_store
 Core.refs
 Dotfiles.sync
+Git.repo_store
 
 # Enum members read by value from manifests and the state file.
 Policy.ONCE  # dotfiles: `policy: once`
