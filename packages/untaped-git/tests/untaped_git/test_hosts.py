@@ -25,7 +25,6 @@ from untaped_git.plugin import Git
 class Forge(GitHost, Provider):
     homes: ClassVar[dict[str, str | None]] = {}
     asked: ClassVar[list[str]] = []
-    proxied: ClassVar[list[str]] = []
     error: ClassVar[Exception | None] = None
 
     @property
@@ -40,10 +39,6 @@ class Forge(GitHost, Provider):
         if type(self).error is not None:
             raise type(self).error
         return Credential(username=self.plugin, password=SecretStr("token"))
-
-    def proxy(self, url: str) -> str | None:
-        type(self).proxied.append(self.plugin)
-        return f"http://proxy.{self.plugin}.example"
 
 
 def installed(*forges: str) -> Install:
@@ -62,7 +57,6 @@ def composed(*forges: str) -> Iterator[None]:
 def _fresh() -> Iterator[None]:
     Forge.homes = {}
     Forge.asked = []
-    Forge.proxied = []
     Forge.error = None
     yield
 
@@ -97,7 +91,7 @@ def test_the_provider_whose_home_matches_answers() -> None:
         auth = resolve_host("https://github.com/acme/app.git")
 
     assert auth is not None
-    assert (auth.plugin, auth.proxy) == ("hub", "http://proxy.hub.example")
+    assert auth.plugin == "hub"
     assert auth.credential is not None
     assert auth.credential.username == "hub"
     assert set(Forge.asked) == {"hub"}  # lab's home is another host: never asked
@@ -109,7 +103,7 @@ def test_ssh_asks_no_credential() -> None:
     with composed("hub"):
         auth = resolve_host("git@github.com:acme/app.git")
 
-    assert auth == HostAuth("hub", None, "http://proxy.hub.example")
+    assert auth == HostAuth("hub", None)
     assert Forge.asked == []
 
 
@@ -132,8 +126,7 @@ def test_the_credential_rank_decides_between_two_homes(url: str, home: Home) -> 
 
     assert auth is not None
     assert auth.plugin == "lab"
-    assert Forge.asked == (["lab"] if url.startswith("https://") else [])
-    assert Forge.proxied == ["lab"]  # the other is never asked
+    assert Forge.asked == (["lab"] if url.startswith("https://") else [])  # hub is never asked
 
 
 def test_another_methods_rank_does_not_decide(home: Home) -> None:
@@ -152,7 +145,7 @@ def test_an_unranked_tie_is_a_config_error() -> None:
         resolve_host("https://github.com/acme/app.git")
 
     assert caught.value.exit_code == 4
-    assert caught.value.hint == "untaped plugin rank git.git_host credential hub lab"
+    assert caught.value.hint == "run `untaped plugin rank git.git_host credential hub lab`"
     assert caught.value.details == {
         "contract": "git.git_host",
         "method": "credential",

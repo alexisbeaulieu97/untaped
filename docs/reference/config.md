@@ -21,7 +21,7 @@ overridden for one process with the environment variable shown.
 |---|---|---|---|---|
 | `untaped.http.ca_bundle_path` | path (optional) | unset | `UNTAPED_UNTAPED__HTTP__CA_BUNDLE_PATH` | PEM file of extra CA certificates to trust instead of the OS trust store. |
 | `untaped.http.timeout_seconds` | number | `30.0` | `UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS` | HTTP request timeout in seconds. Above 0. |
-| `untaped.http.proxy` | string (optional) | unset | `UNTAPED_UNTAPED__HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches from the GitHub host. When unset, standard proxy variables (and, for Git, your Git config) apply. |
+| `untaped.http.proxy` | string (optional) | unset | `UNTAPED_UNTAPED__HTTP__PROXY` | Proxy URL for HTTP clients, and for Git fetches over HTTPS. When unset, standard proxy variables (and, for Git, your Git config) apply. |
 | `untaped.ui.theme` | string | `default` | `UNTAPED_UNTAPED__UI__THEME` | Built-in theme. One of: `default`, `plain`, `compact`, `high-contrast`, `quiet`, `classic`. |
 | `untaped.ui.format` | `json` \| `yaml` \| `table` \| `raw` \| `pipe` (optional) | unset | `UNTAPED_UNTAPED__UI__FORMAT` | Default `--format` for commands whose default is `table`. `UNTAPED_FORMAT` wins over it; an explicit `--format` wins over both. |
 | `untaped.ui.border` | `rounded` \| `square` \| `ascii` \| `none` (optional) | unset | `UNTAPED_UNTAPED__UI__BORDER` | Table border style; overrides the theme. |

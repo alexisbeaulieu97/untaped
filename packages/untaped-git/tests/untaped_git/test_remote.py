@@ -18,7 +18,7 @@ from untaped_git.hosts import Credential, HostAuth
 from untaped_git.plugin import Git
 from untaped_git.remote import default_branch, ls_remote
 from untaped_git.settings import git_settings
-from untaped_git.store import RepoStore
+from untaped_git.store import RepoStore, host_config
 
 
 def test_ls_remote_and_default_branch_through_the_api(remote: GitRemote) -> None:
@@ -38,18 +38,35 @@ def test_ls_remote_and_default_branch_through_the_api(remote: GitRemote) -> None
         assert api.default_branch(remote.url) == "main"
 
 
-def test_a_host_credential_and_proxy_are_passed(remote: GitRemote, tmp_path: Path) -> None:
+def test_a_host_credential_is_passed(remote: GitRemote, tmp_path: Path) -> None:
     asked: list[str] = []
 
     def auth(url: str) -> HostAuth:
         asked.append(url)
-        credential = Credential(username="u", password=SecretStr("p"))
-        return HostAuth("hub", credential, "http://proxy.invalid:3128")
+        return HostAuth("hub", Credential(username="u", password=SecretStr("p")))
 
     refs = ls_remote(remote.url, ["refs/heads/main"], root=tmp_path / "store", auth=auth)
 
     assert refs == {"refs/heads/main": remote.oid("main")}
     assert asked == [remote.url]
+
+
+def test_untaped_s_proxy_covers_every_https_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__PROXY", "http://proxy.example:3128")
+    credential = Credential(username="u", password=SecretStr("p"))
+
+    with install(Git).running():
+        hosted = host_config("https://github.com/acme/api.git", HostAuth("hub", credential))
+        plain = host_config("https://gitlab.example:8443/acme/api.git", None)
+        ssh = host_config("git@github.com:acme/api.git", None)
+
+    assert hosted[1] == {"http.https://github.com/.proxy": "http://proxy.example:3128"}
+    assert plain == ({}, {"http.https://gitlab.example:8443/.proxy": "http://proxy.example:3128"})
+    assert ssh == ({}, {})
+
+
+def test_no_proxy_leaves_git_to_its_own_config() -> None:
+    assert host_config("https://gitlab.example/acme/api.git", None) == ({}, {})
 
 
 def test_a_missing_remote_is_a_git_error(tmp_path: Path) -> None:

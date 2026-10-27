@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from git_test_support import StoreError, StoreFor
+from untaped.sdk.testing import install
 from untaped.sdk.testing.git import GitRemote, git_remote
+from untaped_git.plugin import Git
 from untaped_git.store import RepoStore
+
+
+@pytest.fixture(autouse=True)
+def _run() -> Iterator[None]:
+    """Each test inside a run of git, as the store is: it asks core for untaped's proxy."""
+    with install(Git).running():
+        yield
 
 
 @pytest.fixture
