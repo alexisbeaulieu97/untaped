@@ -1,5 +1,5 @@
-"""``Bytes``, ``Age``, ``Duration``, ``ObjectName`` and ``Spread``: a table's cells in words,
-other formats raw."""
+"""``Bytes``, ``Age``, ``Duration``, ``ObjectName``, ``Spread`` and ``TableText``: a table's
+cells in words, other formats raw."""
 
 from __future__ import annotations
 
@@ -302,3 +302,34 @@ def test_a_view_built_with_table_row_keeps_its_record_s_roles(clock: ManualClock
     shown = table_row(record, {"action": "failed", "note": "joined"})
     assert getattr(shown["action"], "role", None) == "error"
     assert shown["note"] == "joined"
+
+
+class Spot(BaseModel):
+    """Where a copy sits, read as one cell."""
+
+    path: str
+    line: int
+
+    def table_text(self) -> str:
+        return f"{self.path}:{self.line}"
+
+
+class Plain(BaseModel):
+    """A nested model with no text of its own."""
+
+    path: str
+
+
+class Placed(Record):
+    """A copy and where it sits."""
+
+    spot: Spot
+    plain: Plain
+
+
+def test_a_nested_model_with_table_text_reads_as_its_text_and_dumps_whole() -> None:
+    placed = Placed(spot=Spot(path="src/a.py", line=3), plain=Plain(path="b"))
+    row = table_row(placed)
+    assert row["spot"] == "src/a.py:3"
+    assert row["plain"] == {"path": "b"}  # flattened by the renderer, as before
+    assert placed.model_dump(mode="json")["spot"] == {"path": "src/a.py", "line": 3}

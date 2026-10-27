@@ -29,7 +29,17 @@ from enum import Enum
 from functools import cache
 from pathlib import Path
 from types import UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Protocol,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    runtime_checkable,
+)
 
 from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
 from pydantic.types import PathType
@@ -112,6 +122,21 @@ ObjectName = Mark("ObjectName")
 
 Only the table changes: json, yaml, raw and pipe keep the whole name.
 """
+
+
+@runtime_checkable
+class TableText(Protocol):
+    """A nested model that reads as one table cell: ``table_text()`` is the cell's text.
+
+    A record's field holding such a model (a file location reading
+    ``src/a.py:3``) shows that text in a table; a nested model without it
+    flattens to ``key=value`` pairs. Only the table changes: json, yaml, raw
+    and pipe keep the nested record.
+    """
+
+    def table_text(self) -> str:
+        """The cell's text."""
+        ...
 
 
 class Status:
@@ -706,7 +731,8 @@ def table_rows(
 
     A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
     ago it was by :func:`untaped.sdk.now`'s clock, a ``Duration`` field's its
-    run time, an ``ObjectName`` field's its short name, and a ``Spread`` field gives
+    run time, an ``ObjectName`` field's its short name, a :class:`TableText` model's
+    its ``table_text()``, and a ``Spread`` field gives
     way to a column per key (a key a row already has keeps the row's value). A
     word its field's ``Status`` names is a :class:`Roled` cell.
     """
@@ -773,6 +799,8 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
         return elapsed_text(value)
     if ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
         return value[:_SHORT_NAME]
+    if isinstance(value, BaseModel) and isinstance(value, TableText):
+        return value.table_text()
     return cell
 
 
