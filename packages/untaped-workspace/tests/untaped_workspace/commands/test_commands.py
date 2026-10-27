@@ -37,22 +37,14 @@ def test_create_list_path(make_upstream: Callable[..., GitRemote], workspace_env
     assert run(["path", "J-1"]).stdout.strip() == str(workspace_env / "J-1")
 
 
-def test_create_prints_the_path_last_in_table_mode(
+def test_create_prints_its_rows_and_path_prints_the_folder(
     make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     created = run(["create", "J-1", "--repo", make_upstream("api").url])
     assert created.exit == 0, err(created)
-    lines = created.stdout.strip().splitlines()
-    assert len(lines) > 1
-    assert lines[-1] == str(workspace_env / "J-1")
-
-
-def test_create_quiet_prints_only_the_path(
-    make_upstream: Callable[..., GitRemote], workspace_env: Path
-) -> None:
-    created = run(["create", "J-1", "--repo", make_upstream("api").url], quiet=True)
-    assert created.exit == 0, err(created)
-    assert created.stdout.strip() == str(workspace_env / "J-1")
+    assert str(workspace_env / "J-1") not in created.stdout
+    assert "created" in created.stdout
+    assert run(["path", "J-1"], quiet=True).stdout == f"{workspace_env / 'J-1'}\n"
 
 
 def test_create_reads_repos_from_stdin_after_repo(make_upstream: Callable[..., GitRemote]) -> None:

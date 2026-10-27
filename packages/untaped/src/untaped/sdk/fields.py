@@ -409,7 +409,6 @@ class Output[R: BaseModel](FieldBlock):
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
         self._empty: str | None = None
-        self._then: str | None = None
         self._model: type[BaseModel] | None = None
 
     @property
@@ -425,16 +424,6 @@ class Output[R: BaseModel](FieldBlock):
     def empty(self, text: str) -> None:
         """The text a table shows when ``run`` printed no row."""
         self._empty = text
-
-    def then(self, line: str) -> None:
-        """A closing stdout line after the rows, in table format only: the folder or file
-        the command made, say.
-
-        With ``-q`` and no row failed, the rows are left out, so the line is
-        the only one (``cd "$(untaped -q workspace create ...)"``). Other
-        formats print the records only.
-        """
-        self._then = line
 
     def _option_default(self, option: FieldOption) -> str | int | None:
         # ``table`` is every command's, so only another default is recorded
@@ -457,7 +446,6 @@ class Output[R: BaseModel](FieldBlock):
         filled._requested = list(requested) if isinstance(requested, list) else None
         filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
         filled._empty = None
-        filled._then = None
         filled._model = model
         if filled.format in self.render and filled.format != "table":
             if filled._requested is not None:
@@ -467,23 +455,7 @@ class Output[R: BaseModel](FieldBlock):
             check_columns(model, columns=filled._requested, fmt=fmt)
         return filled
 
-    def _print(
-        self, records: BaseModel | list[BaseModel], *, kind: str | None, finished: bool = True
-    ) -> None:
-        """Print ``records`` as this run asked, then the closing line a table has.
-
-        A run that raised after its rows is not ``finished``: its rows print, its line does not.
-        """
-        from untaped.sdk._ui import ui_context  # noqa: PLC0415 - rendering is heavy
-
-        closing = self._then if finished and self.format == "table" else None
-        rows = [records] if isinstance(records, BaseModel) else records
-        if closing is None or not ui_context(strict=False).quiet or any(map(_failed, rows)):
-            self._print_records(records, kind=kind)
-        if closing is not None:
-            print(closing)
-
-    def _print_records(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
+    def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
         from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
             _as_row,
@@ -549,15 +521,6 @@ class Output[R: BaseModel](FieldBlock):
                     empty=f"No {words}.",
                     table_columns=default_columns(item) or None,
                 )
-
-
-def _failed(row: BaseModel) -> bool:
-    """Whether ``row`` failed: an outcome that says so, or a row carrying an error."""
-    from untaped.sdk.records import OutcomeRecord, TargetRecord  # noqa: PLC0415
-
-    if isinstance(row, OutcomeRecord) and row.failed:
-        return True
-    return isinstance(row, OutcomeRecord | TargetRecord) and row.error is not None
 
 
 def _named(row: BaseModel, number: int) -> str:

@@ -124,9 +124,9 @@ class Create(Provisions):
     and the repo records a repo source reads (`github.repo`, say); a record
     without a kind, or of a kind no source reads, exits 2.
 
-    In table format the workspace path is the last stdout line (the only one
-    with -q), so `cd "$(untaped -q workspace create ...)"` works. A name
-    whose directory already holds files exits 1. How repos are named, and
+    Each row's `target_path` is its worktree; `untaped workspace path NAME`
+    prints the workspace's folder. A name whose directory already holds
+    files exits 1. How repos are named, and
     how branches and bases are chosen: `untaped workspace --help`.
 
     Examples
@@ -174,7 +174,6 @@ class Create(Provisions):
         with self.ctx.diag.progress(f"Creating workspace {name}") as progress:
             rows = provision.create(name, args, on_done=_progress_line(progress), progress=progress)
         self.shown(rows, name, warnings)
-        self.output.then(str(self.workspace_dir(name)))
         return iter(rows)
 
 
