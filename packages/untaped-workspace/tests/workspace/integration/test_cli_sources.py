@@ -12,8 +12,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
-from untaped.sdk import UntapedError
+from untaped.sdk import UntapedError, key
 from untaped.sdk.contracts import Contract, NotReady, Source
 from untaped.sdk.testing import CliInvoker, CliResult, compose_with
 from untaped.sdk.testing.git import GitRemote
@@ -27,7 +28,17 @@ from workspace.fakes import Forge, Host, Listing, Project, rank, repo
 
 pytestmark = pytest.mark.usefixtures("workspace_env", "composed")
 run = CliInvoker().invoke
-NO_BASE_URL = NotReady("no base URL", setting="gitlab.base_url")
+
+
+class _Gitlab(BaseModel):
+    base_url: str | None = None
+
+
+class _Github(BaseModel):
+    default_org: str | None = None
+
+
+NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
 GITHUB = Source(plugin="github", kind="workspace.repo")
 
 
@@ -135,7 +146,7 @@ def test_with_no_provider_ready_a_name_is_not_found_naming_the_setting(
 ) -> None:
     """S12: github has no inventory scope: exit 2, the hint names the setting and the URL."""
     github = Listing(
-        repo("acme/api"), not_ready=NotReady("no inventory scope", setting="github.default_org")
+        repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
     )
     with providers(github=[github]):
         result = run(app, ["create", "J-1", "--repo", "acme/api"])

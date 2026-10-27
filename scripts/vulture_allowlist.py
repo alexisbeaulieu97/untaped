@@ -157,3 +157,6 @@ Core.config_permissions
 Core.unknown_keys
 Core.token_store
 Core.refs
+
+# The contract answers' views: SDK API, read by the shelf example and third-party owners.
+Answers.errored

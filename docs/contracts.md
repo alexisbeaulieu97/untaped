@@ -38,7 +38,8 @@ class LibraryBooks(BookSource[Volume], Provider[LibrarySettings]):
         return Book(title=item.name)
 
     def books(self) -> list[Book]:
-        return [self.to_book(Volume.model_validate(row)) for row in self.http.get_json_list(...)]
+        with self.ctx.http.client(self.settings, base_url="https://library.example") as client:
+            return [self.to_book(Volume.model_validate(row)) for row in client.get_json_list(...)]
 
 
 class Library(Plugin):
@@ -53,9 +54,8 @@ class Library(Plugin):
   and is marked `@experimental`, so it may change in its owner's minor
   release (a renamed method keeps its old name marked
   `@deprecated(replacement=...)`). Its name is the class's in snake_case
-  (`book_source`). Method names may not shadow a builtin or the provider
-  machinery (`providers`, `gather`, `convert`, `on`, `own`, `ready`,
-  `settings`, `http`), and every parameter and return type must have a JSON
+  (`book_source`). Method names may not shadow a builtin or an attribute
+  the provider bases define (`ready`, `own`, `ctx`, `settings`), and every parameter and return type must have a JSON
   schema, with no `*args`, positional-only parameters or non-JSON defaults:
   the class definition raises `TypeError` (`unserialisable-signature`)
   otherwise. `shell=` is reserved for shell plugins. The types are the
@@ -87,10 +87,12 @@ class Library(Plugin):
   one's owner from the contract it subclasses and builds it at the first
   ask that reaches it, never at composition. A provider is ready when its
   settings validate; override `ready()` only for what a schema can't
-  say. The contract decides what is `@cached`; a provider never adds it.
-  Use `self.http` for requests: it carries the profile's proxy, CA and
-  timeout, and `gather(deadline=...)` bounds it (as it does any untaped
-  `HttpClient`; another library's client is not bounded). Keep helper methods private
+  say: return `NotReady(reason, key(S).field)`, the key being the setting
+  that would make it ready, which core spells in full for doctor and the
+  `config set` hint (`NotReady.spelled`). The contract decides what is
+  `@cached`; a provider never adds it. Build HTTP clients with
+  `self.ctx.http.client(self.settings, ...)`, as a command does: they carry
+  the profile's proxy, CA and timeout. Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`, unless its function carries
   `__untaped_provider_helper__ = True` (a provider base's own decorator sets
@@ -98,12 +100,16 @@ class Library(Plugin):
   state: `gather` runs providers side by side in threads, so a change would
   reach the providers beside it. Composing the root is the guarded case:
   `compose_root`, `build_root_app` or `compose_with` inside a provider call
-  raises, and the provider's answer is `Failed`.
-- **Asking.** `gather(method, refresh=, needs=, deadline=, plugins=,
-  progress=)(*args)` returns one `Ok`, `Failed` or `Skipped` per provider
-  (only those `plugins` when given, for an owner that already chose by a
-  cheaper method), in rank order, each item validated once as the owner's
-  model. `progress` counts the providers on the caller's task as they
+  raises, and the provider's answer is `Errored`.
+- **Asking.** `gather(method, plugins=, refresh=, progress=)(*args)` returns
+  one `Ok`, `Errored` or `Skipped` per provider that fills the method (only
+  those `plugins` when given: provider classes where the code holds one,
+  plugin names at the user edge), in rank order, each item validated once
+  as the owner's model. The views `.ok`, `.errored` and `.skipped` split
+  them by outcome, so no caller writes `isinstance` loops. A skip's or
+  error's `reason` is a `Reason` (`Reason.not_configured`,
+  `Reason.raised`...), each answer typed by the reasons it can carry; its
+  value is the word on the wire (`not-configured`). `progress` counts the providers on the caller's task as they
   answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding
   provider's error, `NotFound` or `Ambiguous`;
@@ -134,7 +140,7 @@ isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
 nothing and is only in `composition().quarantine`), so an owner can turn it
 into its own error (workspace reports a repo name nobody could look up as not found, naming the
-setting to set). A provider that raises is `Failed` with `reason="raised"`.
+setting to set). A provider that raises is `Errored` with `reason` `Reason.raised`.
 `select_one` then decides:
 
 - A ranked provider is above every unranked one; unranked ones are never

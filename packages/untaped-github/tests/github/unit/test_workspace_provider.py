@@ -16,7 +16,7 @@ import yaml
 
 from untaped.runtime.settings import get_settings
 from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError, home
-from untaped.sdk.contracts import Failed, NoProviderReady, Ok, convert, gather
+from untaped.sdk.contracts import Errored, NoProviderReady, Ok, convert, gather
 from untaped.sdk.testing import assert_fills, compose_with
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
 from untaped_github.records import GithubRepo
@@ -123,7 +123,7 @@ def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() 
         gather(RepoSource.repos, refresh=True)()
 
     not_ready = caught.value.not_ready["github"]
-    assert not_ready.setting == "github.default_org"
+    assert not_ready.spelled == "github.default_org"
     assert not_ready.reason == "no inventory scope"
     assert caught.value.exit_code == ExitCode.ENVIRONMENT
 
@@ -135,7 +135,7 @@ def test_a_bare_team_with_several_orgs_names_the_teams_setting() -> None:
         gather(RepoSource.repos, refresh=True)()
 
     not_ready = caught.value.not_ready["github"]
-    assert not_ready.setting == "github.inventory.teams"
+    assert not_ready.spelled == "github.inventory.teams"
     assert not_ready.reason == "github.inventory.teams needs ORG/SLUG entries"
 
 
@@ -299,7 +299,7 @@ def test_a_failed_listing_fails_when_no_answer_is_cached() -> None:
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(503))
         [answer] = gather(RepoSource.repos, refresh=True)()
 
-    assert isinstance(answer, Failed), answer
+    assert isinstance(answer, Errored), answer
     assert (answer.error.category, answer.error.system) == ("unavailable", "github")
 
 
@@ -374,7 +374,7 @@ def test_listing_failures_keep_their_category(
         mock.get("/orgs/acme/repos").mock(return_value=response)
         [answer] = gather(RepoSource.repos, refresh=True)()
 
-    assert isinstance(answer, Failed), answer
+    assert isinstance(answer, Errored), answer
     assert (answer.error.category, answer.error.system) == (category, "github")
     if hint is not None:
         assert answer.error.hint is not None

@@ -14,8 +14,8 @@ import json
 import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import selected_profile
@@ -48,27 +48,15 @@ from untaped.sdk.contracts._declare import (
     settings_type,
     unused_methods,
 )
+from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.fields import SettingKey
 from untaped.sdk.records import KindError
 
 if TYPE_CHECKING:
     from untaped.sdk.storage.cache import Cache
 
 _LOG = logging.getLogger("untaped.contracts")
-
-#: Why a provider is quarantined (closed set, stable surface).
-PROVIDER_REASONS = frozenset(
-    {
-        "owner-not-installed",
-        "owner-out-of-range",
-        "duplicate-kind",
-        "foreign-kind",
-        "unresolved-item-type",
-        "missing-bridge",
-        "unserialisable-signature",
-        "bad-provider",
-    }
-)
 
 
 def upgrade_hint(plugin: str) -> str:
@@ -82,14 +70,10 @@ class Quarantined:
 
     plugin: str
     owner: str
-    reason: str
+    reason: QuarantineReason
     detail: str
     #: The contract it would fill; ``None`` when its whole group failed to load.
     contract: type[Contract] | None = None
-
-    def __post_init__(self) -> None:
-        if self.reason not in PROVIDER_REASONS:
-            raise ValueError(f"unknown provider quarantine reason: {self.reason!r}")
 
 
 @dataclass(frozen=True)
@@ -242,7 +226,7 @@ def every_offer() -> list[BoundProvider | Quarantined]:
                     Quarantined(
                         spec.name,
                         owner,
-                        "owner-not-installed",
+                        Reason.owner_not_installed,
                         f"{spec.name} provides for {owner}, which is not installed",
                     )
                 )
@@ -259,24 +243,24 @@ def _group(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider |
 
 
 def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | Quarantined, ...]:
-    def whole(reason: str, detail: str) -> tuple[Quarantined, ...]:
+    def whole(reason: QuarantineReason, detail: str) -> tuple[Quarantined, ...]:
         return (Quarantined(spec.name, owner, reason, detail),)
 
     out_of_range = _out_of_range(state, spec, owner)
     if out_of_range is not None:
-        return whole("owner-out-of-range", out_of_range)
+        return whole(Reason.owner_out_of_range, out_of_range)
     try:
         values = tuple(spec.provides[owner]())
     except KindError as exc:
-        return whole(exc.reason, str(exc))
+        return whole(_reason(exc.reason), str(exc))
     except ContractError as exc:
-        return whole(exc.reason, str(exc))
+        return whole(_reason(exc.reason), str(exc))
     except Exception as exc:
         _LOG.debug(
             "provides[%r] of %s raised %s", owner, spec.name, type(exc).__name__, exc_info=exc
         )
         detail = f"{type(exc).__name__}: {exc}"
-        return whole("bad-provider", f"provides[{owner!r}] of {spec.name} raised {detail}")
+        return whole(Reason.bad_provider, f"provides[{owner!r}] of {spec.name} raised {detail}")
     owned = {cls for cls, name in _owners(state).items() if name == owner}
     entries: list[BoundProvider | Quarantined] = []
     seen: dict[type[Contract], int] = {}
@@ -287,9 +271,9 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
             if contract in seen:
                 twice = f"{spec.name} provides {contract.__qualname__} twice"
                 entries[seen[contract]] = Quarantined(
-                    spec.name, owner, "bad-provider", twice, contract
+                    spec.name, owner, Reason.bad_provider, twice, contract
                 )
-                entry = Quarantined(spec.name, owner, "bad-provider", twice, contract)
+                entry = Quarantined(spec.name, owner, Reason.bad_provider, twice, contract)
             else:
                 seen[contract] = len(entries)
         entries.append(entry)
@@ -320,18 +304,18 @@ def _check(
     spec: PluginSpec, owner: str, owned: set[type[Contract]], value: object, profile: str
 ) -> BoundProvider | Quarantined:
     def quarantined(
-        reason: str, detail: str, contract: type[Contract] | None = None
+        reason: QuarantineReason, detail: str, contract: type[Contract] | None = None
     ) -> Quarantined:
         return Quarantined(spec.name, owner, reason, detail, contract)
 
     info = contract_of(type(value)) if isinstance(value, Contract) else None
     if info is None or not isinstance(value, Contract) or type(value) is info.cls:
         return quarantined(
-            "bad-provider", f"{spec.name} offers {value!r} to {owner}, which is not a provider"
+            Reason.bad_provider, f"{spec.name} offers {value!r} to {owner}, which is not a provider"
         )
     if info.cls not in owned:
         return quarantined(
-            "bad-provider",
+            Reason.bad_provider,
             f"{type(value).__qualname__} fills {info.cls.__qualname__}, "
             f"which {owner} does not declare",
         )
@@ -339,7 +323,7 @@ def _check(
     try:
         item = item_type(provider, info)
     except ContractError as exc:
-        return quarantined(exc.reason, str(exc), info.cls)
+        return quarantined(_reason(exc.reason), str(exc), info.cls)
     binding = Binding(spec=spec, owner=owner, contract=info, item=item, profile=profile)
     if not binding.owns_item:
         missing = [
@@ -349,7 +333,7 @@ def _check(
         ]
         if missing:
             return quarantined(
-                "missing-bridge",
+                Reason.missing_bridge,
                 f"{provider.__qualname__} issues {item.__qualname__ if item else '?'} records, "
                 f"so it must fill {', '.join(missing)}",
                 info.cls,
@@ -357,7 +341,7 @@ def _check(
     wanted = settings_type(provider)
     if wanted is not None and wanted is not spec.settings:
         return quarantined(
-            "bad-provider",
+            Reason.bad_provider,
             f"{provider.__qualname__} reads Provider[{wanted.__qualname__}], but "
             f"{spec.name}'s settings model is "
             f"{spec.settings.__qualname__ if spec.settings else 'not declared'}",
@@ -427,21 +411,6 @@ def _contract_name(contract: type[Contract]) -> str:
     return "" if info is None else info.name
 
 
-#: The title of a doctor row about contracts: a reason (closed set, stable surface).
-DOCTOR_REASONS = frozenset(
-    {
-        "active",
-        "not-configured",
-        "unused-method",
-        "owner-schema-drift",
-        "bad-contracts",
-        "rank-unknown-method",
-        "rank-not-installed",
-        *PROVIDER_REASONS,
-    }
-)
-
-
 @dataclass(frozen=True)
 class DoctorRow:
     """One doctor row about contracts: a provider's offer, an owner or a ranking."""
@@ -449,24 +418,46 @@ class DoctorRow:
     check: Literal["contract-provider", "contracts", "rank"]
     plugin: str
     status: Literal["pass", "warn"]
-    #: A :data:`DOCTOR_REASONS` member.
-    title: str
+    title: DoctorReason
     detail: str
     #: The ``untaped`` command (without the program name) that repairs it.
     fix: str | None = None
 
-    def __post_init__(self) -> None:
-        if self.title not in DOCTOR_REASONS:
-            raise ValueError(f"unknown contract doctor reason: {self.title!r}")
-
 
 def ready_of(provider: BoundProvider) -> NotReady | None:
-    """``provider``'s ``ready()``, a raising one counted as not ready."""
+    """``provider``'s ``ready()``, its setting spelled in full; a raising one is not ready.
+
+    ``key(S).field`` is spelled under the section of the plugin whose
+    settings model ``S`` is (the owner rule), whoever runs the provider; a
+    model no composed plugin owns is spelled under the provider's plugin.
+    """
     try:
-        return provider.instance.ready()
+        ready = provider.instance.ready()
     except Exception as exc:
         _LOG.debug("%s's ready() raised %s", provider.plugin, type(exc).__name__, exc_info=exc)
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
+    if ready is None or ready.setting is None:
+        return ready
+    spelled = replace(ready)  # ``spelled`` is core's to set, so no provider passes it
+    object.__setattr__(spelled, "spelled", f"{_section(provider, ready.setting)}.{ready.setting}")
+    return spelled
+
+
+def _section(provider: BoundProvider, setting: SettingKey) -> str:
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the registry
+
+    run = run_or_none()
+    if run is not None:
+        try:
+            return run.composition.owner_of_settings(SettingKey.model_of(setting))
+        except LookupError:
+            pass
+    return provider.plugin
+
+
+def _reason(word: str) -> QuarantineReason:
+    """A declaration error's reason word as the quarantine reason it is."""
+    return cast("QuarantineReason", Reason(word))
 
 
 def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
@@ -488,7 +479,7 @@ def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
     for plugin, why in state.broken.items():
         if wanted(plugin):
             detail = f"contracts couldn't be read: {why}"
-            rows.append(DoctorRow("contracts", plugin, "warn", "bad-contracts", detail))
+            rows.append(DoctorRow("contracts", plugin, "warn", Reason.bad_contracts, detail))
     known = {spec.name for spec in _plugins(state)}
     known |= {record.name for record in state.composition.quarantine}
     owners = owned_contracts()
@@ -502,7 +493,7 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     upgrade = upgrade_hint(entry.plugin)
     if isinstance(entry, Quarantined):
         name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
-        if entry.reason == "owner-not-installed":
+        if entry.reason == Reason.owner_not_installed:
             detail = f"waits for {entry.owner} (not installed)"
             return DoctorRow("contract-provider", entry.plugin, "pass", entry.reason, detail)
         detail = f"{entry.owner}{name}: {entry.detail}; {upgrade}"
@@ -513,21 +504,23 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     unused = unused_methods(provider, info)
     if unused:
         detail = f"{what}: {', '.join(unused)} (not in {info.name}; never called); {upgrade}"
-        return DoctorRow("contract-provider", entry.plugin, "warn", "unused-method", detail)
+        return DoctorRow("contract-provider", entry.plugin, "warn", Reason.unused_method, detail)
     ready = ready_of(entry)
     if ready is not None:
-        why = f"waits for {ready.setting}" if ready.setting else f"inactive: {ready.reason}"
+        why = f"waits for {ready.spelled}" if ready.spelled else f"inactive: {ready.reason}"
         detail = f"{what}: {why}"
-        return DoctorRow("contract-provider", entry.plugin, "pass", "not-configured", detail)
+        return DoctorRow("contract-provider", entry.plugin, "pass", Reason.not_configured, detail)
     methods = ", ".join(name for name in info.methods if fills(provider, info, name))
     if _drifted(entry):
         detail = (
             f"fills {what}: {methods}; tested against another {what} schema "
             f"than the installed {entry.binding.owner}'s; {upgrade}"
         )
-        return DoctorRow("contract-provider", entry.plugin, "warn", "owner-schema-drift", detail)
+        return DoctorRow(
+            "contract-provider", entry.plugin, "warn", Reason.owner_schema_drift, detail
+        )
     detail = f"fills {what}: {methods}"
-    return DoctorRow("contract-provider", entry.plugin, "pass", "active", detail)
+    return DoctorRow("contract-provider", entry.plugin, "pass", Reason.active, detail)
 
 
 def _drifted(provider: BoundProvider) -> bool:
@@ -570,7 +563,9 @@ def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> li
                 )
                 detail = f"{key}: {owner} {missing}; the ranking is ignored{holder.where}"
                 fix = holder.fix(clear)
-                rows.append(DoctorRow("rank", owner, "warn", "rank-unknown-method", detail, fix))
+                rows.append(
+                    DoctorRow("rank", owner, "warn", Reason.rank_unknown_method, detail, fix)
+                )
                 continue
             absent = [plugin for plugin in plugins if plugin not in known]
             if absent:
@@ -580,7 +575,9 @@ def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> li
                     f"{holder.where}"
                 )
                 fix = holder.fix(" ".join([clear, *kept]))
-                rows.append(DoctorRow("rank", owner, "warn", "rank-not-installed", detail, fix))
+                rows.append(
+                    DoctorRow("rank", owner, "warn", Reason.rank_not_installed, detail, fix)
+                )
     return rows
 
 

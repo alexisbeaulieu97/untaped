@@ -105,8 +105,15 @@ BIN = {
 
         from typing import ClassVar
 
+        from pydantic import BaseModel
+
+        from untaped.sdk import key
         from untaped.sdk.contracts import NotReady, Record
         from untaped_rack.api import Item, ItemSource
+
+
+        class _Bins(BaseModel):
+            bins: list[str] = []
 
 
         class Box(Record, kind="bin.box"):
@@ -121,7 +128,7 @@ BIN = {
             waiting: ClassVar[bool] = False
 
             def ready(self) -> NotReady | None:
-                return NotReady("no bins yet", setting="bin.bins") if type(self).waiting else None
+                return NotReady("no bins yet", key(_Bins).bins) if type(self).waiting else None
 
             def to_item(self, item: Box) -> Item:
                 return Item(name=item.label)

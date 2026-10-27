@@ -187,31 +187,6 @@ def test_a_base_url_with_sharp_s_gets_its_credential() -> None:
 
 
 @respx.mock
-def test_a_hop_gets_only_the_time_left(monkeypatch: pytest.MonkeyPatch) -> None:
-    respx.get(f"{_URL}/old").mock(
-        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
-    )
-    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
-    left = iter([30.0, 0.5])  # the first request, then the hop
-    monkeypatch.setattr("untaped.sdk.network.http._time_left", lambda: next(left))
-    with HttpClient(_URL) as client:
-        client.get("/old", follow_redirects=True)
-    assert new.calls.last.request.extensions["timeout"]["read"] == 0.5
-
-
-@respx.mock
-def test_a_hop_keeps_a_shorter_timeout_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
-    respx.get(f"{_URL}/old").mock(
-        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
-    )
-    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
-    monkeypatch.setattr("untaped.sdk.network.http._time_left", lambda: 300.0)
-    with HttpClient(_URL, timeout=5.0) as client:
-        client.get("/old", follow_redirects=True)
-    assert set(new.calls.last.request.extensions["timeout"].values()) == {5.0}
-
-
-@respx.mock
 def test_each_redirect_hop_is_signed_again() -> None:
     respx.get(f"{_URL}/old").mock(
         return_value=httpx.Response(307, headers={"Location": f"{_URL}/new"})
@@ -254,19 +229,6 @@ def test_a_hop_that_fails_to_connect_does_not_resend_a_post() -> None:
         client.post("/submit", json={}, follow_redirects=True)
     assert methods == ["POST", "GET"]
     assert caught.value.details["url"] == f"{_URL}/done"
-
-
-@respx.mock
-def test_no_redirect_hop_starts_past_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    respx.get(f"{_URL}/old").mock(
-        return_value=httpx.Response(302, headers={"Location": f"{_URL}/new"})
-    )
-    new = respx.get(f"{_URL}/new").mock(return_value=httpx.Response(200))
-    left = iter([5.0, -1.0])  # the first request, then the hop
-    monkeypatch.setattr("untaped.sdk.network.http._time_left", lambda: next(left))
-    with HttpClient(_URL) as client, pytest.raises(HttpTransportError, match="deadline"):
-        client.get("/old", follow_redirects=True)
-    assert not new.called
 
 
 def _program(folder: Path, text: str) -> None:

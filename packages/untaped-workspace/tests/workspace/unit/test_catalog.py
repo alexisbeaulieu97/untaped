@@ -11,9 +11,10 @@ from contextlib import contextmanager
 from datetime import timedelta
 
 import pytest
+from pydantic import BaseModel
 
 from untaped.runtime.run import invocation
-from untaped.sdk import ErrorCategory, UntapedError, UsageError
+from untaped.sdk import ErrorCategory, UntapedError, UsageError, key
 
 # The 11.x seam: these blocks record under compose_with's fake providers, which
 # install() cannot compose (workspace is still a PluginSpec), so they use the
@@ -29,7 +30,17 @@ from untaped_workspace.infrastructure.catalog import RepoSources
 from workspace.fakes import Host, Listing, age_answers, invalid_repo, rank, repo
 
 GITLAB = "gitlab.example"
-NO_BASE_URL = NotReady("no base URL", setting="gitlab.base_url")
+
+
+class _Gitlab(BaseModel):
+    base_url: str | None = None
+
+
+class _Github(BaseModel):
+    default_org: str | None = None
+
+
+NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
 
 
 @contextmanager
@@ -210,7 +221,7 @@ def test_with_no_provider_ready_a_name_is_not_found_naming_the_setting() -> None
     """S12: github has no inventory scope: not found (exit 2) naming why and the setting;
     no URL is guessed from the name."""
     github = Listing(
-        repo("acme/api"), not_ready=NotReady("no inventory scope", setting="github.default_org")
+        repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
     )
     with providers(github=[github]), pytest.raises(UsageError) as caught:
         _resolve("acme/api")

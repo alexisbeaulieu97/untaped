@@ -32,7 +32,16 @@ from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run, invocation
 from untaped.runtime.sink import exit_on_counted_failure
 from untaped.sdk._run import recording
-from untaped.sdk.contracts import Contract, Failed, NoProviderReady, Ok, Skipped, Source, gather
+from untaped.sdk.contracts import (
+    Contract,
+    Errored,
+    NoProviderReady,
+    Ok,
+    Reason,
+    Skipped,
+    Source,
+    gather,
+)
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
 from untaped.sdk.storage._digest import settings_digest
@@ -108,12 +117,94 @@ def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None
     assert "set library.catalog" in str(err.value)
 
 
-def test_only_providers_that_fill_the_needed_methods_are_asked() -> None:
+def test_only_providers_that_fill_the_method_are_asked() -> None:
     compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
     write_config(LIBRARY_CONFIG)
     assert [a.plugin for a in gather(BookSource.lookup)("Dune")] == ["shop"]
-    needed = gather(BookSource.books, needs=(BookSource.lookup,))()
-    assert [a.plugin for a in needed] == ["shop"]
+
+
+def test_plugins_picks_providers_by_class_or_by_name() -> None:
+    compose(shelf_spec(), library_spec(), shop_spec())
+    write_config(LIBRARY_CONFIG)
+    assert [a.plugin for a in gather(BookSource.books, plugins=[Shop])()] == ["shop"]
+    assert [a.plugin for a in gather(BookSource.books, plugins={"library"})()] == ["library"]
+
+
+def test_plugins_picks_a_provider_class_exactly_and_refuses_a_bare_name() -> None:
+    class Branch(Shop):
+        pass
+
+    compose(shelf_spec(), shop_spec())
+    with pytest.raises(NoProviderReady):
+        gather(BookSource.books, plugins=[Branch])()
+    with pytest.raises(TypeError, match="collection of names or classes"):
+        gather(BookSource.books, plugins="shop")
+
+
+def test_a_class_never_widens_to_its_plugins_other_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from untaped.sdk.contracts import _gather
+
+    class Branch(Shop):
+        pass
+
+    monkeypatch.setattr(_gather, "_plugin_of", lambda _: "shop")
+    compose(shelf_spec(), shop_spec())
+    with pytest.raises(NoProviderReady):
+        gather(BookSource.books, plugins=[Branch])()
+
+
+def test_a_field_named_like_its_section_is_still_a_field() -> None:
+    from untaped.sdk.contracts import Provider
+    from untaped.sdk.contracts._declare import _key_at
+    from untaped.sdk.fields import SettingKey
+
+    class Inner(BaseModel):
+        port: int = 0
+
+    class GitSettings(BaseModel):
+        git: Inner = Field(default_factory=Inner)
+        port: int = 0
+
+    class Git(Provider[GitSettings]):
+        pass
+
+    def path(loc: tuple[int | str, ...]) -> object:
+        found = _key_at(Git, "git", loc)
+        return found and SettingKey.path_of(found)
+
+    assert path(("git", "port")) == path(("port",)) == ("port",)
+    assert path(("git", "git", "port")) == ("git", "port")
+
+
+def test_an_invalid_setting_names_its_key_in_full() -> None:
+    compose(shelf_spec(), library_spec())
+    write_config("format_version: 2\nlibrary:\n  catalog: x\n  volumes: 5\n")
+    with pytest.raises(NoProviderReady) as err:
+        gather(BookSource.books)()
+    [ready] = err.value.not_ready.values()
+    assert ready.spelled == "library.volumes"
+    assert "(set library.volumes)" in str(err.value)
+
+
+def test_not_ready_takes_a_key_not_a_string() -> None:
+    from untaped.sdk.contracts import NotReady
+
+    with pytest.raises(TypeError, match=r"key\(Settings\)\.field"):
+        NotReady("no volumes", "library.volumes")  # type: ignore[arg-type]
+
+
+def test_the_views_split_the_answers_by_outcome_in_rank_order() -> None:
+    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    write_config(LIBRARY_CONFIG)
+    Shop.error = HttpTransportError("down", system="shop")
+    answers = gather(BookSource.books, refresh=True)()
+    assert [a.plugin for a in answers.ok] == [a.plugin for a in answers if isinstance(a, Ok)]
+    assert [a.plugin for a in answers.errored] == ["shop"]
+    assert all(isinstance(a, Skipped) for a in answers.skipped)
+    assert len(answers.ok) + len(answers.errored) + len(answers.skipped) == len(answers)
+    assert answers.errored[0].reason is Reason.raised
 
 
 def test_a_provider_that_raises_fails_its_own_answer_only() -> None:
@@ -122,12 +213,12 @@ def test_a_provider_that_raises_fails_its_own_answer_only() -> None:
     Shop.error = HttpTransportError("down", system="shop")
     [library, shop] = gather(BookSource.books, refresh=True)()
     assert isinstance(library, Ok)
-    assert isinstance(shop, Failed)
+    assert isinstance(shop, Errored)
     assert shop.error.exit_code == ExitCode.UNAVAILABLE
     assert shop.reason == "raised"
     Shop.error = KeyError("bug")
     shop = gather(BookSource.books, refresh=True)()[1]
-    assert isinstance(shop, Failed)
+    assert isinstance(shop, Errored)
     assert isinstance(shop.error, UntapedError)
     assert shop.error.system == "shop"
     assert shop.reason == "raised"
@@ -168,7 +259,7 @@ def test_an_invalid_answer_that_is_no_listing_fails_whole_by_rank(rank) -> None:
     assert shop.reason == "invalid-item"
     rank("shop")
     [shop] = gather(BookSource.first)()
-    assert isinstance(shop, Failed)
+    assert isinstance(shop, Errored)
     assert shop.reason == "invalid-item"
     assert shop.error.exit_code == ExitCode.ENVIRONMENT
     assert shop.error.hint == "upgrade untaped-shop"
@@ -272,7 +363,7 @@ def test_a_provider_bug_keeps_its_traceback_in_the_debug_log(
     caplog.set_level(logging.DEBUG, logger="untaped")
     Shop.error = KeyError("bug")
     shop = gather(BookSource.books, refresh=True)()[1]
-    assert isinstance(shop, Failed)
+    assert isinstance(shop, Errored)
     [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
     assert "shop" in record.getMessage()
     assert record.exc_info is not None and record.exc_info[1] is Shop.error
@@ -344,7 +435,7 @@ def test_a_failed_live_call_with_no_cached_answer_fails() -> None:
     write_config(LIBRARY_CONFIG)
     Library.error = HttpTransportError("HTTP 503", system="library")
     [library] = gather(BookSource.books)()
-    assert isinstance(library, Failed)
+    assert isinstance(library, Errored)
 
 
 def test_s20_a_changed_model_misses_the_cache_and_nothing_errors() -> None:
@@ -398,24 +489,6 @@ def test_the_cache_is_per_provider_settings() -> None:
     assert {path.parent.name for path in files} == {settings_digest("shelf")}
 
 
-def test_the_deadline_bounds_a_provider_requests() -> None:
-    from untaped.sdk.network.http import _time_left
-
-    seen: list[float | None] = []
-
-    class Timed(Library):
-        def books(self) -> list[Book]:
-            seen.append(_time_left())
-            return []
-
-    compose(shelf_spec(), library_spec(Timed()))
-    write_config(LIBRARY_CONFIG)
-    gather(BookSource.books, refresh=True, deadline=timedelta(seconds=30))()
-    gather(BookSource.books, refresh=True)()
-    assert seen[0] is not None and 0 < seen[0] <= 30
-    assert seen[1] is None
-
-
 def test_each_set_of_arguments_has_its_own_cache_entry() -> None:
     compose(shelf_spec(), shop_spec())
     ask = gather(BookSource.by_author)
@@ -445,17 +518,6 @@ def test_one_item_and_a_plain_value_are_validated_strictly_too() -> None:
     [count] = gather(BookSource.count)()
     assert isinstance(count, Skipped)
     assert count.reason == "invalid-item"
-
-
-def test_needs_names_methods_of_the_same_contract() -> None:
-    from untaped.sdk.contracts import Contract
-
-    class Catalogue(Contract):
-        def entries(self) -> list[Book]:
-            raise NotImplementedError
-
-    with pytest.raises(TypeError, match="not a book_source method"):
-        gather(BookSource.books, needs=[Catalogue.entries])
 
 
 def test_a_cache_entry_names_the_provider_own_record_shape() -> None:
@@ -525,35 +587,6 @@ def test_a_provider_whose_ready_raises_logs_its_traceback(
         gather(BookSource.books)()
     [record] = [r for r in caplog.records if r.name == "untaped.contracts"]
     assert record.exc_info is not None and record.exc_info[1] is error
-
-
-def test_self_http_is_the_profiles_client_bounded_by_the_deadline() -> None:
-    import httpx
-    import respx
-
-    seen: list[object] = []
-
-    class Online(Library):
-        def books(self) -> list[Book]:
-            response = self.http.get("https://library.example/books")
-            return [self.to_book(Volume(id=1, name=response.json()["name"]))]
-
-    def record(request: httpx.Request) -> httpx.Response:
-        seen.append(request.extensions["timeout"]["read"])
-        return httpx.Response(200, json={"name": "Dune"})
-
-    provider = Online()
-    compose(shelf_spec(), library_spec(provider))
-    write_config(LIBRARY_CONFIG + "untaped:\n  http:\n    timeout_seconds: 40\n")
-    with respx.mock() as mock:
-        mock.get("https://library.example/books").mock(side_effect=record)
-        [answer] = gather(BookSource.books, refresh=True, deadline=5)()
-        gather(BookSource.books, refresh=True)()
-    assert isinstance(answer, Ok)
-    assert answer.value[0].title == "Dune"
-    assert seen[0] is not None and 0 < seen[0] <= 5  # type: ignore[operator]
-    assert seen[1] == 40
-    assert provider.http is provider.http
 
 
 def test_own_reads_back_the_providers_record() -> None:
@@ -720,7 +753,7 @@ def test_composing_inside_a_contract_call_fails_that_provider(
     with monkeypatch.context() as patch:
         patch.setattr(bootstrap, "_reregister", lambda: reregistered.append(None))
         [failed, *others] = gather(BookSource.books, refresh=True)()
-    assert isinstance(failed, Failed) and failed.reason == "raised"
+    assert isinstance(failed, Errored) and failed.reason == "raised"
     assert "composer's BookSource.books composed the root inside a contract call" in str(
         failed.error
     )

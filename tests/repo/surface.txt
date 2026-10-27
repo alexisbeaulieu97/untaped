@@ -6723,24 +6723,25 @@ sdk untaped.sdk.contracts.Ambiguous.fix_by class
 sdk untaped.sdk.contracts.Ambiguous.hint class
 sdk untaped.sdk.contracts.Ambiguous.retryable
 sdk untaped.sdk.contracts.Ambiguous.system class
-sdk untaped.sdk.contracts.Answer
 sdk untaped.sdk.contracts.Answers(items, *, owner, contract, method)
 sdk untaped.sdk.contracts.Answers(pending=) default=None
+sdk untaped.sdk.contracts.Answers.errored
+sdk untaped.sdk.contracts.Answers.ok
 sdk untaped.sdk.contracts.Answers.rank_command()
 sdk untaped.sdk.contracts.Answers.rank_command(plugins@1=) default=None
+sdk untaped.sdk.contracts.Answers.skipped
 sdk untaped.sdk.contracts.Answers.take_stale()
 sdk untaped.sdk.contracts.Contract implement=
 sdk untaped.sdk.contracts.Contract.__init_subclass__(shell=) default=None
-sdk untaped.sdk.contracts.Contract.http
 sdk untaped.sdk.contracts.Contract.own(item)
 sdk untaped.sdk.contracts.Contract.ready() -> NotReady?
-sdk untaped.sdk.contracts.Failed(plugin, error)
-sdk untaped.sdk.contracts.Failed(rank@3=) default=None
-sdk untaped.sdk.contracts.Failed(reason@4=) default=None
-sdk untaped.sdk.contracts.Failed.error
-sdk untaped.sdk.contracts.Failed.plugin
-sdk untaped.sdk.contracts.Failed.rank
-sdk untaped.sdk.contracts.Failed.reason
+sdk untaped.sdk.contracts.Errored(plugin, error)
+sdk untaped.sdk.contracts.Errored(rank@3=) default=None
+sdk untaped.sdk.contracts.Errored(reason@4=) default=None
+sdk untaped.sdk.contracts.Errored.error
+sdk untaped.sdk.contracts.Errored.plugin
+sdk untaped.sdk.contracts.Errored.rank
+sdk untaped.sdk.contracts.Errored.reason
 sdk untaped.sdk.contracts.Issued()
 sdk untaped.sdk.contracts.Issued(source=) default=None
 sdk untaped.sdk.contracts.Issued.__init_subclass__(kind=) default=None
@@ -6773,6 +6774,7 @@ sdk untaped.sdk.contracts.NotReady(reason)
 sdk untaped.sdk.contracts.NotReady(setting@2=) default=None
 sdk untaped.sdk.contracts.NotReady.reason
 sdk untaped.sdk.contracts.NotReady.setting
+sdk untaped.sdk.contracts.NotReady.spelled
 sdk untaped.sdk.contracts.Ok(invalid@6=) default=[]
 sdk untaped.sdk.contracts.Ok(plugin, value)
 sdk untaped.sdk.contracts.Ok(rank@3=) default=None
@@ -6787,6 +6789,25 @@ sdk untaped.sdk.contracts.Ok.value
 sdk untaped.sdk.contracts.Provider()
 sdk untaped.sdk.contracts.Provider.ctx
 sdk untaped.sdk.contracts.Provider.settings
+sdk untaped.sdk.contracts.Reason.active = active
+sdk untaped.sdk.contracts.Reason.bad_contracts = bad-contracts
+sdk untaped.sdk.contracts.Reason.bad_provider = bad-provider
+sdk untaped.sdk.contracts.Reason.duplicate_kind = duplicate-kind
+sdk untaped.sdk.contracts.Reason.foreign_kind = foreign-kind
+sdk untaped.sdk.contracts.Reason.invalid_item = invalid-item
+sdk untaped.sdk.contracts.Reason.missing_bridge = missing-bridge
+sdk untaped.sdk.contracts.Reason.no_cache = no-cache
+sdk untaped.sdk.contracts.Reason.not_configured = not-configured
+sdk untaped.sdk.contracts.Reason.owner_not_installed = owner-not-installed
+sdk untaped.sdk.contracts.Reason.owner_out_of_range = owner-out-of-range
+sdk untaped.sdk.contracts.Reason.owner_schema_drift = owner-schema-drift
+sdk untaped.sdk.contracts.Reason.raised = raised
+sdk untaped.sdk.contracts.Reason.rank_not_installed = rank-not-installed
+sdk untaped.sdk.contracts.Reason.rank_unknown_method = rank-unknown-method
+sdk untaped.sdk.contracts.Reason.unbridged_item = unbridged-item
+sdk untaped.sdk.contracts.Reason.unresolved_item_type = unresolved-item-type
+sdk untaped.sdk.contracts.Reason.unserialisable_signature = unserialisable-signature
+sdk untaped.sdk.contracts.Reason.unused_method = unused-method
 sdk untaped.sdk.contracts.Record()
 sdk untaped.sdk.contracts.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.contracts.Record.table_columns class
@@ -6806,9 +6827,7 @@ sdk untaped.sdk.contracts.cached(cache@1/=) default=None
 sdk untaped.sdk.contracts.cached(label=) default=None
 sdk untaped.sdk.contracts.cached(max_age=) default=None
 sdk untaped.sdk.contracts.convert(bridge, envelope) callback(bridge, *)
-sdk untaped.sdk.contracts.gather(deadline=) default=None
 sdk untaped.sdk.contracts.gather(method, /) callback(method, P)
-sdk untaped.sdk.contracts.gather(needs=) default=[] callback(*)
 sdk untaped.sdk.contracts.gather(plugins=) default=None
 sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
 sdk untaped.sdk.contracts.gather(refresh=) default=None

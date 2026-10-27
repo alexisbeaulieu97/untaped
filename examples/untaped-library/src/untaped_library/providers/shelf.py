@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from untaped_shelf.api import Book, BookSource
 
+from untaped.sdk import key
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_library.records import Volume
 from untaped_library.settings import LibrarySettings
@@ -18,7 +19,7 @@ class LibraryBooks(BookSource[Volume], Provider[LibrarySettings]):
     def ready(self) -> NotReady | None:
         """Ready once ``library.volumes`` lists a volume (settings that validate aren't enough)."""
         if not self.settings.volumes:
-            return NotReady("no volumes configured", setting="library.volumes")
+            return NotReady("no volumes configured", key(LibrarySettings).volumes)
         return None
 
     def to_book(self, item: Volume) -> Book:

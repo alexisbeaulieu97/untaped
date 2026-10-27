@@ -24,7 +24,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from untaped.sdk import ConfigError, experimental
-from untaped.sdk.contracts import Answers, Contract, Failed, Ok, gather
+from untaped.sdk.contracts import Answers, Contract, Errored, Ok, gather
 from untaped_git.domain.url import url_host
 
 
@@ -129,7 +129,7 @@ def _answer[R](answers: Answers[R] | None, plugin: str) -> R | None:
     for answer in answers:
         if answer.plugin != plugin:
             continue
-        if isinstance(answer, Failed):
+        if isinstance(answer, Errored):
             raise answer.error
         if isinstance(answer, Ok):
             return answer.value
