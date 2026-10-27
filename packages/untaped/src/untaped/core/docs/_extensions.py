@@ -67,7 +67,8 @@ def page(site: Site, plugin: PluginDecl, point: PointDecl) -> list[str]:
         lines += ["", markdown(each.summary)] if each.summary else []
         kind = None if each.kind is None else site.kind(each.kind)
         if kind is not None and (pages := _kind_pages(site, kind)):
-            lines += ["", f"Kind: `{kind.kind}`; its page: {pages}."]
+            word = "page" if len(pages) == 1 else "pages"
+            lines += ["", f"Kind: `{kind.kind}`; its {word}: {' and '.join(pages)}."]
         elif each.kind is not None:
             lines += ["", f"Kind: `{each.kind}`."]
         lines += tables(each.fields, f"{each.name}.")
@@ -76,11 +77,11 @@ def page(site: Site, plugin: PluginDecl, point: PointDecl) -> list[str]:
     return lines
 
 
-def _kind_pages(site: Site, kind: KindDecl) -> str:
-    """The pages a kind has: its rows' when a command prints it, its file's when one reads it."""
+def _kind_pages(site: Site, kind: KindDecl) -> list[str]:
+    """A kind's pages: its rows' when a command prints it, its file's when one reads or writes."""
     sections: list[Section] = []
     if kind in site.outputs(kind.plugin):
         sections.append("outputs")
     if kind in site.inputs(kind.plugin):
         sections.append("inputs")
-    return " and ".join(f"`{kind_address(kind, section)}`" for section in sections)
+    return [f"`{kind_address(kind, section)}`" for section in sections]

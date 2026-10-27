@@ -53,7 +53,10 @@ def describe(doc: str | None) -> Described:
 
 
 def _fenced(examples: str) -> str:
-    """``examples`` with each bare ``$`` line, and the output under it, in a ``console`` fence."""
+    """``examples`` with each bare ``$`` line, and the output under it, in a ``console`` fence.
+
+    A blank line ends an example: a line right under a ``$`` line is its output.
+    """
     if "```" in examples:
         return examples
     lines: list[str] = []

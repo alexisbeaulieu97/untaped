@@ -91,7 +91,9 @@ fields' descriptions and its examples (see [Plugins](../plugins.md)):
   list; the paragraphs after it are the behaviour on the command's page. An
   `Examples` section (NumPy style) prints under `## Examples`: put commands in
   a fenced `console` block, one per `$ ` line; `untaped lint`'s
-  `example-command` rule checks that each one parses.
+  `example-command` rule checks that each one parses. Bare `$ ` lines are
+  fenced for you, with the lines right under each as its output: a blank
+  line ends an example.
 - **A field's `description`** is its line under `## Usage`, under
   `## Fields` or under `settings`.
 - **A record or file model's docstring** is its line on the `inputs` or
