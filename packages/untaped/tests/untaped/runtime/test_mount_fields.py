@@ -266,6 +266,8 @@ def test_an_unfilled_block_reads_its_default_under_a_run(install: Callable[..., 
     # what code outside a command field reads: the same number, no -j
     with install(Tool).running():
         assert (Spread().parallel.value, Work().parallel.value) == (8, 3)
+        # with no cap, an unset setting is unset itself
+        assert Parallel(default=key(ToolSettings).spread, unset=12).value == 12
 
 
 def test_parallel_and_limit_below_one_are_usage_errors() -> None:

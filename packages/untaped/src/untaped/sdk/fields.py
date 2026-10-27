@@ -936,8 +936,8 @@ class Parallel(FieldBlock):
     ``default`` is a number or a ``key(...)`` to the setting that holds one;
     ``cap`` clamps the value with a warning. ``unset`` is the number an
     optional setting left unset stands for (``Parallel(default=key(S).parallel,
-    unset=8, cap=2 * os.cpu_count())``): the command's own default, so the
-    cap lowers it without a warning.
+    unset=8, cap=16)``): the command's own default, so the cap lowers it
+    without a warning.
     """
 
     field_kind = "parallel"
@@ -954,6 +954,8 @@ class Parallel(FieldBlock):
         unset: int | None = None,
         cap: int | None = None,
     ) -> None:
+        if any(isinstance(each, bool) for each in (default, unset, cap)):
+            raise ValueError("Parallel's default, unset and cap are numbers, not booleans")
         if isinstance(default, int) and default < 1:
             raise ValueError("Parallel's default is at least 1")
         if unset is not None and not isinstance(default, SettingKey):
