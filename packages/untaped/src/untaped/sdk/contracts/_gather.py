@@ -479,7 +479,7 @@ def issue[I: Issued](binding: Binding, model: type[I], item: object) -> I:
                 f"{binding.plugin} returned a {model.__qualname__} without a source; "
                 "build it with the provider's bridge method",
             )
-        source = Source(plugin=binding.plugin, kind=record_kind(model) or "")
+        source = Source(plugin=binding.plugin, kind=record_kind(model) or binding.owner_kind)
     elif not isinstance(source, Source) or source.plugin != binding.plugin:
         named = source.plugin if isinstance(source, Source) else source
         raise _Invalid(

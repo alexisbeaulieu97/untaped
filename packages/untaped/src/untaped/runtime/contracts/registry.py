@@ -327,12 +327,20 @@ def _check(
         item = item_type(provider, info)
     except ContractError as exc:
         return quarantined(_reason(exc.reason), str(exc), info.cls)
-    binding = Binding(spec=spec, owner=owner, contract=info, item=item, profile=profile)
-    if not binding.owns_item and item is not None and record_kind(item) is None:
+    binding = Binding(
+        spec=spec,
+        owner=owner,
+        contract=info,
+        item=item,
+        profile=profile,
+        item_kind=(item and record_kind(item)) or "",
+        owner_kind=(info.item and record_kind(info.item)) or "",
+    )
+    if not binding.owns_item and item is not None and not binding.item_kind:
         return quarantined(
             Reason.unresolved_item_type,
-            f"{provider.__qualname__}: {item.__qualname__} has no kind, "
-            "so a piped record can't find its way back to it",
+            f"{provider.__qualname__}: {item.__qualname__} has no kind (its class name may "
+            "be another record's kind), so a piped record can't find its way back to it",
             info.cls,
         )
     if not binding.owns_item:

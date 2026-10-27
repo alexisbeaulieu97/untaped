@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from pydantic import BaseModel, Field
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import target_of
 from untaped.sdk import Command, Output, Plugin, Positional, Stdin, experimental, key
-from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record
+from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record, gather
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -60,11 +61,36 @@ class Show(Command[Desk]):
             yield Card(title=value) if isinstance(value, str) else value
 
 
+class BigCard(Card):
+    """A card printed by its own command: a model that subclasses the owner's."""
+
+    size: int = 0
+
+
+class Big(Command[Desk]):
+    """Print a big card."""
+
+    output: Output[BigCard]
+
+    def run(self) -> BigCard:
+        return BigCard(title="Atlas", size=3)
+
+
+class Every(Command[Desk]):
+    """Print every card every provider keeps."""
+
+    output: Output[Card]
+
+    def run(self) -> Iterator[Card]:
+        for ok in gather(Cards.cards)().ok:
+            yield from ok.value
+
+
 class Counter(Plugin):
     """Show cards."""
 
     settings = Desk
-    commands = (Show,)
+    commands = (Show, Big, Every)
     offers = (Cards,)
 
 
@@ -89,7 +115,8 @@ class Loans(Cards[Loan], Provider[Lending]):
         return Card(title=f"{item.name} ({self.settings.branch})")
 
     def cards(self) -> list[Card]:
-        return []
+        with ThreadPoolExecutor(1) as pool:  # a plain thread: it doesn't see the run
+            return list(pool.map(self.to_card, [Loan(shelf_mark="A1", name="Dune")]))
 
 
 #: Loan's kind: its class name under the plugin that fills with it, the kit's ``lend``.
@@ -121,6 +148,21 @@ def test_a_provider_row_is_read_through_its_bridge(install: Installer) -> None:
         "record": {"shelf_mark": "A1", "name": "Dune"},
     }
     assert "source" not in rows[1] or rows[1]["source"] is None
+
+
+def test_a_row_stdin_r_takes_reads_without_the_bridge(install: Installer) -> None:
+    counter = _counter(install)
+    piped = counter.cli("counter big -f pipe").stdout
+    ran = counter.cli("counter show --stdin -f json", input=piped)
+    assert ran.exit == 0, ran.stderr
+    assert [row["title"] for row in json.loads(ran.stdout)] == ["Atlas"]
+
+
+def test_a_bridge_called_off_the_run_s_thread_still_names_its_kind(install: Installer) -> None:
+    ran = _counter(install).cli("counter every -f json")
+    assert ran.exit == 0, ran.stderr
+    [row] = json.loads(ran.stdout)
+    assert (row["source"]["plugin"], row["source"]["kind"]) == ("lend", LOAN)
 
 
 def test_nothing_piped_builds_no_provider(install: Installer) -> None:
@@ -187,3 +229,41 @@ def test_via_must_be_a_bridge_returning_what_stdin_accepts() -> None:
     [(rule, detail)] = _bad_via(Stdin(via=Others.to_other))
     assert rule == "field-type"
     assert detail.endswith("reads Other rows, which it doesn't accept")
+
+
+def test_a_provider_record_whose_kind_is_taken_leaves_the_plugin_composed() -> None:
+    def own() -> type[Record]:
+        class Loan(Record):  # the kind lender.loan, which the printed Loan holds
+            note: str
+
+        return Loan
+
+    taken = own()
+
+    class Mine(Command[Lending]):
+        """Print a loan."""
+
+        output: Output[Loan]
+
+        def run(self) -> Loan:
+            return Loan(shelf_mark="A1", name="Dune")
+
+    class Clash(Cards[taken], Provider[Lending]):  # type: ignore[valid-type]
+        def to_card(self, item: Record) -> Card:
+            return Card(title="x")
+
+        def cards(self) -> list[Card]:
+            return []
+
+    class Lender(Plugin):
+        """Lend and print loans."""
+
+        settings = Lending
+        commands = (Mine,)
+        fills = (Clash,)
+
+    declaration = compose([PluginEntry(name="lender", target=target_of(Lender), plugin=Lender)])
+    assert [plugin.name for plugin in declaration.plugins] == ["lender"]
+    assert [(kind.kind, kind.target) for kind in declaration.kinds] == [
+        ("lender.loan", target_of(Loan))
+    ]

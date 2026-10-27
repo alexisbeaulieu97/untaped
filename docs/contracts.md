@@ -122,10 +122,15 @@ class Library(Plugin):
   `self.stdin.values(given)` returns each argument as given, a bare
   identifier or a `Book`, in input order. The declaration records the
   contract, so the surface lists the providers' kinds the command reads under
-  the composed install. A provider is built, and its
-  settings read, only when a row of its kind arrives. A kind no provider
-  reads, or a line with no kind, exits 2; an unready provider whose row
-  arrived, or a bridge returning an invalid `Book`, exits 4. `convert`, the
+  the composed install. A row of a kind `Stdin[Book]` takes
+  reads as it would without `via`. The contract's providers are built, and
+  a provider's settings read, only when a row of a provider's kind arrives.
+  A kind no provider reads, or a line with no kind, exits 2; a provider's
+  row that doesn't validate as its record exits 1; an unready provider
+  whose row arrived, or a bridge returning an invalid `Book`, exits 4. A
+  fake given to `compose_with(provides=)` is an 11.x offer composition never
+  walks, so its own record keeps `kind=` until the kit composes fakes as
+  plugins. `convert`, the
   11.x reader, leaves in 12.0.
   [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
   gives the rules they follow.

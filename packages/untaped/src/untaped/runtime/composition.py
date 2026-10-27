@@ -363,10 +363,12 @@ def _claim(
 ) -> dict[str, KindDecl]:
     """The kinds ``walk`` reaches; two classes that would be one kind are a problem."""
     claimed: dict[str, KindDecl] = {}
-    for cls, kind in walk.kinds.items():
+    for cls, kind in sorted(walk.kinds.items(), key=lambda pair: pair[0] in walk.provided):
         target = target_of(cls)
         held = claimed.get(kind) or kinds.get(kind)
         if held is not None and held.target != target:
+            if cls in walk.provided:
+                continue  # the provider's binding finds no kind and is quarantined alone
             problems.append(
                 Problem(
                     rule="duplicate-kind",
@@ -414,6 +416,9 @@ class _PluginWalk:
         self.offering = offering
         self.problems: list[Problem] = []
         self.kinds: dict[type, str] = {}
+        #: Providers' own records: a kind another record holds leaves one kind-less, so
+        #: the registry quarantines that provider alone.
+        self.provided: set[type] = set()
         self.decl: PluginDecl | None = None
         self.settings: type[BaseModel] | None = None
         if getattr(sys.modules.get(module), "__path__", None) is not None:
@@ -607,6 +612,7 @@ class _PluginWalk:
             # the provider's own record, under the plugin that fills: its rows come back through
             # the bridge
             self.kinds.setdefault(item, f"{self.name}.{snake(item.__name__)}")
+            self.provided.add(item)
 
     def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
         if not cls.fills:

@@ -608,10 +608,12 @@ class Stdin[R: BaseModel](FieldBlock):
 
     ``Stdin(via=RepoSource.to_repo)`` also takes the rows of any provider's
     own kind and reads each through that provider's bridge, so ``R`` is the
-    owner's model: a provider is built, and its settings read, only when a
-    row of its kind arrives. A kind no provider reads, or a kind-less line,
-    exits 2; an unready provider, or a bridge returning an invalid owner
-    model, exits 4.
+    owner's model; a row ``R`` takes reads as it would without ``via``. The
+    contract's providers are built, and a provider's settings read, only
+    when a row of a provider's kind arrives. A kind no provider reads, or a
+    kind-less line, exits 2; a provider's row that doesn't validate as its
+    record exits 1; an unready provider, or a bridge returning an invalid
+    owner model, exits 4.
     """
 
     field_kind = "stdin"
@@ -705,8 +707,12 @@ class Stdin[R: BaseModel](FieldBlock):
             raise TypeError("Stdin was not filled with the models it accepts")
         return self._models[0]
 
+    def _through(self, envelope: PipeEnvelope) -> bool:
+        """Whether ``via`` reads this row: a provider's kind or none, never one ``R`` takes."""
+        return self.via is not None and envelope.kind not in self._kinds
+
     def _identifier(self, envelope: PipeEnvelope) -> str:
-        if self.via is not None:
+        if self._through(envelope):
             row = self._row(envelope)
             model: type[BaseModel] = type(row)
             record: Mapping[str, object] = row.model_dump()
@@ -729,11 +735,11 @@ class Stdin[R: BaseModel](FieldBlock):
         return identifier
 
     def _row(self, envelope: PipeEnvelope) -> R:
-        if self.via is not None:
+        if self._through(envelope):
             from untaped.sdk.contracts._select import bridged  # noqa: PLC0415 - only via pays
 
             given = None if envelope.kind is None else self._known.get(envelope.kind)
-            return cast("R", bridged(self.via, envelope, given))
+            return cast("R", bridged(cast("Callable[..., Any]", self.via), envelope, given))
         try:
             return cast("R", self._model(envelope).model_validate(envelope.record))
         except ValidationError as exc:

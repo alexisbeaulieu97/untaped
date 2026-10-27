@@ -137,6 +137,10 @@ class Binding:
     item: type[Record] | None
     #: The profile the provider was bound for.
     profile: str
+    #: The kinds of ``item`` and the owner's model, read when bound: a provider's own
+    #: threads may not see the run that names them.
+    item_kind: str = ""
+    owner_kind: str = ""
 
     @property
     def plugin(self) -> str:
@@ -244,10 +248,10 @@ def _stamp(provider: Contract, item: Any, result: Any) -> Any:
             hint="ask for providers through untaped.sdk.contracts (gather, convert)",
         )
     if binding.owns_item or not isinstance(item, BaseModel):
-        kind = record_kind(type(result)) or ""
+        kind = record_kind(type(result)) or binding.owner_kind
         record: dict[str, Any] = {}
     else:
-        kind = record_kind(type(item)) or ""
+        kind = record_kind(type(item)) or binding.item_kind
         record = item.model_dump(mode="json", by_alias=True, round_trip=True)
     source = Source(plugin=binding.plugin, kind=kind, record=record)
     return result.model_copy(update={"source": source})
