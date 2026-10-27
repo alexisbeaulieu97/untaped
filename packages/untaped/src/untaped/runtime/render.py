@@ -31,6 +31,7 @@ from rich.text import Text
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
 from untaped.sdk._theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
+from untaped.sdk.fields import Roled
 
 MessageKind = Literal["success", "warning", "error", "info"]
 
@@ -94,7 +95,7 @@ def render_detail(
             rows: list[Row] = [
                 {"field": key, "value": _table_cell(value)} for key, value in selected.items()
             ]
-            return _format_table(rows, theme, colorize=colorize, field_rows=True)
+            return _format_table(rows, theme, colorize=colorize)
         return _format_record_as_lines(selected, theme=theme, colorize=colorize)
 
     raise ValueError(f"unknown format: {fmt!r}")
@@ -221,10 +222,8 @@ def _format_pipe(rows: Sequence[Row], kind: str | None) -> str:
     )
 
 
-def _format_table(
-    rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool, field_rows: bool = False
-) -> str:
-    """A themed table; ``field_rows`` marks a record's ``field``/``value`` rows."""
+def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> str:
+    """A themed table."""
     if not rows:
         return ""
     compact = theme.density == "compact"
@@ -253,10 +252,7 @@ def _format_table(
             *[
                 _styled_text(
                     text,
-                    _status_style(
-                        theme, _named(row, col, field_rows), row.get(col), colorize=colorize
-                    )
-                    or value_style,
+                    _status_style(theme, row.get(col), colorize=colorize) or value_style,
                 )
                 for col, text in zip(columns, texts, strict=True)
             ]
@@ -277,11 +273,6 @@ def _min_width(column: str, *, first: bool) -> int:
     if first:
         return 40
     return 30 if column in _WRAPPED_COLUMNS else 10
-
-
-def _named(row: Row, column: str, field_rows: bool) -> str:
-    """The field a cell holds: its column, or in ``field_rows`` the row's ``field``."""
-    return str(row["field"]) if field_rows and column == "value" else column
 
 
 def _fit_widths(columns: list[str], cells: list[list[str]], *, budget: int) -> list[int | None]:
@@ -349,7 +340,7 @@ def _format_record_as_lines(record: Row, *, theme: ThemeSpec, colorize: bool) ->
 
 def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: bool) -> str:
     key_style = _role_style(theme, "key", colorize=colorize)
-    value_style = _status_style(theme, key, value, colorize=colorize) or _role_style(
+    value_style = _status_style(theme, value, colorize=colorize) or _role_style(
         theme, "value", colorize=colorize
     )
     rendered_value = _flat(value)
@@ -407,7 +398,8 @@ def _table_cell(value: Any) -> str:
     """
     if isinstance(value, float):
         return f"{value:.2f}".rstrip("0").rstrip(".")
-    return " ".join(_flat(value).split())
+    text = " ".join(_flat(value).split())
+    return Roled(text, value.role) if isinstance(value, Roled) else text
 
 
 #: An RFC 3339 UTC timestamp with a fraction, as records and plain rows render one.
@@ -436,57 +428,11 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
             yield f"{prefix}{key}", text
 
 
-#: Columns holding an outcome or state word, colored by what the word means.
-_STATUS_COLUMNS = frozenset({"status", "action", "result", "state", "job_status"})
-_STATUS_ROLES: dict[str, str] = {
-    **dict.fromkeys(
-        ("failed", "failure", "fail", "error", "errored", "conflict", "partial"), "error"
-    ),
-    **dict.fromkeys(
-        (
-            "warn",
-            "warning",
-            "skipped",
-            "pending",
-            "waiting",
-            "running",
-            "planned",
-            "stale",
-            "outdated",
-            "unavailable",
-            "canceled",
-            "cancelled",
-            "cancel_requested",
-        ),
-        "warning",
-    ),
-    **dict.fromkeys(
-        (
-            "successful",
-            "success",
-            "pass",
-            "passed",
-            "ok",
-            "ready",
-            "created",
-            "updated",
-            "deleted",
-            "synced",
-            "cloned",
-            "added",
-            "removed",
-            "completed",
-        ),
-        "success",
-    ),
-}
-
-
-def _status_style(theme: ThemeSpec, column: str, value: Any, *, colorize: bool) -> str | None:
-    if not colorize or column not in _STATUS_COLUMNS or not isinstance(value, str):
+def _status_style(theme: ThemeSpec, value: Any, *, colorize: bool) -> str | None:
+    """A cell's role colour: the one its field's ``Status`` gave its word, if any."""
+    if not colorize or not isinstance(value, Roled):
         return None
-    role = _STATUS_ROLES.get(value.lower())
-    return status_role_style(theme, role) if role is not None else None
+    return status_role_style(theme, value.role)
 
 
 def status_role_style(theme: ThemeSpec, role: str) -> str | None:

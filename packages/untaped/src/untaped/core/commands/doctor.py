@@ -74,7 +74,7 @@ from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
 from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, Failed, UntapedError, first_validation_error
-from untaped.sdk.fields import Confirm, Output
+from untaped.sdk.fields import Confirm, Output, table_row
 from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
 from untaped.sdk.health.deprecated_keys import scan_keys
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -223,7 +223,10 @@ def _show_check_rows(rows: list[dict[str, object]], *, columns: list[str] | None
         _diag.info("")
     else:
         # A table shows ``fix`` as the line to type, so it is a view, not the record.
-        emit_isolated([_table_row(row) for row in rows], fmt="table", columns=columns)
+        shown = [
+            table_row(records.DoctorCheck.model_validate(row), _table_row(row)) for row in rows
+        ]
+        emit_isolated(shown, fmt="table", columns=columns)
 
 
 def _check_footer(rows: list[dict[str, object]], *, op: str) -> bool:

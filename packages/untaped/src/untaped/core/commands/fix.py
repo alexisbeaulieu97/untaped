@@ -52,7 +52,7 @@ from untaped.runtime.sink import (
 from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ErrorCategory, Failed, UntapedError
-from untaped.sdk.fields import Confirm
+from untaped.sdk.fields import Confirm, table_row
 from untaped.sdk.words import command_argv, not_found, plural, run_hint, split_profile, summary
 
 _diag = Diagnostics()
@@ -343,7 +343,9 @@ def _show(rows: list[FixOutcome], *, columns: list[str] | None) -> None:
             emit_fix_list(rows, run_line=run_line)
         return
     # A table shows ``fix`` as the line to type, so it is a view, not the record.
-    shown = [row.model_dump(mode="json") | {"fix": run_line(row.fix)} for row in rows]
+    shown = [
+        table_row(row, row.model_dump(mode="json") | {"fix": run_line(row.fix)}) for row in rows
+    ]
     emit_isolated(shown, fmt="table", columns=columns)
 
 

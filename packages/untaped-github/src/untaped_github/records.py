@@ -19,6 +19,7 @@ from untaped.sdk import (
     OutcomeRecord,
     Record,
     Spread,
+    Status,
     TargetRecord,
     UtcTimestamp,
 )
@@ -130,7 +131,10 @@ class CorpusRepo(Repo):
     path: str = Field(
         description="The repo in the git plugin's repo store, which other plugins may share."
     )
-    status: Literal["synced", "cached", "released", "removed"] = Field(
+    status: Annotated[
+        Literal["synced", "cached", "released", "removed"],
+        Status(success=("synced", "removed")),
+    ] = Field(
         default="cached",
         description=(
             "`cached` for a stored copy, `synced` for one just fetched; on a `cache delete` or "
@@ -233,6 +237,7 @@ class SyncOutcome(OutcomeRecord):
     table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
 
     repo: str
+    action: Annotated[str, Status(success=("synced",))]
     fetched_at: UtcTimestamp | None = None
     detail: str | None = None
 

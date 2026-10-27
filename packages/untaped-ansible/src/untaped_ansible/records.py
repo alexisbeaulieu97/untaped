@@ -6,11 +6,11 @@ in order, are its rows' keys on the wire.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import FreshnessRecord, OutcomeRecord, Record, UtcTimestamp
+from untaped.sdk import FreshnessRecord, OutcomeRecord, Record, Status, UtcTimestamp
 from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
 
@@ -76,7 +76,9 @@ class SourceStatus(FreshnessRecord):
 
     source: str
     source_key: str
-    state: Literal["fresh", "stale", "not_refreshed", "missing_source"] = Field(
+    state: Annotated[
+        Literal["fresh", "stale", "not_refreshed", "missing_source"], Status(warning=("stale",))
+    ] = Field(
         description=(
             "stale when past ansible.caches.source_data.max_age_seconds, made by another untaped "
             "version, or after a failed or partial refresh; not_refreshed when never "

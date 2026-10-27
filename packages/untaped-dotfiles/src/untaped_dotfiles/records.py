@@ -5,14 +5,14 @@ It holds models only, so importing it never imports a command.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field
 
 from untaped.sdk import OutcomeRecord, Record, TargetRecord, UtcTimestamp
 from untaped_dotfiles.models import Mode
 from untaped_dotfiles.policy import Policy
-from untaped_dotfiles.states import FileState
+from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
 
 
 class Repo(TargetRecord):
@@ -79,7 +79,9 @@ class PathStatus(TargetRecord):
     source: str
     mode: Mode
     policy: Policy
-    state: FileState = Field(description="The path's state; the policy guide explains each one.")
+    state: Annotated[FileState, FILE_STATE_ROLES] = Field(
+        description="The path's state; the policy guide explains each one."
+    )
     detail: str = ""
 
 
@@ -124,7 +126,7 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
     source: str
     mode: Mode
     action: PlaceAction
-    state: FileState | None = Field(
+    state: Annotated[FileState, FILE_STATE_ROLES] | None = Field(
         default=None,
         description="The path's state before the action, so a `skipped` row that was "
         "`behind` under `manual` differs from one that was `applied`; the policy guide "

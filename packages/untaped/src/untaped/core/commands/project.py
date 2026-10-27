@@ -20,7 +20,7 @@ from pydantic import Field
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
 from untaped.core.settings import CoreSettings
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Confirm, Output, Positional, table_row
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (
@@ -349,7 +349,7 @@ def _release(
     columns = list(command.output.columns)
     # the planned rows are what --dry-run prints, so only a question shows them first
     preview = lambda: [  # noqa: E731
-        render_rows([row.model_dump() for row in planned], fmt="table", table_columns=columns)
+        render_rows([table_row(row) for row in planned], fmt="table", table_columns=columns)
     ]
     if not confirm(question, preview=None if confirm.dry_run else preview):
         yield from planned

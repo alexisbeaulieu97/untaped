@@ -14,16 +14,19 @@ from pydantic import BaseModel, Field, model_validator
 from untaped.sdk import (
     Age,
     Bytes,
+    CheckRecord,
     Command,
     Duration,
     ObjectName,
+    OutcomeRecord,
     Output,
     Plugin,
     Record,
     Spread,
+    Status,
     now,
 )
-from untaped.sdk.fields import table_rows
+from untaped.sdk.fields import status_roles, table_rows
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -215,3 +218,55 @@ def test_a_mark_shapes_only_the_values_it_names(
     row = record.model_dump(include=set(cells))
     [shown], _, _ = table_rows([record], [row], None)
     assert shown == cells
+
+
+class Cloned(OutcomeRecord):
+    """An outcome whose plugin adds its own verb to core's."""
+
+    action: Annotated[str, Status(success=("cloned",), warning=("created",))]
+
+
+class Spelled(OutcomeRecord, kind="keeper.spelled_outcome"):
+    """An 11.x record (``kind=``): an unmarked column keeps the word map."""
+
+    status: str = "running"
+
+
+class Plain(Record):
+    """A column named ``status`` with no ``Status``."""
+
+    status: str
+
+
+def _roles(record: BaseModel) -> dict[str, str | None]:
+    [shown], _, _ = table_rows([record], [record.model_dump()], None)
+    return {key: getattr(cell, "role", None) for key, cell in shown.items()}
+
+
+@pytest.mark.parametrize(
+    ("record", "roles"),
+    [
+        (OutcomeRecord(action="failed"), {"action": "error"}),
+        (OutcomeRecord(action="unchanged"), {"action": None}),
+        (Cloned(action="cloned"), {"action": "success"}),  # its own verb
+        (Cloned(action="partial"), {"action": "error"}),  # core's, kept
+        (Cloned(action="created"), {"action": "warning"}),  # the nearest class wins
+        (Plain(status="failed"), {"status": None}),
+        (Spelled(action="removed"), {"action": "success", "status": "warning"}),
+    ],
+)
+def test_a_field_s_status_roles_merge_down_its_classes(
+    record: BaseModel, roles: dict[str, str | None], clock: ManualClock
+) -> None:
+    del clock
+    shown = _roles(record)
+    assert {key: shown.get(key) for key in roles} == roles
+
+
+def test_check_records_draw_core_s_check_words() -> None:
+    assert status_roles(CheckRecord)["status"] == {
+        "pass": "success",
+        "warn": "warning",
+        "fail": "error",
+        "error": "error",
+    }

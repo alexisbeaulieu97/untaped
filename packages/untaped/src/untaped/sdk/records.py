@@ -62,6 +62,7 @@ from untaped.sdk.diagnostic import (
     record_kinds,
     record_model,
 )
+from untaped.sdk.fields import Status
 
 
 def _absolute(value: Path) -> Path:
@@ -180,7 +181,14 @@ class OutcomeRecord(Record):
     it is left out of the output of every other row.
     """
 
-    action: str
+    action: Annotated[
+        str,
+        Status(
+            success=("created", "updated", "deleted"),
+            warning=("planned", "skipped", "cancelled"),
+            error=FAILURE_ACTIONS,
+        ),
+    ]
     error: _RowError = None
 
     @property
@@ -207,7 +215,9 @@ _BASES: Final = (OutcomeRecord, TargetRecord)
 class CheckRecord(Record):
     """One check result (doctor checks, validations)."""
 
-    status: CheckStatus
+    status: Annotated[
+        CheckStatus, Status(success=("pass",), warning=("warn",), error=("fail", "error"))
+    ]
 
 
 class Source(BaseModel):
