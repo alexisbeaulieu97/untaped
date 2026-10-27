@@ -409,6 +409,43 @@ def test_apply_reports_a_failed_fetch_and_exits_1(make_upstream: Upstream, user_
     assert (user_home / ".config/starship.toml").read_text().startswith("[character]")
 
 
+def test_apply_dry_run_warns_of_a_failed_fetch_and_exits_0(make_upstream: Upstream) -> None:
+    bare, _ = make_upstream()
+    subscribe(bare)
+    run(["enable", "starship"])
+    bare.rename(bare.with_name("gone.git"))
+    result = run(["apply", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "fetch failed" in result.stderr
+
+
+def test_a_failed_fetch_is_reported_before_the_question(
+    make_upstream: Upstream, terminal: ScriptedTerminal, user_home: Path
+) -> None:
+    bare, _ = make_upstream()
+    subscribe(bare)
+    run(["enable", "starship"])
+    bare.rename(bare.with_name("gone.git"))
+    declined = answered(terminal, False, ["apply"])
+    assert declined.exit_code != 0, declined.output
+    assert "fetch failed" in declined.stderr
+    assert not (user_home / ".config/starship.toml").exists()
+
+
+def test_apply_dry_run_exits_1_on_a_planned_conflict(
+    make_upstream: Upstream, user_home: Path
+) -> None:
+    bare, _ = make_upstream()
+    subscribe(bare)
+    run(["enable", "starship"])
+    run(["apply", "--yes"])
+    (user_home / ".config" / "starship.toml").write_text("edited\n")
+    result = run(["apply", "--dry-run", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    assert [row["action"] for row in json_rows(result)] == ["conflict"]
+    assert (user_home / ".config" / "starship.toml").read_text() == "edited\n"
+
+
 def test_fast_forward_refuses_a_dirty_clone(make_upstream: Upstream, tmp_path: Path) -> None:
     bare, author = make_upstream()
     subscribe(bare)

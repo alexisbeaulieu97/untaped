@@ -115,7 +115,8 @@ def sections(
         file = None
         if held:  # a plugin class's rows, in its own state file
             state, rows = _rows_model(spec.name, held), held
-            file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
+            if state is not None:
+                file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
         if state is None and rows:  # only a project's rows: no section in the home
             state = create_model(spec.name.title().replace("-", "") + "State")
         if state is not None:

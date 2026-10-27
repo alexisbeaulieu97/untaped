@@ -52,3 +52,20 @@ def test_a_plugin_classs_state_section_names_its_file_and_home_rows() -> None:
     assert section.file == "~/.untaped/plugins/acme/state.yml"
     assert list(section.model.model_fields) == ["things"]
     assert section.model.model_fields["things"].description == "A thing the plugin keeps."
+
+
+class Projects(Plugin):
+    """Projects."""
+
+    settings = Settings
+    checkouts = StateRows[Thing].per_project()
+
+
+def test_rows_kept_only_in_projects_name_no_home_file() -> None:
+    result = compose(
+        [PluginCandidate(distribution="untaped-projects", name="projects", target=Projects)]
+    )
+    states = [s for s in sections(result, extensions=False, owner="projects") if s.is_state]
+    assert [(s.file, list(s.model.model_fields)) for s in states] == [(None, [])]
+    texts = [line.text for line in settings_lines(result, owner="projects")]
+    assert "state projects.checkouts.name string" in texts

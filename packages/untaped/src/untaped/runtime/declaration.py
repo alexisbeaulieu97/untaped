@@ -9,6 +9,7 @@ help or docs needs no plugin import. Classes are named by their targets
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -301,7 +302,9 @@ class Declaration(_Frozen):
         )
         if block is None:
             raise LookupError(f"{plugin} holds no state rows named {rows!r}")
-        return None if block.removed_by is None else self._line(block.removed_by, (key,))
+        if block.removed_by is None:
+            return None
+        return self._line(block.removed_by, (shlex.quote(key),))
 
     def _line(self, target: str, args: tuple[object, ...]) -> str:
         from untaped.sdk.fields import SettingKey  # noqa: PLC0415 - only a spelled hint needs it

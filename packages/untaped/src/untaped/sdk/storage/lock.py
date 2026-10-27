@@ -29,7 +29,7 @@ class Lock(OwnedBlock):
 
     ``wait`` is how long :meth:`locked` waits for another process holding it
     before it fails with ``<plugin>.<name> is busy (another untaped
-    process)``. Taking it again in the same thread only counts.
+    process)``, hinting to retry once it is done. Taking it again in the same thread only counts.
     """
 
     block_kind = "lock"
@@ -76,6 +76,9 @@ class Lock(OwnedBlock):
             yield
 
 
+#: What a busy lock's error says to do.
+_RETRY = "wait for the other untaped command to finish, then retry"
+
 #: The operation locks this thread holds, outermost first: (plugin, label, path).
 _HELD = threading.local()
 
@@ -104,11 +107,12 @@ def operation_lock(plugin: str, label: str, path: Path, timeout: float) -> Itera
         path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise UntapedError(f"could not lock {label}: {exc.strerror or exc}") from exc
+    busy = f"{label} is busy (another untaped process)"
     with file_lock(
         path,
         timeout=timeout,
-        error=UntapedError,
-        busy=f"{label} is busy (another untaped process)",
+        error=lambda message: UntapedError(message, hint=_RETRY if message == busy else None),
+        busy=busy,
         failed=f"could not lock {label}",
     ):
         entry = (plugin, label, path)

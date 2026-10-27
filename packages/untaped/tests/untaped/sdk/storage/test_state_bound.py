@@ -125,6 +125,11 @@ def test_a_damaged_row_offers_the_remove_command(tmp_path: Path) -> None:
     )
 
 
+def test_the_remover_quotes_a_key_for_the_shell() -> None:
+    line = _composed(Demo).remove_line("demo", "items", "my notes")
+    assert line == "untaped demo remove 'my notes'"
+
+
 def test_a_damaged_list_row_is_named_by_its_place(tmp_path: Path) -> None:
     folder = tmp_path / "plugins" / "demo"
     folder.mkdir(parents=True)

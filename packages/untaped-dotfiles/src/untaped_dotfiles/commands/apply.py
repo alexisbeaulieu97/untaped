@@ -32,13 +32,13 @@ class Apply(Selected):
 
     Fetches every repo the items read from first, so a managed clone's
     manifest, copy and merge files are read as its remote holds them now; a
-    failed fetch is reported and exits 1 (a --dry-run preview warns and
-    still exits 0). It can move other items' link files; the plan lists them.
-    A local file in the way of a new path is kept aside, and the row says
-    where. Refuses paths edited on this machine (row action `conflict`, exit
-    1) unless --force; `diff` shows what --force would replace in copy and
-    merge files as of the last fetch. The policy guide, linked from `enable`,
-    explains what `apply` does in each state and when a clone is pulled.
+    failed fetch is reported and exits 1 (a --dry-run preview only warns).
+    It can move other items' link files; the plan lists them. A local file in
+    the way of a new path is kept aside, and the row says where. Refuses
+    paths edited on this machine (row action `conflict`, exit 1, under
+    --dry-run too) unless --force; `diff` shows what --force would replace in
+    copy and merge files as of the last fetch. The policy guide explains what
+    `apply` does in each state and when a clone is pulled.
     """
 
     force: bool = Field(
@@ -61,18 +61,19 @@ class Apply(Selected):
             steps = svc.applier.plan_apply(placements, force=self.force)
             planned = svc.applier.planned(steps) + moved
             todo = [s for s in steps if s.action in ("apply", "remove")]
+            for repo_row in unfetched.values():
+                error = repo_row.error
+                assert error is not None  # fetch_all returns failures only
+                if self.confirm.dry_run:
+                    self.ctx.diag.warning(f"{repo_row.name}: {error.message}", hint=error.hint)
+                else:
+                    self.ctx.diag.failure(error, item=repo_row.name)
             if not self.confirm(
                 f"Apply {plural(len(todo), 'path')}?",
                 preview=lambda: plan_lines(svc, planned),
                 needed=bool(todo or moved),
             ):
-                for repo_row in unfetched.values():
-                    assert repo_row.error is not None  # fetch_all returns failures only
-                    self.ctx.diag.warning(f"{repo_row.name}: {repo_row.error.message}")
                 return iter(_as(ApplyOutcome, planned))
-            for repo_row in unfetched.values():
-                assert repo_row.error is not None
-                self.ctx.diag.failure(repo_row.error, item=repo_row.name)
             if todo or moved:
                 _fast_forward(svc, pulled, placements)
                 steps = svc.applier.replan(steps, force=self.force)
@@ -91,9 +92,8 @@ class Sync(DotfilesCommand):
 
     Never prompts and never overwrites a path edited on this machine. Exits 3
     when anything needs the user, 1 when an apply or a git operation failed.
-    Rewrites status.json and attention unless --dry-run. The policy guide,
-    linked from `enable`, has what each policy does in each state, and when
-    a clone is pulled.
+    Rewrites status.json and attention unless --dry-run. The policy guide
+    has what each policy does in each state, and when a clone is pulled.
     """
 
     dry_run: DryRun
