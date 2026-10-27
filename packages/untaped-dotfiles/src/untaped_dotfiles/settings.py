@@ -1,4 +1,4 @@
-"""Dotfiles settings (profile) and state models."""
+"""The dotfiles settings (``dotfiles:`` in ``config.yml``)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped_dotfiles.domain.models import AppliedRecord, ItemChoice, OsName, RepoRecord
+from untaped_dotfiles.models import OsName
 
 
 class DotfilesSettings(BaseModel):
@@ -27,7 +27,7 @@ class DotfilesSettings(BaseModel):
     )
     state_dir: Path = Field(
         default=Path("~/.untaped/plugins/dotfiles"),
-        description="Holds `status.json`, `attention` and the advisory lock.",
+        description="Holds `status.json` and `attention`, the files a prompt segment reads.",
     )
     tags: list[str] = Field(
         default_factory=list,
@@ -35,27 +35,4 @@ class DotfilesSettings(BaseModel):
     )
     os: OsName | None = Field(
         default=None, description="This machine's OS for `os` filters; detected when unset."
-    )
-
-
-class DotfilesState(BaseModel):
-    """Subscribed repos, the machine's item choices and placed paths (``state.yml``)."""
-
-    model_config = ConfigDict(frozen=True)
-
-    repos: list[RepoRecord] = Field(
-        default_factory=list,
-        description="Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`.",
-    )
-    items: list[ItemChoice] = Field(
-        default_factory=list,
-        description=(
-            "Enabled items with their policy and skips. Managed by `dotfiles enable`/`disable`."
-        ),
-    )
-    applied: list[AppliedRecord] = Field(
-        default_factory=list,
-        description=(
-            "One record per path the tool placed. Managed by `dotfiles apply`, `sync` and `remove`."
-        ),
     )

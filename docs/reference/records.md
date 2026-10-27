@@ -236,15 +236,16 @@ untaped workspace status NAME --format pipe \
 | `dotfiles enable`, `dotfiles disable` | `dotfiles.item_outcome` |
 | `dotfiles repos` | `dotfiles.repo` |
 | `dotfiles unsubscribe` | `dotfiles.repo_outcome` |
-| `dotfiles status` | `dotfiles.status` (`--summary`: `dotfiles.status.summary`) |
+| `dotfiles status` | `dotfiles.path_status` |
+| `dotfiles summary` | `dotfiles.status_summary` |
 | `dotfiles apply` | `dotfiles.apply_outcome` |
 | `dotfiles sync` | `dotfiles.sync_outcome` |
 | `dotfiles remove` | `dotfiles.remove_outcome` |
 
-`dotfiles diff` prints a unified diff, not records. `dotfiles status` (run
-without ITEM or `--repo`) and `dotfiles sync` (and, after their changes,
-`dotfiles apply` and `dotfiles remove`) write two files under
-`dotfiles.state_dir`: `status.json`, the `dotfiles.status.summary` record,
+`dotfiles diff` prints a unified diff, not records. `dotfiles status` and
+`dotfiles summary` (run without ITEMS or `--repo`) and `dotfiles sync` (and,
+after their changes, `dotfiles apply` and `dotfiles remove`) write two files under
+`dotfiles.state_dir`: `status.json`, the `dotfiles.status_summary` record,
 and `attention`, one line holding its `attention` count (the rows that need
 the user), for prompt segments.
 

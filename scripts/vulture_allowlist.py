@@ -157,6 +157,10 @@ Core.config_permissions
 Core.unknown_keys
 Core.token_store
 Core.refs
+Dotfiles.sync
+
+# Enum members read by value from manifests and the state file.
+Policy.ONCE  # dotfiles: `policy: once`
 
 # The contract answers' views: SDK API, read by the shelf example and third-party owners.
 Answers.errored

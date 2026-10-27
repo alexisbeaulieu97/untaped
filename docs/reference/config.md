@@ -5,9 +5,10 @@
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `<section>` in `~/.untaped/config.yml` (a named profile's
 under `profiles.<name>.<section>`);
-state lives in `~/.untaped/state.yml` and is written only by the owning
-plugin's commands. See [Configuration](../configuration.md) for the file
-layout, profiles and precedence.
+state lives in `~/.untaped/state.yml`, or the file its section names, and
+is written only by the owning plugin's commands. See
+[Configuration](../configuration.md) for the file layout, profiles and
+precedence.
 
 Set a profile setting with `untaped config set KEY VALUE` (a token:
 `untaped auth login SECTION`; how values are parsed is in
@@ -73,17 +74,19 @@ overridden for one process with the environment variable shown.
 |---|---|---|---|---|
 | `dotfiles.repos_dir` | path | `~/.untaped/plugins/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
 | `dotfiles.kept_dir` | path | `~/.untaped/plugins/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
-| `dotfiles.state_dir` | path | `~/.untaped/plugins/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json`, `attention` and the advisory lock. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path | `~/.untaped/plugins/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json` and `attention`, the files a prompt segment reads. Experimental: may change in a minor release. |
 | `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
 | `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
 
 ## `dotfiles` state
 
+Kept in `~/.untaped/plugins/dotfiles/state.yml`.
+
 | Key | Type | Description |
 |---|---|---|
-| `dotfiles.repos` | list | Subscribed repos. Managed by `dotfiles subscribe`/`unsubscribe`. |
-| `dotfiles.items` | list | Enabled items with their policy and skips. Managed by `dotfiles enable`/`disable`. |
-| `dotfiles.applied` | list | One record per path the tool placed. Managed by `dotfiles apply`, `sync` and `remove`. |
+| `dotfiles.repos` | list | A subscribed repo: where its clone is and which branch it follows. |
+| `dotfiles.items` | list | The machine's decision about one item: its policy and the files it skips. |
+| `dotfiles.applied` | list | One placed path: what the tool wrote there and from which source. |
 
 ## `git`
 
