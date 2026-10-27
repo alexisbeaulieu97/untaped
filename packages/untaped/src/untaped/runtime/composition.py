@@ -156,9 +156,9 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     contract (shelf's ``Book`` is ``shelf.book``), a provider's own record
     to the plugin whose ``fills`` lists the provider. A record has one kind.
     Two entry points in one top-level package share it, the first not
-    quarantined owning its classes, as :meth:`Declaration.owner_of` reads it. A contract belongs to the one
-    plugin whose ``offers`` lists it; two plugins listing it are both
-    refused (``duplicate-offer``), as a fill or refresh of a contract no
+    quarantined owning its classes, as :meth:`Declaration.owner_of` reads
+    it. A contract belongs to the one plugin whose ``offers`` lists it; two
+    plugins listing it are both refused (``duplicate-offer``), as a fill or refresh of a contract no
     composed plugin owns is (``unowned-cache``). Composing is a fixpoint: a
     plugin broken whatever the others are (a name ``taken`` holds included)
     is withdrawn first, then the plugins listing one contract; the others
