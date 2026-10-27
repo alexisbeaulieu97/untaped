@@ -179,6 +179,7 @@ class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
 
     name: str
     type: str | None = None
+    scm_revision: Annotated[str | None, ObjectName] = None
 
 
 # --------------------------------------------------------------------------- #

@@ -8,6 +8,7 @@ from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 from typing import Annotated, ClassVar, Self
 
+import pytest
 from pydantic import BaseModel, Field, model_validator
 
 from untaped.sdk import (
@@ -22,6 +23,7 @@ from untaped.sdk import (
     Spread,
     now,
 )
+from untaped.sdk.fields import table_rows
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -186,3 +188,30 @@ def test_columns_list_and_pick_only_the_keys_the_command_named(
     assert "grep:a" in shown and "zzz" not in shown
     assert refused.exit == 2
     assert "unknown column 'zzz'" in "".join(refused.stderr)
+
+
+class Edges(BaseModel):
+    """Values a mark leaves as they are."""
+
+    took: Annotated[float | bool | None, Duration] = None
+    commit: Annotated[str, ObjectName] = ""
+
+
+@pytest.mark.parametrize(
+    ("record", "cells"),
+    [
+        (Edges(took=True), {"took": True}),
+        (Edges(took=None), {"took": None}),
+        (Edges(took=5), {"took": "5.0s"}),
+        (Edges(commit="0123456789"), {"commit": "0123456789"}),
+        (Edges(commit=FULL.upper()), {"commit": FULL.upper()}),
+        (Edges(commit=FULL + FULL[:24]), {"commit": FULL + FULL[:24]}),
+    ],
+)
+def test_a_mark_shapes_only_the_values_it_names(
+    record: Edges, cells: dict[str, object], clock: ManualClock
+) -> None:
+    del clock
+    row = record.model_dump(include=set(cells))
+    [shown], _, _ = table_rows([record], [row], None)
+    assert shown == cells
