@@ -1056,6 +1056,16 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
+    ok: object = outcome.ok  # unvalidated too: an 11.x positional id lands here
+    if not isinstance(ok, bool):
+        return _row(
+            check_item.id,
+            scope.plugin,
+            _FAIL,
+            check_item.title,
+            f"check returned ok of type {type(ok).__name__}, expected bool"
+            " (DoctorResult takes ok first; id is keyword-only)",
+        )
     returned: object = outcome.detail  # an unvalidated dataclass field: may be anything
     if not isinstance(returned, str | None):
         return _row(

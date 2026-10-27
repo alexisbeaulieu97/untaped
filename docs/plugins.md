@@ -206,7 +206,7 @@ and `system` (your section name) as class defaults; see
 and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (`DoctorCheck` on `PluginSpec.doctor_checks`) returns a
-`DoctorResult`; core fills the row's id from the check, so the result needs
+`DoctorResult`; the row is named after its check, so the result names
 none. Its `fix` is the `untaped` command that repairs a failed or
 warned row, without the program name: a string (`"config set acme.server.url
 <URL>"`, split like a shell would) or an argv list. Write a value the user

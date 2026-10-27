@@ -260,6 +260,25 @@ def test_a_result_without_an_id_takes_its_checks(_isolated_config: Path) -> None
     assert (row["status"], row["detail"]) == ("warn", "worth a look")
 
 
+def test_a_positional_id_fails_its_row_naming_the_order(_isolated_config: Path) -> None:
+    from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
+
+    def _positional(ctx: object) -> DoctorResult:
+        return DoctorResult("ext.a", True, "x")  # type: ignore[arg-type, call-arg]
+
+    app = _doctor_app(
+        make_spec(
+            "ext",
+            doctor_checks=(DoctorCheck(id="ext.a", title="t", run=_positional),),  # type: ignore[arg-type]
+        )
+    )
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+
+    row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.a")
+    assert row["status"] == "fail"
+    assert "id is keyword-only" in row["detail"]
+
+
 def test_a_detail_that_is_not_a_string_fails_its_row_under_json(_isolated_config: Path) -> None:
     from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 

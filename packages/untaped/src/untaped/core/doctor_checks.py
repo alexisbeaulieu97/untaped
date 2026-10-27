@@ -2,7 +2,7 @@
 
 ``Core`` holds each :class:`~untaped.sdk.DoctorCheck` as an attribute, so its
 row is ``untaped.<attribute>`` in kebab case (``untaped.config-permissions``),
-run like any plugin's check; core fills each result's id from its block. Each reads
+run like any plugin's check, whose result names no id. Each reads
 the config file itself when it runs; when the file doesn't load, the ``load
 config file`` row fails and these report ``not checked``. Rows doctor derives
 for every plugin (settings, state, setup, contracts, caches, skills) stay in

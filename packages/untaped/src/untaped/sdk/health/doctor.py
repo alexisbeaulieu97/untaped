@@ -102,8 +102,8 @@ class DoctorResult:
     agent may run it. Doctor fails the row when an automatic fix is missing
     or has a placeholder.
 
-    The row's id is its check's: core fills it from the ``DoctorCheck`` the
-    body belongs to, so a body leaves ``id`` out. An 11.x body passes its
+    The row's id is its check's: core names the row after the ``DoctorCheck``
+    the body belongs to, so a body leaves ``id`` out. An 11.x body passes its
     check's ``id``, and a different one fails the row.
     """
 
