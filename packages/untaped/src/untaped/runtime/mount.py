@@ -756,7 +756,11 @@ def _refill(
         else:
             values[part] = _refill(mount, decl, _bundle_model(info.annotation), node)
     if isinstance(holder, BaseModel):
-        return holder.model_copy(update=values)
+        # validated again, so a validator reading a core field (a command naming its
+        # columns) sees the filled one, as a parsed command's does
+        kept = {name: getattr(holder, name) for name in cls.model_fields}
+        given = {**kept, **values}
+        return cls.model_validate({_keys(cls, name)[0]: v for name, v in given.items()})
     try:
         return holder.model_validate({_keys(holder, part)[0]: v for part, v in values.items()})
     except ValidationError as exc:

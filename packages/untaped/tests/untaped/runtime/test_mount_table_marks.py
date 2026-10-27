@@ -55,11 +55,25 @@ class Copies(Command[Nothing]):
         )
 
 
+class Narrow(Command[Nothing]):
+    """List one copy, naming one of the keys its rows have."""
+
+    output: Output[Stored]
+
+    @model_validator(mode="after")
+    def _keys(self) -> Self:
+        self.output.columns[:] = ["name", "grep:a"]
+        return self
+
+    def run(self) -> Iterator[Stored]:
+        yield Stored(name="api", size=1, fetched=now(), hits={"grep:a": 2, "zzz": 1})
+
+
 class Keeper(Plugin):
     """Keep copies (a test's plugin)."""
 
     settings = Nothing
-    commands = (Copies,)
+    commands = (Copies, Narrow)
 
 
 def _header(text: str) -> str:
@@ -114,3 +128,27 @@ def test_json_keeps_the_raw_values(install: Installer, clock: ManualClock) -> No
     assert row["size"] == 1536
     assert row["hits"] == {"grep:a": 2, "has-file:x": 1}
     assert datetime.fromisoformat(row["fetched"]) == clock.now() - timedelta(hours=3)
+
+
+def test_a_built_command_run_by_the_kit_keeps_the_columns_it_names(
+    install: Installer, clock: ManualClock
+) -> None:
+    del clock
+    ran = install(Keeper).run(Narrow())
+    assert ran.exit == 0, ran.stderr
+    header = _header(ran.stdout)
+    assert "grep:a" in header and "zzz" not in header
+
+
+def test_columns_list_and_pick_only_the_keys_the_command_named(
+    install: Installer, clock: ManualClock
+) -> None:
+    del clock
+    keeper = install(Keeper)
+    listed = keeper.cli("keeper narrow -c ?")
+    refused = keeper.cli("keeper narrow -c +zzz")
+    assert listed.exit == 0, listed.stderr
+    shown = "\n".join(listed.stderr)
+    assert "grep:a" in shown and "zzz" not in shown
+    assert refused.exit == 2
+    assert "unknown column 'zzz'" in "".join(refused.stderr)

@@ -5,5 +5,5 @@ clock), and `Annotated[dict[str, int], Spread]` as one column per key, which
 `--columns KEY` picks. A command names its `Spread` keys once it is built (a
 model validator calling `self.output.columns.add(...)`, or `.offer(...)` for
 a key hidden by default), so `--columns` is checked before `run`, and a named
-key no row has is an empty column.
+key no row has is an empty column; `--columns` picks only the keys it named.
 `untaped.sdk.ago_text(at, now)` gives the same words for a time elsewhere.

@@ -105,8 +105,9 @@ Spread = Mark("Spread")
 keys are. The command names its keys as columns once it is built (a model
 validator calling ``self.output.columns.add(...)``, or ``.offer(...)`` for a key
 hidden by default), so ``--columns`` is checked before ``run``; a named key a
-row lacks is an empty cell. Only the table
-changes: json, yaml, raw and pipe keep the mapping.
+row lacks is an empty cell, and a key it did not name shows by default but is
+not a column ``--columns`` picks. Only the table changes: json, yaml, raw and
+pipe keep the mapping.
 """
 
 Written = Mark("Written")
@@ -495,14 +496,14 @@ class Output[R: BaseModel](FieldBlock):
             return
         if requested is None or requested == ["?"]:
             return
-        schema = [*_model_fields(model), *self._spread_keys()]
+        schema = [*_model_fields(model), *(self._spread_keys() or ())]
         names = [name.lstrip("+-") for name in _column_names(requested)]
         _check_columns(names, [], fmt="table", schema=schema, strict=True)
 
-    def _spread_keys(self) -> list[str]:
+    def _spread_keys(self) -> list[str] | None:
         """The ``Spread`` keys the command named: its columns and offers past ``R``'s fields."""
         if self._model is None or not spreads(self._model):
-            return []
+            return None
         from untaped.sdk._cli import _model_fields  # noqa: PLC0415 - rendering is heavy
 
         known = set(_model_fields(self._model))
