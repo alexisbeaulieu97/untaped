@@ -934,7 +934,10 @@ class Parallel(FieldBlock):
     """How many operations run at once: ``-j/--parallel``, ``Parallel(cap=10)``.
 
     ``default`` is a number or a ``key(...)`` to the setting that holds one;
-    ``cap`` clamps the value with a warning.
+    ``cap`` clamps the value with a warning. ``unset`` is the number an
+    optional setting left unset stands for (``Parallel(default=key(S).parallel,
+    unset=8, cap=16)``): the command's own default, so the cap lowers it
+    without a warning.
     """
 
     field_kind = "parallel"
@@ -944,12 +947,25 @@ class Parallel(FieldBlock):
         ),
     )
 
-    def __init__(self, *, default: int | SettingKey = 4, cap: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        default: int | SettingKey = 4,
+        unset: int | None = None,
+        cap: int | None = None,
+    ) -> None:
+        if any(isinstance(each, bool) for each in (default, unset, cap)):
+            raise ValueError("Parallel's default, unset and cap are numbers, not booleans")
         if isinstance(default, int) and default < 1:
             raise ValueError("Parallel's default is at least 1")
+        if unset is not None and not isinstance(default, SettingKey):
+            raise ValueError("Parallel's unset is for a default read from a setting")
+        if unset is not None and unset < 1:
+            raise ValueError("Parallel's unset is at least 1")
         if cap is not None and cap < 1:
             raise ValueError("Parallel's cap is at least 1")
         self.default = default
+        self.unset = unset
         self.cap = cap
         self._requested: int | None = None
         self._value: int | None = None
@@ -969,7 +985,9 @@ class Parallel(FieldBlock):
     def value(self) -> int:
         """How many operations run at once: ``-j``, else the default or its setting, capped.
 
-        A value above ``cap`` is clamped with a warning, once per invocation.
+        A value above ``cap`` is clamped with a warning, once per invocation;
+        an unset setting's ``unset`` is lowered to ``cap`` silently. Read on
+        an unfilled block under a run, it is the default (no ``-j``).
         """
         if self._value is not None:
             return self._value
@@ -990,6 +1008,8 @@ class Parallel(FieldBlock):
         value: object = settings_of(model)
         for part in SettingKey.path_of(self.default):
             value = getattr(value, part)
+        if value is None and self.unset is not None:
+            return self.unset if self.cap is None else min(self.unset, self.cap)
         setting = f"{current_run().composition.owner_of_settings(model)}.{self.default}"
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ConfigError(

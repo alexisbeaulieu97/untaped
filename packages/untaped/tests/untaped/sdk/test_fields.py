@@ -186,6 +186,12 @@ def test_parallel_checks_its_numbers() -> None:
         Parallel(default=0)
     with pytest.raises(ValueError, match="at least 1"):
         Parallel(cap=0)
+    with pytest.raises(ValueError, match="at least 1"):
+        Parallel(default=key(AcmeSettings).greeting, unset=0)
+    with pytest.raises(ValueError, match="a default read from a setting"):
+        Parallel(default=3, unset=8)
+    with pytest.raises(ValueError, match="not booleans"):
+        Parallel(default=key(AcmeSettings).greeting, unset=True)
 
 
 def test_annotated_marks_reach_the_field() -> None:
