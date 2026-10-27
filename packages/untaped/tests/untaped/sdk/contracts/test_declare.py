@@ -47,8 +47,8 @@ def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:
     assert isinstance(function_mark(BookSource), Experimental)
 
 
-@pytest.mark.parametrize("name", ["list", "id", "settings", "ready", "http", "gather"])
-def test_a_method_may_not_shadow_a_builtin_or_sdk_name(name: str) -> None:
+@pytest.mark.parametrize("name", ["list", "id", "settings", "ready", "ctx", "own"])
+def test_a_method_may_not_shadow_a_builtin_or_a_provider_attribute(name: str) -> None:
     def method(self: Any) -> list[int]:
         raise NotImplementedError
 

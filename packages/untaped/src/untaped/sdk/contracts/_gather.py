@@ -1,8 +1,8 @@
 """Asking every provider of a contract method: ``gather`` and its answers.
 
-``gather(method, refresh=, needs=, deadline=)(*args)`` returns one answer per
-provider that fills the method, in rank order (ranked plugins first, then the
-rest by name): :class:`Ok`, :class:`Failed` or :class:`Skipped`. Every issued
+``gather(method, plugins=, refresh=, progress=)(*args)`` returns one answer
+per provider that fills the method, in rank order (ranked plugins first, then
+the rest by name): :class:`Ok`, :class:`Errored` or :class:`Skipped`. Every issued
 item is validated once, strictly, as the owner's model after the call, with
 its ``source`` stamped. A stale answer's ``untaped.stale`` line is said when
 the answer is used, never when it is fetched: :class:`Answers` says it the
@@ -16,8 +16,8 @@ import logging
 import threading
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Concatenate, get_args, get_origin, overload
+from datetime import datetime
+from typing import Any, Concatenate, cast, get_args, get_origin, overload
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -41,9 +41,9 @@ from untaped.sdk.contracts._declare import (
     fills,
     method_contract,
 )
+from untaped.sdk.contracts._reasons import ErrorReason, QuarantineReason, Reason, SkipReason
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
-from untaped.sdk.network.http import request_deadline
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Issued, Source, kind_of
 from untaped.sdk.storage.cache import CallState, NeverRefreshed, call_state
@@ -56,15 +56,15 @@ _POOL = 8
 
 
 @dataclass(frozen=True, slots=True)
-class Failed:
+class Errored:
     """A provider that was asked and failed; ``error`` keeps its category and exit code."""
 
     plugin: str
     error: UntapedError
     rank: int | None = None
-    #: A stable reason: ``raised`` when the provider raised, else why the SDK failed it
+    #: ``raised`` when the provider raised, else why the SDK failed it
     #: (``invalid-item``, a quarantine reason).
-    reason: str | None = None
+    reason: ErrorReason | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,25 +79,21 @@ class Ok[R]:
     value: R
     rank: int | None = None
     refreshed_at: datetime | None = None
-    stale: Failed | None = None
+    stale: Errored | None = None
     invalid: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class Skipped:
-    """A provider that was not asked, or whose answer doesn't count, and why.
-
-    ``reason`` is stable: ``not-configured``, ``no-cache``, ``invalid-item``,
-    ``unbridged-item`` or a quarantine reason.
-    """
+    """A provider that was not asked, or whose answer doesn't count, and why."""
 
     plugin: str
-    reason: str
+    reason: SkipReason
     detail: str
     rank: int | None = None
 
 
-type Answer[R] = Ok[R] | Failed | Skipped
+type Answer[R] = Ok[R] | Errored | Skipped
 
 
 class NoProviderReady(ConfigError):
@@ -116,7 +112,7 @@ class NoProviderReady(ConfigError):
         message: str,
         *,
         not_ready: Mapping[str, NotReady],
-        quarantined: Mapping[str, str] | None = None,
+        quarantined: Mapping[str, QuarantineReason] | None = None,
     ) -> None:
         super().__init__(message)
         self.not_ready = dict(not_ready)
@@ -162,6 +158,21 @@ class Answers[R](Sequence[Answer[R]]):
         self._say()
         return iter(self._items)
 
+    @property
+    def ok(self) -> tuple[Ok[R], ...]:
+        """The answers that came back, in rank order."""
+        return tuple(answer for answer in self if isinstance(answer, Ok))
+
+    @property
+    def errored(self) -> tuple[Errored, ...]:
+        """The providers that were asked and failed, in rank order."""
+        return tuple(answer for answer in self if isinstance(answer, Errored))
+
+    @property
+    def skipped(self) -> tuple[Skipped, ...]:
+        """The providers that were not asked, or whose answer doesn't count."""
+        return tuple(answer for answer in self if isinstance(answer, Skipped))
+
     def take_stale(self) -> tuple[StaleData, ...]:
         """The stale lines not yet said, which nothing says afterwards.
 
@@ -196,7 +207,7 @@ class Answers[R](Sequence[Answer[R]]):
 
 
 class _Invalid(Exception):
-    def __init__(self, reason: str, message: str) -> None:
+    def __init__(self, reason: ErrorReason, message: str) -> None:
         super().__init__(message)
         self.reason = reason
 
@@ -205,37 +216,27 @@ def gather[C: Contract, **P, R](
     method: Callable[Concatenate[C, P], R],
     /,
     *,
+    plugins: Collection[type[Contract] | str] | None = None,
     refresh: bool | None = None,
-    needs: Sequence[Callable[..., Any]] = (),
-    deadline: float | timedelta | None = None,
-    plugins: Collection[str] | None = None,
     progress: ProgressHandle = NO_PROGRESS,
 ) -> Callable[P, Answers[R]]:
     """Ask every ready provider of ``method``; call the result with the method's arguments.
 
-    ``refresh`` directs ``@cached`` methods: ``False`` serves cached answers
-    only (none stored: ``Skipped(no-cache)``), ``None`` serves within the
-    cache's max age (its ``<owner>.caches.<name>.max_age_seconds`` setting)
-    and calls otherwise, ``True`` always calls. A call refreshing an answer
-    holds that answer's lock, so a second process asking the same provider
-    waits for it (``deadline`` does not bound that wait). ``needs`` names further
-    methods a provider must fill to be asked. ``deadline`` (seconds) bounds
-    every request a provider makes through ``self.http``. ``plugins`` asks
-    only the providers of those plugins (an owner that already chose one by a
-    cheaper method, say); the others are left out of the answers. With no ready
-    provider at all it raises :class:`ConfigError` (exit 4) naming why each
-    one isn't (:class:`NoProviderReady`). ``progress`` counts the providers
-    as they answer, each named as it does; a provider's method never gets
-    the handle.
+    ``plugins`` asks only those providers, each a provider class where the
+    code holds one or a plugin name at the user edge (``--source github``);
+    the others are left out of the answers. ``refresh`` directs ``@cached``
+    methods: ``False`` serves cached answers only (none stored:
+    ``Skipped(no-cache)``), ``True`` always calls, and ``None`` follows the
+    command's ``Refresh`` when it names this method's cache, else serves
+    within the cache's max age (its ``<owner>.caches.<name>.max_age_seconds``
+    setting). A call refreshing an answer holds that answer's lock, so a
+    second process asking the same provider waits for it. With no ready
+    provider at all it raises :class:`NoProviderReady` (exit 4) naming why
+    each one isn't. ``progress`` counts the providers as they answer, each
+    named as it does; a provider's method never gets the handle.
     """
     info, wanted = method_contract(method)
-    needed = [wanted.name]
-    for each in needs:
-        other, also = method_contract(each)
-        if other.cls is not info.cls:
-            raise TypeError(f"needs= names {other.name}.{also.name}, not a {info.name} method")
-        needed.append(also.name)
-    seconds = deadline.total_seconds() if isinstance(deadline, timedelta) else deadline
+    asked = _picked(plugins)
 
     def call(*args: P.args, **kwargs: P.kwargs) -> Answers[R]:
         owner = owner_of(info)
@@ -244,9 +245,9 @@ def gather[C: Contract, **P, R](
         runnable: list[tuple[BoundProvider, int | None]] = []
         reasons: list[str] = []
         not_ready: dict[str, NotReady] = {}
-        quarantined: dict[str, str] = {}
+        quarantined: dict[str, QuarantineReason] = {}
         for entry in offers(info):
-            if plugins is not None and entry.plugin not in plugins:
+            if not asked(entry):
                 continue
             rank = order.index(entry.plugin) if entry.plugin in order else None
             if isinstance(entry, Quarantined):
@@ -254,14 +255,15 @@ def gather[C: Contract, **P, R](
                 reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.detail}")
                 quarantined[entry.plugin] = entry.reason
                 continue
-            provider_class = type(entry.instance)
-            if not all(fills(provider_class, info, name) for name in needed):
+            if not fills(type(entry.instance), info, wanted.name):
                 continue
             ready = ready_of(entry)
             if ready is not None:
-                answers[entry.plugin] = Skipped(entry.plugin, "not-configured", ready.reason, rank)
+                answers[entry.plugin] = Skipped(
+                    entry.plugin, Reason.not_configured, ready.reason, rank
+                )
                 not_ready[entry.plugin] = ready
-                setting = f" (set {ready.setting})" if ready.setting else ""
+                setting = f" (set {ready.spelled})" if ready.spelled else ""
                 reasons.append(f"{entry.plugin}: {ready.reason}{setting}")
                 continue
             runnable.append((entry, rank))
@@ -278,7 +280,7 @@ def gather[C: Contract, **P, R](
 
         def ask(job: tuple[BoundProvider, int | None]) -> tuple[Answer[R], list[StaleData]]:
             provider, rank = job
-            return _ask(provider, wanted, rank, refresh, seconds, args, kwargs)
+            return _ask(provider, wanted, rank, refresh, args, kwargs)
 
         def keep(
             job: tuple[BoundProvider, int | None], asked: tuple[Answer[R], list[StaleData]]
@@ -300,17 +302,33 @@ def gather[C: Contract, **P, R](
     return call
 
 
-def _excluded[R](plugin: str, reason: str, detail: str, rank: int | None) -> Answer[R]:
+def _picked(
+    plugins: Collection[type[Contract] | str] | None,
+) -> Callable[[BoundProvider | Quarantined], bool]:
+    """Whether ``gather(plugins=)`` asks an offer: by its plugin's name or its provider class."""
+    if plugins is None:
+        return lambda _: True
+    names = {each for each in plugins if isinstance(each, str)}
+    classes = tuple(each for each in plugins if isinstance(each, type))
+    return lambda entry: (
+        entry.plugin in names
+        or (isinstance(entry, BoundProvider) and isinstance(entry.instance, classes))
+    )
+
+
+def _excluded[R](
+    plugin: str, reason: QuarantineReason | ErrorReason, detail: str, rank: int | None
+) -> Answer[R]:
     """A provider the SDK set aside: skipped when unranked, failed when ranked.
 
     The failure hints at upgrading ``plugin`` unless the reason is no defect
     of its own (its owner is not installed).
     """
     if rank is None:
-        return Skipped(plugin, reason, detail, rank)
-    hint = None if reason == "owner-not-installed" else upgrade_hint(plugin)
+        return Skipped(plugin, cast("SkipReason", reason), detail, rank)
+    hint = None if reason == Reason.owner_not_installed else upgrade_hint(plugin)
     error = ConfigError(detail, system=plugin, hint=hint)
-    return Failed(plugin, error, rank, reason)
+    return Errored(plugin, error, rank, reason)
 
 
 def _ask[R](
@@ -318,13 +336,12 @@ def _ask[R](
     method: Method,
     rank: int | None,
     refresh: bool | None,
-    deadline: float | None,
     args: Any,
     kwargs: Any,
 ) -> tuple[Answer[R], list[StaleData]]:
     """``provider``'s answer, and the stale lines its caches left for whoever reads it."""
     caller = f"{provider.plugin}'s {provider.binding.contract.cls.__name__}.{method.name}"
-    with call_state(refresh, caller=caller) as state, request_deadline(deadline):
+    with call_state(refresh, caller=caller) as state:
         return _answer(provider, method, rank, state, args, kwargs), state.stale_lines
 
 
@@ -340,11 +357,11 @@ def _answer[R](
     try:
         value = getattr(provider.instance, method.name)(*args, **kwargs)
     except NeverRefreshed:
-        return Skipped(plugin, "no-cache", "no cached answer is stored", rank)
+        return Skipped(plugin, Reason.no_cache, "no cached answer is stored", rank)
     except UntapedError as exc:
-        return Failed(plugin, exc, rank, "raised")
+        return Errored(plugin, exc, rank, Reason.raised)
     except Exception as exc:
-        return Failed(plugin, _unexpected(plugin, method, exc), rank, "raised")
+        return Errored(plugin, _unexpected(plugin, method, exc), rank, Reason.raised)
     try:
         checked, invalid = validate(provider.binding, method, value)
     except _Invalid as exc:
@@ -353,9 +370,9 @@ def _answer[R](
     if state.stale is not None:
         cause = state.stale
         if isinstance(cause, UntapedError):
-            stale = Failed(plugin, cause, rank, "raised")
+            stale = Errored(plugin, cause, rank, Reason.raised)
         else:
-            stale = Failed(plugin, _unexpected(plugin, method, cause), rank, "raised")
+            stale = Errored(plugin, _unexpected(plugin, method, cause), rank, Reason.raised)
     return Ok(plugin, checked, rank, state.refreshed_at, stale, invalid)
 
 
@@ -416,7 +433,7 @@ def _message(exc: ValueError) -> str:
 
 def _invalid(binding: Binding, what: Any, message: str) -> _Invalid:
     name = getattr(what, "__qualname__", repr(what))
-    return _Invalid("invalid-item", f"{binding.plugin} returned an invalid {name}: {message}")
+    return _Invalid(Reason.invalid_item, f"{binding.plugin} returned an invalid {name}: {message}")
 
 
 def issue[I: Issued](binding: Binding, model: type[I], item: object) -> I:
@@ -432,7 +449,7 @@ def issue[I: Issued](binding: Binding, model: type[I], item: object) -> I:
     if source is None:
         if not binding.owns_item:
             raise _Invalid(
-                "unbridged-item",
+                Reason.unbridged_item,
                 f"{binding.plugin} returned a {model.__qualname__} without a source; "
                 "build it with the provider's bridge method",
             )
@@ -440,7 +457,7 @@ def issue[I: Issued](binding: Binding, model: type[I], item: object) -> I:
     elif not isinstance(source, Source) or source.plugin != binding.plugin:
         named = source.plugin if isinstance(source, Source) else source
         raise _Invalid(
-            "unbridged-item",
+            Reason.unbridged_item,
             f"{binding.plugin} returned a {model.__qualname__} whose source names {named!r}",
         )
     data = item.model_dump(mode="json", by_alias=True, round_trip=True, warnings=False)

@@ -153,6 +153,7 @@ def _offers(
 ) -> list[PluginCheckRow]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
     from untaped.runtime.contracts.registry import BoundProvider, every_offer  # noqa: PLC0415
+    from untaped.sdk.contracts import Reason  # noqa: PLC0415
 
     installed = {candidate.name for candidate in candidates}
     owners = [owner for owner in spec.provides if owner in installed]
@@ -168,7 +169,7 @@ def _offers(
                 title = (
                     entry.owner if entry.contract is None else _what(entry.owner, entry.contract)
                 )
-                if entry.reason == "owner-not-installed":
+                if entry.reason == Reason.owner_not_installed:
                     rows.append(row("registration", title, "pass", f"skipped: {entry.detail}"))
                 else:
                     rows.append(
@@ -216,7 +217,7 @@ def _provider(
     waiting = None
     if ready is not None:
         waiting = f"skipped: not ready: {ready.reason}" + (
-            f" (set {ready.setting})" if ready.setting else ""
+            f" (set {ready.spelled})" if ready.spelled else ""
         )
     rows = list(_conformance(provider, composed, candidates, waiting, row))
     samples: list[object] = []
@@ -292,16 +293,17 @@ def _live(
 def _call(
     provider: BoundProvider, name: str, title: str, samples: list[object], row: _Row
 ) -> PluginCheckRow:
-    from untaped.sdk.contracts import Failed, Ok, gather  # noqa: PLC0415
+    from untaped.sdk.contracts import Errored, Ok, gather  # noqa: PLC0415
 
     binding = provider.binding
     try:
-        answers = gather(getattr(binding.contract.cls, name), refresh=True)()
+        method = getattr(binding.contract.cls, name)
+        answers = gather(method, plugins={binding.plugin}, refresh=True)()
     except Exception as exc:
         return row("live", title, "fail", _message(exc))
     answers.take_stale()  # a stale answer is this row's failure, not a warning
     answer = next((each for each in answers if each.plugin == binding.plugin), None)
-    if isinstance(answer, Failed):
+    if isinstance(answer, Errored):
         return row("live", title, "fail", _message(answer.error))
     if not isinstance(answer, Ok):
         reason = "not asked" if answer is None else f"{answer.reason}: {answer.detail}"

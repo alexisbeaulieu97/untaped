@@ -34,7 +34,8 @@ from untaped.runtime.contracts.registry import BoundProvider, offers, upgrade_hi
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts._declare import ContractInfo, method_contract
-from untaped.sdk.contracts._gather import Answers, Failed, Ok, Skipped, _Invalid, issue
+from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue
+from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.records import kind_of, record_model
 
@@ -63,7 +64,7 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
     """
     failed, skipped, found = _sorted(answers, matches)
     for skip in skipped:
-        if skip.reason != "not-configured":
+        if skip.reason != Reason.not_configured:
             _warn(f"{skip.plugin} wasn't asked ({skip.reason}): {skip.detail}")
     if failed:
         lowest = min(_rank_key(each.rank) for each in failed)
@@ -94,27 +95,27 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
 
 def _sorted[I](
     answers: Answers[list[I]], matches: Callable[[I], bool]
-) -> tuple[list[Failed], list[Skipped], list[tuple[Ok[list[I]], list[I]]]]:
+) -> tuple[list[Errored], list[Skipped], list[tuple[Ok[list[I]], list[I]]]]:
     """Rules 1 and 2: the failures (stale absences included), the skips and the matches."""
-    failed: list[Failed] = []
+    failed: list[Errored] = []
     skipped: list[Skipped] = []
     found: list[tuple[Ok[list[I]], list[I]]] = []
     for answer in answers._unsaid():
-        if isinstance(answer, Failed):
+        if isinstance(answer, Errored):
             failed.append(answer)
         elif isinstance(answer, Skipped):
             skipped.append(answer)
         elif answer.invalid:
             detail = f"{len(answer.invalid)} invalid: {answer.invalid[0]}"
             if answer.rank is None:
-                skipped.append(Skipped(answer.plugin, "invalid-item", detail))
+                skipped.append(Skipped(answer.plugin, Reason.invalid_item, detail))
             else:
                 error = ConfigError(
                     f"{answer.plugin} returned {detail}",
                     system=answer.plugin,
                     hint=upgrade_hint(answer.plugin),
                 )
-                failed.append(Failed(answer.plugin, error, answer.rank, "invalid-item"))
+                failed.append(Errored(answer.plugin, error, answer.rank, Reason.invalid_item))
         elif hits := [item for item in answer.value if matches(item)]:
             found.append((answer, hits))
         elif answer.stale is not None:

@@ -20,30 +20,30 @@ from untaped.sdk.contracts._declare import (
     cached,
 )
 from untaped.sdk.contracts._gather import (
-    Answer,
     Answers,
-    Failed,
+    Errored,
     NoProviderReady,
     Ok,
     Skipped,
     gather,
 )
 from untaped.sdk.contracts._providing import providing
+from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.contracts._select import Ambiguous, NotFound, convert, select_one
 from untaped.sdk.records import Issued, Record, Source
 
 __all__ = [
     "Ambiguous",
-    "Answer",
     "Answers",
     "Contract",
-    "Failed",
+    "Errored",
     "Issued",
     "NoProviderReady",
     "NotFound",
     "NotReady",
     "Ok",
     "Provider",
+    "Reason",
     "Record",
     "Skipped",
     "Source",

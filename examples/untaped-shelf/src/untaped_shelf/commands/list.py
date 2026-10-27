@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from untaped.sdk import Command, Output
-from untaped.sdk.contracts import Failed, Ok, Skipped, gather
+from untaped.sdk.contracts import Reason, gather
 from untaped_shelf.api import Book, BookSource
 from untaped_shelf.settings import ShelfSettings
 
@@ -17,10 +17,11 @@ class List(Command[ShelfSettings]):
 
     def run(self) -> Iterator[Book]:
         diag = self.ctx.diag
-        for answer in gather(BookSource.books)():
-            if isinstance(answer, Ok):
-                yield from answer.value  # a stale one says so on stderr as it is read here
-            elif isinstance(answer, Failed):
-                diag.failure(answer.error, item=answer.plugin)
-            elif isinstance(answer, Skipped) and answer.reason != "not-configured":
-                diag.warning(f"{answer.plugin} wasn't asked: {answer.detail}")
+        answers = gather(BookSource.books)()
+        for errored in answers.errored:
+            diag.failure(errored.error, item=errored.plugin)
+        for skipped in answers.skipped:
+            if skipped.reason != Reason.not_configured:
+                diag.warning(f"{skipped.plugin} wasn't asked: {skipped.detail}")
+        for ok in answers.ok:
+            yield from ok.value  # a stale one says so on stderr as it is read here

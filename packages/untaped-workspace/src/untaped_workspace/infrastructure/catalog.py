@@ -125,7 +125,7 @@ def _unasked_hint(exc: NoProviderReady) -> str:
         )
     parts = []
     for plugin, ready in exc.not_ready.items():
-        setting = f"; set {ready.setting}" if ready.setting else ""
+        setting = f"; set {ready.spelled}" if ready.spelled else ""
         parts.append(f"{plugin} wasn't asked: {ready.reason}{setting}")
     return f"{'; '.join(parts)}, or {_URL_HINT}"
 

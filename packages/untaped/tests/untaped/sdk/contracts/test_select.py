@@ -21,9 +21,8 @@ from untaped.runtime.registry import PluginSpec
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts import (
     Ambiguous,
-    Answer,
     Answers,
-    Failed,
+    Errored,
     NotFound,
     Ok,
     Skipped,
@@ -34,18 +33,20 @@ from untaped.sdk.contracts import (
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError, UsageError
 
 
-def _answers(*items: Answer[list[Book]]) -> Answers[list[Book]]:
+def _answers(*items: Ok[list[Book]] | Errored | Skipped) -> Answers[list[Book]]:
     return Answers(items, owner="shelf", contract="book_source", method="books")
 
 
 def _ok(plugin: str, *titles: str, rank: int | None = None, stale: bool = False) -> Ok[list[Book]]:
     books = [Book(title=title) for title in titles]
-    failure = Failed(plugin, HttpTransportError("HTTP 503", system=plugin), rank) if stale else None
+    failure = (
+        Errored(plugin, HttpTransportError("HTTP 503", system=plugin), rank) if stale else None
+    )
     return Ok(plugin, books, rank, stale=failure)
 
 
-def _failed(plugin: str, rank: int | None = None, error: UntapedError | None = None) -> Failed:
-    return Failed(plugin, error or HttpTransportError("HTTP 503", system=plugin), rank)
+def _failed(plugin: str, rank: int | None = None, error: UntapedError | None = None) -> Errored:
+    return Errored(plugin, error or HttpTransportError("HTTP 503", system=plugin), rank)
 
 
 def _dune(book: Book) -> bool:

@@ -13,7 +13,7 @@ or names another repo than ``full_name``, is refused.
 
 from __future__ import annotations
 
-from untaped.sdk import UsageError, app_context
+from untaped.sdk import UsageError, app_context, key
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_git.api import store_key
 from untaped_github.application.inventory import (
@@ -43,7 +43,7 @@ class GithubRepos(RepoSource[GithubRepo], Provider[GithubSettings]):
             teams = isinstance(exc.__cause__, ValueError)  # a malformed team, not no scope
             return NotReady(
                 "github.inventory.teams needs ORG/SLUG entries" if teams else "no inventory scope",
-                setting="github.inventory.teams" if teams else "github.default_org",
+                key(GithubSettings).inventory.teams if teams else key(GithubSettings).default_org,
             )
         return None
 

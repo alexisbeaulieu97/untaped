@@ -28,7 +28,7 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.sdk.contracts import Contract, Failed, Ok, Provider, Skipped, gather
+from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
@@ -114,7 +114,7 @@ def test_a_quarantined_ranked_provider_fails(
     monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("library",))
     caplog.set_level(logging.DEBUG, logger="untaped")
     library = gather(BookSource.books)()[0]
-    assert isinstance(library, Failed)
+    assert isinstance(library, Errored)
     assert library.reason == "bad-provider"
     assert library.error.exit_code == ExitCode.ENVIRONMENT
     assert "of library raised RuntimeError: boom" in str(library.error)

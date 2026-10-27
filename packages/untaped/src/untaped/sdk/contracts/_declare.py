@@ -19,7 +19,7 @@ import re
 import types
 from abc import ABC
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import (
     TYPE_CHECKING,
@@ -43,21 +43,20 @@ from pydantic import (
 from pydantic_core import PydanticSerializationError, to_json
 
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
+from untaped.sdk.fields import SettingKey
+from untaped.sdk.fields import key as setting_key
 from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
     from untaped.runtime.registry import PluginSpec
     from untaped.sdk._run import ProviderContext
-    from untaped.sdk.network.http import HttpClient, VerifyTypes
 
 #: Set to ``True`` on a function a provider base defines for its own role (a rule
 #: decorator, say), so doctor's unused-method check doesn't report it as a removed
 #: contract method.
 PROVIDER_HELPER = "__untaped_provider_helper__"
 
-#: Names a contract method may not take: the provider machinery's own.
-SDK_NAMES = frozenset({"providers", "gather", "convert", "on", "own", "ready", "settings", "http"})
 
 _BRIDGE = "__untaped_bridge__"
 _CACHED = "__untaped_cached__"
@@ -76,10 +75,18 @@ class ContractError(TypeError):
 
 @dataclass(frozen=True)
 class NotReady:
-    """Why a provider can't answer in this profile (``Contract.ready``)."""
+    """Why a provider can't answer in this profile (``Contract.ready``).
+
+    ``reason`` is prose the provider writes; ``setting`` is the key that
+    would make it ready, as ``key(GithubSettings).default_org``. Core spells
+    it in full for doctor and the ``config set`` hint (``spelled``,
+    ``github.default_org``) when it reads ``ready()``; a provider never sets
+    ``spelled``.
+    """
 
     reason: str
-    setting: str | None = None
+    setting: SettingKey | None = None
+    spelled: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -283,15 +290,6 @@ class Contract(ABC):  # noqa: B024 - every method has a default
             return self._settings_ready()
         return None
 
-    @property
-    def http(self) -> HttpClient:
-        """The SDK's HTTP client for this provider: the profile's proxy, CA and timeout.
-
-        Inside ``gather(deadline=...)`` no request starts past the deadline
-        (true of every untaped ``HttpClient``; another library's is not bounded).
-        """
-        return _per_profile(self, "_untaped_http", lambda: _http_client(binding_of(self)))
-
     def own(self, item: Issued) -> Record:
         """The provider's own record ``item`` was issued from (rehydrated from ``source``)."""
         binding = binding_of(self)
@@ -329,21 +327,6 @@ def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
     value = load()
     vars(holder)[attribute] = (binding, value)
     return value
-
-
-def _http_client(binding: Binding | None, *, verify: VerifyTypes | None = None) -> HttpClient:
-    """The profile's client for ``binding``'s provider; ``verify`` replaces the profile's TLS."""
-    from untaped.runtime.settings import load_core_part  # noqa: PLC0415
-    from untaped.sdk.network.http import HttpClient, RetryPolicy, resolve_verify  # noqa: PLC0415
-
-    http = load_core_part("http")
-    return HttpClient(
-        verify=resolve_verify(http) if verify is None else verify,
-        timeout=http.timeout_seconds,
-        proxy=http.proxy,
-        retry=RetryPolicy(),
-        system=None if binding is None else binding.plugin,
-    )
 
 
 class Provider[S: BaseModel]:
@@ -388,11 +371,33 @@ class Provider[S: BaseModel]:
             cause = exc.__cause__
             setting = None
             if isinstance(cause, ValidationError) and cause.errors():
-                loc = ".".join(str(part) for part in cause.errors()[0]["loc"])
-                binding = binding_of(self)
-                setting = loc if binding is None else f"{binding.plugin}.{loc}"
-            return NotReady(str(exc), setting=setting)
+                setting = _key_at(type(self), cause.errors()[0]["loc"])
+            return NotReady(str(exc), setting)
         return None
+
+
+def _key_at(provider: type, loc: tuple[int | str, ...]) -> SettingKey | None:
+    """The settings key at a validation error's ``loc``, as far as it names fields."""
+    model = settings_type(provider)
+    if model is None:
+        return None
+    found = setting_key(model)
+    for part in loc:
+        if not isinstance(part, str):
+            break
+        try:
+            found = getattr(found, part)
+        except AttributeError:
+            break
+    return found if SettingKey.path_of(found) else None
+
+
+@functools.cache
+def _base_names() -> frozenset[str]:
+    """The public names a provider's base classes define (``ready``, ``own``, ``ctx``...)."""
+    return frozenset(
+        name for klass in (Contract, Provider) for name in vars(klass) if not name.startswith("_")
+    )
 
 
 def settings_type(cls: type) -> type[BaseModel] | None:
@@ -508,7 +513,7 @@ def unused_methods(provider: type[Contract], contract: ContractInfo) -> list[str
                 not name.startswith("_")
                 and inspect.isfunction(value)
                 and name not in contract.methods
-                and name not in SDK_NAMES
+                and name not in _base_names()
                 and not getattr(value, PROVIDER_HELPER, False)
                 and name not in unused
             ):
@@ -564,10 +569,11 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
     for name, value in vars(cls).items():
         if name.startswith("_") or not inspect.isfunction(value):
             continue
-        if name in SDK_NAMES or hasattr(builtins, name):
+        if name in _base_names() or hasattr(builtins, name):
             raise TypeError(
                 f"{where}.{name}: a contract method may not be named after "
-                f"{'SDK machinery' if name in SDK_NAMES else 'a builtin'} (pick another name)"
+                f"{'a provider attribute' if name in _base_names() else 'a builtin'} "
+                "(pick another name)"
             )
         hints = _signature_hints(where, name, value, params)
         cache = getattr(value, _CACHED, None)

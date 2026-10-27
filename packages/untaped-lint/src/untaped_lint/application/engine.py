@@ -21,7 +21,16 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, InstalledPlugin, plural
-from untaped.sdk.contracts import Failed, NoProviderReady, Ok, Skipped, Source, gather, providing
+from untaped.sdk.contracts import (
+    Errored,
+    NoProviderReady,
+    Ok,
+    Reason,
+    Skipped,
+    Source,
+    gather,
+    providing,
+)
 from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
 from untaped_lint.application.repo_file import RepoFile
@@ -351,9 +360,9 @@ def _ask(
     return found
 
 
-def _not_checked(answer: Failed | Skipped, report: Report, *, rules: int | None) -> None:
+def _not_checked(answer: Errored | Skipped, report: Report, *, rules: int | None) -> None:
     details = {} if rules is None else {"rules": rules}
-    if isinstance(answer, Failed):
+    if isinstance(answer, Errored):
         failure = Failure.from_exception(answer.error)
         report.failures.append(
             failure.model_copy(
@@ -364,7 +373,7 @@ def _not_checked(answer: Failed | Skipped, report: Report, *, rules: int | None)
                 }
             )
         )
-    elif answer.reason == "not-configured":
+    elif answer.reason == Reason.not_configured:
         report.warnings.append(f"{answer.plugin}'s rules did not run: {answer.detail}")
     else:
         report.failures.append(

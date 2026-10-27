@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from untaped.sdk import PickCatalog, PickItem, UsageError
-from untaped.sdk.contracts import Answers, Failed, NoProviderReady, Ok, Skipped, gather
+from untaped.sdk.contracts import Answers, Errored, NoProviderReady, Ok, Reason, Skipped, gather
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoArg
 from untaped_workspace.domain.naming import repo_key, typed_repo
@@ -163,11 +163,11 @@ class RepoPickSource:
         return items
 
 
-def _note(answer: Ok[list[Repo]] | Failed | Skipped) -> str | None:
+def _note(answer: Ok[list[Repo]] | Errored | Skipped) -> str | None:
     """One provider's footer part: how many repos and how fresh, or why there are none."""
     plugin = answer.plugin
     match answer:
-        case Ok(stale=Failed(error=error)):
+        case Ok(stale=Errored(error=error)):
             return f"{plugin}: cached repos only: {error}"
         case Ok(value=value, refreshed_at=at, invalid=invalid):
             note = f"{plugin}: {_repos(len(value))}"
@@ -176,11 +176,11 @@ def _note(answer: Ok[list[Repo]] | Failed | Skipped) -> str | None:
             if invalid:
                 note += f", {len(invalid)} invalid ({invalid[0]}; upgrade untaped-{plugin})"
             return note
-        case Failed(error=error):
+        case Errored(error=error):
             return f"{plugin}: {error}"
-        case Skipped(reason="not-configured"):
+        case Skipped(reason=Reason.not_configured):
             return None
-        case Skipped(reason="no-cache"):
+        case Skipped(reason=Reason.no_cache):
             return f"{plugin}: not listed yet"
         case Skipped(reason=reason, detail=detail):
             return f"{plugin}: {reason} ({detail})"

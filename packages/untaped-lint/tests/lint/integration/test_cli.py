@@ -104,7 +104,7 @@ def test_every_provider_quarantined_exits_4() -> None:
 def test_a_provider_that_is_not_ready_says_so_when_it_is_the_only_one() -> None:
     class Lazy(Acme):
         def ready(self) -> NotReady:
-            return NotReady(reason="needs a token", setting="acme.token")
+            return NotReady(reason="needs a token")
 
     with compose_with("lint", provides={"acme": [Lazy()]}):
         result = _lint()

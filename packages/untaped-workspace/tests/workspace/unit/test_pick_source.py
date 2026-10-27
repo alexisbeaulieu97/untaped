@@ -14,7 +14,7 @@ from untaped.sdk import UntapedError
 # install() cannot compose (workspace is still a PluginSpec), so they use the
 # kit's private hook until workspace's tests move onto install(...).running().
 from untaped.sdk._run import recording  # untaped: allow private-test-import
-from untaped.sdk.contracts import Answers, Failed, NoProviderReady, NotReady, Ok, Skipped, Source
+from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped, Source
 from untaped.sdk.diagnostic import StaleData
 from untaped.sdk.testing import compose_with
 from untaped_git import SPEC as GIT
@@ -49,7 +49,7 @@ class FakeGit:
         return self._stored
 
 
-def answers(*items: Ok[list[Repo]] | Failed | Skipped) -> Answers[list[Repo]]:
+def answers(*items: Ok[list[Repo]] | Errored | Skipped) -> Answers[list[Repo]]:
     return Answers(items, owner="workspace", contract="repo_source", method="repos")
 
 
@@ -63,7 +63,7 @@ def ok(plugin: str, *repos: Repo, **fields: object) -> Ok[list[Repo]]:
 type Ask = Callable[[bool | None], Answers[list[Repo]]]
 
 
-def always(*items: Ok[list[Repo]] | Failed | Skipped) -> Ask:
+def always(*items: Ok[list[Repo]] | Errored | Skipped) -> Ask:
     return lambda refresh: answers(*items)
 
 
@@ -103,7 +103,7 @@ def test_the_refresh_directive_reaches_the_providers() -> None:
 
 def test_a_provider_serving_its_stored_answer_says_so_and_a_pick_of_another_works() -> None:
     """S7 (after the refresh): github down, its stored answer stands in; a gitlab pick works."""
-    down = Failed("github", UntapedError("HTTP 503"))
+    down = Errored("github", UntapedError("HTTP 503"))
     infra = repo("infra/web", "gitlab.example")
     source = _source(ask=always(ok("github", API, stale=down), ok("gitlab", infra)))
     catalog = source.catalog(refresh=True)
@@ -130,13 +130,13 @@ def test_an_answer_with_invalid_rows_counts_them_and_names_the_upgrade() -> None
 @pytest.mark.parametrize(
     ("answer", "note"),
     [
-        (Failed("gitlab", UntapedError("401 Unauthorized")), "gitlab: 401 Unauthorized"),
+        (Errored("gitlab", UntapedError("401 Unauthorized")), "gitlab: 401 Unauthorized"),
         (Skipped("gitlab", "not-configured", "no base URL"), ""),
         (Skipped("gitlab", "no-cache", "no cached answer is stored"), "gitlab: not listed yet"),
         (Skipped("gitlab", "missing-bridge", "no to_repo"), "gitlab: missing-bridge (no to_repo)"),
     ],
 )
-def test_a_provider_without_repos_says_why(answer: Failed | Skipped, note: str) -> None:
+def test_a_provider_without_repos_says_why(answer: Errored | Skipped, note: str) -> None:
     assert _source(ask=always(answer)).catalog(refresh=None).note == note
 
 
@@ -203,7 +203,7 @@ def test_branches_before_the_catalog_is_not_memoised() -> None:
 def test_a_stored_only_pick_is_named_like_its_typed_url() -> None:
     """The picker id keeps the host; the repo is named by its URL path, as typing it would."""
     git = FakeGit(_stored("gitlab.example/team/tool", "git@gitlab.example:team/tool.git"))
-    source = _source(git, ask=always(Failed("github", UntapedError("HTTP 503"))))
+    source = _source(git, ask=always(Errored("github", UntapedError("HTTP 503"))))
     source.catalog(refresh=None)
     assert source.pick_arg(RepoArg(ident="gitlab.example/team/tool")) == RepoArg(
         ident="team/tool",

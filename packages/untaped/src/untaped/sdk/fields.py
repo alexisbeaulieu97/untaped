@@ -43,8 +43,9 @@ from untaped.sdk.errors import (
 )
 
 if TYPE_CHECKING:
-    from pydantic import GetCoreSchemaHandler
+    from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
     from pydantic.fields import FieldInfo
+    from pydantic.json_schema import JsonSchemaValue
     from rich.text import Text
 
     from untaped.sdk._cli import OutputFormat
@@ -323,6 +324,14 @@ class SettingKey:
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         return core_schema.is_instance_schema(cls, serialization=core_schema.to_string_ser_schema())
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """A key serialises as its dotted path."""
+        del schema, handler
+        return {"type": "string"}
 
 
 def _model_in(annotation: object) -> type[BaseModel] | None:

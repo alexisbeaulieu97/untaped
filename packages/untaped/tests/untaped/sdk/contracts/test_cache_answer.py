@@ -28,7 +28,7 @@ from core_test_support.contracts.support import write_config as configure
 from untaped.runtime.contracts.registry import BoundProvider, offers
 from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
-from untaped.sdk.contracts import Failed, Ok, Skipped, gather, select_one
+from untaped.sdk.contracts import Errored, Ok, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._gather import Answers
 from untaped.sdk.diagnostic import Diagnostic, Failure, Message, Progress, StaleData
@@ -408,7 +408,7 @@ def test_a_never_refreshed_answer_that_failed_is_asked_again(clock: CacheClock) 
     Library.error = DOWN
     [first] = gather(BookSource.books)()
     [again] = gather(BookSource.books)()
-    assert isinstance(first, Failed) and isinstance(again, Failed)
+    assert isinstance(first, Errored) and isinstance(again, Errored)
     assert again.error is DOWN
     assert Library.calls == 2
 

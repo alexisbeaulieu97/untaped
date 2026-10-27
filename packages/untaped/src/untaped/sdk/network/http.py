@@ -21,8 +21,6 @@ import shlex
 import ssl
 import time
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
@@ -48,7 +46,7 @@ from untaped.runtime.settings import (
     load_core_part,
     registered_profile_model,
 )
-from untaped.sdk._run import Clock, run_clock
+from untaped.sdk._run import run_clock
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import (
     ConfigError,
@@ -190,53 +188,6 @@ def _ssl_context(ca_bundle_path: Path | None) -> ssl.SSLContext:
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
-#: The clock a deadline was set on and the time on it when the deadline ends.
-_DEADLINE: ContextVar[tuple[Clock, float] | None] = ContextVar(
-    "untaped_http_deadline", default=None
-)
-
-
-@contextmanager
-def request_deadline(seconds: float | None) -> Iterator[None]:
-    """Bound every :class:`HttpClient` request in the block to ``seconds`` from now.
-
-    Inside it, a request starts only while time is left, and each attempt's
-    timeout is capped at the time left; the retry policy still applies within
-    the budget, and a retry whose wait would end past it is not made (the
-    last error stands). A request past it raises :class:`HttpTransportError`
-    (``unavailable``). ``None`` leaves an enclosing deadline in effect. The
-    deadline is a context variable, so threads started with a copied context
-    (``bounded_map``) share it. It counts down on the clock it was set on
-    (:func:`~untaped.sdk._run.run_clock` then).
-    """
-    if seconds is None:
-        yield
-        return
-    left = _time_left()
-    clock = run_clock()
-    held = _DEADLINE.get()
-    keep = held is not None and left is not None and left <= seconds
-    token = _DEADLINE.set(held if keep else (clock, clock.monotonic() + seconds))
-    try:
-        yield
-    finally:
-        _DEADLINE.reset(token)
-
-
-def _time_left() -> float | None:
-    held = _DEADLINE.get()
-    if held is None:
-        return None
-    clock, ends = held
-    return ends - clock.monotonic()
-
-
-def _fits(delay: float) -> bool:
-    """Whether a retry after ``delay`` seconds could still start before the deadline."""
-    left = _time_left()
-    return left is None or delay < left
-
-
 class HttpClient:
     """A minimal HTTP client suitable for talking to JSON APIs.
 
@@ -289,9 +240,7 @@ class HttpClient:
         then each hop is signed again and one that leaves the request's origin
         raises :class:`HttpError` naming both, before anything is sent there.
         A final failure carries the client's ``system`` and the number of
-        ``attempts`` in its ``details``. Inside :func:`request_deadline`, no
-        attempt starts past the deadline and each one's timeout is capped at
-        the time left. While the upstream budget is capped
+        ``attempts`` in its ``details``. While the upstream budget is capped
         (:mod:`untaped.sdk.network.upstream`), the request is tried once with its timeout
         capped at ``PROBE_TIMEOUT``; a response lifts a ``fail_fast`` cap.
         """
@@ -336,9 +285,8 @@ class HttpClient:
                     and attempt < policy.max_attempts
                     and transient
                     and policy.allows_transport_retry(method, presend=presend)
-                    and _fits(delay := policy.backoff(attempt))
                 ):
-                    _sleep_before_retry(delay, attempt, policy)
+                    _sleep_before_retry(policy.backoff(attempt), attempt, policy)
                     continue
                 raise HttpTransportError(
                     str(exc),
@@ -353,10 +301,8 @@ class HttpClient:
                     policy is not None
                     and attempt < policy.max_attempts
                     and policy.allows_status_retry(method, response.status_code)
-                    and _fits(
-                        delay := policy.status_delay(attempt, response.headers.get("Retry-After"))
-                    )
                 ):
+                    delay = policy.status_delay(attempt, response.headers.get("Retry-After"))
                     _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpStatusError(
@@ -376,10 +322,8 @@ class HttpClient:
         Each hop sent is appended to ``sent``, so the caller knows which
         request a failure or the response belongs to. httpx builds each hop
         (``next_request``, its method and body per the status); the hop is
-        signed again by the client's ``auth``, and none starts past the
-        deadline.
+        signed again by the client's ``auth``.
         """
-        import httpx  # noqa: PLC0415
 
         response = self._client.send(sent[0])
         while follow and (hop := response.next_request) is not None:
@@ -402,41 +346,18 @@ class HttpClient:
                     url=str(request.url),
                     system=self.system,
                 )
-            left = _time_left()
-            if left is not None and left <= 0:
-                raise HttpTransportError(
-                    "request deadline exceeded before a redirect was followed",
-                    url=str(hop.url),
-                    system=self.system,
-                )
-            if left is not None:
-                # httpx copies the first request's timeout onto the hop; cap it.
-                copied = hop.extensions.get("timeout", {})
-                hop.extensions["timeout"] = {
-                    key: left if value is None else min(value, left)
-                    for key, value in httpx.Timeout(**copied).as_dict().items()
-                }
             _log_exchange(request, f"{response.status_code} -> {hop.url}", started)
             sent.append(hop if self._auth is None else self._auth(hop))
             response = self._client.send(sent[-1])
         return response
 
     def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """``kwargs`` with the timeout capped by the upstream budget and the deadline."""
-        limit = kwargs.get("timeout", self._timeout)
-        if capped():
-            limit = min(limit, PROBE_TIMEOUT) if isinstance(limit, int | float) else PROBE_TIMEOUT
-            kwargs = {**kwargs, "timeout": limit}
-        left = _time_left()
-        if left is None:
+        """``kwargs`` with the timeout capped by the upstream budget."""
+        if not capped():
             return kwargs
-        if left <= 0:
-            raise HttpTransportError(
-                "request deadline exceeded before the request started",
-                system=self.system,
-            )
-        bounded = min(left, limit) if isinstance(limit, int | float) else left
-        return {**kwargs, "timeout": bounded}
+        limit = kwargs.get("timeout", self._timeout)
+        limit = min(limit, PROBE_TIMEOUT) if isinstance(limit, int | float) else PROBE_TIMEOUT
+        return {**kwargs, "timeout": limit}
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", path, **kwargs)
