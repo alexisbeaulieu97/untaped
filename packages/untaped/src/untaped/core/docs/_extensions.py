@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from untaped.core.docs._commands import mark
 from untaped.core.docs._docstring import describe, markdown
+from untaped.core.docs._models import Section, tables
 from untaped.core.docs._models import address as kind_address
-from untaped.core.docs._models import tables
 from untaped.core.docs._site import ORGANIZED, Site
-from untaped.runtime.declaration import PluginDecl, PointDecl
+from untaped.runtime.declaration import KindDecl, PluginDecl, PointDecl
 
 
 def find(plugin: PluginDecl, word: str) -> PointDecl | None:
@@ -66,11 +66,21 @@ def page(site: Site, plugin: PluginDecl, point: PointDecl) -> list[str]:
         lines += ["", f"### `{each.name}`"]
         lines += ["", markdown(each.summary)] if each.summary else []
         kind = None if each.kind is None else site.kind(each.kind)
-        if kind is not None and site.printers(kind.kind):
-            lines += ["", f"Kind: `{kind.kind}`; its page: `{kind_address(kind, 'outputs')}`."]
+        if kind is not None and (pages := _kind_pages(site, kind)):
+            lines += ["", f"Kind: `{kind.kind}`; its page: {pages}."]
         elif each.kind is not None:
             lines += ["", f"Kind: `{each.kind}`."]
         lines += tables(each.fields, f"{each.name}.")
     if described.examples:
         lines += ["", "## Examples", "", described.examples]
     return lines
+
+
+def _kind_pages(site: Site, kind: KindDecl) -> str:
+    """The pages a kind has: its rows' when a command prints it, its file's when one reads it."""
+    sections: list[Section] = []
+    if kind in site.outputs(kind.plugin):
+        sections.append("outputs")
+    if kind in site.inputs(kind.plugin):
+        sections.append("inputs")
+    return " and ".join(f"`{kind_address(kind, section)}`" for section in sections)

@@ -53,13 +53,13 @@ def describe(doc: str | None) -> Described:
 
 
 def _fenced(examples: str) -> str:
-    """``examples`` with each run of bare ``$`` lines in a ``console`` fence."""
+    """``examples`` with each bare ``$`` line, and the output under it, in a ``console`` fence."""
     if "```" in examples:
         return examples
     lines: list[str] = []
     run: list[str] = []
     for line in [*examples.splitlines(), ""]:
-        if line.startswith("$ "):
+        if line.startswith("$ ") or (run and line.strip()):
             run.append(line)
             continue
         if run:

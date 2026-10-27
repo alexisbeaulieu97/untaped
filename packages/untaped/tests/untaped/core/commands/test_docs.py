@@ -30,6 +30,7 @@ from cyclopts import App
 from pydantic import BaseModel, Field
 
 from core_test_support.runtime.plugin_harness import make_candidate
+from untaped.core.docs._docstring import _fenced
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import (
@@ -128,6 +129,11 @@ class Rack(Contract):
     def find(self, name: str) -> Widget | None:
         """The widget called ``name``, if the provider holds one."""
         return next((each for each in self.widgets() if each.name == name), None)
+
+    def placed(self, plan: Plan) -> list[Widget]:
+        """The widgets ``plan`` adds that the provider does not hold yet."""
+        held = {each.name for each in self.widgets()}
+        return [each for each in plan.widgets if each.name not in held]
 
 
 class Store(Rack, Provider):
@@ -349,6 +355,20 @@ def test_bare_example_lines_are_fenced(acme: Install) -> None:
     _, page, _ = _docs(acme, "untaped", "commands", "config", "get")
     examples = page.split("## Examples\n", 1)[1]
     assert examples.startswith("\n```console\n$ untaped config get ")
+
+
+def test_an_example_s_output_stays_in_its_fence() -> None:
+    examples = "Show one:\n\n$ untaped acme widgets show w1\nw1  2x1\n\nThat is all."
+    assert _fenced(examples).splitlines() == [
+        "Show one:",
+        "",
+        "```console",
+        "$ untaped acme widgets show w1",
+        "w1  2x1",
+        "```",
+        "",
+        "That is all.",
+    ]
 
 
 # --- search ----------------------------------------------------------------------

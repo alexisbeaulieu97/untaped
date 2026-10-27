@@ -99,6 +99,13 @@ def test_models_in_finds_every_model_a_hint_names() -> None:
     assert models_in(str) == []
 
 
+def test_models_in_ends_at_a_recursive_alias() -> None:
+    type Shelf = list[Shelf] | Size
+
+    assert models_in(Tree) == []
+    assert models_in(Shelf) == [Size]
+
+
 def test_a_method_is_spelled_as_code_without_module_paths() -> None:
     def lookup(self: object, name: str, limit: int = 3) -> list[Widget] | None:
         """The widgets called ``name``.

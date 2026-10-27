@@ -169,12 +169,17 @@ def fields_of(model: type[BaseModel], seen: frozenset[type] = frozenset()) -> tu
     return tuple(found)
 
 
-def models_in(annotation: object) -> list[type[BaseModel]]:
-    """The models ``annotation`` names, outermost first: ``list[Book] | None`` is ``[Book]``."""
-    annotation = _peel(annotation)
+def models_in(
+    annotation: object, expanding: frozenset[object] = frozenset()
+) -> list[type[BaseModel]]:
+    """The models ``annotation`` names, outermost first: ``list[Book] | None`` is ``[Book]``.
+
+    A ``type`` alias met again inside itself names nothing more, so a recursive type ends.
+    """
+    annotation, expanding = _unwrapped(annotation, expanding)
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return [annotation]
-    return [model for arg in get_args(annotation) for model in models_in(arg)]
+    return [model for arg in get_args(annotation) for model in models_in(arg, expanding)]
 
 
 def method_decl(name: str, function: object, hints: typing.Mapping[str, Any]) -> MethodDecl:

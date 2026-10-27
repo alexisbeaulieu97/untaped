@@ -24,7 +24,7 @@ from untaped.runtime.declaration import (
     PluginDecl,
     StabilityDecl,
 )
-from untaped.sdk.marks import owner, removal_text
+from untaped.sdk.marks import removal_text
 from untaped.sdk.words import deprecated_line
 
 #: What each return shape prints, as the ``## Outputs`` section words it.
@@ -44,11 +44,13 @@ def mark(stability: StabilityDecl | None, inherited: StabilityDecl | None = None
     return f" [{stability.stability}]"
 
 
-def _deprecation(plugin: PluginDecl, stability: StabilityDecl | None) -> list[str]:
+def _deprecation(site: Site, plugin: PluginDecl, stability: StabilityDecl | None) -> list[str]:
     """The line ``--help`` ends a deprecated command with: when it goes, and what replaces it."""
     if stability is None or stability.stability != "deprecated":
         return []
-    distribution = None if plugin.name == CORE else owner(plugin.name)
+    distribution = None
+    if plugin.name != CORE:
+        distribution = site.result_plugin(plugin.name).plugin_ref.distribution
     removal = removal_text(stability.removed_in, distribution)
     return ["", deprecated_line(stability.replacement, removal)]
 
@@ -138,7 +140,7 @@ def page(site: Site, plugin: PluginDecl, node: CommandDecl | GroupDecl) -> list[
     if isinstance(node, CommandDecl) and node.asks_first:
         summary = f"{summary} (asks first)".strip()
     lines += ["", summary] if summary else []
-    lines += _deprecation(plugin, node.stability)
+    lines += _deprecation(site, plugin, node.stability)
     lines += ["", described.body] if described.body else []
     examples = described.examples
     if runs is not None and runs is not node:
