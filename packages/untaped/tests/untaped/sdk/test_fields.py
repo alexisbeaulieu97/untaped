@@ -395,6 +395,15 @@ def test_a_filled_stdin_accepts_its_models_and_their_subclasses() -> None:
     assert anything._any and sorted(anything._kinds) == sorted(kinds)
 
 
+def test_a_filled_stdin_names_the_kind_each_row_was_read_as() -> None:
+    kinds = {"acme.row": Row, "acme.narrower": Narrower, "acme.other": Other}
+    anything = Stdin()._fill({}, _call(Stdin[Record], **kinds))
+    assert anything.kind(Narrower(name="a")) == "acme.narrower"
+    assert anything.kind(Other(name="a")) == "acme.other"
+    rows = Stdin()._fill({}, _call(Stdin[Row], **kinds))
+    assert rows.kind(Other(name="a")) is None
+
+
 def test_an_unfilled_stdin_gives_back_what_was_given() -> None:
     stdin: Stdin[Row] = Stdin()
     assert stdin.identifiers(["ada"]) == ["ada"]

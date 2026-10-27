@@ -37,7 +37,7 @@ overridden for one process with the environment variable shown.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `ansible.index_path` | path | `~/.untaped/plugins/ansible/index.sqlite3` | `UNTAPED_ANSIBLE__INDEX_PATH` | SQLite cache of refreshed source data. At this default the file is `index.v<layout>.sqlite3` beside it, one per layout; a path you set is used as it is. |
+| `ansible.index_dir` | path (optional) | unset | `UNTAPED_ANSIBLE__INDEX_DIR` | Folder of the SQLite index of refreshed source data, an absolute path; the file in it is `index.v<layout>.sqlite3`, one per layout. Unset: `plugins/ansible/index/` under the untaped home. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
@@ -46,14 +46,16 @@ overridden for one process with the environment variable shown.
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. 1 or more. |
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. 0 or more. |
 | `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
-| `ansible.caches.index.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__INDEX__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `ansible.caches.source_data.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__SOURCE_DATA__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `ansible` state
 
+Kept in `~/.untaped/plugins/ansible/state.yml`.
+
 | Key | Type | Description |
 |---|---|---|
-| `ansible.sources` | list | Saved sources. Managed by `ansible source` commands. |
-| `ansible.aliases` | mapping | Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands. |
+| `ansible.sources` | list | Named GitHub search boundary for index refresh and impact queries. |
+| `ansible.aliases` | list | A role or Galaxy name and the GitHub ``owner/repo`` it stands for. |
 
 ## `awx`
 
@@ -142,7 +144,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`). Experimental: may change in a minor release. |
+| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one untaped home, which holds its workspaces' locks. Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. 1 or more. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
 | `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. Experimental: may change in a minor release. |
@@ -164,13 +166,14 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 |---|---|---|---|
 | `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
 | `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
-| `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | `ansible.caches.index.max_age_seconds` | renamed |
 | `ansible.cache_dir` | `UNTAPED_ANSIBLE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
 | `ansible.git_blob_filter` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | none | deleted in 11.0; the repo store is blobless |
 | `ansible.git_clone_protocol` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | none | deleted in 11.0; set github.git_protocol: ssh to keep ssh |
 | `ansible.git_fetch_depth` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | none | deleted in 11.0; the repo store fetches full history |
+| `ansible.index_path` | `UNTAPED_ANSIBLE__INDEX_PATH` | none | deleted in 12.0; ansible.index_dir names the folder that holds the index |
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
-| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.index.max_age_seconds |
+| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.source_data.max_age_seconds |
+| `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | none | deleted in 12.0; use ansible.caches.source_data.max_age_seconds |
 | `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | renamed |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
 | `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | retired |

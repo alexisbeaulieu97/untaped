@@ -117,6 +117,12 @@ def words(name: str) -> list[str]:
     return [word.lower() for word in _WORDS.findall(name)]
 
 
+def bundle_panel(model: type) -> str:
+    """A bundle's help panel: its class name as words, ``SourceData`` is ``Source data``."""
+    first, *rest = _WORDS.findall(model.__name__)
+    return " ".join([first, *(word if word.isupper() else word.lower() for word in rest)])
+
+
 def kebab(name: str) -> str:
     """A class name as a command word: ``JobTemplates`` is ``job-templates``."""
     return "-".join(words(name))
@@ -1206,7 +1212,7 @@ class _CommandWalk:
             self.seen.guides.append(target_of(model))
         self.optional_bundles += not required
         for name, info in model.model_fields.items():
-            self._field(name, info, prefix=f"{path}.", panel=model.__name__)
+            self._field(name, info, prefix=f"{path}.", panel=bundle_panel(model))
         self.optional_bundles -= not required
 
     def _option(

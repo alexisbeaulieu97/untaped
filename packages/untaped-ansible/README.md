@@ -51,14 +51,14 @@ untaped ansible impact acme/base-role --cached
 
 `impact` lists the repos in the source that depend on the role, at any ref,
 from cached data, and marks where the walk stopped. A source older than
-`ansible.caches.index.max_age_seconds` (one day) is refreshed first;
+`ansible.caches.source_data.max_age_seconds` (one day) is refreshed first;
 `--cached` reads only what is cached. Inline selectors such as
 `--org` answer a one-off question without saving a source.
 
 ## Find which dependents use a variable
 
 ```bash
-untaped ansible impact acme/base-role --uses base_port
+untaped ansible impact uses acme/base-role base_port
 ```
 
 One row per place a dependent defines, sets or reads `base_port`, with the
@@ -108,7 +108,7 @@ saved source or plugin still uses stays.
 
 ## Reference
 
-`untaped agents ansible` lists every command with its options, the settings, and the guides on where an answer's data comes from and how a walk resolves refs; the untaped you run generates it.
+`untaped agents ansible` lists every command with its options and the settings; the untaped you run generates it. `untaped ansible --help` explains how a walk resolves refs.
 
 `untaped skills install ansible --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) points your agent at it.
 

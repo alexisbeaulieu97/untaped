@@ -4,11 +4,11 @@ behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via
 behaviour untaped.pipe-envelope  [deprecated, removed in 12.0; use Stdin[R] reading the rows, as a command's field]
 behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
 behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use a NeedsSetup-marked CredentialKey setting and a declared Credential]
-cfg ansible.caches.index.max_age_seconds integer(minimum=0) default=86400
+cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
 cfg ansible.git_fetch_parallel integer(maximum=32,minimum=1) default=8
-cfg ansible.index_path string(format=path) default=~/.untaped/plugins/ansible/index.sqlite3
+cfg ansible.index_dir string(format=path)? default=unset
 cfg ansible.probe_parallel integer(maximum=32,minimum=1) default=8
 cfg ansible.ref_scan_default choice=all
 cfg ansible.ref_scan_default choice=default_branch
@@ -19,7 +19,6 @@ cfg ansible.source_refresh_backend choice=graphql
 cfg ansible.source_refresh_backend string default=auto
 cfg ansible.source_refresh_rate_limit_floor integer(minimum=0) default=500
 cfg ansible.source_refresh_repo_batch_size integer(minimum=1) default=100
-cfg ansible.stale_after_seconds -> ansible.caches.index.max_age_seconds  [deprecated, removed in 12.0]
 cfg awx.api_prefix string default=/api/controller/v2/
 cfg awx.base_url -> awx.server.url  [deprecated, removed in 12.0]
 cfg awx.caches.resources.max_age_seconds integer(minimum=0) default=3600
@@ -126,7 +125,7 @@ cli untaped --version switch
 cli untaped agents  [experimental]
 cli untaped agents [PATH...]@1 default=unset  [experimental]
 cli untaped ansible
-cli untaped ansible deps --all-refs switch
+cli untaped ansible deps --all-refs switch default=unset
 cli untaped ansible deps --backend VALUE default=unset
 cli untaped ansible deps --backend choice=auto
 cli untaped ansible deps --backend choice=git
@@ -141,7 +140,7 @@ cli untaped ansible deps --format choice=pipe
 cli untaped ansible deps --format choice=raw
 cli untaped ansible deps --format choice=table
 cli untaped ansible deps --format choice=yaml
-cli untaped ansible deps --live switch
+cli untaped ansible deps --live switch default=unset
 cli untaped ansible deps --org VALUE... default=unset
 cli untaped ansible deps --parallel VALUE default=unset
 cli untaped ansible deps --parallel alias=-j
@@ -159,7 +158,7 @@ cli untaped ansible deps --source VALUE... default=unset
 cli untaped ansible deps --target-repo VALUE default=unset
 cli untaped ansible deps --team VALUE... default=unset
 cli untaped ansible deps ROLE
-cli untaped ansible find --all-refs switch
+cli untaped ansible find --all-refs switch default=unset
 cli untaped ansible find --backend VALUE default=unset
 cli untaped ansible find --backend choice=auto
 cli untaped ansible find --backend choice=git
@@ -174,7 +173,7 @@ cli untaped ansible find --format choice=pipe
 cli untaped ansible find --format choice=raw
 cli untaped ansible find --format choice=table
 cli untaped ansible find --format choice=yaml
-cli untaped ansible find --live switch
+cli untaped ansible find --live switch default=unset
 cli untaped ansible find --org VALUE... default=unset
 cli untaped ansible find --parallel VALUE default=unset
 cli untaped ansible find --parallel alias=-j
@@ -189,14 +188,16 @@ cli untaped ansible find --refresh switch default=unset
 cli untaped ansible find --repo VALUE... default=unset
 cli untaped ansible find --root VALUE... default=unset
 cli untaped ansible find --source VALUE... default=unset
-cli untaped ansible find --stdin switch
+cli untaped ansible find --stdin switch default=unset
 cli untaped ansible find --team VALUE... default=unset
 cli untaped ansible find TARGET...
-cli untaped ansible graph --all-refs switch
+cli untaped ansible graph --all-refs switch default=unset
 cli untaped ansible graph --backend VALUE default=unset
 cli untaped ansible graph --backend choice=auto
 cli untaped ansible graph --backend choice=git
 cli untaped ansible graph --backend choice=graphql
+cli untaped ansible graph --columns VALUE... default=unset
+cli untaped ansible graph --columns alias=-c
 cli untaped ansible graph --depth VALUE default=unset
 cli untaped ansible graph --direction VALUE default=both
 cli untaped ansible graph --direction choice=both
@@ -206,8 +207,12 @@ cli untaped ansible graph --format VALUE default=tree
 cli untaped ansible graph --format alias=-f
 cli untaped ansible graph --format choice=json
 cli untaped ansible graph --format choice=mermaid
+cli untaped ansible graph --format choice=pipe
+cli untaped ansible graph --format choice=raw
+cli untaped ansible graph --format choice=table
 cli untaped ansible graph --format choice=tree
-cli untaped ansible graph --live switch
+cli untaped ansible graph --format choice=yaml
+cli untaped ansible graph --live switch default=unset
 cli untaped ansible graph --org VALUE... default=unset
 cli untaped ansible graph --out VALUE default=unset
 cli untaped ansible graph --out alias=-o
@@ -257,8 +262,38 @@ cli untaped ansible impact --repo VALUE... default=unset
 cli untaped ansible impact --source VALUE... default=unset
 cli untaped ansible impact --target-repo VALUE default=unset
 cli untaped ansible impact --team VALUE... default=unset
-cli untaped ansible impact --uses VALUE... default=unset
 cli untaped ansible impact ROLE
+cli untaped ansible impact uses --backend VALUE default=unset
+cli untaped ansible impact uses --backend choice=auto
+cli untaped ansible impact uses --backend choice=git
+cli untaped ansible impact uses --backend choice=graphql
+cli untaped ansible impact uses --columns VALUE... default=unset
+cli untaped ansible impact uses --columns alias=-c
+cli untaped ansible impact uses --depth VALUE default=unset
+cli untaped ansible impact uses --format VALUE default=table
+cli untaped ansible impact uses --format alias=-f
+cli untaped ansible impact uses --format choice=json
+cli untaped ansible impact uses --format choice=pipe
+cli untaped ansible impact uses --format choice=raw
+cli untaped ansible impact uses --format choice=table
+cli untaped ansible impact uses --format choice=yaml
+cli untaped ansible impact uses --org VALUE... default=unset
+cli untaped ansible impact uses --parallel VALUE default=unset
+cli untaped ansible impact uses --parallel alias=-j
+cli untaped ansible impact uses --path VALUE... default=unset
+cli untaped ansible impact uses --ref VALUE default=unset
+cli untaped ansible impact uses --ref-kind VALUE... default=unset
+cli untaped ansible impact uses --ref-pattern VALUE... default=unset
+cli untaped ansible impact uses --ref-scan-default VALUE default=unset
+cli untaped ansible impact uses --ref-scan-default choice=all
+cli untaped ansible impact uses --ref-scan-default choice=default_branch
+cli untaped ansible impact uses --refresh negative=--cached
+cli untaped ansible impact uses --refresh switch default=unset
+cli untaped ansible impact uses --repo VALUE... default=unset
+cli untaped ansible impact uses --source VALUE... default=unset
+cli untaped ansible impact uses --target-repo VALUE default=unset
+cli untaped ansible impact uses --team VALUE... default=unset
+cli untaped ansible impact uses ROLE NAME...
 cli untaped ansible source
 cli untaped ansible source get --columns VALUE... default=unset
 cli untaped ansible source get --columns alias=-c
@@ -286,13 +321,13 @@ cli untaped ansible source patch --add-ref-kind VALUE... default=unset
 cli untaped ansible source patch --add-ref-pattern VALUE... default=unset
 cli untaped ansible source patch --add-repo VALUE... default=unset
 cli untaped ansible source patch --add-team VALUE... default=unset
-cli untaped ansible source patch --clear-org switch
-cli untaped ansible source patch --clear-path switch
-cli untaped ansible source patch --clear-ref-kind switch
-cli untaped ansible source patch --clear-ref-pattern switch
-cli untaped ansible source patch --clear-ref-scan-default switch
-cli untaped ansible source patch --clear-repo switch
-cli untaped ansible source patch --clear-team switch
+cli untaped ansible source patch --clear-org switch default=unset
+cli untaped ansible source patch --clear-path switch default=unset
+cli untaped ansible source patch --clear-ref-kind switch default=unset
+cli untaped ansible source patch --clear-ref-pattern switch default=unset
+cli untaped ansible source patch --clear-ref-scan-default switch default=unset
+cli untaped ansible source patch --clear-repo switch default=unset
+cli untaped ansible source patch --clear-team switch default=unset
 cli untaped ansible source patch --columns VALUE... default=unset
 cli untaped ansible source patch --columns alias=-c
 cli untaped ansible source patch --format VALUE default=table
@@ -321,7 +356,7 @@ cli untaped ansible source refresh --parallel alias=-j
 cli untaped ansible source refresh NAME
 cli untaped ansible source remove --columns VALUE... default=unset
 cli untaped ansible source remove --columns alias=-c
-cli untaped ansible source remove --dry-run switch
+cli untaped ansible source remove --dry-run switch default=unset
 cli untaped ansible source remove --format VALUE default=table
 cli untaped ansible source remove --format alias=-f
 cli untaped ansible source remove --format choice=json
@@ -330,7 +365,7 @@ cli untaped ansible source remove --format choice=raw
 cli untaped ansible source remove --format choice=table
 cli untaped ansible source remove --format choice=yaml
 cli untaped ansible source remove --yes alias=-y
-cli untaped ansible source remove --yes switch
+cli untaped ansible source remove --yes switch default=unset
 cli untaped ansible source remove NAME
 cli untaped ansible source set --columns VALUE... default=unset
 cli untaped ansible source set --columns alias=-c
@@ -375,7 +410,7 @@ cli untaped ansible source-alias list --format choice=table
 cli untaped ansible source-alias list --format choice=yaml
 cli untaped ansible source-alias remove --columns VALUE... default=unset
 cli untaped ansible source-alias remove --columns alias=-c
-cli untaped ansible source-alias remove --dry-run switch
+cli untaped ansible source-alias remove --dry-run switch default=unset
 cli untaped ansible source-alias remove --format VALUE default=table
 cli untaped ansible source-alias remove --format alias=-f
 cli untaped ansible source-alias remove --format choice=json
@@ -384,7 +419,7 @@ cli untaped ansible source-alias remove --format choice=raw
 cli untaped ansible source-alias remove --format choice=table
 cli untaped ansible source-alias remove --format choice=yaml
 cli untaped ansible source-alias remove --yes alias=-y
-cli untaped ansible source-alias remove --yes switch
+cli untaped ansible source-alias remove --yes switch default=unset
 cli untaped ansible source-alias remove ALIAS
 cli untaped ansible source-alias set --columns VALUE... default=unset
 cli untaped ansible source-alias set --columns alias=-c
@@ -4620,6 +4655,138 @@ convention attribute token_sources
 convention entry-point untaped.plugins
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
+record ansible.FoundIn
+record ansible.FoundIn.path string[]
+record ansible.FoundIn.ref string?
+record ansible.FoundIn.repo string
+record ansible.GraphCycle
+record ansible.GraphCycle.edge_ids string[]
+record ansible.GraphCycle.kind choice=cycle
+record ansible.GraphCycle.kind choice=scc_group
+record ansible.GraphCycle.kind string
+record ansible.GraphCycle.node_ids string[]
+record ansible.GraphCycle.relation choice=impacts
+record ansible.GraphCycle.relation choice=requires
+record ansible.GraphCycle.relation string
+record ansible.GraphEdge
+record ansible.GraphEdge.id string
+record ansible.GraphEdge.relation choice=impacts
+record ansible.GraphEdge.relation choice=requires
+record ansible.GraphEdge.relation string
+record ansible.GraphEdge.source_id string
+record ansible.GraphEdge.source_path string?
+record ansible.GraphEdge.target_id string
+record ansible.GraphEdge.version string?
+record ansible.GraphNode
+record ansible.GraphNode.default_branch string?
+record ansible.GraphNode.id string
+record ansible.GraphNode.label string
+record ansible.GraphNode.ref string?
+record ansible.GraphNode.ref_kind string?
+record ansible.GraphNode.repo string?
+record ansible.GraphNode.shas string[](uniqueItems=true)
+record ansible.GraphNode.stopped choice=depth
+record ansible.GraphNode.stopped choice=not_cached
+record ansible.GraphNode.stopped string?
+record ansible.GraphNode.unresolved string?
+record ansible.dependency
+record ansible.dependency.declared_in string?
+record ansible.dependency.declared_ref string?
+record ansible.dependency.depth integer
+record ansible.dependency.path string[]
+record ansible.dependency.ref string?
+record ansible.dependency.repo string?
+record ansible.dependency.root_ref string?
+record ansible.dependency.stopped choice=depth
+record ansible.dependency.stopped choice=not_cached
+record ansible.dependency.stopped string?
+record ansible.dependency.unresolved string?
+record ansible.dependency_match
+record ansible.dependency_match.declared_in string?
+record ansible.dependency_match.declared_ref string?
+record ansible.dependency_match.input_id integer|string?
+record ansible.dependency_match.input_kind string?
+record ansible.dependency_match.input_name string?
+record ansible.dependency_match.path string[]
+record ansible.dependency_match.repo string
+record ansible.dependency_match.root_ref string?
+record ansible.dependency_match.root_repo string
+record ansible.dependent
+record ansible.dependent.declared_in string?
+record ansible.dependent.declared_ref string?
+record ansible.dependent.depth integer
+record ansible.dependent.path string[]
+record ansible.dependent.ref string?
+record ansible.dependent.repo string?
+record ansible.dependent.root_ref string?
+record ansible.dependent.stopped choice=depth
+record ansible.dependent.stopped choice=not_cached
+record ansible.dependent.stopped string?
+record ansible.dependent.unresolved string?
+record ansible.graph_document
+record ansible.graph_document.cycles GraphCycle[]
+record ansible.graph_document.edges GraphEdge[]
+record ansible.graph_document.header string
+record ansible.graph_document.nodes GraphNode[]
+record ansible.graph_document.target_id string
+record ansible.graph_document.warnings string[]
+record ansible.source
+record ansible.source.dependency_paths string[]
+record ansible.source.name string
+record ansible.source.orgs string[]
+record ansible.source.ref_kinds string[]
+record ansible.source.ref_patterns string[]
+record ansible.source.ref_scan_default choice=all
+record ansible.source.ref_scan_default choice=default_branch
+record ansible.source.ref_scan_default string?
+record ansible.source.repos string[]
+record ansible.source.teams string[]
+record ansible.source_alias
+record ansible.source_alias.alias string
+record ansible.source_alias.repo string
+record ansible.source_alias_outcome
+record ansible.source_alias_outcome.action string
+record ansible.source_alias_outcome.alias string
+record ansible.source_alias_outcome.error Failure?
+record ansible.source_alias_outcome.repo string
+record ansible.source_outcome
+record ansible.source_outcome.action string
+record ansible.source_outcome.changes string[]
+record ansible.source_outcome.error Failure?
+record ansible.source_outcome.name string
+record ansible.source_status
+record ansible.source_status.attempted_at string(format=date-time)?
+record ansible.source_status.configured boolean
+record ansible.source_status.edges integer
+record ansible.source_status.max_age_seconds integer
+record ansible.source_status.outdated boolean
+record ansible.source_status.partial boolean
+record ansible.source_status.refresh_error Failure?
+record ansible.source_status.refreshed_at string(format=date-time)?
+record ansible.source_status.refs integer
+record ansible.source_status.repos integer
+record ansible.source_status.retry_at string(format=date-time)?
+record ansible.source_status.scanned_at string(format=date-time)?
+record ansible.source_status.source string
+record ansible.source_status.source_key string
+record ansible.source_status.stale boolean
+record ansible.source_status.state choice=fresh
+record ansible.source_status.state choice=missing_source
+record ansible.source_status.state choice=not_refreshed
+record ansible.source_status.state choice=stale
+record ansible.source_status.state string
+record ansible.variable_use_hit
+record ansible.variable_use_hit.dependent FoundIn
+record ansible.variable_use_hit.file string
+record ansible.variable_use_hit.how choice=defines
+record ansible.variable_use_hit.how choice=reads
+record ansible.variable_use_hit.how choice=sets
+record ansible.variable_use_hit.how string
+record ansible.variable_use_hit.key_path (integer|string)[]
+record ansible.variable_use_hit.line integer
+record ansible.variable_use_hit.ref string?
+record ansible.variable_use_hit.repo string
+record ansible.variable_use_hit.variable string
 record dotfiles.apply_outcome  [experimental]
 record dotfiles.apply_outcome.action choice=conflict  [experimental]
 record dotfiles.apply_outcome.action choice=created  [experimental]
@@ -5603,6 +5770,7 @@ sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
 sdk untaped.sdk.Buttons.with_error(text)  [experimental]
 sdk untaped.sdk.Bytes
 sdk untaped.sdk.Cache(*, label, max_age)
+sdk untaped.sdk.Cache(follows=) default=None
 sdk untaped.sdk.Cache(model=) default=None callback(0)
 sdk untaped.sdk.Cache(name@2=) default=None
 sdk untaped.sdk.Cache(plugin@1=) default=None
@@ -5620,6 +5788,7 @@ sdk untaped.sdk.Cache.cached(read@2=) default=None callback(0)
 sdk untaped.sdk.Cache.default_max_age
 sdk untaped.sdk.Cache.default_max_age_text
 sdk untaped.sdk.Cache.derived_name(attribute)
+sdk untaped.sdk.Cache.follows
 sdk untaped.sdk.Cache.forget(key)
 sdk untaped.sdk.Cache.forget(partition=) default=None
 sdk untaped.sdk.Cache.freshness(key)
@@ -6984,6 +7153,7 @@ sdk untaped.sdk.Stdin.field_kind class
 sdk untaped.sdk.Stdin.identifiers()
 sdk untaped.sdk.Stdin.identifiers(allow_empty=) default=false
 sdk untaped.sdk.Stdin.identifiers(given@1=) default=[]
+sdk untaped.sdk.Stdin.kind(row)
 sdk untaped.sdk.Stdin.options class
 sdk untaped.sdk.Stdin.panel class
 sdk untaped.sdk.Stdin.requested
@@ -7886,6 +8056,7 @@ sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
 sdk untaped.sdk.storage.Absent()  [experimental]
 sdk untaped.sdk.storage.Cache(*, label, max_age)
+sdk untaped.sdk.storage.Cache(follows=) default=None
 sdk untaped.sdk.storage.Cache(model=) default=None callback(0)
 sdk untaped.sdk.storage.Cache(name@2=) default=None
 sdk untaped.sdk.storage.Cache(plugin@1=) default=None
@@ -7903,6 +8074,7 @@ sdk untaped.sdk.storage.Cache.cached(read@2=) default=None callback(0)
 sdk untaped.sdk.storage.Cache.default_max_age
 sdk untaped.sdk.storage.Cache.default_max_age_text
 sdk untaped.sdk.storage.Cache.derived_name(attribute)
+sdk untaped.sdk.storage.Cache.follows
 sdk untaped.sdk.storage.Cache.forget(key)
 sdk untaped.sdk.storage.Cache.forget(partition=) default=None
 sdk untaped.sdk.storage.Cache.freshness(key)
@@ -8731,8 +8903,7 @@ sdk untaped_github.api.BatchRepoRefsResult.rate_limit_cost
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_remaining
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_reset_at
 sdk untaped_github.api.BatchRepoRefsResult.repos
-sdk untaped_github.api.GithubClient(config)
-sdk untaped_github.api.GithubClient(http=) default=None
+sdk untaped_github.api.GithubClient(config, *, http)
 sdk untaped_github.api.GithubClient.batch_default_branch_refs(chunk_size=) default=200
 sdk untaped_github.api.GithubClient.batch_default_branch_refs(repos)
 sdk untaped_github.api.GithubClient.batch_repo_refs(chunk_size=) default=50
@@ -8978,8 +9149,20 @@ sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.api.RepoSource.repos() -> Repo[]  [experimental]
 sdk untaped_workspace.api.RepoSource.to_repo(item)  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
-state ansible.aliases object
+state ansible.aliases Alias[]
+state ansible.aliases.alias string
+state ansible.aliases.repo string
 state ansible.sources SourceDefinition[]
+state ansible.sources.dependency_paths string[] default=[]
+state ansible.sources.name string
+state ansible.sources.orgs string[] default=[]
+state ansible.sources.ref_kinds string[] default=[]
+state ansible.sources.ref_patterns string[] default=[]
+state ansible.sources.ref_scan_default choice=all
+state ansible.sources.ref_scan_default choice=default_branch
+state ansible.sources.ref_scan_default string? default=None
+state ansible.sources.repos string[] default=[]
+state ansible.sources.teams string[] default=[]
 state dotfiles.applied AppliedRecord[]  [experimental]
 state dotfiles.applied.applied_at string(format=date-time)  [experimental]
 state dotfiles.applied.file string  [experimental]

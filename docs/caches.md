@@ -366,12 +366,16 @@ only counts.
 A folder of the plugin's own is a `Dir` on the plugin class. `notes = Dir()`
 is `plugins/<plugin>/notes/` under the home; `checkouts =
 Dir(at=key(WorkspaceSettings).workspaces_dir)` is the folder a path setting
-names, which must be absolute. `file="log.txt"` makes it one file in that
+names, which must be absolute; an optional setting left unset (`Path | None`)
+is the default place. `file="log.txt"` makes it one file in that
 folder. `layout=N` numbers what it holds as a store numbers its layouts,
 inside the folder (`images/images.v4/`, or `index.v4.sqlite3` with
 `file="index.sqlite3"`), so installs never open each other's data; references
 name the layout, `prune()` after a complete refresh removes the layouts
-nothing holds, and doctor's `stores` row lists them. `items=RepoUrl` with
+nothing holds, and doctor's `stores` row lists them. A cache of the same
+plugin class that describes a numbered place follows it, `Cache(...,
+follows=index)`: its files live in `cached/<name>.v<layout>/` and go with the
+layout, and a complete fill prunes the place. `items=RepoUrl` with
 `release=` and `moved=` lets holders hold things in it; `items()` is that item
 store. `path` says where it is, `open()` creates the folder and returns the
 path (a numbered one holds its layout for the process, its in-use files inside

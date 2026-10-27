@@ -69,7 +69,14 @@ def test_at_expands_the_users_folder(picked: dict[str, object]) -> None:
     assert Demo.checkouts.path == Path("~/checkouts").expanduser()
 
 
-@pytest.mark.parametrize("value", [None, "", "relative/checkouts", "/"])
+def test_an_optional_setting_left_unset_is_the_default_place(
+    tmp_path: Path, picked: dict[str, object]
+) -> None:
+    picked["checkouts_dir"] = None
+    assert Demo.checkouts.path == tmp_path / "home" / "plugins" / "demo" / "checkouts"
+
+
+@pytest.mark.parametrize("value", ["", "relative/checkouts", "/"])
 def test_a_setting_that_names_no_absolute_folder_says_so(
     picked: dict[str, object], value: object
 ) -> None:

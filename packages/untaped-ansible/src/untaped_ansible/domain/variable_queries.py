@@ -14,7 +14,7 @@ from collections.abc import Collection, Iterable
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.reach import Reach
 from untaped_ansible.domain.variable_models import CommitFacts, How, VariableFact
-from untaped_ansible.records import Dependent, ReachedRow, VariableUseHit
+from untaped_ansible.records import FoundIn, ReachedRow, VariableUseHit
 
 
 def dependent_uses(
@@ -104,7 +104,7 @@ def _hit(node: ReachedRow, fact: VariableFact) -> VariableUseHit:
         line=fact.line,
         key_path=fact.key_path,
         how=fact.how,
-        dependent=Dependent(repo=node.repo, ref=node.ref, path=node.path),
+        dependent=FoundIn(repo=node.repo, ref=node.ref, path=node.path),
     )
 
 

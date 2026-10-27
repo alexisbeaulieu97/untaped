@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.entry-points."untaped.plugins"]
-ansible = "untaped_ansible:SPEC"
+ansible = "untaped_ansible.plugin:Ansible"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
