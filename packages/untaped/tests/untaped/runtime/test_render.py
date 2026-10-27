@@ -302,21 +302,17 @@ def test_table_collapses_multiline_text_to_one_line() -> None:
 @pytest.mark.parametrize(
     ("key", "value", "expected"),
     [
-        ("duration_s", 42.13497729599476, "42.1s"),
-        ("duration_s", 102.5, "1m42s"),
-        ("duration_s", 3725.0, "1h02m"),
         ("load", 0.25, "0.25"),
         ("ratio", 0.123456, "0.12"),
-        ("commit", "0123456789abcdef0123456789abcdef01234567", "0123456789"),
-        ("scm_revision", "0123456789abcdef0123456789abcdef01234567", "0123456789"),
-        ("name", "0123456789abcdef0123456789abcdef01234567", "0123456789abcdef"),
+        ("duration_s", 102.5, "102.5"),  # a name is no mark: Duration is
+        ("commit", "0123456789abcdef0123456789abcdef01234567", "0123456789abcdef"),
     ],
 )
-def test_table_formats_durations_floats_and_shas(key: str, value: object, expected: str) -> None:
+def test_table_keeps_two_decimals_and_guesses_nothing_from_names(
+    key: str, value: object, expected: str
+) -> None:
     out = _table([{key: value}], columns=[key])
     assert expected in out
-    full_sha = "0123456789abcdef0123456789abcdef01234567"
-    assert (full_sha in out) == (key == "name")
 
 
 def test_structured_formats_keep_values_verbatim() -> None:
@@ -411,18 +407,10 @@ def test_fitting_keeps_every_column_visible_when_the_terminal_is_narrow(
     assert all(col in header for col in row)
 
 
-@pytest.mark.parametrize(
-    ("column", "value", "expected"),
-    [("wait_s", 5, "5.0s"), ("wait_s", 59.96, "1m00s"), ("elapsed", 102.0, "1m42s")],
-)
-def test_duration_edges(column: str, value: float, expected: str) -> None:
-    assert expected in _table([{column: value}])
-
-
-def test_detail_table_view_formats_each_field_by_name() -> None:
+def test_detail_table_view_flattens_each_field() -> None:
     theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
     out = UiContext(theme=theme).detail({"duration_s": 102.5, "scope": {}}, fmt="table")
-    assert "1m42s" in out
+    assert "102.5" in out
     assert "{}" not in out
 
 

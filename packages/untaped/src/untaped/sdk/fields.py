@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
@@ -96,6 +97,18 @@ Age = Mark("Age")
 """A ``datetime`` a table shows as how long ago it was (``3 h ago``), by the run's clock.
 
 Only the table changes: json, yaml, raw and pipe keep the timestamp.
+"""
+
+Duration = Mark("Duration")
+"""An ``int`` or ``float`` of seconds a table shows as a run time (``1m42s``).
+
+Only the table changes: json, yaml, raw and pipe keep the number.
+"""
+
+ObjectName = Mark("ObjectName")
+"""A ``str`` git object name a table shortens to 10 characters when it is a full 40-hex one.
+
+Only the table changes: json, yaml, raw and pipe keep the whole name.
 """
 
 Spread = Mark("Spread")
@@ -610,12 +623,13 @@ def table_rows(
     """``rows`` as a table shows them, its default ``columns``, and the keys ``Spread`` added.
 
     A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
-    ago it was by :func:`untaped.sdk.now`'s clock, and a ``Spread`` field gives
+    ago it was by :func:`untaped.sdk.now`'s clock, a ``Duration`` field's its
+    run time, an ``ObjectName`` field's its short name, and a ``Spread`` field gives
     way to a column per key (a key a row already has keeps the row's value).
     """
     from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
     from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
-    from untaped.sdk.words import ago_text, size_text  # noqa: PLC0415
+    from untaped.sdk.words import ago_text, elapsed_text, size_text  # noqa: PLC0415
 
     now = run_clock().now()
     spread_keys: dict[str, dict[str, None]] = {}
@@ -642,6 +656,12 @@ def table_rows(
                 out[dumped] = size_text(value)
             elif Age in marks and isinstance(value, datetime):
                 out[dumped] = ago_text(value, now)
+            elif (
+                Duration in marks and isinstance(value, int | float) and not isinstance(value, bool)
+            ):
+                out[dumped] = elapsed_text(value)
+            elif ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
+                out[dumped] = value[:_SHORT_NAME]
             else:
                 out[dumped] = cell
         shown.append(out)
@@ -649,6 +669,11 @@ def table_rows(
         columns = [key for name in columns for key in (spread_keys.get(name) or [name])]
     added = [key for keys in spread_keys.values() for key in keys]
     return shown, None if columns is None else list(columns), added
+
+
+#: A full git object name, and how much of it a table shows.
+_FULL_NAME = re.compile(r"[0-9a-f]{40}")
+_SHORT_NAME = 10
 
 
 def spreads(model: type[BaseModel]) -> bool:

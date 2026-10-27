@@ -199,6 +199,17 @@ def duration_text(seconds: float) -> str:
     return f"{whole} s"
 
 
+def elapsed_text(seconds: float) -> str:
+    """A measured run time, to the tenth under a minute: ``42.1s``, ``1m42s``, ``2h05m``."""
+    if round(seconds, 1) < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(round(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m{secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
 def ago_text(at: datetime, now: datetime) -> str:
     """How long before ``now`` ``at`` was: ``3 h ago``; a naive ``at`` is UTC."""
     aware = at if at.tzinfo else at.replace(tzinfo=UTC)
@@ -224,6 +235,7 @@ __all__ = [
     "deprecated_line",
     "deprecated_message",
     "duration_text",
+    "elapsed_text",
     "hint",
     "not_found",
     "plural",

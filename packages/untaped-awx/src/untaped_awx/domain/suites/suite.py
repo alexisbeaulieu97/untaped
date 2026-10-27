@@ -38,8 +38,10 @@ from pydantic.config import JsonDict
 from untaped.sdk import (
     NOT_COUNTED,
     ConfigError,
+    Duration,
     ErrorCategory,
     ExitCode,
+    ObjectName,
     Record,
     UtcTimestamp,
     q,
@@ -804,7 +806,7 @@ class CaseResult(Record, kind="awx.test_result"):
     rerun_job_id: int | None = Field(
         default=None, description="The `idempotent` rerun's job (null: no rerun was launched)."
     )
-    duration_s: float | None = Field(
+    duration_s: Annotated[float | None, Duration] = Field(
         default=None, description="Seconds from the launch to the verdict."
     )
     started_at: UtcTimestamp | None = Field(
@@ -852,7 +854,7 @@ class CaseResult(Record, kind="awx.test_result"):
             "project's own branch)."
         ),
     )
-    scm_revision: str | None = Field(
+    scm_revision: Annotated[str | None, ObjectName] = Field(
         default=None,
         description="The commit the job checked out: compare it with `git rev-parse HEAD`.",
     )

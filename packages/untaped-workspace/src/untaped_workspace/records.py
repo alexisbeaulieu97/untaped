@@ -6,11 +6,11 @@ It holds models only, so importing it never imports a command. The
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field
 
-from untaped.sdk import OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.sdk import Duration, OutcomeRecord, TargetRecord, UtcTimestamp
 
 
 class Workspace(TargetRecord):
@@ -185,5 +185,5 @@ class RunOutcome(OutcomeRecord, TargetRecord):
     )
     stdout: str = ""
     stderr: str = ""
-    duration_s: float = 0.0
+    duration_s: Annotated[float, Duration] = 0.0
     detail: str = ""
