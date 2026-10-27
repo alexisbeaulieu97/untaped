@@ -20,6 +20,7 @@ import pytest
 import respx
 import yaml
 
+from ansible.composed import invoke
 from ansible.unit.test_cli import (
     _edge,
     _mock_dependency_file,
@@ -55,6 +56,11 @@ def _home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _run(*args: str) -> CliResult:
     return CliInvoker().invoke(app, list(args))
+
+
+def _run_composed(*args: str) -> CliResult:
+    """``_run`` for a command that reads GitHub: github composed, for its token."""
+    return invoke(app, args)
 
 
 def _index(tmp_path: Path) -> SqliteDependencyIndex:
@@ -501,7 +507,7 @@ def test_deps_live_never_refreshes_the_source(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
         _mock_dependency_file(mock, "acme/base", content="")
-        result = _run("deps", "acme/site", "--source", "prod", "--live", "-f", "json")
+        result = _run_composed("deps", "acme/site", "--source", "prod", "--live", "-f", "json")
 
     assert _repos(result) == ["acme/base"]
     assert (fill.keys, _stale(result)) == ([], [])
@@ -517,7 +523,7 @@ def test_graph_live_refreshes_the_source_for_its_upstream_half(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/base", content="")
-        result = _run("graph", "acme/base", "--source", "prod", "--live", "--depth", "1")
+        result = _run_composed("graph", "acme/base", "--source", "prod", "--live", "--depth", "1")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("acme/base  source prod, downstream live · depth 1\n")

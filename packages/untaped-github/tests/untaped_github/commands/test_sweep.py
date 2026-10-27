@@ -11,20 +11,12 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk.testing import CliInvoker, CliResult
-from untaped_github.cli import app
-from untaped_github.records import RepoSweepOutcome
+from github_test_support import Result, Settings, run
+from untaped_github.records import SweepRepo
 
 pytestmark = pytest.mark.usefixtures("composed")
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
-
-
-@pytest.fixture(autouse=True)
-def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
 
 
 def _repo(full_name: str, source: Path, *, clone_url: str | None = None) -> dict[str, object]:
@@ -55,7 +47,7 @@ def _sweep(
     org: list[dict[str, object]] | None = None,
     repos: Mapping[str, httpx.Response] | None = None,
     input: str | None = None,
-) -> tuple[CliResult, list[str]]:
+) -> tuple[Result, list[str]]:
     """Run ``sweep <args>`` and return the API paths it requested.
 
     ``org`` answers ``/orgs/acme/repos`` and ``repos`` answers each ``/repos/<name>``.
@@ -65,11 +57,16 @@ def _sweep(
             mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=org))
         for name, response in (repos or {}).items():
             mock.get(f"/repos/{name}").mock(return_value=response)
-        result = CliInvoker().invoke(app, ["sweep", *args], input=input)
+        result = run(["sweep", *args], input=input)
         return result, [call.request.url.path for call in mock.calls]
 
 
-def _json(result: CliResult) -> list[dict[str, object]]:
+def _view(show: str) -> list[str]:
+    """The words that pick a sweep's rows: ``sweep`` alone lists repos."""
+    return [] if show == "repos" else [show]
+
+
+def _json(result: Result) -> list[dict[str, object]]:
     assert result.exit_code == 0, result.output
     rows: list[dict[str, object]] = json.loads(result.stdout)
     return rows
@@ -77,12 +74,12 @@ def _json(result: CliResult) -> list[dict[str, object]]:
 
 def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
     tmp_path: Path,
+    settings: Settings,
     source_repo: SourceRepo,
     rewrite_to: Callable[..., None],
     store_auth: dict[str, list[str | None]],
 ) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text(cfg.read_text() + "  base_url: https://ghe.example/api/v3\n")
+    settings["server"] = {"url": "https://ghe.example/api/v3"}
     origin = source_repo("origin", {"README.md": "needle\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
     piped = "".join(
@@ -93,9 +90,7 @@ def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
         )
     )
 
-    result = CliInvoker().invoke(
-        app, ["sweep", "--stdin", "--grep", "needle", "--no-owners", "-f", "json"], input=piped
-    )
+    result = run(["sweep", "--stdin", "--grep", "needle", "--no-owners", "-f", "json"], input=piped)
 
     assert [row["full_name"] for row in _json(result)] == ["acme/api", "acme/web"]
     assert all(store_auth["https://ghe.example/acme/api.git"])
@@ -129,13 +124,13 @@ def test_sweep_sends_the_token_only_to_the_enterprise_git_host(
         ),
     ],
 )
-def test_sweep_pipe_records_per_show_mode(
+def test_sweep_pipe_records_per_view(
     source_repo: SourceRepo, show: str, kind: str, records: list[dict[str, object]]
 ) -> None:
     source = source_repo("api", {"a.py": "needle()\nneedle()\n", "b.py": "needle\n", "c.py": "x\n"})
 
     result, _ = _sweep(
-        ["--org", "acme", "--grep", "needle", "--show", show, "--format", "pipe"],
+        [*_view(show), "--org", "acme", "--grep", "needle", "--format", "pipe"],
         org=[_repo("acme/api", source)],
     )
 
@@ -163,7 +158,7 @@ def test_sweep_refuses_an_unknown_column_before_fetching(
     source = source_repo("api", {"a.py": "needle\n"})
 
     result, requested = _sweep(
-        ["--org", "acme", "--grep", grep, "--show", show, "-f", fmt, "-c", "bogus"],
+        [*_view(show), "--org", "acme", "--grep", grep, "-f", fmt, "-c", "bogus"],
         org=[_repo("acme/api", source)],
     )
 
@@ -173,18 +168,25 @@ def test_sweep_refuses_an_unknown_column_before_fetching(
     assert result.stdout == ""
 
 
-def test_sweep_repo_table_only_warns_of_an_unknown_column(source_repo: SourceRepo) -> None:
-    """Its rows are display dicts, a count column per predicate, so they stay lenient."""
+def test_sweep_repo_table_refuses_an_unknown_column_once_its_counts_are_in(
+    source_repo: SourceRepo,
+) -> None:
+    """Its table has a count column per predicate, known only from the rows."""
     source = source_repo("api", {"a.py": "needle\n"})
 
+    picked, _ = _sweep(
+        ["--org", "acme", "--grep", "needle", "-c", "full_name,grep:needle"],
+        org=[_repo("acme/api", source)],
+    )
     result, _ = _sweep(
-        ["--org", "acme", "--grep", "needle", "-c", "full_name,bogus"],
+        ["--org", "acme", "--grep", "needle", "-c", "full_name,bogus", "--cached"],
         org=[_repo("acme/api", source)],
     )
 
-    assert result.exit_code == 0, result.output
-    assert "acme/api" in result.stdout
-    assert "warning: unknown column 'bogus'" in result.stderr
+    assert picked.exit_code == 0, picked.output
+    assert "grep:needle" in picked.stdout
+    assert result.exit_code == 2, result.output
+    assert "unknown column 'bogus'" in result.stderr
 
 
 def test_sweep_table_columns_follow_predicates_refs_and_owners(
@@ -217,10 +219,10 @@ def test_content_modifiers_and_path_reach_the_grep(source_repo: SourceRepo) -> N
     lines = "a NEEDLE.x b\nneedleXx\nzneedle.xz\n"
     source = source_repo("api", {"README.md": lines, "other.md": lines})
 
-    flags = ["--path", "README.md", "-i", "-F", "--word-regexp", "--show", "matches"]
+    flags = ["--path", "README.md", "-i", "-F", "--word-regexp"]
 
     result, _ = _sweep(
-        ["--org", "acme", "--grep", "needle.x", *flags, "--format", "json"],
+        ["matches", "--org", "acme", "--grep", "needle.x", *flags, "--format", "json"],
         org=[_repo("acme/api", source)],
     )
 
@@ -341,7 +343,9 @@ def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: Source
     strict, _ = _sweep([*args, "--strict"], repos=routes)
 
     assert [row["full_name"] for row in _json(lenient)] == ["acme/api"]
-    assert "warning: unscanned acme/gone" in lenient.stderr
+    assert "unscanned acme/gone" in [
+        json.loads(line)["message"].partition(":")[0] for line in lenient.stderr.splitlines()
+    ]
     assert strict.exit_code == 3, strict.output
 
 
@@ -371,8 +375,8 @@ def test_failed_refresh_warns_that_cached_copy_was_scanned(source_repo: SourceRe
 
     assert first.exit_code == 0, first.output
     assert [row["full_name"] for row in _json(refreshed)] == ["acme/api"]
-    assert "warning: acme/api: refresh failed (" in refreshed.stderr
-    assert refreshed.stderr.count("acme/api: refresh failed") == 1
+    [stale] = [line for line in refreshed.stderr.splitlines() if '"untaped.stale"' in line]
+    assert json.loads(stale)["plugin"] == "github"
 
 
 def test_branch_and_tag_with_same_name_are_both_swept(
@@ -387,13 +391,13 @@ def test_branch_and_tag_with_same_name_are_both_swept(
     args = ["--org", "acme", "--refs", "all", "--grep", "needle", "--format", "json"]
 
     repos, _ = _sweep(args, org=[_repo("acme/api", source)])
-    matches, _ = _sweep([*args, "--show", "matches", "--cached"])
+    matches, _ = _sweep(["matches", *args, "--cached"])
 
     [row] = _json(repos)
     assert row["refs_matched"] == ["heads/x", "tags/x"]
     # Regression: table-only per-predicate columns must not leak into json
     # (they produced "unknown column" warnings and null keys).
-    assert set(row) == set(RepoSweepOutcome.model_fields)
+    assert set(row) == set(SweepRepo.model_fields)
     assert not any(":" in key for key in row)
     assert row["hits"] == {"grep:needle": 1}
     assert "unknown column" not in repos.stderr

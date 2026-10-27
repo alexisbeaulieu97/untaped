@@ -45,7 +45,7 @@ def test_no_first_party_model_relies_on_the_names(
         if "token_command" in model.model_fields or hasattr(model, "token_sources"):
             own_commands.add(model.__name__)
     assert unmarked == []
-    assert own_commands == {"GithubSettings"}
+    assert own_commands == set()
 
 
 def _cli(candidates: tuple[PluginCandidate, ...], *args: str) -> list[dict[str, Any]]:

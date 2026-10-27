@@ -1,5 +1,4 @@
 # untaped surface 2
-behaviour github.base-url-alias  [deprecated, removed in 12.0; use GithubSettings.server.url]
 behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via=Contract.bridge) and its values()]
 behaviour untaped.pipe-envelope  [deprecated, removed in 12.0; use Stdin[R] reading the rows, as a command's field]
@@ -43,7 +42,6 @@ cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.proxy string[] default=[]  [experimental]
 cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
 cfg git.untaped_helper_only boolean default=false
-cfg github.base_url -> github.server.url  [deprecated, removed in 12.0]
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
@@ -53,10 +51,7 @@ cfg github.inventory.orgs string[] default=[]
 cfg github.inventory.teams string[] default=[]
 cfg github.server.url string(format=uri,maxLength=2083,minLength=1) default=<computed>
 cfg github.server.verify_tls boolean|string(format=path) default=true
-cfg github.sweep.max_age_seconds -> github.caches.sweep.max_age_seconds  [deprecated, removed in 12.0]
 cfg github.sweep.parallel integer(minimum=1) default=12
-cfg github.token string(format=password)? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
-cfg github.token_command string[]? default=unset  [deprecated, removed in 12.0; use untaped auth login github]
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
@@ -3245,10 +3240,10 @@ cli untaped git store --format choice=yaml
 cli untaped github
 cli untaped github cache
 cli untaped github cache delete
-cli untaped github cache delete --all switch
+cli untaped github cache delete --all switch default=unset
 cli untaped github cache delete --columns VALUE... default=unset
 cli untaped github cache delete --columns alias=-c
-cli untaped github cache delete --dry-run switch
+cli untaped github cache delete --dry-run switch default=unset
 cli untaped github cache delete --format VALUE default=table
 cli untaped github cache delete --format alias=-f
 cli untaped github cache delete --format choice=json
@@ -3258,12 +3253,12 @@ cli untaped github cache delete --format choice=table
 cli untaped github cache delete --format choice=yaml
 cli untaped github cache delete --org VALUE... default=unset
 cli untaped github cache delete --yes alias=-y
-cli untaped github cache delete --yes switch
+cli untaped github cache delete --yes switch default=unset
 cli untaped github cache delete [REPOS...]@1 default=unset
 cli untaped github cache prune
 cli untaped github cache prune --columns VALUE... default=unset
 cli untaped github cache prune --columns alias=-c
-cli untaped github cache prune --dry-run switch
+cli untaped github cache prune --dry-run switch default=unset
 cli untaped github cache prune --format VALUE default=table
 cli untaped github cache prune --format alias=-f
 cli untaped github cache prune --format choice=json
@@ -3273,7 +3268,7 @@ cli untaped github cache prune --format choice=table
 cli untaped github cache prune --format choice=yaml
 cli untaped github cache prune --org VALUE... default=unset
 cli untaped github cache prune --yes alias=-y
-cli untaped github cache prune --yes switch
+cli untaped github cache prune --yes switch default=unset
 cli untaped github cache status
 cli untaped github cache status --columns VALUE... default=unset
 cli untaped github cache status --columns alias=-c
@@ -3311,7 +3306,7 @@ cli untaped github cache sync --refs choice=default
 cli untaped github cache sync --refs choice=tags
 cli untaped github cache sync --repo VALUE... default=unset
 cli untaped github cache sync --repo alias=-r
-cli untaped github cache sync --stdin switch
+cli untaped github cache sync --stdin switch default=unset
 cli untaped github cache sync --team VALUE... default=unset
 cli untaped github cache worktree --columns VALUE... default=unset
 cli untaped github cache worktree --columns alias=-c
@@ -3332,8 +3327,10 @@ cli untaped github repos list --archived choice=include
 cli untaped github repos list --archived choice=only
 cli untaped github repos list --columns VALUE... default=unset
 cli untaped github repos list --columns alias=-c
-cli untaped github repos list --fork negative=--no-fork
-cli untaped github repos list --fork switch default=unset
+cli untaped github repos list --fork VALUE default=include
+cli untaped github repos list --fork choice=exclude
+cli untaped github repos list --fork choice=include
+cli untaped github repos list --fork choice=only
 cli untaped github repos list --format VALUE default=table
 cli untaped github repos list --format alias=-f
 cli untaped github repos list --format choice=json
@@ -3343,7 +3340,7 @@ cli untaped github repos list --format choice=table
 cli untaped github repos list --format choice=yaml
 cli untaped github repos list --limit VALUE default=unset
 cli untaped github repos list --org VALUE... default=unset
-cli untaped github repos list --regex switch
+cli untaped github repos list --regex switch default=unset
 cli untaped github repos list --team VALUE... default=unset
 cli untaped github repos list [PATTERN]@1 default=unset
 cli untaped github search
@@ -3365,7 +3362,7 @@ cli untaped github search code --org VALUE... default=unset
 cli untaped github search code --path VALUE default=unset
 cli untaped github search code --repo VALUE... default=unset
 cli untaped github search code --repo alias=-r
-cli untaped github search code --stdin switch
+cli untaped github search code --stdin switch default=unset
 cli untaped github search code --team VALUE... default=unset
 cli untaped github search code --user VALUE default=unset
 cli untaped github search code [QUERY]@1 default=unset
@@ -3399,7 +3396,7 @@ cli untaped github search issues --sort choice=updated
 cli untaped github search issues --state VALUE default=unset
 cli untaped github search issues --state choice=closed
 cli untaped github search issues --state choice=open
-cli untaped github search issues --stdin switch
+cli untaped github search issues --stdin switch default=unset
 cli untaped github search issues --team VALUE... default=unset
 cli untaped github search issues --user VALUE default=unset
 cli untaped github search issues [QUERY]@1 default=unset
@@ -3410,8 +3407,10 @@ cli untaped github search repos --archived choice=include
 cli untaped github search repos --archived choice=only
 cli untaped github search repos --columns VALUE... default=unset
 cli untaped github search repos --columns alias=-c
-cli untaped github search repos --fork negative=--no-fork
-cli untaped github search repos --fork switch default=unset
+cli untaped github search repos --fork VALUE default=include
+cli untaped github search repos --fork choice=exclude
+cli untaped github search repos --fork choice=include
+cli untaped github search repos --fork choice=only
 cli untaped github search repos --format VALUE default=table
 cli untaped github search repos --format alias=-f
 cli untaped github search repos --format choice=json
@@ -3430,7 +3429,7 @@ cli untaped github search repos --sort choice=forks
 cli untaped github search repos --sort choice=help-wanted-issues
 cli untaped github search repos --sort choice=stars
 cli untaped github search repos --sort choice=updated
-cli untaped github search repos --stdin switch
+cli untaped github search repos --stdin switch default=unset
 cli untaped github search repos --team VALUE... default=unset
 cli untaped github search repos --user VALUE default=unset
 cli untaped github search repos --visibility VALUE default=unset
@@ -3459,16 +3458,16 @@ cli untaped github search users --sort choice=joined
 cli untaped github search users --sort choice=repositories
 cli untaped github search users [QUERY]@1 default=unset
 cli untaped github sweep
-cli untaped github sweep --any switch
+cli untaped github sweep --any switch default=unset
 cli untaped github sweep --archived VALUE default=exclude
 cli untaped github sweep --archived choice=exclude
 cli untaped github sweep --archived choice=include
 cli untaped github sweep --archived choice=only
 cli untaped github sweep --columns VALUE... default=unset
 cli untaped github sweep --columns alias=-c
-cli untaped github sweep --fail-on-match switch
+cli untaped github sweep --fail-on-match switch default=unset
 cli untaped github sweep --fixed-strings alias=-F
-cli untaped github sweep --fixed-strings switch
+cli untaped github sweep --fixed-strings switch default=unset
 cli untaped github sweep --format VALUE default=table
 cli untaped github sweep --format alias=-f
 cli untaped github sweep --format choice=json
@@ -3479,7 +3478,7 @@ cli untaped github sweep --format choice=yaml
 cli untaped github sweep --grep VALUE... default=unset
 cli untaped github sweep --has-file VALUE... default=unset
 cli untaped github sweep --ignore-case alias=-i
-cli untaped github sweep --ignore-case switch
+cli untaped github sweep --ignore-case switch default=unset
 cli untaped github sweep --lacks-file VALUE... default=unset
 cli untaped github sweep --not-grep VALUE... default=unset
 cli untaped github sweep --org VALUE... default=unset
@@ -3498,14 +3497,94 @@ cli untaped github sweep --refs choice=default
 cli untaped github sweep --refs choice=tags
 cli untaped github sweep --repo VALUE... default=unset
 cli untaped github sweep --repo alias=-r
-cli untaped github sweep --show VALUE default=repos
-cli untaped github sweep --show choice=files
-cli untaped github sweep --show choice=matches
-cli untaped github sweep --show choice=repos
-cli untaped github sweep --stdin switch
-cli untaped github sweep --strict switch
+cli untaped github sweep --stdin switch default=unset
+cli untaped github sweep --strict switch default=unset
 cli untaped github sweep --team VALUE... default=unset
-cli untaped github sweep --word-regexp switch
+cli untaped github sweep --word-regexp switch default=unset
+cli untaped github sweep files
+cli untaped github sweep files --any switch default=unset
+cli untaped github sweep files --archived VALUE default=exclude
+cli untaped github sweep files --archived choice=exclude
+cli untaped github sweep files --archived choice=include
+cli untaped github sweep files --archived choice=only
+cli untaped github sweep files --columns VALUE... default=unset
+cli untaped github sweep files --columns alias=-c
+cli untaped github sweep files --fail-on-match switch default=unset
+cli untaped github sweep files --fixed-strings alias=-F
+cli untaped github sweep files --fixed-strings switch default=unset
+cli untaped github sweep files --format VALUE default=table
+cli untaped github sweep files --format alias=-f
+cli untaped github sweep files --format choice=json
+cli untaped github sweep files --format choice=pipe
+cli untaped github sweep files --format choice=raw
+cli untaped github sweep files --format choice=table
+cli untaped github sweep files --format choice=yaml
+cli untaped github sweep files --grep VALUE... default=unset
+cli untaped github sweep files --has-file VALUE... default=unset
+cli untaped github sweep files --ignore-case alias=-i
+cli untaped github sweep files --ignore-case switch default=unset
+cli untaped github sweep files --lacks-file VALUE... default=unset
+cli untaped github sweep files --not-grep VALUE... default=unset
+cli untaped github sweep files --org VALUE... default=unset
+cli untaped github sweep files --parallel VALUE default=unset
+cli untaped github sweep files --parallel alias=-j
+cli untaped github sweep files --path VALUE... default=unset
+cli untaped github sweep files --ref VALUE... default=unset
+cli untaped github sweep files --refresh negative=--cached
+cli untaped github sweep files --refresh switch default=unset
+cli untaped github sweep files --refs VALUE default=default
+cli untaped github sweep files --refs choice=all
+cli untaped github sweep files --refs choice=branches
+cli untaped github sweep files --refs choice=default
+cli untaped github sweep files --refs choice=tags
+cli untaped github sweep files --repo VALUE... default=unset
+cli untaped github sweep files --repo alias=-r
+cli untaped github sweep files --stdin switch default=unset
+cli untaped github sweep files --strict switch default=unset
+cli untaped github sweep files --team VALUE... default=unset
+cli untaped github sweep files --word-regexp switch default=unset
+cli untaped github sweep matches
+cli untaped github sweep matches --any switch default=unset
+cli untaped github sweep matches --archived VALUE default=exclude
+cli untaped github sweep matches --archived choice=exclude
+cli untaped github sweep matches --archived choice=include
+cli untaped github sweep matches --archived choice=only
+cli untaped github sweep matches --columns VALUE... default=unset
+cli untaped github sweep matches --columns alias=-c
+cli untaped github sweep matches --fail-on-match switch default=unset
+cli untaped github sweep matches --fixed-strings alias=-F
+cli untaped github sweep matches --fixed-strings switch default=unset
+cli untaped github sweep matches --format VALUE default=table
+cli untaped github sweep matches --format alias=-f
+cli untaped github sweep matches --format choice=json
+cli untaped github sweep matches --format choice=pipe
+cli untaped github sweep matches --format choice=raw
+cli untaped github sweep matches --format choice=table
+cli untaped github sweep matches --format choice=yaml
+cli untaped github sweep matches --grep VALUE... default=unset
+cli untaped github sweep matches --has-file VALUE... default=unset
+cli untaped github sweep matches --ignore-case alias=-i
+cli untaped github sweep matches --ignore-case switch default=unset
+cli untaped github sweep matches --lacks-file VALUE... default=unset
+cli untaped github sweep matches --not-grep VALUE... default=unset
+cli untaped github sweep matches --org VALUE... default=unset
+cli untaped github sweep matches --parallel VALUE default=unset
+cli untaped github sweep matches --parallel alias=-j
+cli untaped github sweep matches --path VALUE... default=unset
+cli untaped github sweep matches --ref VALUE... default=unset
+cli untaped github sweep matches --refresh negative=--cached
+cli untaped github sweep matches --refresh switch default=unset
+cli untaped github sweep matches --refs VALUE default=default
+cli untaped github sweep matches --refs choice=all
+cli untaped github sweep matches --refs choice=branches
+cli untaped github sweep matches --refs choice=default
+cli untaped github sweep matches --refs choice=tags
+cli untaped github sweep matches --repo VALUE... default=unset
+cli untaped github sweep matches --repo alias=-r
+cli untaped github sweep matches --stdin switch default=unset
+cli untaped github sweep matches --strict switch default=unset
+cli untaped github sweep matches --team VALUE... default=unset
+cli untaped github sweep matches --word-regexp switch default=unset
 cli untaped github whoami
 cli untaped github whoami --columns VALUE... default=unset
 cli untaped github whoami --columns alias=-c
@@ -4749,6 +4828,177 @@ record git.store_report.size_bytes integer
 record git.store_report.store_dir string
 record git.store_report.unowned RepoCount
 record git.store_report.used_by object
+record github.code
+record github.code.name string
+record github.code.path string
+record github.code.repo string
+record github.code.sha string
+record github.code.url string
+record github.corpus_repo
+record github.corpus_repo(full_name, path, ref)
+record github.corpus_repo.archived boolean
+record github.corpus_repo.archived default=false
+record github.corpus_repo.clone_url default=None
+record github.corpus_repo.clone_url string?
+record github.corpus_repo.default_branch default=None
+record github.corpus_repo.default_branch string?
+record github.corpus_repo.description default=None
+record github.corpus_repo.description string?
+record github.corpus_repo.detail default=None
+record github.corpus_repo.detail string?
+record github.corpus_repo.disk_bytes default=0
+record github.corpus_repo.disk_bytes integer
+record github.corpus_repo.fetched_at default=None
+record github.corpus_repo.fetched_at string(format=date-time)?
+record github.corpus_repo.fork boolean?
+record github.corpus_repo.fork default=None
+record github.corpus_repo.forks_count default=None
+record github.corpus_repo.forks_count integer?
+record github.corpus_repo.full_name string
+record github.corpus_repo.html_url default=None
+record github.corpus_repo.html_url string?
+record github.corpus_repo.kept default=None
+record github.corpus_repo.kept string?
+record github.corpus_repo.language default=None
+record github.corpus_repo.language string?
+record github.corpus_repo.name default=None
+record github.corpus_repo.name string?
+record github.corpus_repo.path string
+record github.corpus_repo.private boolean?
+record github.corpus_repo.private default=None
+record github.corpus_repo.profile default=default
+record github.corpus_repo.profile string
+record github.corpus_repo.pushed_at default=None
+record github.corpus_repo.pushed_at string?
+record github.corpus_repo.ref string
+record github.corpus_repo.ref_globs default=[]
+record github.corpus_repo.ref_globs string[]
+record github.corpus_repo.ssh_url default=None
+record github.corpus_repo.ssh_url string?
+record github.corpus_repo.stargazers_count default=None
+record github.corpus_repo.stargazers_count integer?
+record github.corpus_repo.status choice=cached
+record github.corpus_repo.status choice=released
+record github.corpus_repo.status choice=removed
+record github.corpus_repo.status choice=synced
+record github.corpus_repo.status default=cached
+record github.corpus_repo.status string
+record github.corpus_repo.updated_at default=None
+record github.corpus_repo.updated_at string?
+record github.issue
+record github.issue.id integer
+record github.issue.is_pull_request boolean
+record github.issue.number integer
+record github.issue.repo string
+record github.issue.state string
+record github.issue.title string
+record github.issue.url string
+record github.issue.user_login string?
+record github.repo
+record github.repo(full_name)
+record github.repo.archived boolean
+record github.repo.archived default=false
+record github.repo.clone_url default=None
+record github.repo.clone_url string?
+record github.repo.default_branch default=None
+record github.repo.default_branch string?
+record github.repo.description default=None
+record github.repo.description string?
+record github.repo.fork boolean?
+record github.repo.fork default=None
+record github.repo.forks_count default=None
+record github.repo.forks_count integer?
+record github.repo.full_name string
+record github.repo.html_url default=None
+record github.repo.html_url string?
+record github.repo.language default=None
+record github.repo.language string?
+record github.repo.name default=None
+record github.repo.name string?
+record github.repo.private boolean?
+record github.repo.private default=None
+record github.repo.pushed_at default=None
+record github.repo.pushed_at string?
+record github.repo.ssh_url default=None
+record github.repo.ssh_url string?
+record github.repo.stargazers_count default=None
+record github.repo.stargazers_count integer?
+record github.repo.updated_at default=None
+record github.repo.updated_at string?
+record github.sweep_file
+record github.sweep_file.hits integer
+record github.sweep_file.path string
+record github.sweep_file.refs string[]
+record github.sweep_file.repo string
+record github.sweep_match
+record github.sweep_match.line integer
+record github.sweep_match.path string
+record github.sweep_match.refs string[]
+record github.sweep_match.repo string
+record github.sweep_match.text string
+record github.sweep_repo
+record github.sweep_repo(full_name)
+record github.sweep_repo.archived boolean
+record github.sweep_repo.archived default=false
+record github.sweep_repo.clone_url default=None
+record github.sweep_repo.clone_url string?
+record github.sweep_repo.default_branch default=None
+record github.sweep_repo.default_branch string?
+record github.sweep_repo.description default=None
+record github.sweep_repo.description string?
+record github.sweep_repo.fetched_at default=None
+record github.sweep_repo.fetched_at string(format=date-time)?
+record github.sweep_repo.fork boolean?
+record github.sweep_repo.fork default=None
+record github.sweep_repo.forks_count default=None
+record github.sweep_repo.forks_count integer?
+record github.sweep_repo.full_name string
+record github.sweep_repo.hits default={}
+record github.sweep_repo.hits object
+record github.sweep_repo.html_url default=None
+record github.sweep_repo.html_url string?
+record github.sweep_repo.language default=None
+record github.sweep_repo.language string?
+record github.sweep_repo.matched boolean
+record github.sweep_repo.matched default=true
+record github.sweep_repo.name default=None
+record github.sweep_repo.name string?
+record github.sweep_repo.owners default=[]
+record github.sweep_repo.owners string[]
+record github.sweep_repo.private boolean?
+record github.sweep_repo.private default=None
+record github.sweep_repo.pushed_at default=None
+record github.sweep_repo.pushed_at string?
+record github.sweep_repo.refs_matched default=[]
+record github.sweep_repo.refs_matched string[]
+record github.sweep_repo.ssh_url default=None
+record github.sweep_repo.ssh_url string?
+record github.sweep_repo.stargazers_count default=None
+record github.sweep_repo.stargazers_count integer?
+record github.sweep_repo.updated_at default=None
+record github.sweep_repo.updated_at string?
+record github.sync_outcome
+record github.sync_outcome.action string
+record github.sync_outcome.detail string?
+record github.sync_outcome.error Failure?
+record github.sync_outcome.fetched_at string(format=date-time)?
+record github.sync_outcome.repo string
+record github.user
+record github.user.email string?
+record github.user.id integer
+record github.user.login string
+record github.user.name string?
+record github.user_hit
+record github.user_hit.id integer
+record github.user_hit.login string
+record github.user_hit.type string
+record github.user_hit.url string
+record github.worktree
+record github.worktree.error Failure?
+record github.worktree.path string
+record github.worktree.ref string
+record github.worktree.repo string
+record github.worktree.target_path string(format=path)
 record jira.IssueLink
 record jira.IssueLink(key)
 record jira.IssueLink.direction default=""
@@ -6330,6 +6580,12 @@ sdk untaped.sdk.PluginContext.diag
 sdk untaped.sdk.PluginContext.owner
 sdk untaped.sdk.PluginContext.plugin
 sdk untaped.sdk.PluginContext.settings
+sdk untaped.sdk.PluginHandle(name, home)
+sdk untaped.sdk.PluginHandle.committed(name)
+sdk untaped.sdk.PluginHandle.committed(root=) default=None
+sdk untaped.sdk.PluginHandle.dir
+sdk untaped.sdk.PluginHandle.home
+sdk untaped.sdk.PluginHandle.name
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
 sdk untaped.sdk.PluginSpec(caches@11=) default=[]
 sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
@@ -7042,6 +7298,7 @@ sdk untaped.sdk.Viewport.start(rows)  [experimental]
 sdk untaped.sdk.Viewport.update(message, rows)  [experimental]
 sdk untaped.sdk.Written
 sdk untaped.sdk.YesOption
+sdk untaped.sdk.ago_text(at, now)
 sdk untaped.sdk.app_context()
 sdk untaped.sdk.atomic_write(encoding=) default=utf-8
 sdk untaped.sdk.atomic_write(mode=) default=None
@@ -8519,20 +8776,13 @@ sdk untaped_github.api.GithubSettings(git_protocol=) default=https
 sdk untaped_github.api.GithubSettings(inventory=) default=<computed>
 sdk untaped_github.api.GithubSettings(server=) default=<computed>
 sdk untaped_github.api.GithubSettings(sweep=) default=<computed>
-sdk untaped_github.api.GithubSettings(token=) default=None
-sdk untaped_github.api.GithubSettings(token_command=) default=None
 sdk untaped_github.api.GithubSettings.api_url
-sdk untaped_github.api.GithubSettings.base_url
 sdk untaped_github.api.GithubSettings.default_org
 sdk untaped_github.api.GithubSettings.git_protocol
 sdk untaped_github.api.GithubSettings.inventory
-sdk untaped_github.api.GithubSettings.renamed_keys class
 sdk untaped_github.api.GithubSettings.retired_keys class
 sdk untaped_github.api.GithubSettings.server
 sdk untaped_github.api.GithubSettings.sweep
-sdk untaped_github.api.GithubSettings.token
-sdk untaped_github.api.GithubSettings.token_command
-sdk untaped_github.api.GithubSettings.token_sources class  [deprecated, removed in 12.0; use untaped.sdk.Credential]
 sdk untaped_github.api.RepoRef(*, kind, name, sha)
 sdk untaped_github.api.RepoRef.kind
 sdk untaped_github.api.RepoRef.name

@@ -90,10 +90,10 @@ def test_the_entry_point_names_the_package_spec_or_plugin_class(
 def test_first_party_commit_carries_its_entry_point(
     candidates: dict[str, PluginCandidate],
 ) -> None:
-    result = compose([candidates["github"]])
+    result = compose([candidates["awx"]])
     (_, registered) = result.plugins
     assert registered.plugin_ref == PluginRef(
-        distribution="untaped-github", entry_point="untaped_github:SPEC"
+        distribution="untaped-awx", entry_point="untaped_awx:SPEC"
     )
     assert result.quarantine == ()
 

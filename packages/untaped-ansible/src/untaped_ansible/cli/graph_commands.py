@@ -27,7 +27,6 @@ from untaped.sdk import (
     ColumnsOption,
     Diagnostics,
     FormatOption,
-    HttpSettings,
     NeverRefreshed,
     ParallelOption,
     UiContext,
@@ -883,7 +882,6 @@ def _graph_env(
     Nothing is refreshed yet (see :func:`_answer`), so arguments can be
     checked against it first.
     """
-    ctx = app_context()
     settings = get_config_section("ansible", AnsibleSettings)
     has_source = bool(
         options.source or options.orgs or options.teams or options.repos or settings.default_source
@@ -933,7 +931,6 @@ def _graph_env(
         live_reads=_LiveReads(
             stack,
             github_settings=github_settings,
-            http=ctx.http,
             wrapped=index,
             aliases=aliases,
             settings=settings,
@@ -962,7 +959,6 @@ def _answer[T](
         aliases=env.aliases,
         settings=env.settings,
         github_settings=env.github_settings,
-        http=app_context().http,
         concurrency=clamp_parallel(
             options.parallel or env.settings.git_fetch_parallel,
             cap=GIT_PARALLEL_CAP,
@@ -1044,7 +1040,6 @@ class _LiveReads:
         stack: ExitStack,
         *,
         github_settings: GithubSettings,
-        http: HttpSettings,
         wrapped: DependencyIndex,
         aliases: dict[str, str],
         settings: AnsibleSettings,
@@ -1052,7 +1047,6 @@ class _LiveReads:
     ) -> None:
         self._stack = stack
         self._github_settings = github_settings
-        self._http = http
         self._wrapped = wrapped
         self._aliases = aliases
         self._settings = settings
@@ -1061,7 +1055,7 @@ class _LiveReads:
 
     def index(self) -> GithubDependencyIndex:
         if self._index is None:
-            github = self._stack.enter_context(GithubClient(self._github_settings, http=self._http))
+            github = self._stack.enter_context(GithubClient(self._github_settings))
             self._index = GithubDependencyIndex(
                 github=github,
                 wrapped=self._wrapped,

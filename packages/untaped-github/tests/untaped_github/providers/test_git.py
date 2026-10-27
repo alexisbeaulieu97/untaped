@@ -1,37 +1,31 @@
-"""GitHub's ``GitHost``: the credentials and proxy the repo store gets for the GitHub host."""
+"""GitHub's ``GitHost``: the credentials and proxy the repo store gets for the GitHub host.
+
+Asked the way git asks it: ``gather`` on a ``GitHost`` method under a run
+composing git and github.
+"""
 
 from __future__ import annotations
 
 import json
-from contextlib import AbstractContextManager
+from typing import Any
 
 import pytest
-import yaml
 from pydantic import SecretStr
 
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import ConfigError, home
-from untaped.sdk.testing import compose_with, invoke_cli
+from github_test_support import Settings, installed
+from untaped.sdk import ConfigError
+from untaped.sdk.contracts import Ok, Provider, gather
+from untaped.sdk.testing import install
 from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
 from untaped_git.hosts import resolve_host
-from untaped_git.plugin import Git
-from untaped_github import SPEC
-from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
-from untaped_github.providers.git import GithubHost
-from untaped_github.settings import GH, GithubServer
+from untaped_github.plugin import Github
+from untaped_github.settings import GithubSettings
+
+_PROXY = "UNTAPED_UNTAPED__HTTP__PROXY"
 
 
-def configure(github: dict[str, object], *, http: dict[str, object] | None = None) -> None:
-    path = home().expanduser() / "config.yml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    profile: dict[str, object] = {"github": github}
-    if http is not None:
-        profile["untaped"] = {"http": http}
-    path.write_text(yaml.safe_dump({"format_version": 2, **profile}), encoding="utf-8")
-
-
-class OtherForge(GitHost):
+class OtherForge(GitHost, Provider):
     """A second plugin claiming ``github.com``, as an unranked overlap would."""
 
     def home(self) -> str | None:
@@ -44,9 +38,19 @@ class OtherForge(GitHost):
         return None
 
 
-def composed(*extra: PluginSpec) -> AbstractContextManager[object]:
-    """A run of git, github and ``extra``, as one invocation of them has."""
-    return compose_with(Git, SPEC, *extra)
+@pytest.fixture(autouse=True)
+def _no_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test says where its token comes from."""
+    monkeypatch.delenv("GH_TOKEN")
+
+
+def ask(method: Any, *args: str) -> Any:
+    """github's answer to the ``GitHost`` ``method``, asked as git asks it."""
+    with installed().running():
+        answers = gather(method, plugins=["github"])(*args)
+    [answer] = answers
+    assert isinstance(answer, Ok), answer
+    return answer.value
 
 
 @pytest.mark.parametrize(
@@ -56,10 +60,10 @@ def composed(*extra: PluginSpec) -> AbstractContextManager[object]:
         ("https://ghe.example/api/v3", "ghe.example"),
     ],
 )
-def test_home_is_the_git_host_of_the_api(base_url: str, home: str) -> None:
-    configure({"server": {"url": base_url}})
+def test_home_is_the_git_host_of_the_api(settings: Settings, base_url: str, home: str) -> None:
+    settings["server"] = {"url": base_url}
 
-    assert GithubHost().home() == home
+    assert ask(GitHost.home) == home
 
 
 @pytest.mark.parametrize(
@@ -71,11 +75,12 @@ def test_home_is_the_git_host_of_the_api(base_url: str, home: str) -> None:
         ("https://evil.example/acme/api.git", False),
     ],
 )
-def test_the_token_goes_only_to_the_github_host(url: str, expected: bool) -> None:
-    configure({})
-    GH.store(GithubServer(), token="ghp_secret")
+def test_the_token_goes_only_to_the_github_host(
+    monkeypatch: pytest.MonkeyPatch, url: str, expected: bool
+) -> None:
+    monkeypatch.setenv("GH_TOKEN", "ghp_secret")
 
-    credential = GithubHost().credential(url)
+    credential = ask(GitHost.credential, url)
 
     if expected:
         assert credential is not None
@@ -86,38 +91,24 @@ def test_the_token_goes_only_to_the_github_host(url: str, expected: bool) -> Non
 
 
 def test_no_token_means_no_credential() -> None:
-    configure({})
-
-    assert GithubHost().credential("https://github.com/acme/api.git") is None
+    assert ask(GitHost.credential, "https://github.com/acme/api.git") is None
 
 
-def test_the_token_resolves_as_for_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    configure({})
-    monkeypatch.setenv("GH_TOKEN", "ghp_from_env")
+def test_the_http_proxy_covers_git_on_the_github_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_PROXY, "http://proxy.example:3128")
 
-    credential = GithubHost().credential("https://github.com/acme/api.git")
-
-    assert credential is not None
-    assert credential.password.get_secret_value() == "ghp_from_env"
-
-
-def test_the_http_proxy_covers_git_on_the_github_host() -> None:
-    configure({}, http={"proxy": "http://proxy.example:3128"})
-
-    assert GithubHost().proxy("https://github.com/acme/api.git") == "http://proxy.example:3128"
-    assert GithubHost().proxy("https://gitlab.example/acme/api.git") is None
+    assert ask(GitHost.proxy, "https://github.com/acme/api.git") == "http://proxy.example:3128"
+    assert ask(GitHost.proxy, "https://gitlab.example/acme/api.git") is None
 
 
 def test_no_http_proxy_leaves_git_to_its_own_config() -> None:
-    configure({})
-
-    assert GithubHost().proxy("https://github.com/acme/api.git") is None
+    assert ask(GitHost.proxy, "https://github.com/acme/api.git") is None
 
 
-def test_the_store_asks_github_for_its_host() -> None:
-    configure({}, http={"proxy": "http://proxy.example:3128"})
-    GH.store(GithubServer(), token="ghp_secret")
-    with composed():
+def test_the_store_asks_github_for_its_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_PROXY, "http://proxy.example:3128")
+    monkeypatch.setenv("GH_TOKEN", "ghp_secret")
+    with installed().running():
         auth = resolve_host("https://github.com/acme/api.git")
         assert resolve_host("https://gitlab.example/acme/api.git") is None
 
@@ -132,21 +123,22 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S5: two plugins fill GitHost for github.com; a store fetch names both, exit 4."""
-    configure({})
     monkeypatch.setenv("GH_TOKEN", "ghp_secret")
-    with composed(PluginSpec(name="other", provides={"git": lambda: (OtherForge(),)})):
-        record = {
-            "full_name": "acme/api",
-            "clone_url": "https://github.com/acme/api.git",
-            "default_branch": "main",
-        }
-        envelope = {"untaped": "1", "kind": "github.repo", "record": record}
+    both = install(Github, settings=GithubSettings(), providers={"other": (OtherForge,)})
+    record = {
+        "full_name": "acme/api",
+        "clone_url": "https://github.com/acme/api.git",
+        "default_branch": "main",
+    }
+    envelope = {"untaped": "1", "kind": "github.repo", "record": record}
 
-        result = invoke_cli(app, ["cache", "sync", "--stdin"], input=json.dumps(envelope) + "\n")
+    ran = both.cli(["github", "cache", "sync", "--stdin"], input=json.dumps(envelope) + "\n")
 
-        assert result.exit_code == 4, result.output
-        assert "error: github, other all supply credentials for github.com" in result.stderr
-        assert "hint: untaped plugin rank git.git_host credential github other" in result.stderr
+    stderr = "\n".join(ran.stderr)
+    assert ran.exit == 4, stderr
+    assert "error: github, other all supply credentials for github.com" in stderr
+    assert "hint: untaped plugin rank git.git_host credential github other" in stderr
+    with both.running():
         with pytest.raises(ConfigError) as caught:
             ls_remote("https://github.com/acme/api.git")
         assert caught.value.details == {
@@ -155,6 +147,6 @@ def test_an_unranked_overlap_on_the_github_host_is_a_config_error(
             "providers": ["github", "other"],
         }
         store = RepoStore.for_url(
-            "https://github.com/acme/api.git", plugin=SPEC, error=GitCorpusError
+            "https://github.com/acme/api.git", plugin="github", error=GitCorpusError
         )
         assert not store.private_file.exists()

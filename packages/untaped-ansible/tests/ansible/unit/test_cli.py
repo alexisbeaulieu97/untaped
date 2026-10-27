@@ -18,6 +18,7 @@ import pytest
 import respx
 import yaml
 
+from ansible.composed import composed_run, invoke
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Failure, Filled, Progress, ProgressHandle, StaleData
 from untaped.sdk.testing import CliInvoker, CliResult, cache_clock, progress_clock
@@ -102,6 +103,11 @@ def _state(tmp_path: Path) -> dict[str, Any]:
 
 def _run(*args: str) -> CliResult:
     return CliInvoker().invoke(app, list(args))
+
+
+def _run_composed(*args: str) -> CliResult:
+    """``_run`` for a command that reads GitHub: github composed, for its token."""
+    return invoke(app, args)
 
 
 def _index(tmp_path: Path) -> SqliteDependencyIndex:
@@ -443,7 +449,7 @@ def _seed_unchanged_scan(
         patcher.setattr(refresh, "GitSourceStore", _SeedGitCache)
         with respx.mock(base_url="https://api.github.com") as mock:
             _mock_refresh_repos(mock, repos, missing=missing)
-            result = _run("source", "refresh", "prod")
+            result = _run_composed("source", "refresh", "prod")
     assert result.exit_code == (1 if missing else 0), result.output
 
 
@@ -561,7 +567,7 @@ def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, mon
         raise RepoStoreError(f"could not lock repo store for {url}", category="unavailable")
 
     monkeypatch.setattr(GitSourceStore, "release", fail)
-    result = _run("source", "remove", "prod", "--yes", "--format", "json")
+    result = _run_composed("source", "remove", "prod", "--yes", "--format", "json")
 
     assert result.exit_code == 5  # the lock was unavailable: retry later
     row = json.loads(result.stdout)
@@ -784,7 +790,7 @@ def test_graph_reads_downstream_live_without_source(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
-        result = _run("graph", "acme/site", direction, "--depth", "1")
+        result = _run_composed("graph", "acme/site", direction, "--depth", "1")
 
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main", "  acme/base"]
@@ -805,7 +811,7 @@ def test_graph_live_transitive_parse_warnings_keep_repo_ref_context(
         )
         _mock_dependency_file(mock, "acme/one", content=_TEMPLATED)
         _mock_dependency_file(mock, "acme/two", content=_TEMPLATED)
-        result = _run("graph", "acme/site", "--direction=down", "--depth", "2")
+        result = _run_composed("graph", "acme/site", "--direction=down", "--depth", "2")
 
     assert result.exit_code == 0, result.output
     for repo in ("acme/one", "acme/two"):
@@ -822,7 +828,7 @@ def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
-        result = _run(
+        result = _run_composed(
             "graph", "acme/site", "--direction=down", "--format", "mermaid", "--depth", "1",
             "--out", str(output),
         )  # fmt: skip
@@ -903,7 +909,7 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
-        result = _run(
+        result = _run_composed(
             "graph",
             "acme/site",
             "--source",
@@ -935,14 +941,15 @@ def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
 def test_graph_header_names_what_the_build_read(
     tmp_path: Path, monkeypatch, cached: bool, direction: str, header: str
 ) -> None:
-    if cached:
-        _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
     _use_config(tmp_path, monkeypatch, _PLATFORM, token=True)
+    if cached:
+        with composed_run():  # filled as the composed run below reads it
+            _seed(tmp_path, "source:platform", _edge("acme/app", "acme/site"))
     refreshed = _fake_refresh(monkeypatch)
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
-        result = _run(
+        result = _run_composed(
             "graph", "acme/site", "--source", "platform", direction, "--live", "--depth", "1"
         )
 
@@ -1324,7 +1331,7 @@ def test_graph_refresh_global_graphql_error_serves_cached_data_with_a_warning(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, ["acme/site"])
         mock.post("/graphql").mock(return_value=_RATE_LIMIT_EXCEEDED)
-        result = _run(
+        result = _run_composed(
             "graph", "acme/base", "--source", "platform", "--direction=up", "--refresh",
             "--backend", "graphql",
         )  # fmt: skip
@@ -1346,7 +1353,7 @@ def test_graph_target_repo_overrides_local_identity(tmp_path: Path, monkeypatch)
     _init_git_repo(target, origin="https://github.com/acme/wrong.git")
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/base", "--direction=down")
+    result = _run_composed("graph", str(target), "--target-repo", "acme/base", "--direction=down")
 
     assert result.exit_code == 0, result.output
     # No GitHub token: only the checkout's own declarations were read.
@@ -1384,7 +1391,7 @@ def test_graph_local_target_infers_repo_from_origin_remote(
     monkeypatch.setenv("GIT_WORK_TREE", str(other))
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--direction=down")
+    result = _run_composed("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith(f"{expected}  ")
@@ -1402,7 +1409,7 @@ def test_graph_local_target_infers_repo_from_git_worktree(tmp_path: Path, monkey
     _role(tmp_path)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--direction=down")
+    result = _run_composed("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("acme/worktree-role  ")
@@ -1426,8 +1433,10 @@ def test_graph_unresolvable_local_target_hints_target_repo(
         _init_git_repo(target)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--direction=down")
-    explicit = _run("graph", str(target), "--target-repo", "acme/web-role", "--direction=down")
+    result = _run_composed("graph", str(target), "--direction=down")
+    explicit = _run_composed(
+        "graph", str(target), "--target-repo", "acme/web-role", "--direction=down"
+    )
 
     assert result.exit_code == 1
     assert "could not resolve target" in result.stderr
@@ -1442,9 +1451,9 @@ def test_graph_local_target_resolves_configured_enterprise_host(
 ) -> None:
     target = _role(tmp_path, "- src: https://ghe.example.com/acme/users.git\n")
     _init_git_repo(target, origin="git@ghe.example.com:acme/ghe-role.git")
-    _use_config(tmp_path, monkeypatch, github={"base_url": "https://ghe.example.com/api/v3"})
+    _use_config(tmp_path, monkeypatch, github={"server": {"url": "https://ghe.example.com/api/v3"}})
 
-    result = _run("graph", str(target), "--direction=down")
+    result = _run_composed("graph", str(target), "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("acme/ghe-role  ")
@@ -1471,7 +1480,7 @@ def test_graph_local_target_surfaces_dependency_file_warnings(
     (target / path).write_text(content)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/role", "--direction=down")
+    result = _run_composed("graph", str(target), "--target-repo", "acme/role", "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert warning in result.stderr
@@ -1484,7 +1493,7 @@ def test_graph_empty_local_dependency_result_explains_paths_without_cache_fallba
     target = _role(tmp_path, None)
     _use_config(tmp_path, monkeypatch)
 
-    result = _run("graph", str(target), "--target-repo", "acme/empty", "--direction=down")
+    result = _run_composed("graph", str(target), "--target-repo", "acme/empty", "--direction=down")
 
     assert result.exit_code == 0, result.output
     assert "acme/stale" not in result.stdout
@@ -1509,7 +1518,7 @@ def test_graph_local_target_without_source_never_mixes_in_cached_edges(
         _mock_dependency_file(
             mock, "acme/users", sha="sha-users", content="- src: acme/from-live\n"
         )
-        result = _run(
+        result = _run_composed(
             "graph", str(target), "--target-repo", "acme/role", "--direction=down", "--depth", "2"
         )
         assert mock.calls.called is token
@@ -1557,7 +1566,7 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
     )
     captured = _capture_git_refresh(monkeypatch)
 
-    result = _run("source", "refresh", "prod")
+    result = _run_composed("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert "refreshed source prod: 1 repo, 1 ref, 0 edges" in result.stderr
@@ -1598,7 +1607,7 @@ def test_refresh_overrides_reach_the_git_refresh(
     _use_config(tmp_path, monkeypatch, _prod(), token=True)
     captured = _capture_git_refresh(monkeypatch)
 
-    result = _run(*args)
+    result = _run_composed(*args)
 
     assert result.exit_code == exit_code, result.output
     assert captured[key] == value
@@ -1615,7 +1624,7 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=True) as mock:
         _mock_expansion(mock, ["acme/site"])
-        result = _run("source", "refresh", "prod", "--backend", "git")
+        result = _run_composed("source", "refresh", "prod", "--backend", "git")
 
     assert result.exit_code == 0, result.output
     assert "refreshed source prod: 1 repo, 1 ref" in result.stderr
@@ -1629,7 +1638,7 @@ def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/ok": "sha-ok"}, missing=("acme/gone",))
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -1649,7 +1658,7 @@ def test_source_refresh_all_failures_exits_nonzero_and_leaves_index_unchanged(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {}, missing=("acme/gone", "acme/ok"))
-        result = _run("source", "refresh", "prod")
+        result = _run_composed("source", "refresh", "prod")
 
     assert result.exit_code == 1
     assert "error: acme/gone: " in result.stderr
@@ -1698,7 +1707,7 @@ def test_source_refresh_reports_dependency_file_warnings(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 0, result.output
     assert warning in result.stderr
@@ -1717,7 +1726,7 @@ def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monk
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 0, result.output
     assert (
@@ -1739,7 +1748,7 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, ["acme/ok", "acme/flaky"])
         mock.post("/graphql").mock(side_effect=_flaky_graphql)
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 5  # a transient probe failure: retry later
     assert "error: acme/flaky: transient ref probe failed: HTTP 502" in result.stderr
@@ -1764,7 +1773,7 @@ def test_source_refresh_failures_report_their_own_and_the_run_s_category(
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, ["acme/ok", "acme/flaky"])
         mock.post("/graphql").mock(side_effect=_flaky_graphql)
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     errors = [
         line for line in map(json.loads, result.stderr.splitlines()) if line["level"] == "error"
@@ -1805,7 +1814,7 @@ def test_source_refresh_default_backend_recovers_probe_failures_with_git_fallbac
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, repos)
         mock.post("/graphql").mock(**graphql)
-        result = _run("source", "refresh", "prod")
+        result = _run_composed("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -1866,7 +1875,7 @@ def test_source_refresh_global_graphql_error_exits_once_without_per_repo_failure
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_expansion(mock, ["acme/gone", "acme/ok"])
         mock.post("/graphql").mock(return_value=_RATE_LIMIT_EXCEEDED)
-        result = _run("source", "refresh", "prod", "--backend", "graphql")
+        result = _run_composed("source", "refresh", "prod", "--backend", "graphql")
 
     assert result.exit_code == 5  # rate limited: retry later
     assert result.stdout == ""
@@ -1894,7 +1903,7 @@ def test_source_refresh_progress_and_low_rate_limit_warning_on_stderr(
 
         monkeypatch.setattr(GithubRefProbe, "probe", slow_probe)
         _mock_refresh_repos(mock, {"acme/ok": "sha-ok"}, rate_limit_remaining=200)
-        result = _run("source", "refresh", "prod")
+        result = _run_composed("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -1970,6 +1979,13 @@ def _find(stdin: str, *args: str) -> CliResult:
         app,
         ["find", "acme/target", "--stdin", "--source", "platform", *args],
         input=stdin,
+    )
+
+
+def _find_composed(stdin: str, *args: str) -> CliResult:
+    """``_find`` reading GitHub live: github composed, for its token."""
+    return invoke(
+        app, ["find", "acme/target", "--stdin", "--source", "platform", *args], input=stdin
     )
 
 
@@ -2066,7 +2082,9 @@ def test_find_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -
         _mock_dependency_file(
             mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
         )
-        result = _run("find", "acme/target", "--root", "acme/app", "--depth", "2", "-f", "json")
+        result = _run_composed(
+            "find", "acme/target", "--root", "acme/app", "--depth", "2", "-f", "json"
+        )
 
     assert _match_rows(result) == [
         ("acme/app", "main", "v1", ["acme/app@main", "acme/lib@main", "acme/target@v1"])
@@ -2083,7 +2101,7 @@ def test_find_reads_a_shared_dependency_live_once_across_roots(tmp_path: Path, m
         _mock_dependency_file(
             mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
         )
-        result = CliInvoker().invoke(
+        result = invoke(
             app,
             ["find", "acme/target", "--stdin", "--depth", "2", "-f", "json"],
             input="acme/one\nacme/two\n",
@@ -2219,7 +2237,7 @@ def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) ->
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/app", content="")
-        result = CliInvoker().invoke(app, ["find", "acme/target", "--stdin"], input=stdin)
+        result = invoke(app, ["find", "acme/target", "--stdin"], input=stdin)
 
     assert result.exit_code == 0, result.output + result.stderr
     # Each graph build reports its own empty-graph warning: one build, one line.
@@ -2232,7 +2250,7 @@ def test_find_collapses_repeated_roots(tmp_path: Path, monkeypatch) -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/target\n")
         _mock_dependency_file(mock, "acme/target", content="")
-        result = _run(
+        result = _run_composed(
             "find", "acme/target", "--root", "acme/app", "--root", "acme/app", "-f", "json"
         )
 
@@ -2369,7 +2387,7 @@ def test_deps_reads_live_without_a_source(tmp_path: Path, monkeypatch) -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
         _mock_dependency_file(mock, "acme/base", content="")
-        result = _run("deps", "acme/site", "-f", "json")
+        result = _run_composed("deps", "acme/site", "-f", "json")
 
     assert [row[:2] for row in _rows(result)] == [("acme/base", "main")]
 
@@ -2402,7 +2420,7 @@ def test_deps_live_unpinned_hop_follows_the_current_default_branch(
         mock.get(f"/repos/acme/base/contents/{_REQS}", params={"ref": "trunk"}).mock(
             return_value=httpx.Response(200, text="- src: https://github.com/acme/right\n")
         )
-        result = _run(
+        result = _run_composed(
             "deps", "acme/site", "--source", "platform", "--live", "--depth", "2", "-f", "json"
         )
 
@@ -2506,11 +2524,11 @@ def test_default_source_without_cache_fails_deps_cached_until_live(
         tmp_path, monkeypatch, _PLATFORM, token=True, ansible={"default_source": "platform"}
     )
 
-    cached = _run("deps", "acme/site", "--cached")
+    cached = _run_composed("deps", "acme/site", "--cached")
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_dependency_file(mock, "acme/site")
         _mock_dependency_file(mock, "acme/base", content="")
-        live = _run("deps", "acme/site", "--live", "-f", "json")
+        live = _run_composed("deps", "acme/site", "--live", "-f", "json")
 
     assert cached.exit_code == 1
     assert "no cached source data for source platform; drop --cached" in cached.stderr

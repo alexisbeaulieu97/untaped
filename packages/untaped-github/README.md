@@ -34,7 +34,7 @@ keys after `untaped config set github.git_protocol ssh`. Every setting is in the
 ## List an org's or team's repos
 
 ```bash
-untaped github repos list --team acme/platform --no-fork
+untaped github repos list --team acme/platform --fork exclude
 untaped github repos list 'svc-*' --org acme
 untaped github repos list --team acme/platform --format pipe \
   | untaped workspace create platform --stdin

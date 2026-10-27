@@ -14,31 +14,18 @@ import httpx
 import pytest
 import respx
 
+from github_test_support import Result, Settings, installed, run
+from untaped.runtime.bootstrap import build_root_app
 from untaped.sdk import plugin_path
-from untaped.sdk.testing import (
-    CliInvoker,
-    CliResult,
-    assert_destructive_contract,
-    invoke_root,
-)
+from untaped.sdk.testing import assert_destructive_contract, invoke_root
 from untaped_git.api import RepoStore
-from untaped_github import SPEC
-from untaped_github.cli import app
 from untaped_github.errors import GitCorpusError
 
 pytestmark = pytest.mark.usefixtures("composed")
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
 #: ``github.caches.sweep.max_age_seconds: 0``: every run checks every repo.
-_NO_MAX_AGE = "  caches:\n    sweep:\n      max_age_seconds: 0\n"
-
-
-@pytest.fixture(autouse=True)
-def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    return cfg
+_NO_MAX_AGE = ("UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS", "0")
 
 
 def _repo(full_name: str, source: Path, *, archived: bool = False) -> dict[str, object]:
@@ -53,22 +40,22 @@ def _repo(full_name: str, source: Path, *, archived: bool = False) -> dict[str, 
     }
 
 
-def _cache(args: list[str], *, org: dict[str, list[dict[str, object]]] | None = None) -> CliResult:
+def _cache(args: list[str], *, org: dict[str, list[dict[str, object]]] | None = None) -> Result:
     """Run ``<args>``; ``org`` maps an org name to its ``/orgs/<org>/repos`` listing."""
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         for name, repos in (org or {}).items():
             mock.get(f"/orgs/{name}/repos").mock(return_value=httpx.Response(200, json=repos))
-        return CliInvoker().invoke(app, args)
+        return run(args)
 
 
-def _rows(result: CliResult, key: str = "full_name") -> list[str]:
+def _rows(result: Result, key: str = "full_name") -> list[str]:
     """The repos of a json result: ``full_name`` of corpus rows, ``repo`` of sync outcomes."""
     assert result.exit_code == 0, result.output
     return [row[key] for row in json.loads(result.stdout)]
 
 
 def _cached() -> list[str]:
-    return _rows(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]))
+    return _rows(run(["cache", "status", "--format", "json"]))
 
 
 def _populate(source_repo: SourceRepo, *full_names: str) -> dict[str, dict[str, object]]:
@@ -84,18 +71,17 @@ def _populate(source_repo: SourceRepo, *full_names: str) -> dict[str, dict[str, 
 def test_cache_status_reports_profile_size_and_freshness(source_repo: SourceRepo) -> None:
     _populate(source_repo, "acme/api")
 
-    as_json = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
-    table = CliInvoker().invoke(app, ["cache", "status"])
+    as_json = run(["cache", "status", "--format", "json"])
+    table = run(["cache", "status"])
 
     [row] = json.loads(as_json.stdout)
     assert (row["full_name"], row["profile"]) == ("acme/api", "default")
     assert row["disk_bytes"] > 0
     assert re.search(
-        r"Cache: 1 repo, [0-9.]+ KiB, oldest just now, newest just now", as_json.stderr
+        r"Cache: 1 repo, [0-9.]+ KiB, oldest \d+ s ago, newest \d+ s ago", table.stderr
     )
     assert "KiB" in table.stdout
-    assert "just now" in table.stdout
-    assert "disk_bytes" not in table.stdout
+    assert " s ago" in table.stdout
 
 
 def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) -> None:
@@ -106,7 +92,7 @@ def test_cache_sync_warms_the_corpus_without_a_query(source_repo: SourceRepo) ->
             ["cache", "sync", "--org", "acme", "--format", "json", *extra], org={"acme": listed}
         )
         assert result.exit_code == 0, result.output
-        assert result.stderr.splitlines()[-1].startswith("sync: 1 ")
+        assert json.loads(result.stderr.splitlines()[-1])["message"].startswith("sync: 1 ")
         [row] = json.loads(result.stdout)
         return dict(row)
 
@@ -139,9 +125,9 @@ def test_cache_sync_refuses_cached() -> None:
 
 
 def test_cache_sync_skips_fetch_when_github_reports_no_push(
-    _config: Path, source_repo: SourceRepo
+    monkeypatch: pytest.MonkeyPatch, source_repo: SourceRepo
 ) -> None:
-    _config.write_text(_config.read_text() + _NO_MAX_AGE)
+    monkeypatch.setenv(*_NO_MAX_AGE)
     listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
     args = ["cache", "sync", "--org", "acme", "-f", "json"]
 
@@ -151,19 +137,16 @@ def test_cache_sync_skips_fetch_when_github_reports_no_push(
 
 
 def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
-    _config: Path, source_repo: SourceRepo
+    monkeypatch: pytest.MonkeyPatch, source_repo: SourceRepo
 ) -> None:
-    _config.write_text(_config.read_text() + _NO_MAX_AGE)
+    monkeypatch.setenv(*_NO_MAX_AGE)
     listed = [_repo("acme/api", source_repo("api", {"README.md": "hello\n"}))]
     piped = _cache(["repos", "list", "--org", "acme", "-f", "pipe"], org={"acme": listed})
     args = ["cache", "sync", "--stdin", "-f", "json"]
 
     # The first fetch stores GitHub's own pushed_at; piped records must match it.
     synced = _cache(["cache", "sync", "--org", "acme", "-f", "json"], org={"acme": listed})
-    actions = [
-        json.loads(CliInvoker().invoke(app, args, input=piped.stdout).stdout)[0]["action"]
-        for _ in range(2)
-    ]
+    actions = [json.loads(run(args, input=piped.stdout).stdout)[0]["action"] for _ in range(2)]
 
     assert '"pushed_at": "2026-07-01T00:00:00Z"' in piped.stdout
     assert json.loads(synced.stdout)[0]["action"] == "synced"
@@ -171,12 +154,12 @@ def test_cache_sync_of_piped_repos_list_skips_fetch_when_github_reports_no_push(
 
 
 def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
-    _config: Path,
+    settings: Settings,
     source_repo: SourceRepo,
     rewrite_to: Callable[..., None],
     store_auth: dict[str, list[str | None]],
 ) -> None:
-    _config.write_text(_config.read_text() + "  base_url: https://ghe.example/api/v3\n")
+    settings["server"] = {"url": "https://ghe.example/api/v3"}
     origin = source_repo("origin", {"README.md": "hello\n"})
     rewrite_to(origin, "https://ghe.example/acme/api.git", "https://other.example/acme/web.git")
     records = [
@@ -187,8 +170,7 @@ def test_cache_sync_sends_the_token_only_to_the_enterprise_git_host(
         )
     ]
 
-    result = CliInvoker().invoke(
-        app,
+    result = run(
         ["cache", "sync", "--stdin", "-f", "json"],
         input="".join(f"{json.dumps(record)}\n" for record in records),
     )
@@ -211,8 +193,9 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
     assert row["action"] == "failed"
     assert row["error"]["message"] == row["detail"]
     assert (row["error"]["category"], row["error"]["system"]) == ("failed", "git")
-    assert f"error: acme/gone: {row['detail']}" in result.stderr
-    assert "sync: 1 failed" in result.stderr
+    failure, done = (json.loads(line) for line in result.stderr.splitlines())
+    assert (failure["item"], failure["message"]) == ("acme/gone", row["detail"])
+    assert done["message"] == "sync: 1 failed"
 
 
 @pytest.mark.parametrize(
@@ -232,7 +215,7 @@ def test_cache_sync_failure_exits_1_and_names_the_repo(tmp_path: Path) -> None:
     ],
 )
 def test_cache_selection_usage_errors_exit_2(args: list[str], message: str) -> None:
-    result = CliInvoker().invoke(app, ["cache", *args])
+    result = run(["cache", *args])
 
     assert result.exit_code == 2, result.output
     assert message in result.output
@@ -253,7 +236,7 @@ def test_cache_delete_selects_cached_repos(
 ) -> None:
     _populate(source_repo, "acme/api", "other/tool")
 
-    result = CliInvoker().invoke(app, ["cache", "delete", *args, "--yes", "--format", "json"])
+    result = run(["cache", "delete", *args, "--yes", "--format", "json"])
 
     assert _rows(result) == deleted
     assert _cached() == remaining
@@ -273,10 +256,10 @@ def test_cache_delete_of_an_uncached_repo_fails_before_deleting(
 ) -> None:
     _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(app, ["cache", "delete", *args, "--yes", "--format", "json"])
+    result = run(["cache", "delete", *args, "--yes", "--format", "json"])
 
     assert result.exit_code == 1, result.output
-    assert f"error: cached repo not found: '{missing}'" in result.stderr
+    assert json.loads(result.stderr)["message"] == f"cached repo not found: '{missing}'"
     assert result.stdout == ""
     assert _cached() == ["acme/api"]
 
@@ -288,8 +271,8 @@ def test_cache_delete_repo_conforms_to_destructive_contract(source_repo: SourceR
         assert _cached() == ["acme/api"]
 
     assert_destructive_contract(
-        app,
-        ["cache", "delete", "acme/api", "--format", "json"],
+        build_root_app(candidates=installed().candidates).meta,
+        ["github", "cache", "delete", "acme/api", "--format", "json"],
         assert_unchanged=corpus_still_has_repo,
     )
 
@@ -365,7 +348,7 @@ def test_cache_sync_archived_modes_and_default_org(
 def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None:
     _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(app, ["cache", "worktree", "acme/api", "--format", "json"])
+    result = run(["cache", "worktree", "acme/api", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     row = json.loads(result.stdout)
@@ -380,9 +363,7 @@ def test_cache_worktree_refuses_an_unknown_column_before_materializing(
 ) -> None:
     _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(
-        app, ["cache", "worktree", "acme/api", "--format", "json", "-c", "path,nope"]
-    )
+    result = run(["cache", "worktree", "acme/api", "--format", "json", "-c", "path,nope"])
 
     assert result.exit_code == 2, result.output
     assert "unknown column 'nope'" in result.stderr
@@ -392,7 +373,7 @@ def test_cache_worktree_refuses_an_unknown_column_before_materializing(
 def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:
     _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(app, ["cache", "worktree", "acme/api", "--format", "raw"])
+    result = run(["cache", "worktree", "acme/api", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.count("\n") == 1 and "\t" not in result.stdout
@@ -408,14 +389,14 @@ def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo)
     ],
 )
 def test_cache_worktree_rejects_repos_it_cannot_materialize(repo: str, message: str) -> None:
-    result = CliInvoker().invoke(app, ["cache", "worktree", repo])
+    result = run(["cache", "worktree", repo])
 
     assert result.exit_code == 1, result.output
     assert message in result.stderr
 
 
 def _status_bytes() -> int:
-    [row] = json.loads(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]).stdout)
+    [row] = json.loads(run(["cache", "status", "--format", "json"]).stdout)
     return int(row["disk_bytes"])
 
 
@@ -425,7 +406,7 @@ def test_cache_delete_reports_the_size_it_frees(source_repo: SourceRepo, dry_run
     size = _status_bytes()
     args = ["cache", "delete", "acme/api", "--yes", "--format", "json"]
 
-    result = CliInvoker().invoke(app, [*args, "--dry-run"] if dry_run else args)
+    result = run([*args, "--dry-run"] if dry_run else args)
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
@@ -459,10 +440,10 @@ def test_cache_delete_leaves_a_repo_other_plugins_still_use(
     trees = [tmp_path / "ws" / "one", tmp_path / "ws" / "two"]
     for tree in trees:
         workspace.worktree_add(tree, "refs/remotes/origin/main")
-    github = RepoStore.for_url(url, plugin=SPEC, error=GitCorpusError)
+    github = RepoStore.for_url(url, plugin="github", error=GitCorpusError)
     assert github.private_file.is_file()
 
-    result = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes", "--format", "json"])
+    result = run(["cache", "delete", "acme/api", "--yes", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
@@ -482,7 +463,7 @@ def test_cache_delete_names_a_worktree_added_by_hand(
     source_repo: SourceRepo, tmp_path: Path
 ) -> None:
     url = str(_populate(source_repo, "acme/api")["acme/api"]["clone_url"])
-    github = RepoStore.for_url(url, plugin=SPEC, error=GitCorpusError)
+    github = RepoStore.for_url(url, plugin="github", error=GitCorpusError)
     by_hand = tmp_path / "scratch"
     _git_dir(
         github,
@@ -494,7 +475,7 @@ def test_cache_delete_names_a_worktree_added_by_hand(
         "refs/untaped/github/heads/main",
     )
 
-    table = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes"])
+    table = run(["cache", "delete", "acme/api", "--yes"])
 
     assert table.exit_code == 0, table.output
     assert "released" in table.stdout
@@ -505,7 +486,7 @@ def test_cache_delete_names_a_worktree_added_by_hand(
 def test_cache_delete_table_shows_what_it_freed(source_repo: SourceRepo) -> None:
     _populate(source_repo, "acme/api")
 
-    table = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--yes"])
+    table = run(["cache", "delete", "acme/api", "--yes"])
 
     assert table.exit_code == 0, table.output
     assert re.search(r"acme/api\W+removed\W+[0-9.]+ KiB freed", table.stdout), table.stdout
@@ -516,7 +497,7 @@ def test_cache_size_counts_links_not_what_they_point_at(
 ) -> None:
     _populate(source_repo, "acme/api")
     size = _status_bytes()
-    [row] = json.loads(CliInvoker().invoke(app, ["cache", "status", "--format", "json"]).stdout)
+    [row] = json.loads(run(["cache", "status", "--format", "json"]).stdout)
     bare = Path(row["path"])
     outside = tmp_path / "large.bin"
     outside.write_bytes(b"x" * 1_000_000)
@@ -537,7 +518,7 @@ def test_cache_size_skips_a_file_that_vanishes_while_measured(
         return real_lstat(path, *args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(os, "lstat", flaky_lstat)
-    result = CliInvoker().invoke(app, ["cache", "delete", "--all", "--yes", "--format", "json"])
+    result = run(["cache", "delete", "--all", "--yes", "--format", "json"])
 
     assert _rows(result) == ["acme/api", "acme/web"]
 
@@ -557,7 +538,7 @@ def test_cache_delete_dry_run_table_shows_what_each_repo_would_free(
 ) -> None:
     _populate(source_repo, "acme/api")
 
-    result = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--dry-run", "--yes"])
+    result = run(["cache", "delete", "acme/api", "--dry-run", "--yes"])
 
     assert result.exit_code == 0, result.output
     assert "disk_bytes" in result.stdout.splitlines()[1]

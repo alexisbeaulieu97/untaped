@@ -10,12 +10,10 @@ never through this module.
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 from typing import Any
 
-import pytest
-
 import untaped.sdk as sdk
+from github_test_support import Settings, installed
 from untaped_github import api as github_api
 from untaped_github.api import (
     BatchRepoRefsFailure,
@@ -129,15 +127,12 @@ def test_client_covers_ansible_reader_operations() -> None:
     assert default_branch["chunk_size"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
-def test_github_settings_reads_the_active_github_section(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+def test_github_settings_reads_the_active_github_section(settings: Settings) -> None:
+    settings["default_org"] = "acme"
+    installed()
 
-    settings = github_settings()
+    with installed().running():
+        found = github_settings()
 
-    assert isinstance(settings, GithubSettings)
-    assert settings.token is not None
-    assert settings.token.get_secret_value() == "ghp_test"
+    assert isinstance(found, GithubSettings)
+    assert found.default_org == "acme"

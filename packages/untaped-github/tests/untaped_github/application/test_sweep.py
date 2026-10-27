@@ -37,14 +37,17 @@ from untaped_github.domain import (
     SweepQuery,
 )
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepoResult, CorpusSyncOutcome, GithubRepo
+from untaped_github.records import CorpusRepo, Repo, SyncOutcome
 from untaped_github.settings import SWEEP
 
 README = SweepQuery(has_files=("README.md",))
 
+#: The sweep reads and seeds github's ``sweep`` cache, which a run of github holds.
+pytestmark = pytest.mark.usefixtures("composed")
 
-def _item(full_name: str, *, archived: bool = False, pushed_at: str | None = None) -> GithubRepo:
-    return GithubRepo(
+
+def _item(full_name: str, *, archived: bool = False, pushed_at: str | None = None) -> Repo:
+    return Repo(
         full_name=full_name,
         name=full_name.rsplit("/", maxsplit=1)[-1],
         html_url=f"https://github.example.com/{full_name}",
@@ -55,8 +58,8 @@ def _item(full_name: str, *, archived: bool = False, pushed_at: str | None = Non
     )
 
 
-def _row(full_name: str, *, archived: bool = False) -> CorpusRepoResult:
-    return CorpusRepoResult(
+def _row(full_name: str, *, archived: bool = False) -> CorpusRepo:
+    return CorpusRepo(
         full_name=full_name,
         ref="main",
         path=f"/corpus/{full_name}",
@@ -69,12 +72,12 @@ def _row(full_name: str, *, archived: bool = False) -> CorpusRepoResult:
 class _Resolver:
     """Inventory stub: every scope resolves to ``rows``; names in ``missing`` raise a 404."""
 
-    def __init__(self, *rows: GithubRepo, missing: frozenset[str] = frozenset()):
+    def __init__(self, *rows: Repo, missing: frozenset[str] = frozenset()):
         self.rows = rows
         self.missing = missing
         self.scopes: list[RepositoryInventoryScope] = []
 
-    def __call__(self, scope: RepositoryInventoryScope) -> tuple[GithubRepo, ...]:
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[Repo, ...]:
         self.scopes.append(scope)
         for name in set(scope.repos) & self.missing:
             raise UntapedError(f"failed to expand repository {name}: 404 Not Found")
@@ -88,7 +91,7 @@ class _Corpus:
     def __init__(
         self,
         *,
-        cached_rows: tuple[CorpusRepoResult, ...] = (),
+        cached_rows: tuple[CorpusRepo, ...] = (),
         freshness: dict[str, CorpusFreshness] | None = None,
         sync_errors: dict[str, Exception] | None = None,
     ) -> None:
@@ -96,7 +99,7 @@ class _Corpus:
         # A cached row's copy was fetched at its fetched_at.
         self.freshness = {
             row.full_name: CorpusFreshness(
-                fetched_at=datetime.fromisoformat(row.fetched_at or ""), profile="default"
+                fetched_at=row.fetched_at or datetime.now(UTC), profile="default"
             )
             for row in cached_rows
         } | (freshness or {})
@@ -119,7 +122,7 @@ class _Corpus:
         *,
         selector: RefSelector,
         progress: ProgressHandle = NO_PROGRESS,
-    ) -> CorpusRepoResult:
+    ) -> CorpusRepo:
         self.synced.append(repo.full_name)
         self.handles.append(progress)
         error = self.sync_errors.get(repo.full_name)
@@ -129,8 +132,8 @@ class _Corpus:
         self.freshness[repo.full_name] = CorpusFreshness(
             fetched_at=fetched_at, profile=selector.profile, ref_globs=selector.globs
         )
-        return CorpusRepoResult(
-            full_name=repo.full_name, ref="main", path="/store", fetched_at=fetched_at.isoformat()
+        return CorpusRepo(
+            full_name=repo.full_name, ref="main", path="/store", fetched_at=fetched_at
         )
 
     def cache_key(self, repo: CorpusRepoTarget) -> str:
@@ -173,7 +176,7 @@ class _Corpus:
         found = (self.blob_map.get((repo.full_name, ref, path)) for path in paths)
         return next((text for text in found if text is not None), None)
 
-    def list_repos(self) -> tuple[CorpusRepoResult, ...]:
+    def list_repos(self) -> tuple[CorpusRepo, ...]:
         return self.cached_rows
 
 
@@ -354,7 +357,7 @@ def test_auth_and_rate_limit_failures_abort_instead_of_unscanned(status: int, bo
     # aborts the sweep instead of turning each repo into an unscanned row.
     calls: list[RepositoryInventoryScope] = []
 
-    def resolver(scope: RepositoryInventoryScope) -> tuple[GithubRepo, ...]:
+    def resolver(scope: RepositoryInventoryScope) -> tuple[Repo, ...]:
         calls.append(scope)
         cause = HttpStatusError(f"HTTP {status}", status_code=status, body=body)
         raise UntapedError(f"failed to expand repository {scope.repos[0]}") from cause
@@ -475,7 +478,7 @@ def test_expired_copy_with_unchanged_pushed_at_is_touched_not_fetched() -> None:
     assert corpus.synced == []
     assert corpus.touched == ["acme/api"]
     assert (report.cached, report.refreshed) == (1, 0)
-    assert report.rows[0].fetched_at == "2026-07-07T12:00:00+00:00"
+    assert report.rows[0].fetched_at == datetime(2026, 7, 7, 12, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
@@ -717,7 +720,7 @@ def test_a_fill_error_that_is_not_the_repos_stops_the_sweep() -> None:
         _sweep(corpus, resolver=_Resolver(_item("acme/api"), _item("acme/web")))
 
 
-def _sync(corpus: _Corpus, *names: str, refresh: bool = False) -> tuple[CorpusSyncOutcome, ...]:
+def _sync(corpus: _Corpus, *names: str, refresh: bool = False) -> tuple[SyncOutcome, ...]:
     return SyncCorpus(inventory=_Resolver(*map(_item, names)), corpus=corpus)(
         CorpusSyncOptions(
             scope=RepositoryInventoryScope(orgs=("acme",)),

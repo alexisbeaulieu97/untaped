@@ -11,11 +11,11 @@ import httpx
 import pytest
 import respx
 
+from github_test_support import Result, run
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.settings import get_settings
-from untaped.sdk.testing import CliInvoker, CliResult, invoke_cli
-from untaped_github.cli import app
+from untaped.sdk.testing import invoke_cli
 
 API = "https://api.github.com"
 ENDPOINTS = {
@@ -92,7 +92,7 @@ def _search(
     requests: list[str] | None = None,
     root_args: Sequence[str] = (),
     candidates: tuple[PluginCandidate, ...] = (),
-) -> tuple[CliResult, respx.Route]:
+) -> tuple[Result, respx.Route]:
     """Run ``search <args>`` against a mocked API; ``pages`` chain via ``Link`` headers.
 
     ``requests`` collects every requested URL; ``root_args`` (such as ``-q``) run
@@ -120,7 +120,7 @@ def _search(
             argv = [*root_args, "github", "search", *args]
             result = invoke_cli(build_root_app(candidates=candidates), argv, input=input)
         else:
-            result = CliInvoker().invoke(app, ["search", *args], input=input)
+            result = run(["search", *args], input=input)
         if requests is not None:
             requests.extend(str(call.request.url) for call in mock.calls)
     return result, route
@@ -326,16 +326,16 @@ def test_search_large_limit_follows_link_pages_until_github_stops(limit: str) ->
 
 
 def test_search_limit_zero_is_a_usage_error() -> None:
-    result = CliInvoker().invoke(app, ["search", "repos", "--limit", "0"])
+    result = run(["search", "repos", "--limit", "0"])
 
     assert result.exit_code == 2, result.output
     assert "--limit" in result.output
-    assert ">= 1" in result.output
+    assert "must be at least 1, got 0" in result.output
 
 
 def test_search_help_documents_limits_and_points_code_search_to_sweep() -> None:
-    repos = CliInvoker().invoke(app, ["search", "repos", "--help"])
-    code = CliInvoker().invoke(app, ["search", "code", "--help"])
+    repos = run(["search", "repos", "--help"])
+    code = run(["search", "code", "--help"])
 
     assert repos.exit_code == code.exit_code == 0
     assert "30" in repos.output
@@ -356,7 +356,7 @@ def test_search_help_documents_limits_and_points_code_search_to_sweep() -> None:
     ],
 )
 def test_search_malformed_team_is_a_usage_error(team_args: list[str]) -> None:
-    result = CliInvoker().invoke(app, ["search", "repos", *team_args])
+    result = run(["search", "repos", *team_args])
 
     assert result.exit_code == 2, result.output
     assert "ORG/SLUG" in result.output
@@ -455,9 +455,7 @@ def test_search_repos_rejects_oversized_query_before_http_and_explains_422() -> 
                 },
             )
         )
-        rejected = CliInvoker().invoke(
-            app, ["search", "repos", "uses: a/b", "--repo", "acme/api", "--format", "json"]
-        )
+        rejected = run(["search", "repos", "uses: a/b", "--repo", "acme/api", "--format", "json"])
 
     assert rejected.exit_code == 1
     assert "/search/repositories" in rejected.stderr

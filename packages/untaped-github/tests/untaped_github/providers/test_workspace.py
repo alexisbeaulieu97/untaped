@@ -19,9 +19,10 @@ from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError, home
 from untaped.sdk.contracts import Errored, NoProviderReady, Ok, convert, gather
 from untaped.sdk.testing import assert_fills, compose_with
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
-from untaped_github.records import GithubRepo
+from untaped_github.records import Repo
 from untaped_github.settings import GithubSettings
-from untaped_workspace.api import Repo, RepoSource
+from untaped_workspace.api import Repo as WorkspaceRepo
+from untaped_workspace.api import RepoSource
 
 API = "https://api.github.com"
 
@@ -52,8 +53,8 @@ ACME = [
 #: Rows as github commands emit them: a full listing, a search hit (no clone
 #: URLs) and a sparse row (only ``full_name``).
 SAMPLES: list[object] = [
-    GithubRepo.model_validate(ACME[0]),
-    GithubRepo(
+    Repo.model_validate(ACME[0]),
+    Repo(
         full_name="acme/web",
         html_url="https://github.com/acme/web",
         description="Website",
@@ -71,7 +72,7 @@ SAMPLES: list[object] = [
 def configure(**github: object) -> None:
     """Write the default profile's ``github`` section and forget cached settings.
 
-    The token is ``GH_TOKEN``'s (:func:`_token`); a ``base_url`` is the server's URL.
+    The token is ``GH_TOKEN``'s (the conftest's); a ``base_url`` is the server's URL.
     """
     path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,22 +83,17 @@ def configure(**github: object) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GH_TOKEN", "ghp_test")
-
-
-@pytest.fixture(autouse=True)
 def _composed() -> Iterator[None]:
     with compose_with("git", "github", "workspace"):
         yield
 
 
-def piped(record: dict[str, object], kind: str = "github.repo") -> Repo:
+def piped(record: dict[str, object], kind: str = "github.repo") -> WorkspaceRepo:
     """A piped row read the way workspace reads one: through the contract's bridge."""
     return convert(RepoSource.to_repo, PipeEnvelope(kind=kind, record=record, lineno=1))
 
 
-def listed() -> Ok[list[Repo]]:
+def listed() -> Ok[list[WorkspaceRepo]]:
     [answer] = gather(RepoSource.repos, refresh=True)()
     assert isinstance(answer, Ok), answer
     return answer
@@ -160,7 +156,7 @@ def test_a_configured_scope_makes_github_ready(github: dict[str, object]) -> Non
 def test_a_piped_row_becomes_a_workspace_repo_without_an_api_call() -> None:
     # S11: search hits piped while GitHub's API is down still resolve.
     configure(default_org="acme")
-    hit = GithubRepo(full_name="acme/api", html_url="https://github.com/acme/api")
+    hit = Repo(full_name="acme/api", html_url="https://github.com/acme/api")
 
     with respx.mock(base_url=API, assert_all_called=False) as mock:
         down = mock.route().mock(return_value=httpx.Response(503))
@@ -170,13 +166,13 @@ def test_a_piped_row_becomes_a_workspace_repo_without_an_api_call() -> None:
     assert (repo.name, repo.url) == ("acme/api", "https://github.com/acme/api.git")
     assert repo.source is not None
     assert (repo.source.plugin, repo.source.kind) == ("github", "github.repo")
-    assert GithubRepo.model_validate(repo.source.record) == hit
+    assert Repo.model_validate(repo.source.record) == hit
 
 
 def test_a_piped_row_keeps_its_branch_description_and_archived_flag() -> None:
     configure(default_org="acme")
 
-    repo = piped(GithubRepo.model_validate(ACME[1]).model_dump(mode="json"))
+    repo = piped(Repo.model_validate(ACME[1]).model_dump(mode="json"))
 
     assert (repo.default_branch, repo.archived) == ("trunk", True)
     assert repo.url == "https://github.com/acme/web.git"
@@ -197,7 +193,7 @@ def test_git_protocol_picks_the_rows_url_or_builds_one_from_full_name(
 ) -> None:
     configure(default_org="acme", git_protocol=protocol)
 
-    assert piped(GithubRepo.model_validate(row).model_dump(mode="json")).url == url
+    assert piped(Repo.model_validate(row).model_dump(mode="json")).url == url
 
 
 @pytest.mark.parametrize(

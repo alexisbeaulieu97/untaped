@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
+from ansible.composed import invoke
 from untaped.sdk.testing import ScriptedPromptBackend, invoke_cli
 from untaped_ansible.cli import app
 
@@ -290,7 +291,7 @@ def test_graph_out_writes_the_rendered_graph(
     target.mkdir()
     out = tmp_path / "graph.json"
 
-    result = invoke_cli(
+    result = invoke(
         app,
         ["graph", str(target), "--target-repo", "acme/role", "--direction=down", "-f", "json",
          "--out", str(out)],

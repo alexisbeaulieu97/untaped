@@ -33,7 +33,7 @@ from untaped_git import remote as remote_module
 from untaped_git import store as store_module
 from untaped_git.api import Released, RepoStore, store_key
 from untaped_git.plugin import Git
-from untaped_github import SPEC as GITHUB
+from untaped_github.plugin import Github
 
 _REQS = "roles/requirements.yml"
 _META = "meta/main.yml"
@@ -84,10 +84,11 @@ def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path
     root = tmp_path / "store"
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    profile = {"github": {"token": _TOKEN}, "git": {"store_dir": str(root)}}
+    monkeypatch.setenv("GH_TOKEN", _TOKEN)
+    profile = {"git": {"store_dir": str(root)}}
     config.write_text(yaml.safe_dump({"format_version": 2, **profile}), encoding="utf-8")
     get_settings.cache_clear()
-    with compose_with(Git, GITHUB, ANSIBLE):
+    with compose_with(Git, Github, ANSIBLE):
         yield root
     get_settings.cache_clear()
 
@@ -240,7 +241,7 @@ def test_a_release_by_github_keeps_a_repo_ansibles_refresh_uses(
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
     _refresh(tmp_path, "site")
-    github = RepoStore.for_url(site.url, plugin=GITHUB, error=RepoStoreError)
+    github = RepoStore.for_url(site.url, plugin="github", error=RepoStoreError)
     github.fetch(branches=["main"])
     github.write_private()
 

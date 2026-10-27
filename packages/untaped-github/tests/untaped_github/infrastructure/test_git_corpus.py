@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
+from untaped.sdk import plugin_of
 from untaped_git.api import Prefetched, RepoStore
-from untaped_github import SPEC
 from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoTarget,
@@ -26,7 +26,8 @@ from untaped_github.domain import (
 )
 from untaped_github.errors import GitCorpusError
 from untaped_github.infrastructure.git_corpus import GitCorpusCache, prefetch_paths
-from untaped_github.records import CorpusRepoResult
+from untaped_github.records import CorpusRepo
+from untaped_github.settings import GithubSettings
 
 pytestmark = pytest.mark.usefixtures("composed")
 
@@ -53,9 +54,9 @@ class _Corpus:
 
     @property
     def store(self) -> RepoStore:
-        return RepoStore.for_url(self.source.as_uri(), plugin=SPEC, error=GitCorpusError)
+        return RepoStore.for_url(self.source.as_uri(), plugin="github", error=GitCorpusError)
 
-    def sync(self, selector: RefSelector | None = None, **kwargs: Any) -> CorpusRepoResult:
+    def sync(self, selector: RefSelector | None = None, **kwargs: Any) -> CorpusRepo:
         return self.cache.sync_repo(
             kwargs.pop("repo", self.repo), selector=selector or RefSelector()
         )
@@ -79,9 +80,14 @@ class _Corpus:
 @pytest.fixture
 def corpus(source_repo: Callable[[str, dict[str, str | bytes]], Path]) -> Callable[..., _Corpus]:
     def create(files: dict[str, str | bytes], **cache_options: Any) -> _Corpus:
-        return _Corpus(source_repo("source", files), GitCorpusCache(**cache_options))
+        return _Corpus(source_repo("source", files), _cache(**cache_options))
 
     return create
+
+
+def _cache(**options: Any) -> GitCorpusCache:
+    """github's corpus, as a github command builds it, with ``options``."""
+    return GitCorpusCache(plugin=plugin_of(GithubSettings), **options)
 
 
 def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None:
@@ -591,7 +597,7 @@ def test_grep_through_the_handle_matches_a_full_clone(
 def test_validate_pattern_uses_extended_regex_and_checks_pathspecs(
     pattern: str, paths: tuple[str, ...], error: str | None
 ) -> None:
-    found = GitCorpusCache().validate_pattern(pattern=pattern, paths=paths, fixed_strings=False)
+    found = _cache().validate_pattern(pattern=pattern, paths=paths, fixed_strings=False)
 
     if error is None:
         assert found is None
@@ -711,7 +717,7 @@ def test_listing_reads_only_githubs_files_and_warns_on_corrupt_ones(
     assert all("could not read corpus metadata" in warning for warning in warnings)
     assert capfd.readouterr().err == ""
 
-    GitCorpusCache().list_repos()
+    _cache().list_repos()
     assert "warning: could not read corpus metadata" in capfd.readouterr().err
 
 

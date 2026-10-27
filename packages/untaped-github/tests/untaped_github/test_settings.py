@@ -6,10 +6,9 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from untaped.runtime.bootstrap import build_root_app
 from untaped.sdk import get_config_section, home
 from untaped.sdk.health.deprecated_keys import key_mappings
-from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing import invoke_root
 from untaped_github.settings import SWEEP, GithubSettings
 
 
@@ -65,7 +64,7 @@ def test_the_corpus_directory_settings_are_deleted() -> None:
     """``cache_dir`` (and ``corpus_path`` before it) gave way to ``git.store_dir``."""
     deleted = key_mappings(GithubSettings).deleted
 
-    corpus = {key: entry.reason() for key, entry in deleted.items() if "inventory" not in key}
+    corpus = {key: deleted[key].reason() for key in ("cache_dir", "corpus_path")}
     assert corpus == {
         "cache_dir": "deleted in 11.0; the repo store lives under git.store_dir",
         "corpus_path": "deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir",
@@ -90,15 +89,28 @@ def test_git_protocol_takes_https_or_ssh(protocol: str) -> None:
         GithubSettings.model_validate({"git_protocol": "git"})
 
 
+def test_the_11x_token_settings_and_sweep_max_age_are_deleted_in_12() -> None:
+    """The token is stored with ``untaped auth login github``; the max age is the cache's."""
+    deleted = key_mappings(GithubSettings).deleted
+
+    assert deleted["token"].reason() == deleted["token_command"].reason()
+    assert deleted["token"].reason() == (
+        "deleted in 12.0; store the token with `untaped auth login github`"
+    )
+    assert deleted["sweep.max_age_seconds"].reason() == (
+        "deleted in 12.0; use github.caches.sweep.max_age_seconds"
+    )
+
+
+@pytest.mark.usefixtures("composed")
 def test_the_sweep_max_age_is_the_sweep_caches_setting() -> None:
     assert SWEEP.setting == "github.caches.sweep.max_age_seconds"
     assert "max_age_seconds" not in GithubSettings().sweep.model_dump()
 
 
-def test_a_10x_sweep_max_age_is_read_as_the_cache_max_age() -> None:
+def test_an_11x_sweep_max_age_is_not_read() -> None:
     _write({"sweep": {"max_age_seconds": 60}})
 
-    result = CliInvoker().invoke(build_root_app().meta, ["config", "get", SWEEP.setting])
+    result = invoke_root(["config", "get", "github.caches.sweep.max_age_seconds"])
 
-    assert result.stdout.strip() == "60"
-    assert "sweep.max_age_seconds" in result.stderr  # the renamed-key warning
+    assert result.stdout.strip() == "3600"

@@ -17,11 +17,8 @@ from untaped_github.errors import GithubGraphqlError
 from untaped_github.infrastructure import GithubClient
 from untaped_github.settings import GithubServer, GithubSettings
 
-
-@pytest.fixture(autouse=True)
-def _token(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every probe's token comes from gh's variable."""
-    monkeypatch.setenv("GH_TOKEN", "ghp_test")
+#: Every probe's token comes from gh's variable, which the composed github reads.
+pytestmark = pytest.mark.usefixtures("composed")
 
 
 Reply = httpx.Response | Callable[[httpx.Request], httpx.Response] | Exception

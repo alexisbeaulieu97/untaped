@@ -1,20 +1,26 @@
-"""The records github's commands write, each declaring its ``github.*`` kind.
+"""The records github's commands write; each one's kind is ``github.`` and its class name.
 
-They live in one module the plugin's spec imports, so every kind github
-declares is registered once the plugin is composed: ``plugin schema``
-describes each one, and a piped github row resolves to its model before
-any github command runs. The module holds models and their default columns
-only, to keep that import cheap. A model's fields, in order, are its rows'
-keys on the wire.
+The module holds models and their default columns only, to keep its import
+cheap. A model's fields, in order, are its rows' keys on the wire.
 """
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import AbsolutePath, OutcomeRecord, Record, TargetRecord, UtcTimestamp
+from untaped.sdk import (
+    AbsolutePath,
+    Age,
+    Bytes,
+    Key,
+    OutcomeRecord,
+    Record,
+    Spread,
+    TargetRecord,
+    UtcTimestamp,
+)
 
 
 def _with_aliases(data: Any) -> Any:
@@ -39,7 +45,7 @@ def _repo_from_repository_url(value: Any) -> str | None:
     return value.rsplit(marker, 1)[1].strip("/") or None
 
 
-class GithubUser(Record, kind="github.user"):
+class User(Record):
     """The authenticated GitHub user, as ``GET /user`` returns it (``whoami``)."""
 
     model_config = ConfigDict(extra="ignore")
@@ -50,7 +56,7 @@ class GithubUser(Record, kind="github.user"):
     email: str | None = None
 
 
-class GithubRepo(Record, kind="github.repo"):
+class Repo(Record):
     """A GitHub repository, as every github command emits and reads it.
 
     The fields are GitHub's own (``full_name``, ``html_url``, ``clone_url``…),
@@ -70,7 +76,7 @@ class GithubRepo(Record, kind="github.repo"):
         "description",
     )
 
-    full_name: str
+    full_name: Annotated[str, Key]
     name: str | None = Field(default=None, validate_default=True)
     html_url: str | None = None
     clone_url: str | None = None
@@ -103,15 +109,22 @@ class GithubRepo(Record, kind="github.repo"):
 REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", "updated_at")
 
 
-class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
+class CorpusRepo(Repo):
     """One repository row in the local scan corpus.
 
-    A :class:`GithubRepo`, so it pipes into workspace like any repo row.
+    A :class:`Repo`, so it pipes into workspace like any repo row.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "ref", "status", "fetched_at", "path")
+    table_columns: ClassVar[tuple[str, ...]] = (
+        "full_name",
+        "ref",
+        "status",
+        "archived",
+        "disk_bytes",
+        "fetched_at",
+        "path",
+    )
 
-    full_name: str
     ref: str
     path: str = Field(
         description="The repo in the git plugin's repo store, which other plugins may share."
@@ -131,29 +144,38 @@ class CorpusRepoResult(GithubRepo, kind="github.corpus_repo"):
             "add, local branches or a stash."
         ),
     )
-    fetched_at: str | None = None
+    fetched_at: Annotated[UtcTimestamp | None, Age] = None
     profile: str = "default"
     ref_globs: tuple[str, ...] = ()
-    disk_bytes: int = Field(default=0, description="What a `removed` repo freed; 0 otherwise.")
+    detail: str | None = Field(
+        default=None,
+        description=(
+            "On a `cache delete` or `prune` row: what a `removed` repo freed, or what "
+            "kept a `released` one."
+        ),
+    )
+    disk_bytes: Annotated[int, Bytes] = Field(
+        default=0,
+        description="The stored copy's size; on a `cache delete` row, what a `removed` repo freed.",
+    )
 
 
-class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
+class SweepRepo(Repo):
     """Aggregated sweep result for one repository.
 
-    A :class:`GithubRepo`, so a sweep's matches pipe into workspace (or a
+    A :class:`Repo`, so a sweep's matches pipe into workspace (or a
     second sweep) like any repo row.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "refs_matched", "hits", "fetched_at")
+    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "hits", "refs_matched", "owners")
 
-    full_name: str
     matched: bool = Field(
         default=True, description="Always true: a sweep writes a row only for a repo that matched."
     )
     refs_matched: tuple[str, ...] = Field(
         default=(), description="The refs the predicates held on, by short name."
     )
-    hits: dict[str, int] = Field(
+    hits: Annotated[dict[str, int], Spread] = Field(
         default_factory=dict,
         description=(
             "Per predicate label (`grep:PAT`, `not-grep:PAT`, `has-file:GLOB`, "
@@ -168,10 +190,12 @@ class RepoSweepOutcome(GithubRepo, kind="github.sweep_repo"):
             "default owners when no file matched); empty without one or under `--no-owners`."
         ),
     )
-    fetched_at: str | None = Field(default=None, description="When the scanned copy was fetched.")
+    fetched_at: Annotated[UtcTimestamp | None, Age] = Field(
+        default=None, description="When the scanned copy was fetched."
+    )
 
 
-class SweepFile(Record, kind="github.sweep_file"):
+class SweepFile(Record):
     """One file a sweep matched in one repository (``sweep --show files``).
 
     ``refs`` are the refs it matched on; ``hits`` counts its matching lines.
@@ -183,7 +207,7 @@ class SweepFile(Record, kind="github.sweep_file"):
     hits: int
 
 
-class SweepMatch(Record, kind="github.sweep_match"):
+class SweepMatch(Record):
     """One deduped content match, possibly reachable from several refs (``--show matches``)."""
 
     # A match line reads whole: the table shows every field.
@@ -196,7 +220,7 @@ class SweepMatch(Record, kind="github.sweep_match"):
     text: str
 
 
-class CorpusSyncOutcome(OutcomeRecord, kind="github.sync_outcome"):
+class SyncOutcome(OutcomeRecord):
     """The result of warming one repository in the corpus (``cache sync``).
 
     ``action`` is ``synced`` (fetched), ``unchanged`` (GitHub reports no push
@@ -212,7 +236,7 @@ class CorpusSyncOutcome(OutcomeRecord, kind="github.sync_outcome"):
     detail: str | None = None
 
 
-class WorktreeResult(TargetRecord, kind="github.worktree"):
+class Worktree(TargetRecord):
     """A materialized worktree path for a cached repository ref (``cache worktree``).
 
     ``target_path`` leads so ``--format raw`` prints it, for ``$(…)`` capture,
@@ -226,7 +250,7 @@ class WorktreeResult(TargetRecord, kind="github.worktree"):
     ref: str
 
 
-class CodeResult(Record, kind="github.code"):
+class Code(Record):
     """One row of ``GET /search/code``.
 
     Flattens ``repository.full_name`` into ``repo`` so column selection
@@ -257,7 +281,7 @@ class CodeResult(Record, kind="github.code"):
         return data
 
 
-class IssueResult(Record, kind="github.issue"):
+class Issue(Record):
     """One row of ``GET /search/issues``.
 
     Covers both issues and pull requests — distinguished by the presence
@@ -301,7 +325,7 @@ class IssueResult(Record, kind="github.issue"):
         return {**data, **patch} if patch else data
 
 
-class UserResult(Record, kind="github.user_hit"):
+class UserHit(Record):
     """One row of ``GET /search/users``."""
 
     model_config = ConfigDict(extra="ignore")
@@ -320,15 +344,15 @@ class UserResult(Record, kind="github.user_hit"):
 
 __all__ = [
     "REPO_HIT_COLUMNS",
-    "CodeResult",
-    "CorpusRepoResult",
-    "CorpusSyncOutcome",
-    "GithubRepo",
-    "GithubUser",
-    "IssueResult",
-    "RepoSweepOutcome",
+    "Code",
+    "CorpusRepo",
+    "Issue",
+    "Repo",
     "SweepFile",
     "SweepMatch",
-    "UserResult",
-    "WorktreeResult",
+    "SweepRepo",
+    "SyncOutcome",
+    "User",
+    "UserHit",
+    "Worktree",
 ]

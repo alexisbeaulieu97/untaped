@@ -9,10 +9,8 @@ import respx
 from untaped_github.infrastructure import GithubClient
 from untaped_github.settings import GithubSettings
 
-
-@pytest.fixture(autouse=True)
-def _token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GH_TOKEN", "ghp_test")
+#: github's token belongs to the composed plugin.
+pytestmark = pytest.mark.usefixtures("composed")
 
 
 def _client() -> GithubClient:
@@ -79,9 +77,3 @@ def test_get_raw_content_reads_file_at_ref() -> None:
     assert route.calls[0].request.url.params["ref"] == "release/1"
     assert route.calls[0].request.headers["accept"] == "application/vnd.github.raw"
     assert content == "- src: https://github.com/acme/base\n"
-
-
-def test_the_11_0_base_url_keyword_reads_as_the_servers_url() -> None:
-    with pytest.warns(DeprecationWarning, match=r"GithubSettings\(base_url=\.\.\.\) is deprecated"):
-        config = GithubSettings(base_url="https://ghe.example.com/api/v3")  # type: ignore[call-arg]
-    assert config.api_url == "https://ghe.example.com/api/v3"

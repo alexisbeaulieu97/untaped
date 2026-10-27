@@ -3,21 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from untaped.sdk.testing import CliInvoker, CliResult, progress_clock
-from untaped_github.cli import app
-
-
-@pytest.fixture(autouse=True)
-def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("format_version: 2\ngithub:\n  token: ghp_test\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+from github_test_support import Result, run
+from untaped.sdk.testing import progress_clock
 
 
 def _repo(full_name: str, *, archived: bool = False, fork: bool = False) -> dict[str, object]:
@@ -46,13 +38,11 @@ LISTINGS = {
 }
 
 
-def _list(*args: str) -> CliResult:
+def _list(*args: str) -> Result:
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         for path, repos in LISTINGS.items():
             mock.get(path).mock(return_value=httpx.Response(200, json=repos))
-        return CliInvoker().invoke(
-            app, ["repos", "list", *args, "--format", "raw", "-c", "full_name"]
-        )
+        return run(["repos", "list", *args, "--format", "raw", "-c", "full_name"])
 
 
 @pytest.mark.parametrize(
@@ -67,14 +57,25 @@ def _list(*args: str) -> CliResult:
                 "platform/ops",
                 "--archived",
                 "exclude",
-                "--no-fork",
+                "--fork",
+                "exclude",
             ],
             ["acme/play-api", "platform/play-role"],
         ),
         (["play*", "--team", "acme/backend"], ["acme/play-team"]),
         # A bare team with exactly one --org adds that team's repos to the org's.
         (
-            ["play*", "--org", "acme", "--team", "backend", "--no-fork", "--archived", "include"],
+            [
+                "play*",
+                "--org",
+                "acme",
+                "--team",
+                "backend",
+                "--fork",
+                "exclude",
+                "--archived",
+                "include",
+            ],
             ["acme/play-api", "acme/play-old", "acme/play-team"],
         ),
         (["--org", "acme", "--limit", "2"], ["acme/play-api", "acme/play-fork"]),
@@ -101,7 +102,7 @@ def test_repos_list_reports_progress_while_it_waits() -> None:
             return httpx.Response(200, json=LISTINGS["/orgs/acme/repos"])
 
         mock.get("/orgs/acme/repos").mock(side_effect=slow)
-        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "raw"])
+        result = run(["repos", "list", "--org", "acme", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert "Listing repositories" in result.stderr
@@ -151,7 +152,7 @@ def test_repos_list_falls_back_to_github_default_org() -> None:
 def test_repos_list_pipe_record_carries_kind_urls_and_full_name() -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[_repo("acme/a")]))
-        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "pipe"])
+        result = run(["repos", "list", "--org", "acme", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
@@ -169,9 +170,9 @@ def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
     listed = [{**_repo("acme/a"), "pushed_at": "2026-07-01T00:00:00Z", "description": "API"}]
     with respx.mock(base_url="https://api.github.com") as mock:
         mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listed))
-        table = CliInvoker().invoke(app, ["repos", "list", "--org", "acme"])
-        listing = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--columns", "?"])
-        as_json = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "-f", "json"])
+        table = run(["repos", "list", "--org", "acme"])
+        listing = run(["repos", "list", "--org", "acme", "--columns", "?"])
+        as_json = run(["repos", "list", "--org", "acme", "-f", "json"])
 
     assert table.exit_code == listing.exit_code == 0, table.output + listing.output
     assert "acme/a" in table.stdout
@@ -191,18 +192,21 @@ def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:
         (["--org", "acme", "--regex"], ["--regex requires PATTERN"]),
         (["[", "--org", "acme", "--regex"], ["invalid regular expression"]),
         (["--team", "backend"], ["ORG/SLUG"]),
+        (["--team", "acme/backend/extra"], ["ORG/SLUG unless exactly one --org"]),
+        (["--team", "/backend"], ["ORG/SLUG unless exactly one --org"]),
+        (["--team", "acme/"], ["ORG/SLUG unless exactly one --org"]),
         (["--org", "acme", "--org", "platform", "--team", "backend"], ["exactly one --org"]),
     ],
 )
 def test_repos_list_usage_errors_exit_2(args: list[str], messages: list[str]) -> None:
-    result = CliInvoker().invoke(app, ["repos", "list", *args])
+    result = run(["repos", "list", *args])
 
     assert result.exit_code == 2
     assert all(message in result.output for message in messages)
 
 
 def test_repos_list_help_documents_pattern_targeting() -> None:
-    result = CliInvoker().invoke(app, ["repos", "list", "--help"])
+    result = run(["repos", "list", "--help"])
 
     assert result.exit_code == 0, result.output
     for phrase in ("glob", "owner/name", "unanchored", "additive", "exactly one --org", "--regex"):

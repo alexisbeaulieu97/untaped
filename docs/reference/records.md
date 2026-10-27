@@ -87,14 +87,14 @@ a step that asks for or reveals a secret, else `agent`.
 | `github search code` | `github.code` |
 | `github search issues` | `github.issue` |
 | `github search users` | `github.user_hit` |
-| `github sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
+| `github sweep`, `sweep files`, `sweep matches` | `github.sweep_repo`, `github.sweep_file`, `github.sweep_match` |
 | `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` (`cache delete` and `cache prune`: `status` `removed` with the `disk_bytes` freed, or `released` with `kept` naming who still uses the repo) |
 | `github cache sync` | `github.sync_outcome` |
 | `github cache worktree` | `github.worktree` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.sweep_repo`, `github.corpus_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use the record as-is, without an API call) |
+| `github search repos/code/issues --stdin`, `github sweep [files|matches] --stdin`, `github cache sync --stdin` | `github.repo`, `github.sweep_repo`, `github.corpus_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use the record as-is, without an API call) |
 
 ## jira
 

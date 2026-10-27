@@ -9,8 +9,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk.testing import CliInvoker, CliResult
-from untaped_github.cli import app
+from github_test_support import Result, run
 
 
 def _whoami(
@@ -18,18 +17,16 @@ def _whoami(
     monkeypatch: pytest.MonkeyPatch,
     args: list[str],
     *,
-    github: str = "token: ghp_test",
-    ui: str = "",
+    theme: str | None = None,
     response: httpx.Response | None = None,
-) -> CliResult:
-    cfg = tmp_path / "config.yml"
-    ui_section = f"untaped:\n  ui:\n    {ui}\n" if ui else ""
-    cfg.write_text(f"format_version: 2\n{ui_section}github:\n  {github}\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
+) -> Result:
+    del tmp_path
+    if theme is not None:
+        monkeypatch.setenv("UNTAPED_UNTAPED__UI__THEME", theme)
     reply = response or httpx.Response(200, json={"login": "octocat", "id": 1, "extra": "x"})
     with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
         mock.get("/user").mock(return_value=reply)
-        return CliInvoker().invoke(app, ["whoami", *args])
+        return run(["whoami", *args])
 
 
 def test_whoami_renders_one_user_record_per_format(
@@ -52,18 +49,22 @@ def test_whoami_renders_one_user_record_per_format(
 def test_whoami_raw_ignores_invalid_ui_theme(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    result = _whoami(tmp_path, monkeypatch, ["--format", "raw"], ui="theme: missing")
+    result = _whoami(tmp_path, monkeypatch, ["--format", "raw"], theme="missing")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "octocat"
     assert "unknown UI theme" not in result.output
 
 
-@pytest.mark.parametrize("github", ["base_url: https://api.github.com", 'token: "   "'])
+@pytest.mark.parametrize("token", [None, "   "])
 def test_whoami_without_a_token_fails_naming_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, github: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str | None
 ) -> None:
-    result = _whoami(tmp_path, monkeypatch, [], github=github)
+    if token is None:
+        monkeypatch.delenv("GH_TOKEN")
+    else:
+        monkeypatch.setenv("GH_TOKEN", token)
+    result = _whoami(tmp_path, monkeypatch, [])
 
     assert result.exit_code == 4  # local setup needs fixing
     assert "token" in result.stderr

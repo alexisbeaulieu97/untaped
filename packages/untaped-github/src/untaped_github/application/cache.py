@@ -8,7 +8,7 @@ from untaped.sdk import dir_bytes
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepoResult, WorktreeResult
+from untaped_github.records import CorpusRepo, Worktree
 
 
 class StatusCorpus:
@@ -17,7 +17,7 @@ class StatusCorpus:
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self) -> tuple[CorpusRepoResult, ...]:
+    def __call__(self) -> tuple[CorpusRepo, ...]:
         return tuple(with_disk_bytes(row) for row in self._corpus.list_repos())
 
 
@@ -31,7 +31,7 @@ class CleanCorpus:
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, *, repo: CorpusRepoResult) -> CorpusRepoResult:
+    def __call__(self, *, repo: CorpusRepo) -> CorpusRepo:
         return self._corpus.clean_repo(repo)
 
 
@@ -41,7 +41,7 @@ class WorktreeCorpus:
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, repo: str, *, ref: str | None) -> WorktreeResult:
+    def __call__(self, repo: str, *, ref: str | None) -> Worktree:
         split_full_name(repo)
         item = self._corpus.get_repo(repo)
         if item is None:
@@ -49,6 +49,6 @@ class WorktreeCorpus:
         return self._corpus.materialize_worktree(item, ref=ref)
 
 
-def with_disk_bytes(row: CorpusRepoResult) -> CorpusRepoResult:
+def with_disk_bytes(row: CorpusRepo) -> CorpusRepo:
     """``row`` with ``disk_bytes`` measured from its store repository on disk."""
     return row.model_copy(update={"disk_bytes": dir_bytes(Path(row.path))})

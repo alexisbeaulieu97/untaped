@@ -729,43 +729,6 @@ def _samples() -> dict[str, WireModel]:
             tests_dir=Path("/tests"),
         ),
     ]
-    if "untaped_github" in _SHIPPED:
-        from untaped_github.records import (
-            CodeResult,
-            CorpusRepoResult,
-            CorpusSyncOutcome,
-            GithubRepo,
-            GithubUser,
-            IssueResult,
-            RepoSweepOutcome,
-            SweepFile,
-            SweepMatch,
-            UserResult,
-            WorktreeResult,
-        )
-
-        url = "https://github.com/acme/api"
-        rows += [
-            GithubRepo(full_name="acme/api", private=False, pushed_at="2026-10-10T00:00:00Z"),
-            CorpusRepoResult(full_name="acme/api", ref="main", path="/s/acme/api.git"),
-            RepoSweepOutcome(full_name="acme/api", hits={"a.yml": 2}, owners=("@acme/team",)),
-            GithubUser(login="octo", id=1, name=None, email="octo@example.com"),
-            CodeResult(name="a.yml", path="ci/a.yml", sha="0" * 40, repo="acme/api", url=url),
-            IssueResult(number=1, id=2, title="t", state="open", url=url, user_login=None),
-            UserResult(id=1, login="octo", type="User", url="https://github.com/octo"),
-            SweepFile(repo="acme/api", path="a.yml", refs=("main",), hits=2),
-            SweepMatch(repo="acme/api", refs=("main",), path="a.yml", line=3, text="x: 1"),
-            CorpusSyncOutcome(
-                repo="acme/api",
-                action="failed",
-                fetched_at=datetime(2026, 10, 10, tzinfo=UTC),
-                detail="x",
-                error=Failure.from_exception(ConfigError("x")),
-            ),
-            WorktreeResult(
-                target_path=Path("/s/wt/api"), path="/s/wt/api", repo="acme/api", ref="main"
-            ),
-        ]
     if "untaped_recipe" in _SHIPPED:
         from untaped_recipe import records as recipe
 

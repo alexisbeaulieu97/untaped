@@ -127,11 +127,11 @@ def test_root_help_imports_no_plugin_cli() -> None:
 
 
 def test_plugin_help_imports_only_its_own_cli() -> None:
-    # an 11.x plugin (github moves next); a 12.0 plugin's commands load with its class
-    loaded = _plugin_cli_modules(["github", "--help"])
+    # an 11.x plugin; a 12.0 plugin's commands load with its class
+    loaded = _plugin_cli_modules(["recipe", "--help"])
     assert loaded
     owners = {module.split(".")[0].removeprefix("untaped_") for module in loaded}
-    assert owners == {"github"}
+    assert owners == {"recipe"}
 
 
 _STARTUP_PROBE = (

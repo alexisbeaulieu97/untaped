@@ -25,7 +25,7 @@ from untaped_github.domain.models import (
 )
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped_github.infrastructure.github_client import GithubClient
-from untaped_github.settings import GH, GithubSettings
+from untaped_github.settings import TOKEN, GithubSettings
 
 __all__ = [
     "BatchRepoRefsFailure",
@@ -61,4 +61,4 @@ def github_token_found() -> bool:
 
     Ansible asks this before live GitHub reads instead of reading the token.
     """
-    return GH.answer(github_settings().server) is not None
+    return TOKEN.answer(github_settings().server) is not None

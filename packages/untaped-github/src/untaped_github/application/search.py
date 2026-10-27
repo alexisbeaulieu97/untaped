@@ -18,7 +18,7 @@ from untaped_github.domain import (
 )
 from untaped_github.domain.errors import is_rate_limited
 from untaped_github.domain.queries import ScopedQueryBase, tokenize_search_query
-from untaped_github.records import CodeResult, GithubRepo, IssueResult, UserResult
+from untaped_github.records import Code, Issue, Repo, UserHit
 
 WarnFn = Callable[[str], None]
 
@@ -211,7 +211,7 @@ def _github_search_validation_error(
     )
 
 
-def _sort_repo_results(rows: list[GithubRepo], sort: str | None) -> list[GithubRepo]:
+def _sort_repo_results(rows: list[Repo], sort: str | None) -> list[Repo]:
     if sort == "stars":
         return sorted(rows, key=lambda row: (-(row.stargazers_count or 0), row.full_name))
     if sort == "forks":
@@ -335,10 +335,10 @@ class SearchRepos(_ScopedSearch):
         filters: RepoSearchFilters,
         *,
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[GithubRepo]:
+    ) -> Iterator[Repo]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos, note=self._note)
-        rows: list[GithubRepo] = []
+        rows: list[Repo] = []
         seen: set[str] = set()
         globally_sort = effective.sort in _GLOBAL_REPO_SORTS
 
@@ -361,7 +361,7 @@ class SearchRepos(_ScopedSearch):
                 for row in self._search.search_repositories(
                     batch.to_query_string(), sort=batch.sort, limit=batch.limit
                 ):
-                    result = GithubRepo.model_validate(row)
+                    result = Repo.model_validate(row)
                     if result.full_name in seen:
                         continue
                     seen.add(result.full_name)
@@ -389,7 +389,7 @@ class SearchCode(_ScopedSearch):
         filters: CodeSearchFilters,
         *,
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[CodeResult]:
+    ) -> Iterator[Code]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos, note=self._note)
         batches = _cap_batches(
@@ -401,7 +401,7 @@ class SearchCode(_ScopedSearch):
         return _merged_batch_search(
             batches,
             lambda batch: self._search.search_code(batch.to_query_string(), limit=batch.limit),
-            CodeResult,
+            Code,
             identity=lambda row: row.url,
             limit=effective.limit,
             kind="code",
@@ -417,7 +417,7 @@ class SearchIssues(_ScopedSearch):
         filters: IssueSearchFilters,
         *,
         team_scopes: tuple[TeamScope, ...] = (),
-    ) -> Iterator[IssueResult]:
+    ) -> Iterator[Issue]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos, note=self._note)
         batches = _cap_batches(
@@ -442,7 +442,7 @@ class SearchIssues(_ScopedSearch):
             lambda batch: self._search.search_issues(
                 batch.to_query_string(), sort=batch.sort, limit=batch.limit
             ),
-            IssueResult,
+            Issue,
             identity=lambda row: row.id,
             limit=effective.limit,
             sort_key=sort_key,
@@ -464,7 +464,7 @@ class SearchUsers:
     def __init__(self, search: GithubSearchService) -> None:
         self._search = search
 
-    def __call__(self, filters: UserSearchFilters) -> Iterator[UserResult]:
+    def __call__(self, filters: UserSearchFilters) -> Iterator[UserHit]:
         q = filters.to_query_string()
         for row in self._search.search_users(q, sort=filters.sort, limit=filters.limit):
-            yield UserResult.model_validate(row)
+            yield UserHit.model_validate(row)
