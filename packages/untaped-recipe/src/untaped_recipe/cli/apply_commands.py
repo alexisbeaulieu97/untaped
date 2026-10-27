@@ -187,13 +187,13 @@ def apply_command(
     up, then written. Recipes edit plain directories: they never commit, push
     or run shell steps. Pack hooks run in the pack's own environment through
     `uv run`; built-in hooks such as `yaml_edit` run in-process. What pack
-    code can reach: `untaped agents recipe trust`.
+    code can reach: `untaped docs recipe guides trust`.
 
     RECIPE_REF is a path only when it is `.` or `..`, starts with `./`, `../`,
     `/` or `~`, or ends in `.yml`/`.yaml`; anything else is a bare recipe name
     (unique across installed packs) or a `PACK/RECIPE` ref, looked up in the
     library, never on disk. For a local pack directory, pass its path and
-    --recipe NAME. How inputs get their values: `untaped agents recipe inputs`.
+    --recipe NAME. How inputs get their values: `untaped docs recipe guides inputs`.
 
     A target that fails to plan or write writes nothing and gets a `failed`
     row; the other targets still run (exit 1). Within one target the writes

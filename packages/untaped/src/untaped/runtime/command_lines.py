@@ -136,7 +136,11 @@ def comment_commands(text: str) -> Iterator[tuple[str, bool]]:
 
 def examples_of(function: object | None) -> str:
     """The ``Examples`` section of ``function``'s docstring, as written; ``""`` without one."""
-    doc = inspect.getdoc(function) if function is not None else None
+    return examples_in(inspect.getdoc(function) if function is not None else None)
+
+
+def examples_in(doc: str | None) -> str:
+    """The ``Examples`` section of the docstring ``doc``, as written; ``""`` without one."""
     if not doc:
         return ""
     for meta in docstring_parser.parse(doc).meta:

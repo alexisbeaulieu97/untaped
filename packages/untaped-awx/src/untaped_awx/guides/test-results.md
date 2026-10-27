@@ -165,7 +165,7 @@ Approvals:
   1). Set `approvals`. With `--no-cancel` the message gives the `untaped awx
   jobs cancel … --kind workflow_job` command.
 - AWX refusing to approve (a missing Approve role, see
-  `untaped agents awx agent-profile`): `awx.credentials` (exit 4).
+  `untaped docs awx guides agent-profile`): `awx.credentials` (exit 4).
 - A node that ran a project or inventory update itself and failed is
   `awx.scm` or `awx.inventories`, whatever the case expects.
 

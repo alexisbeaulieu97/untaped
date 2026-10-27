@@ -37,4 +37,4 @@ recipes outside a pack look bare names up across installed packs.
   `unknown_tokens: keep`.
 - A file whose content wouldn't change stays byte-identical.
 
-`untaped agents recipe recipe-files` has a recipe that uses it.
+`untaped docs recipe guides recipe-files` has a recipe that uses it.

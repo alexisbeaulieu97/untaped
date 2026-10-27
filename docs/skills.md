@@ -7,8 +7,8 @@ first-party or third-party.
 
 A skill is a **stub**: a short `SKILL.md` that untaped writes from its own
 template and the plugin's description. It lists no commands: it sends the
-agent to `untaped agents`, which prints what the untaped it runs can do as
-Markdown pages (see [Agent pages](./reference/agent-pages.md)). One stub
+agent to `untaped docs`, which prints what the untaped it runs can do as
+Markdown pages (see [untaped docs](./reference/docs.md)). One stub
 serves every untaped installed on the machine.
 
 ## Install skills

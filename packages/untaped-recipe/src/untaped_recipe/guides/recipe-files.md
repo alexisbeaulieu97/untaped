@@ -41,7 +41,7 @@ input may set `items`, and a `dict` input `values`, to the scalar type
 (`str`, `int`, `bool`, `float`; default `str`) its elements are coerced to;
 neither is valid on another type. A `default` must coerce to the input's
 `type` (`validate` reports it) and can't be combined with `required: true`.
-How `apply` fills them: `untaped agents recipe inputs`.
+How `apply` fills them: `untaped docs recipe guides inputs`.
 
 ## Steps
 

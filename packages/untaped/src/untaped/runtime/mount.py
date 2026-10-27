@@ -61,6 +61,7 @@ from untaped.sdk.marks import (
     Stability,
     deprecated,
     deprecated_alias,
+    docs_footer,
     experimental,
     mark_app,
 )
@@ -409,6 +410,7 @@ def build_app(mount: Mount, name: str) -> App:
     """The Cyclopts app of plugin ``name``: its groups and commands, from the declaration."""
     plugin = mount.declaration.plugin(name)
     app = App(name=name, help=_node_help(plugin.doc, plugin.runs))
+    docs_footer(app, f"untaped docs {name}")
     add_commands(app, mount, name)
     if plugin.runs is not None:
         app.default(_command(mount, plugin.runs))
@@ -424,6 +426,7 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
     for node in nodes:
         if isinstance(node, GroupDecl):
             sub = App(name=node.name, help=_node_help(node.doc, node.runs))
+            docs_footer(sub, _docs_address(node))
             mark = _mark(node.stability)
             if mark is not None:
                 mark_app(sub, mark, source="own")
@@ -433,8 +436,14 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
             app.command(sub)
             continue
         app.command(_command(mount, node), name=node.name, help=node.doc)
+        docs_footer(app[node.name], _docs_address(node))
         for alias in node.aliases:
             deprecated_alias(app, alias.name, node.name, removed_in=alias.removed_in)
+
+
+def _docs_address(node: CommandDecl | GroupDecl) -> str:
+    """The ``untaped docs`` address of a command's or group's page."""
+    return " ".join(("untaped docs", node.path[0], "commands", *node.path[1:]))
 
 
 def _node_help(doc: str, runs: CommandDecl | None) -> str:

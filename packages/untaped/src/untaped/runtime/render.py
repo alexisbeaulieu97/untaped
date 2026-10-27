@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal, TextIO
+from typing import TYPE_CHECKING, Any, Literal, TextIO
 
 import yaml
 from rich import box
@@ -29,6 +29,9 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
+
+if TYPE_CHECKING:
+    from rich.markdown import Markdown
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
 from untaped.sdk._theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
 
@@ -594,7 +597,16 @@ def _output_size() -> tuple[int, int]:
     return size.columns, size.lines if size.lines > 0 else 25
 
 
-def _render_rich(renderable: Table | Text, *, colorize: bool, truncate: bool = False) -> str:
+def render_markdown(text: str, *, colorize: bool) -> str:
+    """Markdown ``text`` as Rich renders it at a terminal (``untaped docs``), to its width."""
+    from rich.markdown import Markdown  # noqa: PLC0415 - only the docs pages pay for it
+
+    return _render_rich(Markdown(text), colorize=colorize)
+
+
+def _render_rich(
+    renderable: Table | Text | Markdown, *, colorize: bool, truncate: bool = False
+) -> str:
     buf = io.StringIO()
     # An explicit height too: with only a width Rich pins a TERM=dumb terminal to 80.
     width, height = _output_size()

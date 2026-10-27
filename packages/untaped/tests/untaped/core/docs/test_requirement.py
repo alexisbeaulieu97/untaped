@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.core.agents import untaped_requirement
+from untaped.core.docs import untaped_requirement
 from untaped.sdk import nearest_pyproject
 from untaped.sdk.testing import make_project
 

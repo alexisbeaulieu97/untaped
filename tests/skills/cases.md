@@ -1,7 +1,7 @@
 # Agent docs behaviour cases
 
-`untaped lint` and `tests/repo/test_agent_pages.py` check that the stub
-skills and the `untaped agents` pages render and that what they quote
+`untaped lint` and `tests/repo/test_docs_pages.py` check that the stub
+skills and the `untaped docs` pages render and that what they quote
 parses. These cases check what an agent *does* with them.
 
 ## Method
@@ -11,7 +11,7 @@ parses. These cases check what an agent *does* with them.
    test on PATH. To test a change, set up the previous version the same way
    in a second directory and environment.
 2. For each case, start a fresh agent with only that directory and the runner
-   prompt below. The agent may run `untaped agents` and `--help`, writes a
+   prompt below. The agent may run `untaped docs` and `--help`, writes a
    plan and runs nothing else. If you are comparing versions, label them X and
    Y and keep the key away from the runner and the grader.
 3. A separate grader scores each plan against the case's criteria: Y (met),
@@ -24,7 +24,7 @@ Runner prompt (replace SKILLDIR and REQUEST):
 
 > You are an AI agent helping a user operate the `untaped` CLI. You have no
 > access to untaped's source code and must not run any command that changes
-> anything; `untaped agents ...` and `--help` only read. Your only knowledge
+> anything; `untaped docs ...` and `--help` only read. Your only knowledge
 > of untaped is its installed agent skills in SKILLDIR and what those commands
 > print. Decide which skill applies and read what you need. The user says:
 > "REQUEST". Return the plan you would carry out: the skills and pages you

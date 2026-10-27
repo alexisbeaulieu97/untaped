@@ -29,7 +29,7 @@ them. For two installs that disagree about a renamed setting, see
   [experimental](#experimental) objects listed below.
 - Spellings `untaped` writes outside its own process, such as the Git
   credential helper (`untaped git credential`, with `--profile` before it)
-  in the worktrees it creates, even if hidden, except `untaped agents`,
+  in the worktrees it creates, even if hidden, except `untaped docs`,
   which the stub skills call and which is [experimental](#experimental).
 
 The pipe envelope is versioned on its own (`"untaped": "1"`) and outlives
@@ -42,8 +42,8 @@ These may change in any release:
 - Human-readable output: table layout and default columns, tree and diagram
   text, colors, and the wording of messages, warnings and hints. Scripts read
   `--format json` or `pipe`, and exit codes, instead.
-- What [agent pages](./reference/agent-pages.md) say and how they lay it
-  out.
+- What the [pages of `untaped docs`](./reference/docs.md) say and how they
+  lay it out.
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
@@ -67,8 +67,8 @@ changelog entry that says so. An SDK object (a class or function, not a
 command) is marked with `@experimental` in the code and listed here, not in a
 `--help` panel. Currently experimental:
 
-- `agents`: `untaped agents`, its path argument and the pages it prints.
-  See [Agent pages](./reference/agent-pages.md#stability) for what that
+- `docs`: `untaped docs`, its addresses and the pages it prints.
+  See [untaped docs](./reference/docs.md#stability) for what that
   means for installed stub skills.
 - `awx test`: its commands, the suite file format, the `awx.test_case` and
   `awx.test_result` records, and the `awx.test_timeout_seconds` and

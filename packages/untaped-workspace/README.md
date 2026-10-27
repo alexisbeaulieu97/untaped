@@ -95,9 +95,9 @@ every writable repo and exits 1 if any repo failed.
 
 `untaped workspace --help` is the guide: naming repos, branches, what blocks
 archiving and what `remove` releases. Agents read the same commands and
-settings as Markdown from `untaped agents workspace`, and one command's options
-from its own page (`untaped agents workspace create`, for one); see
-[agent pages](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/agent-pages.md).
+settings as Markdown from `untaped docs workspace`, and one command's options
+from its own page (`untaped docs workspace commands create`, for one); see
+[untaped docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/docs.md).
 `untaped skills install workspace --target claude` (or another
 [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills))
 installs the skill that points an agent there.

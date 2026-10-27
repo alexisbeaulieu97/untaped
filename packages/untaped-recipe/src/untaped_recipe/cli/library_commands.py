@@ -150,7 +150,7 @@ def add_command(
     source is recorded as an absolute path; a git source records the
     requested --rev and the commit it resolved to. A git fetch that times out
     exits 5. Installing a pack installs code that runs as you:
-    `untaped agents recipe trust`.
+    `untaped docs recipe guides trust`.
 
     Examples
     --------

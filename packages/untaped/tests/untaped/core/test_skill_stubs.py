@@ -90,11 +90,11 @@ def test_newer_side_names_what_wrote_the_stub() -> None:
     assert newer_side(_author(version="11.3.0"), _author()) == "untaped-jira (11.3.0)"
 
 
-#: The command forms a stub may name: the ``agents`` entry points, the
+#: The command forms a stub may name: the ``docs`` addresses, the
 #: ``--help`` fallback for an untaped without them, and the example of
 #: running a project's own untaped.
 _STUB_FORMS = re.compile(
-    r"untaped|uv run untaped|untaped agents( \w[\w-]*( COMMAND)?)?|untaped( [\w-]+)? --help"
+    r"untaped|uv run untaped|untaped docs( \w[\w-]*( commands COMMAND)?)?|untaped( [\w-]+)? --help"
 )
 
 
@@ -115,15 +115,15 @@ def test_a_plugin_stub_points_at_its_plugin_and_its_help() -> None:
         '---\nname: untaped-workspace\ndescription: "Workspaces: \\"one dir\\" per task."\n---\n'
     )
     assert "# untaped workspace" in text
-    assert "`untaped agents workspace`" in text
-    assert "`untaped agents workspace COMMAND`" in text
+    assert "`untaped docs workspace`" in text
+    assert "`untaped docs workspace commands COMMAND`" in text
     assert "`untaped workspace --help`" in text
 
 
 def test_core_s_stub_falls_back_to_root_help() -> None:
     text = render_stub("untaped", "untaped", "untaped itself.")
     assert "# untaped\n" in text
-    assert "`untaped agents untaped`" in text
+    assert "`untaped docs untaped`" in text
     assert "`untaped --help`" in text
 
 

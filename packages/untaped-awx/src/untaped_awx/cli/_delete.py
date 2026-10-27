@@ -38,7 +38,7 @@ from untaped_awx.records import DeleteOutcome
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
     help_text = (
         "Delete an explicitly selected batch after one complete preview.\n\n"
-        "What a deleted resource loses: `untaped agents awx writes`."
+        "What a deleted resource loses: `untaped docs awx guides writes`."
     )
     if offers_usage(spec):
         help_text += (

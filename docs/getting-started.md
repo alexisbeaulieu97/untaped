@@ -102,7 +102,7 @@ as yours to run, so a token never passes through the agent. Paste this into your
 ```text
 Install untaped with `uv tool install 'untaped[all]'`, then install its
 agent skills with `untaped skills install --all --target codex` (or
-`claude`). Read `untaped agents`, then `untaped agents untaped setup plan`,
+`claude`). Read `untaped docs`, then `untaped docs untaped commands setup plan`,
 and set up a profile with me: run the steps that are yours and hand me the
 ones that ask for a token.
 ```

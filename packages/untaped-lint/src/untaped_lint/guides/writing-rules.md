@@ -11,7 +11,7 @@ plugin, a plugin's records) and yields findings.
    `untaped lint rules` shows the next agent.
 2. `untaped lint new ID` (a kebab-case id, as `no-print`) writes the rule
    module and its test, and the lint file when the repository has none
-   (`untaped agents lint new` says where each goes).
+   (`untaped lint new --help` says where each goes).
 3. The test holds the smallest `BAD` files that break the convention and
    `GOOD` ones that follow it; it fails until the rule is written.
 4. `untaped lint` at the root then reports what the rule finds in the code.
@@ -72,4 +72,4 @@ def test_no_print_passes_the_good_example() -> None:
 ```
 
 What a rule module may import, and what loading it runs:
-`untaped agents lint lint-file`.
+`untaped docs lint guides lint-file`.

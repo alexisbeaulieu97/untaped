@@ -28,7 +28,7 @@ class ExitCode(IntEnum):
     """The suite's process exit codes (one meaning each).
 
     Each member's ``description`` is its meaning in one line, read at run
-    time (``untaped agents`` lists them); attribute docstrings are not.
+    time (``untaped docs`` lists them); attribute docstrings are not.
     """
 
     description: str

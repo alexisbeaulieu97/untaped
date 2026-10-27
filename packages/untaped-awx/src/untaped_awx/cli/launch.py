@@ -180,8 +180,8 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         """Launch one or more resources and (optionally) wait for each job.
 
         Which launch values a template accepts, what --dry-run shows, and how
-        --wait and --follow end: `untaped agents awx launching`. When it asks
-        first and how the batch runs: `untaped agents awx writes`.
+        --wait and --follow end: `untaped docs awx guides launching`. When it asks
+        first and how the batch runs: `untaped docs awx guides writes`.
 
         Examples
         --------

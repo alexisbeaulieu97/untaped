@@ -54,7 +54,7 @@ template as REF describes it.
 - `validate --source-ref REF` does everything but the writes. A case of a copied
   template is checked against the spec.
 - The AWX user needs to create and delete templates
-  (`untaped agents awx agent-profile`).
+  (`untaped docs awx guides agent-profile`).
 
 ## What a run with copies reports
 
@@ -80,7 +80,7 @@ before any launch with one error and prints no row.
 |---|---|---|---|
 | `awx.suite` | A spec names something AWX does not have, a copy's name is taken, or two specs match one suite | `not_found`, `conflict`, `invalid` (1) | Fix the spec or suite (or create the missing resource in AWX), then `untaped awx test validate --source-ref REF`. |
 | `awx.scm` | A copy's project does not allow branch override, or a template the run does not copy does not prompt for `scm_branch` | `invalid` (1) | Enable `allow_override` on the project; add the template's spec or enable `ask_scm_branch_on_launch`. |
-| `awx.credentials` | AWX refused to create a copy (401, 403) | `auth`, `permission` (4) | Give the AWX user the roles in `untaped agents awx agent-profile`. |
+| `awx.credentials` | AWX refused to create a copy (401, 403) | `auth`, `permission` (4) | Give the AWX user the roles in `untaped docs awx guides agent-profile`. |
 | `awx.controller` | AWX was unavailable while creating a copy or reading a project | `unavailable` (5) | Retry later. |
 | `awx` | AWX did not store a copy as the spec asks (`unverified …` fields) | `invalid` (1) | Rerun with `--keep` to inspect the copy, then fix the spec. |
 
@@ -102,7 +102,7 @@ started, not when the copy was created.
 ## Leftover copies
 
 Copies a killed run left behind are deleted by `untaped awx test prune`
-(`untaped agents awx test prune`). It and the `validate` preview print the
+(`untaped awx test prune --help`). It and the `validate` preview print the
 fields of a `--format json` row (`--columns '?'` lists them under
 `--dry-run`).
 

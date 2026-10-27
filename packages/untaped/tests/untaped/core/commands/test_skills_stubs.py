@@ -92,7 +92,7 @@ def test_install_writes_a_stub_and_its_marker(target: str) -> None:
     assert sorted(path.name for path in stub.iterdir()) == [STUB_MARKER, "SKILL.md"]
     text = (stub / "SKILL.md").read_text(encoding="utf-8")
     assert 'description: "Demo things: widgets and gadgets."' in text
-    assert "`untaped agents demo`" in text
+    assert "`untaped docs demo`" in text
     marker = _marker(stub)
     assert marker["untaped"] == {"file": 1, "by": "11.1.0"}
     assert "format" not in marker
@@ -146,7 +146,7 @@ def test_auto_refreshes_a_stub_an_older_untaped_wrote_silently(
     result = _run(root, "demo", "--help")
     assert result.exit_code == 0, result.output
     assert result.stderr == ""
-    assert "`untaped agents demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
+    assert "`untaped docs demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
     assert _marker(_home())["untaped"]["by"] == "11.1.0"
 
 
@@ -307,14 +307,14 @@ def test_update_leaves_an_edited_stub_and_force_replaces_it(run_as: Callable[[st
     assert "left untaped-demo: edited since it was installed; --force replaces it" in result.stderr
     assert (_home() / "SKILL.md").read_text(encoding="utf-8") == "mine\n"
     assert _run(root, "skills", "update", "demo", "--force").exit_code == 0
-    assert "`untaped agents demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
+    assert "`untaped docs demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_update_refreshes_a_stub_an_older_untaped_wrote(run_as: Callable[[str], None]) -> None:
     root = _install_then_age(run_as)
     result = _run(root, "skills", "update", "-f", "json")
     assert [row["action"] for row in json.loads(result.stdout)] == ["updated"]
-    assert "`untaped agents demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
+    assert "`untaped docs demo`" in (_home() / "SKILL.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("run_as")

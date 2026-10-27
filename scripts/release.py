@@ -26,13 +26,13 @@ subcommand is one step of the workflow:
   built files with what the index already holds: before publishing (conflicts
   fail, so a re-run uploads only what is missing) and, with ``--complete``,
   after publishing (waits until every file is there).
-- ``smoke UNTAPED_EXE VERSION [--expect A,B] [--quarantined C] [--agents]``
+- ``smoke UNTAPED_EXE VERSION [--expect A,B] [--quarantined C] [--docs]``
   runs an installed ``untaped`` and checks its version, that its plugins
   are exactly the expected ones ready (default: every first-party entry point)
   and the quarantined ones quarantined, every ``--help``, and with
-  ``--agents`` each expected plugin's skill and every ``untaped agents`` page:
-  the map, each plugin's page and each guide a page lists (a guide missing
-  from the wheel fails here).
+  ``--docs`` each expected plugin's skill and every ``untaped docs`` page:
+  the overview, each plugin's page and each guide a page lists (a guide
+  missing from the wheel fails here).
 - ``tag TAG --repo OWNER/REPO`` creates the annotated tag TAG on the
   checkout's commit once PyPI has the verified files, or confirms it is
   already there; a ``v*`` tag on another commit is an error, since tags never
@@ -684,17 +684,17 @@ def skill_errors(skills_json: str, expected: Collection[str]) -> list[str]:
     return errors
 
 
-#: A topic line under a page's ``## Guides`` heading: ``- `name`: when to read it``.
-_GUIDE_LINE = re.compile(r"^- `([^`]+)`")
+#: A guide's line under a page's ``## Read first``: ``- `untaped docs P guides NAME`: ...``.
+_GUIDE_LINE = re.compile(r"^- `untaped docs \S+ guides ([^`]+)`")
 
 
 def page_guides(page: str) -> list[str]:
-    """The guides an ``untaped agents PLUGIN`` page lists."""
+    """The guides an ``untaped docs PLUGIN`` page lists to read first."""
     guides: list[str] = []
     listing = False
     for line in page.splitlines():
         if line.startswith("## "):
-            listing = line == "## Guides"
+            listing = line == "## Read first"
         elif listing and (match := _GUIDE_LINE.match(line)):
             guides.append(match.group(1))
     return guides
@@ -710,20 +710,20 @@ def plugin_guides(root: Path) -> dict[str, list[str]]:
     return found
 
 
-def agents_errors(
+def docs_errors(
     exe: str, expected: Collection[str], guides: Mapping[str, Collection[str]]
 ) -> list[str]:
-    """Every ``untaped agents`` page that fails or prints nothing, and every guide left out.
+    """Every ``untaped docs`` page that fails or prints nothing, and every guide left out.
 
-    The map, then each expected plugin's page (core's too) and each guide it
-    lists; a page that lists none of a guide ``guides`` names for its plugin
-    means the guide is missing from the install.
+    The overview, then each expected plugin's page (core's too) and each
+    guide it lists; a page that lists none of a guide ``guides`` names for
+    its plugin means the guide is missing from the install.
     """
     errors: list[str] = []
 
     def page(*path: str) -> str:
-        result = _run(exe, "agents", *path)
-        command = " ".join(["untaped agents", *path])
+        result = _run(exe, "docs", *path)
+        command = " ".join(["untaped docs", *path])
         if result.returncode:
             errors.append(f"{command} exited {result.returncode}")
         elif not result.stdout.strip():
@@ -734,11 +734,11 @@ def agents_errors(
     for plugin in ["untaped", *sorted(expected)]:
         listed = page_guides(page(plugin))
         errors += [
-            f"untaped agents {plugin} does not list the guide {guide}"
+            f"untaped docs {plugin} does not list the guide {guide}"
             for guide in sorted(set(guides.get(plugin, ())) - set(listed))
         ]
         for guide in listed:
-            page(plugin, guide)
+            page(plugin, "guides", guide)
     return errors
 
 
@@ -761,7 +761,7 @@ def run_smoke(
     *,
     expect: Collection[str],
     quarantined: Collection[str] = (),
-    agents: bool = False,
+    docs: bool = False,
     guides: Mapping[str, Collection[str]] | None = None,
 ) -> tuple[list[str], int]:
     """Run the installed ``untaped``: (every smoke failure, expected plugin count)."""
@@ -774,12 +774,12 @@ def run_smoke(
         code = _run(exe, *command, "--help").returncode
         if code:
             errors.append(f"untaped {' '.join([*command, '--help'])} exited {code}")
-    if agents:
+    if docs:
         listing = _run(exe, "skills", "list", "--format", "json")
         errors += skill_errors(listing.stdout, expect)
         if listing.returncode:
             errors.append(f"untaped skills list --format json exited {listing.returncode}")
-        errors += agents_errors(exe, expect, guides or {})
+        errors += docs_errors(exe, expect, guides or {})
     return errors, len(expect)
 
 
@@ -989,9 +989,9 @@ def _parser() -> argparse.ArgumentParser:
         "--quarantined", type=_names, default=[], help="comma-separated quarantined plugins"
     )
     smoke.add_argument(
-        "--agents",
+        "--docs",
         action="store_true",
-        help="check each expected plugin's skill and every untaped agents page",
+        help="check each expected plugin's skill and every untaped docs page",
     )
     tag = commands.add_parser("tag", help="tag the checkout's commit, or confirm the tag is there")
     tag.add_argument("tag")
@@ -1033,7 +1033,7 @@ def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
         args.version,
         expect=expect,
         quarantined=args.quarantined,
-        agents=args.agents,
+        docs=args.docs,
         guides=plugin_guides(root),
     )
     if not errors:

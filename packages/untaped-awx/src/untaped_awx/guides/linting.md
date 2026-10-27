@@ -5,7 +5,7 @@ description: "Read when linting AWX documents or the controller, reading an awx 
 `untaped awx lint` checks AWX resources against rules before `apply` writes
 them or after the controller holds them. It runs on lint's engine, so the
 ids, `--ignore`, `--select`, `--strict` and the exit codes are `untaped
-lint`'s (`untaped agents lint findings`). It never writes to the controller.
+lint`'s (`untaped docs lint guides findings`). It never writes to the controller.
 
 ## Three origins
 

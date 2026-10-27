@@ -39,7 +39,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
 
         The documents go to stdout, or to --out FILE, as one multi-document
         stream that `untaped awx apply -` reads. What a document holds and
-        can't carry: `untaped agents awx documents`.
+        can't carry: `untaped docs awx guides documents`.
 
         Examples
         --------

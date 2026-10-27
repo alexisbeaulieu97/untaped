@@ -14,5 +14,5 @@ tables' are; on `source-alias set` it only warned after the change before.
 `ansible.index_path` and `ansible.stale_after_seconds` are retired: they are
 no longer read, and `untaped doctor` names them for `untaped config migrate`
 to delete. The resolution and source-data guides are the docstrings of the
-plugin class and of `SourceData`; the `untaped agents ansible` guide pages are
-gone until `untaped docs` serves them.
+plugin class and of `SourceData`, on `untaped docs ansible` and at
+`untaped docs ansible guides source-data`.

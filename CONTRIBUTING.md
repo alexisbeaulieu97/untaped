@@ -67,7 +67,7 @@ uv lock --check                                 # lock file is current
   helpers several tests share live in `tests/core_test_support/`.
 - Each plugin is its own package,
   `packages/untaped-<name>/src/untaped_<name>/`, and owns one plugin end
-  to end. Its agent pages (`untaped agents <name>`) are the reference; its
+  to end. Its pages (`untaped docs <name>`) are the reference; its
   `README.md` (also its PyPI page) is a one-screen guide that points at them.
   A package README links into this repository with absolute `blob/main`
   URLs, which the release build points at its own `vX.Y.Z` tag.
@@ -157,9 +157,9 @@ or becomes an SDK helper that every plugin can use. Declare a
 - **Docs in the same change.** A change to behavior, settings, composition or
   a shared helper updates its docs in the same commit. Each fact has one home
   and other pages link to it: plugin detail in the command's docstring, the
-  record's model or the plugin's guide, which its agent pages print (the
+  record's model or the plugin's guide, which its pages print (the
   package `README.md` is a one-screen guide: set up, one example per
-  workflow, and a `## Reference` section pointing at `untaped agents
+  workflow, and a `## Reference` section pointing at `untaped docs
   <name>`), exit codes, record kinds and environment
   variables in [`docs/reference/`](docs/reference), settings in the
   generated [config reference](docs/reference/config.md), history in
@@ -371,7 +371,7 @@ fork's runs publish nothing.
 
 ## Evaluating an agent docs change
 
-`untaped lint` and the agent pages tests check that the pages render and
+`untaped lint` and the docs tests check that the pages render and
 that what they quote parses, not what an agent does with them. When a change
 to a stub description, a guide or a command's docstring could change an
 agent's behavior, run the cases in [`tests/skills/cases.md`](tests/skills/cases.md)
@@ -430,6 +430,10 @@ skills, doctor checks and contracts; each is optional.
 
 **Contract**: an interface one plugin declares and others fill, so the
 plugin asking never names who answers.
+
+**Extension point**: a contract as its reader sees it: what the owner
+`offers` (listed under `untaped docs PLUGIN extensions`) and other plugins
+fill. The code's words are `Contract`, `offers` and `fills`.
 
 **Owner**: the plugin that declares a contract, or an item store and so
 decides how its items are released.
@@ -550,18 +554,20 @@ named in its declaration (`removed_in=`) and shown in its warning.
 **Automatic fix**: a fix that needs no value and no input, so
 `untaped doctor fix` runs it.
 
-**Agent page**: what `untaped agents` prints for a coding agent: the map,
-a plugin's page or a topic's page, generated from what core and the plugins
-declare.
+**Page**: what `untaped docs` prints at one address (the overview, a
+plugin, a section or one entry of it), generated from what core and the
+plugins declare.
 
 **Stub skill**: a version-neutral agent skill that untaped writes from its
 own template and a plugin's description; it lists no command and sends the
-agent to `untaped agents`.
+agent to `untaped docs`.
 
-**Topic**: what a plugin's agent page lists and `untaped agents PLUGIN TOPIC`
-prints: one of its commands, or a guide.
+**Section**: one part of a plugin's pages (`commands`, `inputs`, `outputs`,
+`settings`, `extensions`, `guides`), the third word of an address.
 
-**Guide**: a topic a plugin writes as a Markdown file, for what belongs to no
-single command; each says when to read it.
+**Guide**: prose a plugin wants read before some of its commands, for what
+belongs to no single command: the docstring of an options bundle or of an
+enum (a Markdown file for a plugin still in the 11.x shape); each says when
+to read it.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.

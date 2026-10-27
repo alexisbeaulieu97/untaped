@@ -26,7 +26,7 @@ from untaped_awx.domain import Resource
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 # The docstring is built per kind, before cyclopts reads it; its Examples
-# section is what the command's agents page prints.
+# section is what the command's --help leaves out.
 _PATCH_DOC = """\
 Replace specified fields on an existing selection, with one confirmation.
 
@@ -43,7 +43,7 @@ scope; keep a numeric-looking name a string with JSON quotes
 (`--set 'inventory="123"'`). An ambiguous, missing or out-of-scope reference
 fails before any write. `patch` cannot create, rename, reparent or retarget,
 nor change identity, kind or read-only fields: use `apply` and `rename`.{extra}
-How the writes run: `untaped agents awx writes`.
+How the writes run: `untaped docs awx guides writes`.
 
 Examples
 --------

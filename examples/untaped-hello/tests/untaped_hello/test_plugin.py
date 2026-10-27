@@ -58,3 +58,29 @@ def test_hello_s_own_kind_has_a_schema(install: Installer) -> None:
     ran = install(Hello).cli("plugin schema hello.default_greeting")
     assert ran.exit == 0, ran.stderr
     assert "setting" in json.loads(ran.stdout)["properties"]
+
+
+def test_hello_s_pages_come_from_its_declaration(install: Installer) -> None:
+    hello = install(Hello)
+    page = hello.cli("docs hello").stdout
+    say = hello.cli("docs hello commands say").stdout
+    salutation = hello.cli("docs hello outputs salutation").stdout
+    assert page.startswith("# hello\n")
+    assert "- `commands` (3): what you can run. `untaped docs hello commands`" in page
+    assert "- `names`: Whom to greet." not in say  # a positional shows as written
+    assert "- `NAMES...`: Whom to greet." in say
+    assert "Rows of `hello.salutation` (`untaped docs hello outputs salutation`)" in say
+    assert salutation.startswith("# hello outputs salutation\n")
+
+
+def test_hello_s_pages_import_no_command() -> None:
+    """After the first start, ``untaped docs`` reads the composed declaration, not the plugin."""
+    code = (
+        "import sys; from untaped.sdk.testing import invoke_root; "
+        "r = invoke_root(['docs', 'hello', 'commands', 'say']); "
+        "print(r.exit_code, '# hello commands say' in r.stdout, "
+        "any(m.startswith('untaped_hello.commands') for m in sys.modules))"
+    )
+    subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.split() == ["0", "True", "False"]
