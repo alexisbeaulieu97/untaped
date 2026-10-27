@@ -746,15 +746,16 @@ def plugin_candidate(
     distribution's ``Requires-Dist`` lines (a provider's owner requirement).
     A 12.0 plugin class is the candidate ``install`` composes: its entry
     point's, when it is installed, so an 11.x plugin's tests can compose a
-    plugin that already moved beside their own spec; its distribution is the
-    installed one's, so ``distribution`` and ``requires_dist`` are refused.
+    plugin that already moved beside their own spec. The class names its own
+    distribution (the installed one, else ``untaped-<name>``), so
+    ``distribution`` and ``requires_dist`` are refused.
 
     Pass the result to ``check_conventions(..., candidates=[...])`` or
     ``untaped.runtime.bootstrap.build_root_app(candidates=[...])``.
     """
     if isinstance(spec, type):
         if distribution is not None or requires_dist:
-            raise TypeError("a plugin class's candidate is its installed distribution's")
+            raise TypeError("a plugin class names its own distribution")
         from untaped.runtime.registry import discover_candidates  # noqa: PLC0415
         from untaped.sdk.testing.install import candidate_of  # noqa: PLC0415
 
