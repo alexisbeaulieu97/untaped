@@ -926,8 +926,9 @@ class Stdin[R: BaseModel](FieldBlock):
     """What a command accepts on stdin: ``stdin: Stdin[Salutation]`` adds ``--stdin``.
 
     ``R`` is the record kind (or a union, or a base every accepted kind
-    subclasses; ``Stdin[Record]`` takes any kind); a bare line stands for
-    ``R``'s ``Key`` field. Accepting a kind never claims it.
+    subclasses; ``Stdin[Record]`` takes any installed kind, and reads a
+    row whose kind is ``null`` with every field it carries); a bare line
+    stands for ``R``'s ``Key`` field. Accepting a kind never claims it.
 
     ``Stdin(via=RepoSource.to_repo)`` also takes the rows of any provider's
     own kind and reads each through that provider's bridge, so ``R`` is the
@@ -1040,6 +1041,10 @@ class Stdin[R: BaseModel](FieldBlock):
             )
         if not self._models:
             raise TypeError("Stdin was not filled with the models it accepts")
+        if self._any:
+            from untaped.sdk.records import KindlessRow  # noqa: PLC0415 - reading only
+
+            return KindlessRow
         return self._models[0]
 
     def _through(self, envelope: PipeEnvelope) -> bool:

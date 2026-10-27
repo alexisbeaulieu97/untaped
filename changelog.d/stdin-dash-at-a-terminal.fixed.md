@@ -1,2 +1,2 @@
-A `TextOrStdin` value of `-` with nothing piped is refused (exit 2) instead
-of read as empty text.
+A `TextOrStdin` value of `-` when stdin is a terminal is refused (exit 2)
+instead of waiting for typed input.

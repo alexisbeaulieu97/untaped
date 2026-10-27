@@ -271,6 +271,13 @@ def test_stdin_of_any_record_reads_known_kinds_and_refuses_an_unknown_one() -> N
     assert "no installed plugin declares the kind 'acme.thing'" in refused.stderr
 
 
+def test_stdin_of_any_record_reads_a_kind_less_row_with_every_field() -> None:
+    bare = json.dumps({"untaped": "1", "kind": None, "record": {"name": "x", "size": 2}})
+    counted = _run("shapes", "count", "--stdin", input=bare + "\n")
+    assert counted.exit_code == 0, counted.stderr
+    assert counted.stdout == "1\n"
+
+
 def test_an_optional_text_or_stdin_reads_a_dash() -> None:
     assert _run("shapes", "note", "-", input="piped\n").stdout == "piped\n"
     assert _run("shapes", "note").stdout == ""
