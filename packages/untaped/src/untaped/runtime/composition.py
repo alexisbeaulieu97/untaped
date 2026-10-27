@@ -154,7 +154,12 @@ def compose(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()) -> Dec
     the plugin that reaches it. A contract's records belong to the plugin
     that lists them: the owner's model to the plugin that ``offers`` the
     contract (shelf's ``Book`` is ``shelf.book``), a provider's own record
-    to the plugin whose ``fills`` lists the provider. A record has one kind.
+    to the plugin whose ``fills`` lists the provider. A record has one kind,
+    and a kind one record: kinds are claimed in :data:`_PHASES` across every
+    plugin, a plugin's own records before another's reach of its package, so
+    a clash refuses the plugin claiming later (``duplicate-kind``), entry
+    order deciding only within a phase. A plugin refused claims no kind and
+    holds no name.
     Two entry points in one top-level package share it, the first not
     quarantined owning its classes, as :meth:`Declaration.owner_of` reads
     it. A contract belongs to the one plugin whose ``offers`` lists it; two
@@ -312,21 +317,41 @@ def _compose(
 
     A ``withdrawn`` entry is quarantined with the problems it was withdrawn for, unwalked.
     """
-    names = set(taken)
     plugins: list[PluginDecl] = []
-    kinds: dict[str, KindDecl] = {}
     quarantined: list[Quarantined] = []
     refused: dict[int, tuple[Problem, ...]] = {}
-    walks: list[tuple[int, PluginEntry, _PluginWalk, list[Problem]]] = []
+    walks: dict[int, tuple[PluginEntry, _PluginWalk]] = {}
+    for index, entry in enumerate(entries):
+        if index not in withdrawn:
+            walks[index] = (
+                entry,
+                _PluginWalk(entry, owners, _view(entries, index, offering, readable)),
+            )
+    clean = [
+        index for index, (_, walk) in walks.items() if not walk.problems and walk.decl is not None
+    ]
+    # Kinds first, among the plugins sound on their own, then names among those
+    # whose kinds hold; a plugin refused for its name claims no kind, so settle again.
+    unnamed: set[int] = set()
+    clash: int | None = -1
+    while clash is not None:
+        held, clashes = _settle(
+            [(index, walks[index][1]) for index in clean if index not in unnamed]
+        )
+        admitted = {index for index in clean if index not in clashes and index not in unnamed}
+        before, clash = _names(walks, admitted, taken)
+        if clash is not None:
+            unnamed.add(clash)
+    kinds: dict[str, KindDecl] = {}
     for index, entry in enumerate(entries):
         if index in withdrawn:
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=withdrawn[index])
             )
             continue
-        walk = _PluginWalk(entry, owners, _view(entries, index, offering, readable))
-        problems = list(walk.problems)
-        if entry.name in names:
+        _, walk = walks[index]
+        problems = [*walk.problems, *clashes.get(index, ())]
+        if entry.name in before[index]:
             problems.insert(
                 0,
                 Problem(
@@ -335,23 +360,6 @@ def _compose(
                     detail="the name is taken by a root command, a config key or another plugin",
                 ),
             )
-        walks.append((index, entry, walk, problems))
-        if not problems and walk.decl is not None:
-            names.add(entry.name)
-            if entry.root:
-                names.update(walk.decl.command_words())
-    # Kinds are claimed in phases across every plugin, so no entry order decides between
-    # phases: the models offered contracts own, then the records commands reach, then the
-    # records only a provider reaches (left kind-less on a clash).
-    held: dict[int, dict[str, KindDecl]] = {index: {} for index, *_ in walks}
-    for phase in ("offered", "commands", "provided"):
-        for index, _, walk, problems in walks:
-            if not problems:
-                claimed = _claim(walk, kinds, problems, phase)
-                kinds.update(claimed)
-                held[index].update(claimed)
-    kinds = {}
-    for index, entry, walk, problems in walks:
         if problems or walk.decl is None:
             quarantined.append(
                 Quarantined(name=entry.name, target=entry.target, problems=tuple(problems))
@@ -361,7 +369,7 @@ def _compose(
         if entry.root:
             walk.decl = walk.decl.model_copy(update={"root": True})
         plugins.append(walk.decl)
-        kinds.update(held[index])
+        kinds.update(held.get(index, {}))
     declaration = Declaration(
         plugins=tuple(plugins),
         kinds=tuple(sorted(kinds.values(), key=lambda kind: kind.kind)),
@@ -373,6 +381,76 @@ def _compose(
 def _package(target: str) -> str:
     """The top-level package of an entry point's module: every class under it is the plugin's."""
     return target.partition(":")[0].partition(".")[0]
+
+
+def _names(
+    walks: dict[int, tuple[PluginEntry, _PluginWalk]], admitted: set[int], taken: frozenset[str]
+) -> tuple[dict[int, frozenset[str]], int | None]:
+    """The names taken before each entry, and the first ``admitted`` one whose name is taken."""
+    names = set(taken)
+    before: dict[int, frozenset[str]] = {}
+    for index, (entry, walk) in walks.items():
+        before[index] = frozenset(names)
+        if index in admitted:
+            if entry.name in names:
+                return before, index
+            names.add(entry.name)
+            if entry.root and walk.decl is not None:
+                names.update(walk.decl.command_words())
+    return before, None
+
+
+#: The order kinds are claimed in, across every plugin, so no entry order decides
+#: between them: the models offered contracts own, the records a command reaches
+#: from its plugin's own package (or one no composed plugin owns), those it reaches
+#: from another plugin's package, then the records only a provider reaches.
+_PHASES = ("offered", "own", "reached", "provided")
+
+
+def _settle(
+    walks: Sequence[tuple[int, _PluginWalk]],
+) -> tuple[dict[int, dict[str, KindDecl]], dict[int, list[Problem]]]:
+    """The kinds each of ``walks`` holds, and the kind clashes of those refused, by index.
+
+    A plugin refused for a clash holds no kind, so the others claim again without
+    it; one refused only beside it is then admitted again. Two plugins claiming
+    in one phase are settled by entry order: two classes one kind
+    (``duplicate-kind``) refuse the later.
+    """
+
+    def run(
+        active: Sequence[tuple[int, _PluginWalk]],
+    ) -> tuple[dict[int, dict[str, KindDecl]], tuple[int, list[Problem]] | None]:
+        kinds: dict[str, KindDecl] = {}
+        held: dict[int, dict[str, KindDecl]] = {index: {} for index, _ in active}
+        for phase in _PHASES:
+            for index, walk in active:
+                problems: list[Problem] = []
+                claimed = _claim(walk, kinds, problems, phase)
+                if problems:
+                    return held, (index, problems)
+                kinds.update(claimed)
+                held[index].update(claimed)
+        return held, None
+
+    clashes: dict[int, list[Problem]] = {}
+    active = list(walks)
+    held, clash = run(active)
+    while clash is not None:
+        clashes[clash[0]] = clash[1]
+        active = [each for each in active if each[0] != clash[0]]
+        held, clash = run(active)
+    admitted = True
+    while admitted:
+        admitted = False
+        for each in walks:
+            if each[0] in clashes:
+                trial = sorted([*active, each], key=lambda pair: pair[0])
+                tried, clash = run(trial)
+                if clash is None:
+                    active, held, admitted = trial, tried, True
+                    del clashes[each[0]]
+    return held, clashes
 
 
 def _claim(
@@ -470,10 +548,13 @@ class _PluginWalk:
         return self.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
 
     def phase_of(self, cls: type) -> str:
-        """When composition claims ``cls``'s kind: ``offered``, ``commands`` or ``provided``."""
+        """When composition claims ``cls``'s kind, one of :data:`_PHASES`."""
         if cls in self.offered:
             return "offered"
-        return "provided" if cls in self.provided else "commands"
+        if cls in self.provided:
+            return "provided"
+        owner = self.owners.get(cls.__module__.partition(".")[0], self.name)
+        return "own" if owner == self.name else "reached"
 
     def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
         """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""

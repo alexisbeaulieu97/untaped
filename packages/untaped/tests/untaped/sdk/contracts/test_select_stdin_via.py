@@ -516,11 +516,62 @@ class Lender(Plugin):
     fills = (LoanNotes,)
 """
 
+#: A package whose plugin is broken on its own: two of its records are both ``broken.twin``.
+_BROKEN = {
+    "a": "from untaped.sdk.contracts import Record\nclass Twin(Record):\n    name: str\n",
+    "b": "from untaped.sdk.contracts import Record\nclass Twin(Record):\n    name: str\n",
+    "plugin": """
+from __future__ import annotations
+from abc import abstractmethod
+from collections.abc import Iterator
+from pydantic import BaseModel
+from untaped.sdk import Command, Output, Plugin, experimental
+from untaped.sdk.contracts import Contract, Record
+from kinds_broken import a, b
+from kinds_printer import Tag
+
+class Plain(BaseModel):
+    \"\"\"No settings.\"\"\"
+
+@experimental
+class Labels[T: Record = Tag](Contract):
+    \"\"\"Labels, whose model the printer's package defines.\"\"\"
+    def to_tag(self, item: T) -> Tag:
+        \"\"\"A provider's record as a tag.\"\"\"
+        raise NotImplementedError
+    @abstractmethod
+    def labels(self) -> list[Tag]:
+        \"\"\"Every label.\"\"\"
+
+class PrintA(Command[Plain]):
+    \"\"\"Print a twin.\"\"\"
+    output: Output[a.Twin]
+    def run(self) -> Iterator[a.Twin]:
+        yield from ()
+
+class PrintB(Command[Plain]):
+    \"\"\"Print the other twin.\"\"\"
+    output: Output[b.Twin]
+    def run(self) -> Iterator[b.Twin]:
+        yield from ()
+
+class Broken(Plugin):
+    \"\"\"Offer labels, and print two records of one kind.\"\"\"
+    settings = Plain
+    offers = (Labels,)
+    commands = (PrintA, PrintB)
+""",
+}
+
 
 @pytest.fixture
-def packages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
+def packages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[..., Any]]:
     for name, text in (("printer", _PRINTER), ("owner", _OWNER), ("lender", _LENDER)):
         (tmp_path / f"kinds_{name}.py").write_text(text, encoding="utf-8")
+    (tmp_path / "kinds_broken").mkdir()
+    (tmp_path / "kinds_broken" / "__init__.py").write_text("", encoding="utf-8")
+    for name, text in _BROKEN.items():
+        (tmp_path / "kinds_broken" / f"{name}.py").write_text(text, encoding="utf-8")
     monkeypatch.syspath_prepend(tmp_path)
 
     def composed(*named: tuple[str, str]) -> Any:
@@ -532,8 +583,8 @@ def packages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., A
         return compose(entries)
 
     yield composed
-    for name in ("printer", "owner", "lender"):
-        sys.modules.pop(f"kinds_{name}", None)
+    for module in [each for each in sys.modules if each.startswith("kinds_")]:
+        sys.modules.pop(module)
 
 
 @pytest.mark.parametrize("printer_first", [True, False])
@@ -560,3 +611,32 @@ def test_the_offering_plugin_names_its_model_in_any_order(
     [refused] = declaration.quarantined
     assert refused.name == "tagger"
     assert "but it is tags.tag" in refused.problems[0].detail
+
+
+@pytest.mark.parametrize("broken_first", [True, False])
+def test_a_plugin_broken_on_its_own_claims_no_kind(
+    packages: Callable[..., Any], broken_first: bool
+) -> None:
+    """broken offers a model of the printer's package but never composes.
+
+    So the printer keeps it, in either order.
+    """
+    named = [("broken", "kinds_broken.plugin:Broken"), ("tagger", "kinds_printer:Tagger")]
+    declaration = packages(*(named if broken_first else named[::-1]))
+    assert [plugin.name for plugin in declaration.plugins] == ["tagger"]
+    assert [kind.kind for kind in declaration.kinds] == ["tagger.tag"]
+    [refused] = declaration.quarantined
+    assert refused.name == "broken"
+    assert [problem.detail for problem in refused.problems] == [
+        "would be the kind broken.twin, which kinds_broken.a:Twin is: rename one"
+    ]
+
+
+def test_a_name_held_by_a_plugin_refused_for_its_kinds_is_free(
+    packages: Callable[..., Any],
+) -> None:
+    declaration = packages(("x", "kinds_broken.plugin:Broken"), ("x", "kinds_printer:Tagger"))
+    assert [plugin.target for plugin in declaration.plugins] == ["kinds_printer:Tagger"]
+    assert [kind.kind for kind in declaration.kinds] == ["x.tag"]
+    [refused] = declaration.quarantined
+    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
