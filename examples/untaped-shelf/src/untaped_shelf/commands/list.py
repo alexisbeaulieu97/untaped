@@ -24,4 +24,4 @@ class List(Command[ShelfSettings]):
             if skipped.reason != Reason.not_configured:
                 diag.warning(f"{skipped.plugin} wasn't asked: {skipped.detail}")
         for ok in answers.ok:
-            yield from ok.value  # a stale one says so on stderr as it is read here
+            yield from ok.value  # a stale answer's line was said on stderr with the first view

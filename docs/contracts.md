@@ -108,7 +108,7 @@ class Library(Plugin):
   as the owner's model. The views `.ok`, `.errored` and `.skipped` split
   them by outcome, so no caller writes `isinstance` loops. A skip's or
   error's `reason` is a `Reason` (`Reason.not_configured`,
-  `Reason.raised`...), typed by its use (`SkipReason`, `ErrorReason`); its
+  `Reason.raised`...), each answer typed by the reasons it can carry; its
   value is the word on the wire (`not-configured`). `progress` counts the providers on the caller's task as they
   answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding

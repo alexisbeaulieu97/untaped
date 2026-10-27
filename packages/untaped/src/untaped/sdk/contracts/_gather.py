@@ -305,15 +305,36 @@ def gather[C: Contract, **P, R](
 def _picked(
     plugins: Collection[type[Contract] | str] | None,
 ) -> Callable[[BoundProvider | Quarantined], bool]:
-    """Whether ``gather(plugins=)`` asks an offer: by its plugin's name or its provider class."""
+    """Whether ``gather(plugins=)`` asks an offer: by its plugin's name or its provider class.
+
+    A class picks that provider exactly, never a subclass of it; a class the
+    run's composition places in a plugin picks that plugin's offer even when
+    it was quarantined, so the answer says why.
+    """
     if plugins is None:
         return lambda _: True
+    if isinstance(plugins, str):
+        raise TypeError(f"plugins= takes a collection of names or classes, not {plugins!r}")
     names = {each for each in plugins if isinstance(each, str)}
-    classes = tuple(each for each in plugins if isinstance(each, type))
+    classes = {each for each in plugins if isinstance(each, type)}
+    names |= {plugin for each in classes if (plugin := _plugin_of(each)) is not None}
     return lambda entry: (
         entry.plugin in names
-        or (isinstance(entry, BoundProvider) and isinstance(entry.instance, classes))
+        or (isinstance(entry, BoundProvider) and type(entry.instance) in classes)
     )
+
+
+def _plugin_of(provider: type) -> str | None:
+    """The composed plugin whose package defines ``provider``, if a run knows one."""
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the SDK
+
+    run = run_or_none()
+    if run is None:
+        return None
+    try:
+        return run.composition.owner_of_module(provider.__module__)
+    except LookupError:
+        return None
 
 
 def _excluded[R](

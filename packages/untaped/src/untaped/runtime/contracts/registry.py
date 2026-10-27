@@ -50,6 +50,7 @@ from untaped.sdk.contracts._declare import (
 )
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.fields import SettingKey
 from untaped.sdk.records import KindError
 
 if TYPE_CHECKING:
@@ -426,8 +427,9 @@ class DoctorRow:
 def ready_of(provider: BoundProvider) -> NotReady | None:
     """``provider``'s ``ready()``, its setting spelled in full; a raising one is not ready.
 
-    A provider's settings are its plugin's section, so ``key(S).field`` is
-    spelled ``<plugin>.field``.
+    ``key(S).field`` is spelled under the section of the plugin whose
+    settings model ``S`` is (the owner rule), whoever runs the provider; a
+    model no composed plugin owns is spelled under the provider's plugin.
     """
     try:
         ready = provider.instance.ready()
@@ -436,7 +438,21 @@ def ready_of(provider: BoundProvider) -> NotReady | None:
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
     if ready is None or ready.setting is None:
         return ready
-    return replace(ready, spelled=f"{provider.plugin}.{ready.setting}")
+    spelled = replace(ready)  # ``spelled`` is core's to set, so no provider passes it
+    object.__setattr__(spelled, "spelled", f"{_section(provider, ready.setting)}.{ready.setting}")
+    return spelled
+
+
+def _section(provider: BoundProvider, setting: SettingKey) -> str:
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the registry
+
+    run = run_or_none()
+    if run is not None:
+        try:
+            return run.composition.owner_of_settings(SettingKey.model_of(setting))
+        except LookupError:
+            pass
+    return provider.plugin
 
 
 def _reason(word: str) -> QuarantineReason:

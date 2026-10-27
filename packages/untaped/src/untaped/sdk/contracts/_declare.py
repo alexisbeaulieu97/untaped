@@ -86,7 +86,13 @@ class NotReady:
 
     reason: str
     setting: SettingKey | None = None
-    spelled: str | None = field(default=None, kw_only=True)
+    spelled: str | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        if self.setting is not None and not isinstance(self.setting, SettingKey):
+            raise TypeError(
+                f"NotReady takes the setting as key(Settings).field, not {self.setting!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -377,11 +383,17 @@ class Provider[S: BaseModel]:
 
 
 def _key_at(provider: type, loc: tuple[int | str, ...]) -> SettingKey | None:
-    """The settings key at a validation error's ``loc``, as far as it names fields."""
+    """The settings key at a validation error's ``loc``, as far as it names fields.
+
+    The section loader's ``loc`` starts with the section's name, which is no
+    field of the model: it is skipped.
+    """
     model = settings_type(provider)
     if model is None:
         return None
     found = setting_key(model)
+    if loc and loc[0] not in model.model_fields:
+        loc = loc[1:]
     for part in loc:
         if not isinstance(part, str):
             break

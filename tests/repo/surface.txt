@@ -6772,7 +6772,6 @@ sdk untaped.sdk.contracts.NotFound.retryable
 sdk untaped.sdk.contracts.NotFound.system class
 sdk untaped.sdk.contracts.NotReady(reason)
 sdk untaped.sdk.contracts.NotReady(setting@2=) default=None
-sdk untaped.sdk.contracts.NotReady(spelled=) default=None
 sdk untaped.sdk.contracts.NotReady.reason
 sdk untaped.sdk.contracts.NotReady.setting
 sdk untaped.sdk.contracts.NotReady.spelled

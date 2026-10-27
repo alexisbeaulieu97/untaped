@@ -130,6 +130,34 @@ def test_plugins_picks_providers_by_class_or_by_name() -> None:
     assert [a.plugin for a in gather(BookSource.books, plugins={"library"})()] == ["library"]
 
 
+def test_plugins_picks_a_provider_class_exactly_and_refuses_a_bare_name() -> None:
+    class Branch(Shop):
+        pass
+
+    compose(shelf_spec(), shop_spec())
+    with pytest.raises(NoProviderReady):
+        gather(BookSource.books, plugins=[Branch])()
+    with pytest.raises(TypeError, match="collection of names or classes"):
+        gather(BookSource.books, plugins="shop")
+
+
+def test_an_invalid_setting_names_its_key_in_full() -> None:
+    compose(shelf_spec(), library_spec())
+    write_config("format_version: 2\nlibrary:\n  catalog: x\n  volumes: 5\n")
+    with pytest.raises(NoProviderReady) as err:
+        gather(BookSource.books)()
+    [ready] = err.value.not_ready.values()
+    assert ready.spelled == "library.volumes"
+    assert "(set library.volumes)" in str(err.value)
+
+
+def test_not_ready_takes_a_key_not_a_string() -> None:
+    from untaped.sdk.contracts import NotReady
+
+    with pytest.raises(TypeError, match=r"key\(Settings\)\.field"):
+        NotReady("no volumes", "library.volumes")  # type: ignore[arg-type]
+
+
 def test_the_views_split_the_answers_by_outcome_in_rank_order() -> None:
     compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
     write_config(LIBRARY_CONFIG)

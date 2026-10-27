@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from lint.fakes import Acme, Gizmo, PluginReader, Raising, Sprocket, WarnOnly, Widget, pipe
-from untaped.sdk import InstalledPlugin, PluginSpec
+from untaped.sdk import InstalledPlugin, PluginSpec, key
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.health.doctor import PluginContext
 from untaped.sdk.testing import CliResult, PluginCheckRow, compose_with, invoke_cli, invoke_root
@@ -102,9 +103,12 @@ def test_every_provider_quarantined_exits_4() -> None:
 
 
 def test_a_provider_that_is_not_ready_says_so_when_it_is_the_only_one() -> None:
+    class AcmeSettings(BaseModel):
+        token: str | None = None
+
     class Lazy(Acme):
         def ready(self) -> NotReady:
-            return NotReady(reason="needs a token")
+            return NotReady("needs a token", key(AcmeSettings).token)
 
     with compose_with("lint", provides={"acme": [Lazy()]}):
         result = _lint()
