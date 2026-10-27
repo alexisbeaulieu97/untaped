@@ -7150,6 +7150,11 @@ sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental
 sdk untaped.sdk.StateRows.spelled  [experimental]
 sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
 sdk untaped.sdk.StateRows.where  [experimental]
+sdk untaped.sdk.Status()
+sdk untaped.sdk.Status(error=) default=[]
+sdk untaped.sdk.Status(success=) default=[]
+sdk untaped.sdk.Status(warning=) default=[]
+sdk untaped.sdk.Status.roles
 sdk untaped.sdk.Stdin()
 sdk untaped.sdk.Stdin(via=) default=None callback(*)
 sdk untaped.sdk.Stdin.field_kind class
@@ -8262,6 +8267,8 @@ sdk untaped.sdk.storage.StateRows.where  [experimental]
 sdk untaped.sdk.storage.Unreadable(reason)  [experimental]
 sdk untaped.sdk.storage.Unreadable.reason  [experimental]
 sdk untaped.sdk.summary(operation, counts)
+sdk untaped.sdk.table_row(record)
+sdk untaped.sdk.table_row(row@2=) default=None
 sdk untaped.sdk.testing.CacheClock(start)
 sdk untaped.sdk.testing.CacheClock.advance(by)
 sdk untaped.sdk.testing.CacheClock.now

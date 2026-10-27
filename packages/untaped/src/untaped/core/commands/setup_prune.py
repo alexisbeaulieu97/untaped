@@ -30,7 +30,7 @@ from untaped.core.commands.records import PruneOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.settings import PLUGIN_NAME_PATTERN, plugins_root
 from untaped.sdk.errors import UntapedError
-from untaped.sdk.fields import Confirm, Output
+from untaped.sdk.fields import Confirm, Output, table_row
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._fs import dir_bytes
 from untaped.sdk.words import plural, shown_path, size_text
@@ -159,7 +159,7 @@ class Prune(Command[CoreSettings]):
         columns = list(self.output.columns)
         # the planned rows are what --dry-run prints, so only a question shows them first
         preview = lambda: [  # noqa: E731
-            render_rows([row.model_dump() for row in rows], fmt="table", table_columns=columns)
+            render_rows([table_row(row) for row in rows], fmt="table", table_columns=columns)
         ]
         question = f"Remove {_counted(planned)}?"
         if not self.confirm(question, preview=None if self.confirm.dry_run else preview):

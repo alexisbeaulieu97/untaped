@@ -33,6 +33,7 @@ from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import CompositionResult, PluginSpec, settings_model
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
+from untaped.sdk.fields import table_row
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
 from untaped.sdk.network.auth import (
@@ -86,7 +87,7 @@ def pending(rows: list[Row]) -> bool:
 
 def emit_plan(rows: list[Row], *, profile: str, columns: list[str] | None) -> None:
     """Print the rows as a table, each ``run`` as the command line to type."""
-    shown = [_table_row(row) for row in rows]
+    shown = [table_row(SetupStep.model_validate(row), _table_row(row)) for row in rows]
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile

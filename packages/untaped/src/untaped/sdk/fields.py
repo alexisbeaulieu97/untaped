@@ -25,6 +25,8 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
+from enum import Enum
+from functools import cache
 from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
@@ -110,6 +112,65 @@ ObjectName = Mark("ObjectName")
 
 Only the table changes: json, yaml, raw and pipe keep the whole name.
 """
+
+
+class Status:
+    """The roles a table draws a field's words in: ``Status(success=("cloned",))``.
+
+    The roles are the theme's (``success``, ``warning``, ``error``), so a user
+    theme recolours them; a value no role names stays plain. A subclass that
+    redeclares the field adds to its base's roles, the nearest class winning for
+    a value. Only the table changes: json, yaml, raw and pipe keep the word.
+    """
+
+    __slots__ = ("roles",)
+
+    def __init__(
+        self,
+        *,
+        success: Iterable[object] = (),
+        warning: Iterable[object] = (),
+        error: Iterable[object] = (),
+    ) -> None:
+        given = (("success", success), ("warning", warning), ("error", error))
+        for role, values in given:
+            if isinstance(values, str):
+                raise TypeError(f"Status({role}=...) takes a tuple of words, as ({values!r},)")
+        self.roles: dict[str, str] = {
+            _word(value): role for role, values in given for value in values
+        }
+
+    def __repr__(self) -> str:
+        return f"Status({self.roles!r})"
+
+
+def _word(value: object) -> str:
+    """A status value as the word a row holds: a ``str``, or a member of an enum of words.
+
+    Anything else (an enum of numbers) is refused: its cell holds no word to draw.
+    """
+    word = _plain(value)
+    if not isinstance(word, str):
+        raise TypeError(f"Status takes words (str values), not {value!r}")
+    return word
+
+
+def _plain(value: object) -> object:
+    """``value``, or an enum member's value: what a row holds."""
+    return value.value if isinstance(value, Enum) else value
+
+
+class Roled(str):
+    """A table cell's text and the theme role its field's ``Status`` gave its word."""
+
+    __slots__ = ("role",)
+    role: str
+
+    def __new__(cls, text: str, role: str) -> Roled:
+        cell = super().__new__(cls, text)
+        cell.role = role
+        return cell
+
 
 Spread = Mark("Spread")
 """A ``dict[str, scalar]`` field a table shows as one column per key, named by the key.
@@ -625,11 +686,11 @@ def table_rows(
     A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
     ago it was by :func:`untaped.sdk.now`'s clock, a ``Duration`` field's its
     run time, an ``ObjectName`` field's its short name, and a ``Spread`` field gives
-    way to a column per key (a key a row already has keeps the row's value).
+    way to a column per key (a key a row already has keeps the row's value). A
+    word its field's ``Status`` names is a :class:`Roled` cell.
     """
     from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
-    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
-    from untaped.sdk.words import ago_text, elapsed_text, size_text  # noqa: PLC0415
+    from untaped.sdk.diagnostic import dumped_names, kind_of  # noqa: PLC0415
 
     now = run_clock().now()
     spread_keys: dict[str, dict[str, None]] = {}
@@ -642,6 +703,8 @@ def table_rows(
             dumped: (name, _marks(type(record).model_fields[name]))
             for name, dumped in dumped_names(type(record)).items()
         }
+        roles = status_roles(type(record))
+        spelled = kind_of(type(record)) is not None  # 11.x ``kind=``: the seam below
         out: dict[str, object] = {}
         for dumped, cell in row.items():  # the dump's order is the table's
             name, marks = fields.get(dumped, (None, []))
@@ -652,24 +715,102 @@ def table_rows(
                     keys[str(key)] = None
                     if str(key) not in row:
                         out[str(key)] = item
-            elif Bytes in marks and isinstance(value, int):
-                out[dumped] = size_text(value)
-            elif Age in marks and isinstance(value, datetime):
-                out[dumped] = ago_text(value, now)
-            elif (
-                Duration in marks and isinstance(value, int | float) and not isinstance(value, bool)
-            ):
-                out[dumped] = elapsed_text(value)
-            elif ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
-                out[dumped] = value[:_SHORT_NAME]
             else:
-                out[dumped] = cell
+                out[dumped] = _marked_cell(marks, value, cell, now)
+            role = _role(roles.get(name or ""), value, seam=spelled and dumped in _SEAM_COLUMNS)
+            if role is not None and isinstance(text := out.get(dumped), str):
+                out[dumped] = Roled(text, role)
         shown.append(out)
     if columns is not None and spread_keys:
         columns = [key for name in columns for key in (spread_keys.get(name) or [name])]
     added = [key for keys in spread_keys.values() for key in keys]
     return shown, None if columns is None else list(columns), added
 
+
+def table_row(record: BaseModel, row: Mapping[str, object] | None = None) -> dict[str, object]:
+    """``row`` (``record``'s dump by default) as a table shows it: marked cells, roled words.
+
+    For a view a command builds from a record (a ``fix`` argv as the line to
+    type, warnings joined into one cell) and prints itself: a plain ``dict`` row
+    has no fields, so a table draws its words in no role. A key ``record`` has
+    no field for stays as it is.
+    """
+    shown = dict(record.model_dump(mode="json") if row is None else row)
+    [out], _, _ = table_rows([record], [shown], None)
+    return out
+
+
+def _marked_cell(marks: list[object], value: object, cell: object, now: datetime) -> object:
+    """A cell as its field's table mark shows it (``cell``, the dumped value, when unmarked)."""
+    from untaped.sdk.words import ago_text, elapsed_text, size_text  # noqa: PLC0415
+
+    if Bytes in marks and isinstance(value, int):
+        return size_text(value)
+    if Age in marks and isinstance(value, datetime):
+        return ago_text(value, now)
+    if Duration in marks and isinstance(value, int | float) and not isinstance(value, bool):
+        return elapsed_text(value)
+    if ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
+        return value[:_SHORT_NAME]
+    return cell
+
+
+def _role(words: Mapping[str, str] | None, value: object, *, seam: bool) -> str | None:
+    """The role ``value``'s word is drawn in: its field's ``Status``, else the 11.x seam's."""
+    word = _plain(value)
+    if not isinstance(word, str):
+        return None  # a number, a list, ``None``: no word to draw
+    role = words.get(word) if words else None
+    if role is None and seam:
+        role = _SEAM_ROLES.get(word.lower())
+    return role
+
+
+#: The 11.x seam, removed with ``kind=``: a record of a plugin not yet moved
+#: keeps colouring these columns by these words where its field has no ``Status``.
+_SEAM_COLUMNS = frozenset({"status", "action", "result", "state", "job_status"})
+_SEAM_ROLES: dict[str, str] = {
+    **dict.fromkeys(
+        ("failed", "failure", "fail", "error", "errored", "conflict", "partial"), "error"
+    ),
+    **dict.fromkeys(
+        (
+            "warn",
+            "warning",
+            "skipped",
+            "pending",
+            "waiting",
+            "running",
+            "planned",
+            "stale",
+            "outdated",
+            "unavailable",
+            "canceled",
+            "cancelled",
+            "cancel_requested",
+        ),
+        "warning",
+    ),
+    **dict.fromkeys(
+        (
+            "successful",
+            "success",
+            "pass",
+            "passed",
+            "ok",
+            "ready",
+            "created",
+            "updated",
+            "deleted",
+            "synced",
+            "cloned",
+            "added",
+            "removed",
+            "completed",
+        ),
+        "success",
+    ),
+}
 
 #: A full git object name, and how much of it a table shows.
 _FULL_NAME = re.compile(r"[0-9a-f]{40}")
@@ -737,6 +878,20 @@ def _marks(info: FieldInfo) -> list[object]:
         if get_origin(arg) is Annotated:
             marks.extend(get_args(arg)[1:])
     return marks
+
+
+@cache
+def status_roles(model: type[BaseModel]) -> dict[str, dict[str, str]]:
+    """Each field of ``model`` with a ``Status``, its word → role map merged along the MRO."""
+    found: dict[str, dict[str, str]] = {}
+    for cls in reversed(model.__mro__):
+        if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
+            continue
+        for name, info in cls.model_fields.items():  # an inherited field repeats its base's
+            for mark in _marks(info):
+                if isinstance(mark, Status):
+                    found[name] = {**found.get(name, {}), **mark.roles}
+    return found
 
 
 def _type_argument(annotation: object) -> type[BaseModel] | None:

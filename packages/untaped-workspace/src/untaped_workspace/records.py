@@ -10,7 +10,7 @@ from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field
 
-from untaped.sdk import Duration, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.sdk import Duration, OutcomeRecord, Status, TargetRecord, UtcTimestamp
 
 
 class Workspace(TargetRecord):
@@ -72,7 +72,7 @@ class RepoStatus(TargetRecord):
     branch: str | None
     base: str
     read_only: bool
-    state: StatusState = Field(
+    state: Annotated[StatusState, Status(success=("ok",), error=("error",))] = Field(
         description=(
             "`missing`: the repo directory is gone; `cache_missing`: the repo is missing "
             "from the repo store; `error`: its git state can't be read."
@@ -107,7 +107,7 @@ class ArchiveOutcome(OutcomeRecord, TargetRecord):
 
     workspace: str
     repo: str = Field(description="Empty on the last row, the workspace directory itself.")
-    action: ArchiveAction = Field(
+    action: Annotated[ArchiveAction, Status(success=("removed",))] = Field(
         description=(
             "`removed` or `failed` when it runs; `planned`, or `skipped` for a blocked "
             "repo, on a preview or a refusal. The workspace row is `skipped` when other "
@@ -135,7 +135,7 @@ class RemoveOutcome(OutcomeRecord, TargetRecord):
 
     workspace: str
     repo: str
-    action: RemoveAction
+    action: Annotated[RemoveAction, Status(success=("removed",))]
     detail: str = ""
     freed_bytes: int = Field(default=0, description="The space a `removed` repo took.")
 

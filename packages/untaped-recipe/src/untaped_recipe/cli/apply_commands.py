@@ -27,6 +27,7 @@ from untaped.sdk import (
     finish,
     parse_kv_pairs,
     read_stdin,
+    table_row,
     ui_context,
     writes,
 )
@@ -294,7 +295,7 @@ def apply_command(
             # Human view: key=value pairs and joined warnings instead of reprs,
             # so a view of the records, not the records (it carries no kind).
             emit(
-                [_table_row(row.model_dump(mode="json")) for row in rows],
+                [table_row(row, _table_row(row.model_dump(mode="json"))) for row in rows],
                 fmt=fmt,
                 columns=columns,
                 table_columns=ApplyOutcome.table_columns,

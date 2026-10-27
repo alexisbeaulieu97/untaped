@@ -127,10 +127,12 @@ from untaped.sdk.fields import (
     SettingKey,
     Short,
     Spread,
+    Status,
     Stdin,
     TextOrStdin,
     Written,
     key,
+    table_row,
 )
 from untaped.sdk.git import (
     GitCommandError,
@@ -396,6 +398,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Duration",
     "ObjectName",
     "Spread",
+    "Status",
+    "table_row",
     "key",
     "SettingKey",
     "System",

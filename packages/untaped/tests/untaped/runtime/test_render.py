@@ -14,6 +14,7 @@ import yaml
 
 from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat
 from untaped.sdk._ui import UiContext
+from untaped.sdk.fields import Roled
 
 
 @pytest.fixture
@@ -335,14 +336,21 @@ def test_table_header_is_not_rich_markup() -> None:
     assert "[bold]x" in out
 
 
-def test_status_values_are_colored_by_meaning(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_roled_cell_is_drawn_in_its_role_and_a_plain_status_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.delenv("NO_COLOR", raising=False)
-    rows = [{"name": "a", "status": "failed"}, {"name": "b", "status": "successful"}]
+    rows = [
+        {"name": "a", "status": Roled("failed", "error")},
+        {"name": "b", "status": Roled("successful", "success")},
+        {"name": "c", "status": "failed"},  # a column's name is no Status
+    ]
     out = _table(rows)
     assert "\x1b[31mfailed" in out
     assert "\x1b[32msuccessful" in out
     assert "\x1b[31ma" not in out
+    assert out.count("\x1b[31m") == 1
 
 
 def test_detail_view_flattens_nested_values() -> None:
@@ -418,17 +426,19 @@ def test_a_status_role_set_to_empty_turns_its_color_off(monkeypatch: pytest.Monk
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.delenv("NO_COLOR", raising=False)
     theme = BUILTIN_THEMES["default"].model_copy(update={"color_roles": {"error": ""}})
-    out = UiContext(theme=theme).collection([{"status": "failed"}], fmt="table")
+    out = UiContext(theme=theme).collection([{"status": Roled("failed", "error")}], fmt="table")
     assert "\x1b[31m" not in out
 
 
-def test_detail_table_view_colors_a_status_field_by_meaning(
+def test_detail_table_view_draws_a_roled_field_in_its_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.delenv("NO_COLOR", raising=False)
     theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
-    out = UiContext(theme=theme).detail({"name": "a", "status": "failed"}, fmt="table")
+    out = UiContext(theme=theme).detail(
+        {"name": "a", "status": Roled("failed", "error")}, fmt="table"
+    )
     assert "\x1b[31mfailed" in out
     assert "\x1b[31ma" not in out
 

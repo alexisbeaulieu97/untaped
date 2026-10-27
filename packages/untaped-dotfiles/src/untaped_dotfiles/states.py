@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from untaped.sdk import Status
 from untaped_dotfiles.models import AppliedRecord, Mode
 from untaped_dotfiles.policy import Policy
 
@@ -28,6 +29,9 @@ FileState = Literal[
     "error",
 ]
 """``error``: the path could not be read (a git or filesystem failure); the row's error says why."""
+
+#: How a table draws a :data:`FileState`: waiting, or in trouble.
+FILE_STATE_ROLES = Status(warning=("pending",), error=("conflict", "error"))
 
 Action = Literal["apply", "skip", "report", "remove"]
 
