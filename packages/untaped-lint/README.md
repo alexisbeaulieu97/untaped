@@ -38,4 +38,4 @@ every finding.
 
 [docs/lint.md](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/lint.md)
 explains ids, ignores, exit codes and writing rules. For an agent, run
-`untaped agents lint`; `untaped lint --help` lists the options.
+`untaped docs lint`; `untaped lint --help` lists the options.

@@ -67,7 +67,7 @@ Apply reconciles the graph by `id`, after the workflow itself is written:
    `create_approval_template`);
 2. patches changed nodes (an approval's name, description or timeout on its
    approval template; credentials, labels and instance groups as apply
-   replaces relationship lists, `untaped agents awx documents`);
+   replaces relationship lists, `untaped docs awx guides documents`);
 3. deletes nodes no longer listed, except those it cannot name;
 4. removes, then adds, edges.
 

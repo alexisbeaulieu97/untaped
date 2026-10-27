@@ -71,7 +71,13 @@ def test_experimental_commands_end_their_help_with_the_experimental_line(
     through_root = invoke_root(["awx", "test", *path, "--help"])
     for result in (direct, through_root):
         assert result.exit_code == 0, result.output
-        assert result.stdout.rstrip().endswith(EXPERIMENTAL_LINE)
+        assert _before_footer(result.stdout).endswith(EXPERIMENTAL_LINE)
+
+
+def _before_footer(text: str) -> str:
+    """The help without its last paragraph, the address of its docs page, if it has one."""
+    head, footer, _ = text.rpartition("Full documentation: ")
+    return (head if footer else text).rstrip()
 
 
 def test_run_against_missing_file_emits_clean_error(

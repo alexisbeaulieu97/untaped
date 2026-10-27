@@ -2,7 +2,7 @@
 
 ``untaped plugin schema KIND`` prints a record kind's JSON Schema, and
 ``untaped awx schema`` the schemas of the documents awx reads; the
-agent pages point at both. A field's description reaches them only through
+pages of ``untaped docs`` point at both. A field's description reaches them only through
 ``Field(description=...)``: pydantic drops the attribute docstring written
 after a field unless the model sets ``use_attribute_docstrings``, which no
 untaped model does. Docstrings are for whoever reads the Python (``None``,

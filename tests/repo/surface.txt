@@ -122,8 +122,6 @@ cli untaped --quiet switch
 cli untaped --verbose alias=-v
 cli untaped --verbose switch
 cli untaped --version switch
-cli untaped agents  [experimental]
-cli untaped agents [PATH...]@1 default=unset  [experimental]
 cli untaped ansible
 cli untaped ansible deps --all-refs switch default=unset
 cli untaped ansible deps --backend VALUE default=unset
@@ -3059,6 +3057,9 @@ cli untaped config unset --format choice=raw
 cli untaped config unset --format choice=table
 cli untaped config unset --format choice=yaml
 cli untaped config unset KEY
+cli untaped docs
+cli untaped docs --search VALUE default=unset
+cli untaped docs [ADDRESS...]@1 default=unset
 cli untaped doctor
 cli untaped doctor --columns VALUE... default=unset
 cli untaped doctor --columns alias=-c

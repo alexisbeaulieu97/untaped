@@ -8,9 +8,9 @@ so a start reads :data:`~untaped.core.settings.DECLARATION` instead.
 
 from __future__ import annotations
 
-from untaped.core.commands.agents import Agents
 from untaped.core.commands.auth import Auth
 from untaped.core.commands.config import Config
+from untaped.core.commands.docs import Docs
 from untaped.core.commands.doctor import Doctor
 from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
@@ -24,11 +24,11 @@ from untaped.sdk.storage._refs import REFS
 
 
 class Core(Plugin):
-    """Core's commands: agents, config, profiles, projects, skills, doctor, setup, auth, plugins."""
+    """Core's commands: docs, config, profiles, projects, skills, doctor, setup, auth, plugins."""
 
     settings = CoreSettings
     commands = (
-        Agents,
+        Docs,
         Setup,
         Config,
         ProfileGroup,

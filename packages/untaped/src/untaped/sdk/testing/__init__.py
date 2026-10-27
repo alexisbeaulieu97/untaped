@@ -776,7 +776,7 @@ def check_plugin(
     Composes ``name`` hermetically, as :func:`check` does, and
     returns one :class:`PluginCheckRow` per check: the conventions that read
     the composed root (names, provides requirements, the help tree, guides
-    and map lines, stability marks, structure's class checks, the import
+    and overview lines, stability marks, structure's class checks, the import
     boundary), then ``contracts``,
     ``registration``, ``conformance``, ``live``, ``fills`` and ``schema``,
     each where the plugin has something for it to read. Rows

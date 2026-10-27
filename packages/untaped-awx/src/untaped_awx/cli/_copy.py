@@ -54,7 +54,7 @@ def _add_copy(app: App, spec: AwxResourceSpec) -> None:
         without user input, such as a workflow's references the caller cannot
         use; the `awx.copy_outcome` row lists them in `not_carried`, and its
         `id` is the new template's. To copy to another controller, export,
-        change `metadata.name` and apply (`untaped agents awx documents`).
+        change `metadata.name` and apply (`untaped docs awx guides documents`).
 
         Examples
         --------

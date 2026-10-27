@@ -104,7 +104,7 @@ def _add_membership_verb(
     help_text = (
         f"{verb_doc} {members_noun} {preposition} {article} {parent_noun}.\n\n"
         "Idempotent: a member already there (or already gone) is left as it is. "
-        "To set the whole list at once, apply a document (`untaped agents awx documents`)."
+        "To set the whole list at once, apply a document (`untaped docs awx guides documents`)."
     )
 
     # Positional-only: a keyword spelling of ``parent`` would claim ``--parent``,

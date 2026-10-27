@@ -87,7 +87,7 @@ Deletes preview and ask first (`--dry-run`, `--yes`). For clones you work in, us
 
 ## Reference
 
-`untaped agents github` prints this plugin's commands, settings and guides, as Markdown for an agent ([agent pages](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/agent-pages.md)); `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) installs a skill that sends your agent there. `untaped github COMMAND --help` lists each command's options.
+`untaped docs github` prints this plugin's commands, settings and guides, as Markdown for an agent ([untaped docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/docs.md)); `untaped skills install github --target claude` (or another [agent](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md#install-skills)) installs a skill that sends your agent there. `untaped github COMMAND --help` lists each command's options.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#github) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#github)

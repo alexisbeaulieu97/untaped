@@ -22,7 +22,7 @@ changing something it should not.
    (`inventory: !ref …`, `credentials: …`). AWX refuses a prompted resource
    the launching user cannot use.
 4. For `awx test run --source-ref` (temporary copies of the repository's
-   specs, see `untaped agents awx source-ref`),
+   specs, see `untaped docs awx guides source-ref`),
    the user creates and deletes templates in the organization. Grant:
    - the organization's **Job Template Admin** role and, for workflow
      suites, **Workflow Admin**;
@@ -66,4 +66,4 @@ tries `CONTROLLER_OAUTH_TOKEN`, `TOWER_OAUTH_TOKEN` and `AAP_TOKEN`, in that
 order.
 
 Exit 4 from a test run usually means this user lacks a role above or its
-token was refused (`untaped agents awx test-results`).
+token was refused (`untaped docs awx guides test-results`).

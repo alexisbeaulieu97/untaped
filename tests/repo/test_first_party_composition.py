@@ -268,7 +268,13 @@ def test_every_experimental_help_ends_with_the_experimental_line(
     result = CliInvoker().invoke(root.meta, argv)
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.rstrip().endswith(EXPERIMENTAL_LINE)
+    assert _before_footer(result.stdout).endswith(EXPERIMENTAL_LINE)
+
+
+def _before_footer(text: str) -> str:
+    """The help without its last paragraph, the address of its docs page, if it has one."""
+    head, footer, _ = text.rpartition("Full documentation: ")
+    return (head if footer else text).rstrip()
 
 
 @pytest.mark.parametrize("argv", [["awx", "jobs", "list", "--help"], ["awx", "ping", "--help"]])

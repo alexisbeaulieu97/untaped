@@ -1,7 +1,7 @@
 """Stub skills: core's version-neutral template and the marker recording who wrote one.
 
 A stub skill names what a plugin manages and sends the agent to
-``untaped agents``; it lists no command, so one stub serves every untaped
+``untaped docs``; it lists no command, so one stub serves every untaped
 on the machine. Its marker, ``.untaped-stub.json``, is a data file
 (:mod:`untaped.sdk.storage.data_file`) recording two versions because the stub has two
 owners: core's template writes the body (the stamp's ``by`` names its
@@ -111,15 +111,15 @@ def render_stub(name: str, plugin: str, description: str) -> str:
     """The stub's ``SKILL.md`` for ``plugin`` (``untaped`` for core).
 
     Only the command forms its test allows appear in it, so a release that
-    changes ``untaped agents`` knows exactly what the stubs depend on.
+    changes ``untaped docs`` knows exactly what the stubs depend on.
     """
     core = plugin == CORE
     title = CORE if core else f"untaped {plugin}"
     about = "its core commands" if core else f"its {plugin} plugin"
     what = (
-        "core's commands and settings"
+        "core's sections: its commands, the rows they print and its settings"
         if core
-        else ("this plugin's commands, settings, and the plugins that extend it")
+        else "what to read first about it, and its sections: commands, files, rows and settings"
     )
     fallback = "untaped --help" if core else f"untaped {plugin} --help"
     # A JSON string is a valid YAML double-quoted scalar.
@@ -136,15 +136,15 @@ will run.
 
 Which untaped: in a project whose pyproject.toml names untaped, the project's own, run through
 the project's environment (for example `uv run untaped`); elsewhere, `untaped` on PATH.
-`untaped agents` lists the plugins it has.
+`untaped docs` lists the plugins it has.
 
-1. `untaped agents`: read it first. It names the version that answered, how untaped works, and
-   every installed plugin, so you can combine them.
-2. `untaped agents {plugin}`: {what}.
-3. `untaped agents {plugin} COMMAND`: a command's options and examples. Read it before running
-   the command.
+1. `untaped docs`: read it first. It names the version that answered, how its pages are
+   organized, and every installed plugin, so you can combine them.
+2. `untaped docs {plugin}`: {what}.
+3. `untaped docs {plugin} commands COMMAND`: a command's options and examples. Read it before
+   running the command.
 
-If that untaped answers `agents` with "Unknown command", use `{fallback}` instead.
+If that untaped answers `docs` with "Unknown command", use `{fallback}` instead.
 """
 
 

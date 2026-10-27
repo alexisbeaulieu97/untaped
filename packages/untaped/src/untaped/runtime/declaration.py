@@ -157,12 +157,92 @@ class BlockDecl(_Frozen):
     removed_by: str | None = None
 
 
+class FieldDecl(_Frozen):
+    """One field of a model, as a page writes it: its key, type and description.
+
+    ``fields`` are the fields of the model it holds (``cases`` holds cases),
+    which a page shows as the next level's table; a model met again inside
+    itself holds none.
+    """
+
+    name: str
+    #: The type in a reader's words: ``text``, ``list of case``, ```a`, `b`, or null``.
+    type: str
+    required: bool = False
+    default: JsonValue = None
+    description: str = ""
+    #: How a key under it is spelled for its own table: ``[]`` a list item, ``.NAME`` a map value.
+    holds: Literal["", "[]", ".NAME"] = ""
+    fields: tuple[FieldDecl, ...] = ()
+
+
 class KindDecl(_Frozen):
-    """A record kind, ``<plugin>.<snake_case of the class>``, of the plugin that prints it."""
+    """A record kind, ``<plugin>.<snake_case of the class>``, of the plugin that prints it.
+
+    Its prose and fields are the model's, so its page imports no plugin module.
+    """
 
     kind: str
     target: str
     plugin: str
+    summary: str = ""
+    doc: str = ""
+    fields: tuple[FieldDecl, ...] = ()
+
+
+class GuideDecl(_Frozen):
+    """A guide: the docstring of a bundle or an enum a plugin's commands take.
+
+    ``plugin`` is the plugin whose package defines the class, which the page
+    lives under (``untaped docs PLUGIN guides NAME``).
+    """
+
+    target: str
+    plugin: str
+    #: The address word: the class name in kebab case (``source-ref``).
+    name: str
+    summary: str
+    doc: str
+    #: A bundle's options, as its first command declares them.
+    options: tuple[OptionDecl, ...] = ()
+    #: An enum's choices.
+    choices: tuple[str, ...] = ()
+
+
+class MethodDecl(_Frozen):
+    """One method of a contract, as its extension point's page lists it."""
+
+    name: str
+    #: ``books() -> list[Book]``.
+    signature: str
+    summary: str = ""
+    #: A provider must define it (it is abstract on the contract).
+    required: bool = False
+
+
+class TypeDecl(_Frozen):
+    """A model an extension point's methods take or return, as its page lists it."""
+
+    #: The class name, as the methods' signatures spell it.
+    name: str
+    summary: str = ""
+    #: Its kind, when a command reads or prints it too.
+    kind: str | None = None
+    fields: tuple[FieldDecl, ...] = ()
+
+
+class PointDecl(_Frozen):
+    """An extension point: a contract a plugin ``offers``, with what filling it takes."""
+
+    target: str
+    #: The address word: the contract class in kebab case (``book-source``).
+    name: str
+    summary: str
+    doc: str
+    stability: StabilityDecl | None = None
+    methods: tuple[MethodDecl, ...] = ()
+    #: The contract's own model (``T``'s default) first, then each model a method names.
+    types: tuple[TypeDecl, ...] = ()
 
 
 class FillDecl(_Frozen):
@@ -171,6 +251,8 @@ class FillDecl(_Frozen):
     target: str
     #: The contract it fills, which names its owner: the plugin that ``offers`` it.
     contract: str
+    #: The provider's docstring's first line: what it fills the point with.
+    summary: str = ""
 
 
 class PluginDecl(_Frozen):
@@ -188,7 +270,11 @@ class PluginDecl(_Frozen):
     #: The command ``untaped <plugin>`` runs on its own (``runs = Check``).
     runs: CommandDecl | None = None
     offers: tuple[str, ...] = ()
+    #: The extension points ``offers`` makes, in its order.
+    points: tuple[PointDecl, ...] = ()
     fills: tuple[FillDecl, ...] = ()
+    #: The guides its commands link "Read first", wherever their classes live.
+    guides: tuple[GuideDecl, ...] = ()
     skill: str | None = None
     blocks: tuple[BlockDecl, ...] = ()
     #: Its commands mount at the root (core's): ``untaped plugin``, not ``untaped untaped plugin``.
@@ -335,6 +421,7 @@ class KeptDeclaration(_Frozen):
 
 
 GroupDecl.model_rebuild()
+FieldDecl.model_rebuild()
 
 
 def target_of(obj: object) -> str:

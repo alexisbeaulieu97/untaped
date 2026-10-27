@@ -2,7 +2,7 @@
 
 A plugin's agent skill is a stub: a short `SKILL.md` that untaped writes from
 its own template and one sentence of the plugin's, and that sends the agent
-to `untaped agents` (see [Agent skills](./skills.md)). The plugin declares it
+to `untaped docs` (see [Agent skills](./skills.md)). The plugin declares it
 on `PluginSpec.skills` with a name and a description, and nothing else:
 
 ```python
@@ -38,9 +38,9 @@ routes rather than instructs:
 What the agent needs beyond the description it reads on the plugin's
 pages, which untaped generates from what the plugin already declares:
 docstrings, `Examples`, option help, setting and record field
-descriptions, and [guides](./reference/agent-pages.md#guides) for what
+descriptions, and [guides](./reference/docs.md#guides) for what
 belongs to no single command. [How a plugin shapes its
-pages](./reference/agent-pages.md#how-a-plugin-shapes-its-pages) lists
+pages](./reference/docs.md#how-a-plugin-shapes-its-pages) lists
 each.
 
 Write facts, not advice: what a command does, what it changes, how it

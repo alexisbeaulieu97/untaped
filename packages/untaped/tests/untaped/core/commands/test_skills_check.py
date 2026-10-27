@@ -129,7 +129,7 @@ def test_auto_refreshes_outdated_skills_in_place(_isolated_config: Path) -> None
     code, output = _run(root, "demo", "--help")
     assert code == 0
     assert "warning" not in output
-    assert "`untaped agents demo`" in _installed("untaped-demo").read_text()
+    assert "`untaped docs demo`" in _installed("untaped-demo").read_text()
 
 
 def test_auto_warns_about_a_stub_it_could_not_refresh(

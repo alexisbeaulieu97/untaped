@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import collections.abc
 import enum
-import inspect
 import re
 import sys
 import types
@@ -24,7 +23,7 @@ from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
-from pydantic_core import PydanticUndefined, to_jsonable_python
+from pydantic_core import PydanticUndefined
 
 from untaped.runtime.declaration import (
     AliasDecl,
@@ -34,14 +33,25 @@ from untaped.runtime.declaration import (
     Declaration,
     FillDecl,
     GroupDecl,
+    GuideDecl,
     KindDecl,
     OptionDecl,
     PluginDecl,
+    PointDecl,
     Problem,
     Quarantined,
     Returns,
     StabilityDecl,
+    TypeDecl,
     target_of,
+)
+from untaped.runtime.describe import (
+    fields_of,
+    first_paragraph,
+    jsonable,
+    method_decl,
+    models_in,
+    prose,
 )
 from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
@@ -58,7 +68,7 @@ from untaped.sdk.fields import (
     Written,
     unprintable_following,
 )
-from untaped.sdk.marks import Deprecated, Experimental
+from untaped.sdk.marks import Deprecated, Experimental, class_mark
 from untaped.sdk.plugin import (
     RESERVED_NAMES,
     Command,
@@ -419,6 +429,7 @@ class _Claim:
     kind: str
     target: str
     where: str
+    cls: type[BaseModel] = field(compare=False, repr=False)
 
 
 def _clash(claim: _Claim, other: _Claim) -> str | None:
@@ -433,7 +444,7 @@ def _clash(claim: _Claim, other: _Claim) -> str | None:
 def _claims(index: int, walk: _PluginWalk) -> list[_Claim]:
     """The kinds entry ``index`` claims for the records its commands and offers reach."""
     return [
-        _Claim((_PHASES.index(phase), index), kind, target_of(cls), cls.__qualname__)
+        _Claim((_PHASES.index(phase), index), kind, target_of(cls), cls.__qualname__, cls)
         for cls, kind in walk.kinds.items()
         if (phase := walk.phase_of(cls)) != "provided"
     ]
@@ -481,19 +492,27 @@ def _settle(
     for index, holding in held.items():
         walk = walks[index]
         for cls in [each for each in walk.kinds if each in walk.provided]:
-            claim = _Claim((len(_PHASES), index), walk.kinds[cls], target_of(cls), "")
+            claim = _Claim((len(_PHASES), index), walk.kinds[cls], target_of(cls), "", cls)
             if not any(_clash(claim, other) for other in kinds.values()):
                 kinds[claim.kind] = claim
                 holding.append(claim)
     return {
-        index: {
-            claim.kind: KindDecl(
-                kind=claim.kind, target=claim.target, plugin=claim.kind.partition(".")[0]
-            )
-            for claim in holding
-        }
+        index: {claim.kind: _kind_decl(claim) for claim in holding}
         for index, holding in held.items()
     }, clashes
+
+
+def _kind_decl(claim: _Claim) -> KindDecl:
+    """The kind ``claim`` holds, with its model's prose and fields for its page."""
+    doc = prose(claim.cls)[1]
+    return KindDecl(
+        kind=claim.kind,
+        target=claim.target,
+        plugin=claim.kind.partition(".")[0],
+        summary=first_paragraph(doc),
+        doc=doc,
+        fields=fields_of(claim.cls),
+    )
 
 
 def _unbeaten(remaining: list[int], outranked: dict[int, set[int]]) -> int:
@@ -555,12 +574,6 @@ def _stability(mark: object) -> StabilityDecl | None:
     return None
 
 
-def _prose(cls: type) -> tuple[str, str]:
-    """The summary (first line) and the whole docstring of ``cls`` (its own, never inherited)."""
-    doc = inspect.cleandoc(cls.__dict__.get("__doc__") or "")
-    return doc.partition("\n")[0].strip(), doc
-
-
 class _PluginWalk:
     """One plugin's walk: its declaration, the kinds it reaches, and its problems."""
 
@@ -583,6 +596,8 @@ class _PluginWalk:
         self.offered: set[type] = set()
         self.decl: PluginDecl | None = None
         self.settings: type[BaseModel] | None = None
+        #: The guides its commands link, by target, in the order first reached.
+        self.guides: dict[str, GuideDecl] = {}
         if getattr(sys.modules.get(module), "__path__", None) is not None:
             self.problem(
                 "plugin-module",
@@ -605,6 +620,24 @@ class _PluginWalk:
         self.provided.discard(model)  # a command reaches it: a clash is the plugin's problem
         owner = self.owners.get(model.__module__.partition(".")[0], self.name)
         return self.kinds.setdefault(model, f"{owner}.{snake(model.__name__)}")
+
+    def guide(
+        self, cls: type, *, options: tuple[OptionDecl, ...] = (), choices: tuple[str, ...] = ()
+    ) -> None:
+        """Record ``cls``'s docstring as a guide, under the plugin whose package defines it."""
+        target = target_of(cls)
+        if target in self.guides:
+            return
+        doc = prose(cls)[1]
+        self.guides[target] = GuideDecl(
+            target=target,
+            plugin=self.owners.get(cls.__module__.partition(".")[0], self.name),
+            name=kebab(cls.__name__),
+            summary=first_paragraph(doc),
+            doc=doc,
+            options=options,
+            choices=choices,
+        )
 
     def phase_of(self, cls: type) -> str:
         """When composition claims ``cls``'s kind, one of :data:`_PHASES`."""
@@ -641,7 +674,7 @@ class _PluginWalk:
         if cls.runs is not None and _is_command(cls.runs):
             runs = self._command(cls.runs, (self.name,))
         blocks = self._removed_by(cls, blocks)
-        summary, doc = _prose(cls)
+        summary, doc = prose(cls)
         if not summary:
             self.problem(
                 "missing-docstring", cls.__qualname__, "the plugin's docstring is its help line"
@@ -660,7 +693,9 @@ class _PluginWalk:
             commands=commands,
             runs=runs,
             offers=tuple(target_of(c) for c in cls.offers),
+            points=self._points(cls),
             fills=self._fill_decls(cls),
+            guides=tuple(self.guides.values()),
             skill=skill,
             blocks=blocks,
         )
@@ -809,6 +844,54 @@ class _PluginWalk:
             self.kinds.setdefault(item, f"{self.name}.{snake(item.__name__)}")
             self.provided.add(item)
 
+    def _points(self, cls: type[Plugin]) -> tuple[PointDecl, ...]:
+        """The extension points ``offers`` makes, each with its prose and methods."""
+        if not cls.offers:
+            return ()
+        from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
+
+        # each one is a contract class: _reserved refused the plugin otherwise
+        points: list[PointDecl] = []
+        for offered in cls.offers:
+            info = contract_of(offered)
+            if info is None:
+                continue
+            doc = prose(info.cls)[1]
+            points.append(
+                PointDecl(
+                    target=target_of(info.cls),
+                    name=kebab(info.cls.__name__),
+                    summary=first_paragraph(doc),
+                    doc=doc,
+                    stability=_stability(class_mark(info.cls)),
+                    methods=tuple(
+                        method_decl(method.name, method.function, method.hints)
+                        for method in info.methods.values()
+                    ),
+                    types=self._types(info),
+                )
+            )
+        return tuple(points)
+
+    def _types(self, info: ContractInfo) -> tuple[TypeDecl, ...]:
+        """The models a point's page lists: the contract's own, then each its methods name."""
+        named: list[type[BaseModel]] = [] if info.item is None else [info.item]
+        named += [
+            model
+            for method in info.methods.values()
+            for hint in method.hints.values()
+            for model in models_in(hint)
+        ]
+        return tuple(
+            TypeDecl(
+                name=model.__name__,
+                summary=first_paragraph(prose(model)[1]),
+                kind=self.kinds.get(model),
+                fields=fields_of(model),
+            )
+            for model in dict.fromkeys(named)
+        )
+
     def _fill_decls(self, cls: type[Plugin]) -> tuple[FillDecl, ...]:
         if not cls.fills:
             return ()
@@ -816,7 +899,11 @@ class _PluginWalk:
 
         # each one fills a contract: _reserved refused the plugin otherwise
         return tuple(
-            FillDecl(target=target_of(filled), contract=target_of(info.cls))
+            FillDecl(
+                target=target_of(filled),
+                contract=target_of(info.cls),
+                summary=first_paragraph(prose(filled)[1]),
+            )
             for filled in cls.fills
             if (info := contract_of(filled)) is not None
         )
@@ -919,7 +1006,7 @@ class _PluginWalk:
             if name.endswith("Group") and len(name) > len("Group"):
                 name = name[: -len("Group")]
             group_path = (*path, kebab(name))
-            summary, doc = _prose(node)
+            summary, doc = prose(node)
             if not summary:
                 self.problem(
                     "missing-docstring", node.__qualname__, "a group's docstring is its help line"
@@ -1027,7 +1114,7 @@ class _CommandWalk:
         self._positionals()
         self._output(returns)
         self._removes()
-        summary, doc = _prose(cls)
+        summary, doc = prose(cls)
         if not summary:
             self.problem("missing-docstring", self.where, "a command's docstring is its help")
         if returns is None:
@@ -1208,12 +1295,16 @@ class _CommandWalk:
         self._option(path, where, info, value=value, marks=marks, repeated=repeated, panel=panel)
 
     def _bundle(self, path: str, model: type[BaseModel], *, required: bool) -> None:
-        if _prose(model)[0]:
+        guide = bool(prose(model)[0])
+        if guide:
             self.seen.guides.append(target_of(model))
+        start = len(self.seen.options)
         self.optional_bundles += not required
         for name, info in model.model_fields.items():
             self._field(name, info, prefix=f"{path}.", panel=bundle_panel(model))
         self.optional_bundles -= not required
+        if guide:
+            self.plugin.guide(model, options=tuple(self.seen.options[start:]))
 
     def _option(
         self,
@@ -1266,7 +1357,7 @@ class _CommandWalk:
                 negative=negative,
                 short=shorts[0] if shorts else None,
                 required=info.is_required() and not self.optional_bundles,
-                default=_jsonable(default),
+                default=jsonable(default),
                 help=info.description or "",
                 panel=panel,
                 allow_hyphen=AllowHyphen in marks,
@@ -1290,10 +1381,11 @@ class _CommandWalk:
         if (
             isinstance(value, type)
             and issubclass(value, enum.Enum)
-            and _prose(value)[0]
+            and prose(value)[0]
             and not value.__module__.startswith(("untaped.", "enum"))
         ):
             self.seen.guides.append(target_of(value))
+            self.plugin.guide(value, choices=token[1])
         return token
 
     def _file(self, value: object, marks: tuple[object, ...]) -> None:
@@ -1609,12 +1701,3 @@ def _nested_block(annotation: object) -> bool:
         for arg in get_args(annotation)
         if not isinstance(arg, str)
     )
-
-
-def _jsonable(value: object) -> Any:
-    if isinstance(value, enum.Enum):
-        return value.value
-    try:
-        return to_jsonable_python(value)
-    except Exception:
-        return None

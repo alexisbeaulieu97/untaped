@@ -62,7 +62,7 @@ def test_render_writes_the_lowest_format_its_marks_need() -> None:
 
 
 def test_an_experimental_mark_reads_back_and_an_older_format_still_parses() -> None:
-    lines = [Line("cli untaped agents", "experimental"), Line("cli untaped x", DeprecatedMark(12))]
+    lines = [Line("cli untaped docs", "experimental"), Line("cli untaped x", DeprecatedMark(12))]
     assert parse(render(lines)) == lines
     assert parse("# untaped surface 1\ncli untaped a  [deprecated]\n") == [
         Line("cli untaped a", DeprecatedMark())

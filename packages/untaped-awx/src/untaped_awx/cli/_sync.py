@@ -51,8 +51,8 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         """Sync a fixed selection; inventories expand to their current source IDs.
 
         Which inventories can't sync, and how --wait and --follow end:
-        `untaped agents awx launching`. When it asks first and how the batch
-        runs: `untaped agents awx writes`.
+        `untaped docs awx guides launching`. When it asks first and how the batch
+        runs: `untaped docs awx guides writes`.
 
         Examples
         --------

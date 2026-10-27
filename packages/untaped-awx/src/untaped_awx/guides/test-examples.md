@@ -4,8 +4,8 @@ description: "Read when starting an awx test suite: five working suites (smoke, 
 
 Each suite below loads as written. Copy one to `.untaped/awx/tests/` in the
 playbook repository, change its template and cases, then run `untaped awx
-test validate`. The rules behind them: `untaped agents awx test-suites` and
-`untaped agents awx test-cases`.
+test validate`. The rules behind them: `untaped docs awx guides test-suites` and
+`untaped docs awx guides test-cases`.
 
 ## Smoke
 

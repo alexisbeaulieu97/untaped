@@ -71,6 +71,8 @@ from untaped.sdk.marks import (
     apply_marks,
     bind_behaviours,
     bind_owners,
+    children,
+    docs_footer,
     mark_app,
     panel_for,
 )
@@ -273,6 +275,7 @@ def build_root_app(
             _mount_root(root, result.mount, plugin.spec.name)
         else:
             _mount_plugin(root, plugin)
+    docs_footer(root, "untaped docs")
     root.version = _resolve_version
     root.config = (apply_default_format,)
     skills = composed_skills(result)
@@ -293,7 +296,7 @@ def build_root_app(
 
 
 def root_app() -> App:
-    """The root :func:`build_root_app` last built, which ``untaped agents`` describes."""
+    """The root :func:`build_root_app` last built, which ``untaped docs`` describes."""
     if _BUILT_ROOT is None:
         raise RuntimeError("no root app built yet; call build_root_app() first")
     return _BUILT_ROOT
@@ -368,8 +371,29 @@ class _LazyPluginCommand(CommandSpec):
         # Once resolved, cyclopts lists the app by its own group, not the spec's.
         _place(app, self._plugin.spec)
         apply_marks(app, path=(self._plugin.spec.name,))
+        _docs_footers(app, self._plugin.spec.name)
         self._resolved = app
         return app
+
+
+def _docs_footers(app: App, name: str) -> None:
+    """Give every help screen of plugin ``name``'s app a docs footer it lacks.
+
+    A 12.0 plugin's commands carry their own pages' addresses already; an
+    11.x plugin's app (the seam) has one page, ``untaped docs NAME``. A
+    command without an epilogue of its own shows its parent's, so it keeps
+    the stability line it inherits and gets the footer through it.
+    """
+    seen: set[int] = set()
+    todo = [app]
+    while todo:
+        each = todo.pop()
+        if id(each) in seen:
+            continue
+        seen.add(id(each))
+        if each is app or each.help_epilogue is not None:
+            docs_footer(each, f"untaped docs {name}", keep=True)
+        todo.extend(sub for _, sub in children(each, resolve=True))
 
 
 def _unbuildable_app(failure: QuarantineRecord) -> App:
@@ -429,6 +453,7 @@ def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
     if plugin.app is not None:
         _place(plugin.app, spec)
         _mount(root, plugin.app, name=spec.name)
+        _docs_footers(plugin.app, spec.name)
         return
     if spec.name in root:
         del root[spec.name]

@@ -109,7 +109,7 @@ PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
 @dataclass(frozen=True)
 class SkillAsset:
     """The stub skill a plugin ships: core writes it from its own template and
-    ``description``, and the stub sends the agent to ``untaped agents``. A
+    ``description``, and the stub sends the agent to ``untaped docs``. A
     plugin ships at most one.
     """
 
@@ -203,7 +203,7 @@ class PluginSpec:
     ``<name>``/``<name>_command`` settings, which carry their own marks.
 
     ``guides`` is a folder of Markdown files (``files("untaped_acme") /
-    "guides"``), each a page ``untaped agents <name> <guide>`` prints: prose
+    "guides"``), each a page ``untaped docs <name> guides <guide>`` prints: prose
     that belongs to no single command. Composition never reads it.
     """
 

@@ -4,7 +4,7 @@ description: "Read before changing anything on an AWX controller: how a write pr
 
 Every write (a command marked `(changes things)` or `(destructive)`)
 previews once and asks once, No by default. What to select:
-`untaped agents awx selecting`.
+`untaped docs awx guides selecting`.
 
 ## Preview and confirmation
 
@@ -49,4 +49,4 @@ before the change (`job-templates export Deploy --out deploy-before.yml`) is a
 recovery point: applying it restores the fields of a resource that still
 exists. A deleted resource comes back with a new id and without its secrets,
 access, schedules or history; a recreated template needs a new callback key
-if it used one. What a document can't carry: `untaped agents awx documents`.
+if it used one. What a document can't carry: `untaped docs awx guides documents`.
