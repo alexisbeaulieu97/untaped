@@ -112,6 +112,7 @@ class Run(WorkspaceCommand):
             (None, self.name_or_cmd) if self.cmd is None else (self.name_or_cmd, self.cmd)
         )
         _check_positionals(name, command)
+        script = _piped_script(self.stdin) if command == "-" else None  # before --stdin's rows
         record = self.locate(name)
         specs = self._selected(record.repos, workspace=record.name)
         root = self.workspace_dir(record.name)
@@ -120,7 +121,7 @@ class Run(WorkspaceCommand):
         if not targets:
             self.ctx.diag.warning("no repos to run in (read-only repos need --include-read-only)")
             return iter(())
-        with run_argv(command, self.stdin) as argv:
+        with run_argv(command, script) as argv:
             run = RunInRepos(
                 SubprocessRunner(),
                 parallel=self.parallel.value,
@@ -214,18 +215,23 @@ def _echo_block(row: RunOutcome) -> None:
             echo(text.rstrip("\n"))
 
 
+def _piped_script(stdin: Stdin[Any]) -> str:
+    """The script ``-`` reads from stdin; refused with ``--stdin``, a terminal or nothing piped."""
+    script = stdin.text(what="script")
+    if not script.strip():
+        raise UsageError("`-` reads a script from stdin, but nothing was piped")
+    return script
+
+
 @contextmanager
-def run_argv(command: str, stdin: Stdin[Any]) -> Iterator[list[str]]:
+def run_argv(command: str, script: str | None = None) -> Iterator[list[str]]:
     """The argv for ``run``'s command argument.
 
-    ``-`` is a script read from stdin (kept in a temp file for the duration);
-    an existing file runs directly when executable, else through ``sh``;
-    anything else is a ``sh -c`` string.
+    ``-`` runs ``script``, the text piped on stdin (kept in a temp file for
+    the duration); an existing file runs directly when executable, else
+    through ``sh``; anything else is a ``sh -c`` string.
     """
-    if command == "-":
-        script = stdin.text(what="script")
-        if not script.strip():
-            raise UsageError("`-` reads a script from stdin, but nothing was piped")
+    if command == "-" and script is not None:
         with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
             handle.write(script + "\n")
         try:

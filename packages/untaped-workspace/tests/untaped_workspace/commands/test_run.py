@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import Stdin
 from untaped.sdk.testing import Ran
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.commands.run import run_argv
@@ -82,8 +81,11 @@ def test_a_piped_script_starting_with_dashes_is_no_mistyped_option(ws: Path) -> 
     assert rows  # it ran, and sh said what it made of it
 
 
-def test_stdin_script_with_stdin_selection_is_usage(ws: Path) -> None:
-    assert run(["run", "J-1", "-", "--stdin"], input="true\n").exit == 2
+@pytest.mark.parametrize("piped", ["true\n", "", "docs\n"])
+def test_stdin_script_with_stdin_selection_is_usage(ws: Path, piped: str) -> None:
+    result = run(["run", "J-1", "-", "--stdin"], input=piped)
+    assert result.exit == 2
+    assert "- reads the script from stdin, so it can't be combined with --stdin" in err(result)
 
 
 def test_failure_exits_one_and_human_summary(ws: Path) -> None:
@@ -332,5 +334,5 @@ def test_help_names_the_positionals() -> None:
 
 def test_unknown_user_tilde_is_a_command_string() -> None:
     command = "~no_such_user_untaped/x"
-    with run_argv(command, Stdin()) as argv:
+    with run_argv(command) as argv:
         assert argv == ["sh", "-c", "--", command]
