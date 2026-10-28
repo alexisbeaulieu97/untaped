@@ -18,13 +18,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk.diagnostic import (
-    Debug,
-    Deprecation,
-    Failure,
-    Message,
-    Progress,
-    Pruned,
-    Stale,
+    DIAGNOSTICS,
     WireModel,
     _is_none,
     _Omitted,
@@ -290,16 +284,6 @@ class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):
     error: _RowError = None
 
 
-#: What core prints that no command of its names: its diagnostics and the plugin
-#: check's rows. ``Core.records`` declares them, and before or without a
-#: composition a kind is read from this tuple alone.
-CORE_RECORDS: tuple[type[WireModel], ...] = (
-    Message,
-    Failure,
-    Debug,
-    Progress,
-    Stale,
-    Pruned,
-    Deprecation,
-    PluginCheck,
-)
+#: What core prints that no command of its names: the diagnostics and the
+#: plugin check's rows, which ``Core.records`` lists.
+CORE_RECORDS: tuple[type[WireModel], ...] = (*DIAGNOSTICS, PluginCheck)

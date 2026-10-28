@@ -1,4 +1,6 @@
 A plugin class lists the record models it prints that no command names in
-`records`; each takes the kind `<plugin>.<snake_case of the class>`, claimed
-as the plugin's own. Two plugins listing one model clash as `duplicate-kind`.
-Outside a run, `kind_of` still names core's own records and diagnostics.
+`records`, now a reserved name; each takes the kind
+`<plugin>.<snake_case of the class>` of the plugin whose package defines it.
+In a run, `kind_of` and `record_model` read the kinds composition gave, and
+`record_model` returns any model; before or without a run, the diagnostics
+in `untaped.sdk.diagnostic.DIAGNOSTICS` keep theirs.

@@ -50,6 +50,7 @@ from untaped.sdk._block import Block
 from untaped.sdk._names import kebab, snake, words
 from untaped.sdk.contracts import Contract, Provider, cached
 from untaped.sdk.diagnostic import Failure
+from untaped.sdk.fields import table_row
 from untaped.sdk.records import kind_of, record_model
 
 PACKAGE = __name__.partition(".")[0]
@@ -293,13 +294,42 @@ def test_records_holds_only_models() -> None:
     assert _rules(_plugin_listing(Progressed, "progress")) == [("reserved-name", "Lister.records")]
 
 
-def test_two_plugins_listing_one_record_is_a_kind_clash() -> None:
-    declaration = compose(
-        [_entry(_plugin_listing(Progressed), "hello"), _entry(_plugin_listing(Progressed), "other")]
-    )
-    assert [plugin.name for plugin in declaration.plugins] == ["hello"]
-    [refused] = declaration.quarantined
-    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
+@pytest.mark.parametrize("first", ["hello", "shelf"])
+def test_a_record_listed_beside_its_owner_keeps_the_owner_s_kind(first: str) -> None:
+    entries = {
+        "hello": _entry(_plugin_listing(Book), "hello"),
+        "shelf": _entry(_plugin_listing(Book), "shelf", module=Book.__module__),
+    }
+    order = [entries[first], *(entry for name, entry in entries.items() if name != first)]
+    declaration = compose(order)
+    assert not declaration.quarantined
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [("shelf.book", "shelf")]
+
+
+class Box[T](BaseModel):
+    """A generic record."""
+
+    item: T
+
+
+class Job(BaseModel):
+    """A record whose plain ``status`` is no Status mark."""
+
+    status: str
+
+
+def test_a_run_reads_a_parametrized_record_s_kind_and_skips_a_class_in_a_function() -> None:
+    class Local(BaseModel):
+        """A record defined in a function."""
+
+    listing = _plugin_listing(Box[int], Local, Job)
+    declaration = compose([_entry(listing)])
+    with entered(build_run(declaration, {"hello": HelloSettings})):
+        assert kind_of(Box[int]) == "hello.box_int"
+        assert kind_of(Local) == "hello.local"
+        assert record_model("hello.local") is None
+        assert type(table_row(Job(status="failed"))["status"]) is str  # no 11.x colouring
+    assert record_model("untaped.failure") is Failure
 
 
 def test_a_block_on_the_plugin_class_is_named_by_its_attribute() -> None:

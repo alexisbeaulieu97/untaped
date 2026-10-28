@@ -950,7 +950,7 @@ def table_rows(
     word its field's ``Status`` names is a :class:`Roled` cell.
     """
     from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
-    from untaped.sdk.diagnostic import dumped_names, kind_of  # noqa: PLC0415
+    from untaped.sdk.diagnostic import _spelled_kind, dumped_names  # noqa: PLC0415
 
     now = run_clock().now()
     spread_keys: dict[str, dict[str, None]] = {}
@@ -964,7 +964,7 @@ def table_rows(
             for name, dumped in dumped_names(type(record)).items()
         }
         roles = status_roles(type(record))
-        spelled = kind_of(type(record)) is not None  # 11.x ``kind=``: the seam below
+        spelled = _spelled_kind(type(record)) is not None  # 11.x ``kind=``: the seam below
         out: dict[str, object] = {}
         for dumped, cell in row.items():  # the dump's order is the table's
             name, marks = fields.get(dumped, (None, []))

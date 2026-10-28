@@ -579,7 +579,7 @@ class _PluginWalk:
         self.provided: set[type] = set()
         #: The owner models of the contracts it offers.
         self.offered: set[type] = set()
-        #: The models its ``records`` lists: its own, whichever package defines them.
+        #: The models its ``records`` lists: claimed even when a provider's item too.
         self.listed: set[type] = set()
         self.decl: PluginDecl | None = None
         self.settings: type[BaseModel] | None = None
@@ -630,10 +630,8 @@ class _PluginWalk:
         """When composition claims ``cls``'s kind, one of :data:`_PHASES`."""
         if cls in self.offered:
             return "offered"
-        if cls in self.provided:
+        if cls in self.provided and cls not in self.listed:
             return "provided"
-        if cls in self.listed:
-            return "own"
         owner = self.owners.get(cls.__module__.partition(".")[0], self.name)
         return "own" if owner == self.name else "reached"
 
@@ -777,14 +775,14 @@ class _PluginWalk:
                 self._provider(where, filled)
 
     def _records(self, where: str, listed: tuple[object, ...]) -> None:
-        """The models ``records`` lists are the plugin's, claimed with its commands' records."""
+        """The models ``records`` lists are claimed as its commands' records are, by their owner."""
         for model in listed:
             if not (isinstance(model, type) and issubclass(model, BaseModel)):
                 self.problem(
                     "reserved-name", f"{where}.records", f"{model!r} is not a record model"
                 )
                 continue
-            self.kinds.setdefault(model, f"{self.name}.{snake(model.__name__)}")
+            self.kind(model)
             self.listed.add(model)
 
     def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
