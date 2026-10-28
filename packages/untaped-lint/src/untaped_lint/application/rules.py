@@ -21,10 +21,8 @@ from typing import ClassVar, cast, evaluate_forward_ref
 from untaped.sdk import Failure, Record, experimental, kind_of
 from untaped.sdk.contracts import Contract, Provider
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.records import Finding, Location, Rule, Severity, Tree, declared_kind
+from untaped_lint.records import RULE_ID, Finding, Location, Rule, Severity, Tree, declared_kind
 
-#: A rule's id as its provider declares it: lower-case words joined by ``-``.
-_BARE_ID = r"[a-z][a-z0-9]*(-[a-z0-9]+)*"
 #: Marks a function ``@rule`` declared.
 _RULE = "__untaped_lint_rule__"
 #: Marks a provider base's own helper, so doctor's unused-method check skips it
@@ -78,7 +76,7 @@ def rule(*, severity: Severity) -> Callable[[Callable[..., Iterable[Finding]]], 
     def mark(function: Callable[..., Iterable[Finding]]) -> RuleFunction:
         model, summary = _reads(function), _summary(function)
         id_ = function.__name__.replace("_", "-")
-        if not re.fullmatch(_BARE_ID, id_):
+        if not re.match(RULE_ID, id_):
             raise TypeError(
                 f"rule {function.__qualname__}: its name is its id, so it is lower-case "
                 "words joined by `_` (no_print is no-print)"
@@ -225,7 +223,7 @@ class Rules(Linter, Provider):
 
 
 def _raised(declared: RuleFunction, record: Record, error: Exception) -> Finding:
-    target = str(getattr(record, "name", None) or kind_of(declared.model))
+    target = str(getattr(record, "name", None) or kind_of(declared.model) or declared.id)
     return Finding(
         rule=declared.id,
         severity="error",

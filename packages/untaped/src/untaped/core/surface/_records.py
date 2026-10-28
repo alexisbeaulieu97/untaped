@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from untaped.core.surface._contracts import _closure, _model_mark, model_fields
 from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
-from untaped.core.surface._sdk import SurfaceError
+from untaped.core.surface._sdk import SurfaceError, sdk_line_mark
 from untaped.core.surface._types import choice_text
 from untaped.sdk.marks import Experimental, class_mark
 
@@ -134,8 +134,7 @@ def _declared(
                 reach(kind, mark, written=True)
     for each in kinds.values():
         if not each.marks:  # listed in ``records``: its own mark, else its plugin's
-            experimental = isinstance(class_mark(each.model), Experimental)
-            each.marks.add("experimental" if experimental else marks.get(each.owner))
+            each.marks.add(sdk_line_mark(class_mark(each.model)) or marks.get(each.owner))
 
 
 def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[str]:

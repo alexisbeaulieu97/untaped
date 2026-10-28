@@ -25,7 +25,7 @@ from __future__ import annotations
 from untaped.sdk import InstalledPlugin
 from untaped_lint.application.output import lint_report
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule
+from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule, rule_row
 from untaped_lint.commands._lint import Findings
 from untaped_lint.config import LintConfig, lint_config
 from untaped_lint.domain.report import Report
@@ -64,5 +64,6 @@ __all__ = [
     "lint_config",
     "lint_report",
     "rule",
+    "rule_row",
     "target_of",
 ]

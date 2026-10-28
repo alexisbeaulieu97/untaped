@@ -8,8 +8,7 @@ import pytest
 
 from lint_fakes import Widget, default_branch
 from untaped.sdk import Record
-from untaped_lint.api import Finding, Rules, finding, rule
-from untaped_lint.application.rules import rule_row
+from untaped_lint.api import Finding, Rules, finding, rule, rule_row
 from untaped_lint.testing import run_rule
 
 

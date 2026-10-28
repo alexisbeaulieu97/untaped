@@ -164,7 +164,9 @@ def conformance(provider: Linter | TreeReader) -> None:
     """Fail unless ``provider``'s rule table is one the engine loads: bare, unique ids.
 
     untaped's plugin checks call it for every provider of lint's contracts;
-    a ``TreeReader`` has no rule table, so it passes as it is.
+    a ``TreeReader`` has no rule table, so it passes as it is. Call it under
+    a run composing the provider's plugin (``compose_with("acme")``): the
+    rows name the kinds composition gives.
     """
     if not isinstance(provider, Linter):
         return

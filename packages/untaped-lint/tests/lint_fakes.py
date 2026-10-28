@@ -11,8 +11,7 @@ import json
 from collections.abc import Iterator
 
 from untaped.sdk import InstalledPlugin, Record, kind_of
-from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule
-from untaped_lint.application.rules import rule_row
+from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule, rule_row
 
 
 class Widget(Record, kind="linttest.widget"):

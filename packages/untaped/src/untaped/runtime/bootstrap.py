@@ -203,19 +203,29 @@ def kept_composition() -> Iterator[None]:
 def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[CompositionResult]:
     """Compose ``candidates`` for the block, then bring back the composition before it.
 
-    Under a composed run, the block runs under a child of it whose
-    composition is the block's, so the kinds it reads are those plugins'.
+    The block runs under that composition: a child of the current run with
+    its own section reads, else a run of its own, so the kinds and settings
+    it reads are those plugins'.
     """
-    from untaped.runtime.run import composition_of  # noqa: PLC0415 - the run imports the root
+    from untaped.runtime.run import (  # noqa: PLC0415 - the run imports the root
+        _section_reader,
+        build_run,
+        composition_of,
+        entered,
+    )
 
     with kept_composition():
         result = compose_root(candidates=candidates)
+        declaration, settings = result.mount.declaration, result.mount.settings
         run = run_or_none()
-        if run is None or not run.attached:
-            yield result
+        if run is None:
+            with entered(build_run(declaration, settings)):
+                yield result
             return
-        composition = composition_of(result.mount.declaration, result.mount.settings)
-        with run_scope(replace(run, composition=composition)):
+        child = replace(
+            run, composition=composition_of(declaration, settings), picks=_section_reader()
+        )
+        with run_scope(child):
             yield result
 
 
