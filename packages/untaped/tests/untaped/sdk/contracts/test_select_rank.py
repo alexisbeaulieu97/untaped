@@ -16,16 +16,18 @@ from core_test_support.contracts.support import (
     Book,
     BookSource,
     Shop,
+    candidates,
     compose,
-    kiosk_spec,
-    library_spec,
-    shelf_spec,
-    shop_spec,
+    kiosk_plugin,
+    library_plugin,
+    plugin,
+    shelf_plugin,
+    shop_plugin,
     write_config,
 )
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.contracts.registry import doctor_rows, ranking
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.settings import (
     get_config_section,
     load_settings_section,
@@ -36,7 +38,7 @@ from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Contract, Ok, Skipped, gather, select_one
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import Record
-from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
+from untaped.sdk.testing import CliInvoker, CliResult
 
 RANKED = """\
 format_version: 2
@@ -48,13 +50,13 @@ shelf:
 """
 
 
-def _run(argv: Sequence[str], *specs: PluginSpec) -> CliResult:
-    app = build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+def _run(argv: Sequence[str], *plugins: PluginCandidate | PluginSpec) -> CliResult:
+    app = build_root_app(candidates=candidates(*plugins))
     return CliInvoker().invoke(app.meta, list(argv))
 
 
-def _all() -> tuple[PluginSpec, ...]:
-    return (shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+def _all() -> tuple[PluginCandidate, ...]:
+    return (shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
 
 
 def _extensions() -> object:
@@ -65,7 +67,7 @@ def _extensions() -> object:
 
 
 def test_every_owner_section_has_extensions_and_no_other_section_does() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     shelf = registered_profile_model("shelf")
     library = registered_profile_model("library")
     assert shelf is not None and "extensions" in shelf.model_fields
@@ -77,7 +79,7 @@ def test_an_owner_with_settings_keeps_them_and_reads_them_as_its_own_model() -> 
         model_config = {"extra": "forbid"}
         aisle: int = 1
 
-    owner = PluginSpec(name="shelf", settings=ShelfSettings, contracts=lambda: (BookSource,))
+    owner = plugin("shelf", settings=ShelfSettings, offers=(BookSource,))
     compose(owner)
     write_config(RANKED.replace("shelf:\n", "shelf:\n  aisle: 4\n"))
     settings = get_config_section("shelf", ShelfSettings)
@@ -144,7 +146,7 @@ def test_a_ranking_for_a_missing_contract_method_or_plugin_changes_nothing() -> 
         "    gone: {rank: {x: [nobody]}}\n"
         "    book_source: {rank: {nope: [shop], books: [gitlab, kiosk]}}\n"
     )
-    compose(shelf_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), shop_plugin(), kiosk_plugin())
     Book.model_rebuild()
     answers = gather(BookSource.books)()
     assert [(answer.plugin, answer.rank) for answer in answers] == [("kiosk", 1), ("shop", None)]
@@ -194,6 +196,14 @@ class _StateRetiringExtensions(BaseModel):
     retired_keys: ClassVar[Mapping[str, str]] = {"extensions": "gone"}
 
 
+@experimental
+class _Owned(Contract):
+    """A contract acme owns."""
+
+    def items(self) -> list[str]:
+        raise NotImplementedError
+
+
 class _ReservedState(BaseModel):
     caches: dict[str, str] = {}
 
@@ -201,15 +211,17 @@ class _ReservedState(BaseModel):
 @pytest.mark.parametrize(
     "spec",
     [
-        PluginSpec(name="acme", settings=_Reserved),
+        plugin("acme", settings=_Reserved),
         PluginSpec(name="acme", state=_ReservedState),
-        PluginSpec(name="acme", settings=_ReservedOldKey, contracts=lambda: ()),
-        PluginSpec(name="acme", settings=_RenamedIntoReserved, contracts=lambda: ()),
-        PluginSpec(name="acme", settings=_ReservedAlias),
+        plugin("acme", settings=_ReservedOldKey, offers=(_Owned,)),
+        plugin("acme", settings=_RenamedIntoReserved, offers=(_Owned,)),
+        plugin("acme", settings=_ReservedAlias),
     ],
     ids=["settings-extensions", "state-caches", "owner-old-key", "renamed-into", "alias"],
 )
-def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginSpec) -> None:
+def test_a_plugin_declaring_an_injected_key_is_quarantined(
+    spec: PluginCandidate | PluginSpec,
+) -> None:
     result = compose(spec)
     [record] = result.quarantine
     assert record.reason == "bad-settings-keys"
@@ -223,9 +235,7 @@ def test_an_owner_state_model_may_retire_an_extensions_key() -> None:
 
 def test_a_plugin_that_owns_no_contract_can_rename_its_extensions_setting_away() -> None:
     write_config("format_version: 2\nacme:\n  extensions: {a: b}\n")
-    result = _run(
-        ["config", "get", "acme.plugins"], PluginSpec(name="acme", settings=_ReservedOldKey)
-    )
+    result = _run(["config", "get", "acme.plugins"], plugin("acme", settings=_ReservedOldKey))
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout) == {"a": "b"}
 
@@ -341,8 +351,8 @@ class TagSource(Contract):
         raise NotImplementedError
 
 
-def _tags_spec() -> PluginSpec:
-    return PluginSpec(name="tags", contracts=lambda: (TagSource,))
+def _tags_spec() -> PluginCandidate:
+    return plugin("tags", offers=(TagSource,))
 
 
 def test_plugin_contracts_lists_every_method_with_who_fills_it() -> None:
@@ -373,7 +383,7 @@ def test_plugin_contracts_survives_broken_owner_settings() -> None:
 
 
 def test_plugin_contracts_with_no_owner_says_so() -> None:
-    result = _run(["plugin", "contracts"], shop_spec())
+    result = _run(["plugin", "contracts"], shop_plugin())
     assert result.exit_code == 0
     assert "No installed plugin declares a contract." in result.stdout + result.stderr
 
@@ -418,7 +428,7 @@ def test_plugin_schema_loads_contract_offers_to_find_a_kind(tmp_path: Path) -> N
     gadgets = PluginSpec(name="gadgets", provides={"shelf": offers})
     with pytest.MonkeyPatch.context() as patch:
         patch.syspath_prepend(str(tmp_path))
-        result = _run(["plugin", "schema", "gadgets.gadget"], shelf_spec(), gadgets)
+        result = _run(["plugin", "schema", "gadgets.gadget"], shelf_plugin(), gadgets)
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["required"] == ["name"]
 
@@ -581,7 +591,7 @@ def test_a_parent_variable_holds_only_the_rankings_its_json_sets() -> None:
 
 
 def test_a_quarantined_plugin_stays_in_its_ranking() -> None:
-    broken = PluginSpec(name="gitlab", settings=_Reserved)
+    broken = plugin("gitlab", settings=_Reserved)
     write_config(RANKED.replace("[shop, library]", "[gitlab, shop]"))
     compose(*_all(), broken)
     assert not [row for row in doctor_rows() if row.check == "rank"]
@@ -598,7 +608,7 @@ def test_a_provider_whose_ready_raises_is_inactive_in_doctor() -> None:
         def ready(self) -> None:
             raise RuntimeError("boom")
 
-    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Broken(),)}))
+    compose(shelf_plugin(), plugin("shop", fills=(Broken,)))
     [row] = doctor_rows()
     assert (row.status, row.title) == ("pass", "not-configured")
     assert row.detail == "shelf.book_source: inactive: ready() raised RuntimeError: boom"

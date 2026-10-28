@@ -13,13 +13,13 @@ from core_test_support.contracts.support import (
     SpecialVolume,
     Volume,
     compose,
-    kiosk_spec,
-    library_spec,
-    shelf_spec,
-    shop_spec,
+    kiosk_plugin,
+    library_plugin,
+    plugin,
+    shelf_plugin,
+    shop_plugin,
     write_config,
 )
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts import (
     Ambiguous,
@@ -27,6 +27,7 @@ from untaped.sdk.contracts import (
     Errored,
     NotFound,
     Ok,
+    Provider,
     Skipped,
     Source,
     select_one,
@@ -158,14 +159,14 @@ def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
 
 
 def test_a_bridge_reads_the_owner_kind_directly() -> None:
-    compose(shelf_spec(), kiosk_spec())
+    compose(shelf_plugin(), kiosk_plugin())
     book = convert(BookSource.to_book, _envelope("shelf.book", {"title": "Dune"}))
     assert book == Book(title="Dune")
     assert book.source is None
 
 
 def test_a_bridge_sends_a_provider_kind_through_its_bridge() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     book = convert(BookSource.to_book, _envelope("library.volume", {"id": 3, "name": "Dune"}))
     assert book.title == "Dune"
@@ -181,7 +182,7 @@ def test_a_bridge_sends_a_provider_kind_through_its_bridge() -> None:
 
 
 def test_a_bridge_refuses_kind_less_unknown_and_invalid_records() -> None:
-    compose(shelf_spec(), library_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), kiosk_plugin())
     write_config(LIBRARY_CONFIG)
     with pytest.raises(UsageError, match="needs a kind"):
         convert(BookSource.to_book, _envelope(None, {"title": "Dune"}))
@@ -196,7 +197,7 @@ def test_a_bridge_refuses_kind_less_unknown_and_invalid_records() -> None:
         convert(BookSource.books, _envelope("shelf.book", {"title": "Dune"}))
 
 
-class _Archive(BookSource[SpecialVolume]):
+class _Archive(BookSource[SpecialVolume], Provider):
     def to_book(self, item: SpecialVolume) -> Book:
         return Book(title=f"signed {item.name}" if item.signed else item.name)
 
@@ -204,7 +205,7 @@ class _Archive(BookSource[SpecialVolume]):
         return []
 
 
-class _Copycat(BookSource[Volume]):
+class _Copycat(BookSource[Volume], Provider):
     def to_book(self, item: Volume) -> Book:
         return Book(title=item.name)
 
@@ -213,8 +214,8 @@ class _Copycat(BookSource[Volume]):
 
 
 def test_a_bridge_picks_the_most_derived_reader_and_refuses_a_tie() -> None:
-    archive = PluginSpec(name="archive", provides={"shelf": lambda: (_Archive(),)})
-    compose(shelf_spec(), library_spec(), archive)
+    archive = plugin("archive", fills=(_Archive,))
+    compose(shelf_plugin(), library_plugin(), archive)
     write_config(LIBRARY_CONFIG)
     signed = _envelope("library.special_volume", {"id": 4, "name": "Emma", "signed": True})
     book = convert(BookSource.to_book, signed)
@@ -222,8 +223,8 @@ def test_a_bridge_picks_the_most_derived_reader_and_refuses_a_tie() -> None:
     assert book.source is not None and book.source.plugin == "archive"
     plain = convert(BookSource.to_book, _envelope("library.volume", {"id": 1, "name": "A"}))
     assert plain.source is not None and plain.source.plugin == "library"
-    copycat = PluginSpec(name="copycat", provides={"shelf": lambda: (_Copycat(),)})
-    compose(shelf_spec(), library_spec(), copycat)
+    copycat = plugin("copycat", fills=(_Copycat,))
+    compose(shelf_plugin(), library_plugin(), copycat)
     with pytest.raises(ConfigError, match="duplicate-kind") as err:
         convert(BookSource.to_book, _envelope("library.volume", {"id": 1, "name": "A"}))
     assert err.value.exit_code == ExitCode.ENVIRONMENT

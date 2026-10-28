@@ -22,12 +22,14 @@ from core_test_support.contracts.support import (
     Volume,
     compose,
     fresh_providers,
-    library_spec,
-    shelf_spec,
+    library_plugin,
+    plugin,
+    shelf_plugin,
+    shop_plugin,
     write_config,
 )
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Plugin, deprecated, experimental
 from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
 from untaped.sdk.storage import Cache
@@ -47,9 +49,9 @@ def _fresh_providers() -> Iterator[None]:
 
 
 def test_compose_with_offers_a_fake_to_the_owner_and_restores_the_composition() -> None:
-    before = compose(shelf_spec())
+    before = compose(shelf_plugin())
     Kiosk.rows = [Book(title="Dune")]
-    with compose_with(shelf_spec(), provides={"fake": [Kiosk()]}) as result:
+    with compose_with(shelf_plugin(), provides={"fake": [Kiosk()]}) as result:
         assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "fake", "shelf"]
         [answer] = gather(BookSource.books, refresh=True)()
         assert isinstance(answer, Ok)
@@ -70,7 +72,7 @@ class Acme(Plugin):
 
 
 def test_compose_with_and_plugin_candidate_take_a_plugin_class() -> None:
-    with compose_with(Acme, shelf_spec()) as result:
+    with compose_with(Acme, shelf_plugin()) as result:
         assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "acme", "shelf"]
     assert plugin_candidate(Acme).target is Acme
     with pytest.raises(TypeError, match="names its own distribution"):
@@ -81,18 +83,18 @@ def test_compose_with_refuses_what_it_cannot_compose() -> None:
     with pytest.raises(LookupError, match="no installed plugin named 'nowhere'"):
         compose_with("nowhere").__enter__()
     with pytest.raises(LookupError, match="no composed plugin declares BookSource"):
-        compose_with(PluginSpec(name="other"), provides={"fake": [Kiosk()]}).__enter__()
+        compose_with(plugin("other"), provides={"fake": [Kiosk()]}).__enter__()
     with pytest.raises(TypeError, match="is not a provider"):
-        compose_with(shelf_spec(), provides={"fake": [object()]}).__enter__()  # type: ignore[list-item]
+        compose_with(shelf_plugin(), provides={"fake": [object()]}).__enter__()  # type: ignore[list-item]
 
 
 def test_assert_fills_passes_for_a_bridging_provider() -> None:
-    with compose_with(shelf_spec(), library_spec()):
+    with compose_with(shelf_plugin(), library_plugin()):
         assert_fills(Library, samples=[Volume(id=1, name="Dune"), {"id": 2, "name": "Emma"}])
 
 
 def test_piped_through_reads_a_provider_row_through_its_bridge_and_the_owner_s_as_is() -> None:
-    with compose_with(shelf_spec(), library_spec()):
+    with compose_with(shelf_plugin(), library_plugin()):
         write_config(LIBRARY_CONFIG)
         book = piped_through(BookSource.to_book, Volume(id=3, name="Dune"))
         assert book.title == "Dune"
@@ -105,15 +107,14 @@ def test_piped_through_reads_a_provider_row_through_its_bridge_and_the_owner_s_a
 
 def test_assert_fills_needs_samples_when_the_provider_has_its_own_records() -> None:
     with (
-        compose_with(shelf_spec(), library_spec()),
+        compose_with(shelf_plugin(), library_plugin()),
         pytest.raises(TypeError, match="issues Volume records, so assert_fills needs samples"),
     ):
         assert_fills(Library())
 
 
 def test_assert_fills_of_the_owners_model_needs_no_samples() -> None:
-    spec = PluginSpec(name="shop", provides={"shelf": lambda: (Shop(),)})
-    with compose_with(shelf_spec(), spec):
+    with compose_with(shelf_plugin(), shop_plugin()):
         assert_fills(Shop)
         assert_fills(Shop, samples=[Book(title="Dune")])
 
@@ -124,7 +125,7 @@ class Leaky(Volume, kind="library.leaky"):
     ratio: float = 0.0
 
 
-class Forger(BookSource[Leaky]):
+class Forger(BookSource[Leaky], Provider):
     def to_book(self, item: Leaky) -> Book:
         if item.name == "blank":
             return Book.model_construct(title=None)  # skips validation: an invalid Book
@@ -135,8 +136,8 @@ class Forger(BookSource[Leaky]):
 
 
 def test_assert_fills_lists_every_problem() -> None:
-    spec = PluginSpec(name="forge", provides={"shelf": lambda: (Forger(),)})
-    with compose_with(shelf_spec(), spec), pytest.raises(AssertionError) as failed:
+    spec = plugin("forge", fills=(Forger,))
+    with compose_with(shelf_plugin(), spec), pytest.raises(AssertionError) as failed:
         assert_fills(
             Forger,
             samples=[
@@ -153,13 +154,13 @@ def test_assert_fills_lists_every_problem() -> None:
 
 
 def test_assert_fills_names_a_quarantined_offer() -> None:
-    class Unbridged(BookSource[Volume]):
+    class Unbridged(BookSource[Volume], Provider):
         def books(self) -> list[Book]:
             return []
 
-    spec = PluginSpec(name="lost", provides={"shelf": lambda: (Unbridged(),)})
+    spec = plugin("lost", fills=(Unbridged,))
     with (
-        compose_with(shelf_spec(), spec),
+        compose_with(shelf_plugin(), spec),
         pytest.raises(
             AssertionError, match=r"lost's offer to shelf is quarantined \(missing-bridge\)"
         ),
@@ -168,9 +169,9 @@ def test_assert_fills_names_a_quarantined_offer() -> None:
 
 
 def test_assert_fills_asks_for_an_owner_that_is_not_composed() -> None:
-    lost = PluginSpec(name="aaa", provides={"elsewhere": lambda: ()})
+    lost = plugin("aaa")
     with (
-        compose_with(lost, library_spec()),
+        compose_with(lost, library_plugin()),
         pytest.raises(LookupError, match=r"Library fills book_source, whose owner isn't composed"),
     ):
         assert_fills(Library, samples=[Volume(id=1, name="Dune")])
@@ -228,8 +229,8 @@ def _contract(variant: str, *, mark: bool = False) -> type[Contract]:
     return experimental(found) if mark else found
 
 
-def _owner(contract: type[Contract]) -> PluginSpec:
-    return PluginSpec(name="items", contracts=lambda: (contract,))
+def _owner(contract: type[Contract]) -> type[Plugin]:
+    return plugin("items", offers=(contract,)).target  # type: ignore[return-value]  # a class
 
 
 def test_assert_surface_writes_the_file_then_keeps_it(tmp_path: Path) -> None:
@@ -287,8 +288,9 @@ class _Dated(BaseModel):
     new: int = 0
 
 
-def _dated(removed_in: int | None) -> PluginSpec:
-    return PluginSpec(name="items", settings=_Undated if removed_in is None else _Dated)
+def _dated(removed_in: int | None) -> type[Plugin]:
+    settings = _Undated if removed_in is None else _Dated
+    return plugin("items", settings=settings).target  # type: ignore[return-value]  # a class
 
 
 def test_an_undated_file_stays_format_1_and_a_dated_one_is_rewritten(tmp_path: Path) -> None:

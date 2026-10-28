@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import threading
@@ -20,9 +21,9 @@ from core_test_support.contracts.support import (
     Shop,
     Volume,
     compose,
-    library_spec,
-    shelf_spec,
-    shop_spec,
+    library_plugin,
+    shelf_plugin,
+    shop_plugin,
 )
 from core_test_support.contracts.support import write_config as configure
 from untaped.runtime.contracts.registry import BoundProvider, offers
@@ -69,7 +70,7 @@ def _stale(emitted: list[Diagnostic]) -> list[Stale]:
 
 def _stale_library(clock: CacheClock) -> None:
     """Library's answer stored, then past its max age, with its next live call failing."""
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     clock.advance(timedelta(hours=2))
@@ -210,7 +211,7 @@ def test_a_provider_called_outside_gather_says_its_line_at_the_call(clock: Cache
 
 
 def test_a_provider_exception_reaches_the_caller_with_its_own_cause() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     root = KeyError("root")
     try:
@@ -243,7 +244,7 @@ def test_a_provider_that_raises_drops_the_stale_lines_of_its_own_caches(
                 raise Library.error
             return super().books()
 
-    compose(shelf_spec(), library_spec(Layered()))
+    compose(shelf_plugin(), library_plugin(Layered))
     configure(LIBRARY_CONFIG)
     extra.serve({"k": "k"}, refresh=None, fill=fill, read=lambda: None)
     clock.advance(timedelta(hours=2))
@@ -262,7 +263,7 @@ def test_an_interrupted_refresh_suggests_no_cached_option(clock: CacheClock) -> 
                 raise KeyboardInterrupt
             return super().books()
 
-    compose(shelf_spec(), library_spec(Halting()))
+    compose(shelf_plugin(), library_plugin(Halting))
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     clock.advance(timedelta(hours=2))
@@ -292,7 +293,7 @@ def test_the_line_names_the_provider_the_owners_cache_and_the_entry(clock: Cache
 
 
 def test_11_0s_entry_and_1cs_path_are_misses() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
@@ -319,7 +320,7 @@ def test_11_0s_entry_and_1cs_path_are_misses() -> None:
 
 
 def test_a_changed_type_refills_under_auto_and_is_no_cache_under_cached() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
@@ -336,7 +337,7 @@ def test_an_entry_another_process_replaces_after_the_read_serves_what_was_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The freshness and the value are one read of one file: what was judged is served."""
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
@@ -363,7 +364,7 @@ def test_two_threads_asking_one_stale_answer_make_one_live_call(clock: CacheCloc
             release.wait(10)
             return super().books()
 
-    compose(shelf_spec(), library_spec(Slow()))
+    compose(shelf_plugin(), library_plugin(Slow))
     configure(LIBRARY_CONFIG)
     release.set()
     gather(BookSource.books)()
@@ -371,10 +372,15 @@ def test_two_threads_asking_one_stale_answer_make_one_live_call(clock: CacheCloc
     inside.clear()
     release.clear()
     answers: list[object] = []
-    first = threading.Thread(target=lambda: answers.extend(gather(BookSource.books)()))
+
+    def ask() -> None:
+        answers.extend(gather(BookSource.books)())
+
+    # each thread under the test's run, as a command's worker threads are
+    first = threading.Thread(target=contextvars.copy_context().run, args=(ask,))
     first.start()
     assert inside.wait(10)
-    second = threading.Thread(target=lambda: answers.extend(gather(BookSource.books)()))
+    second = threading.Thread(target=contextvars.copy_context().run, args=(ask,))
     second.start()
     release.set()
     first.join(10)
@@ -403,7 +409,7 @@ def test_a_failed_refresh_is_remembered_until_its_retry_time(clock: CacheClock) 
 
 
 def test_a_never_refreshed_answer_that_failed_is_asked_again(clock: CacheClock) -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     Library.error = DOWN
     [first] = gather(BookSource.books)()
@@ -413,18 +419,18 @@ def test_a_never_refreshed_answer_that_failed_is_asked_again(clock: CacheClock) 
     assert Library.calls == 2
 
 
-def _ticking(ticks: ProgressClock) -> Library:
+def _ticking(ticks: ProgressClock) -> type[Library]:
     class Ticking(Library):
         def books(self) -> list[Book]:
             ticks.advance(3)  # past the 2 s a progress line waits for
             return super().books()
 
-    return Ticking()
+    return Ticking
 
 
 def test_a_first_fill_runs_under_a_task_naming_the_provider() -> None:
     with progress_clock() as ticks:
-        compose(shelf_spec(), library_spec(_ticking(ticks)))
+        compose(shelf_plugin(), library_plugin(_ticking(ticks)))
         configure(LIBRARY_CONFIG)
         with recording() as emitted, invocation():
             gather(BookSource.books)()
@@ -435,7 +441,7 @@ def test_a_first_fill_runs_under_a_task_naming_the_provider() -> None:
 
 def test_a_failed_refresh_closes_its_task_before_the_line(clock: CacheClock) -> None:
     with progress_clock() as ticks:
-        compose(shelf_spec(), library_spec(_ticking(ticks)))
+        compose(shelf_plugin(), library_plugin(_ticking(ticks)))
         configure(LIBRARY_CONFIG)
         gather(BookSource.books)()
         clock.advance(timedelta(hours=2))
@@ -455,7 +461,7 @@ def test_an_override_calling_its_base_method_is_one_cached_call() -> None:
         def books(self) -> list[Book]:
             return [*super().books(), self.to_book(Volume(id=3, name="Notes"))]
 
-    compose(shelf_spec(), library_spec(Annotated()))
+    compose(shelf_plugin(), library_plugin(Annotated))
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [answer] = gather(BookSource.books)()
@@ -477,7 +483,7 @@ def _library_provider() -> BoundProvider:
 def test_plugin_check_reports_a_stale_answer_as_its_failed_row_alone() -> None:
     from untaped.core.plugin_check.check import _call
 
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     Library.error = DOWN
