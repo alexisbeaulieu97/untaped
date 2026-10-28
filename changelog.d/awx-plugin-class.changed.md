@@ -16,7 +16,12 @@ on `projects list` or `--verbosity` on `workflow-templates launch`.
 `export --print-paths` is `export --format paths`, and `schema --format
 yaml` is `schema --yaml`. `jobs events` and `jobs logs` stream: `json` is
 one object per line and `yaml` one document per row, followed or not, and a
-log row is its `line`, then its `job`. Under `--yes` a write no longer
+log row is its `line`, then its `job`, and an event row starts with its
+`counter` and `event` (`-f raw` prints the counter; `-c
+counter,event,host_name,task` gives 11.x's raw line). `jobs events` draws
+AWX-style event lines in a table even without `--follow`; `--columns` gives
+the column table. `test run --source-ref` prints its results after the
+copies are torn down. Under `--yes` a write no longer
 prints its preview (`--dry-run` shows it). `raw` prints each row's first
 column unless `--columns` names more. A kind's `export --format json` prints
 a list, even of one document. `test init` prints the suite's path as its

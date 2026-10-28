@@ -345,7 +345,7 @@ def _pair(value: object, *, shape: str) -> tuple[str, str]:
     key, sep, rest = value.partition("=")
     if not sep or not key.strip():
         raise ValueError(f"expected {shape}, got {value!r}")
-    return key, rest
+    return key.strip(), rest
 
 
 def _key_value(value: object) -> tuple[str, str]:
@@ -363,7 +363,7 @@ def _key_json(value: object) -> tuple[str, JsonValue]:
 
 
 KeyValue = Annotated[tuple[str, str], BeforeValidator(_key_value)]
-"""``KEY=VALUE``, split on the first ``=``: ``labels: list[KeyValue]`` repeats."""
+"""``KEY=VALUE``, split on the first ``=``, key stripped: ``labels: list[KeyValue]`` repeats."""
 
 KeyJson = Annotated[tuple[str, JsonValue], BeforeValidator(_key_json)]
 """``KEY=<json>``: the part after the first ``=`` is JSON (``count=3``, ``tags=["a"]``)."""

@@ -27,7 +27,7 @@ _SUITE = Suite.model_validate(
     ("row_keys", "expected"),
     [
         (lambda: JobRecord.model_validate({"type": "job", "id": 1}).model_dump(), "id"),
-        (lambda: JobEventRow.model_fields, "job"),
+        (lambda: JobEventRow.model_fields, "counter"),
         (lambda: WorkflowNode.model_fields, "id"),
         (lambda: CaseResult.model_fields, "suite"),
         (lambda: case_row(Path("s.yml"), _SUITE, "c1").model_dump(), "suite"),

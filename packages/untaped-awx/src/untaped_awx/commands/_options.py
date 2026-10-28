@@ -304,8 +304,9 @@ class SourceRef(BaseModel):
     - `awx`, `invalid` (1): AWX did not store a copy as the spec asks (`unverified …` fields). Rerun
       with `--keep` to inspect the copy, then fix the spec.
 
-    After the results, each copy is deleted, workflows first, and named on
-    stderr; with `--keep` it is listed as `kept … (id N)`.
+    Once the cases finish, each copy is deleted, workflows first, and named on
+    stderr; with `--keep` it is listed as `kept … (id N)`. The results print
+    after the teardown.
 
     - A copy teardown could not delete in 30 seconds (a job of it still runs),
       or one a second Ctrl-C left, gets a `warning: <copy>: left behind, …`

@@ -41,6 +41,7 @@ from untaped.sdk import (
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.commands._awx import AwxCommand
+from untaped_awx.commands._template_targets import template_targets
 from untaped_awx.errors import AwxError
 from untaped_awx.records import UnifiedTemplate
 
@@ -98,7 +99,8 @@ class Get(AwxCommand):
     output: Output[UnifiedTemplate] = Output(columns=_DEFAULT_LIST_COLUMNS)
 
     def run(self) -> Iterator[UnifiedTemplate]:
-        identifiers = self.stdin.identifiers(self.ids)
+        # a piped record names its template by ``id``, a bare line is the id itself
+        identifiers = [target for target, _ in template_targets(self.ids, self.stdin, by_id=True)]
         for raw in identifiers:
             if not raw.isdecimal():
                 # Fast-fail before hitting AWX so the error message is

@@ -223,12 +223,11 @@ def test_get_reports_a_missing_id_as_not_found(fake_aap: Any) -> None:
     )
 
 
-def test_get_stdin_round_trips_from_list_output(fake_aap: Any) -> None:
-    """End-to-end pipe shape: ``list -f raw -c id | get --stdin``."""
+@pytest.mark.parametrize("piped", [["--format", "raw", "--columns", "id"], ["--format", "pipe"]])
+def test_get_stdin_round_trips_from_list_output(fake_aap: Any, piped: list[str]) -> None:
+    """End-to-end pipe shape: ``list -f raw -c id | get --stdin``, or its records."""
     _seed_all_kinds(fake_aap)
-    list_result = run(
-        ["unified-templates", "list", "--format", "raw", "--columns", "id"],
-    )
+    list_result = run(["unified-templates", "list", *piped])
     assert list_result.exit_code == 0, list_result.output
     get_result = run(
         [

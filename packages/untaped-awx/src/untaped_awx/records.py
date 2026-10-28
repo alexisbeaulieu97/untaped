@@ -189,7 +189,10 @@ class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
 
 
 class JobEventRow(Record, kind="awx.job_event_row"):
-    """One event of a job's run, under the ``job`` it belongs to."""
+    """One event of a job's run, under the ``job`` it belongs to.
+
+    ``counter`` comes first, so ``raw`` prints each event's number in its job.
+    """
 
     table_columns: ClassVar[tuple[str, ...]] = (
         "counter",
@@ -200,9 +203,9 @@ class JobEventRow(Record, kind="awx.job_event_row"):
         "failed",
     )
 
-    job: int
     counter: int
     event: str
+    job: int
     task: str | None
     host: int | None
     host_name: str | None

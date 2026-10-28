@@ -72,12 +72,14 @@ def test_a_catalog_row_keeps_every_field_awx_sent_and_leaves_out_what_it_did_not
 # ---- rows awx builds: the keys of the dict rows they replaced ------------
 
 
-def test_event_row_is_the_job_then_the_event() -> None:
+def test_event_row_is_its_counter_and_event_then_its_job() -> None:
+    """``raw`` prints a row's first field: an event's is its counter."""
     event = JobEvent(counter=1, event="runner_on_ok", stdout="ok")
 
     row = JobEventRow(job=42, **event.model_dump()).model_dump(mode="json")
 
-    assert list(row) == ["job", *event.model_dump()]
+    assert list(row)[:3] == ["counter", "event", "job"]
+    assert set(row) == {"job", *event.model_dump()}
 
 
 def test_log_row_is_the_line_then_its_job() -> None:
