@@ -17,10 +17,10 @@ from pydantic import TypeAdapter, ValidationError
 
 from untaped.runtime.contracts.registry import BoundProvider
 from untaped.sdk.contracts._cache import return_type
-from untaped.sdk.contracts._declare import Binding, fills, record_kind
+from untaped.sdk.contracts._declare import Binding, fills
 from untaped.sdk.contracts._gather import issue
 from untaped.sdk.errors import first_validation_error
-from untaped.sdk.records import Issued, Record
+from untaped.sdk.records import Issued, Record, kind_of
 
 
 def fills_problems(provider: BoundProvider, samples: Sequence[object]) -> list[str]:
@@ -84,7 +84,7 @@ def _bridges(provider: BoundProvider, record: Record, label: str) -> list[str]:
         source = getattr(issued, "source", None)
         if not isinstance(issued, Issued) or source is None:
             continue
-        if source.plugin != binding.plugin or source.kind != (record_kind(type(record)) or ""):
+        if source.plugin != binding.plugin or source.kind != (kind_of(type(record)) or ""):
             problems.append(f"{call}: source names {source.plugin} {source.kind}")
             continue
         try:

@@ -140,9 +140,12 @@ class Composition:
         if target is None:
             return None
         module, _, qualname = target.partition(":")
-        found: object = importlib.import_module(module)
-        for part in qualname.split("."):
-            found = getattr(found, part)
+        try:
+            found: object = importlib.import_module(module)
+            for part in qualname.split("."):
+                found = getattr(found, part)
+        except ImportError, AttributeError:  # a class in a function, a module gone
+            return None
         return found if isinstance(found, type) else None
 
     def owner_of_module(self, module: str) -> str:

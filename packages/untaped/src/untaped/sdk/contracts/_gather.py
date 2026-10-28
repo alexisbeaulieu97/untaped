@@ -40,13 +40,12 @@ from untaped.sdk.contracts._declare import (
     NotReady,
     fills,
     method_contract,
-    record_kind,
 )
 from untaped.sdk.contracts._reasons import ErrorReason, QuarantineReason, Reason, SkipReason
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
-from untaped.sdk.records import Issued, Source
+from untaped.sdk.records import Issued, Source, kind_of
 from untaped.sdk.storage.cache import CallState, NeverRefreshed, call_state
 from untaped.sdk.words import command_line
 
@@ -479,7 +478,7 @@ def issue[I: Issued](binding: Binding, model: type[I], item: object) -> I:
                 f"{binding.plugin} returned a {model.__qualname__} without a source; "
                 "build it with the provider's bridge method",
             )
-        source = Source(plugin=binding.plugin, kind=record_kind(model) or binding.owner_kind)
+        source = Source(plugin=binding.plugin, kind=kind_of(model) or binding.owner_kind)
     elif not isinstance(source, Source) or source.plugin != binding.plugin:
         named = source.plugin if isinstance(source, Source) else source
         raise _Invalid(

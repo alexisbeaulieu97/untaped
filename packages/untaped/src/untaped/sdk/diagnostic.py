@@ -70,7 +70,9 @@ from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 
 from untaped.runtime.redaction import redact_url_password
-from untaped.sdk._run import is_verbose
+from untaped.sdk._home import CORE
+from untaped.sdk._names import snake
+from untaped.sdk._run import is_verbose, run_or_none
 from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
 from untaped.sdk.words import ago_text, duration_text
 
@@ -175,21 +177,49 @@ _KINDS: dict[type[BaseModel], str] = {}
 
 
 def kind_of(model: type[BaseModel]) -> str | None:
-    """The kind ``model`` declares (``None``: a kind-less model, such as the record bases).
+    """``model``'s kind (``None``: a kind-less model, such as the record bases).
 
-    A parametrized generic record (``Page[int]``) has its generic's kind.
+    The current run's composition gives it; before or without one, the
+    diagnostics (:data:`DIAGNOSTICS`) have theirs, and an 11.x ``kind=`` is
+    read last. A parametrized generic record (``Page[int]``) has the kind
+    composition gave it, else its generic's.
     """
     origin = model.__pydantic_generic_metadata__["origin"]
-    return _KINDS.get(model) or (None if origin is None else _KINDS.get(origin))
+    run = run_or_none()
+    if run is not None:
+        composed = run.composition.kind_of(model)
+        if composed is None and origin is not None:
+            composed = run.composition.kind_of(origin)
+        if composed is not None:
+            return composed
+    return _diagnostic_kinds().get(origin or model) or _spelled_kind(model)
 
 
-def record_model(kind: str) -> type[WireModel] | None:
-    """The record or diagnostic model that declares ``kind`` (``None``: no model declares it)."""
-    return _MODELS.get(kind)
+def _spelled_kind(model: type[BaseModel]) -> str | None:
+    """``model``'s 11.x ``kind=`` (``None``: it spells none)."""
+    return _KINDS.get(model.__pydantic_generic_metadata__["origin"] or model)
+
+
+def record_model(kind: str) -> type[BaseModel] | None:
+    """The record or diagnostic model of ``kind`` (``None``: none), read as :func:`kind_of` is."""
+    run = run_or_none()
+    composed = None if run is None else run.composition.model_of(kind)
+    if isinstance(composed, type) and issubclass(composed, BaseModel):
+        return composed
+    diagnostic = next(
+        (model for model, given in _diagnostic_kinds().items() if given == kind), None
+    )
+    return diagnostic or _MODELS.get(kind)
+
+
+@cache
+def _diagnostic_kinds() -> dict[type[BaseModel], str]:
+    """The diagnostics' kinds, read before or without a composition."""
+    return {model: f"{CORE}.{snake(model.__name__)}" for model in DIAGNOSTICS}
 
 
 def record_kinds() -> Mapping[str, type[WireModel]]:
-    """Every declared kind, records and diagnostics, and its model, read-only."""
+    """Every 11.x ``kind=`` and its model, read-only; :func:`kind_of` reads composition first."""
     return MappingProxyType(_MODELS)
 
 
@@ -993,6 +1023,19 @@ def error_message(error: BaseException, *, message: str | None = None) -> tuple[
 
 def _plain(error: BaseException) -> str:
     return str(error) or type(error).__name__
+
+
+#: The lines core writes for every plugin, each ``untaped.<snake_case>``: core
+#: lists them in its ``records``, and they have their kinds before any run.
+DIAGNOSTICS: tuple[type[Diagnostic], ...] = (
+    Message,
+    Failure,
+    Debug,
+    Progress,
+    Stale,
+    Pruned,
+    Deprecation,
+)
 
 
 __all__ = [

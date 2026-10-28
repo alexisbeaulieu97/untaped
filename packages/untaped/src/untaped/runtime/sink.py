@@ -743,7 +743,7 @@ class _RunSink:
         if kind_of(type(diagnostic)) is None:
             raise TypeError(
                 f"{type(diagnostic).__qualname__} declares no kind, so it is not a line: "
-                "emit a subclass declared with kind=…"
+                "list it in its plugin class's records"
             )
         if isinstance(diagnostic, Stale) and not self._first_stale(diagnostic):
             return

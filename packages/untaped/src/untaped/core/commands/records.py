@@ -17,7 +17,12 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk.diagnostic import _is_none, _Omitted
+from untaped.sdk.diagnostic import (
+    DIAGNOSTICS,
+    WireModel,
+    _is_none,
+    _Omitted,
+)
 from untaped.sdk.fields import Column, Key
 from untaped.sdk.records import (
     AbsolutePath,
@@ -277,3 +282,8 @@ class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):
     target_path: Annotated[AbsolutePath, Column]
     action: Annotated[str, Column]
     error: _RowError = None
+
+
+#: What core prints that no command of its names: the diagnostics and the
+#: plugin check's rows, which ``Core.records`` lists.
+CORE_RECORDS: tuple[type[WireModel], ...] = (*DIAGNOSTICS, PluginCheck)
