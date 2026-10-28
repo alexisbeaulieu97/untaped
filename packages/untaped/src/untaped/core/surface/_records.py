@@ -133,8 +133,9 @@ def _declared(
             for kind in (*command.inputs, *_read(command, known), *_through(command, mount)):
                 reach(kind, mark, written=True)
     for each in kinds.values():
-        if not each.marks:
-            each.marks.add(marks.get(each.owner))
+        if not each.marks:  # listed in ``records``: its own mark, else its plugin's
+            experimental = isinstance(class_mark(each.model), Experimental)
+            each.marks.add("experimental" if experimental else marks.get(each.owner))
 
 
 def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[str]:

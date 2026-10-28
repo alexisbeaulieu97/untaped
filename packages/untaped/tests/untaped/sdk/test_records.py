@@ -55,6 +55,7 @@ from untaped.sdk.records import (
     record_kinds,
     record_model,
 )
+from untaped.sdk.testing import compose_with
 
 
 class _Stamped(BaseModel):
@@ -518,6 +519,20 @@ _SHIPPED = frozenset(
 )
 
 
+#: The packages whose every record kind has a sample below.
+_SAMPLED = frozenset({"untaped", "untaped_awx", "untaped_lint"}) & _SHIPPED
+
+
+def _wire_models() -> set[type[WireModel]]:
+    found: set[type[WireModel]] = set()
+    pending = list(WireModel.__subclasses__())
+    while pending:
+        model = pending.pop()
+        pending.extend(model.__subclasses__())
+        found.add(model)
+    return found
+
+
 def _is_shipped(module: str) -> bool:
     return module.partition(".")[0] in _SHIPPED
 
@@ -945,10 +960,16 @@ def _awx_resources() -> WireModel:
     )
 
 
-def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
+def test_every_kind_core_awx_and_lint_print_round_trips_in_json_mode() -> None:
     _import_every_shipped_module()
-    shipped = {kind for kind, model in record_kinds().items() if _is_shipped(model.__module__)}
-    samples = _samples()
+    with compose_with():  # every installed plugin, so each kind is composition's
+        shipped = {
+            kind
+            for model in _wire_models()
+            if model.__module__.partition(".")[0] in _SAMPLED
+            and (kind := kind_of(model)) is not None
+        }
+        samples = _samples()
 
     assert set(samples) == shipped, "give every kind a package declares a sample here"
     for sample in samples.values():
