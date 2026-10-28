@@ -2,7 +2,7 @@
 
 A record's kind is its name on the wire, so it is a string, declared once
 with ``class Widget(Record, kind="acme.widget")``. Everywhere else code
-names the model (``kind_of(Widget)``, ``accepts=(Widget,)``), so renaming a
+names the model (``kind_of(Widget)``, ``Stdin[Widget]``), so renaming a
 kind has one place to change and no line that compares or passes the old
 string is left behind. Two checks hold that:
 
