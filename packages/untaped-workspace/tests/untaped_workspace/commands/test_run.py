@@ -309,7 +309,7 @@ def test_mistyped_long_option_as_command_is_usage(ws: Path) -> None:
 
 def test_help_names_the_positionals() -> None:
     result = run(["run", "--help"])
-    assert "workspace run [OPTIONS] NAME_OR_CMD" in result.stdout
+    assert "Usage: untaped workspace run NAME_OR_CMD [CMD] [OPTIONS]" in result.stdout
     assert "│    CMD " in result.stdout
 
 

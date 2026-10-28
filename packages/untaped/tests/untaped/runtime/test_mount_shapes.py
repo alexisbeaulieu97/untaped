@@ -311,6 +311,13 @@ def test_a_dash_and_stdin_rows_both_reading_stdin_is_a_usage_error() -> None:
     assert "- reads stdin, so it cannot be combined with --stdin" in result.stderr
 
 
+def test_the_usage_line_names_an_optional_argument_as_its_page_does() -> None:
+    helped = _run("shapes", "kinds", "--help").stdout
+    assert helped.startswith("Usage: untaped shapes kinds [LABEL] [OPTIONS]\n")
+    page = _run("docs", "shapes", "commands", "kinds").stdout
+    assert "`untaped shapes kinds [LABEL] [OPTIONS]`" in page
+
+
 def test_an_unknown_column_is_refused_before_run() -> None:
     TOUCHED.clear()
     result = _run("shapes", "touch", "a", "--columns", "nope")

@@ -179,26 +179,11 @@ def command_body(site: Site, command: CommandDecl) -> list[str]:
     read_first = [guide for target in command.guides if (guide := site.guide(target))]
     lines += [""] if read_first else []
     lines += [f"Read first: `untaped docs {g.plugin} guides {g.name}`." for g in read_first]
-    lines += ["", "## Usage", f"`{usage(site, command)}`", *option_lines(command.options)]
+    lines += ["", "## Usage", f"`{site.declaration.usage(command)}`", *option_lines(command.options)]
     lines += _files(site, "Inputs", command.inputs)
     lines += _files(site, "Writes", command.writes)
     lines += _outputs(site, command)
     return lines
-
-
-def usage(site: Site, command: CommandDecl) -> str:
-    """The usage line: the command's words, its arguments, then ``[OPTIONS]``."""
-    words = [site.line(command)]
-    listed = [option for option in command.options if shown(option)]
-    for option in listed:
-        if option.positional:
-            name = option.metavar + ("..." if option.token.startswith("list[") else "")
-            words.append(name if option.required else f"[{name}]")
-        elif option.required:
-            words.append(f"{option.flag} {option.metavar}")
-    if any(not option.positional and not option.required for option in listed):
-        words.append("[OPTIONS]")
-    return " ".join(words)
 
 
 def shown(option: OptionDecl) -> bool:

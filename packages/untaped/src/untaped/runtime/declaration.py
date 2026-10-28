@@ -365,6 +365,29 @@ class Declaration(_Frozen):
         root = any(plugin.root and plugin.name == command.path[0] for plugin in self.plugins)
         return command.path[1:] if root else command.path
 
+    def usage(self, command: CommandDecl) -> str:
+        """The usage line ``--help`` and the command's page show: its words, arguments, options.
+
+        An argument is named as its field is (``[CMD]`` when optional, ``PATHS...``
+        for a list), a required flag with its value, then ``[OPTIONS]`` when an
+        optional flag is left; a deprecated option is not listed, as in ``--help``.
+        """
+        words = ["untaped", *self.words(command)]
+        listed = [
+            option
+            for option in command.options
+            if option.stability is None or option.stability.stability != "deprecated"
+        ]
+        for option in listed:
+            if option.positional:
+                name = option.metavar + ("..." if option.token.startswith("list[") else "")
+                words.append(name if option.required else f"[{name}]")
+            elif option.required:
+                words.append(f"{option.flag} {option.metavar}")
+        if any(not option.positional and not option.required for option in listed):
+            words.append("[OPTIONS]")
+        return " ".join(words)
+
     def section_of(self, settings_target: str) -> str | None:
         """The config section of the plugin whose settings model is ``settings_target``."""
         return next((p.name for p in self.plugins if p.settings == settings_target), None)

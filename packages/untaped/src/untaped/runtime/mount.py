@@ -415,6 +415,7 @@ def build_app(mount: Mount, name: str) -> App:
     add_commands(app, mount, name)
     if plugin.runs is not None:
         app.default(_command(mount, plugin.runs))
+        app.usage = _runs_usage(mount, plugin.runs)
     return app
 
 
@@ -434,12 +435,20 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
             _add(sub, mount, node.commands)
             if node.runs is not None:
                 sub.default(_command(mount, node.runs))
+                sub.usage = _runs_usage(mount, node.runs)
             app.command(sub)
             continue
         app.command(_command(mount, node), name=node.name, help=node.doc)
+        app[node.name].usage = mount.declaration.usage(node)  # Cyclopts names no optional argument
         docs_footer(app[node.name], _docs_address(node))
         for alias in node.aliases:
             deprecated_alias(app, alias.name, node.name, removed_in=alias.removed_in)
+
+
+def _runs_usage(mount: Mount, runs: CommandDecl) -> str:
+    """A group's usage when its own words run a command: that command's, then its commands'."""
+    words = " ".join(("untaped", *mount.declaration.words(runs)))
+    return f"{mount.declaration.usage(runs)}\n       {words} COMMAND ..."
 
 
 def _docs_address(node: CommandDecl | GroupDecl) -> str:
