@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
-from untaped.sdk import InstalledPlugin, Record
-from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, Subject, finding, rule
+from untaped.sdk import InstalledPlugin, Record, kind_of
+from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule
 
 
 class Widget(Record, kind="linttest.widget"):
@@ -32,34 +32,33 @@ class Sprocket(Record, kind="linttest.sprocket"):
     name: str
 
 
-@rule("wide", reads=Widget, severity="error", summary="A widget is narrow.")
+@rule(severity="error")
 def wide(widget: Widget) -> Iterator[Finding]:
+    """A widget is narrow."""
     yield finding(wide, widget.name, "too wide")
 
 
-@rule("tall", reads=Widget, severity="warning", summary="A widget is short.")
+@rule(severity="warning")
 def tall(widget: Widget) -> Iterator[Finding]:
+    """A widget is short."""
     yield finding(tall, widget.name, "too tall")
 
 
-@rule("boom", reads=Widget, severity="error", summary="A rule that raises.")
+@rule(severity="error")
 def boom(widget: Widget) -> Iterator[Finding]:
+    """A rule that raises."""
     raise RuntimeError(f"cannot read {widget.name}")
 
 
-@rule(
-    "default-branch",
-    reads=Gadget,
-    severity="error",
-    summary="A gadget names its default branch.",
-    renamed_from=("old",),
-)
+@rule(severity="error")
 def default_branch(gadget: Gadget) -> Iterator[Finding]:
+    """A gadget names its default branch."""
     yield finding(default_branch, gadget.name, "no default branch")
 
 
-@rule("placed", reads=Widget, severity="warning", summary="A widget's lines are placed.")
+@rule(severity="warning")
 def placed(widget: Widget) -> Iterator[Finding]:
+    """A widget's lines are placed."""
     for line in (1, 2):
         location = FileLocation(path="src/a.py", line=line)
         yield finding(placed, widget.name, "misplaced", location=location)
@@ -70,14 +69,14 @@ class Placing(Rules):
 
 
 class Counting(Rules):
-    """A ``Rules`` host that counts the subjects it is asked about, by kind."""
+    """A ``Rules`` host that counts the records it is asked about, by kind."""
 
     def __init__(self) -> None:
         self.asked: list[str] = []
 
-    def findings(self, subject: Subject) -> list[Finding]:
-        self.asked.append(subject.kind)
-        return super().findings(subject)
+    def findings(self, record: Record) -> list[Finding]:
+        self.asked.append(kind_of(type(record)) or "")
+        return super().findings(record)
 
 
 class Acme(Counting):
@@ -102,7 +101,7 @@ class NotAProvider(Linter):
     def rules(self) -> list[Rule]:
         return []
 
-    def findings(self, subject: Subject) -> list[Finding]:
+    def findings(self, record: Record) -> list[Finding]:
         return []
 
 
@@ -112,7 +111,7 @@ class Malformed(Linter):
     def rules(self) -> list[Rule]:
         return [wide.rule]
 
-    def findings(self, subject: Subject) -> list[Finding]:
+    def findings(self, record: Record) -> list[Finding]:
         bad = Finding.model_construct(rule="wide", severity="fatal", target="b", message="m")
         return [finding(wide, "a", "too wide"), bad]
 
@@ -126,12 +125,13 @@ class MalformedRule(Linter):
         )
         return [bad, wide.rule]
 
-    def findings(self, subject: Subject) -> list[Finding]:
+    def findings(self, record: Record) -> list[Finding]:
         return [finding(wide, "w", "too wide")]
 
 
-@rule("seen", reads=InstalledPlugin, severity="warning", summary="Records each plugin it reads.")
+@rule(severity="warning")
 def seen(plugin: InstalledPlugin) -> Iterator[Finding]:
+    """Records each plugin it reads."""
     PluginReader.read.append(plugin)
     yield finding(seen, plugin.name, "seen")
 

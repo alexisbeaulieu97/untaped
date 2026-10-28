@@ -7,14 +7,12 @@ from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_
 BUDGET = 400
 
 
-@rule(
-    "docs-page-length",
-    reads=Tree,
-    severity="error",
-    summary=f"A docs page is at most {BUDGET} lines; an over-budget page is split, not exempted.",
-)
+@rule(severity="error")
 def docs_page_length(tree: Tree) -> Iterator[Finding]:
-    """One finding per page under docs/ longer than the budget."""
+    """A docs page is at most 400 lines; an over-budget page is split, not exempted.
+
+    One finding per page under docs/ longer than ``BUDGET``.
+    """
     for file in tree.files("docs/**/*.md"):
         if (count := len(file.lines)) > BUDGET:
             yield finding(

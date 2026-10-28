@@ -13,7 +13,7 @@ from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
 from untaped_lint.providers import conventions
 from untaped_lint.providers.conventions import Conventions, file_lines
 from untaped_lint.records import FileLocation
-from untaped_lint.testing import run, subject
+from untaped_lint.testing import run
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -200,7 +200,7 @@ def test_a_narrowed_run_still_reports_an_unreadable_file(site: Site) -> None:
     site = site(_PLUGIN)
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
     with compose_with("lint"):
-        report = run([subject(_plugin(site))], select=["lint.print"], candidates=_DEMO)
+        report = run([_plugin(site)], select=["lint.print"], candidates=_DEMO)
     assert [each.rule for each in report.findings] == ["lint.unreadable-file"]
 
 
@@ -240,7 +240,7 @@ def test_the_deprecation_rules_run_as_lint_ids(site: Site) -> None:
     site = site({**_PLUGIN, "demo_plugin/api.py": _API})
     rules = ["lint.deprecation-text", "lint.unwarned-parameter", "lint.mark-on-overload"]
     with compose_with("lint"):
-        report = run([subject(_plugin(site))], select=rules, candidates=_DEMO)
+        report = run([_plugin(site)], select=rules, candidates=_DEMO)
     assert sorted(each.rule for each in report.findings) == [
         "lint.deprecation-text",
         "lint.mark-on-overload",
@@ -260,7 +260,5 @@ def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(site: Sit
     )
     ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
     with compose_with("lint"):
-        report = run(
-            [subject(_plugin(site))], select=["lint.import-boundary"], candidates=[*_DEMO, ghost]
-        )
+        report = run([_plugin(site)], select=["lint.import-boundary"], candidates=[*_DEMO, ghost])
     assert [each.message for each in report.findings] == ["imports ghost.domain; use ghost.api"]

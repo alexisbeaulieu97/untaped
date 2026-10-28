@@ -19,14 +19,14 @@ _PACKAGE = {
     "cli.py": """
         \"\"\"Allow demo commands.\"\"\"
 
-        from untaped.sdk import get_config_section
+        from untaped.sdk import app_context
 
         a = b = None
 
 
         def read() -> None:
-            get_config_section("other")  # untaped: allow foreign-section
-            get_config_section("elsewhere")  # untaped: allow layer
+            app_context().section("other", object)  # untaped: allow foreign-section
+            app_context().section("elsewhere", object)  # untaped: allow layer
         """,
     "domain/__init__.py": '"""Allow demo domain."""',
     "domain/model.py": """

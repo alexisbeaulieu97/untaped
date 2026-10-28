@@ -1,4 +1,4 @@
-"""``readers:``: a plugin turns the files its globs match into subjects, and only there."""
+"""``readers:``: a plugin turns the files its globs match into records, and only there."""
 
 from __future__ import annotations
 
@@ -8,27 +8,27 @@ from pathlib import Path
 import pytest
 
 from lint_fakes import Acme, Widget
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, Record
 from untaped.sdk.testing import compose_with
-from untaped_lint.api import Subject, Tree, TreeReader
-from untaped_lint.testing import run, subject
+from untaped_lint.api import Tree, TreeReader
+from untaped_lint.testing import run
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 class WidgetFiles(TreeReader):
-    """Reads each ``*.widget`` file it is handed into a ``linttest.widget`` subject."""
+    """Reads each ``*.widget`` file it is handed into a ``Widget``."""
 
     def __init__(self) -> None:
         self.handed: list[tuple[str, ...]] = []
 
-    def read(self, tree: Tree) -> list[Subject]:
+    def read(self, tree: Tree) -> list[Record]:
         self.handed.append(tree.paths)
         return list(self._subjects(tree))
 
-    def _subjects(self, tree: Tree) -> Iterator[Subject]:
+    def _subjects(self, tree: Tree) -> Iterator[Record]:
         for file in tree.files():
-            yield subject(Widget(name=file.text.strip()))
+            yield Widget(name=file.text.strip())
 
 
 def _repo(root: Path, readers: str) -> Path:

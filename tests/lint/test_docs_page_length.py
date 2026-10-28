@@ -19,3 +19,8 @@ def test_docs_page_length_flags_the_bad_example() -> None:
 
 def test_docs_page_length_passes_the_good_example() -> None:
     assert run_rule(RULE, tree(GOOD)) == []
+
+
+def test_the_summary_says_the_budget() -> None:
+    """The summary is the docstring, which can't interpolate: it states the budget itself."""
+    assert str(RULE.__globals__["BUDGET"]) in RULE.rule.summary

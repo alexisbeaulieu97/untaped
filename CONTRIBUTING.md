@@ -487,7 +487,7 @@ it reads.
 **Finding**: what a rule reports about one target; an error finding fails the
 run.
 
-**Subject**: a record a run lints, by its kind (`untaped.plugin`, `lint.tree`).
+**Subject**: a record a run lints, as the model a rule reads (`InstalledPlugin`, `Tree`).
 
 **Tree**: the files of a repository a run lints: what git tracks or would
 track, minus what `.untaped/lint.yml` excludes.

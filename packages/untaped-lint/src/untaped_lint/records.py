@@ -1,12 +1,10 @@
-"""The lint records: a rule, a finding, the subject a rule reads, and where a finding is.
+"""The lint records: a rule, a finding, the tree lint reads, and where a finding is.
 
-Every kind is declared once, on its model. A provider declares a rule's id
-bare (``default-branch``); the engine prefixes it with the provider's plugin
-(``acme.default-branch``), so nobody types a public id in source. A
-``Subject`` is what ``Linter.findings`` receives: one kind and that record's
-dump, built by the engine and never emitted as a row. A ``Tree`` is the
-subject lint builds itself: the files of a repository, read through
-``tree.files(*globs)``.
+Every kind is declared once, on its model. A rule's id is bare
+(``default-branch``); the engine prefixes it with the provider's plugin
+(``acme.default-branch``), so nobody types a public id in source. A rule
+reads one record model, its subject; a ``Tree`` is the subject lint builds
+itself: the files of a repository, read through ``tree.files(*globs)``.
 """
 
 from __future__ import annotations
@@ -22,7 +20,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import (
     AbsolutePath,
@@ -35,7 +33,6 @@ from untaped.sdk import (
     Source,
     TargetRecord,
     kind_of,
-    record_model,
 )
 from untaped_lint.domain.glob import matches
 
@@ -62,13 +59,12 @@ class Rule(Issued, kind="lint.rule"):
         ),
     ]
     reads: Annotated[str, Column] = Field(
-        description="The kind of subject the rule reads, written by `rule()` from the model."
+        description="The kind of record the rule reads, written by `rule()` from its parameter."
     )
     severity: Annotated[Severity, Column]
     summary: Annotated[str, Column] = Field(
         description="The convention in one sentence, as an agent reads it."
     )
-    renamed_from: tuple[str, ...] = ()
 
 
 class _Location(BaseModel):
@@ -140,13 +136,6 @@ class Finding(Issued, kind="lint.finding"):
             "as a failure."
         ),
     )
-
-
-class Subject(Record, kind="lint.subject"):
-    """What a rule reads: a record of one kind, as its dump."""
-
-    kind: str
-    record: dict[str, JsonValue]
 
 
 class Tree(Record, kind="lint.tree"):
@@ -249,8 +238,3 @@ def declared_kind(model: type[BaseModel]) -> str:
     if kind is None:
         raise TypeError(f"{model.__qualname__} declares no kind")
     return kind
-
-
-def is_kind(kind: str, model: type[BaseModel]) -> bool:
-    """Whether ``kind`` is ``model``'s: lint decides by class, never by a kind string."""
-    return record_model(kind) is model

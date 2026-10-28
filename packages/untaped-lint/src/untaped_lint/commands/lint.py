@@ -155,8 +155,9 @@ class RuleModule(BaseModel):
     from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
 
-    @rule("no-print", reads=Tree, severity="error", summary="Library code never calls print().")
+    @rule(severity="error")
     def no_print(tree: Tree) -> Iterator[Finding]:
+        \"\"\"Library code never calls print().\"\"\"
         for file in tree.files("src/**/*.py"):
             for number, line in enumerate(file.lines, start=1):
                 if "print(" in line:
@@ -168,7 +169,9 @@ class RuleModule(BaseModel):
                     )
     ```
 
-    - `reads=Tree` takes the model, never a kind string.
+    - The function's name is the rule's id (`no_print` is `no-print`), its
+      docstring's first paragraph the summary, and its parameter's model what
+      it reads.
     - `tree.files(*globs)` yields each matching file: `path`, `text`, `lines`,
       and `json()`, `yaml()`, `python()` for the parsed file; in a glob `*` stops
       at `/` and `**` crosses it. A file that isn't
@@ -211,7 +214,7 @@ class RuleModule(BaseModel):
 class New(Command[LintSettings]):
     """Scaffold a repository rule in .untaped/lint/ and its test, fixtures first.
 
-    The rule reads the repository's files (reads=Tree). With a pytest
+    The rule reads the repository's files (its parameter is a Tree). With a pytest
     configuration at the root its test goes in tests/lint/; otherwise
     fixtures/ID/good and fixtures/ID/bad under the rules directory, checked
     by the two commands printed. The lint file and its linters entry are

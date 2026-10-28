@@ -49,13 +49,9 @@ _SCHEDULE_FIELDS = {
 
 
 @experimental
-@rule(
-    "ignored-launch-field",
-    reads=Resources,
-    severity="error",
-    summary="A schedule or workflow node sets only launch fields its template prompts for.",
-)
+@rule(severity="error")
 def ignored_launch_field(resources: Resources) -> Iterator[Finding]:
+    """A schedule or workflow node sets only launch fields its template prompts for."""
     for item in resources.of("Schedule"):
         template = referenced(resources, item, "parent")
         if template is None or template.resource.kind not in _TEMPLATES:

@@ -30,8 +30,9 @@ def _write(root: Path, files: dict[str, str | bytes]) -> None:
             path.write_text(body, encoding="utf-8")
 
 
-@rule("todo", reads=Tree, severity="error", summary="No TODO in a Python file.")
+@rule(severity="error")
 def todo(files: Tree) -> Iterator[Finding]:
+    """No TODO in a Python file."""
     for file in files.files("**/*.py"):
         for number, line in enumerate(file.lines, start=1):
             if "TODO" in line:
@@ -65,12 +66,10 @@ def test_outside_a_checkout_every_file_under_the_root(tmp_path: Path) -> None:
 
 def test_files_match_the_lint_glob() -> None:
     files = tree({"a.py": "", "src/b.py": "", "src/deep/c.py": "", "src/d.md": ""})
-    found = run_rule(todo, files)
-    assert found == []
-    shown = Tree.model_validate(files.record)
-    assert [each.path for each in shown.files("src/*.py")] == ["src/b.py"]
-    assert [each.path for each in shown.files("src/**/*.py")] == ["src/b.py", "src/deep/c.py"]
-    assert [each.path for each in shown.files()] == [
+    assert run_rule(todo, files) == []
+    assert [each.path for each in files.files("src/*.py")] == ["src/b.py"]
+    assert [each.path for each in files.files("src/**/*.py")] == ["src/b.py", "src/deep/c.py"]
+    assert [each.path for each in files.files()] == [
         "a.py",
         "src/b.py",
         "src/d.md",
@@ -79,9 +78,7 @@ def test_files_match_the_lint_glob() -> None:
 
 
 def test_a_file_reads_as_text_lines_json_yaml_and_python() -> None:
-    files = Tree.model_validate(
-        tree({"a.json": '{"x": 1}', "b.yml": "x: [1, 2]\n", "c.py": "x = 1\n"}).record
-    )
+    files = tree({"a.json": '{"x": 1}', "b.yml": "x: [1, 2]\n", "c.py": "x = 1\n"})
     by_path = {each.path: each for each in files.files()}
     assert by_path["a.json"].json() == {"x": 1}
     assert by_path["b.yml"].yaml() == {"x": [1, 2]}

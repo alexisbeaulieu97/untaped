@@ -11,13 +11,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "missing-reference",
-    reads=Resources,
-    severity="error",
-    summary="Every reference names a resource that exists: in the batch or on the controller.",
-)
+@rule(severity="error")
 def missing_reference(resources: Resources) -> Iterator[Finding]:
+    """Every reference names a resource that exists: in the batch or on the controller."""
     for item in resources.items:
         for ref in item.references:
             if ref.resolution == "absent":

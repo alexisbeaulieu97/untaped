@@ -53,7 +53,7 @@ def test_with_pytest_the_rule_and_its_test_and_a_new_lint_file(tmp_path: Path) -
         "linters": {"house": {"rules": ".untaped/lint"}},
     }
     module = (root / ".untaped/lint/no_print.py").read_text()
-    assert "reads=Tree" in module
+    assert "def no_print(tree: Tree)" in module
     assert "lint.tree" not in module  # the model, never a kind string
 
 

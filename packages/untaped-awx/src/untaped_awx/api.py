@@ -7,9 +7,9 @@ models and report with these helpers::
     from untaped_awx.api import Resources, JobTemplateDoc, target_of
     from untaped_lint.api import Finding, finding, rule
 
-    @rule("vault-credential", reads=Resources, severity="warning",
-          summary="Every job template carries the vault credential.")
+    @rule(severity="warning")
     def vault_credential(resources: Resources) -> Iterator[Finding]:
+        \"\"\"Every job template carries the vault credential.\"\"\"
         for item in resources.of("JobTemplate"):
             if "vault" not in (JobTemplateDoc.model_validate(item.resource.spec).credentials or []):
                 yield finding(vault_credential, target_of(item), "no vault credential",

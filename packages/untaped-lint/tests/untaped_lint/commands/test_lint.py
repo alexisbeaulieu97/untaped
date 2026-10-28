@@ -335,7 +335,6 @@ def test_lint_rules_lists_every_rule_and_composes_nothing(
     rows = {row["id"]: row for row in json.loads(result.stdout)}
     assert {"lint.error-case", "lint.plugin-not-installed", "acme.default-branch"} <= set(rows)
     assert rows["acme.default-branch"]["reads"] == "linttest.gadget"
-    assert rows["acme.default-branch"]["renamed_from"] == ["old"]
 
 
 # --- the repository's lint file ---------------------------------------------------
@@ -347,8 +346,9 @@ NO_PRINT = '''\
 from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
 
-@rule("no-print", reads=Tree, severity="error", summary="No print() in library code.")
+@rule(severity="error")
 def no_print(tree: Tree) -> Iterator[Finding]:
+    """No print() in library code."""
     for file in tree.files("src/**/*.py"):
         for number, line in enumerate(file.lines, start=1):
             if "print(" in line:

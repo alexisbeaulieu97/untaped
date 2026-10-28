@@ -23,13 +23,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "survey-default-missing",
-    reads=Resources,
-    severity="warning",
-    summary="A scheduled launch answers every required survey question, or it has a default.",
-)
+@rule(severity="warning")
 def survey_default_missing(resources: Resources) -> Iterator[Finding]:
+    """A scheduled launch answers every required survey question, or it has a default."""
     for item in resources.of("Schedule"):
         template = referenced(resources, item, "parent")
         if template is not None:

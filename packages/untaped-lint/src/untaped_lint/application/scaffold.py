@@ -2,8 +2,8 @@
 
 The rule module goes in the key's rules directory (``.untaped/lint/`` unless
 the lint file says otherwise) and reads the repository's files
-(``reads=Tree``): the model, never a kind string, because the next agent
-copies the example. With a pytest configuration at the root the test goes in
+(its parameter is a ``Tree``): the model, never a kind string, because the
+next agent copies the example. With a pytest configuration at the root the test goes in
 ``tests/lint/``, through ``untaped_lint.testing``; without one, a good and a
 bad fixture directory beside the rules, and the two ``untaped lint``
 commands that check them. The test fails until the rule is written. The lint
@@ -192,14 +192,12 @@ from collections.abc import Iterator
 from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
 
-@rule(
-    "{rule_id}",
-    reads=Tree,
-    severity="error",
-    summary="The convention in one sentence, as the next agent reads it.",
-)
+@rule(severity="error")
 def {name}(tree: Tree) -> Iterator[Finding]:
-    """One finding for each line of the repository's files that breaks the convention."""
+    """The convention in one sentence, as the next agent reads it.
+
+    One finding for each line of the repository's files that breaks it.
+    """
     for file in tree.files("**/*"):  # narrow the glob to the files the convention is about
         for number, line in enumerate(file.lines, start=1):
             if _breaks(line):

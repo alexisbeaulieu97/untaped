@@ -21,13 +21,9 @@ _NOISE = ("For further information", "^")
 
 
 @experimental
-@rule(
-    "invalid-document",
-    reads=Resources,
-    severity="error",
-    summary="Every document is a valid resource of a kind untaped knows.",
-)
+@rule(severity="error")
 def invalid_document(resources: Resources) -> Iterator[Finding]:
+    """Every document is a valid resource of a kind untaped knows."""
     for each in resources.unreadable:
         message, hint = _sentence(each.error)
         yield finding(

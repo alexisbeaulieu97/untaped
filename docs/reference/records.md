@@ -267,7 +267,7 @@ records.
 | Command | Writes |
 |---|---|
 | `lint` | `lint.finding` (`rule`, `severity` `error` or `warning`, `target`, `message`, `location`, `hint`, `fix`) |
-| `lint rules` | `lint.rule` (`id`, `reads`, `severity`, `summary`, `renamed_from`) |
+| `lint rules` | `lint.rule` (`id`, `reads`, `severity`, `summary`) |
 | `lint new` | `lint.scaffold_outcome` (`action` `created`, `updated` or `planned`, `target_path`) |
 
 A finding's `location` is `{path, line, column}` in a file,

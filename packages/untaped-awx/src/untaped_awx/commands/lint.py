@@ -179,9 +179,9 @@ class Linting(BaseModel):
     from untaped_lint.api import Finding, finding, rule
 
 
-    @rule("has-credential", reads=Resources, severity="warning",
-          summary="Every job template carries a credential.")
+    @rule(severity="warning")
     def has_credential(resources: Resources) -> Iterator[Finding]:
+        \"\"\"Every job template carries a credential.\"\"\"
         for item in resources.of("JobTemplate"):
             if not JobTemplateDoc.model_validate(item.resource.spec).credentials:
                 yield finding(has_credential, target_of(item), "no credential",

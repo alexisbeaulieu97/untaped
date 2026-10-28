@@ -726,7 +726,6 @@ def _samples() -> dict[str, WireModel]:
             Finding,
             Rule,
             ScaffoldOutcome,
-            Subject,
             Tree,
         )
 
@@ -745,7 +744,6 @@ def _samples() -> dict[str, WireModel]:
                 location=FileLocation(path="src/a.py", line=3),
                 error=Failure.from_exception(ConfigError("x")),
             ),
-            Subject(kind="untaped.installed_plugin", record={"name": "acme", "tags": [1, None]}),
             Tree(root="/repo", paths=("README.md", "src/a.py")),
             ScaffoldOutcome(action="created", target_path="/repo/.untaped/lint/no_print.py"),
         ]

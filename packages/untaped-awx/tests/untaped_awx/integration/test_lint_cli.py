@@ -711,35 +711,32 @@ def test_usage_mistakes_exit_2_before_anything_is_read(
 # --- another plugin's rules over the same subject -----------------------------------
 
 
-@rule(
-    "vault-credential",
-    reads=Resources,
-    severity="warning",
-    summary="Every job template carries a credential.",
-)
-def _vault_credential(resources: Resources) -> Iterator[Finding]:
+@rule(severity="warning")
+def vault_credential(resources: Resources) -> Iterator[Finding]:
+    """Every job template carries a credential."""
     from untaped_awx.api import JobTemplateDoc, location_of, target_of
     from untaped_lint.api import finding
 
     for item in resources.of("JobTemplate"):
         if not JobTemplateDoc.model_validate(item.resource.spec).credentials:
             yield finding(
-                _vault_credential, target_of(item), "no credential", location=location_of(item)
+                vault_credential, target_of(item), "no credential", location=location_of(item)
             )
 
 
 class _HouseRules(Rules):
-    RULES = (_vault_credential,)
+    RULES = (vault_credential,)
 
 
-@rule("boom", reads=Resources, severity="error", summary="Raises.")
-def _boom(resources: Resources) -> Iterator[Finding]:
+@rule(severity="error")
+def boom(resources: Resources) -> Iterator[Finding]:
+    """Raises."""
     raise RuntimeError("cannot judge")
     yield  # pragma: no cover - a generator
 
 
 class _Raising(Rules):
-    RULES = (_boom,)
+    RULES = (boom,)
 
 
 def test_a_third_party_rule_that_raises_exits_1_and_awx_still_reports(tmp_path: Path) -> None:
@@ -750,29 +747,31 @@ def test_a_third_party_rule_that_raises_exits_1_and_awx_still_reports(tmp_path: 
     assert "house.boom" in result.stderr
 
 
-@rule("rewrite", reads=Resources, severity="warning", summary="Mutates what it reads.")
-def _rewrite(resources: Resources) -> Iterator[Finding]:
+@rule(severity="warning")
+def rewrite(resources: Resources) -> Iterator[Finding]:
+    """Mutates what it reads."""
     for item in resources.items:
         item.resource.spec["project"] = "elsewhere"
     return iter(())
 
 
-@rule("project", reads=Resources, severity="warning", summary="Says each project.")
-def _project(resources: Resources) -> Iterator[Finding]:
+@rule(severity="warning")
+def project(resources: Resources) -> Iterator[Finding]:
+    """Says each project."""
     from untaped_awx.api import location_of, target_of
     from untaped_lint.api import finding
 
     for item in resources.of("JobTemplate"):
-        project = item.resource.spec.get("project")
-        yield finding(_project, target_of(item), f"project {project}", location=location_of(item))
+        named = item.resource.spec.get("project")
+        yield finding(project, target_of(item), f"project {named}", location=location_of(item))
 
 
 class _Rewriting(Rules):
-    RULES = (_rewrite,)
+    RULES = (rewrite,)
 
 
 class _Reading(Rules):
-    RULES = (_project,)
+    RULES = (project,)
 
 
 def test_a_provider_mutating_its_subject_leaks_nothing(tmp_path: Path) -> None:

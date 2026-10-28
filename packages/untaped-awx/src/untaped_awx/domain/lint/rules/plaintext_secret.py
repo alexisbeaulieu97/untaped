@@ -26,13 +26,9 @@ _HINT = "keep it in a credential or a vault, or write $encrypted$ to keep the co
 
 
 @experimental
-@rule(
-    "plaintext-secret",
-    reads=Resources,
-    severity="error",
-    summary="A document holds no secret in plain text.",
-)
+@rule(severity="error")
 def plaintext_secret(resources: Resources) -> Iterator[Finding]:
+    """A document holds no secret in plain text."""
     for item in resources.items:
         facts = resources.kinds.get(item.resource.kind)
         if item.origin != "document":
