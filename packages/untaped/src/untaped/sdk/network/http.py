@@ -805,7 +805,7 @@ def _not_set_up(config: BaseModel, *, section: str) -> ConfigError:
     fields = [field for field in fields if not field.is_secret]
     if fields:
         keys = [f"{section}.{field.key}" for field in fields]
-        profile, set_in = _profiles_for(section, [(field.key,) for field in fields])
+        profile, set_in = _profiles_for(section, [field.key for field in fields])
         what = f"{_join(keys)} {'is' if len(keys) == 1 else 'are'} not set"
     else:
         profile, set_in = _profiles_for(section, [])
@@ -830,17 +830,15 @@ def _in_profiles(profile: str | None) -> str:
     return f" in {'profiles' if ',' in profile else 'profile'} {q(profile)}"
 
 
-def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str | None, list[str]]:
-    """The selected profile and the other profiles that resolve every one of ``needs``.
+def _profiles_for(section: str, needs: Sequence[str]) -> tuple[str | None, list[str]]:
+    """The selected profile and the other profiles that set every missing field in ``needs``.
 
-    Each need is a missing field, then the settings that also supply it.
-    Each profile is resolved as it would be
-    selected (``default`` beneath it, old key names renamed). An
-    environment override of a missing field applies to every profile, so it
-    names none; an unreadable config file names only a profile chosen by
-    ``--profile`` or ``UNTAPED_PROFILE``.
+    Each profile is resolved as it would be selected (``default`` beneath
+    it, old key names renamed). An environment override of a missing field
+    applies to every profile, so it names none; an unreadable config file
+    names only a profile chosen by ``--profile`` or ``UNTAPED_PROFILE``.
     """
-    if any(env_sets_key(section, need[0]) for need in needs):
+    if any(env_sets_key(section, need) for need in needs):
         return None, []
     picked = picked_names()
     try:
@@ -859,9 +857,7 @@ def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str |
             values = layout.effective(data, profile=name).get(section)
         except ConfigError:
             continue
-        if isinstance(values, dict) and all(
-            any(_is_set(values.get(field)) for field in need) for need in needs
-        ):
+        if isinstance(values, dict) and all(_is_set(values.get(need)) for need in needs):
             found.append(name)
     return profile, found
 

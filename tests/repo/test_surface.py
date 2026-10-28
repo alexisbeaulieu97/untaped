@@ -24,7 +24,6 @@ import release  # scripts/release.py
 from packaging.version import Version
 
 from repo.support import (
-    PACKAGES,
     REPO_ROOT,
     SURFACE_FILE,
     baseline_tag,
@@ -302,9 +301,6 @@ def test_written_outside_spellings_have_lines(generated: str) -> None:
 
 def test_conventions_are_real() -> None:
     """Each ``convention`` line names something core really finds by that name."""
-    auth = (PACKAGES / "untaped" / "src" / "untaped" / "sdk" / "network" / "auth.py").read_text(
-        encoding="utf-8"
-    )
     conformance = inspect.getsource(plugin_check._owner_conformance)
     real = {
         f"entry-point {PLUGINS_ENTRY_POINT_GROUP}": True,
@@ -314,6 +310,5 @@ def test_conventions_are_real() -> None:
         and '"conformance"' in conformance,
         "attribute renamed_keys": "renamed_keys" in DECLARATIONS,
         "attribute retired_keys": "retired_keys" in DECLARATIONS,
-        "attribute token_sources": 'getattr(model, "token_sources"' in auth,
     }
     assert {name for name, ok in real.items() if ok} == set(CONVENTIONS)

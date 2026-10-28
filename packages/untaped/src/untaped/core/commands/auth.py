@@ -373,7 +373,7 @@ def _status_row(target: _Target, profile: str) -> TokenSource:
         if answer.row is not None:
             update["id"] = answer.row[:SHORT_ID]
     if folder_chose(key):
-        refused = credential.refusal(key, "a variable or old setting")
+        refused = credential.refusal(key, "a variable")
         update["refusal"] = str(refused) if refused is not None else None
     return row.model_copy(update=update)
 
@@ -419,8 +419,8 @@ class Login(Command[CoreSettings]):
     --token-command stores a command instead (its program a bare name or an
     absolute path, run from the config file's folder). The store is macOS
     security, secret-tool (Secret Service), then pass, or --store. A login
-    wins over the deprecated PLUGIN.token settings and the plugin's
-    variables; UNTAPED_PLUGIN__TOKEN still wins over it. Logging in again
+    wins over the plugin's variables; UNTAPED_PLUGIN__TOKEN still wins over
+    it. Logging in again
     replaces it. A server a folder's settings chose is refused.
 
     Examples:

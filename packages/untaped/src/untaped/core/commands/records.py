@@ -33,8 +33,8 @@ class TokenSource(Record, kind="untaped.token_source"):
     """Where one credential comes from (``auth status``), named without reading it.
 
     One row per credential for this run: its key, the step that answers
-    (``variable``, ``stored``, ``setting``, ``env``) and the stored row's id,
-    or why a folder's settings refuse it.
+    (``variable``, ``stored``, ``env``) and the stored row's id, or why a
+    folder's settings refuse it.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "name", "key", "source")

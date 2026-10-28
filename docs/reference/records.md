@@ -14,7 +14,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`; `planned` under `--dry-run`) |
 | `auth login`, `auth forget` | `untaped.credential_outcome` (never the secret; `plugin`, `name`, `key` described, `id` short, `store`, `action`) |
 | `auth list` | `untaped.stored_credential` (`id`, `plugin`, `name`, `key`, `backend`, `where`: the store entry or the command's program alone) |
-| `auth status` | `untaped.token_source` (one row per credential for this run: `key`, `step` `variable`, `stored`, `setting` (a value `setup` is checking) or `env`, `source`, `id`, or `refusal`) |
+| `auth status` | `untaped.token_source` (one row per credential for this run: `key`, `step` `variable`, `stored` or `env`, `source`, `id`, or `refusal`) |
 | `profile list` | `untaped.profile` (`name`, `selected`, `keys`) |
 | `profile show` | `untaped.profile_view` (`name`, `selected`, `raw`, `data`: the settings, secrets `***` unless `--show-secrets`; `yaml` by default) |
 | `profile current` | `untaped.profile_pick` (`name`: the pick comma-joined, else `default`; `profiles`, each `name` and `source` `flag` or `env`; `raw` by default) |

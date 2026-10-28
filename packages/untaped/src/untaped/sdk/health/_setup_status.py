@@ -76,8 +76,7 @@ def secret_source(settings: BaseModel, field: MarkedField, *, ambient: bool = Tr
     whose key is unset has none. Nothing is read or run.
     """
     credential = field.credential
-    if credential is None:
-        return None
+    assert credential is not None, f"{field.key} is not a secret"
     key = credential_key(credential, settings)
     if key is None:
         # No server yet, so no stored login; a variable still counts.
