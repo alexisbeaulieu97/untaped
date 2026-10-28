@@ -368,6 +368,16 @@ def test_transition_preview_by_id_reads_the_issue_once(jira: Invoke) -> None:
     assert len(listing.calls) == 0
 
 
+def test_a_one_key_dry_run_prints_one_planned_record(jira: Invoke) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        _transition_mock(mock, "ABC-1")
+        result = jira(["issues", "transition", "ABC-1", "--id", "31", "--dry-run", "-f", "json"])
+
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert (row["action"], row["key"]) == ("planned", "ABC-1")
+
+
 def test_a_failed_preview_read_shows_unknown_instead_of_aborting(jira: Invoke) -> None:
     with respx.mock(base_url=BASE) as mock:
         _transition_mock(mock, "ABC-1")

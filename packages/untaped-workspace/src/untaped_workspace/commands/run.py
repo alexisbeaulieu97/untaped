@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 
 from untaped.sdk import (
     AllowHyphen,
-    ConfigError,
     Failure,
     Output,
     Parallel,
@@ -24,7 +22,6 @@ from untaped.sdk import (
     Stdin,
     UsageError,
     echo,
-    resolve_text_input,
 )
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.commands._workspace import WORKERS, WorkspaceCommand
@@ -114,7 +111,8 @@ class Run(WorkspaceCommand):
         name, command = (
             (None, self.name_or_cmd) if self.cmd is None else (self.name_or_cmd, self.cmd)
         )
-        _check_positionals(name, command, stdin=self.stdin.requested)
+        _check_positionals(name, command)
+        script = _piped_script(self.stdin) if command == "-" else None  # before --stdin's rows
         record = self.locate(name)
         specs = self._selected(record.repos, workspace=record.name)
         root = self.workspace_dir(record.name)
@@ -123,7 +121,7 @@ class Run(WorkspaceCommand):
         if not targets:
             self.ctx.diag.warning("no repos to run in (read-only repos need --include-read-only)")
             return iter(())
-        with run_argv(command) as argv:
+        with run_argv(command, script) as argv:
             run = RunInRepos(
                 SubprocessRunner(),
                 parallel=self.parallel.value,
@@ -188,7 +186,7 @@ def _named(specs: Sequence[RepoSpec], names: Sequence[str]) -> set[RepoSpec]:
     return {by_name[name] for name in names}
 
 
-def _check_positionals(name: str | None, command: str, *, stdin: bool) -> None:
+def _check_positionals(name: str | None, command: str) -> None:
     """Usage errors ``run`` catches before touching anything.
 
     The positionals accept a leading hyphen (``-`` is a stdin script), so a
@@ -200,15 +198,13 @@ def _check_positionals(name: str | None, command: str, *, stdin: bool) -> None:
                 f"unknown option: {value}",
                 hint="a command that starts with -- needs quoting with a space, e.g. ' --x'",
             )
-    if command == "-" and stdin:
-        raise UsageError("a script on stdin (-) cannot be combined with --stdin")
 
 
 def _echo_block(row: RunOutcome) -> None:
     """One finished repo's output: a header (with the reason unless it ran), stdout, stderr.
 
-    Skipped rows print nothing (the summary counts them); each block is
-    flushed, so blocks stream through pipes.
+    Skipped rows print nothing (the summary counts them); ``echo`` flushes,
+    so blocks stream through pipes.
     """
     if row.action == "skipped":
         return
@@ -217,22 +213,25 @@ def _echo_block(row: RunOutcome) -> None:
     for text in (row.stdout, row.stderr):
         if text:
             echo(text.rstrip("\n"))
-    sys.stdout.flush()
+
+
+def _piped_script(stdin: Stdin[Any]) -> str:
+    """The script ``-`` reads from stdin; refused with ``--stdin``, a terminal or nothing piped."""
+    script = stdin.text(what="script")
+    if not script.strip():
+        raise UsageError("`-` reads a script from stdin, but nothing was piped")
+    return script
 
 
 @contextmanager
-def run_argv(command: str) -> Iterator[list[str]]:
+def run_argv(command: str, script: str | None = None) -> Iterator[list[str]]:
     """The argv for ``run``'s command argument.
 
-    ``-`` is a script read from stdin (kept in a temp file for the duration);
-    an existing file runs directly when executable, else through ``sh``;
-    anything else is a ``sh -c`` string.
+    ``-`` runs ``script``, the text piped on stdin (kept in a temp file for
+    the duration); an existing file runs directly when executable, else
+    through ``sh``; anything else is a ``sh -c`` string.
     """
-    if command == "-":
-        try:
-            script = resolve_text_input(value=None, file=None, what="script")
-        except ConfigError:
-            raise UsageError("`-` reads a script from stdin, but nothing was piped") from None
+    if command == "-" and script is not None:
         with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
             handle.write(script + "\n")
         try:

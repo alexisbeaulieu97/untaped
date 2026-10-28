@@ -274,11 +274,12 @@ class Transition(JiraCommand):
     lists them for the issue's current status. ``--resolution`` and
     ``--comment`` go in the same request as the transition.
 
-    Several keys, or ``--stdin`` with bare keys or ``jira.issue`` and
+    One key prints one record (none when it fails before sending). Several
+    keys, or ``--stdin`` with bare keys or ``jira.issue`` and
     ``jira.issue_outcome`` records from ``--format pipe``, transition as one
-    batch: a key that fails prints ``error: KEY: ...``, the rest continue, and
-    the exit code is the most severe failure. The ``issues`` group's page
-    explains the preview and when it asks first.
+    batch and print rows: a key that fails prints ``error: KEY: ...``, the
+    rest continue, and the exit code is the most severe failure. The
+    ``issues`` group's page explains the preview and when it asks first.
 
     Examples
     --------
@@ -303,11 +304,13 @@ class Transition(JiraCommand):
     confirm: Confirm
     output: Output[IssueOutcome] = Output(columns=("key", "transition_id", "action"))
 
-    def run(self) -> Iterator[IssueOutcome]:
+    def run(self) -> IssueOutcome | Iterator[IssueOutcome]:
         if bool(self.id) == bool(self.to):
             raise UsageError("provide exactly one of --id or --to")
-        keys = issue_keys(self.stdin.identifiers(self.keys))
-        yield from self._rows(keys)
+        rows = self._rows(issue_keys(self.stdin.identifiers(self.keys)))
+        if len(self.keys) == 1 and len(rows) == 1:
+            return rows[0]  # one key prints one record, as ``issues get KEY`` does
+        return iter(rows)
 
     def _rows(self, keys: Sequence[str]) -> list[IssueOutcome]:
         url = self.settings.url

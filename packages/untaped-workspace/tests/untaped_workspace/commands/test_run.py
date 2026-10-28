@@ -66,8 +66,26 @@ def test_stdin_script(ws: Path) -> None:
     assert rows[0]["stdout"].strip() == "J-1"
 
 
-def test_stdin_script_with_stdin_selection_is_usage(ws: Path) -> None:
-    assert run(["run", "J-1", "-", "--stdin"], input="true\n").exit == 2
+def test_a_piped_script_is_its_text_never_a_file_it_names(
+    ws: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "s.sh").write_text("echo caller\n")
+    monkeypatch.chdir(tmp_path)
+    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input="s.sh\n"))
+    assert all(row["action"] == "failed" for row in rows)  # no s.sh in the repos
+    assert "caller" not in "".join(str(row["stdout"]) for row in rows)
+
+
+def test_a_piped_script_starting_with_dashes_is_no_mistyped_option(ws: Path) -> None:
+    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input="--version\n"))
+    assert rows  # it ran, and sh said what it made of it
+
+
+@pytest.mark.parametrize("piped", ["true\n", "", "docs\n"])
+def test_stdin_script_with_stdin_selection_is_usage(ws: Path, piped: str) -> None:
+    result = run(["run", "J-1", "-", "--stdin"], input=piped)
+    assert result.exit == 2
+    assert "- reads the script from stdin, so it can't be combined with --stdin" in err(result)
 
 
 def test_failure_exits_one_and_human_summary(ws: Path) -> None:
@@ -310,7 +328,7 @@ def test_mistyped_long_option_as_command_is_usage(ws: Path) -> None:
 
 def test_help_names_the_positionals() -> None:
     result = run(["run", "--help"])
-    assert "workspace run [OPTIONS] NAME_OR_CMD" in result.stdout
+    assert "Usage: untaped workspace run NAME_OR_CMD [CMD] [OPTIONS]" in result.stdout
     assert "│    CMD " in result.stdout
 
 

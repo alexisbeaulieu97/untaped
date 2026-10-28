@@ -90,6 +90,7 @@ class Count(Command):
 class Kinds(Command):
     """Print each piped row's kind as read, validated by nobody."""
 
+    label: Positional[TextOrStdin | None] = Field(None, description="A label, or - for stdin.")
     stdin: Stdin[Record]
 
     def run(self) -> str:
@@ -302,6 +303,29 @@ def test_stdin_of_any_record_reads_a_kind_less_row_with_every_field() -> None:
 def test_an_optional_text_or_stdin_reads_a_dash() -> None:
     assert _run("shapes", "note", "-", input="piped\n").stdout == "piped\n"
     assert _run("shapes", "note").stdout == ""
+
+
+def test_a_dash_and_stdin_rows_both_reading_stdin_is_a_usage_error() -> None:
+    result = _run("shapes", "kinds", "-", "--stdin", input="piped\n")
+    assert result.exit_code == 2
+    assert "- reads stdin, so it can't be combined with --stdin" in result.stderr
+
+
+def test_the_usage_line_names_an_optional_argument_as_its_page_does() -> None:
+    helped = _run("shapes", "kinds", "--help").stdout
+    assert helped.startswith("Usage: untaped shapes kinds [LABEL] [OPTIONS]\n")
+    page = _run("docs", "shapes", "commands", "kinds").stdout
+    assert "`untaped shapes kinds [LABEL] [OPTIONS]`" in page
+
+
+def test_a_group_that_runs_a_command_shows_its_usage_and_its_commands() -> None:
+    helped = _run("doctor", "--help").stdout
+    assert helped.startswith("Usage: untaped doctor [OPTIONS]\n       untaped doctor COMMAND ...\n")
+
+
+def test_the_usage_line_names_a_required_flag_with_its_value() -> None:
+    helped = _run("plugin", "new", "--help").stdout
+    assert helped.startswith("Usage: untaped plugin new NAME --fills FILLS [OPTIONS]\n")
 
 
 def test_an_unknown_column_is_refused_before_run() -> None:

@@ -61,6 +61,16 @@ class OptionDecl(_Frozen):
     reads_file: bool = False
     stability: StabilityDecl | None = None
 
+    @property
+    def shown(self) -> bool:
+        """Whether ``--help`` lists it without ``--deprecated``."""
+        return self.stability is None or self.stability.stability != "deprecated"
+
+    @property
+    def argument(self) -> str:
+        """An argument's name as usage and pages write it: ``PATHS...`` for a list."""
+        return self.metavar + ("..." if self.token.startswith("list[") else "")
+
 
 class AliasDecl(_Frozen):
     """An old spelling of a renamed command, which still works and warns until its removal."""
@@ -364,6 +374,25 @@ class Declaration(_Frozen):
         """The words ``command`` is typed as after ``untaped``: a root plugin's without its name."""
         root = any(plugin.root and plugin.name == command.path[0] for plugin in self.plugins)
         return command.path[1:] if root else command.path
+
+    def usage(self, command: CommandDecl) -> str:
+        """The usage line ``--help`` and the command's page show: its words, arguments, options.
+
+        An argument is named as its field is (``[CMD]`` when optional, ``PATHS...``
+        for a list), a required flag with its value, then ``[OPTIONS]`` when an
+        optional flag is left; a deprecated option is not listed, as in ``--help``.
+        """
+        words = ["untaped", *self.words(command)]
+        listed = [option for option in command.options if option.shown]
+        for option in listed:
+            if option.positional:
+                name = option.argument
+                words.append(name if option.required else f"[{name}]")
+            elif option.required:
+                words.append(f"{option.flag} {option.metavar}")
+        if any(not option.positional and not option.required for option in listed):
+            words.append("[OPTIONS]")
+        return " ".join(words)
 
     def section_of(self, settings_target: str) -> str | None:
         """The config section of the plugin whose settings model is ``settings_target``."""

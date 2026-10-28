@@ -179,38 +179,19 @@ def command_body(site: Site, command: CommandDecl) -> list[str]:
     read_first = [guide for target in command.guides if (guide := site.guide(target))]
     lines += [""] if read_first else []
     lines += [f"Read first: `untaped docs {g.plugin} guides {g.name}`." for g in read_first]
-    lines += ["", "## Usage", f"`{usage(site, command)}`", *option_lines(command.options)]
+    lines += ["", "## Usage", f"`{site.declaration.usage(command)}`"]
+    lines += option_lines(command.options)
     lines += _files(site, "Inputs", command.inputs)
     lines += _files(site, "Writes", command.writes)
     lines += _outputs(site, command)
     return lines
 
 
-def usage(site: Site, command: CommandDecl) -> str:
-    """The usage line: the command's words, its arguments, then ``[OPTIONS]``."""
-    words = [site.line(command)]
-    listed = [option for option in command.options if shown(option)]
-    for option in listed:
-        if option.positional:
-            name = option.metavar + ("..." if option.token.startswith("list[") else "")
-            words.append(name if option.required else f"[{name}]")
-        elif option.required:
-            words.append(f"{option.flag} {option.metavar}")
-    if any(not option.positional and not option.required for option in listed):
-        words.append("[OPTIONS]")
-    return " ".join(words)
-
-
-def shown(option: OptionDecl) -> bool:
-    """Whether ``--help`` shows ``option`` without ``--deprecated``."""
-    return option.stability is None or option.stability.stability != "deprecated"
-
-
 def option_lines(options: Sequence[OptionDecl]) -> list[str]:
     """Every option ``--help`` shows, in its panels, in their order, arguments first in each."""
     panels: dict[str, list[OptionDecl]] = {}
     for option in options:
-        if shown(option):
+        if option.shown:
             panels.setdefault(option.panel, []).append(option)
     lines: list[str] = []
     for panel, unsorted in panels.items():
@@ -224,8 +205,7 @@ def option_lines(options: Sequence[OptionDecl]) -> list[str]:
 def option_line(option: OptionDecl) -> str:
     """One option as a page lists it: its spellings, help, choices and default."""
     if option.positional:
-        many = "..." if option.token.startswith("list[") else ""
-        names = f"`{option.metavar}{many}`"
+        names = f"`{option.argument}`"
     else:
         spelled = [option.flag, option.negative, option.short]
         names = ", ".join(f"`{name}`" for name in spelled if name)
@@ -287,4 +267,14 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
             for each in named
         )
         lines += ["", f"Accepts on stdin (`--stdin`): {listed}."]
+    via = command.stdin_via
+    found = None if via is None or not site.fillers(via) else site.point(via)
+    if found is not None:
+        owner, point = found
+        lines += [
+            "",
+            f"Also accepts on stdin each installed `{point.name}` provider's own records, which "
+            f"that provider turns into these (`untaped docs {owner.name} extensions "
+            f"{point.name}`).",
+        ]
     return ["", "## Outputs", *lines[1:]] if lines else []

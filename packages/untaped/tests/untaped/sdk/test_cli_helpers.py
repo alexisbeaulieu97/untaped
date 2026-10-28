@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import subprocess
@@ -36,7 +37,7 @@ from untaped.sdk import (
     report_errors,
     resolve_each,
 )
-from untaped.sdk._cli import run_cyclopts_app
+from untaped.sdk._cli import echo, run_cyclopts_app
 from untaped.sdk.testing import CliInvoker
 
 
@@ -933,3 +934,23 @@ def test_columns_question_mark_lists_columns_under_quiet(
     err = capsys.readouterr().err
     assert "available columns" in err
     assert "  name" in err
+
+
+class _Flushes(io.StringIO):
+    """A stdout that counts its flushes."""
+
+    flushed = 0
+
+    def flush(self) -> None:
+        self.flushed += 1
+        super().flush()
+
+
+def test_echo_flushes_each_line_so_a_pipe_reads_it_as_it_comes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = _Flushes()
+    monkeypatch.setattr(sys, "stdout", out)
+    echo("one")
+    echo("two")
+    assert (out.getvalue(), out.flushed) == ("one\ntwo\n", 2)

@@ -1005,6 +1005,22 @@ class Stdin[R: BaseModel](FieldBlock):
             for value in self._read(given, allow_empty=allow_empty)
         ]
 
+    def text(self, *, what: str) -> str:
+        """Stdin's whole text, for an argument whose ``-`` names stdin (``run W -``).
+
+        For a command that tells ``-`` from a value itself, where
+        :data:`TextOrStdin` would hand it the text in the value's place. One
+        terminal newline is trimmed. ``-`` with ``--stdin``, or a terminal
+        stdin, is a usage error naming ``what``; an empty pipe is ``""``.
+        """
+        from untaped.sdk import _stdin  # noqa: PLC0415 - only a reader pays
+
+        if self._requested:  # one stdin: the rows or this text, never both
+            raise UsageError(f"- reads the {what} from stdin, so it can't be combined with --stdin")
+        if _stdin.stdin_is_terminal():  # never a wait for typing
+            raise UsageError(f"- reads the {what} from stdin; pipe it")
+        return _stdin.read_stdin_text()
+
     def envelopes(self, *, allow_empty: bool = False) -> list[str | PipeEnvelope]:
         """What stdin carried, unvalidated: each a bare line or a row's kind, record and line.
 

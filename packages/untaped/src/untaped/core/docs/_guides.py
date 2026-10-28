@@ -10,7 +10,7 @@ addresses until its move.
 from __future__ import annotations
 
 from untaped.core.docs import _guide_files
-from untaped.core.docs._commands import option_line, shown
+from untaped.core.docs._commands import option_line
 from untaped.core.docs._docstring import describe, markdown
 from untaped.core.docs._site import ORGANIZED, Site
 from untaped.runtime.declaration import GuideDecl
@@ -63,7 +63,7 @@ def _page(site: Site, guide: GuideDecl) -> list[str]:
     described = describe(guide.doc)
     lines += [part for text in (described.summary, described.body) if text for part in ("", text)]
     if guide.options:
-        lines += ["", "## Options", "", *(option_line(o) for o in guide.options if shown(o))]
+        lines += ["", "## Options", "", *(option_line(o) for o in guide.options if o.shown)]
     if guide.choices:
         lines += ["", "## Choices", "", *(f"- `{choice}`" for choice in guide.choices)]
     if described.examples:
