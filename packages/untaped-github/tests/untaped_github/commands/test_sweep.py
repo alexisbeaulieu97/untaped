@@ -458,6 +458,6 @@ def test_an_empty_pipe_is_refused_rather_than_widened_to_the_default_org(
         requested = [call.request.url.path for call in mock.calls]
 
     assert result.exit_code == 1, result.output
-    assert "no identifiers received on stdin" in result.stderr
+    assert "nothing received on stdin" in result.stderr
     assert requested == []
     assert result.stdout == ""

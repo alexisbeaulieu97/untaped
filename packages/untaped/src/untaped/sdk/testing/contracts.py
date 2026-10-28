@@ -1,7 +1,8 @@
 """Testing contracts: compose fakes and prove a provider fills its contract.
 
 Owners compose a fake provider with :func:`compose_with`; providers prove they
-fill a contract with :func:`assert_fills`. An owner guards its contracts'
+fill a contract with :func:`assert_fills`, and read a row of theirs as an
+owner's ``Stdin(via=bridge)`` reads it with :func:`piped_through`. An owner guards its contracts'
 schemas with :func:`untaped.sdk.testing.assert_surface`. Nothing here imports
 ``untaped.sdk.contracts`` until it is called.
 """
@@ -12,6 +13,8 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import BoundProvider
@@ -153,6 +156,23 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
         return
     with compose_with(*_installed_for(cls)):
         _assert_bound(cls, samples)
+
+
+def piped_through[R](bridge: Callable[..., R], row: BaseModel) -> R:
+    """``row`` as a command's ``Stdin(via=bridge)`` reads it when it is piped in.
+
+    The row travels as its kind, as on the wire, and comes back as the
+    owner's model: through the bridge of the provider whose ``T`` it is,
+    with that provider as its ``source``, or as it is when it is the owner's
+    own kind. The errors are the ones the command would exit with.
+    """
+    from untaped.sdk._cli import _as_row  # noqa: PLC0415 - the pipe writer's dump
+    from untaped.sdk._pipe import PipeEnvelope  # noqa: PLC0415
+    from untaped.sdk.contracts._declare import record_kind  # noqa: PLC0415
+    from untaped.sdk.contracts._select import bridged  # noqa: PLC0415
+
+    envelope = PipeEnvelope(kind=record_kind(type(row)), record=_as_row(row), lineno=1)
+    return bridged(bridge, envelope, type(row))
 
 
 def _assert_bound(cls: type, samples: Sequence[object]) -> None:

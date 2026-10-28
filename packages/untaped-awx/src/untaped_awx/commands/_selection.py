@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from untaped.sdk import PipeEnvelope, Stdin, UsageError
+from pydantic import BaseModel
+
+from untaped.sdk import Stdin, UsageError
 from untaped_awx.application.resources.selection import (
     SelectedResource,
     SelectionRequest,
@@ -83,14 +85,14 @@ def select_resources(
             "selection sources are exclusive: use names, --stdin, filters/search, or --all"
         )
     values = tuple(names)
-    pipe: tuple[PipeEnvelope, ...] | None = None
+    pipe: tuple[BaseModel, ...] | None = None
     effective_by_id = by_id
     if piped:
         assert stdin is not None
-        read = stdin.envelopes()
-        envelopes = tuple(value for value in read if isinstance(value, PipeEnvelope))
-        if envelopes:
-            pipe = envelopes
+        read = stdin.values()
+        rows = tuple(value for value in read if isinstance(value, BaseModel))
+        if rows:
+            pipe = rows
             effective_by_id = False
         else:
             values = tuple(value for value in read if isinstance(value, str))

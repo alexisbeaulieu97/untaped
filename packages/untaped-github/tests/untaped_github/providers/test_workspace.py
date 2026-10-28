@@ -1,7 +1,7 @@
 """``GithubRepos``: GitHub fills workspace's ``RepoSource`` with its repository inventory.
 
 Asked the way workspace asks it: ``gather`` for the listing and readiness,
-``convert`` for a piped ``github.repo`` row. The provider's scope helper
+``Stdin(via=RepoSource.to_repo)`` for a piped ``github.repo`` row. The provider's scope helper
 ``inventory_scope`` is tested directly.
 """
 
@@ -13,13 +13,14 @@ import httpx
 import pytest
 import respx
 import yaml
+from pydantic import BaseModel
 
 from untaped.runtime.settings import get_settings
-from untaped.sdk import ExitCode, PipeEnvelope, UntapedError, UsageError, home
-from untaped.sdk.contracts import Errored, NoProviderReady, Ok, convert, gather
-from untaped.sdk.testing import assert_fills, compose_with
+from untaped.sdk import ExitCode, UntapedError, UsageError, home
+from untaped.sdk.contracts import Errored, NoProviderReady, Ok, gather
+from untaped.sdk.testing import assert_fills, compose_with, piped_through
 from untaped_github.providers.workspace import GithubRepos, inventory_scope
-from untaped_github.records import Repo
+from untaped_github.records import CorpusRepo, Repo, SweepRepo
 from untaped_github.settings import GithubSettings
 from untaped_workspace.api import Repo as WorkspaceRepo
 from untaped_workspace.api import RepoSource
@@ -88,9 +89,11 @@ def _composed() -> Iterator[None]:
         yield
 
 
-def piped(record: dict[str, object], kind: str = "github.repo") -> WorkspaceRepo:
+def piped(row: BaseModel | dict[str, object]) -> WorkspaceRepo:
     """A piped row read the way workspace reads one: through the contract's bridge."""
-    return convert(RepoSource.to_repo, PipeEnvelope(kind=kind, record=record, lineno=1))
+    return piped_through(
+        RepoSource.to_repo, Repo.model_validate(row) if isinstance(row, dict) else row
+    )
 
 
 def listed() -> Ok[list[WorkspaceRepo]]:
@@ -160,7 +163,7 @@ def test_a_piped_row_becomes_a_workspace_repo_without_an_api_call() -> None:
 
     with respx.mock(base_url=API, assert_all_called=False) as mock:
         down = mock.route().mock(return_value=httpx.Response(503))
-        repo = piped(hit.model_dump(mode="json"))
+        repo = piped(hit)
 
     assert down.call_count == 0
     assert (repo.name, repo.url) == ("acme/api", "https://github.com/acme/api.git")
@@ -172,7 +175,7 @@ def test_a_piped_row_becomes_a_workspace_repo_without_an_api_call() -> None:
 def test_a_piped_row_keeps_its_branch_description_and_archived_flag() -> None:
     configure(default_org="acme")
 
-    repo = piped(Repo.model_validate(ACME[1]).model_dump(mode="json"))
+    repo = piped(ACME[1])
 
     assert (repo.default_branch, repo.archived) == ("trunk", True)
     assert repo.url == "https://github.com/acme/web.git"
@@ -193,7 +196,7 @@ def test_git_protocol_picks_the_rows_url_or_builds_one_from_full_name(
 ) -> None:
     configure(default_org="acme", git_protocol=protocol)
 
-    assert piped(Repo.model_validate(row).model_dump(mode="json")).url == url
+    assert piped(row).url == url
 
 
 @pytest.mark.parametrize(
@@ -247,8 +250,8 @@ def test_corpus_and_sweep_rows_are_read_as_github_repos() -> None:
     corpus = {"full_name": "acme/api", "ref": "main", "path": "/store/api"}
     sweep = {"full_name": "acme/web", "refs_matched": ["heads/main"], "hits": {"grep:x": 1}}
 
-    from_corpus = piped(corpus, kind="github.corpus_repo")
-    from_sweep = piped(sweep, kind="github.sweep_repo")
+    from_corpus = piped(CorpusRepo.model_validate(corpus))
+    from_sweep = piped(SweepRepo.model_validate(sweep))
 
     assert from_corpus.url == "https://github.com/acme/api.git"
     assert from_sweep.url == "https://github.com/acme/web.git"

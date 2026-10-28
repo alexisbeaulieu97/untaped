@@ -1106,17 +1106,6 @@ class Stdin[R: BaseModel](FieldBlock):
             raise UsageError(f"- reads the {what} from stdin; pipe it")
         return _stdin.read_stdin_text()
 
-    def envelopes(self, *, allow_empty: bool = False) -> list[str | PipeEnvelope]:
-        """What stdin carried, unvalidated: each a bare line or a row's kind, record and line.
-
-        For a command whose readers validate each row by its kind (lint's
-        providers), so a row its model refuses is that reader's to report
-        instead of ending the read. ``Stdin[Record]`` takes every kind, one no
-        installed plugin declares included; a narrower ``Stdin[X]`` still
-        refuses a kind that is none of its models'.
-        """
-        return self._read((), allow_empty=allow_empty, what="records")
-
     def kind(self, row: BaseModel) -> str | None:
         """The kind of ``row``'s model among those this command reads (``None``: none of them).
 
@@ -1133,9 +1122,7 @@ class Stdin[R: BaseModel](FieldBlock):
             rows.append(value)
         return rows
 
-    def _read(
-        self, given: Sequence[str], *, allow_empty: bool, what: str = "identifiers"
-    ) -> list[str | PipeEnvelope]:
+    def _read(self, given: Sequence[str], *, allow_empty: bool) -> list[str | PipeEnvelope]:
         from untaped.sdk._stdin import read_stdin_input  # noqa: PLC0415 - only a reader pays
 
         if not self._requested:
@@ -1145,7 +1132,7 @@ class Stdin[R: BaseModel](FieldBlock):
         if given:
             raise UsageError("provide identifiers as positional args or via --stdin, not both")
         kinds = None if self._any or self.via is not None else tuple(self._kinds)
-        piped = read_stdin_input(accept_kinds=kinds, what=what, allow_empty=allow_empty)
+        piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
         return list(piped.values) if piped.records is None else list(piped.records)
 
     def _model(self, envelope: PipeEnvelope) -> type[BaseModel]:
@@ -1171,20 +1158,15 @@ class Stdin[R: BaseModel](FieldBlock):
         return self.via is not None and envelope.kind not in self._kinds
 
     def _identifier(self, envelope: PipeEnvelope) -> str:
-        if self._through(envelope):
-            row = self._row(envelope)
-            model: type[BaseModel] = type(row)
-            record: Mapping[str, object] = row.model_dump()
-        else:
-            model, record = self._model(envelope), envelope.record
-        field = key_field(model)
+        row = self._row(envelope)  # validated whole, as values() reads it
+        field = key_field(type(row))
         if field is None:
             raise ConfigError(
                 "stdin is untaped pipe format but this command cannot map records to "
                 "identifiers: no field of the accepted model is marked Key",
                 category="invalid",
             )
-        value = record.get(field)
+        value = getattr(row, field, None)
         identifier = "" if value is None else str(value).strip()
         if not identifier:
             raise ConfigError(
@@ -1200,7 +1182,8 @@ class Stdin[R: BaseModel](FieldBlock):
             given = None if envelope.kind is None else self._known.get(envelope.kind)
             return cast("R", bridged(cast("Callable[..., Any]", self.via), envelope, given))
         try:
-            return cast("R", self._model(envelope).model_validate(envelope.record))
+            model = self._model(envelope)  # strict, as a JSON row: as ``via`` reads one
+            return cast("R", model.model_validate_json(json.dumps(envelope.record), strict=True))
         except ValidationError as exc:
             raise ConfigError(
                 f"line {envelope.lineno}: {first_validation_error(exc)}", category="invalid"

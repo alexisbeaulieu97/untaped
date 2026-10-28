@@ -88,14 +88,15 @@ class Count(Command):
 
 
 class Kinds(Command):
-    """Print each piped row's kind as read, validated by nobody."""
+    """Print each piped row's kind, as its model reads it."""
 
     label: Positional[TextOrStdin | None] = Field(None, description="A label, or - for stdin.")
     stdin: Stdin[Record]
 
     def run(self) -> str:
         return " ".join(
-            "-" if isinstance(each, str) else str(each.kind) for each in self.stdin.envelopes()
+            "-" if isinstance(each, str) else str(self.stdin.kind(each))
+            for each in self.stdin.values(allow_empty=True)
         )
 
 
@@ -284,13 +285,15 @@ def test_stdin_of_any_record_reads_known_kinds_and_refuses_an_unknown_one() -> N
     assert "no installed plugin declares the kind 'acme.thing'" in refused.stderr
 
 
-def test_stdin_envelopes_leave_an_unknown_kind_and_an_invalid_row_to_the_reader() -> None:
+def test_stdin_of_any_record_reads_each_row_as_its_kind_and_refuses_an_unknown_one() -> None:
     piped = _run("shapes", "touch", "a", "--format", "pipe").stdout
-    other = json.dumps({"untaped": "1", "kind": "acme.thing", "record": {"name": 3}})
-    read = _run("shapes", "kinds", "--stdin", input=piped + other + "\n")
+    read = _run("shapes", "kinds", "--stdin", input=piped)
     assert read.exit_code == 0, read.stderr
-    assert read.stdout.split()[1:] == ["acme.thing"]
-    assert "no records received on stdin" in _run("shapes", "kinds", "--stdin", input="").stderr
+    assert read.stdout.split() == [json.loads(piped)["kind"]]
+    other = json.dumps({"untaped": "1", "kind": "acme.thing", "record": {"name": 3}})
+    refused = _run("shapes", "kinds", "--stdin", input=piped + other + "\n")
+    assert refused.exit_code == 1
+    assert "no installed plugin declares the kind 'acme.thing'" in refused.stderr
 
 
 def test_stdin_of_any_record_reads_a_kind_less_row_with_every_field() -> None:

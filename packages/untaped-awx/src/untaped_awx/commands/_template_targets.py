@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from untaped.sdk import PipeEnvelope, Stdin
+from pydantic import BaseModel
+
+from untaped.sdk import Stdin
 from untaped_awx.application.resources.selection import pipe_record_id
 
 
@@ -24,8 +26,8 @@ def template_targets(
     if identifiers:
         stdin.identifiers(identifiers)  # names and --stdin at once: its usage error
     return [
-        (str(pipe_record_id(value)), True) if isinstance(value, PipeEnvelope) else (value, by_id)
-        for value in stdin.envelopes()
+        (str(pipe_record_id(value)), True) if isinstance(value, BaseModel) else (value, by_id)
+        for value in stdin.values()
     ]
 
 

@@ -1,4 +1,4 @@
-"""``compose_with``, ``assert_fills`` and ``assert_surface`` from ``untaped.sdk.testing``."""
+"""The contract helpers of ``untaped.sdk.testing``: composing, filling, piping, surfaces."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel
 
 from core_test_support.contracts.support import (
+    LIBRARY_CONFIG,
     Book,
     BookSource,
     Kiosk,
@@ -23,13 +24,20 @@ from core_test_support.contracts.support import (
     fresh_providers,
     library_spec,
     shelf_spec,
+    write_config,
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import Plugin, deprecated, experimental
 from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
 from untaped.sdk.storage import Cache
-from untaped.sdk.testing import assert_fills, assert_surface, compose_with, plugin_candidate
+from untaped.sdk.testing import (
+    assert_fills,
+    assert_surface,
+    compose_with,
+    piped_through,
+    plugin_candidate,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +89,18 @@ def test_compose_with_refuses_what_it_cannot_compose() -> None:
 def test_assert_fills_passes_for_a_bridging_provider() -> None:
     with compose_with(shelf_spec(), library_spec()):
         assert_fills(Library, samples=[Volume(id=1, name="Dune"), {"id": 2, "name": "Emma"}])
+
+
+def test_piped_through_reads_a_provider_row_through_its_bridge_and_the_owner_s_as_is() -> None:
+    with compose_with(shelf_spec(), library_spec()):
+        write_config(LIBRARY_CONFIG)
+        book = piped_through(BookSource.to_book, Volume(id=3, name="Dune"))
+        assert book.title == "Dune"
+        assert book.source == Source(
+            plugin="library", kind="library.volume", record={"id": 3, "name": "Dune"}
+        )
+        own = piped_through(BookSource.to_book, Book(title="Emma"))
+        assert own == Book(title="Emma")
 
 
 def test_assert_fills_needs_samples_when_the_provider_has_its_own_records() -> None:

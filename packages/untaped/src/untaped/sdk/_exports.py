@@ -58,13 +58,10 @@ from untaped.sdk._cli import (
 )
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
-from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.sdk._run import Context, Diag, PluginHandle, http_of, now, plugin_of, settings_of
 from untaped.sdk._stdin import (
-    StdinInput,
     read_identifiers,
     read_stdin,
-    read_stdin_input,
     read_stdin_text,
     resolve_text_input,
 )
@@ -439,7 +436,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "NOT_COUNTED",
     "OutcomeRecord",
     "OutputFormat",
-    "PipeEnvelope",
     "Progress",
     "Record",
     "Source",
@@ -458,9 +454,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "emit",
     "emit_document",
     "finish",
-    "is_envelope_line",
     "kind_of",
-    "parse_envelope_line",
     "print_tree",
     "record_model",
     "render_rows",
@@ -489,14 +483,12 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "run_hint",
     # input
     "AbsolutePath",
-    "StdinInput",
     "StdinOption",
     "existing_file",
     "parse_json_pairs",
     "parse_kv_pairs",
     "read_identifiers",
     "read_stdin",
-    "read_stdin_input",
     "read_stdin_text",
     "read_structured_file",
     "resolve_each",

@@ -559,7 +559,7 @@ class Mark:
 
     where: str
     """The command path (``awx test``), option (``awx test run --dry-run``), plugin name,
-    setting key (``awx.test_parallel``) or behaviour (``untaped.pipe-envelope``,
+    setting key (``awx.test_parallel``) or behaviour (``untaped.row-kind``,
     ``<plugin>.<name>`` for a plugin's)."""
     target: MarkTarget
     stability: Stability
@@ -1232,7 +1232,7 @@ class DeprecatedBehaviour(OwnedBlock):
     def name_problem(cls, name: str) -> str | None:
         if isinstance(name, str) and _BEHAVIOUR_NAME.fullmatch(name):
             return None
-        return f"a deprecated behaviour's name is kebab-case (pipe-envelope), not {name!r}"
+        return f"a deprecated behaviour's name is kebab-case (row-kind), not {name!r}"
 
     @property
     def spelled(self) -> bool:
@@ -1341,16 +1341,12 @@ def deprecated_behaviour(
 
 
 def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
-    """Core's own deprecated behaviours, the SDK's: each goes in the 12.0 removal sweep.
+    """Core's own deprecated behaviours, the SDK's (none today).
 
-    Never ``Core`` attributes (core move ruling 3): they are listed here,
-    beside the mechanic that reads them, until the sweep removes them, and
-    this listing leaves with them in that sweep.
+    Never ``Core`` attributes (core move ruling 3): one is listed here,
+    imported from beside the mechanic that reads it, until its major removes it.
     """
-    from untaped.sdk._stdin import PIPE_ENVELOPE  # noqa: PLC0415 - off the CLI path
-    from untaped.sdk.contracts._select import CONVERT  # noqa: PLC0415
-
-    return (CONVERT, PIPE_ENVELOPE)
+    return ()
 
 
 # Plugin name → the ``deprecations`` callable of its spec, bound by the

@@ -542,7 +542,7 @@ def test_groups_hosts_add_empty_stdin_is_an_error(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     result = run(["groups", "hosts", "add", "--yes", "web-servers", "--stdin"], input="")
     assert result.exit_code == 1
-    assert "no records received on stdin" in result.stderr
+    assert "nothing received on stdin" in result.stderr
     assert not fake_aap.memberships[("groups", 200, "hosts")]
 
 

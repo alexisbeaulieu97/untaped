@@ -1347,16 +1347,14 @@ def test_an_excused_still_failing_case_exits_zero_though_its_row_names_a_failure
     assert (full["change"], full["failure"]["system"]) == ("still_failing", "awx.playbook")
 
 
-def test_compare_reads_pipe_output_and_reports_removed_cases_in_the_table(
-    fake_aap: FakeAap, tmp_path: Path
-) -> None:
+def test_compare_reports_removed_cases_in_the_table(fake_aap: FakeAap, tmp_path: Path) -> None:
     _seed_jt(fake_aap)
     suite = _write(tmp_path / "s.yml", _suite_text("s"))
-    saved = _run(str(suite), "-f", "pipe")
-    (tmp_path / "base.ndjson").write_text(saved.stdout)
+    saved = _run(str(suite), "-f", "json")
+    (tmp_path / "base.json").write_text(saved.stdout)
     _write(suite, "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  smoke: {}\n")
 
-    result = _run(str(suite), "--compare", str(tmp_path / "base.ndjson"), "-f", "json")
+    result = _run(str(suite), "--compare", str(tmp_path / "base.json"), "-f", "json")
 
     assert result.exit_code == 0, result.output
     smoke, full = json.loads(result.stdout)
@@ -1370,7 +1368,7 @@ def test_compare_reads_pipe_output_and_reports_removed_cases_in_the_table(
     assert "1 case: 1 pass" in result.stderr
     assert "compared with the baseline: 1 pass, 1 removed" in result.stderr
 
-    table = _run(str(suite), "--compare", str(tmp_path / "base.ndjson"))
+    table = _run(str(suite), "--compare", str(tmp_path / "base.json"))
     header = table.stdout.splitlines()[1]
     assert header.index("result") < header.index("change") < header.index("job_status")
     assert "removed" in table.stdout
@@ -1422,10 +1420,9 @@ def test_validate_refuses_an_idempotent_negative_case(fake_aap: FakeAap, tmp_pat
         ('[{"id": 1, "name": "Deploy"}]', "row 1 is not an awx.case_result row: suite"),
         ("suite: s\n", "Expecting value"),
         (
-            '{"untaped": "1", "kind": "awx.job_record", "record": {"id": 1}}\n',
-            "line 1: record kind 'awx.job_record' is not accepted here; expected 'awx.case_result'",
+            '{"untaped": "1", "kind": "awx.case_result", "record": {}}\n',
+            "expected a list of awx.case_result rows",
         ),
-        ('{"untaped": "1", "kind": "awx.case_result"\n', "line 1: invalid JSON"),
     ],
 )
 def test_compare_refuses_a_file_that_is_not_run_output(

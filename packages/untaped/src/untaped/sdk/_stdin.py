@@ -12,19 +12,7 @@ from untaped.runtime.render import stream_is_tty
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.sdk.diagnostic import WireModel, kind_of
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.marks import deprecated_behaviour
 from untaped.sdk.words import q
-
-PIPE_ENVELOPE = deprecated_behaviour(
-    "pipe-envelope",
-    removed_in=12,
-    replacement="Stdin[R] reading the rows, as a command's field",
-)
-"""A plugin reading pipe lines itself (``PipeEnvelope`` and its line parsers).
-
-``PipeEnvelope``, ``is_envelope_line`` and ``parse_envelope_line`` each leave
-in the 12.0 move of the last plugin that calls it.
-"""
 
 
 def stdin_is_terminal() -> bool:
@@ -131,14 +119,13 @@ def read_stdin_input(
     *,
     accepts: Collection[type[WireModel]] | None = None,
     accept_kinds: Collection[str] | None = None,
-    what: str = "identifiers",
     allow_empty: bool = False,
 ) -> StdinInput:
     """Read stdin as bare values or a pipe stream, detected from the first line.
 
     The one core stdin reader for commands that accept either shape (a
     name/ID list or another command's ``--format pipe`` output). Raises
-    :class:`ConfigError` on empty stdin (``no <what> received on stdin``), on
+    :class:`ConfigError` on empty stdin (``nothing received on stdin``), on
     mixed bare/envelope input, and on malformed envelopes (line-precise).
     With ``allow_empty`` an empty (or blank) pipe is no values instead, for
     commands where "nothing piped" means "nothing to do"; a terminal stdin
@@ -154,7 +141,7 @@ def read_stdin_input(
     pairs = _read_raw_lines()
     if not pairs:
         if pairs is None or not allow_empty:
-            raise ConfigError(f"no {what} received on stdin", category="invalid")
+            raise ConfigError("nothing received on stdin", category="invalid")
         return StdinInput(values=(), records=None)
     _, first_text = pairs[0]
     if _looks_like_envelope(first_text):

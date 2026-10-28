@@ -46,6 +46,7 @@ EXPECTED_ALL = [
     "manual_clock",
     "memory_store",
     "move_ask",
+    "piped_through",
     "plan_release",
     "plugin_candidate",
     "progress_clock",

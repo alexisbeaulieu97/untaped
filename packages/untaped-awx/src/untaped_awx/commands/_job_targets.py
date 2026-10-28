@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from untaped.sdk import ConfigError, PipeEnvelope, Positional, Stdin
+from untaped.sdk import ConfigError, Positional, Stdin
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.domain.jobs.job import JOB_ROUTES
 from untaped_awx.records import JobRecord, JobRelaunchOutcome, LaunchOutcome, SyncOutcome
@@ -51,11 +51,11 @@ def job_targets(job_ids: Sequence[str], stdin: Stdin[Any]) -> tuple[list[str], d
         stdin.identifiers(job_ids)  # ids and --stdin at once: its usage error
     ids: list[str] = []
     kinds: dict[str, str] = {}
-    for value in stdin.envelopes():
-        if not isinstance(value, PipeEnvelope):
+    for value in stdin.values():
+        if isinstance(value, str):
             ids.append(value)
             continue
-        record = value.record
+        record = value.model_dump(mode="json")
         ident = str(record.get("id"))
         ids.append(ident)
         record_kind = record.get("kind")

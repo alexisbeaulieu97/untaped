@@ -1,8 +1,8 @@
 """Standardized destructive-batch UX: preview → confirm → execute → summarize.
 
 :func:`batch_apply` is the shared front-end a tool uses to act on a *set* of
-already-resolved items (typically read from a ``--format pipe`` stream via
-:func:`untaped.sdk._stdin.read_identifiers` / :func:`untaped.sdk._stdin.read_stdin_input`). It
+already-resolved items (typically read from a ``--format pipe`` stream by a
+command's ``Stdin`` field). It
 previews the targets, gates a destructive verb behind a confirmation (or
 ``--yes``), runs the per-item ``action`` under a progress indicator, and reports
 per-item failures — leaving the caller to render the outcome rows and choose the

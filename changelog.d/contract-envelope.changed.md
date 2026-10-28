@@ -6,4 +6,5 @@ contracts. `Stdin(via=Contract.bridge)` reads the rows of any
 provider's own record through that provider's bridge, building the provider
 only when one of its rows arrives; an unready provider whose row arrived
 exits 4. `convert`, `PipeEnvelope`, `is_envelope_line` and
-`parse_envelope_line` are deprecated behaviours removed in 12.0.
+`parse_envelope_line` are gone: `Stdin` reads every pipe line, so no plugin
+reads one itself.

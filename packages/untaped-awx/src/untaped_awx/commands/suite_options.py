@@ -533,10 +533,9 @@ class TestResults(BaseModel):
 
     ## Comparing with a baseline
 
-    `--compare FILE` compares the run with the saved `--format json` or
-    `--format pipe` output of an earlier run; `--baseline REF` runs every
-    selected case on `REF` first and compares with that (an `idempotent` case
-    then launches 4 jobs).
+    `--compare FILE` compares the run with the saved `--format json` output
+    of an earlier run; `--baseline REF` runs every selected case on `REF`
+    first and compares with that (an `idempotent` case then launches 4 jobs).
 
     - The baseline run exits 1 when the base branch already fails some cases;
       those become `still_failing` rows.
@@ -597,7 +596,7 @@ class TestResults(BaseModel):
     compare: ExistingFile | None = Field(
         None,
         description=(
-            "Compare with an earlier `awx test run --format json` (or pipe) output: each row "
+            "Compare with an earlier `awx test run --format json` output: each row "
             "gains baseline and change, and a failure the baseline already had does not fail "
             "the run."
         ),

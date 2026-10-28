@@ -176,7 +176,8 @@ def _q(route: respx.Route) -> str:
         ),
         (
             ["code", "TODO", "--stdin"],
-            '{"untaped": "1", "kind": "github.corpus_repo", "record": {"full_name": "acme/web"}}\n',
+            '{"untaped": "1", "kind": "github.corpus_repo", '
+            '"record": {"full_name": "acme/web", "ref": "main", "path": "/store/web"}}\n',
             "TODO repo:acme/web",
         ),
         (
@@ -488,5 +489,5 @@ def test_search_refuses_an_empty_pipe_rather_than_searching_the_default_org() ->
     result, route = _search(["repos", "--stdin"], input="")
 
     assert result.exit_code == 1, result.output
-    assert "no identifiers received on stdin" in result.stderr
+    assert "nothing received on stdin" in result.stderr
     assert not route.called

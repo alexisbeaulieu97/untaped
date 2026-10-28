@@ -337,7 +337,8 @@ def test_each_target_gets_its_tree_and_a_failed_one_doesnt_stop_the_others(
 
 def test_piped_records_get_one_tree_each(ancestry: Any) -> None:
     piped = "".join(
-        json.dumps({"untaped": "1", "kind": "awx.job_template", "record": {"id": id_}}) + "\n"
+        json.dumps({"untaped": "1", "kind": "awx.job_template", "record": {"id": id_, "name": "x"}})
+        + "\n"
         for id_ in (12, 11)
     )
 

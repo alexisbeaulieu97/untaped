@@ -37,13 +37,6 @@ from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract
 from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue
 from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
-from untaped.sdk.marks import deprecated_behaviour
-from untaped.sdk.records import record_model
-
-CONVERT = deprecated_behaviour(
-    "contracts-convert", removed_in=12, replacement="Stdin(via=Contract.bridge) and its values()"
-)
-"""``convert(bridge, envelope)``; it leaves in workspace's 12.0 move, its last caller."""
 
 
 class NotFound(UsageError):
@@ -145,23 +138,6 @@ def _one[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:
             details={"provider": ok.plugin, "contract": f"{answers.owner}.{answers.contract}"},
         )
     return hits[0]
-
-
-def convert[R](bridge: Callable[..., R], envelope: PipeEnvelope) -> R:
-    """Read a piped record as the owner's model, through the provider whose kind it is.
-
-    The 11.x reader, kept for the plugins that still read ``PipeEnvelope``;
-    a 12.0 command declares ``Stdin(via=bridge)`` and reads the same rows
-    with :meth:`~untaped.sdk.Stdin.values` (:data:`CONVERT`).
-    """
-    from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the SDK
-
-    kind = envelope.kind
-    run = run_or_none()
-    given = None if kind is None else record_model(kind)
-    if given is None and kind is not None and run is not None:
-        given = run.composition.model_of(kind)  # a plugin class's kind
-    return bridged(bridge, envelope, given)
 
 
 def bridged[R](

@@ -12,7 +12,6 @@ from untaped.sdk import (
     DryRun,
     Matched,
     Output,
-    PipeEnvelope,
     Positional,
     Record,
     Stdin,
@@ -98,12 +97,11 @@ class Lint(LintCommand):
         if report.predicate_hit(strict=self.findings.strict):
             raise Matched
 
-    def _piped(self) -> Iterator[PipeEnvelope]:
-        # unvalidated: each provider validates the rows of the kind it reads
-        for value in self.stdin.envelopes():
+    def _piped(self) -> Iterator[tuple[str | None, Record]]:
+        for value in self.stdin.values():
             if isinstance(value, str):
                 raise UsageError("--stdin reads records: pipe untaped's --format pipe output")
-            yield value
+            yield self.stdin.kind(value), value
 
 
 class Rules(LintCommand):

@@ -103,7 +103,7 @@ def test_empty_pipe_is_a_clear_error(fake_aap: Any, command: str) -> None:
     extras = ["--set", "description=new"] if command == "patch" else []
     result = run(["projects", command, "--stdin", *extras, "--format", "json"], input="")
     assert result.exit_code == 1, result.output
-    assert '"message": "no records received on stdin"' in result.stderr
+    assert '"message": "nothing received on stdin"' in result.stderr
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
 
