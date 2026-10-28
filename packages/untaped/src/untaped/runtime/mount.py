@@ -311,7 +311,7 @@ def _contract_fields(mount: Mount, plugin: PluginDecl) -> dict[str, Any]:
     """
     fields: dict[str, Any] = {}
     if plugin.offers:
-        fields["contracts"] = partial(_offered, mount, plugin.name)
+        fields["contracts"] = partial(_offered, mount, plugin.name, plugin.offers)
     owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
     grouped: dict[str, list[int]] = defaultdict(list)
     for index, fill in enumerate(plugin.fills):
@@ -326,9 +326,15 @@ def _contract_fields(mount: Mount, plugin: PluginDecl) -> dict[str, Any]:
     return fields
 
 
-def _offered(mount: Mount, name: str) -> tuple[Any, ...]:
-    """The plugin class's ``offers``: as its fills, a class made at run time needs no name."""
-    return tuple(mount.plugins[name].offers)
+def _offered(mount: Mount, name: str, targets: Sequence[str]) -> tuple[Any, ...]:
+    """The contracts the plugin offers, imported by name so a start imports no plugin class.
+
+    A contract made in a function (a test's) has no importable name, so it is
+    read from the plugin class, as its fills always are.
+    """
+    if any("<locals>" in target for target in targets):
+        return tuple(mount.plugins[name].offers)
+    return tuple(resolve_target(target) for target in targets)
 
 
 def _instances(mount: Mount, name: str, indexes: Sequence[int]) -> tuple[Any, ...]:
