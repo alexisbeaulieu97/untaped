@@ -13,7 +13,7 @@ import pytest
 from core_test_support.runtime.run import quiet
 from untaped.runtime.run import entered, start_run
 from untaped.sdk._batch import BatchOutcome, batch_apply, finish
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Terminal
 from untaped.sdk.errors import HttpError, UntapedError, UsageError
 from untaped.sdk.prompt.prompts import reset_terminal_override, set_terminal_override
 from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
@@ -34,8 +34,8 @@ def _recorder() -> tuple[Callable[[str], str], list[str]]:
     return action, calls
 
 
-def _ui(*, interactive: bool, confirms: list[bool] | None = None) -> UiContext:
-    return UiContext(
+def _ui(*, interactive: bool, confirms: list[bool] | None = None) -> Terminal:
+    return Terminal(
         stdin=TtyStringIO() if interactive else io.StringIO(),
         stdout=io.StringIO(),
         stderr=io.StringIO(),
@@ -382,7 +382,7 @@ def test_failure_lines_do_not_interleave_with_the_spinner() -> None:
         raise HttpError("boom")
 
     stderr = TtyStringIO()
-    ui = UiContext(stdin=io.StringIO(), stdout=io.StringIO())
+    ui = Terminal(stdin=io.StringIO(), stdout=io.StringIO())
     with redirect_stderr(stderr):
         _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
 

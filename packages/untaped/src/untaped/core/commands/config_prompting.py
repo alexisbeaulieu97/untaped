@@ -10,7 +10,7 @@ from untaped.core.config.use_cases import GetSetting
 from untaped.sdk._cli import raise_usage
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk._stdin import read_stdin_text
-from untaped.sdk._ui import ui_context
+from untaped.sdk._ui import build_terminal
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.prompt.prompts import PromptChoice
 
@@ -49,7 +49,7 @@ def _read_stdin_value() -> str:
 def _prompt_value(full_key: str, repo: SettingsReader) -> str:
     descriptor = repo.descriptor(full_key)
     message = f"Value for {full_key}"
-    ui = ui_context(strict=False)
+    ui = build_terminal(strict=False)
     if descriptor.is_secret:
         return ui.secret(message)
     default = _prompt_default(full_key, descriptor, repo)

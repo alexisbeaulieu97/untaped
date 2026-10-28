@@ -13,14 +13,15 @@ release. A plugin never imports `prompt_toolkit`; `untaped lint` flags it
 
 A screen is three pure functions plus declarations. The model is a frozen
 dataclass; `update` returns the next model and the commands to run; `view`
-returns a Rich renderable. `ui.run(screen)` returns what the screen quits with:
+returns a Rich renderable. In a command, `self.ctx.terminal.run(screen)`
+returns what the screen quits with:
 
 ```python
 from dataclasses import dataclass, replace
 
 from rich.text import Text
 from untaped.screen.core import Key
-from untaped.sdk import Cmd, Frame, Quit, Screen, ui_context
+from untaped.sdk import Cmd, Frame, Quit, Screen
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ SCREEN = Screen(
     alternative="untaped acme name --name NAME",
 )
 
-name = ui_context().run(SCREEN)
+name = self.ctx.terminal.run(SCREEN)  # in the command's run
 ```
 
 `init` returns the first model and the commands to start with (`[]` for
@@ -60,14 +61,14 @@ screen where a test backend records or reports one. `command` and
 `alternative` are what the user sees when there is no terminal (see
 [Without a terminal](#without-a-terminal)).
 
-`ui.run` raises `OperationCancelledError` when the user backs out, and
+`terminal.run` raises `OperationCancelledError` when the user backs out, and
 `PromptInterruptedError` (exit 130) on an interrupt, as every prompt does. A
 screen returns a value only by sending `Quit(result)`; `Cancel()` or an
 unhandled esc ends it without one, and an unhandled ctrl-c ends it as an
 interrupt. `layout` is `"full"` (the default: the alternate screen, the whole
 terminal) or `"inline"` (below the cursor, erased when done); use inline only
 for a single question. An inline screen leaves nothing behind; the built-in
-prompts (`ui.text`, `ui.confirm`, ...) print the answer as one plain
+prompts (`terminal.text`, `terminal.confirm`, ...) print the answer as one plain
 `question: answer` line after they close, and a screen that wants a record does
 the same.
 
@@ -127,7 +128,7 @@ command that raises arrives as `CmdError`, never as a crash.
 
 ## Without a terminal
 
-`ui.run` (and `ui.pick_many`, which is a screen too, and the one-shot prompts, once
+`terminal.run` (and `terminal.pick_many`, which is a screen too, and the one-shot prompts, once
 stdin is a terminal) uses stdin and stderr when
 both are terminals. Otherwise (piped stdin, a redirected stderr) it draws on the
 controlling terminal, so a screen never paints into a file. Only when none can
@@ -204,7 +205,7 @@ the rows in view, so a thousand items cost no more than ten; `Viewport` does
 that arithmetic (which rows show, scrolling, following a cursor) for your own
 views.
 
-`ui.pick_many`, the workspace picker, is a screen built from `Panes`,
+`terminal.pick_many`, the workspace picker, is a screen built from `Panes`,
 `SearchList`, `Tree`, `TextInput` and `Buttons`; its `PickRequest` names the
 `command` and `alternative` the no-terminal refusal shows (generic ones when it
 leaves them unset). `allow_empty` lets it confirm with nothing selected; a
@@ -218,7 +219,7 @@ a number, a `SingleList` or `Select` for a `Literal`, a list editor for a
 from its key, so a plugin's settings need no screen code: the help under a setting's row is its
 `Field(description=...)` and its bounds (`gt=0` reads "Above 0."). A command
 that builds its screen only after reading config or probing a store asks
-`ui.require_screen_terminal(command=..., alternative=...)` first, so a run
+`terminal.require_screen_terminal(command=..., alternative=...)` first, so a run
 without a terminal exits 2 having touched nothing.
 
 A `Panes` side may also be a drawing (a function `(frame, focused) ->
@@ -226,14 +227,14 @@ renderable`) for a pane whose model the screen owns; `SearchList` and `Tree`
 take `window_rows` to fit a smaller pane, and `Buttons.boxed_width` says how
 wide a boxed row is.
 
-The one-shot prompts (`ui.text`, `ui.secret`, `ui.select`, `ui.multiselect`,
-`ui.confirm`) are inline screens built from `TextInput`, `SecretInput`,
+The one-shot prompts (`terminal.text`, `terminal.secret`, `terminal.select`,
+`terminal.confirm`) are inline screens built from `TextInput`, `SecretInput`,
 `SingleList`, `SearchList` and `MultiList`, so they look and key like every
 other screen. Esc cancels one (its footer says `esc cancel`, `esc clear` while a
 search query is typed), and so does ctrl-d on an empty answer, as on a line
-prompt. The window of a list is cut to the terminal's height. Unlike `ui.run`,
+prompt. The window of a list is cut to the terminal's height. Unlike `terminal.run`,
 a prompt needs a terminal on stdin (a piped stdin is refused with a usage
-error, unless `ui.terminal` or `confirm_action` secured one); like it, a prompt
+error, unless `terminal.terminal()` or the `Confirm` block secured one); like it, a prompt
 draws on stderr when that is a terminal and on the controlling terminal when it
 is redirected, so it never paints into a log.
 
@@ -254,7 +255,7 @@ each key; pass `commands={name: message}` to stub one by its `Cmd.name`.
 A command's own test does not run the screen: give the scripted backend a
 result, a `Quit(result)`, a `Cancel()`, an exception (instance or class) to
 raise or `ScreenKeys("a", "enter")` to replay through the real screen. The
-scripted backend never touches a terminal, so `ui.run` and `ui.pick_many` do
+scripted backend never touches a terminal, so `terminal.run` and `terminal.pick_many` do
 not look for one:
 `invoke_cli(command, args, prompt_backend=ScriptedPromptBackend(screens=[...]))`
 needs no `terminal=True` and no TTY stdin.

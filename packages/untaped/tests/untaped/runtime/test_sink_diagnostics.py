@@ -27,7 +27,7 @@ from untaped.sdk._cli import (
     resolve_each,
 )
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Terminal
 from untaped.sdk.errors import (
     ConfigError,
     HttpStatusError,
@@ -281,7 +281,7 @@ def test_a_failed_row_counts_in_a_table_list_view(monkeypatch: pytest.MonkeyPatc
     error = Failure.from_exception(UntapedError("broke"))
     row = _Outcome(name="a", action="failed", error=error).model_dump(mode="json")
     theme = ThemeSpec(collection_view="list")
-    monkeypatch.setattr(cli, "ui_context", lambda **_: UiContext(theme=theme))
+    monkeypatch.setattr(cli, "build_terminal", lambda **_: Terminal(theme=theme))
     app = App(name="demo")
 
     @app.default

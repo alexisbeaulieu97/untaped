@@ -109,7 +109,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Select`, `SingleList`,
   `MultiList`, `ListItem`, `Cycle`, `Tabs`, `Tab`, `Buttons`, `Button`,
   `Pressed`, `SearchList`, `Tree`, `TreeRow`, `Tags`, `Viewport`, `Form`,
-  `Submitted` and `Panes`), `UiContext.run`, `UiContext.require_screen_terminal`,
+  `Submitted` and `Panes`), `Terminal.run`, `Terminal.require_screen_terminal`,
   and `untaped.sdk.testing.drive_screen` with `untaped.sdk.testing.ScreenKeys` and
   `untaped.sdk.testing.ScreenRun`. See [Screens](./screens.md).
 - Data files: `DataFile`, `read_data_file`, `write_data_file` and what a
@@ -126,7 +126,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   they write are stable from the start: users keep them, and a stable
   plugin's row fields are `state` lines. See [Plugin state](./state.md).
 - Tree output: `TreeGraph` (with `cycle_edges`), `TreeGraphNode`,
-  `TreeGraphEdge`, `print_tree` and `tree_text` in `untaped.sdk`. The text a
+  `TreeGraphEdge` and `tree_text` in `untaped.sdk` (a renderer returns a
+  `TreeGraph` and core prints it). The text a
   tree draws is for people and outside the promise anyway.
 - Table cells: `TableText` in `untaped.sdk`, a nested model's `table_text()`
   as its cell (lint's locations are its one consumer).

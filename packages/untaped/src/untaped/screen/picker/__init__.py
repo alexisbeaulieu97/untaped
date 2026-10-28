@@ -1,9 +1,9 @@
-"""Public value types for the multi-select picker behind ``UiContext.pick_many``.
+"""Public value types for the multi-select picker behind ``Terminal.pick_many``.
 
 The picker lists :class:`PickItem` entries, lets the user select several and
 set per-item :class:`PickSetting` values, and returns a :class:`PickResult`.
 Nothing here imports prompt_toolkit or Rich: the picker is a screen
-(:mod:`untaped.screen.picker.screen`) that ``UiContext.pick_many`` runs on the screen
+(:mod:`untaped.screen.picker.screen`) that ``Terminal.pick_many`` runs on the screen
 runtime, and its pure reducer is :mod:`untaped.screen.picker.state`.
 """
 

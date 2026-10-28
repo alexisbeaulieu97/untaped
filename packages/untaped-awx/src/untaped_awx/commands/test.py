@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from functools import partial
@@ -63,6 +63,7 @@ from untaped_awx.records import ProvisionOutcome, PruneOutcome, SuiteCase
 from untaped_awx.settings import AwxSettings
 
 if TYPE_CHECKING:
+    from untaped.sdk import Context, Terminal
     from untaped_awx.application.suites.ports import Filesystem
     from untaped_awx.application.suites.preflight import PreflightLaunch
     from untaped_awx.application.suites.resolver import ResolveCasePayload
@@ -130,11 +131,13 @@ def _load_suites(
     cli_vars: dict[str, str],
     vars_files: tuple[Path, ...],
     non_interactive: bool,
+    terminal: Callable[[], Terminal],
     filesystem: Filesystem | None = None,
 ) -> dict[Path, Suite]:
     """Each file's suite; suite names must be unique (``--case SUITE/CASE`` needs it).
 
-    ``filesystem`` reads the files (default: the working tree).
+    ``terminal`` asks for a variable no flag or file gives; ``filesystem``
+    reads the files (default: the working tree).
     """
     from untaped_awx.application.suites.loader import LoadTestSuite  # noqa: PLC0415
     from untaped_awx.infrastructure.suites import (  # noqa: PLC0415
@@ -148,7 +151,7 @@ def _load_suites(
         filesystem or LocalFilesystem(),
         parser=DefaultParser(),
         vars_resolver=resolve_variables,
-        prompt=UiPrompt(force_non_interactive=non_interactive),
+        prompt=UiPrompt(terminal, force_non_interactive=non_interactive),
     )
     file_list = list(paths)
     # Pre-pass: build the union of declared variable names across all files
@@ -173,13 +176,14 @@ def _load_suites(
     return loaded
 
 
-def _loader(suites: TestSuites) -> partial[dict[Path, Suite]]:
-    """:func:`_load_suites` with the variables ``suites`` gives."""
+def _loader(suites: TestSuites, ctx: Context) -> partial[dict[Path, Suite]]:
+    """:func:`_load_suites` with the variables ``suites`` gives, asking on ``ctx``'s terminal."""
     return partial(
         _load_suites,
         cli_vars=dict(suites.var),
         vars_files=tuple(suites.vars_file),
         non_interactive=suites.non_interactive,
+        terminal=lambda: ctx.terminal,
     )
 
 
@@ -293,7 +297,7 @@ class Run(_SuiteCommand):
                 baseline = git_head.pushed_branch()
             default_scope = _jt_scope(ctx, _jt_spec(ctx))
             preflight = PreflightLaunch(ctx.repo, ctx.catalog)
-            load = _loader(self.suites)
+            load = _loader(self.suites, self.ctx)
             provisioning: AbstractContextManager[dict[str, TemplateBinding]] = nullcontext({})
             if source_ref is None:
                 suites = list(load(files).values())
@@ -474,7 +478,7 @@ class List(_SuiteCommand):
     output: Output[SuiteCase]
 
     def run(self) -> Iterator[SuiteCase]:
-        loaded = _loader(self.suites)(_expand_paths(self.paths))
+        loaded = _loader(self.suites, self.ctx)(_expand_paths(self.paths))
         for path, suite in loaded.items():
             for case in suite.cases:
                 yield case_row(path, suite, case)
@@ -542,7 +546,7 @@ class Validate(_SuiteCommand):
         with self.awx() as ctx:
             if scm_branch == "HEAD":
                 scm_branch = git_head.pushed_branch()
-            load = _loader(self.suites)
+            load = _loader(self.suites, self.ctx)
             default_scope = _jt_scope(ctx, _jt_spec(ctx))
             preflight = PreflightLaunch(ctx.repo, ctx.catalog)
             temp: TemporarySet | None = None

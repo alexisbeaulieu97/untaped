@@ -115,7 +115,7 @@ def _failure_reason(ev: JobEvent) -> list[str]:
 def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
     """Return :class:`rich.text.Text` with status styling.
 
-    Print with ``UiContext.styled`` so colour is emitted on TTY and
+    Return it from an ``Output`` renderer so colour is emitted on TTY and
     stripped on pipes — no manual ``isatty`` check required.
 
     When ``prefix`` is non-empty, ``[<prefix>] `` is prepended (dim

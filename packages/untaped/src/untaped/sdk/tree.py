@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple, Self
 from pydantic import BaseModel, ConfigDict, model_validator
 from rich.cells import cell_len
 
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._ui import Terminal, build_terminal, print_styled
 from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
@@ -103,7 +103,7 @@ class TreeGraph(BaseModel):
 
 
 @experimental
-def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None = None) -> None:
+def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: Terminal | None = None) -> None:
     """Print ``graphs`` to stdout in one write, separated by a blank line (none: nothing).
 
     Color only where stdout supports it; a line too wide for the terminal
@@ -112,7 +112,7 @@ def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None 
     """
     from rich.text import Text  # noqa: PLC0415 — Rich styling only when printing
 
-    ui = ui or ui_context()
+    ui = ui or build_terminal()
     lines = _lines(graphs, _glyphs(ui))
     if not lines:
         return
@@ -123,15 +123,15 @@ def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None 
     text: Text = Text("\n").join(
         Text.assemble(*((segment.text, styles[segment.role]) for segment in line)) for line in lines
     )
-    ui.styled(text, truncate=True)
+    print_styled(ui, text, truncate=True)
 
 
 @experimental
-def tree_text(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None = None) -> str:
+def tree_text(graphs: TreeGraph | Sequence[TreeGraph], *, ui: Terminal | None = None) -> str:
     """The lines :func:`print_tree` prints, as plain text (for a file)."""
     return "\n".join(
         "".join(segment.text for segment in line)
-        for line in _lines(graphs, _glyphs(ui or ui_context()))
+        for line in _lines(graphs, _glyphs(ui or build_terminal()))
     )
 
 
@@ -176,7 +176,7 @@ _NOTE_COLUMN_MAX = 56
 """Notes line up after the widest row up to this column, then follow two spaces."""
 
 
-def _glyphs(ui: UiContext) -> _Glyphs:
+def _glyphs(ui: Terminal) -> _Glyphs:
     return _ASCII if ui.theme.border == "ascii" else _UNICODE
 
 

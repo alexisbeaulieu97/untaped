@@ -8,11 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.sdk import TreeGraph, TreeGraphEdge, TreeGraphNode, UiContext, print_tree, tree_text
+from untaped.sdk import Terminal, TreeGraph, TreeGraphEdge, TreeGraphNode, tree_text
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.testing import TtyStringIO
+from untaped.sdk.tree import print_tree
 
-_UNICODE = UiContext()
+_UNICODE = Terminal()
 
 
 def _node(key: str, **extra: object) -> TreeGraphNode:
@@ -31,7 +32,7 @@ def _graph(edges: list[TreeGraphEdge], *, root: TreeGraphNode | None = None, **e
     return TreeGraph(root=root, nodes=nodes, edges=tuple(edges), **extra)
 
 
-def _text(graph: TreeGraph | list[TreeGraph], ui: UiContext = _UNICODE) -> list[str]:
+def _text(graph: TreeGraph | list[TreeGraph], ui: Terminal = _UNICODE) -> list[str]:
     return tree_text(graph, ui=ui).splitlines()
 
 
@@ -237,9 +238,9 @@ def test_ascii_glyphs_under_an_ascii_border() -> None:
         [_edge("app", "a"), _edge("app", "b"), _edge("a", "c"), _edge("b", "c"), _edge("c", "d")]
     )
 
-    assert _text(graph, UiContext(theme=BUILTIN_THEMES["plain"])) == expected
-    assert _text(graph, UiContext(theme=ThemeSpec(border="ascii"))) == expected
-    assert _text(repeated, UiContext(theme=ThemeSpec(border="ascii")))[-2:] == [
+    assert _text(graph, Terminal(theme=BUILTIN_THEMES["plain"])) == expected
+    assert _text(graph, Terminal(theme=ThemeSpec(border="ascii"))) == expected
+    assert _text(repeated, Terminal(theme=ThemeSpec(border="ascii")))[-2:] == [
         "    `-- c",
         "        `-- ... see [1]",
     ]
@@ -269,7 +270,7 @@ def test_a_graph_with_unknown_or_duplicate_keys_is_refused(build, message: str) 
 
 def _styled(graph: TreeGraph, theme: ThemeSpec | None = None) -> str:
     stream = TtyStringIO()
-    print_tree(graph, ui=UiContext(stdout=stream, theme=theme))
+    print_tree(graph, ui=Terminal(stdout=stream, theme=theme))
     return stream.getvalue()
 
 
@@ -324,12 +325,12 @@ def test_print_tree_is_plain_when_piped_and_cuts_lines_wider_than_the_terminal(m
     monkeypatch.delenv("COLUMNS", raising=False)
     piped = io.StringIO()
 
-    print_tree(graph, ui=UiContext(stdout=piped))
+    print_tree(graph, ui=Terminal(stdout=piped))
 
     assert piped.getvalue() == "app\n└── a-very-long-node-name  with notes\n"
     monkeypatch.setenv("COLUMNS", "20")
     narrow = io.StringIO()
-    print_tree(graph, ui=UiContext(stdout=narrow))
+    print_tree(graph, ui=Terminal(stdout=narrow))
     assert narrow.getvalue() == "app\n└── a-very-long-nod…\n"
 
 
@@ -353,7 +354,7 @@ def test_a_placeholder_line_does_not_widen_the_notes_column() -> None:
 def test_no_graphs_print_nothing() -> None:
     stream = io.StringIO()
 
-    print_tree([], ui=UiContext(stdout=stream))
+    print_tree([], ui=Terminal(stdout=stream))
 
     assert stream.getvalue() == ""
 

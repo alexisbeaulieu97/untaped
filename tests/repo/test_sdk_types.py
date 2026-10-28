@@ -18,7 +18,7 @@ SDK = REPO_ROOT / "packages/untaped/src/untaped/sdk/_exports.py"
 
 SNIPPET = """\
 import untaped.sdk
-from untaped.sdk import Cmd, Screen, TextInput, UiContext
+from untaped.sdk import Cmd, Screen, TextInput, Terminal
 from untaped.sdk import Scren  # line 3: a typo in an import
 from untaped.sdk import emmit  # line 4: a typo in a helper
 
@@ -29,7 +29,7 @@ def title(screen: Screen[int, str]) -> str:
     return screen.title
 
 
-def run(ui: UiContext, screen: Screen[int, str]) -> str:
+def run(ui: Terminal, screen: Screen[int, str]) -> str:
     return ui.run(screen)
 
 

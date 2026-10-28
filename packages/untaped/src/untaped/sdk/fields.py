@@ -30,7 +30,7 @@ from enum import Enum
 from functools import cache
 from pathlib import Path
 from types import UnionType
-from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, Self, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
 from pydantic.types import PathType
@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
     from untaped.sdk._cli import OutputFormat
     from untaped.sdk._pipe import PipeEnvelope
+    from untaped.sdk.tree import TreeGraph
 
 # --- positionals and marks ------------------------------------------------------
 
@@ -521,7 +522,8 @@ class Output[R: BaseModel](FieldBlock):
     command its own default columns (a one-record table shows them even when empty),
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it, though ``--columns`` still
-    prints core's table), and ``Output(format="raw")`` makes another
+    prints core's table): the renderer returns what to print and core prints
+    it (:func:`print_rendered`), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
     ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
     yields as it comes (a log being followed): json one object per line, yaml
@@ -661,7 +663,7 @@ class Output[R: BaseModel](FieldBlock):
             count_row_failures,
             emit_with,
         )
-        from untaped.sdk._ui import ui_context  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._ui import build_terminal  # noqa: PLC0415 - rendering is heavy
 
         count_failed_actions([records] if isinstance(records, BaseModel) else records)
         renderer = self.render.get(self.format)
@@ -669,7 +671,7 @@ class Output[R: BaseModel](FieldBlock):
             renderer = None  # --columns asks for core's table, whatever replaced it
         if renderer is not None:
             count_row_failures([records] if isinstance(records, BaseModel) else records)
-            renderer(records)
+            print_rendered(renderer(records))
             return
         if self._requested == ["?"] and records == [] and self._model is not None:
             # no row to read the columns from: ``R`` names them
@@ -678,7 +680,7 @@ class Output[R: BaseModel](FieldBlock):
         # The run is over: a broken ``ui`` section draws the default theme rather
         # than losing what it printed.
         themed = self.format in ("table", "tree")
-        ui = ui_context(strict=False) if themed else None
+        ui = build_terminal(strict=False) if themed else None
         columns = self._requested
         detail = isinstance(records, BaseModel) and self.format == "table"
         if columns is None and self._declared and detail:
@@ -720,6 +722,55 @@ class Output[R: BaseModel](FieldBlock):
                 )
 
 
+class Verbatim(str):
+    """Text a renderer returns to print byte for byte, with no newline added.
+
+    For content a script writes to a file, where a newline the content does not
+    end with would change it: ``return Verbatim(document)``.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls, text: str) -> Self:
+        return super().__new__(cls, text)
+
+
+type Printable = str | Text | TreeGraph
+"""One thing a renderer returns for core to print: a line or block, styled text, a tree."""
+
+type Rendered = Printable | Sequence[Printable] | None
+"""What an ``Output`` renderer returns: one printable, several in order, or nothing."""
+
+
+def print_rendered(rendered: Rendered) -> None:
+    """Print what a plugin renderer returned, in the run's theme.
+
+    A string prints as it is, then a newline; a :class:`Verbatim` prints
+    with nothing added. Styled text prints in colour
+    where stdout supports it. Trees print as one block, themed, a line too wide
+    for the terminal ending in an ellipsis. ``None`` prints nothing.
+    """
+    from rich.text import Text  # noqa: PLC0415 - rendering is heavy
+
+    from untaped.sdk._ui import build_terminal, print_styled  # noqa: PLC0415
+    from untaped.sdk.tree import TreeGraph, print_tree  # noqa: PLC0415
+
+    if rendered is None:
+        return
+    items = [rendered] if isinstance(rendered, str | Text | TreeGraph) else list(rendered)
+    terminal = build_terminal(strict=False)  # the run is over: a broken ``ui`` draws the default
+    if items and all(isinstance(item, TreeGraph) for item in items):
+        print_tree(cast("list[TreeGraph]", items), ui=terminal)
+        return
+    for item in items:
+        if isinstance(item, str):
+            print(item, end="" if isinstance(item, Verbatim) else "\n", flush=True)
+        elif isinstance(item, TreeGraph):
+            print_tree(item, ui=terminal)
+        else:
+            print_styled(terminal, item)
+
+
 class _Stream:
     """One streamed run's printing: each row as it comes, the table's header once."""
 
@@ -744,7 +795,7 @@ class _Stream:
             renderer = None  # --columns asks for core's table, whatever replaced it
         if renderer is not None:
             count_row_failures([record])
-            renderer(record)
+            print_rendered(renderer(record))
         elif output.format == "table":
             count_row_failures([record])
             self._table_line(record)

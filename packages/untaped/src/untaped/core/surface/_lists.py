@@ -26,7 +26,7 @@ IMPLEMENTERS: Mapping[str, str] = {
     "untaped.sdk.contracts.Contract": "every provider subclasses it, and the SDK calls its ready()",
     "untaped.sdk.testing.PromptBackend": (
         "tests pass their own backend to invoke_cli(prompt_backend=) and "
-        "UiContext(prompt_backend=), and the SDK calls its methods"
+        "Terminal(prompt_backend=), and the SDK calls its methods"
     ),
 }
 

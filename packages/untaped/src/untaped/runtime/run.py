@@ -51,7 +51,7 @@ from untaped.sdk.projects import untaped_home
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration
-    from untaped.sdk._ui import UiContext
+    from untaped.sdk._ui import Terminal
 
 
 def composition_of(
@@ -99,9 +99,9 @@ def start_run(*, home: Path | None = None, profiles: str | Sequence[str] = ()) -
     root's token pass writes the line's onto it instead. Its output is its
     own, and ``UNTAPED_DIAGNOSTICS`` is read now, as the run's other inputs are.
     """
-    built: list[UiContext] = []
+    built: list[Terminal] = []
 
-    def terminal() -> UiContext:
+    def terminal() -> Terminal:
         if not built:
             built.append(app_context().ui())
         return built[0]

@@ -223,7 +223,7 @@ class Get(Command[CoreSettings]):
     output: Output[Setting] = Output(
         format="raw",
         columns=_GET_COLUMNS,
-        render={"raw": lambda row: _print_value(row)},
+        render={"raw": lambda row: _value(row)},
     )
 
     def run(self) -> Setting:
@@ -233,9 +233,8 @@ class Get(Command[CoreSettings]):
         return setting_entry_row(entry, human=self.output.format in ("table", "raw"))
 
 
-def _print_value(row: Setting) -> None:
-    if row.value is not None:
-        echo(str(row.value))
+def _value(row: Setting) -> str | None:
+    return None if row.value is None else str(row.value)
 
 
 class Set(Command[CoreSettings]):

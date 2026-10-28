@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from rich.text import Text
 
     from untaped.sdk._theme import ThemeSpec
-    from untaped.sdk._ui import UiContext
+    from untaped.sdk._ui import Terminal
     from untaped.sdk.diagnostic import Diagnostic, Failure
     from untaped.sdk.errors import UntapedError
     from untaped.sdk.network.http import HttpFactory
@@ -256,7 +256,7 @@ class Run:
     picks: Callable[[str, type[BaseModel]], BaseModel]
     diag: Diag
     #: The terminal handle, built on first use (prompts and screens need one).
-    terminal: Callable[[], UiContext]
+    terminal: Callable[[], Terminal]
     #: What every block reads time from (:func:`run_clock`).
     clock: Clock = field(default_factory=Clock)
     #: What blocks noted during ``run``, for core to read after it.
@@ -568,7 +568,7 @@ class Context(ProviderContext):
     """
 
     @property
-    def terminal(self) -> UiContext:
+    def terminal(self) -> Terminal:
         return self._run.terminal()
 
 

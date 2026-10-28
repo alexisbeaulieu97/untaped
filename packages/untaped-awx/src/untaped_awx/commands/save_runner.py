@@ -6,7 +6,7 @@ import stat
 from collections.abc import Iterator
 from pathlib import Path
 
-from untaped.sdk import UntapedError, atomic_write, echo
+from untaped.sdk import UntapedError, atomic_write
 from untaped_awx.application import SaveResource, SaveResources
 from untaped_awx.application.resources.selection import SelectedResource
 from untaped_awx.commands.context import AwxContext
@@ -24,19 +24,16 @@ def document_row(resource: Resource, text: str, *, path: Path | None = None) -> 
     return row
 
 
-def print_yaml(rows: Document | list[Document]) -> None:
+def yaml_text(rows: Document | list[Document]) -> str | None:
     """``--format yaml``: the documents as one multi-document stream ``apply -`` reads."""
     documents = [rows] if isinstance(rows, Document) else rows
-    text = "---\n".join(row._text or _dumped(row) for row in documents)
-    if text:
-        echo(text)
+    return "---\n".join(row._text or _dumped(row) for row in documents) or None
 
 
-def print_paths(rows: Document | list[Document]) -> None:
+def path_lines(rows: Document | list[Document]) -> list[str]:
     """``--format paths``: the file each document was written to, one per line."""
-    for row in [rows] if isinstance(rows, Document) else rows:
-        if row._path is not None:
-            echo(str(row._path))
+    documents = [rows] if isinstance(rows, Document) else rows
+    return [str(row._path) for row in documents if row._path is not None]
 
 
 def _dumped(row: Document) -> str:

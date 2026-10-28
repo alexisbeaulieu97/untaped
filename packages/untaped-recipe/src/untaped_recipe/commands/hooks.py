@@ -18,7 +18,7 @@ from untaped.sdk import (
     Positional,
     TextOrStdin,
     UsageError,
-    echo,
+    Verbatim,
     run_editor,
     unified_diff_text,
 )
@@ -131,12 +131,11 @@ class Init(RecipeCommand):
         return str(path)
 
 
-def _text(row: HookRun) -> None:
+def _text(row: HookRun) -> str | None:
     """The ``text`` format: a transform's content (or diff), a validate's verdict."""
     if row.kind == "transform":
-        echo(row.diff if row.diff is not None else row.content or "", nl=False)
-    else:
-        echo(f"{row.status}: {row.message}" if row.message else row.status)
+        return Verbatim(row.diff if row.diff is not None else row.content or "")
+    return f"{row.status}: {row.message}" if row.message else row.status
 
 
 class Run(RecipeCommand):

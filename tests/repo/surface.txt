@@ -7703,6 +7703,32 @@ sdk untaped.sdk.TargetRecord(error=) default=None
 sdk untaped.sdk.TargetRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.TargetRecord.error
 sdk untaped.sdk.TargetRecord.target_path
+sdk untaped.sdk.Terminal()
+sdk untaped.sdk.Terminal(prompt_backend=) default=None
+sdk untaped.sdk.Terminal(quiet=) default=false
+sdk untaped.sdk.Terminal(stderr=) default=None
+sdk untaped.sdk.Terminal(stdin=) default=None
+sdk untaped.sdk.Terminal(stdout=) default=None
+sdk untaped.sdk.Terminal(theme=) default=None
+sdk untaped.sdk.Terminal(verbose=) default=false
+sdk untaped.sdk.Terminal.can_prompt
+sdk untaped.sdk.Terminal.confirm(default=) default=false
+sdk untaped.sdk.Terminal.confirm(message)
+sdk untaped.sdk.Terminal.pick_many(request)
+sdk untaped.sdk.Terminal.prompt_backend
+sdk untaped.sdk.Terminal.require_screen_terminal(*, command, alternative)  [experimental]
+sdk untaped.sdk.Terminal.run(screen)  [experimental]
+sdk untaped.sdk.Terminal.secret(confirmation=) default=false
+sdk untaped.sdk.Terminal.secret(message)
+sdk untaped.sdk.Terminal.secret(required=) default=true
+sdk untaped.sdk.Terminal.select(default=) default=None
+sdk untaped.sdk.Terminal.select(message, choices)
+sdk untaped.sdk.Terminal.select(search=) default=false
+sdk untaped.sdk.Terminal.terminal()
+sdk untaped.sdk.Terminal.terminal(refusal=) default="interactive input requires a terminal"
+sdk untaped.sdk.Terminal.text(default=) default=None
+sdk untaped.sdk.Terminal.text(message)
+sdk untaped.sdk.Terminal.text(required=) default=true
 sdk untaped.sdk.TextInput(choice@11=) default=0  [experimental]
 sdk untaped.sdk.TextInput(complete@8=) default=None  [experimental]
 sdk untaped.sdk.TextInput(cursor@3=) default=None  [experimental]
@@ -7805,53 +7831,6 @@ sdk untaped.sdk.TreeRow.children  [experimental]
 sdk untaped.sdk.TreeRow.id  [experimental]
 sdk untaped.sdk.TreeRow.label  [experimental]
 sdk untaped.sdk.TreeRow.summary  [experimental]
-sdk untaped.sdk.UiContext()
-sdk untaped.sdk.UiContext(prompt_backend=) default=None
-sdk untaped.sdk.UiContext(quiet=) default=false
-sdk untaped.sdk.UiContext(stderr=) default=None
-sdk untaped.sdk.UiContext(stdin=) default=None
-sdk untaped.sdk.UiContext(stdout=) default=None
-sdk untaped.sdk.UiContext(theme=) default=None
-sdk untaped.sdk.UiContext(verbose=) default=false
-sdk untaped.sdk.UiContext.can_prompt
-sdk untaped.sdk.UiContext.collection(columns=) default=None
-sdk untaped.sdk.UiContext.collection(empty=) default=None
-sdk untaped.sdk.UiContext.collection(kind=) default=None
-sdk untaped.sdk.UiContext.collection(rows, *, fmt)
-sdk untaped.sdk.UiContext.confirm(default=) default=false
-sdk untaped.sdk.UiContext.confirm(message)
-sdk untaped.sdk.UiContext.confirm_action(assume_yes=) default=false
-sdk untaped.sdk.UiContext.confirm_action(default=) default=false
-sdk untaped.sdk.UiContext.confirm_action(message)
-sdk untaped.sdk.UiContext.confirm_action(refusal=) default="confirmation requires --yes when not interactive"
-sdk untaped.sdk.UiContext.confirm_or_cancel(assume_yes=) default=false
-sdk untaped.sdk.UiContext.confirm_or_cancel(message)
-sdk untaped.sdk.UiContext.confirm_or_cancel(preview=) default=None callback(0)
-sdk untaped.sdk.UiContext.confirm_or_cancel(refusal=) default="confirmation requires --yes when not interactive"
-sdk untaped.sdk.UiContext.detail(columns=) default=None
-sdk untaped.sdk.UiContext.detail(kind=) default=None
-sdk untaped.sdk.UiContext.detail(record, *, fmt)
-sdk untaped.sdk.UiContext.multiselect(defaults=) default=None
-sdk untaped.sdk.UiContext.multiselect(message, choices)
-sdk untaped.sdk.UiContext.multiselect(min_count=) default=0
-sdk untaped.sdk.UiContext.pick_many(request)
-sdk untaped.sdk.UiContext.prompt_backend
-sdk untaped.sdk.UiContext.require_screen_terminal(*, command, alternative)  [experimental]
-sdk untaped.sdk.UiContext.run(screen)  [experimental]
-sdk untaped.sdk.UiContext.secret(confirmation=) default=false
-sdk untaped.sdk.UiContext.secret(message)
-sdk untaped.sdk.UiContext.secret(required=) default=true
-sdk untaped.sdk.UiContext.select(default=) default=None
-sdk untaped.sdk.UiContext.select(message, choices)
-sdk untaped.sdk.UiContext.select(search=) default=false
-sdk untaped.sdk.UiContext.styled(tail=) default=""
-sdk untaped.sdk.UiContext.styled(text)
-sdk untaped.sdk.UiContext.styled(truncate=) default=false
-sdk untaped.sdk.UiContext.terminal()
-sdk untaped.sdk.UiContext.terminal(refusal=) default="interactive input requires a terminal"
-sdk untaped.sdk.UiContext.text(default=) default=None
-sdk untaped.sdk.UiContext.text(message)
-sdk untaped.sdk.UiContext.text(required=) default=true
 sdk untaped.sdk.UnknownHolder(*, label)  [experimental]
 sdk untaped.sdk.UnknownHolder.label  [experimental]
 sdk untaped.sdk.Unreadable(reason)  [experimental]
@@ -7889,6 +7868,7 @@ sdk untaped.sdk.UsageError.hint class
 sdk untaped.sdk.UsageError.retryable
 sdk untaped.sdk.UsageError.system class
 sdk untaped.sdk.UtcTimestamp
+sdk untaped.sdk.Verbatim(text)
 sdk untaped.sdk.Viewport(content_height)  [experimental]
 sdk untaped.sdk.Viewport(offset@2=) default=0  [experimental]
 sdk untaped.sdk.Viewport.around(first, stop, rows)  [experimental]
@@ -8376,8 +8356,6 @@ sdk untaped.sdk.plugin_path(*parts)
 sdk untaped.sdk.plugin_path(name)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
-sdk untaped.sdk.print_tree(graphs)  [experimental]
-sdk untaped.sdk.print_tree(ui=) default=None  [experimental]
 sdk untaped.sdk.project_at(path)  [experimental]
 sdk untaped.sdk.projects.Project(*, id, root)  [experimental]
 sdk untaped.sdk.projects.Project(copy_of=) default=None  [experimental]
@@ -8743,9 +8721,8 @@ sdk untaped.sdk.testing.PluginCheckRow.status
 sdk untaped.sdk.testing.PluginCheckRow.title
 sdk untaped.sdk.testing.ProgressClock()
 sdk untaped.sdk.testing.ProgressClock.advance(seconds)
-sdk untaped.sdk.testing.PromptBackend implement=confirm,multiselect,pick_many,secret,select,text
+sdk untaped.sdk.testing.PromptBackend implement=confirm,pick_many,secret,select,text
 sdk untaped.sdk.testing.PromptBackend.confirm(message: string, *, default: boolean) -> boolean
-sdk untaped.sdk.testing.PromptBackend.multiselect(message: string, choices: PromptChoice[object][], *, defaults: array) -> array
 sdk untaped.sdk.testing.PromptBackend.pick_many(request: PickRequest) -> PickResult?
 sdk untaped.sdk.testing.PromptBackend.secret(message: string, *, confirmation: boolean) -> string
 sdk untaped.sdk.testing.PromptBackend.select(message: string, choices: PromptChoice[object][], *, default: any?, search: boolean) -> any
@@ -8777,7 +8754,6 @@ sdk untaped.sdk.testing.ScreenRun.result  [experimental]
 sdk untaped.sdk.testing.ScriptedPromptBackend()
 sdk untaped.sdk.testing.ScriptedPromptBackend(confirms=) default=[]
 sdk untaped.sdk.testing.ScriptedPromptBackend(interrupt=) default=false
-sdk untaped.sdk.testing.ScriptedPromptBackend(multiselects=) default=[]
 sdk untaped.sdk.testing.ScriptedPromptBackend(picks=) default=[]
 sdk untaped.sdk.testing.ScriptedPromptBackend(screens=) default=[]
 sdk untaped.sdk.testing.ScriptedPromptBackend(secrets=) default=[]
@@ -8789,7 +8765,6 @@ sdk untaped.sdk.testing.ScriptedPromptBackend.answers(*answers)
 sdk untaped.sdk.testing.ScriptedPromptBackend.answers(yes=) default=None
 sdk untaped.sdk.testing.ScriptedPromptBackend.calls
 sdk untaped.sdk.testing.ScriptedPromptBackend.confirm(message, *, default)
-sdk untaped.sdk.testing.ScriptedPromptBackend.multiselect(message, choices, *, defaults)
 sdk untaped.sdk.testing.ScriptedPromptBackend.needs_terminal class
 sdk untaped.sdk.testing.ScriptedPromptBackend.pick_many(request)
 sdk untaped.sdk.testing.ScriptedPromptBackend.picks()
@@ -8808,7 +8783,6 @@ sdk untaped.sdk.testing.ScriptedTerminal.answers()
 sdk untaped.sdk.testing.ScriptedTerminal.answers(*answers)
 sdk untaped.sdk.testing.ScriptedTerminal.answers(yes=) default=None
 sdk untaped.sdk.testing.ScriptedTerminal.confirm(message, *, default)
-sdk untaped.sdk.testing.ScriptedTerminal.multiselect(message, choices, *, defaults)
 sdk untaped.sdk.testing.ScriptedTerminal.needs_terminal class
 sdk untaped.sdk.testing.ScriptedTerminal.pick_many(request)
 sdk untaped.sdk.testing.ScriptedTerminal.picks()
@@ -8928,12 +8902,6 @@ sdk untaped.sdk.testing.write_reference(version=) default=None  [experimental]
 sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]
 sdk untaped.sdk.tree_text(ui=) default=None  [experimental]
-sdk untaped.sdk.ui_context()
-sdk untaped.sdk.ui_context(stderr=) default=None
-sdk untaped.sdk.ui_context(stdin=) default=None
-sdk untaped.sdk.ui_context(stdout=) default=None
-sdk untaped.sdk.ui_context(strict=) default=true
-sdk untaped.sdk.ui_context(theme=) default=None
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
 sdk untaped.sdk.write_data_file(path, value)  [experimental]
