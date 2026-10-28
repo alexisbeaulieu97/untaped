@@ -806,7 +806,7 @@ def _instance(
 
                 name = option.flag or option.metavar
                 if piped:  # one stdin: the rows or this text, never both
-                    raise UsageError(f"{name}: - reads stdin, so it cannot be combined with --stdin")
+                    raise UsageError(f"{name}: - reads stdin, so it can't be combined with --stdin")
                 if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
                     raise UsageError(f"{name}: - reads stdin; pipe it")
                 value = read_stdin_text()

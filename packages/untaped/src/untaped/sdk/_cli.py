@@ -364,6 +364,8 @@ def echo(
 ) -> None:
     """Print a CLI message to stdout or stderr.
 
+    Each stdout message is flushed, so lines a command prints as it goes
+    stream through a pipe.
     ``err=True``: deprecated, and its warning names the release that removes
     it; write stderr through ``ctx.diag``.
     A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON
@@ -375,7 +377,7 @@ def echo(
     if err:
         current_sink().echo(str(message), end=end)
         return
-    print(message, end=end)
+    print(message, end=end, flush=True)
 
 
 # untaped's mark dates each on the surface; the literal under it is what mypy reports

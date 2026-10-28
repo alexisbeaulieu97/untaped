@@ -179,7 +179,8 @@ def command_body(site: Site, command: CommandDecl) -> list[str]:
     read_first = [guide for target in command.guides if (guide := site.guide(target))]
     lines += [""] if read_first else []
     lines += [f"Read first: `untaped docs {g.plugin} guides {g.name}`." for g in read_first]
-    lines += ["", "## Usage", f"`{site.declaration.usage(command)}`", *option_lines(command.options)]
+    lines += ["", "## Usage", f"`{site.declaration.usage(command)}`"]
+    lines += option_lines(command.options)
     lines += _files(site, "Inputs", command.inputs)
     lines += _files(site, "Writes", command.writes)
     lines += _outputs(site, command)

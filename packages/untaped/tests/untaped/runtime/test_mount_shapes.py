@@ -308,7 +308,7 @@ def test_an_optional_text_or_stdin_reads_a_dash() -> None:
 def test_a_dash_and_stdin_rows_both_reading_stdin_is_a_usage_error() -> None:
     result = _run("shapes", "kinds", "-", "--stdin", input="piped\n")
     assert result.exit_code == 2
-    assert "- reads stdin, so it cannot be combined with --stdin" in result.stderr
+    assert "- reads stdin, so it can't be combined with --stdin" in result.stderr
 
 
 def test_the_usage_line_names_an_optional_argument_as_its_page_does() -> None:
