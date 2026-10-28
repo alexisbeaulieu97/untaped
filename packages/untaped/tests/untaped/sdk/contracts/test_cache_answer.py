@@ -31,7 +31,7 @@ from untaped.sdk._run import recording
 from untaped.sdk.contracts import Errored, Ok, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._gather import Answers
-from untaped.sdk.diagnostic import Diagnostic, Failure, Message, Progress, StaleData
+from untaped.sdk.diagnostic import Diagnostic, Failure, Message, Progress, Stale
 from untaped.sdk.errors import HttpTransportError, UntapedError
 from untaped.sdk.storage.cache import RETRY_AFTER, Cache, Filled
 from untaped.sdk.testing import CacheClock, ProgressClock, cache_clock, progress_clock
@@ -63,8 +63,8 @@ def _restamp(entry: Path, **changes: object) -> None:
     entry.write_text(json.dumps({"untaped": stamp}) + "\n" + value + "\n")
 
 
-def _stale(emitted: list[Diagnostic]) -> list[StaleData]:
-    return [each for each in emitted if isinstance(each, StaleData)]
+def _stale(emitted: list[Diagnostic]) -> list[Stale]:
+    return [each for each in emitted if isinstance(each, Stale)]
 
 
 def _stale_library(clock: CacheClock) -> None:
@@ -188,7 +188,7 @@ def test_two_threads_reading_one_answers_say_its_line_once(clock: CacheClock) ->
     _stale_library(clock)
     with recording() as emitted, invocation():
         answers = gather(BookSource.books)()
-        taken: list[tuple[StaleData, ...]] = []
+        taken: list[tuple[Stale, ...]] = []
         threads = [
             threading.Thread(target=lambda: taken.append(answers.take_stale())) for _ in range(8)
         ]
@@ -445,7 +445,7 @@ def test_a_failed_refresh_closes_its_task_before_the_line(clock: CacheClock) -> 
     kinds = [
         each.state if isinstance(each, Progress) else "stale"
         for each in emitted
-        if isinstance(each, Progress | StaleData)
+        if isinstance(each, Progress | Stale)
     ]
     assert kinds[-2:] == ["failed", "stale"]
 

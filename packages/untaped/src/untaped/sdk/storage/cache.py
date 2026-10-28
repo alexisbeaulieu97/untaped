@@ -68,7 +68,7 @@ from untaped.runtime.settings import load_settings_section, registered_profile_m
 from untaped.runtime.sink import current_sink
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._run import run_clock
-from untaped.sdk.diagnostic import NOT_COUNTED, Failure, StaleData, format_utc, parse_utc
+from untaped.sdk.diagnostic import NOT_COUNTED, Failure, Stale, format_utc, parse_utc
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.git import safe_path_segment
 from untaped.sdk.network.upstream import fail_fast, full_retries
@@ -112,7 +112,7 @@ class CallState:
     caller: str = "a provider"
     stale: BaseException | None = None
     refreshed_at: datetime | None = None
-    stale_lines: list[StaleData] = field(default_factory=list)
+    stale_lines: list[Stale] = field(default_factory=list)
 
     def served(self, at: datetime) -> None:
         if self.refreshed_at is None or at < self.refreshed_at:
@@ -1560,7 +1560,7 @@ class Cache[M = None](OwnedBlock):
         plugin: str | None = None,
         max_age: timedelta | None = None,
         options: bool = True,
-    ) -> StaleData:
+    ) -> Stale:
         """The ``untaped.stale`` line for ``key`` served from ``freshness``.
 
         ``options``: the reader has ``--refresh``/``--cached`` to suggest (an
@@ -1572,7 +1572,7 @@ class Cache[M = None](OwnedBlock):
             hint = "pass --refresh to retry them"
         elif options and freshness.error is not None and freshness.attempted_at == started:
             hint = "retry later, or pass --cached to read it without checking"
-        line = StaleData.describe(
+        line = Stale.describe(
             plugin=self.plugin if plugin is None else plugin,
             subject=label,
             cache=self.qualified,
@@ -1594,7 +1594,7 @@ class Cache[M = None](OwnedBlock):
             line = line.model_copy(update={"message": f"{line.message}, or pass --refresh"})
         return line
 
-    def _emit_stale(self, line: StaleData) -> None:
+    def _emit_stale(self, line: Stale) -> None:
         """The one place a stale line leaves :meth:`serve`: deferred under a call state.
 
         Inside a provider call the line waits on the call state for whoever

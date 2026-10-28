@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
-from untaped.core.commands.records import PluginCheckRow
+from untaped.core.commands.records import PluginCheck
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.sdk.errors import UsageError, first_validation_error
@@ -39,7 +39,7 @@ def check_plugins(
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
     name: str | None,
-) -> list[PluginCheckRow]:
+) -> list[PluginCheck]:
     """Every finding for plugin ``name``, or for every installed plugin when it is ``None``.
 
     The conventions that read only the plugin's files are lint's, not run here.
@@ -49,7 +49,7 @@ def check_plugins(
     installed = sorted({candidate.name for candidate in candidates})
     if name is not None and name not in installed:
         raise UsageError(not_found("plugin", name, known=installed))
-    rows: list[PluginCheckRow] = []
+    rows: list[PluginCheck] = []
     with kept_composition():
         for each in [name] if name is not None else installed:
             rows += _check(each, result, candidates)
@@ -60,9 +60,9 @@ def _check(
     name: str,
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
-) -> list[PluginCheckRow]:
-    def row(check: str, title: str, status: str, detail: str = "") -> PluginCheckRow:
-        return PluginCheckRow(plugin=name, check=check, title=title, status=status, detail=detail)
+) -> list[PluginCheck]:
+    def row(check: str, title: str, status: str, detail: str = "") -> PluginCheck:
+        return PluginCheck(plugin=name, check=check, title=title, status=status, detail=detail)
 
     quarantined = next((record for record in result.quarantine if record.name == name), None)
     if quarantined is not None:
@@ -76,12 +76,10 @@ def _check(
     return rows
 
 
-type _Row = Callable[..., PluginCheckRow]
+type _Row = Callable[..., PluginCheck]
 
 
-def _conventions(
-    name: str, candidates: Sequence[PluginCandidate], row: _Row
-) -> list[PluginCheckRow]:
+def _conventions(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> list[PluginCheck]:
     # rules import the root
     from untaped.core.plugin_check.rules import plugin_violations  # noqa: PLC0415
 
@@ -91,7 +89,7 @@ def _conventions(
         return [row("conventions", "plugin-name", "fail", str(exc))]
     if not found:
         return [row("conventions", "conventions", "pass", "no violations")]
-    rows: list[PluginCheckRow] = []
+    rows: list[PluginCheck] = []
     for line in found:
         where, rule, detail = [*line.split("::", 2), "", ""][:3]
         rows.append(row("conventions", rule, "fail", f"{where}: {detail}" if detail else where))
@@ -102,7 +100,7 @@ def _hermetic(names: Sequence[str], candidates: Sequence[PluginCandidate]) -> li
     return [candidate for candidate in candidates if candidate.name in names]
 
 
-def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> list[PluginCheckRow]:
+def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> list[PluginCheck]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415
         owned_contracts,
@@ -118,14 +116,14 @@ def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> l
 
 def _offers(
     spec: PluginSpec, candidates: Sequence[PluginCandidate], row: _Row
-) -> list[PluginCheckRow]:
+) -> list[PluginCheck]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
     from untaped.runtime.contracts.registry import BoundProvider, every_offer  # noqa: PLC0415
     from untaped.sdk.contracts import Reason  # noqa: PLC0415
 
     installed = {candidate.name for candidate in candidates}
     owners = [owner for owner in spec.provides if owner in installed]
-    rows: list[PluginCheckRow] = []
+    rows: list[PluginCheck] = []
     with composed_with(_hermetic([spec.name, *owners], candidates)) as composed:
         unusable = _unusable_owners(owners, composed)
         rows += [row("registration", owner, "fail", why) for owner, why in unusable.items()]
@@ -176,7 +174,7 @@ def _provider(
     composed: CompositionResult,
     candidates: Sequence[PluginCandidate],
     row: _Row,
-) -> list[PluginCheckRow]:
+) -> list[PluginCheck]:
     from untaped.runtime.contracts.registry import ready_of  # noqa: PLC0415
 
     ready = ready_of(provider)
@@ -195,7 +193,7 @@ def _conformance(
     candidates: Sequence[PluginCandidate],
     waiting: str | None,
     row: _Row,
-) -> Iterator[PluginCheckRow]:
+) -> Iterator[PluginCheck]:
     binding = provider.binding
     what = f"{binding.owner}.{binding.contract.name}"
     check = _owner_conformance(binding.owner, composed, candidates)
@@ -231,7 +229,7 @@ def _owner_conformance(
     return found if callable(found) else None
 
 
-def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[PluginCheckRow]:
+def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[PluginCheck]:
     from untaped.sdk.contracts._declare import fills  # noqa: PLC0415
 
     binding = provider.binding
@@ -249,7 +247,7 @@ def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[P
             yield _call(provider, name, title, row)
 
 
-def _call(provider: BoundProvider, name: str, title: str, row: _Row) -> PluginCheckRow:
+def _call(provider: BoundProvider, name: str, title: str, row: _Row) -> PluginCheck:
     from untaped.sdk.contracts import Errored, Ok, gather  # noqa: PLC0415
 
     binding = provider.binding

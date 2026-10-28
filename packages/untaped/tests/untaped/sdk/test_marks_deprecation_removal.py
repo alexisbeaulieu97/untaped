@@ -21,7 +21,7 @@ from untaped.runtime import bootstrap, sink
 from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import get_settings
 from untaped.sdk._cli import create_app
-from untaped.sdk.diagnostic import DeprecationNotice
+from untaped.sdk.diagnostic import Deprecation
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import Renamed, Retired, mapping_errors
 from untaped.sdk.marks import (
@@ -288,7 +288,7 @@ def test_an_untaped_deprecation_warning_arrives_as_its_record() -> None:
         "hint": None,
         "message": "`old()` is deprecated",
     }
-    assert isinstance(result.diagnostics[0], DeprecationNotice)
+    assert isinstance(result.diagnostics[0], Deprecation)
 
 
 @pytest.mark.usefixtures("shown")

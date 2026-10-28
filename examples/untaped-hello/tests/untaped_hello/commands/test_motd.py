@@ -9,7 +9,7 @@ from untaped_hello.commands.motd import Motd
 from untaped_hello.plugin import Hello
 from untaped_hello.settings import HelloSettings
 
-from untaped.sdk import Progress, StaleData
+from untaped.sdk import Progress, Stale
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -69,7 +69,7 @@ def test_hello_motd_serves_its_copy_when_the_file_is_gone(
     ran = hello.run(Motd())
     assert (ran.exit, ran.text) == (0, "ship it")
     [stale] = ran.diagnostics
-    assert isinstance(stale, StaleData)
+    assert isinstance(stale, Stale)
     assert (stale.plugin, stale.cache, stale.key) == ("hello", "hello.motd", str(source.resolve()))
     assert "refresh failed (could not read" in stale.message
 

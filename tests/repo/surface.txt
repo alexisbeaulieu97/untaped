@@ -7496,36 +7496,36 @@ sdk untaped.sdk.Source.kind
 sdk untaped.sdk.Source.plugin
 sdk untaped.sdk.Source.record
 sdk untaped.sdk.Spread
-sdk untaped.sdk.StaleData(*, message, plugin, cache, key, refreshed_at, age_seconds, max_age_seconds)
-sdk untaped.sdk.StaleData(attempted_at=) default=None
-sdk untaped.sdk.StaleData(error=) default=None
-sdk untaped.sdk.StaleData(hint=) default=None
-sdk untaped.sdk.StaleData(outdated=) default=false
-sdk untaped.sdk.StaleData(partial=) default=false
-sdk untaped.sdk.StaleData(retry_at=) default=None
-sdk untaped.sdk.StaleData.__init_subclass__(kind=) default=None
-sdk untaped.sdk.StaleData.age_seconds
-sdk untaped.sdk.StaleData.attempted_at
-sdk untaped.sdk.StaleData.cache
-sdk untaped.sdk.StaleData.describe(*, plugin, subject, cache, key, refreshed_at, now, max_age)
-sdk untaped.sdk.StaleData.describe(attempted_at=) default=None
-sdk untaped.sdk.StaleData.describe(cached=) default=false
-sdk untaped.sdk.StaleData.describe(error=) default=None
-sdk untaped.sdk.StaleData.describe(hint=) default=None
-sdk untaped.sdk.StaleData.describe(outdated=) default=false
-sdk untaped.sdk.StaleData.describe(partial=) default=false
-sdk untaped.sdk.StaleData.describe(retry_at=) default=None
-sdk untaped.sdk.StaleData.error
-sdk untaped.sdk.StaleData.hint
-sdk untaped.sdk.StaleData.key
-sdk untaped.sdk.StaleData.level class
-sdk untaped.sdk.StaleData.max_age_seconds
-sdk untaped.sdk.StaleData.message
-sdk untaped.sdk.StaleData.outdated
-sdk untaped.sdk.StaleData.partial
-sdk untaped.sdk.StaleData.plugin
-sdk untaped.sdk.StaleData.refreshed_at
-sdk untaped.sdk.StaleData.retry_at
+sdk untaped.sdk.Stale(*, message, plugin, cache, key, refreshed_at, age_seconds, max_age_seconds)
+sdk untaped.sdk.Stale(attempted_at=) default=None
+sdk untaped.sdk.Stale(error=) default=None
+sdk untaped.sdk.Stale(hint=) default=None
+sdk untaped.sdk.Stale(outdated=) default=false
+sdk untaped.sdk.Stale(partial=) default=false
+sdk untaped.sdk.Stale(retry_at=) default=None
+sdk untaped.sdk.Stale.__init_subclass__(kind=) default=None
+sdk untaped.sdk.Stale.age_seconds
+sdk untaped.sdk.Stale.attempted_at
+sdk untaped.sdk.Stale.cache
+sdk untaped.sdk.Stale.describe(*, plugin, subject, cache, key, refreshed_at, now, max_age)
+sdk untaped.sdk.Stale.describe(attempted_at=) default=None
+sdk untaped.sdk.Stale.describe(cached=) default=false
+sdk untaped.sdk.Stale.describe(error=) default=None
+sdk untaped.sdk.Stale.describe(hint=) default=None
+sdk untaped.sdk.Stale.describe(outdated=) default=false
+sdk untaped.sdk.Stale.describe(partial=) default=false
+sdk untaped.sdk.Stale.describe(retry_at=) default=None
+sdk untaped.sdk.Stale.error
+sdk untaped.sdk.Stale.hint
+sdk untaped.sdk.Stale.key
+sdk untaped.sdk.Stale.level class
+sdk untaped.sdk.Stale.max_age_seconds
+sdk untaped.sdk.Stale.message
+sdk untaped.sdk.Stale.outdated
+sdk untaped.sdk.Stale.partial
+sdk untaped.sdk.Stale.plugin
+sdk untaped.sdk.Stale.refreshed_at
+sdk untaped.sdk.Stale.retry_at
 sdk untaped.sdk.StateCollection(id_field=) default=name
 sdk untaped.sdk.StateCollection(section, key)
 sdk untaped.sdk.StateCollection.entries()
@@ -8700,14 +8700,14 @@ sdk untaped.sdk.testing.PluginCandidate.entry_point_group
 sdk untaped.sdk.testing.PluginCandidate.name
 sdk untaped.sdk.testing.PluginCandidate.requires_dist
 sdk untaped.sdk.testing.PluginCandidate.target
-sdk untaped.sdk.testing.PluginCheckRow(*, status, plugin, check, title)
-sdk untaped.sdk.testing.PluginCheckRow(detail=) default=""
-sdk untaped.sdk.testing.PluginCheckRow.__init_subclass__(kind=) default=None
-sdk untaped.sdk.testing.PluginCheckRow.check
-sdk untaped.sdk.testing.PluginCheckRow.detail
-sdk untaped.sdk.testing.PluginCheckRow.plugin
-sdk untaped.sdk.testing.PluginCheckRow.status
-sdk untaped.sdk.testing.PluginCheckRow.title
+sdk untaped.sdk.testing.PluginCheck(*, status, plugin, check, title)
+sdk untaped.sdk.testing.PluginCheck(detail=) default=""
+sdk untaped.sdk.testing.PluginCheck.__init_subclass__(kind=) default=None
+sdk untaped.sdk.testing.PluginCheck.check
+sdk untaped.sdk.testing.PluginCheck.detail
+sdk untaped.sdk.testing.PluginCheck.plugin
+sdk untaped.sdk.testing.PluginCheck.status
+sdk untaped.sdk.testing.PluginCheck.title
 sdk untaped.sdk.testing.ProgressClock()
 sdk untaped.sdk.testing.ProgressClock.advance(seconds)
 sdk untaped.sdk.testing.PromptBackend implement=confirm,pick_many,secret,select,text

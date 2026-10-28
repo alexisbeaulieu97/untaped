@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from untaped.sdk import ErrorCategory, UntapedError, UsageError, key
 from untaped.sdk.contracts import Ambiguous, NotReady, Source, gather
-from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock, Running
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.infrastructure.catalog import RepoSources
@@ -113,7 +113,7 @@ def test_a_stale_listing_without_the_repo_is_the_providers_failure(clock: Manual
     assert caught.value is HTTP_503
     assert caught.value.category == ErrorCategory.UNAVAILABLE
     assert caught.value.hint == "retry later"
-    assert [each for each in emitted if isinstance(each, StaleData)] == []  # the error says it
+    assert [each for each in emitted if isinstance(each, Stale)] == []  # the error says it
 
 
 def test_a_match_ranked_above_the_failed_provider_wins_with_a_warning(
@@ -148,7 +148,7 @@ def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line(clock: Ma
     assert found.url == "https://github.com/acme/api.git"
     assert github.calls == 2  # the second call failed; the stored answer stood in
     [stale] = emitted
-    assert isinstance(stale, StaleData)
+    assert isinstance(stale, Stale)
     assert (stale.plugin, stale.cache) == ("github", "workspace.repo_source_repos")
     assert stale.hint is None  # workspace has no --cached to suggest
 
@@ -355,7 +355,7 @@ def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer()
             catalog.reask(saved)
     emitted = running.diagnostics
     assert caught.value is HTTP_503
-    assert [each for each in emitted if isinstance(each, StaleData)] == []  # the error says it
+    assert [each for each in emitted if isinstance(each, Stale)] == []  # the error says it
 
 
 def test_reask_of_a_source_that_is_gone_or_not_ready_is_none() -> None:

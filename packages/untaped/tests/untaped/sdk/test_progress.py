@@ -27,7 +27,7 @@ from untaped.runtime.sink import (
     open_tasks,
 )
 from untaped.sdk._concurrency import bounded_map
-from untaped.sdk.diagnostic import Failure, Progress, StaleData
+from untaped.sdk.diagnostic import Failure, Progress, Stale
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.testing import ProgressClock, TtyStringIO, invoke_cli, progress_clock
@@ -190,7 +190,7 @@ def test_quiet_mutes_progress_and_nothing_else(monkeypatch: pytest.MonkeyPatch) 
 def test_a_stale_line_inside_the_quiet_period_prints_alone() -> None:
     """The quiet period's documented cost: on a pipe no progress line comes before it."""
     stream = io.StringIO()
-    stale = StaleData(
+    stale = Stale(
         message="source prod: cached data",
         plugin="ansible",
         cache="ansible.index",

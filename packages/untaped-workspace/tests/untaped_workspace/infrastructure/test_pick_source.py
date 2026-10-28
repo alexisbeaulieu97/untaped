@@ -9,7 +9,7 @@ import pytest
 
 from untaped.sdk import UntapedError
 from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped, Source
-from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock
 from untaped_workspace.api import Repo
 from untaped_workspace.domain.models import RepoArg, StoredRepo
@@ -316,10 +316,10 @@ def test_the_first_pass_drops_its_stale_line_and_a_failed_refresh_says_its_own(
         clock.advance(timedelta(hours=7))
         github.error = UntapedError("HTTP 503", category="unavailable")
         first = source.catalog(refresh=False)
-        assert [each for each in running.diagnostics if isinstance(each, StaleData)] == []
+        assert [each for each in running.diagnostics if isinstance(each, Stale)] == []
         refreshed = source.catalog(refresh=None)
     emitted = running.diagnostics
     assert first.note == "github: 1 repo, refreshed 7h ago"
     assert refreshed.note == "github: cached repos only: HTTP 503"
-    [line] = [each for each in emitted if isinstance(each, StaleData)]
+    [line] = [each for each in emitted if isinstance(each, Stale)]
     assert line.plugin == "github" and line.error is not None

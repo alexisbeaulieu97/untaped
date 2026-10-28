@@ -95,7 +95,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Progress",
         "Record",
         "Source",
-        "StaleData",
+        "Stale",
         "TableGlyph",
         "TargetRecord",
         "TreeFormatOption",

@@ -9,7 +9,7 @@ import pytest
 
 from lint_test_support import Site
 from untaped.sdk import InstalledPlugin
-from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
+from untaped.sdk.testing import PluginCandidate, PluginCheck, compose_with
 from untaped_lint.providers import conventions
 from untaped_lint.providers.conventions import Conventions, file_lines
 from untaped_lint.records import FileLocation
@@ -174,8 +174,8 @@ def test_a_stale_quarantined_record_of_a_plugin_that_composes_keeps_its_rules(
     assert {"plugin-name", "undeclared-write"} <= rules
 
 
-def _row(check: str, title: str, status: str, detail: str) -> PluginCheckRow:
-    return PluginCheckRow(plugin="demo", check=check, title=title, status=status, detail=detail)
+def _row(check: str, title: str, status: str, detail: str) -> PluginCheck:
+    return PluginCheck(plugin="demo", check=check, title=title, status=status, detail=detail)
 
 
 def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> None:
