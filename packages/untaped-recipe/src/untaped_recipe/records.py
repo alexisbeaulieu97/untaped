@@ -9,13 +9,14 @@ are ``null`` on a ``list`` row. ``recipe.pack``'s ``recipes`` and
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from untaped.sdk import (
     AbsolutePath,
     CheckRecord,
+    Column,
     Failure,
     Following,
     Key,
@@ -37,19 +38,11 @@ class ApplyOutcome(OutcomeRecord, TargetRecord):
     why in ``detail`` (for humans) and ``error`` (category, system, message).
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "target_path",
-        "action",
-        "files_changed",
-        "warnings",
-        "detail",
-    )
-
-    target_path: AbsolutePath
-    action: Annotated[str, Status(success=("applied",))]
-    files_changed: int
-    warnings: list[str]
-    detail: str | None
+    target_path: Annotated[AbsolutePath, Column]
+    action: Annotated[str, Column, Status(success=("applied",))]
+    files_changed: Annotated[int, Column]
+    warnings: Annotated[list[str], Column]
+    detail: Annotated[str | None, Column]
     inputs: dict[str, object]
     recipe: str
 
@@ -62,21 +55,12 @@ class _PackOutcome(OutcomeRecord):
     source (``rev`` is the one asked for).
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "name",
-        "action",
-        "source",
-        "rev",
-        "commit",
-        "detail",
-    )
-
-    name: str
-    action: Annotated[str, Status(success=("removed",))]
-    source: str | None = None
-    rev: str | None = None
-    commit: Annotated[str | None, ObjectName] = None
-    detail: str | None = None
+    name: Annotated[str, Column]
+    action: Annotated[str, Column, Status(success=("removed",))]
+    source: Annotated[str | None, Column] = None
+    rev: Annotated[str | None, Column] = None
+    commit: Annotated[str | None, Column, ObjectName] = None
+    detail: Annotated[str | None, Column] = None
 
 
 class AddOutcome(_PackOutcome):
@@ -119,24 +103,15 @@ class Pack(Record):
     version in ``packs get``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "name",
-        "version",
-        "source",
-        "rev",
-        "recipes",
-        "hooks",
-    )
-
-    name: Annotated[str, Key]
+    name: Annotated[str, Column, Key]
     project: str
-    version: str
+    version: Annotated[str, Column]
     path: str
-    source: str
-    rev: str
+    source: Annotated[str, Column]
+    rev: Annotated[str, Column]
     commit: Annotated[str, ObjectName]
-    recipes: int | list[PackRecipe]
-    hooks: int | list[PackHook]
+    recipes: Annotated[int | list[PackRecipe], Column]
+    hooks: Annotated[int | list[PackHook], Column]
     manifest_name: str | None = None
 
 
@@ -172,10 +147,8 @@ class Recipe(Record):
     recipe file by ``recipe get`` only; ``recipe list`` leaves them null.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("pack", "name")
-
-    pack: str
-    name: str
+    pack: Annotated[str, Column]
+    name: Annotated[str, Column]
     ref: str
     description: str | None = None
     inputs: Annotated[list[RecipeInput] | None, Following] = None
@@ -192,12 +165,10 @@ class Hook(Record):
     null.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("pack", "name", "module")
-
-    pack: str
-    name: str
+    pack: Annotated[str, Column]
+    name: Annotated[str, Column]
     ref: str
-    module: str
+    module: Annotated[str, Column]
     exports: list[str] | None = None
     path: str
 
@@ -216,18 +187,16 @@ class HookRun(Record):
     kind's fields are null.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("hook", "kind", "file", "status", "message")
-
-    hook: str
-    kind: Literal["transform", "validate"]
+    hook: Annotated[str, Column]
+    kind: Annotated[Literal["transform", "validate"], Column]
     target: str
-    file: str | None = None
+    file: Annotated[str | None, Column] = None
     status: Annotated[
-        HookRunStatus, Status(success=("ok", "pass"), warning=("skip",), error=("fail",))
+        HookRunStatus, Column, Status(success=("ok", "pass"), warning=("skip",), error=("fail",))
     ]
     content: str | None = None
     diff: str | None = None
-    message: str | None = None
+    message: Annotated[str | None, Column] = None
     error: Failure | None = None
 
 
@@ -244,13 +213,11 @@ class Check(CheckRecord):
     says why a check failed.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "type", "status", "path", "detail")
-
-    name: str
-    type: CheckedType
-    status: Literal["pass", "fail"]
-    path: str
-    detail: str | None = None
+    name: Annotated[str, Column]
+    type: Annotated[CheckedType, Column]
+    status: Annotated[Literal["pass", "fail"], Column]
+    path: Annotated[str, Column]
+    detail: Annotated[str | None, Column] = None
 
 
 class Test(Record):
@@ -260,16 +227,15 @@ class Test(Record):
     row also carries a structured ``error``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("recipe", "case", "status", "detail")
-
     pack: str
-    recipe: str
-    case: str
+    recipe: Annotated[str, Column]
+    case: Annotated[str, Column]
     status: Annotated[
         Literal["pass", "fail", "error", "updated"],
+        Column,
         Status(success=("pass", "updated"), error=("fail", "error")),
     ]
-    detail: str
+    detail: Annotated[str, Column]
     error: Failure | None = None
 
 
@@ -282,10 +248,8 @@ class BackupFile(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    table_columns: ClassVar[tuple[str, ...]] = ("target", "relative_path")
-
-    target: str
-    relative_path: str
+    target: Annotated[str, Column]
+    relative_path: Annotated[str, Column]
     before_hash: str | None = None
     after_hash: str | None
     backup_file: str | None
@@ -301,11 +265,9 @@ class Backup(Record):
     ``backups get`` only; ``backups list`` leaves them null.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "created_at", "recipe")
-
-    id: str
-    created_at: UtcTimestamp | None
-    recipe: str | None
+    id: Annotated[str, Column]
+    created_at: Annotated[UtcTimestamp | None, Column]
+    recipe: Annotated[str | None, Column]
     path: str
     inputs: dict[str, JsonValue] | None = None
     files: Annotated[list[BackupFile] | None, Following] = None

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Record
+from untaped.sdk import Column, Record
 
 
 class Host(Record):
@@ -17,12 +17,10 @@ class Host(Record):
     untaped helper path written into a worktree config that no longer exists.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("host", "plugins", "credential", "helpers_first")
-
-    host: str
-    plugins: list[str]
-    credential: bool
-    helpers_first: list[str] = Field(default_factory=list)
+    host: Annotated[str, Column]
+    plugins: Annotated[list[str], Column]
+    credential: Annotated[bool, Column]
+    helpers_first: Annotated[list[str], Column] = Field(default_factory=list)
     missing_helper: str | None = None
 
 
@@ -70,9 +68,7 @@ class StoreReport(Record):
 class TreeEntry(Record):
     """One ``ls-tree`` entry of a store tree."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("mode", "type", "path")
-
-    mode: str
-    type: str
+    mode: Annotated[str, Column]
+    type: Annotated[str, Column]
     oid: str
-    path: str
+    path: Annotated[str, Column]

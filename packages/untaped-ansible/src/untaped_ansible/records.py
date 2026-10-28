@@ -6,11 +6,11 @@ in order, are its rows' keys on the wire.
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import FreshnessRecord, OutcomeRecord, Record, Status, UtcTimestamp
+from untaped.sdk import Column, FreshnessRecord, OutcomeRecord, Record, Status, UtcTimestamp
 from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
 
@@ -22,25 +22,14 @@ class Source(Record):
     of the same name.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "name",
-        "orgs",
-        "teams",
-        "repos",
-        "dependency_paths",
-        "ref_kinds",
-        "ref_patterns",
-        "ref_scan_default",
-    )
-
-    name: str
-    orgs: list[str]
-    teams: list[str]
-    repos: list[str]
-    dependency_paths: list[str]
-    ref_kinds: list[str]
-    ref_patterns: list[str]
-    ref_scan_default: Literal["all", "default_branch"] | None = None
+    name: Annotated[str, Column]
+    orgs: Annotated[list[str], Column]
+    teams: Annotated[list[str], Column]
+    repos: Annotated[list[str], Column]
+    dependency_paths: Annotated[list[str], Column]
+    ref_kinds: Annotated[list[str], Column]
+    ref_patterns: Annotated[list[str], Column]
+    ref_scan_default: Annotated[Literal["all", "default_branch"] | None, Column] = None
 
 
 class SourceAlias(Record):
@@ -72,12 +61,12 @@ class SourceStatus(FreshnessRecord):
     last written and what it holds.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("source", "state", "refreshed_at", "repos", "refs")
-
-    source: str
+    source: Annotated[str, Column]
     source_key: str
     state: Annotated[
-        Literal["fresh", "stale", "not_refreshed", "missing_source"], Status(warning=("stale",))
+        Literal["fresh", "stale", "not_refreshed", "missing_source"],
+        Column,
+        Status(warning=("stale",)),
     ] = Field(
         description=(
             "stale when past ansible.caches.source_data.max_age_seconds, made by another untaped "
@@ -88,9 +77,10 @@ class SourceStatus(FreshnessRecord):
     )
     configured: bool
     scanned_at: UtcTimestamp | None = None
-    repos: int = 0
-    refs: int = 0
+    repos: Annotated[int, Column] = 0
+    refs: Annotated[int, Column] = 0
     edges: int = 0
+    refreshed_at: Annotated[UtcTimestamp | None, Column]
 
 
 class DependencyMatch(Record):
@@ -100,27 +90,21 @@ class DependencyMatch(Record):
     ``name`` as ``input_kind``, ``input_id`` and ``input_name``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "root_repo",
-        "root_ref",
-        "repo",
-        "declared_ref",
-        "path",
-    )
-
-    root_repo: str
-    root_ref: str | None = Field(
+    root_repo: Annotated[str, Column]
+    root_ref: Annotated[str | None, Column] = Field(
         description=(
             "The ref the root was read at (its default branch when none was given); null "
             "when it has no known ref."
         )
     )
-    repo: str
-    declared_ref: str | None = Field(
+    repo: Annotated[str, Column]
+    declared_ref: Annotated[str | None, Column] = Field(
         description="The ref as the edge that reached the repo declares it, verbatim."
     )
     declared_in: str | None = Field(description="The dependency file that declares that edge.")
-    path: list[str] = Field(description="The shortest path from the root to the repo.")
+    path: Annotated[list[str], Column] = Field(
+        description="The shortest path from the root to the repo."
+    )
     input_kind: str | None = Field(
         default=None, description="The kind of the pipe record the root came from, else null."
     )
@@ -136,10 +120,8 @@ class ReachedRow(Record):
     why the walk did not read the node's own dependencies.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "stopped", "declared_in", "path")
-
-    repo: str | None
-    ref: str | None = Field(
+    repo: Annotated[str | None, Column]
+    ref: Annotated[str | None, Column] = Field(
         description="The ref reached; an unpinned dependency reaches its default branch."
     )
     unresolved: str | None = Field(
@@ -148,16 +130,18 @@ class ReachedRow(Record):
     declared_ref: str | None = Field(
         description="The ref as the edge that reached the repo declares it, verbatim."
     )
-    declared_in: str | None = Field(description="The dependency file that declares that edge.")
+    declared_in: Annotated[str | None, Column] = Field(
+        description="The dependency file that declares that edge."
+    )
     depth: int = Field(description="Hops from the root.")
-    path: list[str] = Field(
+    path: Annotated[list[str], Column] = Field(
         description=(
             "The shortest path, in dependency order. A table cuts it to its first and last "
             "hop; other formats keep it whole."
         )
     )
     root_ref: str | None = Field(description="The root's ref this row was reached from.")
-    stopped: StopReason | None = Field(
+    stopped: Annotated[StopReason | None, Column] = Field(
         description=(
             "depth when --depth ran out before this repo's own edges were read, not_cached "
             "when its ref is not in the source's cache, else null. Either way more repos may "
@@ -207,8 +191,6 @@ class VariableUse(Record):
 
 class VariableUseHit(VariableUse):
     """A :class:`VariableUse` in a dependent of the role ``impact uses`` was asked about."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "ref", "file", "line", "key_path", "how")
 
     dependent: FoundIn
 

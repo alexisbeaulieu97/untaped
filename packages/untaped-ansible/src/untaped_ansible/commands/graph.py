@@ -32,6 +32,7 @@ from untaped.sdk import (
     Stdin,
     UsageError,
     echo,
+    key,
     plural,
     print_tree,
     run_hint,
@@ -203,7 +204,16 @@ class Uses(_Reaching):
         None,
         description="Branch, tag, or SHA of ROLE to find dependents of; omit for every cached ref.",
     )
-    output: Output[VariableUseHit]
+    output: Output[VariableUseHit] = Output(
+        columns=(
+            key(VariableUseHit).repo,
+            key(VariableUseHit).ref,
+            key(VariableUseHit).file,
+            key(VariableUseHit).line,
+            key(VariableUseHit).key_path,
+            key(VariableUseHit).how,
+        )
+    )
 
     def run(self) -> Iterator[VariableUseHit]:
         names = _variable_names(self.name)

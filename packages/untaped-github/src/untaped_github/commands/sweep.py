@@ -196,7 +196,14 @@ class Sweep(_Sweep):
     """
 
     owners: bool = Field(True, description="Report CODEOWNERS for matching repos.")
-    output: Output[SweepRepo]
+    output: Output[SweepRepo] = Output(
+        columns=(
+            key(SweepRepo).full_name,
+            key(SweepRepo).hits,
+            key(SweepRepo).refs_matched,
+            key(SweepRepo).owners,
+        )
+    )
 
     @model_validator(mode="after")
     def _columns(self) -> Self:

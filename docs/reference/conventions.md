@@ -191,14 +191,15 @@ free, but a command that writes declares it with `@writes`, or
 ## Output records
 
 - The record is for scripts and agents; the table is for a human scanning
-  rows. Keep every field on the record and pick the table's default columns
-  on the record type, `table_columns: ClassVar[tuple[str, ...]] = (…)`: the
-  identifying field, what changed or its state, and what the reader acts on
-  next. Leave out fields that repeat the command's own arguments or are empty
-  on most rows.
-- A listed record with more than four fields (`error` aside) must declare
-  default columns. `emit(rows, …, table_columns=[…])` overrides them for one
-  command; a single record shows every field.
+  rows. Keep every field on the record and mark the table's default columns
+  on its fields, `name: Annotated[str, Column]`: the identifying field, what
+  changed or its state, and what the reader acts on next. Leave out fields
+  that repeat the command's own arguments or are empty on most rows.
+- The columns come in the order json shows the fields. An outcome's `action`
+  and a check's `status` are marked by their base and join the record's own
+  marks; a record marking none of its own fields shows every field. Redeclare
+  an inherited field to mark it. `Output(columns=(key(Repo).full_name, …))`
+  sets one command's defaults; a single record shows every field.
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;

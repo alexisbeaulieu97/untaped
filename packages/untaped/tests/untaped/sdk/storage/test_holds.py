@@ -535,7 +535,7 @@ def test_remove_at_a_terminal_previews_the_holds_as_the_rows_print_them(tmp_path
     assert result.exit_code == 0, result.output
     header = next(line for line in result.stderr.splitlines() if "plugin" in line)
     cells = [cell.strip() for cell in header.strip("│ ").split("│")]
-    assert cells[:4] == ["plugin", "item", "action", "detail"]
+    assert cells[:4] == ["action", "plugin", "item", "detail"]
 
 
 def test_remove_finds_a_project_by_its_name(tmp_path: Path) -> None:

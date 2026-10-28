@@ -32,7 +32,7 @@ from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
-from untaped.sdk.fields import table_row
+from untaped.sdk.fields import default_columns, table_row
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
 from untaped.sdk.network.auth import find_program
@@ -84,7 +84,7 @@ def emit_plan(rows: list[Row], *, profile: str, columns: list[str] | None) -> No
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
     with child_run(profiles=scope):
-        emit(shown, fmt="table", columns=columns, table_columns=SetupStep.table_columns)
+        emit(shown, fmt="table", columns=columns, table_columns=default_columns(SetupStep))
 
 
 def _table_row(row: Row) -> Row:

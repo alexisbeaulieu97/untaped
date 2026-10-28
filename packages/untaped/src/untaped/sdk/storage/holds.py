@@ -27,12 +27,13 @@ from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Self, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from untaped.sdk.diagnostic import Failure, _Omitted
 from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.fields import Column
 from untaped.sdk.marks import experimental
 from untaped.sdk.records import OutcomeRecord
 from untaped.sdk.storage._fs import file_lock
@@ -609,13 +610,11 @@ class HoldOutcome(OutcomeRecord, kind="untaped.hold_outcome"):
     ``forgotten``, ``repaired``, ``moved``, ``removed`` or ``skipped``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("plugin", "item", "action", "detail", "hint")
-
     holder: str
-    plugin: str
-    item: str
-    detail: str
-    hint: _Omitted = None
+    plugin: Annotated[str, Column]
+    item: Annotated[str, Column]
+    detail: Annotated[str, Column]
+    hint: Annotated[_Omitted, Column] = None
 
 
 def plan_holds(

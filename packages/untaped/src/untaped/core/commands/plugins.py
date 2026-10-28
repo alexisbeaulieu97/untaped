@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ from untaped.core.config.models import SettingOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.registry import CompositionResult, owns_contracts, run_deferred_factory
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.fields import DryRun, Output, Positional
+from untaped.sdk.fields import Column, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.plugin_records import InstalledPlugin
 from untaped.sdk.records import Record, record_model
@@ -63,26 +63,20 @@ class List(Command[CoreSettings]):
 class ContractMethod(Record, kind="untaped.contract_method"):
     """One method of an installed contract and who fills it."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "contract",
-        "method",
-        "stability",
-        "providers",
-        "ranked",
-    )
-
-    contract: str = Field(description="`owner.contract`.")
-    method: str
+    contract: Annotated[str, Column] = Field(description="`owner.contract`.")
+    method: Annotated[str, Column]
     owner: str
-    stability: Literal["stable", "experimental", "deprecated"] = Field(
+    stability: Annotated[Literal["stable", "experimental", "deprecated"], Column] = Field(
         description="The method's own mark, else its contract's."
     )
-    providers: list[str] = Field(
+    providers: Annotated[list[str], Column] = Field(
         description=(
             "The plugins whose usable providers fill the method, in the order they are asked."
         )
     )
-    ranked: list[str] = Field(description="The profile's explicit ranking (`plugin rank`).")
+    ranked: Annotated[list[str], Column] = Field(
+        description="The profile's explicit ranking (`plugin rank`)."
+    )
 
 
 class Contracts(Command[CoreSettings]):

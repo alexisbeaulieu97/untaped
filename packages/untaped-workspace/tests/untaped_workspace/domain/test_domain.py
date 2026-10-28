@@ -16,7 +16,7 @@ from untaped_workspace.domain.naming import (
     validate_workspace_name,
 )
 from untaped_workspace.domain.safety import NOT_STORED, SUBMODULES, archive_blockers, archive_hint
-from untaped_workspace.records import RepoOutcome, RepoStatus
+from untaped_workspace.records import RepoStatus
 
 
 @pytest.mark.parametrize("name", ["JIRA-1234", "feature_x", "a.b"])
@@ -160,14 +160,13 @@ def test_hints_combine_once_per_kind() -> None:
     )
 
 
-def test_records_round_trip_and_default_columns() -> None:
+def test_records_round_trip() -> None:
     record = WorkspaceRecord(
         name="w",
         created_at=datetime(2026, 10, 1, tzinfo=UTC),
         repos=(_spec("acme/api", "api"),),
     )
     assert WorkspaceRecord.model_validate(record.model_dump(mode="json")) == record
-    assert RepoOutcome.table_columns
     row = RepoStatus(
         workspace="w",
         repo="acme/api",

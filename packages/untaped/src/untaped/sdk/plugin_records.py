@@ -13,7 +13,7 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -25,6 +25,7 @@ from untaped.runtime.registry import (
     candidate_distribution,
     declared_distributions,
 )
+from untaped.sdk.fields import Column
 from untaped.sdk.records import AbsolutePath, Record
 
 _UNKNOWN = "unknown"
@@ -33,12 +34,10 @@ _UNKNOWN = "unknown"
 class InstalledPlugin(Record, kind="untaped.installed_plugin"):
     """One installed plugin: ready, or quarantined (then only its entry point names its package)."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "status", "distribution", "version")
-
-    name: str
-    status: Literal["ready", "quarantined"]
-    distribution: str
-    version: str
+    name: Annotated[str, Column]
+    status: Annotated[Literal["ready", "quarantined"], Column]
+    distribution: Annotated[str, Column]
+    version: Annotated[str, Column]
     package: str | None = Field(default=None, description="Its import package (`untaped_awx`).")
     source_dir: AbsolutePath | None = Field(
         default=None, description="Where that package's code is."

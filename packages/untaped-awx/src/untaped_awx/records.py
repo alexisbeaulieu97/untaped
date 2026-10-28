@@ -24,11 +24,11 @@ rules read, in ``domain/lint/resources.py``).
 
 from __future__ import annotations
 
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any
 
 from pydantic import ConfigDict, Field, JsonValue
 
-from untaped.sdk import Duration, ObjectName, OutcomeRecord, Record, UtcTimestamp
+from untaped.sdk import Column, Duration, ObjectName, OutcomeRecord, Record, UtcTimestamp
 from untaped_awx.domain.suites.temporary_set import TemporaryCopyOutcome
 
 ForeignKey = int | str | None
@@ -194,25 +194,16 @@ class JobEventRow(Record, kind="awx.job_event_row"):
     ``counter`` comes first, so ``raw`` prints each event's number in its job.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "counter",
-        "event",
-        "host_name",
-        "task",
-        "changed",
-        "failed",
-    )
-
-    counter: int
-    event: str
+    counter: Annotated[int, Column]
+    event: Annotated[str, Column]
     job: int
-    task: str | None
+    task: Annotated[str | None, Column]
     host: int | None
-    host_name: str | None
+    host_name: Annotated[str | None, Column]
     role: str | None
     play: str | None
-    changed: bool
-    failed: bool
+    changed: Annotated[bool, Column]
+    failed: Annotated[bool, Column]
     created: str | None
     stdout: str
 
@@ -220,9 +211,7 @@ class JobEventRow(Record, kind="awx.job_event_row"):
 class JobLogLine(Record, kind="awx.job_log_line"):
     """One line of a job's stdout; ``line`` comes first, so ``raw`` prints the bare lines."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("line",)
-
-    line: str
+    line: Annotated[str, Column]
     job: int
 
 
@@ -270,26 +259,17 @@ class ActionOutcome(OutcomeRecord):
 
     model_config = ConfigDict(serialize_by_alias=True, validate_by_name=True)
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "target_name",
-        "id",
-        "status",
-        "action",
-        "detail",
-        "payload",
-    )
-
-    id: int | None
+    id: Annotated[int | None, Column]
     kind: str | None
     target_id: int
     target_kind: str
-    target_name: str | None
+    target_name: Annotated[str | None, Column]
     scope: dict[str, Any]
-    action: str
-    payload: JsonValue = None
-    detail: str | None = None
+    action: Annotated[str, Column]
+    payload: Annotated[JsonValue, Column] = None
+    detail: Annotated[str | None, Column] = None
     name: str | None = None
-    status: str | None = None
+    status: Annotated[str | None, Column] = None
     started_at: UtcTimestamp | None = None
     finished_at: UtcTimestamp | None = None
     elapsed: Annotated[float | None, Duration] = None
@@ -315,81 +295,54 @@ class ApplyOutcomeRow(OutcomeRecord, kind="awx.apply_outcome_row"):
     one); ``identity`` and ``scope`` say which resource it is.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "id",
-        "name",
-        "kind",
-        "action",
-        "fields_changed",
-        "detail",
-    )
-
-    id: int | None
-    kind: str
+    id: Annotated[int | None, Column]
+    kind: Annotated[str, Column]
     scope: dict[str, Any]
     identity: dict[str, Any]
     partial: bool
     unverified: bool
-    name: str
-    action: str
-    fields_changed: list[str]
+    name: Annotated[str, Column]
+    action: Annotated[str, Column]
+    fields_changed: Annotated[list[str], Column]
     preserved_secrets: list[str]
     dropped_undeclared_secrets: list[str]
     dropped_secrets: list[str]
-    detail: str
+    detail: Annotated[str, Column]
 
 
 class DeleteOutcome(OutcomeRecord, kind="awx.delete_outcome"):
     """One resource ``delete`` removed, asked AWX to remove, or skipped."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "name", "action", "detail")
-
-    id: int
+    id: Annotated[int, Column]
     kind: str
-    name: str | None
+    name: Annotated[str | None, Column]
     scope: dict[str, Any]
-    action: str
-    detail: str | None = None
+    action: Annotated[str, Column]
+    detail: Annotated[str | None, Column] = None
 
 
 class MembershipOutcome(OutcomeRecord, kind="awx.membership_outcome"):
     """What an ``add``/``remove`` of members did to one parent's ``field``."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "id",
-        "name",
-        "action",
-        "associate",
-        "disassociate",
-        "detail",
-    )
-
-    id: int
+    id: Annotated[int, Column]
     kind: str
-    name: str | None
+    name: Annotated[str | None, Column]
     scope: dict[str, Any]
-    action: str
+    action: Annotated[str, Column]
     field: str
-    associate: list[int]
-    disassociate: list[int]
+    associate: Annotated[list[int], Column]
+    disassociate: Annotated[list[int], Column]
     partial: bool = False
-    detail: str | None = None
+    detail: Annotated[str | None, Column] = None
 
 
 class SuiteCase(Record, kind="awx.suite_case"):
     """One case ``test list`` would run, with the suite and template it belongs to."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "suite",
-        "case",
-        "job_template",
-        "workflow_template",
-    )
-
-    suite: str
-    case: str
-    job_template: str | None
-    workflow_template: str | None
+    suite: Annotated[str, Column]
+    case: Annotated[str, Column]
+    job_template: Annotated[str | None, Column]
+    workflow_template: Annotated[str | None, Column]
     organization: str | None
     path: str
     variables: dict[str, dict[str, Any]] = Field(
@@ -400,13 +353,9 @@ class SuiteCase(Record, kind="awx.suite_case"):
 class ProvisionOutcome(TemporaryCopyOutcome, kind="awx.provision_outcome"):
     """A temporary copy ``test validate --source-ref`` plans."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("kind", "name", "template", "prompts", "path")
-
 
 class PruneOutcome(TemporaryCopyOutcome, kind="awx.prune_outcome"):
     """A temporary copy ``test prune`` deleted, would delete, or failed to."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("kind", "id", "name", "ref", "created_at", "action")
 
 
 __all__ = [

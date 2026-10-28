@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from typing import ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Record, TreeGraph, TreeGraphEdge, TreeGraphNode, plural
+from untaped.sdk import Column, Record, TreeGraph, TreeGraphEdge, TreeGraphNode, plural
 from untaped_awx.domain.workflow_node import WorkflowNodeType
 
 
@@ -47,12 +47,11 @@ class WorkflowUsage(Record, kind="awx.workflow_usage"):
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "name", "depth", "node_count")
 
-    id: int
-    name: str | None = None
-    depth: int = 0
-    node_count: int
+    id: Annotated[int, Column]
+    name: Annotated[str | None, Column] = None
+    depth: Annotated[int, Column] = 0
+    node_count: Annotated[int, Column]
     contains: list[ContainedTemplate] = Field(default_factory=list)
     target: int
     stopped: Literal["depth"] | None = None

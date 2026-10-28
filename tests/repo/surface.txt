@@ -6254,7 +6254,6 @@ sdk untaped.sdk.Check.with_error(text)  [experimental]
 sdk untaped.sdk.CheckRecord(*, status)
 sdk untaped.sdk.CheckRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.CheckRecord.status
-sdk untaped.sdk.CheckRecord.table_columns class
 sdk untaped.sdk.Cmd(fn) callback(fn, 0)  [experimental]
 sdk untaped.sdk.Cmd(name@4=) default=""  [experimental]
 sdk untaped.sdk.Cmd(suspend@3=) default=false  [experimental]
@@ -6688,7 +6687,6 @@ sdk untaped.sdk.FreshnessRecord.refresh_error
 sdk untaped.sdk.FreshnessRecord.refreshed_at
 sdk untaped.sdk.FreshnessRecord.retry_at
 sdk untaped.sdk.FreshnessRecord.stale
-sdk untaped.sdk.FreshnessRecord.table_columns class
 sdk untaped.sdk.GitCommandError(category=) default=None
 sdk untaped.sdk.GitCommandError(hint=) default=None
 sdk untaped.sdk.GitCommandError(message)
@@ -6827,7 +6825,6 @@ sdk untaped.sdk.InstalledPlugin.requires
 sdk untaped.sdk.InstalledPlugin.root
 sdk untaped.sdk.InstalledPlugin.source_dir
 sdk untaped.sdk.InstalledPlugin.status
-sdk untaped.sdk.InstalledPlugin.table_columns class
 sdk untaped.sdk.InstalledPlugin.tests_dir
 sdk untaped.sdk.InstalledPlugin.version
 sdk untaped.sdk.Interrupt()  [experimental]
@@ -6835,7 +6832,6 @@ sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
 sdk untaped.sdk.Issued.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Issued.source
-sdk untaped.sdk.Issued.table_columns class
 sdk untaped.sdk.ItemStore(item=) default=<computed>  [experimental]
 sdk untaped.sdk.ItemStore(plugin, name, *, release, moved) callback(release, 1) callback(moved, 1)  [experimental]
 sdk untaped.sdk.ItemStore.holders(item)  [experimental]
@@ -7035,7 +7031,6 @@ sdk untaped.sdk.OutcomeRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.OutcomeRecord.action
 sdk untaped.sdk.OutcomeRecord.error
 sdk untaped.sdk.OutcomeRecord.failed
-sdk untaped.sdk.OutcomeRecord.table_columns class
 sdk untaped.sdk.Output()
 sdk untaped.sdk.Output(columns=) default=[]
 sdk untaped.sdk.Output(format=) default=table
@@ -7296,7 +7291,6 @@ sdk untaped.sdk.Quit(result)  [experimental]
 sdk untaped.sdk.Quit.result  [experimental]
 sdk untaped.sdk.Record()
 sdk untaped.sdk.Record.__init_subclass__(kind=) default=None
-sdk untaped.sdk.Record.table_columns class
 sdk untaped.sdk.RefHolder(*, kind, name)  [experimental]
 sdk untaped.sdk.RefHolder.describe()  [experimental]
 sdk untaped.sdk.RefHolder.kind  [experimental]
@@ -7705,7 +7699,6 @@ sdk untaped.sdk.TargetRecord(*, target_path)
 sdk untaped.sdk.TargetRecord(error=) default=None
 sdk untaped.sdk.TargetRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.TargetRecord.error
-sdk untaped.sdk.TargetRecord.table_columns class
 sdk untaped.sdk.TargetRecord.target_path
 sdk untaped.sdk.TextInput(choice@11=) default=0  [experimental]
 sdk untaped.sdk.TextInput(complete@8=) default=None  [experimental]
@@ -7972,7 +7965,6 @@ sdk untaped.sdk.contracts.Issued()
 sdk untaped.sdk.contracts.Issued(source=) default=None
 sdk untaped.sdk.contracts.Issued.__init_subclass__(kind=) default=None
 sdk untaped.sdk.contracts.Issued.source
-sdk untaped.sdk.contracts.Issued.table_columns class
 sdk untaped.sdk.contracts.NoProviderReady(message, *, not_ready)
 sdk untaped.sdk.contracts.NoProviderReady(quarantined=) default=None
 sdk untaped.sdk.contracts.NoProviderReady.category class
@@ -8034,7 +8026,6 @@ sdk untaped.sdk.contracts.Reason.unserialisable_signature = unserialisable-signa
 sdk untaped.sdk.contracts.Reason.unused_method = unused-method
 sdk untaped.sdk.contracts.Record()
 sdk untaped.sdk.contracts.Record.__init_subclass__(kind=) default=None
-sdk untaped.sdk.contracts.Record.table_columns class
 sdk untaped.sdk.contracts.Skipped(plugin, reason, detail)
 sdk untaped.sdk.contracts.Skipped(rank@4=) default=None
 sdk untaped.sdk.contracts.Skipped.detail
@@ -8754,7 +8745,6 @@ sdk untaped.sdk.testing.PluginCheckRow.check
 sdk untaped.sdk.testing.PluginCheckRow.detail
 sdk untaped.sdk.testing.PluginCheckRow.plugin
 sdk untaped.sdk.testing.PluginCheckRow.status
-sdk untaped.sdk.testing.PluginCheckRow.table_columns class
 sdk untaped.sdk.testing.PluginCheckRow.title
 sdk untaped.sdk.testing.ProgressClock()
 sdk untaped.sdk.testing.ProgressClock.advance(seconds)
@@ -9287,7 +9277,6 @@ sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
 sdk untaped_git.api.TreeEntry.mode
 sdk untaped_git.api.TreeEntry.oid
 sdk untaped_git.api.TreeEntry.path
-sdk untaped_git.api.TreeEntry.table_columns class
 sdk untaped_git.api.TreeEntry.type
 sdk untaped_git.api.check_names(names)
 sdk untaped_git.api.default_branch(url)
@@ -9430,7 +9419,6 @@ sdk untaped_lint.api.Finding.location  [experimental]
 sdk untaped_lint.api.Finding.message  [experimental]
 sdk untaped_lint.api.Finding.rule  [experimental]
 sdk untaped_lint.api.Finding.severity  [experimental]
-sdk untaped_lint.api.Finding.table_columns class  [experimental]
 sdk untaped_lint.api.Finding.target  [experimental]
 sdk untaped_lint.api.Findings()  [experimental]
 sdk untaped_lint.api.Findings(ignore=) default=[]  [experimental]
@@ -9456,7 +9444,6 @@ sdk untaped_lint.api.InstalledPlugin.requires  [experimental]
 sdk untaped_lint.api.InstalledPlugin.root  [experimental]
 sdk untaped_lint.api.InstalledPlugin.source_dir  [experimental]
 sdk untaped_lint.api.InstalledPlugin.status  [experimental]
-sdk untaped_lint.api.InstalledPlugin.table_columns class  [experimental]
 sdk untaped_lint.api.InstalledPlugin.tests_dir  [experimental]
 sdk untaped_lint.api.InstalledPlugin.version  [experimental]
 sdk untaped_lint.api.LintConfig()  [experimental]
@@ -9496,7 +9483,6 @@ sdk untaped_lint.api.Rule.reads  [experimental]
 sdk untaped_lint.api.Rule.renamed_from  [experimental]
 sdk untaped_lint.api.Rule.severity  [experimental]
 sdk untaped_lint.api.Rule.summary  [experimental]
-sdk untaped_lint.api.Rule.table_columns class  [experimental]
 sdk untaped_lint.api.RuleFunction  [experimental]
 sdk untaped_lint.api.RuleFunction.model  [experimental]
 sdk untaped_lint.api.RuleFunction.rule  [experimental]

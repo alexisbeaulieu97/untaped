@@ -19,13 +19,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from untaped.sdk import (
     AbsolutePath,
+    Column,
     Failure,
     InstalledPlugin,
     Issued,
@@ -51,21 +52,22 @@ _ANY_ID = r"^([a-z][a-z0-9]*(-[a-z0-9]+)*\.)?[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 class Rule(Issued, kind="lint.rule"):
     """One convention a provider enforces, as ``untaped lint rules`` lists it."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "reads", "severity", "summary")
-
     id: Annotated[
         str,
+        Column,
         Field(
             pattern=_ANY_ID,
             description="Bare as its provider declares it (`no-print`); `lint rules` lists "
             "it public (`house.no-print`).",
         ),
     ]
-    reads: str = Field(
+    reads: Annotated[str, Column] = Field(
         description="The kind of subject the rule reads, written by `rule()` from the model."
     )
-    severity: Severity
-    summary: str = Field(description="The convention in one sentence, as an agent reads it.")
+    severity: Annotated[Severity, Column]
+    summary: Annotated[str, Column] = Field(
+        description="The convention in one sentence, as an agent reads it."
+    )
     renamed_from: tuple[str, ...] = ()
 
 
@@ -115,19 +117,17 @@ type Location = FileLocation | DocumentLocation | ResourceLocation
 class Finding(Issued, kind="lint.finding"):
     """One place where a subject breaks a rule."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("location", "severity", "rule", "target", "message")
-
-    rule: str = Field(
+    rule: Annotated[str, Column] = Field(
         description="The public id once the engine prefixed it: `lint.error-case`, `acme.no-print`."
     )
-    severity: Severity
-    target: str = Field(
+    severity: Annotated[Severity, Column]
+    target: Annotated[str, Column] = Field(
         description=(
             "What the finding is about, spelled by the subject's owner (an ignore glob matches it)."
         )
     )
-    message: str
-    location: Location | None = None
+    message: Annotated[str, Column]
+    location: Annotated[Location | None, Column] = None
     hint: str | None = None
     fix: list[str] | None = Field(
         default=None,
@@ -225,8 +225,6 @@ def unreadable_files() -> Iterator[set[str]]:
 
 class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="lint.scaffold_outcome"):
     """One file ``lint new`` wrote (``created``, ``updated``) or would write (``planned``)."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
 
 
 def target_of(item: File | InstalledPlugin) -> str:

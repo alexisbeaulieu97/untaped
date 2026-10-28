@@ -6,7 +6,7 @@ cheap. A model's fields, in order, are its rows' keys on the wire.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -14,6 +14,7 @@ from untaped.sdk import (
     AbsolutePath,
     Age,
     Bytes,
+    Column,
     Key,
     ObjectName,
     OutcomeRecord,
@@ -70,30 +71,23 @@ class Repo(Record):
     """
 
     model_config = ConfigDict(extra="ignore", frozen=True)
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "full_name",
-        "default_branch",
-        "private",
-        "pushed_at",
-        "description",
-    )
 
-    full_name: Annotated[str, Key]
+    full_name: Annotated[str, Column, Key]
     name: str | None = Field(default=None, validate_default=True)
     html_url: str | None = None
     clone_url: str | None = None
     ssh_url: str | None = None
-    default_branch: str | None = None
-    description: str | None = None
+    default_branch: Annotated[str | None, Column] = None
+    description: Annotated[str | None, Column] = None
     language: str | None = None
     stargazers_count: int | None = None
     forks_count: int | None = None
-    private: bool | None = None
+    private: Annotated[bool | None, Column] = None
     archived: bool = False
     fork: bool | None = None
     # GitHub's last push, in GitHub's own ``…Z`` form: piped into sweep or
     # cache sync it matches the stored value and skips an unchanged repo.
-    pushed_at: str | None = None
+    pushed_at: Annotated[str | None, Column] = None
     updated_at: str | None = None
 
     @field_validator("name")
@@ -116,16 +110,6 @@ class CorpusRepo(Repo):
 
     A :class:`Repo`, so it pipes into workspace like any repo row.
     """
-
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "full_name",
-        "ref",
-        "status",
-        "archived",
-        "disk_bytes",
-        "fetched_at",
-        "path",
-    )
 
     ref: str
     path: str = Field(
@@ -172,8 +156,6 @@ class SweepRepo(Repo):
     second sweep) like any repo row.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("full_name", "hits", "refs_matched", "owners")
-
     matched: bool = Field(
         default=True, description="Always true: a sweep writes a row only for a repo that matched."
     )
@@ -216,13 +198,14 @@ class SweepMatch(Record):
     """One deduped content match, possibly reachable from several refs (``sweep matches``)."""
 
     # A match line reads whole: the table shows every field.
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "refs", "path", "line", "text")
 
-    repo: str
-    refs: tuple[str, ...] = Field(description="Every scanned ref whose file has this line.")
-    path: str
-    line: int
-    text: str
+    repo: Annotated[str, Column]
+    refs: Annotated[tuple[str, ...], Column] = Field(
+        description="Every scanned ref whose file has this line."
+    )
+    path: Annotated[str, Column]
+    line: Annotated[int, Column]
+    text: Annotated[str, Column]
 
 
 class SyncOutcome(OutcomeRecord):
@@ -234,12 +217,10 @@ class SyncOutcome(OutcomeRecord):
     row says why in ``detail`` and carries the structured ``error``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
-
-    repo: str
-    action: Annotated[str, Status(success=("synced",))]
+    repo: Annotated[str, Column]
+    action: Annotated[str, Column, Status(success=("synced",))]
     fetched_at: UtcTimestamp | None = None
-    detail: str | None = None
+    detail: Annotated[str | None, Column] = None
 
 
 class Worktree(TargetRecord):
@@ -264,12 +245,11 @@ class Code(Record):
     """
 
     model_config = ConfigDict(extra="ignore")
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "path")
 
     name: str
-    path: str
+    path: Annotated[str, Column]
     sha: Annotated[str, ObjectName]
-    repo: str = ""
+    repo: Annotated[str, Column] = ""
     url: str
 
     @model_validator(mode="before")
@@ -296,15 +276,14 @@ class Issue(Record):
     """
 
     model_config = ConfigDict(extra="ignore")
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "number", "title", "state", "user_login")
 
-    repo: str = ""
-    number: int
+    repo: Annotated[str, Column] = ""
+    number: Annotated[int, Column]
     id: int
-    title: str
-    state: str
+    title: Annotated[str, Column]
+    state: Annotated[str, Column]
     url: str
-    user_login: str | None = None
+    user_login: Annotated[str | None, Column] = None
     is_pull_request: bool = False
 
     @model_validator(mode="before")
@@ -335,11 +314,10 @@ class UserHit(Record):
     """One row of ``GET /search/users``."""
 
     model_config = ConfigDict(extra="ignore")
-    table_columns: ClassVar[tuple[str, ...]] = ("login", "type")
 
     id: int
-    login: str
-    type: str
+    login: Annotated[str, Column]
+    type: Annotated[str, Column]
     url: str
 
     @model_validator(mode="before")

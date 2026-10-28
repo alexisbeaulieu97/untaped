@@ -5,11 +5,11 @@ It holds models only, so importing it never imports a command.
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
-from untaped.sdk import OutcomeRecord, Record, TargetRecord, UtcTimestamp
+from untaped.sdk import Column, OutcomeRecord, Record, TargetRecord, UtcTimestamp
 from untaped_dotfiles.models import Mode
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
@@ -18,71 +18,50 @@ from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
 class Repo(TargetRecord):
     """One subscribed repo and its fetch state."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "ref", "managed", "behind", "items")
-
-    name: str
+    name: Annotated[str, Column]
     url: str
-    ref: str
-    managed: bool
+    ref: Annotated[str, Column]
+    managed: Annotated[bool, Column]
     head: str | None = None
-    behind: int | None = Field(
+    behind: Annotated[int | None, Column] = Field(
         default=None,
         description="Commits the checkout is behind `origin/<ref>` as last fetched; "
         "null when unknown.",
     )
-    items: int = 0
+    items: Annotated[int, Column] = 0
 
 
 class Item(Record):
     """One manifest item and the machine's choice about it."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "name",
-        "suggested",
-        "policy",
-        "files",
-        "excluded",
-        "description",
-    )
-
-    repo: str
-    name: str
-    suggested: Policy
-    policy: Policy | None = Field(
+    repo: Annotated[str, Column]
+    name: Annotated[str, Column]
+    suggested: Annotated[Policy, Column]
+    policy: Annotated[Policy | None, Column] = Field(
         default=None, description="The machine's policy; null while the item is not enabled."
     )
     enabled: bool = False
-    files: int
+    files: Annotated[int, Column]
     skip: tuple[str, ...] = ()
-    excluded: str | None = Field(
+    excluded: Annotated[str | None, Column] = Field(
         default=None, description="Why the item does not apply on this machine, or null."
     )
-    description: str = ""
+    description: Annotated[str, Column] = ""
 
 
 class PathStatus(TargetRecord):
     """The state of one placed path."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "item",
-        "source",
-        "mode",
-        "policy",
-        "state",
-        "detail",
-    )
-
     repo: str
-    item: str
+    item: Annotated[str, Column]
     file: str
-    source: str
-    mode: Mode
-    policy: Policy
-    state: Annotated[FileState, FILE_STATE_ROLES] = Field(
+    source: Annotated[str, Column]
+    mode: Annotated[Mode, Column]
+    policy: Annotated[Policy, Column]
+    state: Annotated[FileState, Column, FILE_STATE_ROLES] = Field(
         description="The path's state; the policy guide explains each one."
     )
-    detail: str = ""
+    detail: Annotated[str, Column] = ""
 
 
 class StatusSummary(Record):
@@ -119,20 +98,18 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
     :class:`SyncOutcome`, :class:`RemoveOutcome`).
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("item", "source", "action", "state", "detail")
-
     repo: str
-    item: str
-    source: str
+    item: Annotated[str, Column]
+    source: Annotated[str, Column]
     mode: Mode
-    action: PlaceAction
-    state: Annotated[FileState, FILE_STATE_ROLES] | None = Field(
+    action: Annotated[PlaceAction, Column]
+    state: Annotated[Annotated[FileState, FILE_STATE_ROLES] | None, Column] = Field(
         default=None,
         description="The path's state before the action, so a `skipped` row that was "
         "`behind` under `manual` differs from one that was `applied`; the policy guide "
         "explains each state and what apply, sync and remove do in it.",
     )
-    detail: str = ""
+    detail: Annotated[str, Column] = ""
 
 
 class ApplyOutcome(PlaceOutcome):
@@ -153,13 +130,11 @@ ItemAction = Literal["created", "updated", "deleted", "planned"]
 class ItemOutcome(OutcomeRecord):
     """What ``enable`` or ``disable`` recorded for one item."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "name", "action", "policy", "detail")
-
-    repo: str
-    name: str
-    action: ItemAction
-    policy: Policy | None = None
-    detail: str = ""
+    repo: Annotated[str, Column]
+    name: Annotated[str, Column]
+    action: Annotated[ItemAction, Column]
+    policy: Annotated[Policy | None, Column] = None
+    detail: Annotated[str, Column] = ""
 
 
 RepoAction = Literal["planned", "updated", "deleted", "unchanged", "failed", "skipped"]
@@ -172,8 +147,6 @@ class RepoOutcome(OutcomeRecord):
     they run, and report them on stderr rather than emitting them.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "action", "detail")
-
-    name: str
-    action: RepoAction
-    detail: str = ""
+    name: Annotated[str, Column]
+    action: Annotated[RepoAction, Column]
+    detail: Annotated[str, Column] = ""

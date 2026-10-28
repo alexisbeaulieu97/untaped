@@ -122,8 +122,8 @@ def test_jobs_events_table_shows_changed_and_failed(fake_aap: Any) -> None:
     assert table.splitlines()[0].split() == [
         "counter",
         "event",
-        "host_name",
         "task",
+        "host_name",
         "changed",
         "failed",
     ]
@@ -174,7 +174,7 @@ def test_launch_table_shows_the_target_and_its_execution(seeded_default_org: Any
     table = _run("job-templates", "launch", "alpha").stdout
     row = json.loads(_run("job-templates", "launch", "alpha", "--format", "json").stdout)[0]
 
-    assert _header(table) == ["target_name", "id", "status", "action"]
+    assert _header(table) == ["id", "target_name", "action", "status"]
     assert {"kind", "target_kind", "scope", "failed"} <= row.keys()
 
 
@@ -216,7 +216,7 @@ def test_apply_table_keeps_the_kind_of_a_mixed_batch(
 
     table = _run("apply", str(f), "--dry-run").stdout
 
-    assert _header(table) == ["id", "name", "kind", "action", "fields_changed"]
+    assert _header(table) == ["id", "kind", "name", "action", "fields_changed"]
 
 
 # ---- spec-driven list ----

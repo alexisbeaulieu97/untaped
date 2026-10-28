@@ -46,7 +46,7 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk._cli import echo, emit
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import DryRun, Output, Positional
+from untaped.sdk.fields import DryRun, Output, Positional, default_columns
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,
@@ -335,7 +335,7 @@ class Config(Group):
     commands = (List, Get, Set, Unset, Migrate, Edit)
 
 
-_STABLE_COLUMNS = tuple(column for column in Setting.table_columns if column != "note")
+_STABLE_COLUMNS = tuple(column for column in default_columns(Setting) if column != "note")
 
 
 def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None) -> None:
@@ -361,7 +361,7 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
     tables = [
         (None, stable, _STABLE_COLUMNS),
         ("Experimental", experimental, _STABLE_COLUMNS),
-        ("Deprecated", deprecated, Setting.table_columns),
+        ("Deprecated", deprecated, default_columns(Setting)),
     ]
     present = [table for table in tables if table[1]] or tables[:1]
     for index, (heading, group, table_columns) in enumerate(present):

@@ -61,7 +61,6 @@ from untaped.sdk.records import (
     TableGlyph,
     check_data_kind,
     kind_of,
-    table_columns_of,
 )
 from untaped.sdk.tree import TreeGraph, print_tree
 
@@ -728,7 +727,7 @@ def emit(
     type that declares a kind carry it, so ``kind`` is only for plain models,
     mappings and kind-less records; one that names another kind than a row
     declares is an error. Without ``table_columns``, a collection of
-    records shows their type's ``table_columns``; a table shows a field's
+    records shows their type's ``Column`` fields; a table shows a field's
     :class:`~untaped.sdk.records.TableGlyph` instead of its value.
 
     ``tree`` is the same records as graphs (:class:`~untaped.sdk.tree.TreeGraph`),
@@ -935,8 +934,10 @@ def _model_fields(model: type[BaseModel]) -> list[str]:
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:
     """The default ``table`` columns every record's type declares (``None``: no shared ones)."""
+    from untaped.sdk.fields import default_columns  # noqa: PLC0415 - fields import this module
+
     declared = {
-        table_columns_of(type(item)) if isinstance(item, BaseModel) else () for item in items
+        default_columns(type(item)) if isinstance(item, BaseModel) else () for item in items
     }
     return (list(declared.pop()) or None) if len(declared) == 1 else None
 
