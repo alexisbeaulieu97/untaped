@@ -729,4 +729,4 @@ def test_source_status_table_shows_its_default_columns(tmp_path: Path, monkeypat
 
     header, _ = table(run("source", "status"))
 
-    assert header == ["source", "state", "refreshed_at", "repos", "refs"]
+    assert header == ["source", "state", "repos", "refs", "refreshed_at"]

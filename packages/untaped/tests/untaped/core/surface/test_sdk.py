@@ -135,10 +135,10 @@ def test_a_model_lists_fields_class_attributes_methods_and_subclass_keywords(
         f"sdk {_NAME}.Record(tags=) default=[]",
         f'sdk {_NAME}.Record.__init_subclass__(kind=) default=""',
         f"sdk {_NAME}.Record.count",
+        f"sdk {_NAME}.Record.flags class",
         f"sdk {_NAME}.Record.name",
         f"sdk {_NAME}.Record.show()",
         f"sdk {_NAME}.Record.show(wide=) default=false",
-        f"sdk {_NAME}.Record.table_columns class",
         f"sdk {_NAME}.Record.tags",
         f"sdk {_NAME}.Record.title",
     ]

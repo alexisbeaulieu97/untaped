@@ -19,8 +19,9 @@ for the fields the pipe contract fixes (``docs/reference/conventions.md#output-r
   tables only;
 - :class:`TableText` — a nested model that shows as one table cell.
 
-A record type picks the columns a table of it shows by default with a
-``table_columns`` class variable (:func:`table_columns_of`).
+A record type marks the fields a table of it shows by default with
+``Column`` (:data:`~untaped.sdk.fields.Column`); an outcome's ``action`` and a
+check's ``status`` are marked here, and join a record's own marks.
 
 Records are frozen pydantic models; subclasses add their own fields, which
 serialize before the base fields they inherit (the identifying field stays
@@ -65,7 +66,7 @@ from untaped.sdk.diagnostic import (
     record_kinds,
     record_model,
 )
-from untaped.sdk.fields import Status
+from untaped.sdk.fields import Column, Status
 from untaped.sdk.marks import experimental
 
 
@@ -148,11 +149,6 @@ class TableText(Protocol):
         ...
 
 
-def table_columns_of(model: type[BaseModel]) -> tuple[str, ...]:
-    """The columns a table of ``model`` records shows by default (none: every field)."""
-    return tuple(getattr(model, "table_columns", ()))
-
-
 class Record(WireModel):
     """Base for emitted records: frozen, with unknown fields rejected.
 
@@ -176,8 +172,6 @@ class Record(WireModel):
     Markdown); an attribute docstring after the field stays in the Python.
     """
 
-    #: The fields a table of these records shows by default (empty: every field).
-    table_columns: ClassVar[tuple[str, ...]] = ()
     #: Not a test class, though pytest would collect ``TestResult`` or ``TestCase``.
     __test__: ClassVar[bool] = False
 
@@ -197,6 +191,9 @@ _RowError = Annotated[Failure | None, Field(exclude_if=_is_none)]
 class OutcomeRecord(Record):
     """A mutation result; declare its kind as ``<plugin>.<verb>_outcome``.
 
+    ``action`` is a ``Column``, so a table showing the record's own marked
+    columns shows it too.
+
     A failed row may carry ``error`` (a :class:`~untaped.sdk.diagnostic.Failure`);
     it is left out of the output of every other row.
     """
@@ -208,6 +205,7 @@ class OutcomeRecord(Record):
             warning=("planned", "skipped", "cancelled"),
             error=FAILURE_ACTIONS,
         ),
+        Column,
     ]
     error: _RowError = None
 
@@ -233,10 +231,12 @@ _BASES: Final = (OutcomeRecord, TargetRecord)
 
 
 class CheckRecord(Record):
-    """One check result (doctor checks, validations)."""
+    """One check result (doctor checks, validations); ``status`` is a ``Column``."""
 
     status: Annotated[
-        CheckStatus, Status(success=("pass",), warning=("warn",), error=("fail", "error"))
+        CheckStatus,
+        Status(success=("pass",), warning=("warn",), error=("fail", "error")),
+        Column,
     ]
 
 
@@ -295,5 +295,4 @@ __all__ = [
     "kind_of",
     "record_kinds",
     "record_model",
-    "table_columns_of",
 ]

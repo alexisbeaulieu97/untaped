@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from pkgutil import resolve_name
-from typing import Any
 
 import pytest
 import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.utils import canonicalize_name
-from pydantic import BaseModel
 
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candidates
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import drop_tasks
-from untaped.sdk import _cli as cli
 from untaped.sdk._run import Run
-from untaped.sdk.records import table_columns_of
 
 pytest_plugins = ["untaped.sdk.testing.plugin"]
 
@@ -163,38 +159,3 @@ def rewrite_to(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Callable[...,
         monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
 
     return rewrite
-
-
-@pytest.fixture(autouse=True)
-def table_default_violations(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
-    """Fail the test whose command emits a wide record collection without default columns.
-
-    Records with more than four fields (``error`` aside) need default table
-    columns: their type's ``table_columns`` or the command's ``table_columns=``
-    (``docs/reference/conventions.md#output-records``).
-    """
-    found: list[str] = []
-    emit = cli._emit  # what emit and emit_with both call
-
-    def checked(records: Any, **kwargs: Any) -> None:
-        if not isinstance(records, BaseModel | Mapping) and not kwargs.get("table_columns"):
-            found.extend(_lacking_default_columns(records))
-        emit(records, **kwargs)
-
-    monkeypatch.setattr(cli, "_emit", checked)
-    yield found
-    if found:
-        pytest.fail(
-            "record collections emitted without default table columns (declare "
-            "`table_columns` on the record; see docs/reference/conventions.md#output-records):\n"
-            + "\n".join(f"  {line}" for line in sorted(set(found)))
-        )
-
-
-def _lacking_default_columns(records: Sequence[object]) -> Iterator[str]:
-    for model in dict.fromkeys(type(item) for item in records if isinstance(item, BaseModel)):
-        fields = {*model.model_fields, *model.model_computed_fields} - {"error"}
-        root = model.__module__.split(".")[0]
-        own = root == "untaped" or root.startswith("untaped_")
-        if own and len(fields) > 4 and not table_columns_of(model):
-            yield f"{model.__module__}.{model.__qualname__}::no-default-columns"

@@ -6,22 +6,20 @@ It holds models only, so importing it never imports a command. The
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
-from untaped.sdk import Duration, OutcomeRecord, Status, TargetRecord, UtcTimestamp
+from untaped.sdk import Column, Duration, OutcomeRecord, Status, TargetRecord, UtcTimestamp
 
 
 class Workspace(TargetRecord):
     """One active or archived workspace."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "repos", "created_at", "archived_at")
-
-    name: str
-    repos: int = Field(description="How many repos the workspace holds.")
-    created_at: UtcTimestamp
-    archived_at: UtcTimestamp | None = Field(
+    name: Annotated[str, Column]
+    repos: Annotated[int, Column] = Field(description="How many repos the workspace holds.")
+    created_at: Annotated[UtcTimestamp, Column]
+    archived_at: Annotated[UtcTimestamp | None, Column] = Field(
         default=None, description="When it was archived; null while active."
     )
 
@@ -32,21 +30,19 @@ RepoAction = Literal["created", "checked_out", "unchanged", "failed"]
 class RepoOutcome(OutcomeRecord, TargetRecord):
     """What ``create``/``add`` did for one repo."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "branch", "base", "detail")
-
     workspace: str
-    repo: str
+    repo: Annotated[str, Column]
     dir: str
-    action: RepoAction = Field(
+    action: Annotated[RepoAction, Column] = Field(
         description=(
             "`created`: a new branch from the base; `checked_out`: an existing branch "
             "resumed, or a read-only checkout; `unchanged`: already in the workspace."
         )
     )
-    branch: str | None = None
-    base: str = ""
+    branch: Annotated[str | None, Column] = None
+    base: Annotated[str, Column] = ""
     read_only: bool = False
-    detail: str = ""
+    detail: Annotated[str, Column] = ""
 
 
 StatusState = Literal["ok", "missing", "cache_missing", "error"]
@@ -55,37 +51,26 @@ StatusState = Literal["ok", "missing", "cache_missing", "error"]
 class RepoStatus(TargetRecord):
     """Live git state of one repo, and what blocks archiving it."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "branch",
-        "state",
-        "ahead",
-        "behind",
-        "modified",
-        "untracked",
-        "blockers",
-    )
-
     workspace: str
-    repo: str
+    repo: Annotated[str, Column]
     dir: str
-    branch: str | None
+    branch: Annotated[str | None, Column]
     base: str
     read_only: bool
-    state: Annotated[StatusState, Status(success=("ok",), error=("error",))] = Field(
+    state: Annotated[StatusState, Column, Status(success=("ok",), error=("error",))] = Field(
         description=(
             "`missing`: the repo directory is gone; `cache_missing`: the repo is missing "
             "from the repo store; `error`: its git state can't be read."
         )
     )
     upstream: str | None = Field(default=None, description="Null until the branch is on origin.")
-    ahead: int = 0
-    behind: int = 0
-    modified: int = 0
-    untracked: int = 0
+    ahead: Annotated[int, Column] = 0
+    behind: Annotated[int, Column] = 0
+    modified: Annotated[int, Column] = 0
+    untracked: Annotated[int, Column] = 0
     stashed: int = 0
     unpushed: int = 0
-    blockers: tuple[str, ...] = Field(
+    blockers: Annotated[tuple[str, ...], Column] = Field(
         default=(), description="Why the repo blocks `archive`; empty when it doesn't."
     )
     detail: str = Field(
@@ -103,18 +88,18 @@ ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
 class ArchiveOutcome(OutcomeRecord, TargetRecord):
     """What ``archive`` did (or would do) for one repo."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
-
     workspace: str
-    repo: str = Field(description="Empty on the last row, the workspace directory itself.")
-    action: Annotated[ArchiveAction, Status(success=("removed",))] = Field(
+    repo: Annotated[str, Column] = Field(
+        description="Empty on the last row, the workspace directory itself."
+    )
+    action: Annotated[ArchiveAction, Column, Status(success=("removed",))] = Field(
         description=(
             "`removed` or `failed` when it runs; `planned`, or `skipped` for a blocked "
             "repo, on a preview or a refusal. The workspace row is `skipped` when other "
             "files stay in its directory."
         )
     )
-    detail: str = ""
+    detail: Annotated[str, Column] = ""
 
 
 RemoveAction = Literal["planned", "released", "removed", "kept", "skipped", "failed"]
@@ -131,12 +116,10 @@ class RemoveOutcome(OutcomeRecord, TargetRecord):
     an empty ``repo`` is the workspace itself.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "detail")
-
     workspace: str
-    repo: str
-    action: Annotated[RemoveAction, Status(success=("removed",))]
-    detail: str = ""
+    repo: Annotated[str, Column]
+    action: Annotated[RemoveAction, Column, Status(success=("removed",))]
+    detail: Annotated[str, Column] = ""
     freed_bytes: int = Field(default=0, description="The space a `removed` repo took.")
 
 
@@ -151,14 +134,12 @@ class ResolveOutcome(OutcomeRecord, TargetRecord):
     is gone or not ready).
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action", "url", "detail")
-
     workspace: str
-    repo: str
+    repo: Annotated[str, Column]
     dir: str
-    action: ResolveAction
-    url: str
-    detail: str = ""
+    action: Annotated[ResolveAction, Column]
+    url: Annotated[str, Column]
+    detail: Annotated[str, Column] = ""
 
 
 RunAction = Literal["ran", "failed", "skipped"]
@@ -167,23 +148,15 @@ RunAction = Literal["ran", "failed", "skipped"]
 class RunOutcome(OutcomeRecord, TargetRecord):
     """What ``run`` did for one repo."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "repo",
-        "action",
-        "returncode",
-        "duration_s",
-        "detail",
-    )
-
     workspace: str
-    repo: str
+    repo: Annotated[str, Column]
     dir: str
-    action: RunAction
-    returncode: int | None = Field(
+    action: Annotated[RunAction, Column]
+    returncode: Annotated[int | None, Column] = Field(
         default=None,
         description="Null for a timeout or a repo not run; negative for a signal.",
     )
     stdout: str = ""
     stderr: str = ""
-    duration_s: Annotated[float, Duration] = 0.0
-    detail: str = ""
+    duration_s: Annotated[float, Column, Duration] = 0.0
+    detail: Annotated[str, Column] = ""

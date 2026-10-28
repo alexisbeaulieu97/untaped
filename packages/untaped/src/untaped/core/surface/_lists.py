@@ -46,9 +46,6 @@ HOOKS: Mapping[str, Mapping[str, str]] = {
         "category": "subclasses set it; the exit code and the failure record read it",
         "describes_body": "subclasses set it; the error report reads it",
     },
-    "untaped.sdk.Record": {
-        "table_columns": "record classes set it; the table renderer reads it",
-    },
 }
 
 CONVENTIONS: Mapping[str, str] = {

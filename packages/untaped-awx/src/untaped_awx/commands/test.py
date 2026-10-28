@@ -507,7 +507,9 @@ class Validate(_SuiteCommand):
             "prompt for it); HEAD is the current branch, once pushed."
         ),
     )
-    output: Output[ProvisionOutcome]
+    output: Output[ProvisionOutcome] = Output(
+        columns=("kind", "name", "template", "prompts", "path")
+    )
 
     def run(self) -> Iterator[ProvisionOutcome]:
         """Check every selected case as ``run`` would, without writing or launching anything.
@@ -651,7 +653,9 @@ class Prune(AwxCommand):
         None, description="Only the copies of this run (RUN in `NAME [untaped-test SHA RUN]`)."
     )
     confirm: Confirm
-    output: Output[PruneOutcome]
+    output: Output[PruneOutcome] = Output(
+        columns=("kind", "id", "name", "ref", "created_at", "action")
+    )
 
     def run(self) -> Iterator[PruneOutcome]:
         from untaped_awx.commands import _temporary_sets as copies  # noqa: PLC0415

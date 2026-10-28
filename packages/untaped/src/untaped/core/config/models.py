@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from pydantic_core import to_jsonable_python
@@ -16,6 +16,7 @@ from untaped.sdk._schema import (
     FieldDescriptor,
     redact_nested_url_passwords,
 )
+from untaped.sdk.fields import Column
 from untaped.sdk.marks import SettingStability, removal_text
 from untaped.sdk.records import OutcomeRecord, Record, TableGlyph
 from untaped.sdk.words import removal_phrase
@@ -113,23 +114,14 @@ class Setting(Record, kind="untaped.setting"):
     list as compact JSON, which is also valid input for ``config set``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "key",
-        "value",
-        "default",
-        "source",
-        "profile",
-        "note",
-    )
-
-    key: str
-    value: Annotated[object, _UNSET]
-    default: Annotated[object, _UNSET]
-    source: str
-    profile: str | None = Field(
+    key: Annotated[str, Column]
+    value: Annotated[object, Column, _UNSET]
+    default: Annotated[object, Column, _UNSET]
+    source: Annotated[str, Column]
+    profile: Annotated[str | None, Column] = Field(
         description="Set in `--all-profiles` mode to name the profile owning this row."
     )
-    note: str | None = Field(
+    note: Annotated[str | None, Column] = Field(
         default=None,
         description=(
             "Set when the value came from a deprecated key or variable (`from OLD, removed in "

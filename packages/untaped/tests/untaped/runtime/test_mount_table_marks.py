@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 from enum import IntEnum, StrEnum
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, Self
 
 import pytest
 from pydantic import BaseModel, Field, model_validator
@@ -39,10 +39,6 @@ FULL = "0123456789abcdef0123456789abcdef01234567"
 
 class Stored(Record):
     """One stored copy."""
-
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "name", "size", "fetched", "took", "commit", "wait_s", "sha", "hits",
-    )  # fmt: skip
 
     name: str
     size: Annotated[int, Bytes]

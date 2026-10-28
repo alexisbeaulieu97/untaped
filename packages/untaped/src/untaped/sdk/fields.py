@@ -493,7 +493,7 @@ class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
     ``R`` is the record ``run`` yields or returns (the return type must
-    agree); its ``Column`` marks, else its ``table_columns``, are a list's
+    agree); its ``Column`` marks are a list's
     default columns (a single record's table shows every field), and
     ``--columns`` names its fields (checked before ``run``, so a subclass's
     own fields are not columns). The default configures it:
@@ -934,12 +934,32 @@ def spreads(model: type[BaseModel]) -> bool:
 
 
 def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
-    """A table's default columns for ``model``: its ``Column`` fields, else ``table_columns``."""
-    return column_fields(model) or tuple(getattr(model, "table_columns", None) or ())
+    """A table's default columns for ``model``: its ``Column`` fields, in dump order.
+
+    A field a record base marks (an outcome's ``action``, a check's
+    ``status``) joins the record's own marks; a record marking none of its
+    own fields shows every field, so the base's marks alone are no default.
+    """
+    from untaped.sdk.diagnostic import WireModel, _field_order, dumped_names  # noqa: PLC0415
+    from untaped.sdk.records import CheckRecord, OutcomeRecord  # noqa: PLC0415
+
+    marked = set(column_fields(model))
+    joining = {
+        name
+        for base in (OutcomeRecord, CheckRecord)
+        if issubclass(model, base)
+        for name in column_fields(base)
+    }
+    if marked <= joining:
+        return ()
+    keys = dumped_names(model)
+    shown = {keys[name] for name in marked}
+    order = _field_order(model) if issubclass(model, WireModel) else tuple(keys.values())
+    return tuple(key for key in order if key in shown)
 
 
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:
-    """The fields of ``model`` marked ``Column``: a table's default columns (none: every field)."""
+    """The fields of ``model`` marked ``Column``, by field name."""
     return tuple(name for name, info in model.model_fields.items() if Column in _marks(info))
 
 

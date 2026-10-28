@@ -13,11 +13,12 @@ omits match the dict rows these replaced.
 
 from __future__ import annotations
 
-from typing import Annotated, ClassVar, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk.diagnostic import _is_none, _Omitted
+from untaped.sdk.fields import Column
 from untaped.sdk.records import (
     AbsolutePath,
     CheckRecord,
@@ -37,13 +38,17 @@ class TokenSource(Record, kind="untaped.token_source"):
     folder's settings refuse it.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "name", "key", "source")
-
-    profile: str
-    section: str
-    source: str = Field(description="What answers: a variable, `stored <id>`, a setting, `none`.")
-    name: str = Field(default="token", description="The credential's name in its plugin.")
-    key: _Omitted = Field(default=None, description="What the credential is for, described.")
+    profile: Annotated[str, Column]
+    section: Annotated[str, Column]
+    source: Annotated[str, Column] = Field(
+        description="What answers: a variable, `stored <id>`, a setting, `none`."
+    )
+    name: Annotated[str, Column] = Field(
+        default="token", description="The credential's name in its plugin."
+    )
+    key: Annotated[_Omitted, Column] = Field(
+        default=None, description="What the credential is for, described."
+    )
     step: _Omitted = Field(default=None, description="Which step answers: `variable`, `stored`…")
     id: _Omitted = Field(default=None, description="The stored row's short id, when one answers.")
     refusal: _Omitted = Field(
@@ -54,62 +59,55 @@ class TokenSource(Record, kind="untaped.token_source"):
 class CredentialOutcome(OutcomeRecord, kind="untaped.credential_outcome"):
     """What ``auth login`` or ``auth forget`` did to one stored credential (never the secret)."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("plugin", "name", "key", "id", "store", "action")
-
-    plugin: str
-    name: str
-    key: str = Field(description="What the credential is for, described.")
-    id: str = Field(description="The stored row's short id.")
-    store: str | None = Field(description="Where the secret is kept, or `None`: nowhere.")
-    action: str
+    plugin: Annotated[str, Column]
+    name: Annotated[str, Column]
+    key: Annotated[str, Column] = Field(description="What the credential is for, described.")
+    id: Annotated[str, Column] = Field(description="The stored row's short id.")
+    store: Annotated[str | None, Column] = Field(
+        description="Where the secret is kept, or `None`: nowhere."
+    )
+    action: Annotated[str, Column]
     detail: _Omitted = None
 
 
 class StoredCredential(Record, kind="untaped.stored_credential"):
     """One stored credential (``auth list``): what it is for and how it is read, not the secret."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("id", "plugin", "name", "key", "where")
-
-    id: str = Field(description="The row's short id, as `auth forget --id` takes it.")
-    plugin: str
-    name: str
-    key: str = Field(description="What the credential is for, described.")
+    id: Annotated[str, Column] = Field(
+        description="The row's short id, as `auth forget --id` takes it."
+    )
+    plugin: Annotated[str, Column]
+    name: Annotated[str, Column]
+    key: Annotated[str, Column] = Field(description="What the credential is for, described.")
     backend: str = Field(description="`security`, `secret-tool`, `pass` or `command`.")
-    where: str = Field(description="The store entry, or the command's program alone.")
+    where: Annotated[str, Column] = Field(
+        description="The store entry, or the command's program alone."
+    )
 
 
 class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outcome"):
     """One key ``config migrate`` renamed, dropped or deleted in one profile."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("profile", "from", "to", "action", "detail")
-
     model_config = ConfigDict(serialize_by_alias=True)
 
-    profile: str
-    from_: str = Field(alias="from")
-    to: str = Field(description="Empty for a deleted key.")
-    action: str
-    detail: str = Field(description="For a deleted key, the value it held and why it went.")
+    profile: Annotated[str, Column]
+    from_: Annotated[str, Column] = Field(alias="from")
+    to: Annotated[str, Column] = Field(description="Empty for a deleted key.")
+    action: Annotated[str, Column]
+    detail: Annotated[str, Column] = Field(
+        description="For a deleted key, the value it held and why it went."
+    )
 
 
 class DoctorCheck(CheckRecord, kind="untaped.doctor_check"):
     """One ``doctor`` check; ``fix`` is the command that fixes it, as arguments."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "plugin",
-        "check",
-        "status",
-        "title",
-        "detail",
-        "fix",
-    )
-
-    check: str
-    plugin: str
-    status: CheckStatus
-    title: str
-    detail: str
-    fix: list[str] | None
+    check: Annotated[str, Column]
+    plugin: Annotated[str, Column]
+    status: Annotated[CheckStatus, Column]
+    title: Annotated[str, Column]
+    detail: Annotated[str, Column]
+    fix: Annotated[list[str] | None, Column]
     automatic: bool = Field(description="Whether `doctor fix` runs `fix` on its own.")
 
 
@@ -151,12 +149,10 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     the references' (core's to change), so the record keeps its shape.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "version", "environment", "targets")
-
     holder: Annotated[RegisteredHolder | None, Field(exclude_if=_is_none)] = None
-    environment: str
-    version: str | None
-    targets: list[RegisteredTarget]
+    environment: Annotated[str, Column]
+    version: Annotated[str | None, Column]
+    targets: Annotated[list[RegisteredTarget], Column]
 
 
 PruneWhat = Literal["reference", "folder"]
@@ -172,11 +168,10 @@ class PruneOutcome(OutcomeRecord, TargetRecord, kind="untaped.prune_outcome"):
     or ``failed``, with ``error``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("what", "target_path", "action", "detail")
-
-    what: PruneWhat
-    detail: str
+    what: Annotated[PruneWhat, Column]
+    detail: Annotated[str, Column]
     bytes: int = Field(description="Its size on disk when it was listed.")
+    target_path: Annotated[AbsolutePath, Column]
 
 
 ProjectState = Literal["present", "unreadable", "missing", "unknown"]
@@ -191,12 +186,10 @@ class RecordedProject(Record, kind="untaped.recorded_project"):
     ``path`` and why in ``detail``.
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "path", "state", "current")
-
-    name: str
-    path: str
-    state: ProjectState
-    current: bool = Field(description="Whether the working directory is in it.")
+    name: Annotated[str, Column]
+    path: Annotated[str, Column]
+    state: Annotated[ProjectState, Column]
+    current: Annotated[bool, Column] = Field(description="Whether the working directory is in it.")
     id: _Omitted = None
     holds: dict[str, list[str]] = Field(default_factory=dict)
     detail: _Omitted = None
@@ -210,12 +203,10 @@ class ProjectOutcome(OutcomeRecord, kind="untaped.project_outcome"):
     given its own).
     """
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "path", "action", "detail")
-
-    name: str
-    path: str
+    name: Annotated[str, Column]
+    path: Annotated[str, Column]
     id: str
-    detail: str
+    detail: Annotated[str, Column]
 
 
 SetupState = Literal["done", "todo", "failed", "skipped"]
@@ -228,18 +219,16 @@ SetupActor = Literal["agent", "user"]
 class SetupStep(Record, kind="untaped.setup_step"):
     """One step of ``setup plan``; ``run`` is the command that does it, as arguments."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("step", "state", "by", "detail", "run")
-
-    step: str
+    step: Annotated[str, Column]
     plugin: str
-    state: SetupState
-    detail: str
-    run: list[str] = Field(
+    state: Annotated[SetupState, Column]
+    detail: Annotated[str, Column]
+    run: Annotated[list[str], Column] = Field(
         description=(
             "The complete argv to pass after `untaped`; a `<NAME>` token is a value to ask for."
         )
     )
-    by: SetupActor = Field(
+    by: Annotated[SetupActor, Column] = Field(
         description="Whose step it is: the user's when a secret would pass through the agent."
     )
 
@@ -247,24 +236,20 @@ class SetupStep(Record, kind="untaped.setup_step"):
 class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
     """One finding of a plugin check (:func:`untaped.sdk.testing.check_plugin`)."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("plugin", "check", "title", "status", "detail")
-
-    plugin: str
-    check: str = Field(
+    plugin: Annotated[str, Column]
+    check: Annotated[str, Column] = Field(
         description=("`conventions`, `registration`, `conformance`, `live` or `contracts`.")
     )
-    title: str = Field(
+    title: Annotated[str, Column] = Field(
         description=(
             "What it is about: a convention rule, `owner.contract` or `owner.contract.method`."
         )
     )
-    detail: str = ""
+    detail: Annotated[str, Column] = ""
 
 
 class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcome"):
     """One file ``plugin new`` wrote (``created``) or would write (``planned``)."""
-
-    table_columns: ClassVar[tuple[str, ...]] = ("action", "target_path")
 
 
 class Skill(Record, kind="untaped.skill"):
@@ -277,28 +262,19 @@ class Skill(Record, kind="untaped.skill"):
 class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
     """An untaped-installed skill directory and whether it matches this version."""
 
-    table_columns: ClassVar[tuple[str, ...]] = (
-        "name",
-        "target",
-        "scope",
-        "state",
-        "target_path",
-    )
-
-    name: str
-    target: str
-    scope: str
-    state: str
+    name: Annotated[str, Column]
+    target: Annotated[str, Column]
+    scope: Annotated[str, Column]
+    state: Annotated[str, Column]
+    target_path: Annotated[AbsolutePath, Column]
 
 
 class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):
     """What ``skills update`` or ``skills remove`` did to one installed skill."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ("name", "target", "scope", "target_path", "action")
-
-    name: str
-    target: str
-    scope: str
-    target_path: AbsolutePath
-    action: str
+    name: Annotated[str, Column]
+    target: Annotated[str, Column]
+    scope: Annotated[str, Column]
+    target_path: Annotated[AbsolutePath, Column]
+    action: Annotated[str, Column]
     error: _RowError = None

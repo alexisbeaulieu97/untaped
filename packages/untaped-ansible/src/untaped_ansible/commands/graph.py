@@ -203,7 +203,9 @@ class Uses(_Reaching):
         None,
         description="Branch, tag, or SHA of ROLE to find dependents of; omit for every cached ref.",
     )
-    output: Output[VariableUseHit]
+    output: Output[VariableUseHit] = Output(
+        columns=("repo", "ref", "file", "line", "key_path", "how")
+    )
 
     def run(self) -> Iterator[VariableUseHit]:
         names = _variable_names(self.name)

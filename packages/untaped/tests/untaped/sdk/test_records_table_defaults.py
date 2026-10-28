@@ -7,25 +7,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated
 
 import pytest
 from pydantic import BaseModel
 
-from untaped.sdk import OutcomeRecord, TableGlyph, emit
+from untaped.sdk import Column, OutcomeRecord, TableGlyph, emit
 
 
 class _Repo(OutcomeRecord):
-    table_columns: ClassVar[tuple[str, ...]] = ("repo", "action")
-
-    repo: str
+    repo: Annotated[str, Column]
     url: str = "u"
 
 
 class _Plain(BaseModel):
-    table_columns: ClassVar[tuple[str, ...]] = ("name",)
-
-    name: str
+    name: Annotated[str, Column]
     kind: str = "x"
 
 

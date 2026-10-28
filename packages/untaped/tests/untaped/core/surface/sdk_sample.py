@@ -123,7 +123,7 @@ class Fill(Exception):
 class Record(BaseModel):
     """A pydantic model: its fields only, never BaseModel's API."""
 
-    table_columns: ClassVar[tuple[str, ...]] = ()
+    flags: ClassVar[tuple[str, ...]] = ()
 
     name: str
     tags: list[str] = field(default_factory=list)  # type: ignore[assignment]
