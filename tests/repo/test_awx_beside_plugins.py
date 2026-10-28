@@ -65,8 +65,10 @@ def test_a_broken_sibling_section_does_not_break_awx(
     )
     config: Path = home.path / "config.yml"
     written = yaml.safe_load(config.read_text(encoding="utf-8"))
-    written["github"] = {"sweep": {"max_age_seconds": "not-a-number"}}
+    written["github"] = {"sweep": {"parallel": "not-a-number"}}
     config.write_text(yaml.safe_dump(written), encoding="utf-8")
+    broken = both.cli("github repos list --org acme")
+    assert broken.exit == 4, broken.stderr  # the section is broken for github itself
 
     with respx.mock(base_url=_AWX) as awx:
         awx.get("/api/v2/me/").mock(

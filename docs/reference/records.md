@@ -120,7 +120,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 `awx.inventory_source`, `awx.host`, `awx.group`, `awx.execution_environment`,
 `awx.label`, `awx.instance_group`, `awx.system_job_template`, `awx.job_template`,
 `awx.workflow_job_template`, `awx.schedule`. A resource row is AWX's answer, as
-are `awx.job` and `awx.unified_template` rows: the fields untaped reads lead
+are `awx.job_record` and `awx.unified_template` rows: the fields untaped reads lead
 (`id`, `name`, `type` and the resource's own; `id`, `name`, `status` on a job),
 then every other field AWX sent, in its order. `untaped plugin schema
 awx.job_template` lists the typed fields "plus any others" (`additionalProperties`).
@@ -129,33 +129,33 @@ awx.job_template` lists the typed fields "plus any others" (`additionalPropertie
 |---|---|
 | `awx <resource> list`, `awx <resource> get` | that resource's kind |
 | `awx <resource> export --format json` or `--format pipe` | `awx.document` (YAML by default) |
-| `awx apply`, `awx <resource> patch`, `edit` | `awx.apply_outcome` |
+| `awx apply`, `awx <resource> patch`, `edit` | `awx.apply_outcome_row` |
 | `awx <resource> delete` | `awx.delete_outcome` |
 | `awx job-templates copy`, `awx workflow-templates copy` | `awx.copy_outcome` (`id` names the new template) |
 | `awx job-templates rename`, `awx workflow-templates rename` | `awx.rename_outcome` |
 | `awx <resource> <members> add/remove` | `awx.membership_outcome` |
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
 | `awx projects sync`, `inventories sync`, `inventory-sources sync` | `awx.sync_outcome` |
-| `awx jobs list`, `jobs get`, `jobs wait` | `awx.job` |
-| `awx jobs cancel` | `awx.cancel_outcome` |
-| `awx jobs relaunch` | `awx.relaunch_outcome` (`id`/`kind` name the new execution) |
-| `awx jobs events` | `awx.event`, with the job id as `job` |
-| `awx jobs logs` | `awx.log` (`job`, `line`) |
+| `awx jobs list`, `jobs get`, `jobs wait` | `awx.job_record` |
+| `awx jobs cancel` | `awx.job_cancel_outcome` |
+| `awx jobs relaunch` | `awx.job_relaunch_outcome` (`id`/`kind` name the new execution) |
+| `awx jobs events` | `awx.job_event_row` (`counter`, `event`, then the job id as `job`) |
+| `awx jobs logs` | `awx.job_log_line` (`line`, `job`) |
 | `awx unified-templates list/get` | `awx.unified_template` |
-| `awx job-templates usage`, `awx workflow-templates usage` | `awx.template_usage` (`contains` lists what each workflow runs, as `id`, `type` and `node_count`; `target` and `stopped`) |
+| `awx job-templates usage`, `awx workflow-templates usage` | `awx.workflow_usage` (`contains` lists what each workflow runs, as `id`, `type` and `node_count`; `target` and `stopped`) |
 | `awx workflow-templates nodes` | `awx.workflow_node` |
-| `awx test list` | `awx.test_case` |
-| `awx test run` | `awx.test_result` |
+| `awx test list` | `awx.suite_case` |
+| `awx test run` | `awx.case_result` |
 | `awx test validate --source-ref` | `awx.provision_outcome` |
 | `awx test prune` | `awx.prune_outcome` |
-| `awx ping` | `awx.status` |
+| `awx ping` | `awx.ping_status` |
 | `awx lint` | `lint.finding` ([lint](#lint)) |
 
 | Consumer | Reads | Field used |
 |---|---|---|
 | `awx <resource> <verb> --stdin` (selection commands) | that resource's kind (templates also take `awx.copy_outcome` and `awx.rename_outcome` of their kind); or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
 | `awx <resource> <members> add/remove --stdin` | the member resource's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
-| `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
+| `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job_record`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.job_relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
 | `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines (ID lines with `--by-id`) | `id` of a record; a line is a name, or an ID with `--by-id` |
 
@@ -164,10 +164,11 @@ controller's resources it lints, with each reference and what it resolved
 to), which the run builds and never prints; a repository's own rules read it
 through `untaped_awx.api`.
 
-`awx jobs events` and `awx jobs logs` with several ids print one json or yaml
-array covering every job; the `job` field says which job a row belongs to.
-`pipe` and `raw` print one line per row, and `--follow --format json` streams
-NDJSON; with `--columns '?'` it lists the columns without following.
+`awx jobs events` and `awx jobs logs` stream, followed or not: json prints
+one object per line and yaml one document per row, covering every job; the
+`job` field says which job a row belongs to. `pipe` and `raw` print one line
+per row (raw prints an event's `counter` and a log's `line`); with
+`--columns '?'` they list the columns without reading the jobs.
 
 ## ansible
 

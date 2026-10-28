@@ -366,7 +366,7 @@ KeyValue = Annotated[tuple[str, str], BeforeValidator(_key_value)]
 """``KEY=VALUE``, split on the first ``=``, key stripped: ``labels: list[KeyValue]`` repeats."""
 
 KeyJson = Annotated[tuple[str, JsonValue], BeforeValidator(_key_json)]
-"""``KEY=<json>``: the part after the first ``=`` is JSON (``count=3``, ``tags=["a"]``)."""
+"""``KEY=<json>``, key stripped: the rest is JSON (``count=3``, ``tags=["a"]``)."""
 
 
 # --- typed references to settings ------------------------------------------------
