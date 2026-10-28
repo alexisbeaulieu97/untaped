@@ -15,14 +15,11 @@ The digest is the first 16 hex digits of the sha256 of canonical JSON
   the SDK injects into every section (:data:`~untaped.runtime.settings.RESERVED_SECTION_KEYS`:
   cache max ages, extension ranks) and every secret are left out.
 - ``credentials``: for each credential the plugin declares, the step its
-  ``get`` would use for this run's key: the variable's name, the old
-  ``<name>``/``<name>_command`` setting, or ``stored`` (read from the
-  environment and the index, never a value or a backend); for an 11.0
-  section, each secret setting's source (:func:`~untaped.sdk.network.auth.secret_source`).
+  ``get`` would use for this run's key: the variable's name, or ``stored``
+  (read from the environment and the index, never a value or a backend).
   A run on another credential source never shares a folder with your stored
   login, while the same variable with a new value keeps its folder. Data that
   depends on who asks passes the credential as the cache's ``partition=``.
-  The old settings of a declared credential are sources, not values.
 
 Core's own sections (``http``) are no plugin's: they are never part of it.
 """
@@ -42,7 +39,6 @@ from untaped.runtime.settings import (
     registered_profile_model,
 )
 from untaped.sdk._schema import unwrap_optional
-from untaped.sdk.network.auth import secret_source
 from untaped.sdk.network.credentials import Credential, credential_key, declared_credentials
 
 #: Hex digits of the sha256 kept: a folder name, still far from any collision.
@@ -69,16 +65,10 @@ def settings_terms(section: str) -> dict[str, Any]:
         for name, field in type(loaded).model_fields.items()
         if unwrap_optional(field.annotation) is SecretStr
     }
-    old = {f"{each.name}_command" for each in declared}
     values = loaded.model_dump(
-        mode="json", exclude_unset=True, exclude=set(RESERVED_SECTION_KEYS) | secrets | old
+        mode="json", exclude_unset=True, exclude=set(RESERVED_SECTION_KEYS) | secrets
     )
-    if declared:
-        sources = {each.name: _step(each, loaded) for each in declared}
-    else:
-        sources = {
-            name: secret_source(loaded, section=section, field=name) for name in sorted(secrets)
-        }
+    sources = {each.name: _step(each, loaded) for each in declared}
     return {
         "settings": values,
         "credentials": {name: source for name, source in sources.items() if source is not None},

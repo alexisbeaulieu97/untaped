@@ -4,8 +4,8 @@ One reading of "set" serves doctor, ``setup plan`` and the online checks: a
 value from the active profile, the ``default`` profile it inherits, an
 ``UNTAPED_*`` variable (a leaf or a JSON object) counts; a blank string does
 not, ``[]`` does. A secret's conventional variable is ambient: it counts
-only once every other marked field is set. A ``token_command`` source counts
-without running.
+only once every other marked field is set. A stored command counts without
+running.
 """
 
 from __future__ import annotations
@@ -25,9 +25,6 @@ from core_test_support.commands.support import (
     PROBES,
     WIZ_TOKEN,
     ExtProfile,
-    LegacyProfile,
-    OldWizProfile,
-    UnmarkedWizProfile,
     WizProfile,
     WizServer,
     make_spec,
@@ -42,15 +39,11 @@ from untaped.sdk import (
     HttpError,
     HttpTransportError,
     NeedsSetup,
-    connection_check,
     online_check,
 )
-from untaped.sdk.health.marks import TokenCommand  # type: ignore[deprecated]
-from untaped.sdk.marks import deprecated, forget_notices
+from untaped.sdk.marks import forget_notices
 from untaped.sdk.testing import (
     CliResult,
-    ScreenKeys,
-    ScriptedPromptBackend,
     invoke_cli,
     plugin_candidate,
 )
@@ -139,24 +132,6 @@ def test_a_missing_key_names_config_set_with_its_url(monkeypatch: pytest.MonkeyP
     row = _setup()
     assert row["detail"] == "1 of 2 set; missing wiz.server"
     assert row["fix"][-4:] == ["config", "set", "wiz.server.url", "<URL>"]
-
-
-@pytest.mark.parametrize("setting", ["token: t", "token_command: [x]"])
-def test_a_token_from_an_old_setting_warns_with_auth_login(
-    _isolated_config: Path, setting: str
-) -> None:
-    write_config(
-        _isolated_config,
-        f"format_version: 2\nwiz: {{server: {{url: https://wiz}}, {setting}}}\n",
-    )
-    row = _setup(specs=(make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,)),))
-    old = f"wiz.{setting.partition(':')[0]}"
-    assert row["status"] == "warn"
-    assert row["detail"] == (
-        f"url=https://wiz; token from {old}; `auth login wiz` replaces {old} with a stored login"
-    )
-    assert row["fix"][-3:] == ["auth", "login", "wiz"]
-    assert row["automatic"] is False
 
 
 @pytest.mark.parametrize(
@@ -255,34 +230,6 @@ def test_a_rejected_token_names_auth_login(_isolated_config: Path) -> None:
     assert "the token can also come from $WIZ_TOKEN" in row["detail"]
 
 
-def _legacy() -> PluginSpec:
-    return make_spec(
-        "wiz",
-        settings=UnmarkedWizProfile,
-        doctor_checks=(connection_check("wiz.connection", section="wiz"),),
-    )
-
-
-def test_an_unmarked_plugin_keeps_its_rows_and_warns_once(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "format_version: 2\nwiz: {base_url: https://wiz}\n")
-    result = _cli("doctor", "--format", "json", specs=(_legacy(),))
-    rows = {row["check"]: row for row in json.loads(result.stdout)}
-    assert "setup" not in rows
-    assert rows["wiz.connection"]["detail"].startswith("wiz.token not configured")
-    assert result.stderr.count("behaviour untaped.unmarked-service") == 1
-    plan = _cli("setup", "plan", "--format", "json", specs=(_legacy(),))
-    base_url = next(row for row in json.loads(plan.stdout) if row["step"] == "wiz.base_url")
-    assert base_url["state"] == "done"
-    token = next(row for row in json.loads(plan.stdout) if row["step"] == "wiz.token")
-    assert token["state"] == "todo"
-
-
-def test_the_fallback_warns_only_where_setup_is_read() -> None:
-    result = _cli("config", "list", "--format", "json", specs=(_legacy(),))
-    assert result.exit_code == 0, result.output
-    assert "NeedsSetup" not in result.stderr
-
-
 def test_a_plugin_without_a_service_never_warns() -> None:
     result = _cli("doctor", "--format", "json", specs=(make_spec("ext", settings=ExtProfile),))
     assert "NeedsSetup" not in result.stderr
@@ -364,13 +311,6 @@ class HookProfile(BaseModel):
 SIGNING_KEY = Credential("hook", "signing_key", key=HookServer)
 
 
-class OldHookProfile(HookProfile):
-    """``hook`` with 11.0's settings for its credential still declared, as github's are."""
-
-    signing_key: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
-    signing_key_command: Annotated[TokenCommand, deprecated(removed_in=12)] = None
-
-
 def _hook(*checks: Any) -> PluginSpec:
     return make_spec("hook", settings=HookProfile, doctor_checks=checks, credentials=(SIGNING_KEY,))
 
@@ -384,41 +324,10 @@ def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
     assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]
 
 
-def test_auth_set_calls_an_unmarked_plugin_without_a_command_unknown() -> None:
-    legacy = make_spec("legacy", settings=LegacyProfile)
-    wiz = make_spec("wiz", settings=UnmarkedWizProfile)
-    refused = _cli("auth", "set", "legacy", specs=(legacy, wiz))
-    assert refused.exit_code != 0
-    assert "unknown token section 'legacy'; known: wiz" in refused.stderr
-    assert "no secret named token" not in refused.stderr
-
-
 def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
     result = _cli("setup", "plan", "--format", "json", specs=specs)
     assert result.exit_code == 0, result.output
     return {row["step"]: row for row in json.loads(result.stdout)}
-
-
-@pytest.mark.parametrize(
-    ("hook", "state", "source"),
-    [
-        ("{server: {url: https://hook}, signing_key: plain}", "failed", "hook.signing_key"),
-        (
-            "{server: {url: https://hook}, signing_key_command: [x]}",
-            "done",
-            "hook.signing_key_command",
-        ),
-    ],
-)
-def test_a_credential_from_an_old_setting_names_it(
-    _isolated_config: Path, hook: str, state: str, source: str
-) -> None:
-    write_config(_isolated_config, f"format_version: 2\nhook: {hook}\n")
-    spec = make_spec("hook", settings=OldHookProfile, credentials=(SIGNING_KEY,))
-    row = _plan_rows(spec)["hook.signing_key"]
-    assert row["state"] == state
-    assert row["detail"].startswith(f"signing_key from {source}")
-    assert "auth login hook signing_key" in " ".join([row["detail"], *row["run"]])
 
 
 class PinProfile(BaseModel):
@@ -446,28 +355,6 @@ def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> No
     row = _doctor("--online", specs=(spec,), exit_code=1)["pin.api:pin"]
     assert row["detail"] == "down (pin.pin is set)"
     assert "1234" not in json.dumps(row)
-
-
-@pytest.mark.parametrize(
-    ("wiz", "status"),
-    [
-        ("{token_command: [x]}", "configured"),
-        ("{base_url: https://wiz}", "missing token"),
-        ("{}", "not configured"),
-    ],
-)
-def test_an_unmarked_plugin_keeps_its_screen_status(
-    _isolated_config: Path, wiz: str, status: str
-) -> None:
-    write_config(_isolated_config, f"format_version: 2\nwiz: {wiz}\n")
-    backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(_legacy()),))
-    setup = invoke_cli(
-        root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True
-    )
-    assert setup.exit_code == 0, setup.output
-    row = next(row for row in backend.ran[0].init()[0].rows if row.name == "wiz")
-    assert row.status == status
 
 
 def test_a_rejected_credential_not_named_token_names_its_own_auth_login(

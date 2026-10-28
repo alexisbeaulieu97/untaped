@@ -534,7 +534,6 @@ def _import_every_shipped_module() -> None:
 def _samples() -> dict[str, WireModel]:
     from untaped.core.commands.plugins import ContractMethod
     from untaped.core.commands.records import (
-        AuthOutcome,
         ConfigMigrationOutcome,
         CredentialOutcome,
         DoctorCheck,
@@ -665,14 +664,6 @@ def _samples() -> dict[str, WireModel]:
             plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),
-        AuthOutcome(
-            section="github",
-            profile="default",
-            store=None,
-            action="failed",
-            detail="x",
-            error=Failure.from_exception(ConfigError("x")),
-        ),
         TokenSource(profile="default", section="github", source="$GITHUB_TOKEN"),
         CredentialOutcome(
             plugin="github",
@@ -969,8 +960,6 @@ def test_every_kind_core_and_plugins_declare_round_trips_in_json_mode() -> None:
 #: The keys, in order, of the dict rows core's management commands wrote
 #: before each declared a model: a model keeps its row's wire order.
 _ROW_KEYS = {
-    # `field` came later, at the end, so the old keys keep their order.
-    "untaped.auth_outcome": ["section", "profile", "store", "action", "detail", "error"],
     "untaped.token_source": ["profile", "section", "source", "name"],
     "untaped.credential_outcome": ["plugin", "name", "key", "id", "store", "action"],
     "untaped.stored_credential": ["id", "plugin", "name", "key", "backend", "where"],

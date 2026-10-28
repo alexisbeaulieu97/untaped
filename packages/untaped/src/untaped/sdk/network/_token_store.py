@@ -1,9 +1,8 @@
-"""Store API tokens with a tool on this machine, outside ``config.yml``.
+"""The password stores on this machine that keep credentials outside ``config.yml``.
 
-``untaped auth set`` hands a token to one of three stores **on stdin**
-(never in argv), reads it back, then writes the matching
-``<section>.token_command`` so the token is read lazily like any other
-command token (:mod:`untaped.sdk.network.auth`). Stores, in the order they are tried:
+A secret goes to one of three stores **on stdin** (never in argv) and is
+read back before anything names it (:mod:`untaped.sdk.network._credential_store`
+files the row). Stores, in the order they are tried:
 
 - ``security``: the macOS login keychain;
 - ``secret-tool``: a Secret Service (GNOME Keyring, KWallet), detected by
@@ -11,8 +10,7 @@ command token (:mod:`untaped.sdk.network.auth`). Stores, in the order they are t
   set with no service behind it (WSL2, SSH);
 - ``pass``: the GPG password store, which works headless with gpg-agent.
 
-Every entry is named ``<profile>/<section>`` under the ``untaped``
-service, whichever config file is in use. Their stdout is never shown, nor
+Every entry is filed under the ``untaped`` service. Their stdout is never shown, nor
 is ``security``'s stderr (its ``-i`` input carries the token): a failure is
 reported by program and exit status, plus the fix for the causes worth
 naming (a locked keychain, a timeout on an unseen unlock prompt). The other
@@ -22,11 +20,9 @@ tools explain their own failures on stderr, which never sees the token.
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -47,27 +43,25 @@ from untaped.sdk.network.auth import (
 )
 
 StoreName = Literal["security", "secret-tool", "pass"]
-"""A store ``auth set --store`` accepts."""
+"""A store ``auth login --store`` accepts."""
 
 SERVICE = "untaped"
 _PROBE_TIMEOUT_SECONDS = 5.0
 _ROUND_TRIP_SECONDS = 60.0
-_OWN_COMMAND_HINT = "if `pass` itself works for you, set the section's token_command to your own"
+_OWN_COMMAND_HINT = "if `pass` itself works for you, log in with --token-command and your own"
 _PREFLIGHT_HINT_SUFFIX = f"; {_OWN_COMMAND_HINT} command"
-_SEGMENT = r"[A-Za-z0-9_-][A-Za-z0-9._-]*"
-_ENTRY = re.compile(f"{_SEGMENT}/{_SEGMENT}")
 _LOCKED = "User interaction is not allowed"
 _SECURITY_NOT_FOUND = 44
 
 
 @dataclass(frozen=True)
 class TokenStore:
-    """One store: how to write, read and delete the entry ``<profile>/<section>``."""
+    """One store: how to write, read and delete an entry."""
 
     name: StoreName
 
     def read_argv(self, entry: str) -> list[str]:
-        """The ``token_command`` that prints the entry's token."""
+        """The command that prints the entry's token."""
         if self.name == "security":
             return ["security", "find-generic-password", "-s", SERVICE, "-a", entry, "-w"]
         if self.name == "secret-tool":
@@ -101,12 +95,12 @@ class TokenStore:
         else:
             argv = ["pass", "insert", "--multiline", "--force", f"{SERVICE}/{entry}"]
             _run(argv, stdin=f"{token}\n")
-        # A fresh run, never the per-process token_command cache, so a failed
+        # A fresh run, never the per-process token command cache, so a failed
         # store cannot hide behind an earlier read.
         if _run(self.read_argv(entry)).stdout.strip() != token:
             raise ConfigError(
                 f"{self.name}: the token did not read back from {entry}, which may now hold a "
-                "bad value; the config was not changed, so store the token again"
+                "bad value; nothing was filed, so store the token again"
             )
 
     def gone(self, entry: str) -> bool:
@@ -138,8 +132,8 @@ class TokenStore:
 
         ``usable`` only looks (a key exists, the service answers); this really
         encrypts and decrypts, or stores and reads back, so a missing pinentry
-        or a locked keyring stops ``auth set``, ``auth migrate`` and ``setup``
-        before any token is asked for or moved. ``security`` has its own locked-keychain
+        or a locked keyring stops ``auth login`` and ``setup`` before any
+        token is asked for. ``security`` has its own locked-keychain
         message and needs none. It may prompt for an unlock, so ``doctor``
         never calls it.
         """
@@ -303,27 +297,6 @@ def _gpg_recipients() -> list[str]:
     return [ident for line in text.splitlines() if (ident := line.split("#", 1)[0].strip())]
 
 
-def entry_name(
-    profile: str, section: str, *, field: str = "token", command: str = "token_command"
-) -> str:
-    """The store entry for the secret ``field`` of ``section`` in ``profile``.
-
-    ``<profile>/<section>`` for a field named ``token`` (the entry every
-    earlier release wrote), ``<profile>/<section>.<field>`` for another.
-    ``command`` is the field's command setting, named when the profile
-    can't name an entry.
-    """
-    entry = f"{profile}/{section}" if field == "token" else f"{profile}/{section}.{field}"
-    if not _ENTRY.fullmatch(entry):
-        raise ConfigError(
-            f"profile {profile!r} cannot name a store entry (letters, digits, '.', '_' and "
-            f"'-' only, not starting with '.'); set {section}.{command} to your own "
-            "command instead",
-            category="invalid",
-        )
-    return entry
-
-
 def pick_store(name: StoreName | None = None) -> TokenStore | None:
     """The named store when usable (else an error), or the first usable one."""
     if name is not None:
@@ -344,29 +317,6 @@ def usable_stores() -> list[TokenStore]:
     return [store for store in STORES if store.usable()]
 
 
-def preset_entry(argv: Sequence[str] | None) -> tuple[TokenStore, str] | None:
-    """The store and entry when ``argv`` is a ``token_command`` untaped wrote."""
-    if not argv:
-        return None
-    for store in STORES:
-        for entry in _candidate_entries(store, argv):
-            if list(argv) == store.read_argv(entry):
-                return store, entry
-    return None
-
-
-def no_store_message(section: str, env: Sequence[str], *, command: str = "token_command") -> str:
-    """Why nothing was stored, and the routes that remain (``command``: the secret's setting)."""
-    routes = [f"set {section}.{command} to a password manager's command"]
-    routes.extend(f"export ${name}" for name in env[:1])
-    skipped = pass_problem() if find_program("pass") else None
-    note = f" ({skipped})" if skipped else ""
-    return (
-        "no token store is usable on this machine (macOS security, secret-tool with a "
-        f"Secret Service, or pass with a gpg key){note}; {' or '.join(routes)}"
-    )
-
-
 def no_backend_message(plugin: str, name: str) -> tuple[str, str]:
     """Why no credential store answers here, and the hint naming the command way that remains."""
     skipped = pass_problem() if find_program("pass") else None
@@ -385,14 +335,6 @@ def no_backend_message(plugin: str, name: str) -> tuple[str, str]:
 def _quoted(text: str) -> str:
     """``text`` as one argument of a ``security -i`` command line."""
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _candidate_entries(store: TokenStore, argv: Sequence[str]) -> list[str]:
-    if store.name == "pass":
-        prefix = f"{SERVICE}/"
-        last = argv[-1]
-        return [last.removeprefix(prefix)] if last.startswith(prefix) else []
-    return [argv[i + 1] for i, part in enumerate(argv[:-1]) if part in ("-a", "account")]
 
 
 def _password_store() -> Path:
@@ -433,11 +375,8 @@ __all__ = [
     "PASS_GPG_HINT",
     "StoreName",
     "TokenStore",
-    "entry_name",
     "no_backend_message",
-    "no_store_message",
     "pass_problem",
     "pick_store",
-    "preset_entry",
     "usable_stores",
 ]

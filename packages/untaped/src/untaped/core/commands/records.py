@@ -29,30 +29,12 @@ from untaped.sdk.records import (
 )
 
 
-class AuthOutcome(OutcomeRecord, kind="untaped.auth_outcome"):
-    """What the deprecated ``auth set``, ``unset`` or ``migrate`` did to a section's token.
-
-    Never the token. ``store`` is where it is kept (``None``: nowhere); a
-    failed ``migrate`` row says why in ``detail`` and ``error``.
-    """
-
-    table_columns: ClassVar[tuple[str, ...]] = ("section", "profile", "store", "action", "detail")
-
-    section: str
-    profile: str
-    store: str | None
-    action: str
-    detail: _Omitted = None
-    error: _RowError = None
-
-
 class TokenSource(Record, kind="untaped.token_source"):
     """Where one credential comes from (``auth status``), named without reading it.
 
-    For a declared credential, one row for this run: its key, the step that
-    answers (``variable``, ``stored``, ``setting``, ``env``) and the stored
-    row's id, or why a folder's settings refuse it. For a plugin still on
-    11.0's ``token`` settings, one row per profile, as in 11.0.
+    One row per credential for this run: its key, the step that answers
+    (``variable``, ``stored``, ``setting``, ``env``) and the stored row's id,
+    or why a folder's settings refuse it.
     """
 
     table_columns: ClassVar[tuple[str, ...]] = ("profile", "section", "name", "key", "source")
@@ -269,10 +251,7 @@ class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
 
     plugin: str
     check: str = Field(
-        description=(
-            "`conventions`, `registration`, `conformance`, `live`, `unmarked-service` or "
-            "`contracts`."
-        )
+        description=("`conventions`, `registration`, `conformance`, `live` or `contracts`.")
     )
     title: str = Field(
         description=(

@@ -156,7 +156,7 @@ def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line(clock: Ma
 def test_an_expired_token_blocks_with_its_own_category_never_not_found() -> None:
     """S6: gitlab's token expired, nothing ranked: gitlab's auth error (exit 4)."""
     expired = UntapedError(
-        "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth set gitlab`"
+        "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth login gitlab`"
     )
     with (
         providers(github=[listing(repo("acme/api"))], gitlab=[listing(error=expired)]),

@@ -25,24 +25,17 @@ from untaped.core.commands.setup_state import (
     profile_exists,
     service_marks,
     service_states,
-    service_store,
 )
 from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import CompositionResult, PluginSpec, settings_model
+from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
 from untaped.sdk.fields import table_row
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
-from untaped.sdk.network.auth import (
-    PLAINTEXT_TOKEN,
-    find_program,
-    plaintext_subject,
-    takes_token_command,
-    token_instead,
-)
+from untaped.sdk.network.auth import find_program
 from untaped.sdk.words import command_argv, command_line, shown_path, split_profile
 
 Row = dict[str, object]
@@ -63,10 +56,9 @@ def plan_rows(
     exists = profile_exists(profile)
     rows = [_install_row(profile), _profile_row(profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
-    store = service_store(services)
     ready: list[str] = []
     for name, spec in services.items():
-        steps = _service_rows(spec, states[name], profile, store_name=store.name if store else None)
+        steps = _service_rows(spec, states[name], profile)
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
@@ -142,9 +134,7 @@ def _profile_row(profile: str, *, exists: bool) -> Row:
     return _row("profile", NAME, "todo", detail, ["profile", "create", profile])
 
 
-def _service_rows(
-    spec: PluginSpec, state: ServiceState, profile: str, *, store_name: str | None
-) -> list[Row]:
+def _service_rows(spec: PluginSpec, state: ServiceState, profile: str) -> list[Row]:
     """A row per marked field, in declaration order: done, or the command that sets it."""
     name, section = spec.name, spec.name
     if state.invalid is not None:
@@ -157,9 +147,8 @@ def _service_rows(
         if field.credential is not None and field.key in state.missing:
             rows.append(_login_row(spec, field, profile))
         elif field.credential is not None:
-            rows.append(_credential_row(spec, field, state, profile))
-        elif field.path == ("token",) and field.credential is None and field.is_secret:
-            rows.append(_token_row(spec, state, profile, store_name=store_name))
+            source = state.sources.get(field.key, "")
+            rows.append(_row(step, name, "done", f"{field.key} from {source}"))
         elif field.key not in state.missing:
             rows.append(_row(step, name, "done", _done(field, state)))
         else:
@@ -199,74 +188,6 @@ def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
     return _row(f"{name}.{field.key}", name, "todo", detail, run, by="user")
 
 
-def _credential_row(spec: PluginSpec, field: MarkedField, state: ServiceState, profile: str) -> Row:
-    """A found credential: done, unless it is still plain text in its deprecated setting.
-
-    ``auth login`` prompts for the secret, so storing it is the user's step.
-    """
-    name = spec.name
-    step = f"{name}.{field.key}"
-    source = state.sources.get(field.key, "")
-    detail = f"{field.key} from {source}"
-    login = set_command(field, service_marks(spec), section=name)
-    if source == f"{name}.{field.key}":
-        detail = f"{detail}, plain text in the config file; store it as a login"
-        return _row(step, name, "failed", detail, command_argv(login, profile=profile), by="user")
-    if source.startswith(f"{name}."):
-        detail = f"{detail}; `{' '.join(login)}` replaces {source} with a stored login"
-    return _row(step, name, "done", detail)
-
-
-def _token_row(
-    spec: PluginSpec, state: ServiceState, profile: str, *, store_name: str | None
-) -> Row:
-    """The token step.
-
-    A step is the user's when a secret would pass through the agent's process
-    or terminal: ``auth set`` prompts for a token, while ``auth migrate``
-    moves one inside its own process and prints none.
-    """
-    name, section = spec.name, spec.name
-    step = f"{name}.token"
-    takes_command = takes_token_command(settings_model(spec))
-    settings = settings_model(spec).model_construct()
-    token = service_marks(spec).token
-    if state.plaintext is not None or state.inherited_token:
-        holder = profile if state.plaintext is not None else DEFAULT_PROFILE
-        # Each branch names its own way out, so the sentence names none.
-        subject = plaintext_subject(section, f"profile {holder}")
-        detail = PLAINTEXT_TOKEN.sentence(subject, replacement=None)
-        if takes_command and store_name is not None:
-            # `auth migrate` moves every profile's plaintext tokens.
-            run = command_argv("auth migrate", profile=profile)
-            return _row(step, name, "failed", f"{detail}; move it to {store_name}", run)
-        if takes_command:
-            # No store here: the setup screen replaces it with a command or a variable.
-            run = command_argv(["setup", "--only", name], profile=holder)
-            return _row(step, name, "failed", f"{detail}; replace it", run, by="user")
-        instead = token_instead(settings, section=section)
-        detail = f"{detail}; export {instead} in your shell, then remove it"
-        run = command_argv(["config", "unset", f"{section}.token"], profile=holder)
-        return _row(step, name, "failed", detail, run, by="user")
-    if state.token_source is not None:
-        return _row(step, name, "done", f"token from {state.token_source}")
-    if not takes_command:
-        detail = f"no token; export {token_instead(settings, section=section)}"
-        return _row(step, name, "todo", detail, by="user")
-    if store_name is not None:
-        detail = f"no token; store one with {store_name}"
-        run = command_argv(["auth", "set", section], profile=profile)
-    else:
-        detail = (
-            "no token and no password store here; <COMMAND> prints the token, "
-            'as a JSON argv list such as ["my-vault", "read", "token"]'
-        )
-        command = ["config", "set", f"{section}.token_command", "<COMMAND>"]
-        run = command_argv(command, profile=profile)
-    del token
-    return _row(step, name, "todo", detail, run, by="user")
-
-
 def _online_rows(spec: PluginSpec, checks: list[Row], *, online: bool, ready: bool) -> list[Row]:
     """One row per declared online check, ``<service>.online.<check>`` in every state."""
     name = spec.name
@@ -289,35 +210,22 @@ def _online_rows(spec: PluginSpec, checks: list[Row], *, online: bool, ready: bo
 
 
 def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
-    name, section = spec.name, spec.name
+    name = spec.name
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None
-    if run is not None and split_profile(run)[1][:3] == ["config", "set", f"{section}.token"]:
-        # Models without `token_command`: never suggest storing a token in the config.
-        settings = settings_model(spec).model_construct()
-        detail = f"{detail}; export {token_instead(settings, section=section)} with a working token"
-        return _row(step, name, "failed", detail, by="user")
-    by = _by(spec, run, automatic=row.get("automatic") is True)
+    by = _by(run, automatic=row.get("automatic") is True)
     return _row(step, name, "failed", detail, run, by=by)
 
 
-def _by(spec: PluginSpec, run: list[str] | None, *, automatic: bool) -> SetupActor:
-    """Who runs a fix: an automatic one is the agent's.
+def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
+    """Who runs a fix: an automatic one is the agent's, any other ``auth …`` the user's.
 
-    Any other fix that writes a secret (``auth …``, a secret's setting or
-    its command setting, from the marks) is the user's.
+    Only ``auth`` writes a secret, and it asks for it.
     """
     if automatic:
         return "agent"
-    command = split_profile(run or [])[1]
-    secrets = {
-        f"{spec.name}.{key}"
-        for field in service_marks(spec).secrets
-        for key in (field.key, f"{field.key}_command")
-    }
-    secret = command[:1] == ["auth"] or any(arg in secrets for arg in command)
-    return "user" if secret else "agent"
+    return "user" if split_profile(run or [])[1][:1] == ["auth"] else "agent"
 
 
 __all__ = ["SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]

@@ -1,9 +1,6 @@
 # untaped surface 2
-behaviour untaped.connected-client-by-name  [deprecated, removed in 12.0; use base_url= and bearer= values]
 behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via=Contract.bridge) and its values()]
 behaviour untaped.pipe-envelope  [deprecated, removed in 12.0; use Stdin[R] reading the rows, as a command's field]
-behaviour untaped.plaintext-token  [deprecated, removed in 12.0; use untaped auth migrate]
-behaviour untaped.unmarked-service  [deprecated, removed in 12.0; use a NeedsSetup-marked CredentialKey setting and a declared Credential]
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -474,36 +471,6 @@ cli untaped auth login --store choice=security
 cli untaped auth login --token-command VALUE default=unset
 cli untaped auth login [NAME]@2 default=unset
 cli untaped auth login [PLUGIN]@1 default=unset
-cli untaped auth migrate  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --columns alias=-c  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --dry-run switch default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format alias=-f  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format choice=json  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format choice=pipe  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format choice=raw  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format choice=table  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --format choice=yaml  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --store VALUE default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --store choice=pass  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --store choice=secret-tool  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth migrate --store choice=security  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --columns alias=-c  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format alias=-f  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format choice=json  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format choice=pipe  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format choice=raw  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format choice=table  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --format choice=yaml  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --stdin switch default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --store VALUE default=unset  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --store choice=pass  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --store choice=secret-tool  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set --store choice=security  [deprecated, removed in 12.0; use untaped auth login]
-cli untaped auth set SECTION  [deprecated, removed in 12.0; use untaped auth login]
 cli untaped auth status
 cli untaped auth status --columns VALUE... default=unset
 cli untaped auth status --columns alias=-c
@@ -514,19 +481,6 @@ cli untaped auth status --format choice=pipe
 cli untaped auth status --format choice=raw
 cli untaped auth status --format choice=table
 cli untaped auth status --format choice=yaml
-cli untaped auth unset --columns VALUE... default=unset  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --columns alias=-c  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --dry-run switch default=unset  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format VALUE default=table  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format alias=-f  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format choice=json  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format choice=pipe  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format choice=raw  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format choice=table  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --format choice=yaml  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --yes alias=-y  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset --yes switch default=unset  [deprecated, removed in 12.0; use untaped auth forget]
-cli untaped auth unset SECTION  [deprecated, removed in 12.0; use untaped auth forget]
 cli untaped awx
 cli untaped awx apply --allow-unverified switch default=unset
 cli untaped awx apply --check switch default=unset
@@ -4323,7 +4277,6 @@ contract workspace.repo_source.repos() -> Repo[]  [experimental]
 contract workspace.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 convention attribute renamed_keys
 convention attribute retired_keys
-convention attribute token_sources
 convention entry-point untaped.plugins
 convention module <owner>.testing.conformance
 convention module untaped.sdk.testing.plugin
@@ -5775,13 +5728,6 @@ record untaped.Source.kind string  [experimental]
 record untaped.Source.plugin string  [experimental]
 record untaped.Source.record default={}  [experimental]
 record untaped.Source.record object  [experimental]
-record untaped.auth_outcome  [deprecated, removed in 12.0]
-record untaped.auth_outcome.action string  [deprecated, removed in 12.0]
-record untaped.auth_outcome.detail string?  [deprecated, removed in 12.0]
-record untaped.auth_outcome.error Failure?  [deprecated, removed in 12.0]
-record untaped.auth_outcome.profile string  [deprecated, removed in 12.0]
-record untaped.auth_outcome.section string  [deprecated, removed in 12.0]
-record untaped.auth_outcome.store string?  [deprecated, removed in 12.0]
 record untaped.config_migration_outcome
 record untaped.config_migration_outcome.action string
 record untaped.config_migration_outcome.detail string
@@ -7806,11 +7752,6 @@ sdk untaped.sdk.TextInput.view(width=) default=None  [experimental]
 sdk untaped.sdk.TextInput.with_error(text)  [experimental]
 sdk untaped.sdk.TextOrStdin
 sdk untaped.sdk.TlsVerify
-sdk untaped.sdk.TokenCommand
-sdk untaped.sdk.TokenSources()  [deprecated, removed in 12.0; use untaped.sdk.Credential]
-sdk untaped.sdk.TokenSources(env@1=) default=[]  [deprecated, removed in 12.0; use untaped.sdk.Credential]
-sdk untaped.sdk.TokenSources.__init_subclass__(*args)  [deprecated, removed in 12.0; use untaped.sdk.Credential]
-sdk untaped.sdk.TokenSources.env  [deprecated, removed in 12.0; use untaped.sdk.Credential]
 sdk untaped.sdk.TokenUrl
 sdk untaped.sdk.Tree(cursor@4=) default=0  [experimental]
 sdk untaped.sdk.Tree(error@6=) default=""  [experimental]
@@ -8004,17 +7945,12 @@ sdk untaped.sdk.code_version(extra=) default=[]
 sdk untaped.sdk.code_version(module)
 sdk untaped.sdk.command_line(command)
 sdk untaped.sdk.committed_path(spec, name, *, root)  [experimental]
-sdk untaped.sdk.connected_client(base_url=) default=<computed>
-sdk untaped.sdk.connected_client(base_url_field=) default=base_url  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(bearer=) default=None
-sdk untaped.sdk.connected_client(bearer_token_field=) default=token  [deprecated, removed in 12.0; use bearer=]
-sdk untaped.sdk.connected_client(config, *, section)
+sdk untaped.sdk.connected_client(config, *, section, base_url)
 sdk untaped.sdk.connected_client(headers=) default=None
 sdk untaped.sdk.connected_client(http=) default=None
-sdk untaped.sdk.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.connected_client(retry=) default=<computed>
 sdk untaped.sdk.connected_client(verify=) default=None
-sdk untaped.sdk.connection_check(check_id, *, section)
 sdk untaped.sdk.contracts.Ambiguous()
 sdk untaped.sdk.contracts.Ambiguous(*args)
 sdk untaped.sdk.contracts.Ambiguous(category=) default=None
@@ -8405,14 +8341,10 @@ sdk untaped.sdk.network.RetryPolicy.retry_on_transport
 sdk untaped.sdk.network.RetryPolicy.retry_statuses
 sdk untaped.sdk.network.RetryPolicy.status_delay(attempt, retry_after)
 sdk untaped.sdk.network.TlsVerify
-sdk untaped.sdk.network.connected_client(base_url=) default=<computed>
-sdk untaped.sdk.network.connected_client(base_url_field=) default=base_url  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.network.connected_client(bearer=) default=None
-sdk untaped.sdk.network.connected_client(bearer_token_field=) default=token  [deprecated, removed in 12.0; use bearer=]
-sdk untaped.sdk.network.connected_client(config, *, section)
+sdk untaped.sdk.network.connected_client(config, *, section, base_url)
 sdk untaped.sdk.network.connected_client(headers=) default=None
 sdk untaped.sdk.network.connected_client(http=) default=None
-sdk untaped.sdk.network.connected_client(required=) default=["base_url","token"]  [deprecated, removed in 12.0; use base_url=]
 sdk untaped.sdk.network.connected_client(retry=) default=<computed>
 sdk untaped.sdk.network.connected_client(verify=) default=None
 sdk untaped.sdk.network.find_program(name)

@@ -1,45 +1,19 @@
-"""Tests for token resolution: explicit token > ``token_command`` > env fallbacks."""
+"""Running a token command: once per process, lazily, never showing its output or arguments."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import ClassVar
 
 import httpx
 import pytest
 import respx
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import BaseModel
 
-from untaped.runtime.settings import (
-    HttpSettings,
-    get_config_section,
-    get_settings,
-    get_settings_model,
-    register_profile_settings,
-    reset_config_registry,
-)
-from untaped.sdk import TokenCommand, TokenSources, connected_client
-from untaped.sdk._app_context import app_context
+from untaped.runtime.settings import HttpSettings
+from untaped.sdk import connected_client
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.network.auth import (
-    clear_token_cache,
-    describe_token_source,
-    forget_token_command,
-    resolve_token,
-)
-
-
-class DemoSettings(BaseModel):
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("DEMO_TOKEN", "DEMO_TOKEN_2"))
-
-    base_url: str = "https://api.example.com"
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-
-
-class PlainSettings(BaseModel):
-    token: SecretStr | None = None
+from untaped.sdk.network.auth import CommandToken, clear_token_cache, forget_token_command
 
 
 def _printer(text: str, *, log: Path | None = None, code: int = 0) -> list[str]:
@@ -52,41 +26,21 @@ def _printer(text: str, *, log: Path | None = None, code: int = 0) -> list[str]:
     return [sys.executable, "-c", script]
 
 
-def test_explicit_token_wins_over_command_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DEMO_TOKEN", "from-env")
-    settings = DemoSettings(token=SecretStr("explicit"), token_command=_printer("from-cmd"))
-    resolved = resolve_token(settings, section="demo")
-    assert resolved.token is not None
-    assert resolved.token.get_secret_value() == "explicit"
-    assert describe_token_source(settings, section="demo") == "demo.token"
+class _Demo(BaseModel):
+    """The ``demo`` section's settings: nothing a client reads."""
 
 
-def test_ambient_false_ignores_the_conventional_variables(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("DEMO_TOKEN", "from-env")
-    assert describe_token_source(DemoSettings(), section="demo") == "$DEMO_TOKEN"
-    assert describe_token_source(DemoSettings(), section="demo", ambient=False) is None
-    command = DemoSettings(token_command=["x"])
-    assert describe_token_source(command, section="demo", ambient=False) == "demo.token_command"
+def _token(argv: list[str]) -> CommandToken:
+    return CommandToken(argv, setting="the demo token")
 
 
-def test_command_wins_over_env_and_runs_once_lazily(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("DEMO_TOKEN", "from-env")
+def test_a_command_runs_once_and_only_when_read(tmp_path: Path) -> None:
     log = tmp_path / "runs"
-    settings = DemoSettings(token_command=_printer("  from-cmd\n", log=log))
-    resolved = resolve_token(settings, section="demo")
-    assert describe_token_source(settings, section="demo") == "demo.token_command"
+    token = _token(_printer("  from-cmd\n", log=log))
+    assert repr(token) == "CommandToken('**********')"
     assert not log.exists(), "the command must not run until the token is read"
-    assert resolved.token is not None
-    assert repr(resolved.token) == "CommandToken('**********')"
-    assert not log.exists()
-    assert resolved.token.get_secret_value() == "from-cmd"
-    again = resolve_token(settings, section="demo")
-    assert again.token is not None
-    assert again.token.get_secret_value() == "from-cmd"
+    assert token.get_secret_value() == "from-cmd"
+    assert _token(_printer("  from-cmd\n", log=log)).get_secret_value() == "from-cmd"
     assert log.read_text() == "x"
 
 
@@ -95,9 +49,7 @@ def test_forgetting_a_command_runs_it_again_and_leaves_the_others_cached(tmp_pat
     argv, other = _printer("tok", log=log), _printer("tok", log=other_log)
 
     def read(command: list[str]) -> str:
-        token = resolve_token(DemoSettings(token_command=command), section="demo").token
-        assert token is not None
-        return token.get_secret_value()
+        return _token(command).get_secret_value()
 
     read(argv), read(other), read(argv)
     assert (log.read_text(), other_log.read_text()) == ("x", "x")  # cached
@@ -109,97 +61,36 @@ def test_forgetting_a_command_runs_it_again_and_leaves_the_others_cached(tmp_pat
     forget_token_command(["never", "run"])  # an unknown command is nothing to forget
 
 
-@pytest.mark.parametrize(
-    ("env", "expected"),
-    [({"DEMO_TOKEN": "a", "DEMO_TOKEN_2": "b"}, "a"), ({"DEMO_TOKEN_2": "b"}, "b")],
-)
-def test_env_fallbacks_in_declared_order(
-    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: str
-) -> None:
-    for name, value in env.items():
-        monkeypatch.setenv(name, value)
-    resolved = resolve_token(DemoSettings(), section="demo")
-    assert resolved.token is not None
-    assert resolved.token.get_secret_value() == expected
-
-
-def test_no_source_leaves_settings_unchanged() -> None:
-    settings = DemoSettings()
-    assert resolve_token(settings, section="demo") is settings
-    assert describe_token_source(settings, section="demo") is None
-
-
-def test_models_without_token_sources_are_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DEMO_TOKEN", "from-env")
-    settings = PlainSettings()
-    assert resolve_token(settings, section="plain") is settings
-
-
 def test_failing_command_names_program_and_status_but_not_output() -> None:
-    settings = DemoSettings(token_command=_printer("s3cr3t-output", code=3))
-    resolved = resolve_token(settings, section="demo")
-    assert resolved.token is not None
+    token = _token(_printer("s3cr3t-output", code=3))
     with pytest.raises(ConfigError) as caught:
-        resolved.token.get_secret_value()
+        token.get_secret_value()
     message = str(caught.value)
-    assert "demo.token_command" in message
+    assert "the demo token" in message
     assert "exited with status 3" in message
     assert "s3cr3t-output" not in message
     assert "print" not in message, "arguments may carry secrets and are never shown"
 
 
 def test_missing_program_and_empty_output_are_config_errors() -> None:
-    missing = resolve_token(DemoSettings(token_command=["untaped-no-such-program"]), section="demo")
-    assert missing.token is not None
     with pytest.raises(ConfigError, match="not found on PATH"):
-        missing.token.get_secret_value()
-    empty = resolve_token(DemoSettings(token_command=_printer("")), section="demo")
-    assert empty.token is not None
+        _token(["untaped-no-such-program"]).get_secret_value()
     with pytest.raises(ConfigError, match="printed no token"):
-        empty.token.get_secret_value()
-
-
-def test_token_command_must_be_a_non_empty_argv_list() -> None:
-    with pytest.raises(ValidationError, match="non-empty argv list"):
-        DemoSettings(token_command=[])
-    with pytest.raises(ValidationError):
-        DemoSettings.model_validate({"token_command": "gh auth token"})
+        _token(_printer("")).get_secret_value()
 
 
 @respx.mock
 def test_command_token_becomes_the_bearer_header() -> None:
     route = respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200))
-    settings = resolve_token(DemoSettings(token_command=_printer("cmd-token")), section="demo")
     with connected_client(
-        settings,
+        _Demo(),
         section="demo",
-        base_url=settings.base_url,
-        bearer=settings.token,
+        base_url="https://api.example.com",
+        bearer=_token(_printer("cmd-token")),
         http=HttpSettings(),
     ) as client:
         client.get("/user")
     assert route.calls.last.request.headers["Authorization"] == "Bearer cmd-token"
-
-
-def test_section_accessors_apply_token_fallbacks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    config = tmp_path / "config.yml"
-    config.write_text("format_version: 2\ndemo:\n  base_url: https://x\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
-    monkeypatch.setenv("DEMO_TOKEN_2", "env-token")
-    reset_config_registry()
-    register_profile_settings("demo", DemoSettings)
-    get_settings.cache_clear()
-    get_settings_model.cache_clear()
-    try:
-        via_context = app_context().section("demo", DemoSettings)
-        via_helper = get_config_section("demo", DemoSettings)
-    finally:
-        reset_config_registry()
-    for settings in (via_context, via_helper):
-        assert settings.token is not None
-        assert settings.token.get_secret_value() == "env-token"
 
 
 class _Stream:
@@ -250,9 +141,7 @@ def _no_gpg_conf(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def _read(argv: list[str]) -> str:
-    settings = resolve_token(DemoSettings(token_command=argv), section="demo")
-    assert settings.token is not None
-    return settings.token.get_secret_value()
+    return CommandToken(argv, setting="the demo token").get_secret_value()
 
 
 @pytest.mark.usefixtures("_no_gpg_conf")

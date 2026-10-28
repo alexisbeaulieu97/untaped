@@ -7,11 +7,11 @@ mark what needs setting up, :mod:`untaped.sdk.health.marks`), each with a
 status, and the selected one's settings. A setting is written on enter
 through the use case ``config set`` runs. A service's connection is one row
 whose form takes its marked fields and how to get its token (stored with
-this machine's password store, a plaintext token moved there, a
-``token_command``, a conventional environment variable, or the current
-source kept); the service's online checks run against those values before
-anything is saved (:mod:`untaped.core.commands.setup_write`). After the
-screen closes this command prints what the screen wrote, then the doctor
+this machine's password store, a command that prints it, a conventional
+environment variable, or the current source kept); the service's online
+checks run against those values before anything is saved
+(:mod:`untaped.core.commands.setup_write`). After the screen closes this
+command prints what the screen wrote, then the doctor
 checks of the services whose connection it saved, online ones included, and
 exits 1 when any fails; ctrl-c exits 130 after that. It needs a terminal:
 without one it exits 2, naming ``setup plan``, before it reads the config or

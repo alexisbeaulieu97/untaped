@@ -183,7 +183,7 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
         _row("conventions", "conventions", "pass", "no violations"),
         _row("live", "rack.item_source.items", "pass", "1 item"),
         _row("live", "rack.item_source.items", "fail", "NotImplementedError"),
-        _row("unmarked-service", "rack", "warn", "base_url names no NeedsSetup"),
+        _row("conformance", "rack.item_source", "warn", "an item has no title"),
     ]
     monkeypatch.setattr(conventions, "check_plugin", lambda name, candidates=None: rows)
     plugin = InstalledPlugin(
@@ -192,7 +192,7 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
     found = Conventions().findings(plugin)
     assert [(each.rule, each.severity, each.message) for each in found] == [
         ("live", "error", "rack.item_source.items: NotImplementedError"),
-        ("unmarked-service", "warning", "rack: base_url names no NeedsSetup"),
+        ("conformance", "warning", "rack.item_source: an item has no title"),
     ]
 
 
@@ -247,47 +247,6 @@ def test_the_deprecation_rules_run_as_lint_ids(site: Site) -> None:
         "lint.unwarned-parameter",
         "lint.unwarned-parameter",
     ]
-
-
-_SERVICE = '''
-    """A service plugin that says what needs setting up the deprecated way."""
-
-    from __future__ import annotations
-
-    from typing import ClassVar
-
-    from pydantic import BaseModel, ConfigDict, SecretStr
-
-    from untaped.sdk import PluginSpec, TokenSources
-
-
-    class OldSettings(BaseModel):
-        """Read through the base_url/token fallback."""
-
-        model_config = ConfigDict(frozen=True)
-        token_sources: ClassVar[TokenSources] = TokenSources(env=("OLD_TOKEN",))
-
-        base_url: str | None = None
-        token: SecretStr | None = None
-
-
-    OLD = PluginSpec(name="old", settings=OldSettings)
-    '''
-
-
-def test_an_unmarked_service_is_a_warning(site: Site) -> None:
-    site({"svc_plugin/__init__.py": _SERVICE})
-    candidate = PluginCandidate(distribution="untaped-old", name="old", target="svc_plugin:OLD")
-    record = InstalledPlugin(
-        name="old", status="ready", distribution="untaped-old", version="0.1.0"
-    )
-    rule = "lint.unmarked-service"
-    with compose_with("lint"):
-        report = run([subject(record)], select=[rule], candidates=[candidate])
-    [finding] = report.findings
-    assert (finding.rule, finding.severity) == (rule, "warning")
-    assert "removed in 12.0" in finding.message
-    assert not report.predicate_hit(strict=False)
 
 
 def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(site: Site) -> None:

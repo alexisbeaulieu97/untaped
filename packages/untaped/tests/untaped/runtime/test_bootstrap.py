@@ -928,7 +928,6 @@ def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from untaped.runtime.settings import env_var_name, get_config_section
-    from untaped.sdk.network.auth import token_override_env, token_override_name
 
     spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
     bootstrap.compose_root(candidates=[plugin_candidate(spec)])
@@ -940,8 +939,6 @@ def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
 
     assert (settings.greeting, settings.token) == ("from env", "env-token")
     assert env_var_name(["acme-tools", "greeting"]) == "UNTAPED_ACME_TOOLS__GREETING"
-    assert token_override_name("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
-    assert token_override_env("acme-tools") == "UNTAPED_ACME_TOOLS__TOKEN"
 
 
 def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyPatch) -> None:

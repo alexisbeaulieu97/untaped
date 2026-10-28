@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import hashlib
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from contextvars import ContextVar, Token
 from functools import cache
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from untaped.runtime.settings import resolve_config_path
 from untaped.runtime.sink import Diagnostics
@@ -38,7 +38,6 @@ from untaped.sdk.network.credentials import (
     BoundSecret,
     describe_key,
     key_data,
-    override_variable,
 )
 
 if TYPE_CHECKING:
@@ -107,10 +106,6 @@ class CredentialRow(BaseModel):
     entry: str | None = Field(default=None, description="The store entry, for a store backend.")
     argv: list[str] | None = Field(default=None, description="The command, for `command`.")
     label: str = Field(default="", description="How the store shows it: `awx token url=…`.")
-    migrated: bool = Field(
-        default=False,
-        description="Its entry is an 11.0 one (`<profile>/<section>`) that older untaped reads.",
-    )
 
     @property
     def short(self) -> str:
@@ -267,7 +262,7 @@ def store_token(
     index().put(_row(credential, key, ident, backend=cast("Backend", store.name), entry=entry))
     if old is not None and (old.backend, old.entry) != (store.name, entry):
         try:
-            _drop_entry(old)
+            _delete_entry(old)
         except ConfigError as exc:
             _diag.warning(f"stored, but the replaced entry {old.where()} stays: {exc}")
     return store.describe(entry)
@@ -297,46 +292,22 @@ def store_command(credential: Credential[Any], key: CredentialKey, argv: Sequenc
     old = find_row(ident)
     index().put(_row(credential, key, ident, backend="command", argv=command))
     if old is not None:
-        _drop_entry(old)
+        _delete_entry(old)
     return f"will run `{shlex.join(command)}` from the config folder when this token is needed"
 
 
-def file_reference(
-    credential: Credential[Any], key: CredentialKey, store: TokenStore, entry: str
-) -> str:
-    """File a row reading the 11.0 entry ``entry`` that ``store`` already holds; where it is.
-
-    11.1's ``config migrate`` filed one per preset ``token_command``: the
-    entry stays where it is (an older untaped still reads it), so forgetting
-    the row leaves it.
-    """
-    ident = credential.id(key)
-    index().put(_row(credential, key, ident, backend=store.name, entry=entry, migrated=True))
-    return store.describe(entry)
-
-
 def forget_row(ident: str) -> CredentialRow | None:
-    """Delete the row ``ident`` and its store entry; the row, or ``None`` when absent.
-
-    A migrated row's entry is left: an older untaped still reads it.
-    """
+    """Delete the row ``ident`` and its store entry; the row, or ``None`` when absent."""
     row = find_row(ident)
     if row is None:
         return None
-    if not row.migrated:
-        _delete_entry(row)
+    _delete_entry(row)
     index().delete(ident)
     return row
 
 
-def _drop_entry(old: CredentialRow) -> None:
-    """Delete the entry a replaced row named, unless it is an 11.0 one an older untaped reads."""
-    if not old.migrated:
-        _delete_entry(old)
-
-
 def _delete_entry(row: CredentialRow) -> None:
-    """Delete ``row``'s store entry unless another row still names it (a migrated one)."""
+    """Delete ``row``'s store entry unless another row still names it."""
     store = row.store
     if store is None or row.entry is None:
         return
@@ -364,46 +335,6 @@ def _store_name(backend: str | None) -> StoreName | None:
 # --------------------------------------------------------------------------- #
 
 
-def legacy_values(
-    credential: Credential[Any],
-) -> tuple[str, str | Callable[[], str]] | None:
-    """``(setting, value)`` from the old ``<plugin>.<name>`` or ``<plugin>.<name>_command``.
-
-    Both settings are deprecated, so reading one from the config file warns
-    once (as any deprecated setting does). The override variable is step 1
-    of ``get``, so it is not read here.
-    """
-    from untaped.runtime.settings import (  # noqa: PLC0415
-        env_var_setting,
-        load_settings_section,
-        registered_profile_model,
-    )
-
-    plugin, name = credential.plugin, credential.name
-    if registered_profile_model(plugin) is None:
-        return None  # used uncomposed: no section holds the old settings
-    try:
-        section = load_settings_section(plugin)
-    except ConfigError:
-        return None
-    if section is None:
-        return None
-    value = getattr(section, name, None)
-    if (
-        isinstance(value, SecretStr)
-        and value.get_secret_value().strip()
-        and override_variable(plugin, name) is None
-    ):
-        return f"{plugin}.{name}", value.get_secret_value().strip()
-    command_field = f"{name}_command"
-    argv = getattr(section, command_field, None)
-    if argv:
-        setting = env_var_setting((plugin, command_field)) or f"{plugin}.{command_field}"
-        command = [str(part) for part in argv]
-        return setting, lambda: read_command(command, setting=setting)
-    return None
-
-
 __all__ = [
     "SECTION",
     "Backend",
@@ -412,12 +343,10 @@ __all__ = [
     "SecretStore",
     "config_prefix",
     "entry_for",
-    "file_reference",
     "find_row",
     "forget_row",
     "index",
     "label_for",
-    "legacy_values",
     "read_row",
     "reset_test_store",
     "rows",

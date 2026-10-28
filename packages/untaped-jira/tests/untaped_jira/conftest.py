@@ -27,7 +27,6 @@ def settings() -> Settings:
 def jira(
     install: Callable[..., Install], settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> Invoke:
-    # Not in the settings: a plaintext token there warns on every run.
     monkeypatch.setenv("JIRA_API_TOKEN", "jira_pat")
 
     def invoke(args: Sequence[str], *, input: str | None = None) -> Result:

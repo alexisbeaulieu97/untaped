@@ -77,7 +77,7 @@ def _report_error_item() -> None:
 
 def _report_error_hint() -> None:
     with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        report_error(ConfigError("no token", hint="run `untaped auth set`"))
+        report_error(ConfigError("no token", hint="run `untaped auth login`"))
 
 
 def _echo_lines() -> None:

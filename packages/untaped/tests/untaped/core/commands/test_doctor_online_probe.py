@@ -155,7 +155,7 @@ def test_a_new_profile_is_checked_over_default_before_it_exists(
     assert "prod" not in _isolated_config.read_text()
 
 
-def test_a_plaintext_candidate_token_does_not_report_plaintext(
+def test_a_typed_candidate_token_runs_only_the_online_check(
     _isolated_config: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     write_config(_isolated_config, "format_version: 2\n")

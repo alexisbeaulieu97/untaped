@@ -18,7 +18,7 @@ from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from untaped.core.commands.config_editor import run_config_editor
 from untaped.core.commands.config_prompting import resolve_set_value
@@ -43,7 +43,6 @@ from untaped.runtime.registry import (
 from untaped.runtime.settings import (
     active_settings_layout,
     notify_config_key,
-    resolve_config_path,
 )
 from untaped.sdk._cli import echo, emit
 from untaped.sdk.errors import ConfigError
@@ -56,7 +55,6 @@ from untaped.sdk.health.deprecated_keys import (
     notify_use,
 )
 from untaped.sdk.marks import show_deprecated
-from untaped.sdk.network.auth import PLAINTEXT_TOKEN, plaintext_subject, takes_token_command
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import hint, plural
 
@@ -73,9 +71,6 @@ class RootSectionScope:
 
     mappings: KeyMappings = NO_KEY_MAPPINGS
     """The section model's renamed, retired and deprecated keys."""
-
-    model: type[BaseModel] | None = None
-    """The section's settings model, for the secrets ``auth set`` can store instead."""
 
 
 @dataclass(frozen=True)
@@ -160,7 +155,6 @@ def section_scopes(result: CompositionResult) -> dict[str, RootSectionScope]:
             plugin=spec.name,
             state_fields=state_keys(spec),
             mappings=key_mappings(settings_model(spec)),
-            model=settings_model(spec),
         )
         for spec in (registered.spec for registered in result.plugins)
     }
@@ -266,7 +260,6 @@ class Set(Command[CoreSettings]):
         value = resolve_set_value(
             resolved, self.value, stdin=self.stdin, prompt=self.prompt, repo=repo
         )
-        _warn_plaintext_token(ctx, resolved)
         _warn_deprecated_setting(ctx, resolved)
         change = SetSetting(repo)(resolved, value, dry_run=bool(self.dry_run))
         print_notes(change.notes)
@@ -399,22 +392,6 @@ def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:
             rest, rest, "deprecated", message=setting.replacement, removed_in=setting.removed_in
         )
         notify_use(use, section=section, old=key, new=key)
-
-
-def _warn_plaintext_token(ctx: RootConfigContext, key: str) -> None:
-    """Deprecate ``config set <section>.token`` of an 11.0 section that ``auth set`` serves."""
-    section, rest = _split_first(key)
-    scope = ctx.sections.get(section)
-    if rest is None or scope is None or scope.model is None:
-        return
-    # A declared credential's old setting is a deprecated setting, which warns as one.
-    if rest != "token" or not takes_token_command(scope.model):
-        return
-    PLAINTEXT_TOKEN.notify(
-        plaintext_subject(section, resolve_config_path().name, field=rest),
-        key=section,
-        replacement=f"untaped auth set {section}",
-    )
 
 
 def _other_readers() -> str:

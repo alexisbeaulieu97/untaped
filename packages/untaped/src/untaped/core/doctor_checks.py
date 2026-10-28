@@ -20,7 +20,6 @@ from typing import Any
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import base_sections, profile_entries
 from untaped.runtime.settings import (
-    active_settings_layout,
     get_profile_settings_model,
     profile_section_models,
     resolve_config_path,
@@ -96,26 +95,19 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
 
 
 def _token_store(ctx: PluginContext) -> DoctorResult:
-    """Fail when a ``pass`` token command cannot work here (no key, no gpg).
+    """Fail when a stored credential needs ``pass`` and it cannot work here (no key, no gpg).
 
-    Checked only once a profile's ``token_command`` runs ``pass``, so
-    installing ``pass`` alone fails nothing.
+    Checked only once a stored credential is in ``pass`` or reads through a
+    ``pass`` command, so installing ``pass`` alone fails nothing.
     """
     del ctx
-    raw = _raw()
-    if raw is None:
-        return DoctorResult(ok=True, detail=_NOT_CHECKED)
-    layout = active_settings_layout()
+    from untaped.sdk.network._credential_store import rows  # noqa: PLC0415 - reads the index
+
     uses_pass = any(
-        isinstance(node, dict)
-        and isinstance(argv := node.get("token_command"), list)
-        and argv
-        and Path(str(argv[0])).name == "pass"
-        for profile in layout.profile_names(raw)
-        for node in (layout.profile_data(raw, profile) or {}).values()
+        row.backend == "pass" or (row.argv and Path(row.argv[0]).name == "pass") for row in rows()
     )
     if not uses_pass:
-        return DoctorResult(ok=True, detail="no token_command runs pass")
+        return DoctorResult(ok=True, detail="no stored credential uses pass")
     if (problem := pass_problem()) is not None:
         return DoctorResult(ok=False, detail=problem)
     return DoctorResult(ok=True, detail="gpg holds a key for the password store")

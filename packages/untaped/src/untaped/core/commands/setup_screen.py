@@ -41,9 +41,8 @@ neither is a cancel. A quit while a write runs waits for it, so the result
 always says what was written.
 
 The typed token lives in a ``SecretInput`` and a ``Candidate`` as a ``SecretStr``
-and in no frame, repr or message of this module's own. The model never holds the
-plain text of a token the profile already stores (``ServiceState.plaintext`` is
-left out of its repr), nor a secret setting's value (rows show it masked).
+and in no frame, repr or message of this module's own. The model never holds a
+secret setting's value (rows show it masked).
 """
 
 from __future__ import annotations
@@ -905,7 +904,7 @@ class _Setup:
                 argv = list(command)
                 forget_token_command(argv)  # every check runs the command, a retry included
                 try:
-                    CommandToken(argv, section=spec.name).get_secret_value()
+                    CommandToken(argv, setting=f"the {spec.name} token command").get_secret_value()
                 except ConfigError as exc:
                     return Probed(name, (("fail", str(exc)),))
             return Primed(name)
@@ -920,17 +919,17 @@ class _Setup:
         )
         if asked.commands:
             return checking, [Cmd(prime, suspend=True, name="prime")]
-        return checking, [self._probe(asked, model.states[name])]
+        return checking, [self._probe(asked)]
 
     def _primed(self, model: SetupModel, name: str) -> tuple[SetupModel, list[Cmd]]:
         asked = model.pending
         if model.phase != "probing" or asked is None or asked.name != name:
             return model, []
-        return model, [self._probe(asked, model.states[name])]
+        return model, [self._probe(asked)]
 
-    def _probe(self, asked: Candidate, state: ServiceState) -> Cmd:
+    def _probe(self, asked: Candidate) -> Cmd:
         """The background check of ``asked``: the plugin's online checks over its values."""
-        overlay = overlay_values(asked, state)
+        overlay = overlay_values(asked)
         result, name, profile = self.result, asked.name, asked.profile
 
         def probe() -> object:
@@ -986,17 +985,11 @@ class _Setup:
 
     def _save(self, model: SetupModel, asked: Candidate) -> tuple[SetupModel, list[Cmd]]:
         name = asked.name
-        spec, state, store, preflight, services = (
-            self.services[name],
-            model.states[name],
-            self.store,
-            self.preflight,
-            self.services,
-        )
+        spec, preflight, services = self.services[name], self.preflight, self.services
 
         def save() -> object:
             try:
-                notes = write_candidate(spec, asked, state, store, preflight)
+                notes = write_candidate(spec, asked, preflight)
             except Exception as exc:  # shown on the form, as any failed command is
                 conflict = isinstance(exc, ConfigError) and exc.category is ErrorCategory.CONFLICT
                 listing = _listing(asked.profile, services)
@@ -1034,7 +1027,7 @@ class _Setup:
             failed=_without(model.failed, name),
             forms={
                 **done.forms,
-                name: connection_form(self.services[name], state, self.store, model.current),
+                name: connection_form(self.services[name], state, self.store),
             },
             opened={**done.opened, name: state},
             saved=(*model.saved, (message.profile, name)),
@@ -1087,7 +1080,7 @@ class _Setup:
         done = model if message.listing is None else self._relisted(model, message.listing)
         fresh = done.states.get(name)
         if fresh is not None and message.conflict:
-            form = connection_form(self.services[name], fresh, self.store, model.current)
+            form = connection_form(self.services[name], fresh, self.store)
             opened = fresh
             done = replace(done, forms={**done.forms, name: form})
         elif fresh is not None:
@@ -1210,7 +1203,7 @@ class _Setup:
 
     def _forms(self, states: Mapping[str, ServiceState], profile: str) -> dict[str, Form]:
         return {
-            name: connection_form(spec, states[name], self.store, profile)
+            name: connection_form(spec, states[name], self.store)
             for name, spec in self.services.items()
         }
 
@@ -1296,17 +1289,9 @@ def _index(rows: tuple[CapRow, ...], name: str) -> int:
 
 
 def _initial_status(state: ServiceState) -> str:
-    """A service's status: every marked setting set, none, only its token missing, or a count.
-
-    A plugin read through the legacy fallback keeps the old rule: a token
-    source or a URL of its own makes it configured.
-    """
+    """A service's status: every marked setting set, none, only its token missing, or a count."""
     if state.invalid is not None:
         return "invalid settings"
-    if state.legacy_configured is not None:
-        if not state.legacy_configured:
-            return "not configured"
-        return "configured" if state.token_source is not None else "missing token"
     if state.configured:
         return "configured"
     if len(state.missing) == state.required:

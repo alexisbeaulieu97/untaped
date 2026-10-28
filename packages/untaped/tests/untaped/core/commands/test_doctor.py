@@ -40,6 +40,7 @@ from untaped.runtime.registry import (
     named_plugin_dir,
 )
 from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
+from untaped.sdk.network._credential_store import CredentialRow, index
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.data_file import write_lines
 from untaped.sdk.storage.state import StateRows
@@ -78,17 +79,17 @@ def test_all_pass_exits_zero(_isolated_config: Path) -> None:
     assert _PASS in result.stdout
 
 
-def test_a_pass_preset_that_cannot_decrypt_is_a_failed_row(
+def _file_row(**values: object) -> None:
+    """A stored ``github`` credential row, as ``auth login`` files one."""
+    index().put(CredentialRow(id="a" * 64, plugin="github", name="token", **values))  # type: ignore[arg-type]
+
+
+def test_a_pass_credential_that_cannot_decrypt_is_a_failed_row(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     monkeypatch.setenv("STUB_MODE", "no-secret-key")
-    write_config(
-        _isolated_config,
-        "format_version: 2\ngithub:\n  base_url: https://g\n"
-        "  token_command: [pass, show, untaped/default/github]\n",
-    )
-    get_settings.cache_clear()
+    _file_row(backend="pass", entry="github/token/aaaa")
     result = CliInvoker().invoke(
         _doctor_app(make_spec("github", settings=GithubProfile)),  # type: ignore[arg-type]
         ["--format", "json"],
@@ -104,12 +105,7 @@ def test_a_working_pass_and_a_missing_pass_are_reported(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "format_version: 2\ngithub:\n  base_url: https://g\n"
-        "  token_command: [pass, show, hand/written]\n",
-    )
-    get_settings.cache_clear()
+    _file_row(backend="command", argv=["pass", "show", "hand/written"])
     app = _doctor_app(make_spec("github", settings=GithubProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]

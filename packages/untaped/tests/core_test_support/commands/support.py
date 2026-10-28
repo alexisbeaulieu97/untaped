@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal
+from typing import Annotated, Any, Literal
 
 from cyclopts import App
 from pydantic import BaseModel, HttpUrl, SecretStr
@@ -16,19 +16,17 @@ from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, SkillAsset
 from untaped.runtime.settings import active_settings_layout, get_settings
-from untaped.sdk import (  # type: ignore[deprecated]
+from untaped.sdk import (
     Credential,
     CredentialKey,
     HttpStatusError,
     NeedsSetup,
     TlsVerify,
-    TokenCommand,
-    TokenSources,
     online_check,
 )
 from untaped.sdk._cli import create_app, run_cyclopts_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.marks import Stability, deprecated
+from untaped.sdk.marks import Stability
 from untaped.sdk.testing import plugin_candidate
 
 # NOTE: section models are module-level on purpose. The settings registry
@@ -88,13 +86,6 @@ class WizProfile(BaseModel):
 WIZ_TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
 
 
-class OldWizProfile(WizProfile):
-    """``wiz`` with 11.0's ``token`` settings still declared, as github's are until it moves."""
-
-    token: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
-    token_command: Annotated[TokenCommand, deprecated(removed_in=12)] = None
-
-
 class EnvyServer(CredentialKey):
     """The server an ``envy`` token is for."""
 
@@ -115,23 +106,6 @@ CREDENTIALS: dict[type[BaseModel], tuple[Credential[Any], ...]] = {
     WizProfile: (WIZ_TOKEN,),
     EnvProfile: (ENVY_TOKEN,),
 }
-
-
-class UnmarkedWizProfile(BaseModel):
-    """An unmarked 11.0 service double, read through the deprecated fallback (section ``wiz``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("WIZ_TOKEN",))  # type: ignore[deprecated]
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-
-
-class LegacyProfile(BaseModel):
-    """Unmarked service double without ``token_command`` (section ``legacy``)."""
-
-    base_url: str | None = None
-    token: SecretStr | None = None
 
 
 #: Calls to :func:`wiz_probe`; tests clear it.
@@ -259,7 +233,6 @@ __all__ = [
     "GithubProfile",
     "GithubState",
     "JiraProfile",
-    "LegacyProfile",
     "StrictProfile",
     "WizProfile",
     "WizServer",

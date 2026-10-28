@@ -17,8 +17,6 @@ from pydantic import BaseModel, Field, SecretStr
 from rich.console import Console
 
 from core_test_support.commands.support import (
-    OldWizProfile,
-    UnmarkedWizProfile,
     WizProfile,
     compose,
     make_spec,
@@ -33,7 +31,7 @@ from untaped.core.config.fields import editor, written
 from untaped.core.config.repository import SettingsFileRepository
 from untaped.core.config.use_cases import NamedValue, RankProviders, SetSetting
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
@@ -590,14 +588,6 @@ def test_a_map_that_declares_its_names_edits_the_profiles_own_names() -> None:
     assert [entry.name for entry in marks.entries] == ["a", "b"]
     assert written(_descriptor("marks"), marks) == '{"b": "3"}'
     assert written(_descriptor("marks"), cleared) is None  # no names left: unset
-
-
-@pytest.mark.parametrize("model", [UnmarkedWizProfile, OldWizProfile])
-def test_a_token_command_is_declared_a_command(model: type[BaseModel]) -> None:
-    composed = settings_model(make_spec("wiz", settings=model))
-    descriptors = walk_settings(composed, include_collections=True)
-
-    assert [d.key for d in descriptors if d.argv] == ["token_command"]
 
 
 def test_a_malformed_command_line_is_the_fields_own_error() -> None:

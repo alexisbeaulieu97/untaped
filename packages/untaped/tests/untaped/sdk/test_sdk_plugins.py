@@ -183,8 +183,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "RetryPolicy",
         "Suggest",
         "TlsVerify",
-        "TokenCommand",
-        "TokenSources",
         "TokenUrl",
         "connected_client",
         "paginate_link",
@@ -266,7 +264,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "run_editor",
         "ui_context",
     ),
-    "doctor checks": ("connection_check", "executable_check", "online_check"),
+    "doctor checks": ("executable_check", "online_check"),
     "conventions": (
         "DEPRECATED_OPTIONS",
         "Deprecated",

@@ -3,8 +3,7 @@
 ``bearer`` is the token a ``Credential`` gave (bound to its server), or
 ``None`` for a client without one. A blank URL is "<section> is not set
 up", naming the unset marked settings (or the parameter, for an unmarked
-model); leaving ``base_url=`` out keeps the old read by field name and
-warns; passing both kinds refuses.
+model).
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ class Marked(BaseModel):
 
 
 class Plain(BaseModel):
-    """Unmarked: its ``token`` is still the bearer of the old read by name."""
+    """Unmarked: nothing says what it needs set up."""
 
     base_url: str = ""
     token: SecretStr | None = None
@@ -120,18 +119,9 @@ def test_a_missing_url_names_the_unset_marked_fields(
     assert error.details["profiles"] == ["work"]
 
 
-class Bare(BaseModel):
-    """Nothing marked and nothing the old fallback reads."""
-
-    timeout: float = 1.0
-
-
-def test_a_blank_url_of_an_unmarked_model_names_its_setting_else_the_parameter() -> None:
+def test_a_blank_url_of_an_unmarked_model_names_the_parameter() -> None:
     with pytest.raises(ConfigError) as caught:
         connected_client(Plain(), section="demo", base_url=" ", http=_HTTP)
-    assert str(caught.value).endswith(": demo.base_url is not set")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(Bare(), section="demo", base_url=" ", http=_HTTP)
     assert str(caught.value).startswith("demo is not set up")
     assert str(caught.value).endswith(": base_url= has no value")
     assert (caught.value.hint or "").endswith("run `untaped setup plan --only demo`")
@@ -152,52 +142,6 @@ def test_a_missing_ca_file_is_refused(tmp_path: Path) -> None:
         connected_client(
             Marked(), section="demo", base_url=_URL, verify=tmp_path / "ca.pem", http=_HTTP
         )
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "named"),
-    [
-        ({"required": ("base_url",)}, "required="),
-        ({"required": ("base_url", "token")}, "required="),
-        ({"bearer_token_field": "token"}, "bearer_token_field="),
-        ({"base_url_field": "url", "required": ()}, "required= and base_url_field="),
-    ],
-    ids=["required", "required-as-its-old-default", "bearer_token_field", "two"],
-)
-def test_base_url_with_an_old_parameter_refuses(kwargs: dict[str, object], named: str) -> None:
-    """Even an old parameter's former default counts as passed."""
-    with (
-        pytest.warns(DeprecationWarning, match=r"connected_client\("),
-        pytest.raises(TypeError, match=f"pass base_url= or {named}, not both"),
-    ):
-        connected_client(Marked(), section="demo", base_url=_URL, http=_HTTP, **kwargs)  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "named"),
-    [
-        ({"bearer": "t"}, "bearer="),
-        ({"verify": False}, "verify="),
-        ({"verify": True, "bearer": None}, "bearer= and verify="),
-    ],
-    ids=["bearer", "verify", "both"],
-)
-def test_a_new_parameter_without_base_url_refuses(kwargs: dict[str, object], named: str) -> None:
-    """Without ``base_url=`` the old read would ignore them."""
-    with pytest.raises(TypeError, match=f"pass base_url= with {named}$"):
-        connected_client(Plain(base_url=_URL), section="demo", http=_HTTP, **kwargs)  # type: ignore[arg-type]
-
-
-def test_leaving_base_url_out_keeps_the_old_read_and_warns() -> None:
-    config = Plain(base_url=_URL, token=SecretStr("p"))
-    with pytest.warns(DeprecationWarning, match="for demo without base_url=") as caught:
-        assert _authorization(config) == "Bearer p"
-    assert caught[0].filename == __file__, "the warning names the caller, not core"
-    with (
-        pytest.warns(DeprecationWarning, match="without base_url="),
-        pytest.raises(ConfigError, match=r"demo\.token is not configured"),
-    ):
-        connected_client(Plain(base_url=_URL), section="demo", http=_HTTP)
 
 
 class DuoServer(CredentialKey):

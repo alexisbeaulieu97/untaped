@@ -40,15 +40,6 @@ class SettingsWriter(Protocol):
     def provenance(self) -> dict[tuple[str, ...], str]: ...
     def own_value(self, key: str, *, profile: str | None = None) -> Any: ...
 
-    def set_value(
-        self,
-        key: str,
-        raw_value: str,
-        *,
-        profile: str | None = None,
-        dry_run: bool = False,
-        on_spelling_removed: Callable[[str], None] | None = None,
-    ) -> str: ...
     def update_value(
         self,
         key: str,

@@ -15,7 +15,7 @@ import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, SecretStr
@@ -30,15 +30,12 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk._run import Run, SettingsOverlay, current_overlay, current_run
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.network.auth import TokenSources, clear_token_cache, resolve_token
 
 pytestmark = pytest.mark.usefixtures("home_run")
 
 
 class OverlayProfile(BaseModel):
-    """Service double with a token and a token command (section ``ovl``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("OVL_TOKEN",))
+    """Service double with a secret setting and a command setting (section ``ovl``)."""
 
     base_url: str | None = None
     token: SecretStr | None = None
@@ -255,23 +252,3 @@ def test_resolve_with_overlay_is_plain_resolution_without_an_overlay(
     resolved = resolve_with_overlay({"format_version": 2, "ovl": {"base_url": "u"}})
 
     assert resolved.effective == {"ovl": {"base_url": "u"}}
-
-
-def test_plaintext_warning_is_suppressed_under_an_overlay(
-    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    _config(
-        _isolated_config,
-        "format_version: 2\novl:\n  token: file-token\n",
-    )
-    clear_token_cache()
-    section = load_settings_section("ovl")
-
-    with _overlaid("default", "ovl", {"token": SecretStr("typed")}):
-        resolve_token(section, section="ovl")
-
-    assert capsys.readouterr().err == ""
-
-    resolve_token(section, section="ovl")  # the warning still fires without the overlay
-
-    assert "support for a plain-text ovl.token" in capsys.readouterr().err

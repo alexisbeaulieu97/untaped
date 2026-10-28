@@ -271,8 +271,8 @@ The sections above name the helper for each rule. Beyond those:
   `get_config_section(name, Model)`, which validate only your section, rather
   than `app_context().settings`.
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
-  setting and declare each secret as a `Credential` on the spec (not
-  `token_sources` or a `token` setting), and build its client with
+  setting and declare each secret as a `Credential` on the spec, and build
+  its client with
   `self.ctx.http.client(self.settings, base_url=…, bearer=…)`; see
   [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,

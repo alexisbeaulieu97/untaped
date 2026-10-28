@@ -11,10 +11,7 @@ verdict:
 - ``conformance``: the owner's own checks, a ``conformance(provider)``
   function in its ``testing`` module, on each ready provider;
 - ``live``: one live call of each filled method taking no required
-  arguments, every item round-tripped through JSON;
-- ``unmarked-service``: a ``warn`` row when the settings say what needs
-  setting up only through the legacy ``base_url``/``token`` names, so a
-  plugin's ``assert_clean`` still passes.
+  arguments, every item round-tripped through JSON.
 
 An owner gets a ``contracts`` row: its ``contracts`` function loads.
 """
@@ -33,7 +30,6 @@ from untaped.core.commands.records import PluginCheckRow
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.sdk.errors import UsageError, first_validation_error
-from untaped.sdk.health.marks import UNMARKED_SERVICE, setup_marks, unmarked_subject
 from untaped.sdk.words import not_found, plural
 
 if TYPE_CHECKING:
@@ -86,7 +82,6 @@ def _check(
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
     rows = _conventions(name, candidates, row, violations)
     spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
-    rows += _setup_marks(spec, row)
     if owns_contracts(spec):
         rows += _contracts(name, candidates, row)
     if spec.provides:
@@ -110,19 +105,6 @@ def _conventions(
     for line in found:
         where, rule, detail = [*line.split("::", 2), "", ""][:3]
         rows.append(row("conventions", rule, "fail", f"{where}: {detail}" if detail else where))
-    return rows
-
-
-def _setup_marks(spec: PluginSpec, row: _Row) -> list[PluginCheckRow]:
-    """A ``warn`` row per deprecated way ``spec``'s settings say what needs setting up."""
-    model = spec.settings
-    if model is None:
-        return []
-    rows: list[PluginCheckRow] = []
-    marks = setup_marks(model, spec.credentials)
-    if marks is not None and marks.legacy:
-        detail = UNMARKED_SERVICE.sentence(unmarked_subject(spec.name))
-        rows.append(row("unmarked-service", model.__name__, "warn", detail))
     return rows
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 import pytest
 import yaml
@@ -21,13 +21,10 @@ from core_test_support.commands.support import (
     FAIL,
     PROBES,
     WIZ_TOKEN,
-    LegacyProfile,
-    OldWizProfile,
     WizProfile,
     WizServer,
     make_spec,
     wiz_api_check,
-    wiz_probe,
     write_config,
 )
 from untaped.core.commands import setup_plan
@@ -36,9 +33,7 @@ from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     Credential,
     CredentialKey,
-    NeedsSetup,
     Suggest,
-    online_check,
 )
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import (
@@ -89,11 +84,6 @@ def _wiz() -> PluginSpec:
         settings=WizProfile,
         doctor_checks=(wiz_api_check(),),
     )
-
-
-def _old_wiz() -> PluginSpec:
-    """``wiz`` still declaring 11.0's ``token`` settings, as github does until it moves."""
-    return make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,))
 
 
 def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
@@ -189,23 +179,6 @@ def test_the_token_step_is_auth_login_with_or_without_a_password_store(
         assert token["detail"] == "no wiz token for this run's wiz settings"
 
 
-def test_a_plaintext_token_fails_and_is_stored_with_auth_login(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    _configure(_isolated_config, "{server: {url: https://wiz}, token: s3cret}")
-    token = _step(_plan(specs=(_old_wiz(),)), "wiz.token")
-    # `auth login` prompts for the token, so the step is the user's.
-    assert (token["state"], token["by"]) == ("failed", "user")
-    assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
-    assert token["detail"] == (
-        "token from wiz.token, plain text in the config file; store it as a login"
-    )
-    for fmt in ("json", "yaml", "table", "pipe"):
-        plan = _cli("setup", "plan", "--format", fmt, specs=(_old_wiz(),))
-        assert "s3cret" not in plan.output
-
-
 @pytest.mark.parametrize(
     ("wiz", "env", "detail"),
     [
@@ -237,33 +210,12 @@ def test_a_token_outside_the_config_is_done(
     assert token["detail"].startswith(detail)
 
 
-def test_a_token_command_in_the_config_is_done_and_deprecated(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz: {server: {url: https://wiz}, token_command: [x]}\n",
-    )
-    token = _step(_plan(specs=(_old_wiz(),)), "wiz.token")
-    assert (token["state"], token["run"]) == ("done", [])
-    assert token["detail"] == (
-        "token from wiz.token_command; `auth login wiz` replaces wiz.token_command "
-        "with a stored login"
-    )
-
-
-def test_a_service_without_token_command_is_told_to_export_a_variable() -> None:
-    legacy = make_spec("legacy", settings=LegacyProfile)
-    token = _step(_plan(specs=(legacy,)), "legacy.token")
-    assert (token["state"], token["by"], token["run"]) == ("todo", "user", [])
-    assert "$UNTAPED_LEGACY__TOKEN" in token["detail"]
-
-
 def test_no_step_ever_stores_a_token_in_the_config(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    legacy = make_spec("legacy", settings=LegacyProfile)
     for stores in ((), ("pass",)):
         install_fake_stores(tmp_path, monkeypatch, *stores)
-        for rows in (_plan(specs=(_wiz(), legacy)), _plan(profile="work", specs=(_wiz(),))):
+        for rows in (_plan(), _plan(profile="work")):
             for row in rows:
                 assert not any(arg.endswith(".token") for arg in row["run"]), row
 
@@ -419,75 +371,16 @@ def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.Monkey
     assert _cli("setup", "plan", "--online", "--check", "--format", "json").exit_code == 0
 
 
-def test_a_plaintext_token_in_default_fails_the_profile_that_inherits_it(
-    _isolated_config: Path,
-) -> None:
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz: {token: s3cret}\n"
-        "profiles:\n  work:\n    wiz: {server: {url: https://wiz}, token_command: [x]}\n",
-    )
-    token = _step(_plan(profile="work", specs=(_old_wiz(),)), "wiz.token")
-    assert (token["state"], token["by"]) == ("failed", "user")
-    assert token["detail"].startswith("token from wiz.token, plain text")
-    assert token["run"] == ["--profile", "work", "auth", "login", "wiz"]
-
-
-def test_a_plaintext_token_without_token_command_is_exported_instead(
-    _isolated_config: Path,
-) -> None:
-    legacy = make_spec("legacy", settings=LegacyProfile)
-    write_config(_isolated_config, "format_version: 2\nlegacy: {base_url: https://l, token: t}\n")
-    token = _step(_plan(specs=(legacy,)), "legacy.token")
-    assert (token["state"], token["by"]) == ("failed", "user")
-    assert "export $UNTAPED_LEGACY__TOKEN" in token["detail"]
-    assert token["run"] == ["--profile", "default", "config", "unset", "legacy.token"]
-
-
-def test_a_rejected_token_without_token_command_is_never_stored_in_the_config(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    legacy = make_spec(
-        "legacy",
-        settings=LegacyProfile,
-        doctor_checks=(online_check("legacy.api", section="legacy", probe=wiz_probe),),
-    )
-    monkeypatch.setenv("UNTAPED_LEGACY__BASE_URL", "https://l")
-    monkeypatch.setenv("UNTAPED_LEGACY__TOKEN", "t")
-    FAIL.append(True)
-    online = _step(_plan("--online", specs=(legacy,)), "legacy.online.api")
-    assert (online["state"], online["by"], online["run"]) == ("failed", "user", [])
-    assert "export $UNTAPED_LEGACY__TOKEN with a working token" in online["detail"]
-
-
 @pytest.mark.parametrize(
     ("run", "by"),
     [
-        (["--profile", "auth", "config", "set", "wiz.base_url", "<URL>"], "agent"),
-        (["--profile", "work", "auth", "set", "wiz"], "user"),
-        (["--profile", "work", "config", "set", "wiz.token_command", "<COMMAND>"], "user"),
-        (["--profile", "work", "config", "set", "wiz.token", "--prompt"], "user"),
+        (["--profile", "auth", "config", "set", "wiz.server.url", "<URL>"], "agent"),
+        (["--profile", "work", "auth", "login", "wiz"], "user"),
+        (["auth", "login", "keyed", "api_key"], "user"),
     ],
 )
 def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -> None:
-    assert setup_plan._by(_wiz(), run, automatic=False) == by
-
-
-class KeyedKey(CredentialKey):
-    origin = HttpUrl("https://keyed.example")
-
-
-def test_who_runs_a_fix_comes_from_the_declared_credential_not_the_key_name() -> None:
-    class Keyed(BaseModel):
-        token_hint: Annotated[str | None, NeedsSetup] = None
-
-    api_key = Credential("keyed", "api_key", key=KeyedKey)
-    keyed = make_spec("keyed", settings=Keyed, credentials=(api_key,))
-    for key, by in (("keyed.api_key", "user"), ("keyed.api_key_command", "user")):
-        assert setup_plan._by(keyed, ["config", "set", key, "<X>"], automatic=False) == by
-    assert setup_plan._by(keyed, ["config", "set", "keyed.token_hint", "x"], automatic=False) == (
-        "agent"
-    )
+    assert setup_plan._by(run, automatic=False) == by
 
 
 @pytest.mark.parametrize(("automatic", "by"), [(True, "agent"), (False, "user")])
@@ -496,7 +389,7 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
 ) -> None:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
-            id="wiz.api", ok=False, detail="stale", fix="auth migrate", automatic=automatic
+            id="wiz.api", ok=False, detail="stale", fix="auth login wiz", automatic=automatic
         )
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
@@ -504,7 +397,7 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", by)
-    assert online["run"] == ["--profile", "default", "auth", "migrate"]
+    assert online["run"] == ["--profile", "default", "auth", "login", "wiz"]
 
 
 @pytest.mark.parametrize("spelling", [["--profile", "default"], ["--profile=default"]])
@@ -513,7 +406,7 @@ def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
 ) -> None:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
-            id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "set", "wiz"]
+            id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "login", "wiz"]
         )
 
     check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
@@ -534,22 +427,20 @@ _VALUES = {
 def test_every_run_parses(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    legacy = make_spec("legacy", settings=LegacyProfile)
-    specs = (_wiz(), legacy)
+    specs = (_wiz(),)
     root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
     runs: list[list[str]] = []
     for stores in ((), ("pass",)):
         install_fake_stores(tmp_path, monkeypatch, *stores)
         for config in (
             "format_version: 2\n",
-            "format_version: 2\nwiz: {base_url: https://w, token: t}\n"
-            "legacy: {base_url: https://l, token: t}\n",
+            "format_version: 2\nwiz: {server: {url: https://w}}\n",
         ):
             write_config(_isolated_config, config)
             runs += [row["run"] for row in _plan(specs=specs) if row["run"]]
             runs += [row["run"] for row in _plan(profile="work", specs=specs) if row["run"]]
     FAIL.append(True)
-    write_config(_isolated_config, "format_version: 2\nwiz: {base_url: https://w}\n")
+    write_config(_isolated_config, "format_version: 2\nwiz: {server: {url: https://w}}\n")
     monkeypatch.setenv("WIZ_TOKEN", "t")
     runs += [row["run"] for row in _plan("--online", specs=specs) if row["run"]]
     commands = {tuple(run[2:] if run[0] == "--profile" else run) for run in runs}

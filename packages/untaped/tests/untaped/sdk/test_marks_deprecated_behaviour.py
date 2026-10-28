@@ -31,13 +31,19 @@ from untaped.sdk.marks import (
     forget_notices,
     marks,
 )
-from untaped.sdk.network.auth import PLAINTEXT_TOKEN
 from untaped.sdk.testing import invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 ROW_KIND = deprecated_behaviour("row-kind", removed_in=3, replacement="kind= on the Record class")
 UNLISTED = deprecated_behaviour("unlisted", removed_in=3)
+CORE = deprecated_behaviour("old-login", removed_in=12, replacement="untaped auth login")
+
+
+@pytest.fixture
+def _core_behaviour(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Core lists :data:`CORE` as its own behaviour."""
+    monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (CORE,))
 
 
 def _spec(
@@ -87,16 +93,16 @@ def test_a_plugin_class_names_its_behaviour(tmp_path: Path) -> None:
         """Demo."""
 
         settings = _Settings
-        plaintext_token = DeprecatedBehaviour(removed_in=13, replacement="untaped auth migrate")
+        bare_ids = DeprecatedBehaviour(removed_in=13, replacement="--id NAME")
 
-    behaviour = Demo.plaintext_token
+    behaviour = Demo.bare_ids
     assert (behaviour.name, behaviour.spelled, behaviour.module) == (
-        "plaintext-token",
+        "bare-ids",
         False,
         __name__,
     )
     with run_scope(run_owning(tmp_path, __name__.partition(".")[0], "demo")):
-        assert behaviour.id == "behaviour demo.plaintext-token"
+        assert behaviour.id == "behaviour demo.bare-ids"
         assert behaviour.sentence("a plain token").startswith(
             "a plain token is deprecated and will be removed in"
         )
@@ -121,17 +127,18 @@ def test_a_spec_s_deprecations_is_a_function(value: object) -> None:
 # --- the sentence and its owner ------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("_core_behaviour")
 def test_core_s_behaviour_names_the_bare_version() -> None:
     _compose()
-    assert PLAINTEXT_TOKEN.id == "behaviour untaped.plaintext-token"
-    subject = "support for a plain-text awx.token in config.yml"
-    assert PLAINTEXT_TOKEN.sentence(subject) == (
-        f"{subject} is deprecated and will be removed in 12.0; use `untaped auth migrate`"
+    assert CORE.id == "behaviour untaped.old-login"
+    subject = "logging in the old way"
+    assert CORE.sentence(subject) == (
+        f"{subject} is deprecated and will be removed in 12.0; use `untaped auth login`"
     )
-    assert PLAINTEXT_TOKEN.sentence(subject, replacement="untaped auth set awx").endswith(
-        "; use `untaped auth set awx`"
+    assert CORE.sentence(subject, replacement="untaped auth login awx").endswith(
+        "; use `untaped auth login awx`"
     )
-    assert PLAINTEXT_TOKEN.sentence(subject, replacement=None) == (
+    assert CORE.sentence(subject, replacement=None) == (
         f"{subject} is deprecated and will be removed in 12.0"
     )
 
@@ -151,11 +158,12 @@ def test_a_behaviour_nobody_lists_reads_as_core_s() -> None:
     assert UNLISTED.sentence("x") == "x is deprecated and will be removed in 3.0"
 
 
+@pytest.mark.usefixtures("_core_behaviour")
 def test_a_core_behaviour_stays_core_s_and_no_plugin_may_list_it() -> None:
-    spec = _spec(PLAINTEXT_TOKEN, name="hijack")
+    spec = _spec(CORE, name="hijack")
     _compose(spec)
-    assert PLAINTEXT_TOKEN.id == "behaviour untaped.plaintext-token"
-    with pytest.raises(ConfigError, match="'plaintext-token', which untaped owns"):
+    assert CORE.id == "behaviour untaped.old-login"
+    with pytest.raises(ConfigError, match="'old-login', which untaped owns"):
         plugin_lines(spec)
 
 
@@ -268,6 +276,7 @@ def test_a_bad_listing_is_refused_where_it_is_read(
         plugin_lines(spec)
 
 
+@pytest.mark.usefixtures("_core_behaviour")
 def test_marks_report_behaviours() -> None:
     root = _compose(_spec(ROW_KIND))
     found = {
@@ -276,13 +285,7 @@ def test_marks_report_behaviours() -> None:
         if mark.target == "behaviour"
     }
     assert found == {
-        "untaped.connected-client-by-name": "base_url= and bearer= values",
-        "untaped.contracts-convert": "Stdin(via=Contract.bridge) and its values()",
-        "untaped.pipe-envelope": "Stdin[R] reading the rows, as a command's field",
-        "untaped.plaintext-token": "`untaped auth migrate`",
-        "untaped.unmarked-service": (
-            "a NeedsSetup-marked CredentialKey setting and a declared Credential"
-        ),
+        "untaped.old-login": "`untaped auth login`",
         "svc.row-kind": "kind= on the Record class",
     }
 

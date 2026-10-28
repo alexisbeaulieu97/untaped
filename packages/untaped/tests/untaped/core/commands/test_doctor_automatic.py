@@ -16,7 +16,6 @@ import yaml
 
 from core_test_support.commands.support import (
     FAIL,
-    UnmarkedWizProfile,
     WizProfile,
     make_spec,
     root_group,
@@ -24,7 +23,6 @@ from core_test_support.commands.support import (
     write_config,
 )
 from untaped.runtime.registry import PluginSpec
-from untaped.sdk import connection_check
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -58,18 +56,6 @@ def _declaring(*, ok: bool = False, warn: bool = False, fix: str | list[str] | N
 
 def test_a_result_is_manual_by_default() -> None:
     assert DoctorResult(id="x", ok=False, detail="d", fix="skills update").automatic is False
-
-
-def test_a_plaintext_token_fix_is_automatic(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "format_version: 2\nwiz: {base_url: https://w, token: t}\n")
-    wiz = make_spec(
-        "wiz",
-        settings=UnmarkedWizProfile,
-        doctor_checks=(connection_check("wiz.connection", section="wiz"),),
-    )
-    row = _row(_rows(wiz), "wiz.connection")
-    assert (row["status"], row["automatic"]) == ("warn", True)
-    assert row["fix"] == ["--profile", "default", "auth", "migrate"]
 
 
 def test_an_online_fix_is_manual(_isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -138,7 +124,9 @@ def test_an_impossible_automatic_fix_fails_its_row(
 
 
 def test_a_passing_row_still_validates_its_automatic_fix() -> None:
-    row = _row(json.loads(_doctor(_declaring(ok=True, fix="auth set <NAME>")).stdout), "svc.check")
+    row = _row(
+        json.loads(_doctor(_declaring(ok=True, fix="auth login <NAME>")).stdout), "svc.check"
+    )
     assert row["status"] == "fail"
     assert row["detail"] == "check svc.check declares an automatic fix that needs <NAME>"
 

@@ -67,8 +67,8 @@ A service's first row is what it needs set up. Enter opens its form: every
 setting the plugin marks as needed (such as its server's URL), each in the
 field its type takes, then, for each of its secrets (usually one token), how
 to get it (tabs): store it with your password store (as `untaped auth login`
-does), move a plaintext one there, give a command that prints it, use an
-environment variable, or keep the current one. Each secret is filed for the
+does), give a command that prints it, use an environment variable, or keep
+the current one. Each secret is filed for the
 server the form saves. Saving checks the service online with what you typed
 before anything is written; if the check fails, the reason is shown under the
 form and you can fix the values, or `Save anyway`. Only the settings you

@@ -9,13 +9,11 @@ in order:
 1. ``UNTAPED_<PLUGIN>__<NAME>`` (or ``<name>`` in an ``UNTAPED_<PLUGIN>`` JSON
    object), today's override spelling;
 2. the credential stored with ``untaped auth login`` for exactly this key;
-3. the old ``<plugin>.<name>`` or ``<plugin>.<name>_command`` setting, while
-   an 11.0 settings model still declares it;
-4. the plugin's own variables (``env=``), in order.
+3. the plugin's own variables (``env=``), in order.
 
-A key a folder file chose, by any of its fields, gets nothing from steps 1, 3
-and 4: a repository can't point a token from your shell or an old config line
-at a server of its choosing. A stored credential answers only its exact key,
+A key a folder file chose, by any of its fields, gets nothing from steps 1
+and 3: a repository can't point a token from your shell at a server of its
+choosing. A stored credential answers only its exact key,
 so a changed URL or TLS setting misses it.
 
 The secret comes back as a :class:`BoundSecret`, bound to the origin the key
@@ -297,7 +295,7 @@ class BoundSecret(SecretStr):
     ``origin`` is ``scheme://host[:port]`` as the key gives it, or ``None``
     for a secret that is not for HTTP (``connected_client`` refuses that one
     as a bearer). ``source`` names where it came from (``stored``, a
-    variable, an old setting), never the value. A secret read through a
+    variable, setup's candidate), never the value. A secret read through a
     command runs it on first read, once per process.
     """
 
@@ -338,7 +336,7 @@ class NoCredential(ConfigError):
 _NAME = re.compile(r"^[a-z][a-z0-9]*([_-][a-z0-9]+)*$")
 
 Step = Literal["variable", "stored", "setting", "env"]
-"""Which of :meth:`Credential.get`'s steps answered."""
+"""Which of :meth:`Credential.get`'s steps answered; ``setting`` is the candidate setup checks."""
 
 
 @dataclass(frozen=True)
@@ -347,7 +345,7 @@ class Answer:
 
     step: Step
     source: str
-    """``$UNTAPED_AWX__TOKEN``, ``stored 9b07e4``, ``awx.token_command``, ``$GH_TOKEN``."""
+    """``$UNTAPED_AWX__TOKEN``, ``stored 9b07e4``, ``setup's candidate``, ``$GH_TOKEN``."""
     row: str | None = None
     """The stored row's id, for the ``stored`` step."""
 
@@ -458,17 +456,14 @@ class Credential[K: CredentialKey](OwnedBlock):
             return Answer("stored", f"stored {row.id[:SHORT_ID]}", row=row.id)
         if refused:
             return None
-        legacy = legacy_setting(self)
-        if legacy is not None:
-            return Answer("setting", legacy[0])
         found = next((each for each in self.env if os.environ.get(each, "").strip()), None)
         return None if found is None else Answer("env", f"${found}")
 
     def get(self, key: K) -> BoundSecret:
         """The secret for ``key``, bound to its origin, or :class:`NoCredential` (exit 4).
 
-        A command (stored, or an old ``<name>_command``) runs when the
-        secret is first read, never here.
+        A stored command (or the one ``setup`` checks) runs when the secret
+        is first read, never here.
         """
         from untaped.sdk.network._credential_store import find_row, read_row  # noqa: PLC0415
 
@@ -487,13 +482,9 @@ class Credential[K: CredentialKey](OwnedBlock):
         row = None if candidate is not None else find_row(self.id(key))
         if row is not None:
             return read_row(row, origin=origin)
-        legacy = None if candidate is not None else legacy_setting(self)
         found = next((each for each in self.env if os.environ.get(each, "").strip()), None)
-        if refused and (legacy is not None or found is not None):
-            raise self._refusal(key, f"{legacy[0] if legacy else found} is set")
-        if legacy is not None:
-            setting, value = legacy
-            return BoundSecret(value, origin=origin, source=setting)
+        if refused and found is not None:
+            raise self._refusal(key, f"{found} is set")
         if found is not None:
             return BoundSecret(os.environ[found].strip(), origin=origin, source=f"${found}")
         raise self._missing(key)
@@ -502,8 +493,8 @@ class Credential[K: CredentialKey](OwnedBlock):
         """What ``untaped setup`` is checking for this credential, before anything is stored.
 
         The run's settings overlay (:attr:`untaped.sdk._run.Run.overlay`) names
-        the candidate as the old ``<name>`` or ``<name>_command``; while it
-        does, that answers instead of the stored login and the old settings
+        the candidate under ``<name>`` (a typed secret) or ``<name>_command``
+        (an argv); while it does, that answers instead of the stored login
         (``(source, None)``: a variable is the candidate, so only ``env``
         answers). ``None`` outside a check.
         """
@@ -615,9 +606,8 @@ def override_variable(plugin: str, name: str) -> str | None:
     Matched without regard to case, as settings read variables.
     """
     from untaped.runtime.settings import env_var_name  # noqa: PLC0415
-    from untaped.sdk.network.auth import token_override_name  # noqa: PLC0415
 
-    variable = token_override_name(plugin, field=name)
+    variable = env_var_name([plugin, name])
     if _env(variable).strip():
         return variable
     whole = env_var_name([plugin])
@@ -631,9 +621,8 @@ def override_variable(plugin: str, name: str) -> str | None:
 
 def _override_value(plugin: str, name: str) -> str:
     from untaped.runtime.settings import env_var_name  # noqa: PLC0415
-    from untaped.sdk.network.auth import token_override_name  # noqa: PLC0415
 
-    direct = _env(token_override_name(plugin, field=name)).strip()
+    direct = _env(env_var_name([plugin, name])).strip()
     if direct:
         return direct
     node = json.loads(_env(env_var_name([plugin])) or "{}")
@@ -646,19 +635,6 @@ def _env(name: str) -> str:
     if value is not None:
         return value
     return next((text for key, text in os.environ.items() if key.upper() == name), "")
-
-
-def legacy_setting(credential: Credential[Any]) -> tuple[str, str | Callable[[], str]] | None:
-    """The deprecated ``<plugin>.<name>`` (plain text) or ``<name>_command`` that would answer.
-
-    ``(setting, value)``: the value is the secret, or a function running the
-    command. The plain-text one warns once (the ``plaintext-token``
-    behaviour). Only settings in a config file count: the override variable
-    is step 1.
-    """
-    from untaped.sdk.network._credential_store import legacy_values  # noqa: PLC0415
-
-    return legacy_values(credential)
 
 
 # --------------------------------------------------------------------------- #
@@ -756,15 +732,6 @@ def forget_provenance() -> None:
     _touched.cache_clear()
 
 
-def legacy_section_refused(section: str) -> bool:
-    """Whether a folder set any leaf of an 11.0-shaped ``section``, which is then one key.
-
-    Its old ``token`` from a variable or a setting is refused, as for a
-    declared key a folder chose.
-    """
-    return any(leaf[0] == section for leaf in folder_leaves())
-
-
 # --------------------------------------------------------------------------- #
 # What the composition declares
 # --------------------------------------------------------------------------- #
@@ -855,5 +822,4 @@ __all__ = [
     "key_id",
     "key_origin",
     "key_shape",
-    "legacy_section_refused",
 ]

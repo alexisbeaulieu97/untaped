@@ -109,11 +109,6 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("contracts", "error", "An owner's contracts function loads."),
     ("conformance", "error", "Each ready provider passes its owner's conformance checks."),
     ("live", "error", "Each filled method taking no arguments answers with valid items."),
-    (
-        "unmarked-service",
-        "warning",
-        "A service's settings mark NeedsSetup; its token is a Credential.",
-    ),
 )
 
 RULES: tuple[Rule, ...] = tuple(

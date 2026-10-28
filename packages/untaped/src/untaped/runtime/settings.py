@@ -246,9 +246,6 @@ def reserved_section_keys(
     name. An old key (``renamed_keys``, ``retired_keys``) collides only with
     a key the SDK actually ``injected`` into this section, so a plugin can
     still move its own ``extensions`` setting away under a new name.
-
-    A credential's deprecated ``<name>``/``<name>_command`` settings are
-    injected unless the model declares them, so they never collide.
     """
     keys = set(model.model_fields)
     for field in model.model_fields.values():
@@ -1262,23 +1259,17 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 
     Only ``section`` (plus its own state section) is validated, so an invalid
-    sibling section never breaks an unrelated plugin. A token-bearing
-    section gets its token fallbacks applied (:func:`untaped.sdk.network.auth.resolve_token`).
+    sibling section never breaks an unrelated plugin.
     """
     settings_cls: type[Settings] | None = None
     if section not in _CONFIG_REGISTRY.profile_sections:
         settings_cls = _build_settings_model({section: model_cls}, _CONFIG_REGISTRY.state_sections)
-    from untaped.sdk.network.auth import resolve_token  # noqa: PLC0415
-
     value = load_settings_section(section, settings_cls)
-    if isinstance(value, BaseModel):
-        # Resolve on the composed class, which holds the injected command settings.
-        value = resolve_token(value, section=section)
     if isinstance(value, model_cls):
         return value
     if isinstance(value, BaseModel):
         return model_cls.model_validate(value.model_dump())
-    return resolve_token(model_cls.model_validate(value), section=section)
+    return model_cls.model_validate(value)
 
 
 def _build_settings_model(

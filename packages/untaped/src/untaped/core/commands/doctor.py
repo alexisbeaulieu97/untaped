@@ -75,7 +75,7 @@ from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_the
 from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, Failed, UntapedError, first_validation_error
 from untaped.sdk.fields import Confirm, Output, table_row
-from untaped.sdk.health._setup_status import SETUP_CHECK, notify_unmarked, setup_result
+from untaped.sdk.health._setup_status import SETUP_CHECK, setup_result
 from untaped.sdk.health.deprecated_keys import scan_keys
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.health.marks import section_marks
@@ -149,13 +149,12 @@ class Check(Command[CoreSettings]):
 class Fix(Command[CoreSettings]):
     """Run every automatic fix doctor found, after one confirmation.
 
-    No automatic fix asks for or prints a token, so `--yes` passes none:
-    `auth migrate` moves tokens inside its own process. A keychain may
-    show an unlock prompt on the user's screen; a locked `pass` store
-    exits 5 with a hint naming the unlock command. A `skipped` row's
-    `fix` is the argv to run after `untaped`: a `<NAME>` token in it is a
-    value to ask for, and a fix that asks for or reveals a token
-    (`auth login`, `auth set`, `config set ….token --prompt`) is the user's to run.
+    No automatic fix asks for or prints a token, so `--yes` passes none.
+    A keychain may show an unlock prompt on the user's screen; a locked
+    `pass` store exits 5 with a hint naming the unlock command. A `skipped`
+    row's `fix` is the argv to run after `untaped`: a `<NAME>` token in it
+    is a value to ask for, and a fix that asks for or reveals a token
+    (`auth login`, `config set ….token --prompt`) is the user's to run.
 
     Examples:
         $ untaped doctor fix --dry-run
@@ -431,8 +430,8 @@ def online_probe_rows(
     for the duration of the call, in a child run carrying them
     (:func:`untaped.runtime.run.child_run`);
     ``profile`` need not exist yet. Only the ``online=True`` checks run: the
-    offline ones (connection settings, the plaintext-token warning) would
-    misreport on candidate values, and there are no state or config-file rows.
+    offline ones would misreport on candidate values, and there are no state
+    or config-file rows.
     Settings that do not validate come back as the one failing ``validate
     settings`` row. Never writes: not the config, not a token store.
 
@@ -991,17 +990,9 @@ def _settings_row(
 def _setup_rows(
     scope: _SectionScope, settings: BaseModel | None, *, profile: str
 ) -> list[dict[str, object]]:
-    """Core's ``setup`` row for a plugin that marks what it needs; none for any other.
-
-    A plugin read through the legacy fallback keeps its own
-    ``connection_check`` row, and the fallback warns
-    (:data:`~untaped.sdk.health.marks.UNMARKED_SERVICE`).
-    """
+    """Core's ``setup`` row for a plugin that marks what it needs; none for any other."""
     marks = section_marks(scope.section, scope.settings_model)
     if marks is None:
-        return []
-    if marks.legacy:
-        notify_unmarked(scope.plugin, marks)
         return []
     outcome = setup_result(settings, marks, section=scope.section)
     fix = None if outcome.fix is None else command_argv(outcome.fix, profile=profile)

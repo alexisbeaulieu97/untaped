@@ -3,10 +3,9 @@
 ``NeedsSetup`` only takes effect on an optional field defaulting to ``None``,
 so a misplaced mark quarantines its plugin at load. A declared
 :class:`~untaped.sdk.Credential` is checked the same way: its key, its name,
-and the settings that hold the key. A credential's 11.0 settings
-(``<name>`` and ``<name>_command``) are added to its section, deprecated,
-so an 11.0 config file still reads; the marks change neither the JSON
-schema nor the ``cfg`` surface lines of what a model declares.
+and the settings that hold the key; core adds no setting for it. The marks
+change neither the JSON schema nor the ``cfg`` surface lines of what a
+model declares.
 """
 
 from __future__ import annotations
@@ -20,26 +19,19 @@ from core_test_support.runtime.plugin_harness import nullary_app
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import CompositionResult, PluginSpec, compose, section_settings
-from untaped.sdk import (  # type: ignore[deprecated]
+from untaped.sdk import (
     Credential,
     CredentialKey,
     NeedsSetup,
     Suggest,
-    TokenCommand,
     TokenUrl,
     deprecated,
 )
-from untaped.sdk.testing import check_plugin, plugin_candidate
+from untaped.sdk.testing import plugin_candidate
 
 
 class Server(CredentialKey):
     url: HttpUrl
-
-
-class Plain(BaseModel):
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
 
 
 class Marked(BaseModel):
@@ -69,7 +61,7 @@ class Clash(BaseModel):
 
 
 class Kept(BaseModel):
-    """An 11.0 secret setting kept, deprecated, beside the credential that replaces it."""
+    """A deprecated secret setting named like the credential that replaces it."""
 
     server: Server | None = None
     token: Annotated[SecretStr | None, deprecated(removed_in=12, replacement="auth login")] = None
@@ -152,6 +144,7 @@ def test_needs_setup_fits_an_optional_model() -> None:
         ),
         (_spec(Marked, (Credential("alpha", "token", key=Fixed),)), "bad-credential", "https"),
         (_spec(Clash, (TOKEN,)), "bad-credential", "has the name of a setting of its section"),
+        (_spec(Kept, (TOKEN,)), "bad-credential", "has the name of a setting of its section"),
         (_spec(TwoServers, (TOKEN,)), "bad-credential", "several settings hold a Server"),
     ],
 )
@@ -163,8 +156,7 @@ def test_a_credential_that_cannot_work_quarantines_its_plugin(
     assert says in record.detail
 
 
-def test_a_kept_secret_setting_and_one_token_url_load() -> None:
-    assert _compose(_spec(Kept, (TOKEN,))).quarantine == ()
+def test_one_token_url_loads() -> None:
     tokened = Credential("alpha", "token", key=OneTokenUrl)
     assert _compose(_spec(None, (tokened,))).quarantine == ()
 
@@ -173,19 +165,6 @@ def test_core_adds_no_old_settings_for_a_credential() -> None:
     composed = section_settings(_spec(Marked, (TOKEN,)))
     assert composed is not None
     assert not {"token", "token_command"} & composed.model_fields.keys()
-    kept = section_settings(_spec(Kept, (TOKEN,)))
-    assert kept is not None
-    assert kept.model_fields["token"].metadata == Kept.model_fields["token"].metadata
-
-
-@pytest.mark.usefixtures("fresh_composition")
-def test_lint_warns_about_an_unmarked_service() -> None:
-    spec = _spec(Plain)
-    rows = check_plugin("alpha", candidates=[plugin_candidate(spec)])
-    (row,) = [row for row in rows if row.check == "unmarked-service"]
-    assert (row.title, row.status) == ("Plain", "warn")
-    assert "setting up alpha from its base_url and token names" in row.detail
-    assert all(row.check != "registration" for row in rows)
 
 
 @pytest.mark.usefixtures("fresh_composition")
