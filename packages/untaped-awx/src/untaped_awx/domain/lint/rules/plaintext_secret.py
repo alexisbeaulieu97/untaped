@@ -15,7 +15,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources
+from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.domain.lint.rules._support import report
 from untaped_awx.domain.lint.secrets import is_plaintext, plaintext_secrets, variables_of
 from untaped_awx.domain.secret_names import looks_secret
@@ -28,11 +28,11 @@ _HINT = "keep it in a credential or a vault, or write $encrypted$ to keep the co
 @experimental
 @rule(
     "plaintext-secret",
-    reads=AwxResources,
+    reads=Resources,
     severity="error",
     summary="A document holds no secret in plain text.",
 )
-def plaintext_secret(resources: AwxResources) -> Iterator[Finding]:
+def plaintext_secret(resources: Resources) -> Iterator[Finding]:
     for item in resources.items:
         facts = resources.kinds.get(item.resource.kind)
         if item.origin != "document":

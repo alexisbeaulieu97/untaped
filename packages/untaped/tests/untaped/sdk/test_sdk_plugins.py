@@ -12,6 +12,8 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "the plugin and its commands": (
         "Plugin",
         "Command",
+        "Context",
+        "Diag",
         "Group",
         "derive",
         "StubSkill",
@@ -151,6 +153,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "read_identifiers",
         "read_stdin",
         "read_stdin_input",
+        "read_stdin_text",
         "read_structured_file",
         "resolve_each",
         "resolve_text_input",

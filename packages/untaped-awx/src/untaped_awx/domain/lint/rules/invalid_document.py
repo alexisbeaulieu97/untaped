@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterator
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources
+from untaped_awx.domain.lint.resources import Resources
 from untaped_lint.api import DocumentLocation, Finding, finding, rule
 
 _VALIDATION = re.compile(r"^\d+ validation errors? for \w+$")
@@ -23,11 +23,11 @@ _NOISE = ("For further information", "^")
 @experimental
 @rule(
     "invalid-document",
-    reads=AwxResources,
+    reads=Resources,
     severity="error",
     summary="Every document is a valid resource of a kind untaped knows.",
 )
-def invalid_document(resources: AwxResources) -> Iterator[Finding]:
+def invalid_document(resources: Resources) -> Iterator[Finding]:
     for each in resources.unreadable:
         message, hint = _sentence(each.error)
         yield finding(

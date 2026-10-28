@@ -40,7 +40,7 @@ class _SavedRow(BaseModel):
 
 
 def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
-    """Each ``(suite, case)``'s baseline from ``awx.test_result`` rows.
+    """Each ``(suite, case)``'s baseline from ``awx.case_result`` rows.
 
     ``removed`` rows (``result: null``, from an earlier comparison) ran
     nothing and are skipped. An older row without ``failure`` keeps only its
@@ -48,14 +48,14 @@ def saved_baselines(rows: Any) -> dict[tuple[str, str], Baseline]:
     result row, or a case listed twice.
     """
     if not isinstance(rows, list):
-        raise ValueError("expected a list of awx.test_result rows")
+        raise ValueError("expected a list of awx.case_result rows")
     found: dict[tuple[str, str], Baseline] = {}
     for index, row in enumerate(rows, start=1):
         try:
             saved = _SavedRow.model_validate(row)
         except ValidationError as exc:
             problem = first_validation_error(exc)
-            raise ValueError(f"row {index} is not an awx.test_result row: {problem}") from None
+            raise ValueError(f"row {index} is not an awx.case_result row: {problem}") from None
         key = (saved.suite, saved.case)
         if key in found:
             raise ValueError(f"row {index} repeats case {saved.suite}/{saved.case}")

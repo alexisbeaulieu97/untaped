@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from untaped.sdk.contracts import Provider
 from untaped_awx.application.lint.documents import load_documents
 from untaped_awx.domain.lint.resources import subject_of
 from untaped_awx.domain.lint.rules import RULES
@@ -25,7 +26,7 @@ class AwxRules(Rules):
     RULES: ClassVar[tuple[RuleFunction, ...]] = RULES
 
 
-class AwxDocuments(TreeReader):
+class AwxDocuments(TreeReader, Provider):
     """The apply documents of a repository, as one ``awx.resources`` subject.
 
     References resolve within the files read, as under ``--offline``. A file

@@ -14,7 +14,7 @@ dependencies = ["jinja2>=3.1.6,<4", "untaped==11.1.0", "untaped-lint==11.1.0"]
 lint = ["untaped-lint==11.1.0"]
 
 [project.entry-points."untaped.plugins"]
-awx = "untaped_awx:SPEC"
+awx = "untaped_awx.plugin:Awx"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

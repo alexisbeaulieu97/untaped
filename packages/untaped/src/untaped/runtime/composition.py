@@ -1080,6 +1080,7 @@ class _Seen:
     stdin_via: str | None = None
     output: type[BaseModel] | None = None
     formats: tuple[str, ...] = ()
+    streams: bool = False
 
 
 class _CommandWalk:
@@ -1132,6 +1133,7 @@ class _CommandWalk:
             returns=returns[0],
             output=None if seen.output is None else self._kind(seen.output),
             formats=seen.formats,
+            streams=seen.streams,
             stdin=tuple(seen.stdin),
             stdin_via=seen.stdin_via,
             inputs=tuple(seen.inputs),
@@ -1255,6 +1257,13 @@ class _CommandWalk:
                 f"declares Output[{output.__name__}] but run returns {model.__name__}, "
                 "which is not it or a base of it",
             )
+        if self.seen.streams and shape != "rows":
+            self.problem(
+                "output-return",
+                self.where,
+                f"declares Output(stream=True) but run returns {shape}: a stream yields rows "
+                "(Iterator[R])",
+            )
         for name in unprintable_following(output) if output is not None else ():
             self.problem(
                 "field-type",
@@ -1335,7 +1344,9 @@ class _CommandWalk:
                 self.problem("core-short", where, f"{short} belongs to core's own flags")
         default = None if info.default is PydanticUndefined else info.default
         negative = None
-        if token[0] == "bool" and not positional and default is True:
+        # a flag on by default turns off with --no-X; a ``bool | None`` (unset
+        # unless given) takes either, so --no-X says false outright
+        if token[0] == "bool" and not positional and (default is True or info.default is None):
             negative = f"--no-{name.replace('_', '-')}"
         flag = None if positional else f"--{name.replace('_', '-')}"
         for spelled in (flag, negative, *shorts):
@@ -1453,6 +1464,7 @@ class _CommandWalk:
             return
         self.seen.output = model
         self.seen.formats = default.formats
+        self.seen.streams = default.stream
         self._kind(model)
 
     def _stdin_field(self, where: str, annotation: object, default: Stdin[Any]) -> None:

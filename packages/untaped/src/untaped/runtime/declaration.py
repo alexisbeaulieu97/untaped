@@ -102,6 +102,8 @@ class CommandDecl(_Frozen):
     #: The kind of the records it prints (``Output[R]``).
     output: str | None = None
     formats: tuple[str, ...] = ()
+    #: ``Output(stream=True)``: each row prints as it comes (json one object per line).
+    streams: bool = False
     #: The targets of the models ``--stdin`` accepts (``Stdin[R]``).
     stdin: tuple[str, ...] = ()
     #: The contract whose bridge ``Stdin(via=)`` reads its providers' own rows through.

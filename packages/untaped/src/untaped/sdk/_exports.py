@@ -64,12 +64,13 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
-from untaped.sdk._run import PluginHandle, http_of, now, plugin_of, settings_of
+from untaped.sdk._run import Context, Diag, PluginHandle, http_of, now, plugin_of, settings_of
 from untaped.sdk._stdin import (
     StdinInput,
     read_identifiers,
     read_stdin,
     read_stdin_input,
+    read_stdin_text,
     resolve_text_input,
 )
 from untaped.sdk._ui import UiContext, ui_context
@@ -372,6 +373,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # the plugin and its commands (12.0)
     "Plugin",
     "Command",
+    "Context",
+    "Diag",
     "Group",
     "derive",
     "StubSkill",
@@ -506,6 +509,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "read_identifiers",
     "read_stdin",
     "read_stdin_input",
+    "read_stdin_text",
     "read_structured_file",
     "resolve_each",
     "resolve_text_input",

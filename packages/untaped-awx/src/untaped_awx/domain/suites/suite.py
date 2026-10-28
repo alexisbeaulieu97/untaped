@@ -783,7 +783,7 @@ class Baseline(BaseModel):
     )
 
 
-class CaseResult(Record, kind="awx.test_result"):
+class CaseResult(Record, kind="awx.case_result"):
     """One row of the test report."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")

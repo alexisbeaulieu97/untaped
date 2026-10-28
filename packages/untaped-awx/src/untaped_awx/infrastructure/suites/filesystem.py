@@ -12,14 +12,18 @@ import re
 from collections.abc import Iterable
 from pathlib import Path, PurePath
 
-from untaped.sdk import ConfigError, committed_path
-from untaped_awx import SPEC
+from untaped.sdk import ConfigError, plugin_of
+from untaped_awx.settings import AwxSettings
 
-SPEC_ROOT = committed_path(SPEC, "awx", root=Path())
-"""Where a repository keeps its specs and suites (``.untaped/awx``), relative to its root."""
 
-DEFAULT_SUITE_DIR = SPEC_ROOT / "tests"
-"""Where suites live when no path is given, relative to the git checkout root."""
+def spec_root() -> Path:
+    """Where a repository keeps its specs and suites (``.untaped/awx``), relative to its root."""
+    return plugin_of(AwxSettings).committed("awx", root=Path())
+
+
+def default_suite_dir() -> Path:
+    """Where suites live when no path is given (``.untaped/awx/tests``), relative to the root."""
+    return spec_root() / "tests"
 
 
 def kind_marker(kinds: Iterable[str]) -> re.Pattern[str]:

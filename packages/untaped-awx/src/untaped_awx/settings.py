@@ -20,7 +20,7 @@ from untaped.sdk import (
 )
 
 if TYPE_CHECKING:
-    from untaped_awx.domain.lint.resources import AwxResources
+    from untaped_awx.domain.lint.resources import Resources
 
 #: The ansible.controller / awx.awx collection's token variables, in its order.
 _TOKEN_ENV = ("CONTROLLER_OAUTH_TOKEN", "TOWER_OAUTH_TOKEN", "AAP_TOKEN")
@@ -111,11 +111,11 @@ def _resources_version() -> str:
     )
 
 
-def _resources_model() -> type[AwxResources]:
+def _resources_model() -> type[Resources]:
     """The snapshot's model, imported on first use: it loads lint, which ``--help`` never needs."""
-    from untaped_awx.domain.lint.resources import AwxResources  # noqa: PLC0415
+    from untaped_awx.domain.lint.resources import Resources  # noqa: PLC0415
 
-    return AwxResources
+    return Resources
 
 
 #: The controller snapshot ``awx lint`` reads without FILES: every resource
@@ -124,8 +124,6 @@ def _resources_model() -> type[AwxResources]:
 #: partition, so the files are shared by every profile and a token never
 #: reads what another token saw.
 RESOURCES = Cache(
-    "awx",
-    "resources",
     label="controller resources",
     max_age=timedelta(hours=1),
     version=_resources_version,
@@ -136,7 +134,7 @@ RESOURCES = Cache(
 
 #: The controller's API token, filed per server by ``untaped auth login awx``;
 #: the collection's variables are tried last.
-TOKEN = Credential("awx", "token", key=AwxServer, env=_TOKEN_ENV)
+TOKEN = Credential(key=AwxServer, env=_TOKEN_ENV)
 
 
 __all__ = ["RESOURCES", "TOKEN", "AwxServer", "AwxSettings"]

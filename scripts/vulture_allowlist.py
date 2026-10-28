@@ -111,6 +111,16 @@ NodePrompts.forks
 NodePrompts.job_slice_count
 WorkflowNodeSpec.always
 
+# Launch options the LAUNCH_FLAGS table reads by name (awx commands.resource_actions),
+# and the prompts fields of a node's and a lint view's launch values.
+Launch.launch_inventory
+Launch.job_tag
+Launch.skip_tag
+Launch.verbosity
+Launch.diff_mode
+NodePrompts.verbosity
+NodePrompts.diff_mode
+
 # Public API for recipe hook authors.
 HookHelpers.pass_
 YamlDumpOptions.block_seq_indent  # TypedDict keys
@@ -124,6 +134,8 @@ UiContext.confirm_action  # documented SDK
 StateRows.per_project  # documented SDK: projects PR 6's workspace rows are the first caller
 StateRows.replace_all  # documented SDK
 StateCollection.upsert  # 11.x SDK, removed with the 11.x state helpers in the sweep
+UiContext.confirm_or_cancel  # 11.x SDK (awx was the last caller), removed in the sweep
+_.parent_app  # cyclopts' resolve() signature, overridden by the lazy 11.x mount
 DataFile.copy_to  # documented SDK: the plugins' move PRs are the first callers
 Lock.try_locked  # documented SDK: dotfiles' move PR is the first caller
 _clear_for_tests  # test hook for the composed root

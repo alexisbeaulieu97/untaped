@@ -13,7 +13,7 @@ from collections.abc import Iterator
 
 from untaped.sdk import experimental
 from untaped_awx.domain.lint.fixes import patch_fix
-from untaped_awx.domain.lint.resources import AwxResources
+from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.domain.lint.rules._support import described, referenced, report
 from untaped_awx.domain.lint.views import JobTemplateDoc, ProjectDoc
 from untaped_awx.domain.scm import effective_scm_ref
@@ -23,11 +23,11 @@ from untaped_lint.api import Finding, rule
 @experimental
 @rule(
     "branch-override-ignored",
-    reads=AwxResources,
+    reads=Resources,
     severity="error",
     summary="A job template sets scm_branch only when its project allows the override.",
 )
-def branch_override_ignored(resources: AwxResources) -> Iterator[Finding]:
+def branch_override_ignored(resources: Resources) -> Iterator[Finding]:
     for item in resources.of("JobTemplate"):
         own = JobTemplateDoc.model_validate(item.resource.spec).scm_branch
         project = referenced(resources, item, "project")

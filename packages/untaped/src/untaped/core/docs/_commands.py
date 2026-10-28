@@ -256,6 +256,11 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
         shape = _RETURNS.get(command.returns, "Rows of")
         where = kind_address(kind, "outputs")
         lines += ["", f"{shape} `{kind.kind}` (`{where}`): {markdown(kind.summary)}"]
+        if command.streams:
+            lines += [
+                "",
+                "Rows print as they come: json is one object per line, yaml one document per row.",
+            ]
         lines += field_lines(kind.fields, where)
     accepted = [site.kind_of_target(target) for target in command.stdin]
     named = [each for each in accepted if each is not None]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_awx.domain.lint.resources import AwxResources, Linted, Reference
+from untaped_awx.domain.lint.resources import Linted, Reference, Resources
 from untaped_awx.domain.lint.targets import location_of, target_of
 from untaped_lint.api import Finding, RuleFunction, finding
 
@@ -26,7 +26,7 @@ def reference(item: Linted, field: str) -> Reference | None:
     return next((each for each in item.references if each.field == field), None)
 
 
-def referenced(resources: AwxResources, item: Linted, field: str) -> Linted | None:
+def referenced(resources: Resources, item: Linted, field: str) -> Linted | None:
     """The item ``item``'s resolved reference in ``field`` names, when the snapshot holds it."""
     found = reference(item, field)
     if found is None or found.resolution != "resolved":

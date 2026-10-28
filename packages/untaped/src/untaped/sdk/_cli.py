@@ -636,12 +636,16 @@ def check_columns(
     rows (which only warn) calls this first, so the usage error (exit 2) comes
     before anything changed, as the exit code promises. ``+name``/``-name``
     edits are checked by name; ``pipe`` and ``--columns ?`` are left alone.
-    A ``tree`` has no columns: any ``--columns`` is a usage error.
+    A ``tree`` has no columns: any ``--columns`` is a usage error. A model
+    with ``extra="allow"`` has an open schema, so its rows are checked when
+    they render, as mapping rows are.
     """
     if fmt == "tree":
         _refuse_tree_columns(columns)
         return
     if columns is None or columns == ["?"] or fmt == "pipe":
+        return
+    if model.model_config.get("extra") == "allow":
         return
     names = [name.lstrip("+-") for name in _column_names(columns)]
     _check_columns(names, [], fmt=fmt, schema=_model_fields(model), strict=True)

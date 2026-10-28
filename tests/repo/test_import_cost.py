@@ -126,14 +126,6 @@ def test_root_help_imports_no_plugin_cli() -> None:
     assert _plugin_cli_modules(["--help"]) == set()
 
 
-def test_plugin_help_imports_only_its_own_cli() -> None:
-    # an 11.x plugin; a 12.0 plugin's commands load with its class
-    loaded = _plugin_cli_modules(["awx", "--help"])
-    assert loaded
-    owners = {module.split(".")[0].removeprefix("untaped_") for module in loaded}
-    assert owners == {"awx"}
-
-
 _STARTUP_PROBE = (
     "import contextlib, io\n"
     "baseline = set(sys.modules)\n"
@@ -219,12 +211,15 @@ def test_startup_stays_within_its_module_budget(flag: str, tmp_path: Path) -> No
     assert total <= _TOTAL_BUDGET, f"a kept untaped {flag} imported {total} modules"
 
 
-def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:
+def test_a_typed_cache_declared_at_startup_does_not_load_its_model(tmp_path: Path) -> None:
     """``model=`` takes a function for a model whose import would cost startup; ``--help`` too.
 
     The data file loads at every start (core reads its declaration cache), so
-    only the model is held here.
+    only the model is held here. A start composing afresh imports each 12.0
+    plugin class (awx's imports this model), so the second start is the one held.
     """
+    env = {**os.environ, "UNTAPED_HOME": str(tmp_path)}
+    _loaded_heavy_modules(_DISPATCH_PROBE.format(argv=["--help"]), env)
     snippet = (
         "from datetime import timedelta\n"
         "from untaped.sdk import Cache\n"
@@ -235,7 +230,7 @@ def test_a_typed_cache_declared_at_startup_does_not_load_its_model() -> None:
         + _DISPATCH_PROBE.format(argv=["--help"])
         + "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
     )
-    assert "httpx" not in _loaded_heavy_modules(snippet)
+    assert "httpx" not in _loaded_heavy_modules(snippet, env)
 
 
 def test_contracts_load_only_when_asked(tmp_path: Path) -> None:

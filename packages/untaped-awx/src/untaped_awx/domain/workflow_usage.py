@@ -34,7 +34,7 @@ class ContainedTemplate(BaseModel):
     node_count: int = Field(description="How many of the workflow's nodes run it.")
 
 
-class WorkflowUsage(Record, kind="awx.template_usage"):
+class WorkflowUsage(Record, kind="awx.workflow_usage"):
     """One workflow that runs a queried template, directly or through other workflows (``usage``).
 
     ``depth`` is the shortest distance to the queried template (``0``: it

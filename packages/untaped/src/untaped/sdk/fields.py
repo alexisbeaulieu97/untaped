@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import ExitStack
 from datetime import datetime
@@ -328,7 +329,12 @@ TextOrStdin = Annotated[str, OR_STDIN]
 """A value, or ``-`` to read it from stdin."""
 
 PathOrStdin = Annotated[Path, OR_STDIN]
-"""A path, or ``-`` to read the content from stdin."""
+"""A path, or ``-`` to read the content from stdin.
+
+Core refuses ``-`` with ``--stdin`` or from a terminal; the value stays
+``Path("-")`` for the command to read with :func:`read_stdin_text`. It also
+marks list items: ``Positional[list[PathOrStdin]]``.
+"""
 
 
 def _pair(value: object, *, shape: str) -> tuple[str, str]:
@@ -497,7 +503,11 @@ class Output[R: BaseModel](FieldBlock):
     (one named after a core format replaces it, though ``--columns`` still
     prints core's table), and ``Output(format="raw")`` makes another
     format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
-    ``untaped.ui.format``).
+    ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
+    yields as it comes (a log being followed): json one object per line, yaml
+    one document per row, pipe and raw one line per row, a table one row per
+    line under its header, and a plugin renderer once per row; a stream with
+    no row prints nothing.
     """
 
     field_kind = "output"
@@ -515,8 +525,11 @@ class Output[R: BaseModel](FieldBlock):
         columns: Sequence[str] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
         format: str = "table",
+        stream: bool = False,
     ) -> None:
         self._declared = tuple(columns)
+        #: Each row prints as ``run`` yields it, not once the run ends.
+        self.stream = stream
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
         if format not in self.formats:
             raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
@@ -672,6 +685,78 @@ class Output[R: BaseModel](FieldBlock):
                     empty=f"No {words}.",
                     table_columns=default_columns(item) or None,
                 )
+
+
+class _Stream:
+    """One streamed run's printing: each row as it comes, the table's header once."""
+
+    def __init__(self, output: Output[Any]) -> None:
+        self.output = output
+        self.rows = 0
+        #: A streamed table's columns and their widths, from its first row.
+        self.widths: dict[str, int] | None = None
+
+    def row(self, record: BaseModel, *, kind: str | None) -> None:
+        """Print ``record``, the next row ``run`` yielded, and flush it."""
+        from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+            count_failed_actions,
+            count_row_failures,
+            emit_with,
+        )
+
+        output = self.output
+        count_failed_actions([record])
+        renderer = output.render.get(output.format)
+        if output.format == "table" and output._requested is not None:
+            renderer = None  # --columns asks for core's table, whatever replaced it
+        if renderer is not None:
+            count_row_failures([record])
+            renderer(record)
+        elif output.format == "table":
+            count_row_failures([record])
+            self._table_line(record)
+        else:
+            if output.format == "yaml" and self.rows:
+                print("---")
+            single = output.format in ("json", "yaml")
+            emit_with(
+                record if single else [record],
+                ui=None,
+                fmt=cast("OutputFormat", output.format),
+                columns=output._requested,
+                kind=kind,
+                table_columns=list(output.columns) or None,
+            )
+        self.rows += 1
+        sys.stdout.flush()
+
+    def _table_line(self, record: BaseModel) -> None:
+        """One row of a streamed table: its cells padded to the widths the first row set."""
+        from untaped.sdk._cli import _as_row, _selected_columns  # noqa: PLC0415 - heavy
+
+        row = _as_row(record)
+        if self.widths is None:
+            names, _ = _selected_columns(
+                self.output._requested,
+                [row],
+                fmt="table",
+                schema=None,
+                strict=False,
+                table_columns=list(self.output.columns) or None,
+            )
+            names = names or list(row)
+            self.widths = {name: max(len(name), len(_cell(row.get(name)))) for name in names}
+            print("  ".join(name.ljust(width) for name, width in self.widths.items()).rstrip())
+        print(
+            "  ".join(
+                _cell(row.get(name)).ljust(width) for name, width in self.widths.items()
+            ).rstrip()
+        )
+
+
+def _cell(value: object) -> str:
+    """A streamed table's cell: the value's text on one line (empty for ``None``)."""
+    return "" if value is None else str(value).replace("\n", " ")
 
 
 def _named(row: BaseModel, number: int) -> str:
