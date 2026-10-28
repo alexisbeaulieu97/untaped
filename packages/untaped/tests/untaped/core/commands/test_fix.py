@@ -114,7 +114,7 @@ def _rows(result: CliResult) -> list[dict[str, Any]]:
     return rows
 
 
-_MIGRATE = ("svc.a", "auth migrate", {})
+_MIGRATE = ("svc.a", "config migrate", {})
 _UPDATE = ("svc.b", "skills update", {})
 
 
@@ -124,13 +124,13 @@ _UPDATE = ("svc.b", "skills update", {})
 def test_rows_sharing_a_fix_make_one_outcome_listing_both_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    spec = _spec(_MIGRATE, ("svc.c", "auth migrate", {}), _UPDATE)
+    spec = _spec(_MIGRATE, ("svc.c", "config migrate", {}), _UPDATE)
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert result.exit_code == 0, result.output
     rows = _rows(result)
     assert [row["checks"] for row in rows] == [["svc.a", "svc.c"], ["svc.b"]]
     assert RAN == [
-        ["--profile", "default", "auth", "migrate"],
+        ["--profile", "default", "config", "migrate"],
         ["--profile", "default", "skills", "update"],
     ]
 
@@ -138,7 +138,7 @@ def test_rows_sharing_a_fix_make_one_outcome_listing_both_checks(
 def test_manual_fixes_are_skipped_with_what_they_need(monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(
         ("svc.url", "config set svc.base_url <URL>", {"automatic": False}),
-        ("svc.token", "auth set svc", {"automatic": False}),
+        ("svc.token", "auth login svc", {"automatic": False}),
     )
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert result.exit_code == 0, result.output
@@ -181,7 +181,7 @@ def test_a_fix_that_heals_its_rows_is_fixed_with_the_childs_counts(
     assert result.exit_code == 0, result.output
     assert _rows(result) == [
         {
-            "fix": ["--profile", "default", "auth", "migrate"],
+            "fix": ["--profile", "default", "config", "migrate"],
             "checks": ["svc.a"],
             "action": "fixed",
             "detail": "2 moved",
@@ -209,22 +209,27 @@ def test_a_failed_fix_carries_the_childs_error_and_the_next_one_runs(
         "system": "awx",
         "retryable": False,
         "message": "token rejected",
-        "hint": "run `untaped auth set awx`",
+        "hint": "run `untaped auth login awx`",
         "exit_code": 4,
         "details": {},
     }
     failed = ChildRun(code=4, rows=[], diagnostics=[{"level": "info", "message": "x"}, error])
     spec = _spec(_MIGRATE, _UPDATE)
     result = _cli(
-        spec, "--yes", "--format", "json", monkeypatch=monkeypatch, results={"auth migrate": failed}
+        spec,
+        "--yes",
+        "--format",
+        "json",
+        monkeypatch=monkeypatch,
+        results={"config migrate": failed},
     )
     assert result.exit_code == 4
     rows = _rows(result)
     assert [row["action"] for row in rows] == ["failed", "fixed"]
-    assert rows[0]["detail"] == "token rejected; run `untaped auth set awx`"
+    assert rows[0]["detail"] == "token rejected; run `untaped auth login awx`"
     assert rows[0]["error"] == {key: value for key, value in error.items() if key != "level"}
     assert "error" not in rows[1]
-    assert "error: untaped auth migrate" not in result.stderr
+    assert "error: untaped config migrate" not in result.stderr
 
 
 def test_a_fix_that_cannot_start_fails_and_the_next_one_runs(
@@ -251,7 +256,7 @@ def test_a_child_failing_without_an_error_line_reads_its_status(
         "--format",
         "json",
         monkeypatch=monkeypatch,
-        results={"auth migrate": failed},
+        results={"config migrate": failed},
     )
     assert result.exit_code == 1
     [row] = _rows(result)
@@ -280,7 +285,7 @@ def test_without_outcome_rows_the_detail_falls_back(
         "--format",
         "json",
         monkeypatch=monkeypatch,
-        results={"auth migrate": child},
+        results={"config migrate": child},
     )
     assert _rows(result)[0]["detail"] == detail
 
@@ -315,7 +320,7 @@ def test_a_dry_run_prints_its_planned_rows_and_no_plan_first(
 ) -> None:
     result = _cli(_spec(_MIGRATE), "--dry-run", monkeypatch=monkeypatch)
     assert result.exit_code == 0, result.output
-    assert "untaped auth migrate" in result.stdout and "planned" in result.stdout
+    assert "untaped config migrate" in result.stdout and "planned" in result.stdout
     assert "Fixes to run" not in result.stderr
     assert result.stderr.endswith("doctor fix: 1 planned\n")
 
@@ -332,12 +337,12 @@ def test_a_dry_run_with_a_refused_fix_fails_like_the_real_run(
 
 def test_a_declined_prompt_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ScriptedPromptBackend(confirms=[False])
-    spec = _spec(_MIGRATE, ("svc.token", "auth set svc", {"automatic": False}))
+    spec = _spec(_MIGRATE, ("svc.token", "auth login svc", {"automatic": False}))
     result = _cli(spec, monkeypatch=monkeypatch, terminal=True, prompt_backend=backend)
     assert result.exit_code == 1
     assert result.stderr.endswith("cancelled; no changes made\n")
-    assert "Fixes to run (1):\n  → untaped auth migrate  svc.a\n" in result.stderr
-    assert "Needs you (1):\n  → untaped auth set svc  svc.token\n" in result.stderr
+    assert "Fixes to run (1):\n  → untaped config migrate  svc.a\n" in result.stderr
+    assert "Needs you (1):\n  → untaped auth login svc  svc.token\n" in result.stderr
     assert backend.calls == [("confirm", "Run 1 automatic fix?")]
     assert RAN == []
 
@@ -357,14 +362,14 @@ def test_yes_prints_no_plan(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    online = _check("svc.api", "auth migrate", online=True)
+    online = _check("svc.api", "config migrate", online=True)
 
     def counted(ctx: PluginContext) -> DoctorResult:
         calls.append("probe")
         return online.run(ctx)
 
     _FIXES.clear()
-    _FIXES["svc.api"] = "auth migrate"
+    _FIXES["svc.api"] = "config migrate"
     spec = make_spec(
         "svc", doctor_checks=(DoctorCheck("svc.api", title="svc API", run=counted, online=True),)
     )
@@ -440,25 +445,25 @@ def test_nothing_to_fix_and_healthy_exits_0(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_the_result_is_one_line_per_fix(monkeypatch: pytest.MonkeyPatch) -> None:
     STUBBORN.add("svc.b")
-    spec = _spec(_MIGRATE, _UPDATE, ("svc.token", "auth set svc", {"automatic": False}))
+    spec = _spec(_MIGRATE, _UPDATE, ("svc.token", "auth login svc", {"automatic": False}))
     result = _cli(spec, "--yes", monkeypatch=monkeypatch)
     assert result.stdout.splitlines() == [
-        "  ✓ untaped auth migrate   fixed    2 moved",
-        "  ◐ untaped skills update  partial  2 moved; still warns: svc.b is off",
-        "  ○ untaped auth set svc   skipped  asks for input; run it yourself",
+        "  ✓ untaped config migrate  fixed    2 moved",
+        "  ◐ untaped skills update   partial  2 moved; still warns: svc.b is off",
+        "  ○ untaped auth login svc  skipped  asks for input; run it yourself",
     ]
     assert "doctor fix: 1 fixed, 1 partial, 1 skipped" in result.stderr
 
 
 def test_the_result_keeps_a_profile_the_flag_chose(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _cli(_spec(_MIGRATE), "--profile", "default", "--yes", monkeypatch=monkeypatch)
-    assert "untaped --profile default auth migrate" in result.stdout
+    assert "untaped --profile default config migrate" in result.stdout
 
 
 def test_columns_prints_the_table_with_the_command_line(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _cli(_spec(_MIGRATE), "--yes", "--columns", "fix,action", monkeypatch=monkeypatch)
     cells = [c.strip() for c in result.stdout.splitlines()[3].strip("│").split("│")]
-    assert cells == ["untaped auth migrate", "fixed"]
+    assert cells == ["untaped config migrate", "fixed"]
 
 
 def test_an_ascii_theme_swaps_the_glyphs(
@@ -470,7 +475,7 @@ def test_an_ascii_theme_swaps_the_glyphs(
     backend = ScriptedPromptBackend(confirms=[True])
     result = _cli(spec, monkeypatch=monkeypatch, terminal=True, prompt_backend=backend)
     assert [line.split()[0] for line in result.stdout.splitlines()] == ["+", "~"]
-    assert "  -> untaped auth migrate" in result.stderr
+    assert "  -> untaped config migrate" in result.stderr
 
 
 # ── the hint on doctor and setup ─────────────────────────────────────────────
@@ -482,7 +487,7 @@ def _doctor(spec: PluginSpec, *root_args: str) -> CliResult:
 
 
 def test_doctor_hints_at_doctor_fix_counting_unique_fixes() -> None:
-    spec = _spec(_MIGRATE, ("svc.c", "auth migrate", {}), _UPDATE)
+    spec = _spec(_MIGRATE, ("svc.c", "config migrate", {}), _UPDATE)
     assert _doctor(spec).stderr.splitlines()[-1] == (
         "hint: run `untaped doctor fix` to apply 2 automatic fixes"
     )
@@ -491,13 +496,13 @@ def test_doctor_hints_at_doctor_fix_counting_unique_fixes() -> None:
 def test_the_hint_names_the_fixes_that_need_you() -> None:
     spec = _spec(
         _MIGRATE,
-        ("svc.token", "auth set svc", {"automatic": False}),
+        ("svc.token", "auth login svc", {"automatic": False}),
         ("svc.url", "config set svc.base_url <URL>", {"automatic": False}),
     )
     assert _doctor(spec).stderr.splitlines()[-1] == (
         "hint: run `untaped doctor fix` to apply 1 automatic fix; 2 fixes need you"
     )
-    one = _spec(_MIGRATE, ("svc.token", "auth set svc", {"automatic": False}))
+    one = _spec(_MIGRATE, ("svc.token", "auth login svc", {"automatic": False}))
     assert _doctor(one).stderr.splitlines()[-1].endswith("; 1 fix needs you")
 
 
@@ -550,7 +555,7 @@ def test_every_core_fix_row_has_a_check_id_of_its_own() -> None:
 
 
 def test_no_automatic_fix_no_hint() -> None:
-    stderr = _doctor(_spec(("svc.token", "auth set svc", {"automatic": False}))).stderr
+    stderr = _doctor(_spec(("svc.token", "auth login svc", {"automatic": False}))).stderr
     assert "doctor fix" not in stderr
 
 
@@ -578,11 +583,11 @@ def fake_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.usefixtures("fake_python")
 def test_the_child_gets_json_closed_stdin_and_no_format_variable() -> None:
-    run = fix._run_one(("--profile", "p", "auth", "migrate"))
+    run = fix._run_one(("--profile", "p", "config", "migrate"))
     assert run.code == 0
     [seen] = run.rows
     assert seen == {
-        "argv": ["-m", "untaped", "--profile", "p", "auth", "migrate", "--format", "json"],
+        "argv": ["-m", "untaped", "--profile", "p", "config", "migrate", "--format", "json"],
         "stdin": "",
         "diagnostics": "json",
         "format": None,

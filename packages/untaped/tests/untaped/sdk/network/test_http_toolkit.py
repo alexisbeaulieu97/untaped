@@ -2,46 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any
 
 import httpx
 import pytest
 import respx
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import BaseModel, HttpUrl, SecretStr, ValidationError
 
 from untaped.runtime.settings import (
     HttpSettings,
     register_profile_settings,
     reset_config_registry,
 )
+from untaped.sdk import CredentialKey, NeedsSetup
 from untaped.sdk._home import config_path
-from untaped.sdk.diagnostic import format_error
 from untaped.sdk.errors import ConfigError, HttpError, UntapedError
-from untaped.sdk.network.auth import TokenCommand, TokenSources
 from untaped.sdk.network.http import (
     connected_client,
-    missing_setting_error,
     paginate_link,
     paginate_offset,
     paginate_pages,
     rejected_token_error,
     same_origin,
 )
-
-
-@pytest.fixture
-def _by_name() -> Iterator[None]:
-    """The deprecated read by field name (no ``base_url=``), which these tests keep covering.
-
-    Each such call warns; ``required=`` warns on its own.
-    """
-    with pytest.warns(DeprecationWarning, match=r"without base_url=|connected_client\(required="):
-        yield
-
-
-_BY_NAME = pytest.mark.usefixtures("_by_name")
 
 
 class DemoSettings(BaseModel):
@@ -128,74 +112,20 @@ def test_connected_client_defaults_to_resolved_profile_http(
     assert captured["proxy"] == "http://corp-proxy:3128"
 
 
-@pytest.mark.parametrize(("field", "placeholder"), [("token", "<token>"), ("base_url", "<url>")])
-def test_missing_setting_error_names_config_set_and_env_paths(field: str, placeholder: str) -> None:
-    """The ``config set`` placeholder is the field's last word."""
-    error = missing_setting_error("demo", field)
-
-    assert isinstance(error, ConfigError)
-    assert str(error) == f"demo.{field} is not configured"
-    assert error.hint is not None
-    assert f"`untaped config set demo.{field} {placeholder}`" in error.hint
-    assert f"UNTAPED_DEMO__{field.upper()}" in error.hint
+class DemoServer(CredentialKey):
+    url: HttpUrl
 
 
-def test_missing_setting_error_names_every_field_and_prompts_for_secrets() -> None:
-    error = format_error(missing_setting_error("demo", "base_url", "token", secret=("token",)))
+class MarkedSettings(BaseModel):
+    """A service whose server is unset: ``connected_client`` gets no ``base_url``."""
 
-    assert "demo.base_url and demo.token are not configured" in error
-    assert "`untaped config set demo.base_url <url>`" in error
-    assert "`untaped config set demo.token --prompt`" in error
-    assert "<token>" not in error
-    assert "UNTAPED_DEMO__BASE_URL" in error
-    assert "UNTAPED_DEMO__TOKEN" in error
+    server: Annotated[DemoServer | None, NeedsSetup] = None
 
 
-class SourcedSettings(BaseModel):
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("DEMO_TOKEN",))
-
-    base_url: str = "https://api.example.com"
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
-
-
-@_BY_NAME
-def test_a_missing_token_names_the_sources_that_keep_it_out_of_the_config_file() -> None:
+def _not_set_up() -> ConfigError:
     with pytest.raises(ConfigError) as caught:
-        connected_client(SourcedSettings(), section="demo")
-    message = format_error(caught.value)
-    assert "`untaped auth set demo`" in message
-    assert "demo.token_command or $DEMO_TOKEN" in message
-
-
-def test_a_missing_token_without_token_command_prompts_for_it() -> None:
-    error = format_error(missing_setting_error("demo", "token", secret=("token",)))
-    assert "`untaped config set demo.token --prompt`" in error
-    assert "auth set" not in error
-
-
-class NoUrlSettings(BaseModel):
-    base_url: str | None = None
-    token: SecretStr | None = SecretStr("sekret")
-
-
-@_BY_NAME
-@pytest.mark.parametrize(
-    ("config", "message"),
-    [
-        (DemoSettings(token=None), r"demo\.token is not configured"),
-        (DemoSettings(token=SecretStr("   ")), r"demo\.token is not configured"),
-        (NoUrlSettings(), r"demo\.base_url is not configured"),
-        (
-            DemoSettings(base_url="", token=None),
-            r"demo\.base_url and demo\.token are not configured",
-        ),
-    ],
-    ids=["missing-token", "blank-token", "missing-base-url", "both-missing"],
-)
-def test_connected_client_rejects_missing_settings(config: BaseModel, message: str) -> None:
-    with pytest.raises(ConfigError, match=message):
-        connected_client(config, section="demo")
+        connected_client(MarkedSettings(), section="demo", base_url=None, http=HttpSettings())
+    return caught.value
 
 
 def _write_config(text: str) -> None:
@@ -204,7 +134,6 @@ def _write_config(text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-@_BY_NAME
 def test_a_missing_setting_names_the_profiles_that_set_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """An agent can switch profile from the error alone instead of asking for the value."""
     _write_config(
@@ -212,16 +141,14 @@ def test_a_missing_setting_names_the_profiles_that_set_it(monkeypatch: pytest.Mo
         "profiles:\n"
         "  home: {}\n"
         "  work:\n"
-        "    demo: {base_url: https://work.example.com}\n"
+        "    demo: {server: {url: https://work.example.com}}\n"
         "  lab:\n"
-        "    demo: {base_url: '  '}\n"
+        "    demo: {server: null}\n"
     )
     monkeypatch.setenv("UNTAPED_PROFILE", "home")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
+    error = _not_set_up()
 
-    error = caught.value
-    assert str(error) == "demo.base_url is not configured in profile 'home'"
+    assert str(error) == "demo is not set up in profile 'home': demo.server is not set"
     assert error.hint is not None
     assert "profile 'work' sets it: run `untaped --profile work …`" in error.hint
     assert "UNTAPED_PROFILE=work" in error.hint
@@ -229,70 +156,61 @@ def test_a_missing_setting_names_the_profiles_that_set_it(monkeypatch: pytest.Mo
     assert error.details["profiles"] == ["work"]
 
 
-@_BY_NAME
-def test_a_missing_token_counts_a_profile_with_a_token_command() -> None:
+def test_several_profiles_that_set_it_are_all_named() -> None:
     _write_config(
         "format_version: 2\n"
         "profiles:\n  a:\n"
-        "    demo: {token_command: [pass, show, demo]}\n"
+        "    demo: {server: {url: https://a.example.com}}\n"
         "  b:\n"
-        "    demo: {token: sekret}\n"
+        "    demo: {server: {url: https://b.example.com}}\n"
     )
-    with pytest.raises(ConfigError) as caught:
-        connected_client(SourcedSettings(), section="demo")
+    hint = _not_set_up().hint or ""
 
-    assert "profiles 'a' and 'b' set it" in (caught.value.hint or "")
-    assert "`untaped --profile NAME …`" in (caught.value.hint or "")
+    assert "profiles 'a' and 'b' set it" in hint
+    assert "`untaped --profile NAME …`" in hint
 
 
-@_BY_NAME
 def test_a_missing_setting_no_other_profile_sets_names_only_the_profile() -> None:
     _write_config("format_version: 2\nprofiles:\n  work: {}\n")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
+    error = _not_set_up()
 
-    assert str(caught.value) == "demo.base_url is not configured in profile 'default'"
-    assert "--profile" not in (caught.value.hint or "")
-    assert "profiles" not in caught.value.details
+    assert str(error) == "demo is not set up in profile 'default': demo.server is not set"
+    assert "--profile" not in (error.hint or "")
+    assert "profiles" not in error.details
 
 
-@_BY_NAME
 def test_a_profile_inheriting_the_setting_from_default_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The active profile blanks a key ``default`` sets; ``work`` still inherits it."""
     _write_config(
         "format_version: 2\n"
-        "demo: {base_url: https://example.com}\n"
+        "demo: {server: {url: https://example.com}}\n"
         "profiles:\n  home:\n"
-        "    demo: {base_url: null}\n"
+        "    demo: {server: null}\n"
         "  my work: {}\n"
     )
     monkeypatch.setenv("UNTAPED_PROFILE", "home")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
 
-    assert caught.value.details["profiles"] == ["default", "my work"]
+    assert _not_set_up().details["profiles"] == ["default", "my work"]
 
 
-@_BY_NAME
 def test_a_profile_name_with_a_space_is_quoted_in_the_command() -> None:
-    _write_config("format_version: 2\nprofiles:\n  my work:\n    demo: {base_url: https://x}\n")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
+    _write_config(
+        "format_version: 2\nprofiles:\n  my work:\n    demo: {server: {url: https://x}}\n"
+    )
+    hint = _not_set_up().hint or ""
 
-    hint = caught.value.hint or ""
     assert "`untaped --profile 'my work' …`" in hint
     assert "UNTAPED_PROFILE='my work'" in hint
 
 
-@_BY_NAME
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("UNTAPED_DEMO__BASE_URL", ""),
-        ("untaped_demo__base_url", ""),
-        ("UNTAPED_DEMO", '{"base_url": ""}'),
+        ("UNTAPED_DEMO__SERVER", ""),
+        ("untaped_demo__server", ""),
+        ("UNTAPED_DEMO", '{"server": ""}'),
         ("UNTAPED_DEMO", "not json"),
     ],
 )
@@ -300,28 +218,23 @@ def test_an_environment_override_names_no_profile(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
 ) -> None:
     """An override applies to every profile, so switching profile would not help."""
-    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {base_url: https://x}\n")
+    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {server: {url: https://x}}\n")
     monkeypatch.setenv(name, value)
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
+    error = _not_set_up()
 
-    assert str(caught.value) == "demo.base_url is not configured"
-    assert "--profile" not in (caught.value.hint or "")
+    assert str(error) == "demo is not set up: demo.server is not set"
+    assert "--profile" not in (error.hint or "")
 
 
-@_BY_NAME
 def test_an_environment_blob_without_the_key_still_names_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {base_url: https://x}\n")
-    monkeypatch.setenv("UNTAPED_DEMO", '{"token": "t"}')
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
+    _write_config("format_version: 2\nprofiles:\n  work:\n    demo: {server: {url: https://x}}\n")
+    monkeypatch.setenv("UNTAPED_DEMO", '{"timeout": 3}')
 
-    assert caught.value.details["profiles"] == ["work"]
+    assert _not_set_up().details["profiles"] == ["work"]
 
 
-@_BY_NAME
 def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -330,10 +243,8 @@ def test_an_unreadable_config_names_only_a_profile_chosen_outside_it(
 
     monkeypatch.setattr("untaped.sdk.network.http.read_config_dict", unreadable)
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
-    with pytest.raises(ConfigError) as caught:
-        connected_client(NoUrlSettings(), section="demo")
 
-    assert str(caught.value) == "demo.base_url is not configured in profile 'work'"
+    assert str(_not_set_up()) == "demo is not set up in profile 'work': demo.server is not set"
 
 
 @respx.mock
@@ -367,28 +278,6 @@ def test_connected_client_strips_trailing_base_url_slash() -> None:
 
     with connected_client(config, section="demo", base_url=config.base_url) as client:
         assert client.get_json_dict("/user") == {"ok": True}
-
-
-@_BY_NAME
-@pytest.mark.parametrize(
-    ("token", "authorization"), [(SecretStr("sekret"), "Bearer sekret"), (None, None)]
-)
-@respx.mock
-def test_connected_client_token_not_required(
-    token: SecretStr | None, authorization: str | None
-) -> None:
-    """awx leaves ``token`` out of ``required`` so a token-less client can hit
-    unauthenticated endpoints, yet a token that *is* configured must still
-    become the ``Authorization: Bearer`` header."""
-    route = respx.get("https://api.example.com/ping/").mock(
-        return_value=httpx.Response(200, json={"pong": True})
-    )
-    config = DemoSettings(token=token)
-
-    with connected_client(config, section="demo", required=("base_url",)) as client:
-        assert client.get_json_dict("/ping/") == {"pong": True}
-
-    assert route.calls.last.request.headers.get("Authorization") == authorization
 
 
 def test_paginate_pages_follows_cursors_and_respects_limit() -> None:
@@ -819,30 +708,21 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
 
 
 @pytest.mark.usefixtures("_isolated_config")
-def test_a_rejected_token_is_an_auth_config_error_with_the_token_hint() -> None:
-    cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="awx")
+@pytest.mark.parametrize("model", [None, DemoSettings])
+def test_a_rejected_secret_setting_is_an_auth_error_naming_its_prompt(
+    model: type[BaseModel] | None,
+) -> None:
+    cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="plain")
+    if model is not None:
+        register_profile_settings("plain", model)
 
-    register_profile_settings("awx", SourcedSettings)
-
-    error = rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=cause)
+    error = rejected_token_error("plain", "rejected the token (HTTP 401)", cause=cause)
 
     assert isinstance(error, ConfigError)
     assert (str(error), error.category, error.system) == (
-        "AWX rejected the token (HTTP 401)",
+        "rejected the token (HTTP 401)",
         "auth",
-        "awx",
+        "plain",
     )
-    assert error.hint == "run `untaped auth set awx`"
-    assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}
-
-
-@pytest.mark.usefixtures("_isolated_config")
-@pytest.mark.parametrize("model", [None, DemoSettings])
-def test_a_rejected_token_without_token_command_hints_at_config_set(
-    model: type[BaseModel] | None,
-) -> None:
-    # `auth set` refuses a section whose model has no token_command.
-    if model is not None:
-        register_profile_settings("plain", model)
-    error = rejected_token_error("plain", "rejected")
     assert error.hint == "run `untaped config set plain.token --prompt`"
+    assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}

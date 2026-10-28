@@ -28,7 +28,6 @@ from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import resolve_theme_or_default
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.network.auth import resolve_token
 
 if TYPE_CHECKING:
     from untaped.runtime.theme import UiSettings
@@ -57,9 +56,7 @@ class AppContext:
         Only ``name`` (plus its own state section) is validated, once per
         context. Unlike :func:`untaped.runtime.settings.get_config_section`, this never
         builds a one-off model for unregistered sections — it serves only
-        sections registered before the composition was resolved. A
-        token-bearing section gets its token fallbacks applied
-        (:func:`untaped.sdk.network.auth.resolve_token`).
+        sections registered before the composition was resolved.
         """
         if name not in self.settings_model.model_fields:
             raise ConfigError(
@@ -68,14 +65,11 @@ class AppContext:
         if name not in self._resolved:
             self._resolved[name] = load_settings_section(name, self.settings_model)
         value = self._resolved[name]
-        if isinstance(value, BaseModel):
-            # Resolve on the composed class, which holds the injected command settings.
-            value = resolve_token(value, section=name)
         if isinstance(value, model_cls):
             return value
         if isinstance(value, BaseModel):
             return model_cls.model_validate(value.model_dump())
-        return resolve_token(model_cls.model_validate(value), section=name)
+        return model_cls.model_validate(value)
 
     @property
     def profile(self) -> str:

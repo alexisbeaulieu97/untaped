@@ -54,7 +54,7 @@ def test_hint_names_the_full_command_once() -> None:
 
 
 def test_run_hint_is_the_body_a_hint_line_prints() -> None:
-    assert run_hint("auth set awx") == "run `untaped auth set awx`"
+    assert run_hint("auth login awx") == "run `untaped auth login awx`"
     assert run_hint("untaped doctor") == "run `untaped doctor`"
 
 

@@ -229,32 +229,6 @@ class SettingsFileRepository:
                 return OldSpelling(f"{section}.{use.old}", use.removed_in, section)
         return None
 
-    def set_value(
-        self,
-        key: str,
-        raw_value: str,
-        *,
-        profile: str | None = None,
-        dry_run: bool = False,
-        on_spelling_removed: SpellingRemoved | None = None,
-    ) -> str:
-        """Validate ``raw_value`` against the key's type, then persist.
-
-        The raw string is validated against the leaf's annotation (lax mode:
-        ``true``/``no`` for bools, numbers, literals, paths); string and
-        secret fields keep the exact input. Only the key's own section is
-        re-validated, so an unrelated invalid section never blocks a repair.
-        Returns the resolved target profile name so callers can report where
-        the write landed. ``dry_run`` validates the same way but writes nothing.
-        """
-        return self.update_value(
-            key,
-            lambda _target, _current: raw_value,
-            profile=profile,
-            dry_run=dry_run,
-            on_spelling_removed=on_spelling_removed,
-        )
-
     def update_value(
         self,
         key: str,
@@ -268,11 +242,14 @@ class SettingsFileRepository:
 
         ``update(target, current)`` receives the target profile's name and
         the key's raw value in that profile's own data (``None`` when unset),
-        and returns the raw string to store (validated as in
-        :meth:`set_value`) or ``None`` to remove the key. It runs inside the
-        locked mutation, so a concurrent writer's change is never replaced
-        from a stale read; raise from it to abort without writing. Returns the
-        target profile name.
+        and returns the raw string to store or ``None`` to remove the key. The
+        string is validated against the leaf's annotation (lax mode:
+        ``true``/``no`` for bools, numbers, literals, paths); string and secret
+        fields keep the exact input. Only the key's own section is
+        re-validated, so an unrelated invalid section never blocks a repair.
+        It runs inside the locked mutation, so a concurrent writer's change is
+        never replaced from a stale read; raise from it to abort without
+        writing. Returns the target profile name.
 
         A value stored under an old spelling of the key counts as the key's
         own; writing or removing the key removes every old spelling in the
@@ -382,7 +359,7 @@ class SettingsFileRepository:
             if not (own or olds):
                 return
             removed = True
-            # Symmetric with ``set_value``: re-validate the key's section so a
+            # Symmetric with ``update_value``: re-validate the key's section so a
             # removal that would leave the scope in a state pydantic would
             # reject surfaces here (with the offending key in the message),
             # not at next-load with an opaque traceback.
@@ -533,7 +510,7 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
     the input as JSON or YAML and replace the whole value. Other types
     validate the raw string in pydantic's lax mode and store the JSON-mode
     dump (e.g. a ``Path`` as a string). For those non-string types the
-    literal ``null`` stores ``None``; the section validation in ``set_value``
+    literal ``null`` stores ``None``; the section validation in ``update_value``
     rejects it when the field is not optional. (``config unset`` removes a
     key instead.)
     """

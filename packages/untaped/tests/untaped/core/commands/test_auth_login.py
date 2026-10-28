@@ -7,13 +7,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from pydantic import BaseModel, HttpUrl, SecretStr
+from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.support import make_spec, root_group, write_config
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.marks import deprecated
-from untaped.sdk.network._credential_store import CredentialRow, file_reference, index
+from untaped.sdk.network._credential_store import CredentialRow, index
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.credentials import describe_key
@@ -29,12 +28,6 @@ class WizServer(CredentialKey):
 
 class WizProfile(BaseModel):
     server: Annotated[WizServer | None, NeedsSetup] = None
-
-
-class OldWizProfile(WizProfile):
-    """``wiz`` still declaring 11.0's ``token``, as github does until it moves."""
-
-    token: Annotated[SecretStr | None, deprecated(removed_in=12)] = None
 
 
 class Vault(CredentialKey):
@@ -146,19 +139,6 @@ def test_login_refuses_a_bad_token_command(command: str, message: str) -> None:
 
     assert result.exit_code == 2, result.output
     assert message in result.stderr
-
-
-def test_login_names_the_old_setting_a_login_outranks(_isolated_config: Path) -> None:
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz: {server: {url: https://wiz.example.com}, token: old}\n",
-    )
-
-    result = _auth("login", "wiz", input="new\n", settings=OldWizProfile)
-
-    assert result.exit_code == 0, result.output
-    assert "this login now wins over wiz.token" in result.stderr
-    assert "untaped config unset wiz.token" in result.stderr
 
 
 def test_login_before_setup_names_the_setup_step() -> None:
@@ -340,22 +320,6 @@ def test_an_id_prefix_matching_several_rows_is_refused() -> None:
     assert f"id {shared!r} matches several stored credentials" in result.stderr
 
 
-@pytest.mark.usefixtures("_server")
-def test_forgetting_a_migrated_row_leaves_its_old_entry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    deleted: list[str] = []
-    monkeypatch.setattr(TokenStore, "delete", lambda self, entry: deleted.append(entry))
-    file_reference(TOKEN, KEY, TokenStore("pass"), "default/wiz")
-
-    result = _auth("forget", "wiz", "--yes")
-
-    assert result.exit_code == 0, result.output
-    assert "which an older untaped still reads" in result.stderr
-    assert "nothing was revoked on the server" in result.stderr
-    assert deleted == []
-
-
 # --- status --------------------------------------------------------------------
 
 
@@ -395,20 +359,6 @@ def test_login_tests_the_store_before_asking_for_the_token(
     assert result.exit_code == 4, result.output
     assert "pass cannot decrypt" in result.stderr
     assert backend.calls == []
-
-
-@pytest.mark.usefixtures("_server")
-def test_a_command_login_over_a_migrated_row_keeps_the_old_entry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    deleted: list[str] = []
-    monkeypatch.setattr(TokenStore, "delete", lambda self, entry: deleted.append(entry))
-    file_reference(TOKEN, KEY, TokenStore("pass"), "default/wiz")
-
-    result = _auth("login", "wiz", "--token-command", "printf tok")
-
-    assert result.exit_code == 0, result.output
-    assert deleted == []
 
 
 @pytest.mark.usefixtures("_server")

@@ -14,8 +14,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `config migrate` | `untaped.config_migration_outcome` (`from`, `to`, `profile`, `detail`; `action` `renamed`, `dropped` or `deleted`, with an empty `to` and the old value in `detail`; `planned` under `--dry-run`) |
 | `auth login`, `auth forget` | `untaped.credential_outcome` (never the secret; `plugin`, `name`, `key` described, `id` short, `store`, `action`) |
 | `auth list` | `untaped.stored_credential` (`id`, `plugin`, `name`, `key`, `backend`, `where`: the store entry or the command's program alone) |
-| `auth status` | `untaped.token_source` (for a declared credential, one row for this run: `key`, `step` `variable`, `stored`, `setting` or `env`, `source`, `id`, or `refusal`; for a plugin on 11.0's settings, one per profile) |
-| `auth set`, `auth unset`, `auth migrate` (deprecated) | `untaped.auth_outcome` (never the secret; `field` names it, `token` or another; `action` `gone` when `unset` found the entry already deleted; a secret `migrate` could not move is `failed`, with `error`) |
+| `auth status` | `untaped.token_source` (one row per credential for this run: `key`, `step` `variable`, `stored` or `env`, `source`, `id`, or `refusal`) |
 | `profile list` | `untaped.profile` (`name`, `selected`, `keys`) |
 | `profile show` | `untaped.profile_view` (`name`, `selected`, `raw`, `data`: the settings, secrets `***` unless `--show-secrets`; `yaml` by default) |
 | `profile current` | `untaped.profile_pick` (`name`: the pick comma-joined, else `default`; `profiles`, each `name` and `source` `flag` or `env`; `raw` by default) |
@@ -38,9 +37,8 @@ command runs and needs at least one row, so use it on a read command or add
 
 `--stdin` on `skills install`, `status`, `update` and `remove` reads bare
 skill names, one per line. With `--dry-run`, `config set/unset/migrate`,
-`plugin rank`, `plugin new`, `auth unset/migrate`,
-`profile create/delete/rename`, `doctor fix` and `setup prune` validate, write
-nothing and print their outcome with `action` `planned`; `doctor fix`'s manual
+`plugin rank`, `plugin new`, `profile create/delete/rename`, `doctor fix` and
+`setup prune` validate, write nothing and print their outcome with `action` `planned`; `doctor fix`'s manual
 fixes stay `skipped` and its refused ones `failed`.
 
 A `fix_outcome` row has `fix` (the argv run after `untaped`), `checks` (the

@@ -60,8 +60,8 @@ def test_behaviours_are_listed() -> None:
     )
 
 
-def test_core_lists_the_plaintext_token() -> None:
-    assert "behaviour untaped.plaintext-token" in declared(PACKAGES) & listed()
+def test_core_lists_its_own_behaviours() -> None:
+    assert "behaviour untaped.pipe-envelope" in declared(PACKAGES) & listed()
 
 
 def test_a_planted_declaration_is_found(tmp_path: Path) -> None:

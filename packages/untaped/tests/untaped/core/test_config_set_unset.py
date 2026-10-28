@@ -32,6 +32,11 @@ class StrictSettings(Settings):
     mandatory: str = Field(...)
 
 
+def _set(key: str, value: str, *, profile: str | None = None) -> str:
+    """Write ``value`` to ``key`` as ``config set`` does; the profile written to."""
+    return SettingsFileRepository().update_value(key, lambda _target, _old: value, profile=profile)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # The testing plugin resets the registry and settings cache around each test.
@@ -134,7 +139,7 @@ def test_set_writes_into_the_target_profile(
     expected: dict[str, Any],
 ) -> None:
     _write(_isolate_settings, initial)
-    assert SettingsFileRepository().set_value(key, value, profile=profile) == written_to
+    assert _set(key, value, profile=profile) == written_to
     assert _by_profile(_isolate_settings) == expected
 
 
@@ -146,7 +151,7 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
         "workspace:\n  active:\n    - name: ws1\n"
         '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n'
     )
-    SettingsFileRepository().set_value("demo.token", "tok")
+    _set("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
     default = data
     assert default["untaped"]["skills"] == {"updates": "auto"}
@@ -200,7 +205,7 @@ def test_set_rejects_without_writing(
 ) -> None:
     _write(_isolate_settings, initial)
     with pytest.raises(ConfigError, match=match) as excinfo:
-        SettingsFileRepository().set_value(key, value, profile=profile)
+        _set(key, value, profile=profile)
     assert "untaped-profile" not in str(excinfo.value)
     if initial is None:
         assert not _isolate_settings.exists()
@@ -216,7 +221,7 @@ def test_set_validation_isolated_from_env_overlay(
     break ``get_settings()`` the day the env var goes away)."""
     monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "5")
     with pytest.raises(ConfigError, match="timeout_seconds"):
-        SettingsFileRepository().set_value("untaped.http.timeout_seconds", "not-a-number")
+        _set("untaped.http.timeout_seconds", "not-a-number")
 
 
 # ── unset ────────────────────────────────────────────────────────────────────

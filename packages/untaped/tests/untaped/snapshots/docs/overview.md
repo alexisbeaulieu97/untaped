@@ -7,7 +7,7 @@ Unified untaped developer CLI.
 
 Every page's title is its address: `untaped docs`, `untaped docs PLUGIN`, `untaped docs PLUGIN SECTION`, `untaped docs PLUGIN SECTION NAME`. Drop the last word to go up a level. Core's own commands are the plugin `untaped`.
 
-A plugin's sections are `commands` (what you can run), `inputs` (the files you write for its commands), `outputs` (the rows they print), `settings` and, for a plugin other plugins extend, `extensions`; its page lists the guides to read first (`untaped docs PLUGIN guides NAME`). Commands and guides are spelled as the command line spells them (`untaped docs untaped commands config set`), inputs and outputs as their kind spells itself (`untaped.auth_outcome` is `untaped docs untaped outputs auth_outcome`).
+A plugin's sections are `commands` (what you can run), `inputs` (the files you write for its commands), `outputs` (the rows they print), `settings` and, for a plugin other plugins extend, `extensions`; its page lists the guides to read first (`untaped docs PLUGIN guides NAME`). Commands and guides are spelled as the command line spells them (`untaped docs untaped commands config set`), inputs and outputs as their kind spells itself (`untaped.config_migration_outcome` is `untaped docs untaped outputs config_migration_outcome`).
 
 `untaped docs [ADDRESS] --search TEXT` prints every line of the pages under the address that contains the text, after its page's address.
 

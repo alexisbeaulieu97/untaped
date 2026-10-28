@@ -9,31 +9,33 @@ from __future__ import annotations
 
 import json
 import ssl
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any
 
 import httpx
 import pytest
 import respx
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.support import (
-    GithubProfile,
     make_spec,
     root_group,
     write_config,
 )
+from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     ConfigError,
+    Credential,
+    CredentialKey,
     DoctorCheck,
     DoctorResult,
     HttpClient,
     HttpStatusError,
     HttpTransportError,
+    NeedsSetup,
     PluginContext,
     RetryPolicy,
-    TokenCommand,
-    TokenSources,
     online_check,
 )
 from untaped.sdk.testing import CliInvoker, CliResult
@@ -41,18 +43,28 @@ from untaped.sdk.testing import CliInvoker, CliResult
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
+class SvcServer(CredentialKey):
+    """The server an ``svc`` token is for."""
+
+    url: HttpUrl
+
+
 class ProbeProfile(BaseModel):
-    """Token-bearing profile double (section ``svc``)."""
+    """Service double (section ``svc``): a server and a declared token."""
 
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("SVC_TOKEN",))
+    server: Annotated[SvcServer | None, NeedsSetup] = None
 
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
+
+#: The ``svc`` token, read last from ``$SVC_TOKEN``.
+SVC_TOKEN = Credential("svc", "token", key=SvcServer, env=("SVC_TOKEN",))
+
+
+def _spec(checks: tuple[DoctorCheck, ...]) -> PluginSpec:
+    return make_spec("svc", settings=ProbeProfile, doctor_checks=checks, credentials=(SVC_TOKEN,))
 
 
 def _doctor(checks: tuple[DoctorCheck, ...], *args: str) -> CliResult:
-    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=checks)
+    spec = _spec(checks)
     app = root_group("doctor", spec)
     return CliInvoker().invoke(app, ["--format", "json", *args])
 
@@ -62,9 +74,17 @@ def _row(result: CliResult, check: str) -> dict[str, Any]:
     return next(row for row in rows if row["check"] == check)
 
 
-def _configured(path: Path, **values: str) -> None:
-    body = "".join(f"      {key}: {value}\n" for key, value in values.items())
-    write_config(path, f"format_version: 2\nsvc:\n{body}")
+@pytest.fixture
+def _configured(_isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Set ``svc``'s server ``url`` in the config and its ``token`` in ``$SVC_TOKEN``."""
+
+    def configure(*, url: str | None = None, token: str | None = None) -> None:
+        if token is not None:
+            monkeypatch.setenv("SVC_TOKEN", token)
+        server = "" if url is None else f"  server: {{url: {url}}}\n"
+        write_config(_isolated_config, f"format_version: 2\nsvc:\n{server}")
+
+    return configure
 
 
 def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
@@ -100,8 +120,8 @@ def _probe_check(probe: Any) -> DoctorCheck:
     return online_check("svc.api", section="svc", probe=probe)
 
 
-def test_online_check_passes_with_the_probe_detail(_isolated_config: Path) -> None:
-    _configured(_isolated_config, base_url="https://svc", token="t")
+def test_online_check_passes_with_the_probe_detail(_configured: Callable[..., None]) -> None:
+    _configured(url="https://svc", token="t")
     result = _doctor((_probe_check(lambda: "authenticated as alice"),), "--online")
     assert result.exit_code == 0, result.output
     row = _row(result, "svc.api")
@@ -114,10 +134,10 @@ def test_online_check_skips_an_unconfigured_service(_isolated_config: Path) -> N
 
     result = _doctor((_probe_check(probe),), "--online")
     assert result.exit_code == 0, result.output
-    assert _row(result, "svc.api")["detail"] == "not configured"
+    assert _row(result, "svc.api")["detail"] == "skipped: not set up"
 
 
-def test_an_ambient_token_variable_without_a_base_url_is_not_configured(
+def test_an_ambient_token_variable_without_a_server_is_not_set_up(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SVC_TOKEN", "ambient")
@@ -127,19 +147,7 @@ def test_an_ambient_token_variable_without_a_base_url_is_not_configured(
 
     result = _doctor((_probe_check(probe),), "--online")
     assert result.exit_code == 0, result.output
-    assert _row(result, "svc.api")["detail"] == "not configured"
-
-
-def test_a_default_base_url_without_a_token_is_not_configured(_isolated_config: Path) -> None:
-    def probe() -> str:
-        raise AssertionError("must not probe")
-
-    check = online_check("github.api", section="github", probe=probe)
-    spec = make_spec("github", settings=GithubProfile, doctor_checks=(check,))
-    app = root_group("doctor", spec)
-    result = CliInvoker().invoke(app, ["--online", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    assert _row(result, "github.api")["detail"] == "not configured"
+    assert _row(result, "svc.api")["detail"] == "skipped: not set up"
 
 
 def _raise(exc: Exception) -> Any:
@@ -176,83 +184,60 @@ def _rejected() -> Exception:
     ("config", "error", "detail", "fix"),
     [
         (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             _rejected(),
-            "svc rejected the configured token "
-            "(the token can also come from svc.token_command or $SVC_TOKEN)",
-            "auth set svc",
+            "svc rejected the configured token (the token can also come from $SVC_TOKEN)",
+            "auth login svc",
         ),
         (
-            {"base_url": "https://svc"},
-            HttpStatusError("HTTP 403 from https://svc/me", status_code=403),
-            "HTTP 403 from https://svc/me "
-            "(the token can also come from svc.token_command or $SVC_TOKEN)",
-            "auth set svc",
-        ),
-        (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             HttpTransportError("cannot connect to https://svc: name not resolved"),
-            "cannot connect to https://svc: name not resolved",
-            "config set svc.base_url <URL>",
+            "cannot connect to https://svc: name not resolved (svc.server is url=https://svc)",
+            "config set svc.server.url <URL>",
         ),
         (
-            {"base_url": "https://svc"},
-            HttpTransportError("cannot connect to https://svc: connection refused"),
-            "cannot connect to https://svc: connection refused",
-            "config set svc.base_url <URL>",
-        ),
-        (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             _tls(20),  # X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
             "[SSL] handshake failed for https://svc",
             "config set untaped.http.ca_bundle_path <PATH>",
         ),
         (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             _tls(62),  # X509_V_ERR_HOSTNAME_MISMATCH: the URL names the wrong host
-            "[SSL] handshake failed for https://svc",
-            "config set svc.base_url <URL>",
+            "[SSL] handshake failed for https://svc (svc.server is url=https://svc)",
+            "config set svc.server.url <URL>",
         ),
         (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             HttpTransportError("certificate problem mentioned, but no ssl cause"),
-            "certificate problem mentioned, but no ssl cause",
-            "config set svc.base_url <URL>",
+            "certificate problem mentioned, but no ssl cause (svc.server is url=https://svc)",
+            "config set svc.server.url <URL>",
         ),
         (
-            {"base_url": "https://svc", "token": "t"},
+            {"url": "https://svc", "token": "t"},
             ValueError("1 validation error for SvcUser\nlogin\n  input_value={'body': 'secret'}"),
-            "ValueError: 1 validation error for SvcUser",
-            "config set svc.base_url <URL>",
-        ),
-        (
-            {"token": "t"},
-            None,
-            "svc.base_url is not set",
-            "config set svc.base_url <URL>",
+            "ValueError: 1 validation error for SvcUser (svc.server is url=https://svc)",
+            "config set svc.server.url <URL>",
         ),
     ],
     ids=[
         "rejected-token",
-        "no-token",
         "unreachable",
-        "unreachable-without-token",
         "tls-untrusted",
         "tls-hostname",
         "certificate-word-only",
         "unexpected-response",
-        "no-base-url",
     ],
 )
 def test_online_check_failures_name_the_fix(
-    _isolated_config: Path,
+    _configured: Callable[..., None],
     config: dict[str, str],
-    error: Exception | None,
+    error: Exception,
     detail: str,
     fix: str,
 ) -> None:
-    _configured(_isolated_config, **config)
-    probe = _raise(error or AssertionError("must not probe"))
+    _configured(**config)
+    probe = _raise(error)
     result = _doctor((_probe_check(probe),), "--online")
     assert result.exit_code == 1
     row = _row(result, "svc.api")
@@ -261,8 +246,10 @@ def test_online_check_failures_name_the_fix(
     assert row["fix"] == ["--profile", "default", *fix.split()]
 
 
-def test_online_probes_do_not_retry_and_use_a_short_timeout(_isolated_config: Path) -> None:
-    _configured(_isolated_config, base_url="https://svc", token="t")
+def test_online_probes_do_not_retry_and_use_a_short_timeout(
+    _configured: Callable[..., None],
+) -> None:
+    _configured(url="https://svc", token="t")
     timeouts: list[object] = []
 
     def refuse(request: httpx.Request) -> httpx.Response:
@@ -283,7 +270,7 @@ def test_online_probes_do_not_retry_and_use_a_short_timeout(_isolated_config: Pa
 
 
 def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "format_version: 2\nsvc:\n  base_url: [1]\n")
+    write_config(_isolated_config, "format_version: 2\nsvc:\n  server: [1]\n")
     result = _doctor((_probe_check(_raise(AssertionError("must not probe"))),), "--online")
     assert _row(result, "svc.api")["detail"] == "skipped: settings are invalid"
 
@@ -296,39 +283,40 @@ def _fixing(fix: str | list[str]) -> DoctorCheck:
 
 
 @pytest.mark.parametrize(
-    "fix", ["untaped config set svc.base_url '<URL>'", ["config", "set", "svc.base_url", "<URL>"]]
+    "fix",
+    ["untaped config set svc.server.url '<URL>'", ["config", "set", "svc.server.url", "<URL>"]],
 )
 def test_a_string_or_argv_fix_becomes_the_same_argv(_isolated_config: Path, fix: Any) -> None:
     row = _row(_doctor((_fixing(fix),), "--online"), "svc.api")
-    assert row["fix"] == ["--profile", "default", "config", "set", "svc.base_url", "<URL>"]
+    assert row["fix"] == ["--profile", "default", "config", "set", "svc.server.url", "<URL>"]
 
 
 def test_a_fix_that_names_a_profile_keeps_only_its_own(_isolated_config: Path) -> None:
-    row = _row(_doctor((_fixing("--profile=prod auth set svc"),), "--online"), "svc.api")
-    assert row["fix"] == ["--profile=prod", "auth", "set", "svc"]
+    row = _row(_doctor((_fixing("--profile=prod auth login svc"),), "--online"), "svc.api")
+    assert row["fix"] == ["--profile=prod", "auth", "login", "svc"]
 
 
 def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
-    row = _row(_doctor((_fixing("config set 'svc.base_url"),), "--online"), "svc.api")
+    row = _row(_doctor((_fixing("config set 'svc.server.url"),), "--online"), "svc.api")
     assert row["status"] == "fail"
     assert row["detail"].startswith("check returned an unparsable fix")
     assert row["fix"] is None
 
 
 def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
-    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = _spec((_fixing("auth login svc"),))
     app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     assert "token rejected\n" in result.stdout
-    assert "→ untaped auth set svc\n" in result.stdout
+    assert "→ untaped auth login svc\n" in result.stdout
 
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
-    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = _spec((_fixing("auth login svc"),))
     app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--profile", "default", "--format", "table", "--online"])
     # Without the flag the same line would read the profiles UNTAPED_PROFILE picks.
-    assert "→ untaped --profile default auth set svc\n" in result.stdout
+    assert "→ untaped --profile default auth login svc\n" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -343,7 +331,7 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n  b: {}\n")
     if env:
         monkeypatch.setenv("UNTAPED_PROFILE", env)
-    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = _spec((_fixing("auth login svc"),))
     app = root_group("doctor", spec)
     picked = ["--profile", ",".join(flag)] if flag else []
     listed = CliInvoker().invoke(app, [*picked, "--format", "table", "--online"])
@@ -351,8 +339,8 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
 
     # One profile, so a write lands where this run reads it; kept on the line,
     # since the bare line would write to the base.
-    assert row["fix"] == ["--profile", "b", "auth", "set", "svc"]
-    assert "→ untaped --profile b auth set svc\n" in listed.stdout
+    assert row["fix"] == ["--profile", "b", "auth", "login", "svc"]
+    assert "→ untaped --profile b auth login svc\n" in listed.stdout
 
 
 def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
@@ -360,10 +348,10 @@ def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
 ) -> None:
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "a")
-    spec = make_spec("svc", settings=ProbeProfile, doctor_checks=(_fixing("auth set svc"),))
+    spec = _spec((_fixing("auth login svc"),))
     app = root_group("doctor", spec)
     # `--profile default` sets the variable aside
     result = CliInvoker().invoke(app, ["--profile", "default", "--format", "table", "--online"])
 
     # The bare line would read profile `a` again.
-    assert "→ untaped --profile default auth set svc\n" in result.stdout
+    assert "→ untaped --profile default auth login svc\n" in result.stdout

@@ -14,18 +14,16 @@ off belongs to one server's key (``<plugin>.server.verify_tls``).
 from __future__ import annotations
 
 import email.utils
-import functools
-import inspect
 import logging
 import shlex
 import ssl
 import time
-from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, SecretStr
@@ -42,12 +40,9 @@ from untaped.runtime.settings import (
     HttpSettings,
     active_settings_layout,
     env_sets_key,
-    env_var_name,
     load_core_part,
-    registered_profile_model,
 )
 from untaped.sdk._run import run_clock
-from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import (
     ConfigError,
     HttpError,
@@ -56,8 +51,6 @@ from untaped.sdk.errors import (
     UntapedError,
 )
 from untaped.sdk.health.marks import section_marks
-from untaped.sdk.marks import deprecated, deprecated_behaviour, deprecated_parameters
-from untaped.sdk.network.auth import takes_token_command, token_alternatives
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
 from untaped.sdk.words import command_line, q, run_hint
 
@@ -491,59 +484,6 @@ def _decode_json_dict(response: httpx.Response, *, system: str | None = None) ->
 # --------------------------------------------------------------------------- #
 
 
-def missing_setting_error(
-    section: str,
-    field: str,
-    *more_fields: str,
-    secret: Collection[str] = (),
-    token_sources: str = "",
-    auth_set: bool = False,
-    profile: str | None = None,
-    set_in: Sequence[str] = (),
-) -> ConfigError:
-    """Return the standard error for missing plugin settings.
-
-    Names every missing field; the ``hint`` names the root command (and env
-    var) that sets each one. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
-    value never lands in shell history. ``token_sources`` (from
-    :func:`untaped.sdk.network.auth.token_alternatives`) names the sources that keep a
-    missing token out of the config file. ``auth_set`` (the section's model
-    has ``token_command``) makes the token's command ``auth set <section>``.
-    ``profile`` names the selected profile in the message. ``set_in`` names
-    the other profiles that set the fields: the hint leads with how to run
-    the command under one (``--profile`` or ``UNTAPED_PROFILE``), and
-    ``details["profiles"]`` lists them, so a caller can recover without
-    asking anyone for the value. Nothing switches profile on its own.
-    """
-    tail = f"; to keep the token out of the config file, use {token_sources}"
-    tail = tail if token_sources else ""
-    fields = (field, *more_fields)
-    keys = [f"{section}.{name}" for name in fields]
-    where = _in_profiles(profile)
-    lead = _other_profiles_hint(set_in, plural=len(fields) > 1)
-    details = {"profiles": list(set_in)} if set_in else None
-    commands = [
-        f"`{command_line(f'auth set {section}')}`"
-        if name == "token" and auth_set
-        else f"`untaped config set {section}.{name} --prompt`"
-        if name in secret
-        else f"`untaped config set {section}.{name} <{name.rsplit('_', maxsplit=1)[-1]}>`"
-        for name in fields
-    ]
-    env_vars = [env_var_name([section, name]) for name in fields]
-    if len(fields) == 1:
-        return ConfigError(
-            f"{keys[0]} is not configured{where}",
-            hint=f"{lead}set it via {commands[0]} or {env_vars[0]}{tail}",
-            details=details,
-        )
-    return ConfigError(
-        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured{where}",
-        hint=f"{lead}set them via {' and '.join(commands)}, or {' / '.join(env_vars)}{tail}",
-        details=details,
-    )
-
-
 def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
     """The hint's lead naming the other profiles that set the missing fields."""
     if not profiles:
@@ -573,20 +513,16 @@ def rejected_token_error(
 
     ``auth`` in ``section`` (exit ``4``). For a declared credential the hint
     is ``auth login <section>`` (``auth login <section> <name>`` for one not
-    named ``token``), the person's step. For an 11.0 section it is ``auth
-    set <section>`` when its model takes ``token_command``, else ``config
-    set <section>.<field> --prompt``. The ``cause``'s details (``status``,
+    named ``token``), the person's step; for a secret setting, ``config set
+    <section>.<field> --prompt``. The ``cause``'s details (``status``,
     ``url``) are kept.
     """
     from untaped.sdk.network.credentials import declared_credentials  # noqa: PLC0415
 
     details = cause.details if isinstance(cause, UntapedError) else None
     declared = {each.name for each in declared_credentials(section)}
-    model = registered_profile_model(section)
     if field in declared:
         command = f"auth login {section}" + ("" if field == "token" else f" {field}")
-    elif field == "token" and model is not None and takes_token_command(model):
-        command = f"auth set {section}"
     else:
         command = f"config set {section}.{field} --prompt"
     return ConfigError(
@@ -599,64 +535,13 @@ def rejected_token_error(
     )
 
 
-class _FromConfig:
-    """``connected_client``'s ``base_url`` and ``bearer`` default: read from ``config``."""
-
-    def __repr__(self) -> str:
-        return "<from config>"
-
-
-_FROM_CONFIG: Any = _FromConfig()
-
-
-CONNECTED_BY_NAME = deprecated_behaviour(
-    "connected-client-by-name", removed_in=12, replacement="base_url= and bearer= values"
-)
-"""``connected_client`` reading ``base_url`` and ``token`` off the settings by field name."""
-
-#: ``connected_client``'s parameters for each kind of call: values, or the deprecated read by name.
-_BY_VALUE = ("bearer", "verify")
-_BY_NAME = ("required", "base_url_field", "bearer_token_field")
-
-
-def _one_kind[**P, R](function: Callable[P, R]) -> Callable[P, R]:
-    """Refuse a ``connected_client`` call that mixes values with the read by name.
-
-    Decided by the parameters the call names, so passing an old parameter's
-    default still counts.
-    """
-    signature = inspect.signature(function)
-
-    @functools.wraps(function)
-    def call(*args: P.args, **kwargs: P.kwargs) -> R:
-        passed = signature.bind_partial(*args, **kwargs).arguments
-        if "base_url" in passed:
-            if mixed := [f"{name}=" for name in _BY_NAME if name in passed]:
-                raise TypeError(f"connected_client: pass base_url= or {_join(mixed)}, not both")
-        elif mixed := [f"{name}=" for name in _BY_VALUE if name in passed]:
-            raise TypeError(f"connected_client: pass base_url= with {_join(mixed)}")
-        return function(*args, **kwargs)
-
-    return call
-
-
-@deprecated_parameters
-@_one_kind
 def connected_client(
     config: BaseModel,
     *,
     section: str,
-    base_url: str | None = _FROM_CONFIG,
+    base_url: str | None,
     bearer: SecretStr | str | None = None,
-    required: Annotated[tuple[str, ...], deprecated(removed_in=12, replacement="base_url=")] = (
-        "base_url",
-        "token",
-    ),
     headers: Mapping[str, str] | None = None,
-    base_url_field: Annotated[str, deprecated(removed_in=12, replacement="base_url=")] = "base_url",
-    bearer_token_field: Annotated[
-        str | None, deprecated(removed_in=12, replacement="bearer=")
-    ] = "token",
     http: HttpSettings | None = None,
     verify: bool | Path | None = None,
     retry: RetryPolicy | None = _DEFAULT_RETRY,
@@ -687,36 +572,13 @@ def connected_client(
     ``retry`` to a safe :class:`RetryPolicy` (transport and idempotent
     429/503 backoff), ``None`` to disable. The client's failures are
     attributed to ``section``.
-
-    Leaving out ``base_url`` reads the settings by field name, the way
-    ``required`` (default ``("base_url", "token")``), ``base_url_field``
-    (``"base_url"``) and ``bearer_token_field`` (``"token"``) describe: the
-    deprecated behaviour :data:`CONNECTED_BY_NAME`. Passing ``base_url``
-    with any of those three, or ``bearer`` or ``verify`` without it,
-    refuses.
     """
-    override: VerifyTypes | None = None
-    if base_url is _FROM_CONFIG:
-        CONNECTED_BY_NAME.warn(
-            f"calling connected_client for {section} without base_url=", stacklevel=4
-        )
-        url, token = _read_by_name(
-            config,
-            section=section,
-            required=required,
-            base_url_field=base_url_field,
-            bearer_token_field=bearer_token_field,
-        )
-        origin = url
-        if token and _legacy_refused(section):
-            raise _legacy_refusal(section)
-    else:
-        url = _text(base_url)
-        if not url:
-            raise _not_set_up(config, section=section)
-        token = _text(bearer)
-        origin = _bound_origin(bearer, url, section=section)
-        override = None if verify is None else _key_verify(verify)
+    url = _text(base_url)
+    if not url:
+        raise _not_set_up(config, section=section)
+    token = _text(bearer)
+    origin = _bound_origin(bearer, url, section=section)
+    override = None if verify is None else _key_verify(verify)
     http_settings = http if http is not None else load_core_part("http")
     request_headers = dict(headers or {})
     credential = _pop_authorization(request_headers) or (f"Bearer {token}" if token else None)
@@ -889,21 +751,6 @@ def _refuse_folder_transport(
         )
 
 
-def _legacy_refused(section: str) -> bool:
-    from untaped.sdk.network.credentials import legacy_section_refused  # noqa: PLC0415
-
-    return legacy_section_refused(section)
-
-
-def _legacy_refusal(section: str) -> ConfigError:
-    return ConfigError(
-        f"a folder's settings set {section}'s settings; untaped never sends a token from a "
-        "variable or a setting to a server a folder chose",
-        system=section,
-        fix_by="user",
-    )
-
-
 def _pop_authorization(headers: dict[str, str]) -> str | None:
     """Remove and return ``headers``' ``Authorization`` (any case), if it has one."""
     name = next((name for name in headers if name.lower() == "authorization"), None)
@@ -954,11 +801,11 @@ def _not_set_up(config: BaseModel, *, section: str) -> ConfigError:
     )
 
     marks = section_marks(section, type(config))
-    fields = [] if marks is None else list(unset_fields(config, marks, section=section))
+    fields = [] if marks is None else list(unset_fields(config, marks))
     fields = [field for field in fields if not field.is_secret]
     if fields:
         keys = [f"{section}.{field.key}" for field in fields]
-        profile, set_in = _profiles_for(section, [(field.key,) for field in fields])
+        profile, set_in = _profiles_for(section, [field.key for field in fields])
         what = f"{_join(keys)} {'is' if len(keys) == 1 else 'are'} not set"
     else:
         profile, set_in = _profiles_for(section, [])
@@ -976,47 +823,6 @@ def _join(names: Sequence[str]) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def _read_by_name(
-    config: BaseModel,
-    *,
-    section: str,
-    required: tuple[str, ...],
-    base_url_field: str,
-    bearer_token_field: str | None,
-) -> tuple[str, str]:
-    """The old read: ``required`` fields must be non-blank; the URL and bearer by name."""
-    values: dict[str, str] = {}
-    missing: list[str] = []
-    # ``base_url_field`` and ``bearer_token_field`` are always walked — even
-    # when not listed in ``required`` — so the client can be built and the
-    # bearer header set; de-dup keeps a field named twice from being read twice.
-    optional = (base_url_field, bearer_token_field) if bearer_token_field else (base_url_field,)
-    for field in dict.fromkeys((*required, *optional)):
-        value = _text(getattr(config, field, None))
-        if field in required and not value:
-            missing.append(field)
-        values[field] = value
-    if missing:
-        secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
-        sources = token_alternatives(config, section=section) if "token" in missing else ""
-        auth_set = takes_token_command(type(config))
-        needs = [
-            (name, "token_command") if name == "token" and auth_set else (name,) for name in missing
-        ]
-        profile, set_in = _profiles_for(section, needs)
-        raise missing_setting_error(
-            section,
-            *missing,
-            secret=secret,
-            token_sources=sources,
-            auth_set=auth_set,
-            profile=profile,
-            set_in=set_in,
-        )
-    token = values.get(bearer_token_field, "") if bearer_token_field is not None else ""
-    return values[base_url_field], token
-
-
 def _in_profiles(profile: str | None) -> str:
     """`` in profile 'a'`` or `` in profiles 'a,b'`` for a missing-setting message, else ``""``."""
     if not profile:
@@ -1024,17 +830,15 @@ def _in_profiles(profile: str | None) -> str:
     return f" in {'profiles' if ',' in profile else 'profile'} {q(profile)}"
 
 
-def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str | None, list[str]]:
-    """The selected profile and the other profiles that resolve every one of ``needs``.
+def _profiles_for(section: str, needs: Sequence[str]) -> tuple[str | None, list[str]]:
+    """The selected profile and the other profiles that set every missing field in ``needs``.
 
-    Each need is a missing field, then the settings that also supply it (a
-    secret's command setting). Each profile is resolved as it would be
-    selected (``default`` beneath it, old key names renamed). An
-    environment override of a missing field applies to every profile, so it
-    names none; an unreadable config file names only a profile chosen by
-    ``--profile`` or ``UNTAPED_PROFILE``.
+    Each profile is resolved as it would be selected (``default`` beneath
+    it, old key names renamed). An environment override of a missing field
+    applies to every profile, so it names none; an unreadable config file
+    names only a profile chosen by ``--profile`` or ``UNTAPED_PROFILE``.
     """
-    if any(env_sets_key(section, need[0]) for need in needs):
+    if any(env_sets_key(section, need) for need in needs):
         return None, []
     picked = picked_names()
     try:
@@ -1053,9 +857,7 @@ def _profiles_for(section: str, needs: Sequence[tuple[str, ...]]) -> tuple[str |
             values = layout.effective(data, profile=name).get(section)
         except ConfigError:
             continue
-        if isinstance(values, dict) and all(
-            any(_is_set(values.get(field)) for field in need) for need in needs
-        ):
+        if isinstance(values, dict) and all(_is_set(values.get(need)) for need in needs):
             found.append(name)
     return profile, found
 

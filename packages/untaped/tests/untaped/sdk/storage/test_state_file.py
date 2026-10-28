@@ -188,6 +188,6 @@ def test_config_set_does_not_touch_state_file(cfg: Path) -> None:
     register_state_settings("demo", DemoState)
     state_file = cfg.parent / "state.yml"
     state_file.write_text("# state\ndemo:\n  items: []\n")
-    SettingsFileRepository().set_value("demo.url", "https://new")
+    SettingsFileRepository().update_value("demo.url", lambda _target, _current: "https://new")
     assert state_file.read_text() == "# state\ndemo:\n  items: []\n"
     assert yaml.safe_load(cfg.read_text()) == {"format_version": 2, "demo": {"url": "https://new"}}

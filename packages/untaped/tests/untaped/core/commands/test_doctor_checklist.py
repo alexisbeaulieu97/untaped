@@ -49,7 +49,7 @@ def _specs() -> tuple[PluginSpec, ...]:
             ),
         ),
         make_spec(
-            "beta", doctor_checks=(_fixing("beta.manual", "auth set beta", automatic=False),)
+            "beta", doctor_checks=(_fixing("beta.manual", "auth login beta", automatic=False),)
         ),
     )
 
@@ -84,14 +84,14 @@ def test_a_fix_shows_under_its_row_tagged_when_automatic() -> None:
     auto = next(i for i, line in enumerate(lines) if " alpha.auto " in line)
     assert lines[auto + 1].strip() == "→ untaped skills update  (automatic)"
     manual = next(i for i, line in enumerate(lines) if " beta.manual " in line)
-    assert lines[manual + 1].strip() == "→ untaped auth set beta"
+    assert lines[manual + 1].strip() == "→ untaped auth login beta"
     # The fix line sits under the title column.
     assert lines[auto + 1].index("→") == lines[auto].index("alpha.auto title")
 
 
 def test_a_fix_keeps_a_profile_the_flag_chose() -> None:
     stdout = _doctor("--profile", "default").stdout
-    assert "→ untaped --profile default auth set beta\n" in stdout
+    assert "→ untaped --profile default auth login beta\n" in stdout
 
 
 def test_the_footer_counts_every_status_and_a_failure_exits_1() -> None:

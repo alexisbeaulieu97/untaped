@@ -6,7 +6,7 @@
     "system": "local",
     "retryable": false,
     "message": "no token",
-    "hint": "run `untaped auth set`",
+    "hint": "run `untaped auth login`",
     "exit_code": 4,
     "details": {}
   }

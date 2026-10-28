@@ -333,9 +333,7 @@ A plugin's token for a server comes from the first of these that has one:
 1. `UNTAPED_<PLUGIN>__TOKEN` (`UNTAPED_<PLUGIN>__<NAME>` for a secret not
    named `token`), an override for this process;
 2. the login stored for exactly this server;
-3. while a plugin's settings still declare them (github's, until it moves),
-   its deprecated `<plugin>.token` or `<plugin>.token_command` setting;
-4. the service's conventional environment variables, in the order the
+3. the service's conventional environment variables, in the order the
    [environment table](./reference/environment.md#untaped) lists them
    (`GH_TOKEN`, `JIRA_API_TOKEN`, `CONTROLLER_OAUTH_TOKEN`, …).
 
@@ -374,11 +372,8 @@ harness.
 
 ### Tokens from untaped 11.0
 
-untaped 12.0 reads no token from `config.yml` for a plugin that declares its
-credentials: log in again with `untaped auth login <plugin>`. github still
-reads its deprecated `github.token` and `github.token_command` after a stored
-login, and `auth set|unset|migrate` keep their 11.0 meaning for plugins still
-on 11.0's settings.
+untaped 12.0 reads no token from `config.yml`: log in again with `untaped
+auth login <plugin>`.
 
 ## Debug logs
 

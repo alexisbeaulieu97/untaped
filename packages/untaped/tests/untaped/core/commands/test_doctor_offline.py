@@ -1,15 +1,14 @@
 """Offline doctor rows: config permissions, unknown keys, outdated skills,
-and the shared ``connection_check``/``executable_check`` factories."""
+and the shared ``executable_check`` factory."""
 
 from __future__ import annotations
 
 import json
 import shutil
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
-from pydantic import BaseModel, SecretStr
 
 from core_test_support.commands.support import (
     GithubProfile,
@@ -23,26 +22,11 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
-from untaped.sdk import (
-    TokenCommand,
-    TokenSources,
-    connection_check,
-    executable_check,
-)
+from untaped.sdk import executable_check
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
-
-
-class ApiProfile(BaseModel):
-    """Token-bearing profile double (section ``api``)."""
-
-    token_sources: ClassVar[TokenSources] = TokenSources(env=("API_TOKEN",))
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-    token_command: TokenCommand = None
 
 
 def _rows(*specs: Any, exit_code: int = 0) -> list[dict[str, Any]]:
@@ -190,91 +174,6 @@ def test_skill_no_longer_shipped_warns() -> None:
     assert "untaped skills remove" in row["detail"]
     # Orphaned skills alone have no fix, so nothing is automatic.
     assert (row["fix"], row["automatic"]) == (None, False)
-
-
-@pytest.mark.parametrize(
-    ("config", "env", "status", "detail"),
-    [
-        ("{}", {}, "pass", "not configured"),
-        ("{}", {"API_TOKEN": "e"}, "pass", "not configured"),
-        ("{base_url: https://a}", {}, "warn", "api.token not configured"),
-        ("{token: t}", {}, "warn", "api.base_url not configured"),
-        (
-            "{base_url: https://a, token: t}",
-            {},
-            "warn",
-            "https://a; support for a plain-text api.token in config.yml is deprecated and will"
-            " be removed in 12.0",
-        ),
-        (
-            "{base_url: https://a, token: t}",
-            {"UNTAPED_API__TOKEN": "o"},
-            "warn",
-            "https://a; support for a plain-text api.token in config.yml is deprecated and will"
-            " be removed in 12.0",
-        ),
-        ("{base_url: https://a}", {"UNTAPED_API__TOKEN": "o"}, "pass", "token from api.token"),
-        ("{base_url: https://a}", {"untaped_api__token": "o"}, "pass", "token from api.token"),
-        (
-            "{base_url: https://a}",
-            {"UNTAPED_API": '{"token": "o"}'},
-            "pass",
-            "token from api.token",
-        ),
-        (
-            "{base_url: https://a, token_command: [x]}",
-            {},
-            "pass",
-            "token from api.token_command",
-        ),
-        ("{base_url: https://a}", {"API_TOKEN": "e"}, "pass", "token from $API_TOKEN"),
-    ],
-)
-def test_connection_check(
-    _isolated_config: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    config: str,
-    env: dict[str, str],
-    status: str,
-    detail: str,
-) -> None:
-    for name, value in env.items():
-        monkeypatch.setenv(name, value)
-    write_config(_isolated_config, f"format_version: 2\napi: {config}\n")
-    spec = make_spec(
-        "api",
-        settings=ApiProfile,
-        doctor_checks=(connection_check("api.connection", section="api"),),
-    )
-    row = _row(_rows(spec), "api.connection")
-    assert row["status"] == status
-    assert detail in row["detail"]
-
-
-class BareProfile(BaseModel):
-    """Token-bearing profile double with no ``token_command`` or env fallbacks."""
-
-    base_url: str | None = None
-    token: SecretStr | None = None
-
-
-def test_plaintext_token_without_fallbacks_points_at_the_untaped_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = tmp_path / "config.yml"
-    monkeypatch.setenv("UNTAPED_HOME", str(config.parent))
-    write_config(config, "format_version: 2\nbare: {base_url: https://b, token: t}\n")
-    spec = make_spec(
-        "bare",
-        settings=BareProfile,
-        doctor_checks=(connection_check("bare.connection", section="bare"),),
-    )
-    row = _row(_rows(spec), "bare.connection")
-    assert row["status"] == "warn"
-    assert row["detail"] == (
-        "https://b; support for a plain-text bare.token in config.yml is deprecated and will be"
-        " removed in 12.0; use $UNTAPED_BARE__TOKEN"
-    )
 
 
 def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:

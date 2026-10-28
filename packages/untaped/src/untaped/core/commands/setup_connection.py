@@ -8,9 +8,9 @@ written (:mod:`untaped.core.commands.setup_screen`). The form's values become a
 :class:`~untaped.core.commands.setup_write.Candidate`, which
 :func:`~untaped.core.commands.setup_write.write_candidate` writes in one change.
 
-The source choices name no plain-text storage when a store or a command can
-hold the secret. A typed secret lives in a ``SecretInput`` and a ``Candidate``
-as a ``SecretStr``, never in plain text here.
+The source choices never store a secret in plain text. A typed secret lives
+in a ``SecretInput`` and a ``Candidate`` as a ``SecretStr``, never in plain
+text here.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from untaped.core.commands.setup_state import ServiceState, form_fields, service
 from untaped.core.commands.setup_write import Candidate, SecretChoice
 from untaped.core.config.fields import editor, written
 from untaped.core.config.repository import SettingsFileRepository
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import PluginSpec, settings_model
 from untaped.screen.components.buttons import Button, Buttons
 from untaped.screen.components.form import Form
@@ -35,11 +34,8 @@ from untaped.screen.components.tabs import Tab, Tabs
 from untaped.sdk._schema import FieldDescriptor, walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.marks import MarkedField
-from untaped.sdk.network._token_store import TokenStore, preset_entry
-from untaped.sdk.network.auth import takes_token_command, token_env_names
-from untaped.sdk.network.credentials import Credential
+from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.prompt.prompts import PromptChoice
-from untaped.sdk.words import hint
 
 __all__ = [
     "anyway_buttons",
@@ -53,19 +49,11 @@ __all__ = [
 #: The name of the typed secret's field inside a source tab.
 _TYPED = "typed"
 
-_TAB_LABELS = {
-    "keep": "Keep",
-    "move": "Move",
-    "command": "Command",
-    "env": "Env",
-    "enter": "Enter",
-}
+_TAB_LABELS = {"keep": "Keep", "command": "Command", "env": "Env"}
 
 
-def connection_form(
-    spec: PluginSpec, state: ServiceState, store: TokenStore | None, profile: str
-) -> Form:
-    """The setup form of ``spec`` in ``profile``: its marked settings, its secrets, ``Save``.
+def connection_form(spec: PluginSpec, state: ServiceState, store: TokenStore | None) -> Form:
+    """The setup form of ``spec``: its marked settings, its secrets, ``Save``.
 
     Each marked setting opens in its shape's field (as its row would); each
     secret gets source tabs.
@@ -74,13 +62,9 @@ def connection_form(
     fields: list[tuple[str, Any]] = [
         (field.key, _setting(descriptors[field.path], field, state)) for field in form_fields(spec)
     ]
-    has_command = takes_token_command(settings_model(spec))
     for secret in service_marks(spec).secrets:
-        choices = token_choices(spec, state, store, has_command=has_command, secret=secret)
-        tabs = tuple(
-            _tab(spec, state, store, choice, profile, secret, has_command=has_command)
-            for choice in choices
-        )
+        choices = token_choices(spec, state, store, secret=secret)
+        tabs = tuple(_tab(spec, store, choice, secret) for choice in choices)
         title = f"{_label(secret.key, title=True)} source"
         fields.append((_source(secret), Tabs(title, tabs, active=choices[0].value)))
     return Form((*fields, ("buttons", _save_buttons())))
@@ -111,33 +95,19 @@ def _noun(secret: MarkedField) -> str:
 
 
 def _tab(
-    spec: PluginSpec,
-    state: ServiceState,
-    store: TokenStore | None,
-    choice: PromptChoice[str],
-    profile: str,
-    secret: MarkedField,
-    *,
-    has_command: bool,
+    spec: PluginSpec, store: TokenStore | None, choice: PromptChoice[str], secret: MarkedField
 ) -> Tab:
     how = choice.value
     label = store.name if how == "store" and store is not None else _TAB_LABELS[how]
-    note = choice.label
     noun = _noun(secret)
-    if how == "keep" and has_command and state.inherited_token and secret.credential is None:
-        note += (
-            f"\n{spec.name}.{secret.key} is set in profile {DEFAULT_PROFILE}: switching "
-            f"profile {profile} to a stored {noun} or a command would leave it in charge, so "
-            f"only keeping the current {noun} is offered\n{hint('auth migrate')}"
-        )
     fields: tuple[tuple[str, Any], ...] = ()
-    if how in ("store", "enter"):
+    if how == "store":
         typed = SecretInput(noun[:1].upper() + noun[1:], validator=_secret_error(noun))
         fields = ((_TYPED, typed),)
     elif how == "command":
         validator = _command_validator(spec.name)
         fields = (("command", TextInput("Command", validator=validator)),)
-    return Tab(how, label, fields, note)
+    return Tab(how, label, fields, choice.label)
 
 
 def _save_buttons() -> Buttons:
@@ -262,7 +232,7 @@ def _choice(name: str, secret: MarkedField, tab: object) -> SecretChoice:
     """One secret's tab as what the user asked for (``keep`` with no tabs)."""
     assert isinstance(tab, dict)
     how = str(tab["tab"])
-    if how in ("store", "enter"):
+    if how == "store":
         typed = tab[_TYPED]
         assert isinstance(typed, SecretStr)
         return SecretChoice(secret.key, how, token=SecretStr(typed.get_secret_value().strip()))
@@ -276,14 +246,11 @@ def token_choices(
     current: ServiceState,
     store: TokenStore | None,
     *,
-    has_command: bool,
     secret: MarkedField | None = None,
 ) -> list[PromptChoice[str]]:
-    """A secret's source choices, the recommended one first; none stores plain text if avoidable.
+    """A secret's source choices, the recommended one first: each files a login, as ``auth login``.
 
-    ``secret`` defaults to the one a bare section names. While ``default``'s
-    plaintext token wins, keeping it is the only choice that would work for
-    a section ``auth`` serves.
+    ``secret`` defaults to the one a bare section names.
     """
     marks = service_marks(spec)
     secret = secret or marks.default_secret or marks.secrets[0]
@@ -293,52 +260,11 @@ def token_choices(
     if source is not None:
         label = f"Keep the current {noun} ({source})"
         choices.append(PromptChoice(value="keep", label=label))
-    credential = secret.credential
-    if credential is not None:
-        # A stored login answers before any setting, default's plain text included.
-        moves = secret == marks.token  # 11.0 kept only the token in the config file
-        return _login_choices(choices, credential, current, store, noun=noun, moves=moves)
-    if has_command and current.inherited_token:
-        return choices
-    if current.plaintext is not None and store is not None:
-        label = f"Move the current token to {store.name}"
-        choices.insert(0, PromptChoice(value="move", label=label))
-    if store is not None:
-        choices.append(PromptChoice(value="store", label=f"Store a token with {store.name}"))
-    if has_command:
-        choices.append(PromptChoice(value="command", label="Run a command that prints the token"))
-        env = token_env_names(settings_model(spec).model_construct())
-        # default's command would win over the variable once the profile's is gone.
-        if env and not current.inherited_command:
-            stored = current.own_command is not None and preset_entry(current.own_command)
-            effect = "drops the stored token" if stored else "nothing is stored"
-            label = f"Use ${env[0]} (you export it; {effect})"
-            choices.append(PromptChoice(value="env", label=label))
-    else:
-        choices.append(PromptChoice(value="enter", label="Enter a token (stored in config.yml)"))
-    return choices
-
-
-def _login_choices(
-    choices: list[PromptChoice[str]],
-    credential: Credential[Any],
-    current: ServiceState,
-    store: TokenStore | None,
-    *,
-    noun: str,
-    moves: bool,
-) -> list[PromptChoice[str]]:
-    """A declared credential's choices: each files a login for the key, as ``auth login`` does.
-
-    ``moves`` offers moving the profile's plain-text token first.
-    """
-    if moves and current.plaintext is not None and store is not None:
-        label = f"Move the current token to {store.name}"
-        choices.insert(0, PromptChoice(value="move", label=label))
     if store is not None:
         choices.append(PromptChoice(value="store", label=f"Store a {noun} with {store.name}"))
     choices.append(PromptChoice(value="command", label=f"Run a command that prints the {noun}"))
-    if credential.env:
+    credential = secret.credential
+    if credential is not None and credential.env:
         label = f"Use ${credential.env[0]} (you export it; drops a stored {noun})"
         choices.append(PromptChoice(value="env", label=label))
     return choices

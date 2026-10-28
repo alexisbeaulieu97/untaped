@@ -559,7 +559,7 @@ class Mark:
 
     where: str
     """The command path (``awx test``), option (``awx test run --dry-run``), plugin name,
-    setting key (``awx.test_parallel``) or behaviour (``untaped.plaintext-token``,
+    setting key (``awx.test_parallel``) or behaviour (``untaped.pipe-envelope``,
     ``<plugin>.<name>`` for a plugin's)."""
     target: MarkTarget
     stability: Stability
@@ -1185,9 +1185,9 @@ _OWN = _Default()
 class DeprecatedBehaviour(OwnedBlock):
     """A deprecated behaviour: a promise with no object to mark, so it carries a name.
 
-    A plugin class holding it names it: ``plaintext_token =
-    DeprecatedBehaviour(removed_in=13, replacement="untaped auth migrate")`` is
-    the plugin's behaviour ``plaintext-token``. The 11.x spelling is
+    A plugin class holding it names it: ``bare_ids =
+    DeprecatedBehaviour(removed_in=13, replacement="--id NAME")`` is the
+    plugin's behaviour ``bare-ids``. The 11.x spelling is
     :func:`deprecated_behaviour`, listed on the spec of the plugin that owns it
     (``PluginSpec(deprecations=lambda: (ROW_KIND,))``). The surface writes
     ``behaviour <plugin>.<name>`` for a listed one, so the release check holds
@@ -1232,7 +1232,7 @@ class DeprecatedBehaviour(OwnedBlock):
     def name_problem(cls, name: str) -> str | None:
         if isinstance(name, str) and _BEHAVIOUR_NAME.fullmatch(name):
             return None
-        return f"a deprecated behaviour's name is kebab-case (plaintext-token), not {name!r}"
+        return f"a deprecated behaviour's name is kebab-case (pipe-envelope), not {name!r}"
 
     @property
     def spelled(self) -> bool:
@@ -1279,8 +1279,8 @@ class DeprecatedBehaviour(OwnedBlock):
     def sentence(self, subject: str, *, replacement: str | None | _Default = _OWN) -> str:
         """``<subject> is deprecated and will be removed in <version>[; use <replacement>]``.
 
-        ``subject`` names the support that goes away ("support for a plain-text
-        awx.token in config.yml"). ``replacement`` overrides the behaviour's own
+        ``subject`` names the support that goes away ("support for a pipe
+        envelope on stdin"). ``replacement`` overrides the behaviour's own
         for one site (text, or ``None`` for none: a row that shows its fix already).
         """
         removal = removal_text(self.mark.removed_in, _distribution(self))
@@ -1333,8 +1333,8 @@ def deprecated_behaviour(
 ) -> DeprecatedBehaviour:
     """Declare a deprecated behaviour: ``name`` (kebab-case), its removal major and replacement.
 
-    ``PLAINTEXT_TOKEN = deprecated_behaviour("plaintext-token", removed_in=12,
-    replacement="untaped auth migrate")``. List it on the owning spec's
+    ``BARE_IDS = deprecated_behaviour("bare-ids", removed_in=13,
+    replacement="--id NAME")``. List it on the owning spec's
     ``deprecations``; a plugin's ``removed_in`` is its own major.
     """
     return DeprecatedBehaviour(name, Deprecated(replacement=replacement, removed_in=removed_in))
@@ -1349,11 +1349,8 @@ def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
     """
     from untaped.sdk._stdin import PIPE_ENVELOPE  # noqa: PLC0415 - off the CLI path
     from untaped.sdk.contracts._select import CONVERT  # noqa: PLC0415
-    from untaped.sdk.health.marks import UNMARKED_SERVICE  # noqa: PLC0415
-    from untaped.sdk.network.auth import PLAINTEXT_TOKEN  # noqa: PLC0415
-    from untaped.sdk.network.http import CONNECTED_BY_NAME  # noqa: PLC0415
 
-    return (CONNECTED_BY_NAME, CONVERT, PIPE_ENVELOPE, PLAINTEXT_TOKEN, UNMARKED_SERVICE)
+    return (CONVERT, PIPE_ENVELOPE)
 
 
 # Plugin name → the ``deprecations`` callable of its spec, bound by the

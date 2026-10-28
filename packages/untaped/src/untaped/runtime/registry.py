@@ -35,8 +35,7 @@ from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, create_model, model_validator
-from pydantic.fields import FieldInfo
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from untaped.runtime.declaration import (
     Declaration,
@@ -55,13 +54,11 @@ from untaped.runtime.settings import (
     timed_caches,
 )
 from untaped.sdk._home import HOME_ENV
-from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import mapping_errors
 from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
 from untaped.sdk.marks import (
-    Deprecated,
     DeprecatedBehaviour,
     Stability,
     check_stability,
@@ -199,8 +196,7 @@ class PluginSpec:
 
     ``credentials`` are the :class:`~untaped.sdk.network.credentials.Credential` objects
     whose secrets the plugin needs: core keeps them outside configuration,
-    owns ``untaped auth login`` for them, and each still reads its 11.0
-    ``<name>``/``<name>_command`` settings, which carry their own marks.
+    owns ``untaped auth login`` for them.
 
     ``guides`` is a folder of Markdown files (``files("untaped_acme") /
     "guides"``), each a page ``untaped docs <name> guides <guide>`` prints: prose
@@ -938,8 +934,7 @@ def _check_credentials(spec: PluginSpec) -> None:
                 "bad-credential",
                 f"plugin {spec.name!r} credential {credential.name!r}: {errors[0]}",
             )
-        clash = fields.get(credential.name)
-        if clash is not None and not _kept_secret_field(clash):
+        if credential.name in fields:
             raise _Quarantine(
                 "bad-credential",
                 f"plugin {spec.name!r} credential {credential.name!r} has the name of a "
@@ -952,12 +947,6 @@ def _check_credentials(spec: PluginSpec) -> None:
                 f"plugin {spec.name!r} credential {credential.name!r}: several settings hold a "
                 f"{credential.key.__name__} ({', '.join(held)}); keep one",
             )
-
-
-def _kept_secret_field(field: FieldInfo) -> bool:
-    """Whether ``field`` is an 11.0 secret setting kept, deprecated, beside its credential."""
-    deprecated_mark = any(isinstance(item, Deprecated) for item in field.metadata)
-    return deprecated_mark and unwrap_optional(field.annotation) is SecretStr
 
 
 def _check_stores(spec: PluginSpec) -> None:

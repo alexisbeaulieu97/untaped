@@ -57,7 +57,6 @@ CONVENTIONS: Mapping[str, str] = {
     "module <owner>.testing.conformance": "where plugin checks find an owner's conformance checks",
     "attribute renamed_keys": "core reads it off a settings model for renamed keys",
     "attribute retired_keys": "core reads it off a settings model for retired keys",
-    "attribute token_sources": "core reads it off a settings model for where a token comes from",
 }
 
 WRITTEN_OUTSIDE: Mapping[str, str] = {}

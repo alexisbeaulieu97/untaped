@@ -1,8 +1,7 @@
 """The settings digest: what names a ``split="settings"`` cache folder and a contract answer.
 
 A ``toy`` section is registered as composition would (with its injected
-cache max age, extension ranks and its declared token's old settings), and
-the config file is written per test.
+cache max age and extension ranks), and the config file is written per test.
 """
 
 from __future__ import annotations

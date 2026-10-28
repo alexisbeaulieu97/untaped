@@ -28,9 +28,6 @@ from core_test_support.commands.support import (
     WIZ_TOKEN,
     EnvProfile,
     EnvyServer,
-    LegacyProfile,
-    OldWizProfile,
-    UnmarkedWizProfile,
     WizProfile,
     WizServer,
     compose,
@@ -86,10 +83,6 @@ def _wiz() -> PluginSpec:
 
 def _envy() -> PluginSpec:
     return make_spec("envy", settings=EnvProfile)
-
-
-def _legacy() -> PluginSpec:
-    return make_spec("legacy", settings=LegacyProfile)
 
 
 def _build(
@@ -184,16 +177,6 @@ def test_check_passes_then_writes_a_stored_token(
     assert _result(run) == SetupResult("default", ("wiz",), (), interrupted=False)
 
 
-def test_check_passes_then_writes_a_typed_token_for_a_model_without_a_command(
-    _isolated_config: Path,
-) -> None:
-    run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok"), "esc", "esc"])
-
-    section = read_config_dict(_isolated_config)["legacy"]
-    assert section == {"base_url": "https://legacy", "token": "tok"}
-    assert _result(run).touched == ("legacy",)
-
-
 def test_check_passes_then_writes_a_command(_isolated_config: Path, tmp_path: Path) -> None:
     program = _token_program(tmp_path)
     write_config(_isolated_config, "format_version: 2\n")
@@ -225,86 +208,6 @@ def _seed(stores: FakeStores, tmp_path: Path, entries: dict[str, str]) -> None:
         gpg = tmp_path / "password-store" / f"{key}.gpg"
         gpg.parent.mkdir(parents=True, exist_ok=True)
         gpg.write_text("encrypted", encoding="utf-8")
-
-
-_UNMARKED_STORED = (
-    "format_version: 2\nwiz:\n  base_url: https://wiz\n"
-    "  token_command: [pass, show, untaped/default/wiz]\n"
-)
-
-
-def test_an_11_0_section_using_the_env_var_drops_its_stored_token(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(_isolated_config, _UNMARKED_STORED)
-    _seed(stores, tmp_path, {"untaped/default/wiz": "tok"})
-
-    # keep, store, command, env: the env tab is the fourth.
-    run = drive_screen(
-        _build(make_spec("wiz", settings=UnmarkedWizProfile)), [*_keys(right=3), "esc", "esc"]
-    )
-
-    assert _wiz_section(_isolated_config) == {"base_url": "https://wiz"}
-    assert stores.entries() == {}
-    notes = [text for _, text in _result(run).notes]
-    assert "deleted the replaced wiz token from pass (untaped/default/wiz)" in notes
-
-
-def test_an_unreachable_replaced_store_only_warns(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "secret-tool", "pass")
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz:\n  base_url: https://wiz\n"
-        "  token_command:\n"
-        "    [secret-tool, lookup, service, untaped, account, default/wiz]\n",
-    )
-    stores.state.write_text('{"default/wiz": "old"}')
-    monkeypatch.setenv("STUB_MODE", "no-service")  # secret-tool goes away: pass takes over
-
-    run = drive_screen(
-        _build(make_spec("wiz", settings=UnmarkedWizProfile)),
-        [*_keys(right=1, token="new"), "esc", "esc"],
-    )
-
-    notes = _result(run).notes
-    assert any(
-        kind == "warning" and "could not delete the replaced wiz token from secret-tool" in text
-        for kind, text in notes
-    )
-    assert stores.entries() == {"default/wiz": "old", "untaped/default/wiz": "new"}
-
-
-def test_a_stray_token_line_is_not_offered_to_move(_isolated_config: Path) -> None:
-    # wiz's settings declare no `token`, so the line is not read (doctor names it).
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz:\n  server: {url: https://wiz}\n  token: old\n",
-    )
-
-    run = drive_screen(_build())
-
-    assert run.model.states["wiz"].plaintext is None
-
-
-def test_a_stray_token_command_keeps_its_entry(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stores = install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz:\n  server: {url: https://wiz}\n"
-        "  token_command: [pass, show, untaped/default/wiz]\n",
-    )
-    _seed(stores, tmp_path, {"untaped/default/wiz": "tok"})
-
-    run = drive_screen(_build(), [*_keys(token="new"), "esc", "esc"])
-
-    # The line is not wiz's to read, so the entry it names is not the login's to retire.
-    assert stores.entries() == {"untaped/default/wiz": "tok"}
-    assert not any("deleted the replaced" in text for _, text in _result(run).notes)
 
 
 def test_check_passes_then_keeps_the_current_token(
@@ -413,11 +316,11 @@ def test_only_online_probes_run_before_saving(
 
 
 def test_a_plugin_without_an_online_check_saves_directly(_isolated_config: Path) -> None:
-    run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok")])
+    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1)])
 
     assert run.commands_run == ("probe", "save")
     assert "saved" in _flat(run.frame)
-    assert _wiz_section_for(_isolated_config, "legacy")["token"] == "tok"
+    assert _wiz_section_for(_isolated_config, "envy") == {"server": {"url": "https://envy/"}}
 
 
 def _wiz_section_for(path: Path, section: str) -> dict[str, Any]:
@@ -448,13 +351,15 @@ def test_a_malformed_token_command_writes_nothing(_isolated_config: Path) -> Non
     assert not _isolated_config.exists()
 
 
-def test_an_empty_url_and_an_empty_token_are_refused_in_place(_isolated_config: Path) -> None:
-    run = drive_screen(_build(_legacy()), _keys("", token=""))
+def test_an_empty_url_and_an_empty_token_are_refused_in_place(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
+    run = drive_screen(_build(), _keys("", token=""))
 
     assert run.commands_run == ()
     flat = _flat(run.frame)
-    assert "Enter the base URL." in flat and "Enter a token." in flat
-    assert "Base URL" in flat
+    assert "Enter the URL." in flat and "Enter a token." in flat
     assert not _isolated_config.exists()
 
 
@@ -564,8 +469,8 @@ def test_a_second_form_cannot_start_a_check_while_one_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
-    runtime, host = _held(_build(_legacy(), _wiz()))  # listed by name: legacy, then wiz
-    _send(runtime, _keys("https://legacy", token="tok"))
+    runtime, host = _held(_build(_envy(), _wiz()))  # listed by name: envy, then wiz
+    _send(runtime, _keys("https://envy", token="tok"))
     assert runtime.model.phase == "probing"
 
     _send(runtime, ["esc", "esc", "down", *_keys("https://wiz", token="x")])
@@ -640,10 +545,11 @@ def test_esc_on_the_list_quits_with_the_touched_set(_isolated_config: Path) -> N
 
 
 def test_ctrl_c_on_the_list_quits_interrupted(_isolated_config: Path) -> None:
-    run = drive_screen(_build(_legacy()), [*_keys("https://legacy", token="tok"), "ctrl-c"])
+    run = drive_screen(_build(_envy()), [*_keys("https://envy", right=1), "ctrl-c"])
 
     assert not isinstance(run.outcome, Cancel)
-    assert _result(run) == SetupResult("default", ("legacy",), (), interrupted=True)
+    assert _result(run).touched == ("envy",)
+    assert _result(run).interrupted is True
 
 
 def test_ctrl_c_in_a_field_quits_interrupted_too() -> None:
@@ -662,17 +568,20 @@ def test_esc_in_the_form_goes_back_to_the_list_first() -> None:
 # --- profile ---------------------------------------------------------------------
 
 
-def test_new_profile_is_created_once(_isolated_config: Path) -> None:
+def test_new_profile_is_created_once(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(_isolated_config, "format_version: 2\n")
-    screen = _build(_legacy(), _envy(), profile="prod")  # listed by name: envy, then legacy
+    screen = _build(_wiz(), _envy(), profile="prod")  # listed by name: envy, then wiz
 
     run = drive_screen(
         screen,
         [
-            *_keys("https://envy", right=1),
+            *_keys("https://envy", right=2),
             "esc",
             "down",
-            *_keys("https://legacy", token="t"),
+            *_keys("https://wiz", token="t"),
             "esc",
             "esc",
         ],
@@ -680,11 +589,11 @@ def test_new_profile_is_created_once(_isolated_config: Path) -> None:
 
     result = _result(run)
     assert result.profile == "prod"
-    assert result.touched == ("envy", "legacy")
+    assert result.touched == ("envy", "wiz")
     assert [text for _, text in result.notes].count("created profile: prod") == 1
     config = read_config_dict(_isolated_config)
     assert "active" not in config
-    assert set(config["profiles"]["prod"]) == {"legacy", "envy"}
+    assert set(config["profiles"]["prod"]) == {"wiz", "envy"}
 
 
 def test_preflight_failure_writes_nothing(
@@ -796,24 +705,6 @@ def test_progress_statuses_use_the_ellipsis_token(
     assert re.search(r"wiz\s+saving…", saving)
 
 
-def test_inherited_token_note_shows_in_the_tab(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    install_fake_stores(tmp_path, monkeypatch, "pass")
-    write_config(
-        _isolated_config,
-        "format_version: 2\nwiz:\n  token: shared\nprofiles:\n  prod: {}\n",
-    )
-
-    unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
-    run = drive_screen(_build(unmarked, profile="prod"), ["enter", "enter", "tab"], size=(220, 40))
-
-    flat = _flat(run.frame)
-    assert "would leave it in charge, so only keeping the current token is offered" in flat
-    assert "untaped auth migrate" in flat
-    assert "Keep" in flat and "Command" not in flat and "pass" not in flat
-
-
 _UNSET = ServiceState(values={})
 
 
@@ -823,30 +714,13 @@ def test_tabs_offer_the_same_choices_as_before(
     install_fake_stores(tmp_path, monkeypatch, "pass")
     store = pick_store()
 
-    def offered(
-        state: ServiceState, spec: PluginSpec | None = None, *, has_command: bool = True
-    ) -> list[str]:
-        # A plaintext or inherited token is read only where the settings declare it.
-        spec = spec or make_spec("wiz", settings=OldWizProfile, credentials=(WIZ_TOKEN,))
-        return [c.value for c in _token_choices(spec, state, store, has_command=has_command)]
+    def offered(state: ServiceState, store: Any = store) -> list[str]:
+        return [c.value for c in _token_choices(_wiz(), state, store)]
 
-    plain = ServiceState(values={}, secret_sources={"token": "wiz.token"}, plaintext="old")
-    assert offered(plain) == ["move", "keep", "store", "command", "env"]
+    stored = ServiceState(values={}, secret_sources={"token": "stored 1a2b3c4d"})
+    assert offered(stored) == ["keep", "store", "command", "env"]
     assert offered(_UNSET) == ["store", "command", "env"]
-    inherited = ServiceState(values={}, secret_sources={"token": "wiz.token"}, inherited_token=True)
-    # A stored login answers before default's plain text, so every choice works.
-    assert offered(inherited) == ["keep", "store", "command", "env"]
-    assert [c.value for c in _token_choices(_wiz(), _UNSET, None, has_command=True)] == [
-        "command",
-        "env",
-    ]
-    unmarked = make_spec("wiz", settings=UnmarkedWizProfile)
-    assert offered(inherited, unmarked) == ["keep"]
-    assert offered(_UNSET, _legacy(), has_command=False) == ["store", "enter"]
-    assert offered(ServiceState(values={}, inherited_command=True), unmarked) == [
-        "store",
-        "command",
-    ]
+    assert offered(_UNSET, None) == ["command", "env"]
 
 
 def test_without_a_store_the_tabs_never_offer_plain_text() -> None:
@@ -868,36 +742,20 @@ def test_the_tab_labels_name_the_store(tmp_path: Path, monkeypatch: pytest.Monke
 # --- secrets never show ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("branch", ["store", "enter", "move", "command"])
+@pytest.mark.parametrize("branch", ["store", "command"])
 def test_token_never_in_a_frame(
     branch: str, _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     keys: list[ScreenKey]
-    spec = _wiz()
-    if branch == "enter":
-        spec, keys = _legacy(), _keys("https://legacy", token=SECRET)
-    elif branch == "store":
+    if branch == "store":
         keys = _keys("https://wiz", token=SECRET)
-    elif branch == "move":
-        # Only an 11.0 section still reads a plaintext token from the config.
-        spec = make_spec("wiz", settings=UnmarkedWizProfile)
-        write_config(
-            _isolated_config,
-            f"format_version: 2\nwiz:\n  base_url: https://wiz\n  token: {SECRET}\n",
-        )
-        keys = _keys()
     else:
         keys = _keys("https://wiz", right=1, command=_token_program(tmp_path, token=SECRET))
 
-    # The unfinished run goes first: the finished one migrates a plaintext token, and the
-    # unfinished one must start from the original config (the token in the model's states).
-    failing = drive_screen(_build(spec), keys[:-1])  # typed, not submitted
-    run = drive_screen(_build(spec), keys)
+    failing = drive_screen(_build(), keys[:-1])  # typed, not submitted
+    run = drive_screen(_build(), keys)
 
-    if branch == "move":
-        # The precondition: the model does hold the plaintext, so only its repr keeps it out.
-        assert failing.model.states["wiz"].plaintext == SECRET
     for each in (run, failing):
         assert all(SECRET not in frame for frame in each.frames)
         assert SECRET not in repr(each.model)
@@ -1004,11 +862,11 @@ def test_the_screen_is_usable_on_a_narrow_terminal(
 
 
 def test_scripted_keys_run_the_screen_end_to_end(_isolated_config: Path) -> None:
-    keys = ScreenKeys(*_keys("https://legacy", token="tok"), "esc", "esc")
+    keys = ScreenKeys(*_keys("https://envy", right=1), "esc", "esc")
 
-    run = drive_screen(_build(_legacy()), keys)
+    run = drive_screen(_build(_envy()), keys)
 
-    assert _result(run).touched == ("legacy",)
+    assert _result(run).touched == ("envy",)
 
 
 # --- the profile field and the forms agree ---------------------------------------
@@ -1038,7 +896,7 @@ def test_ctrl_s_in_the_profile_field_loads_it_and_never_saves_to_the_old_profile
     write_config(_isolated_config, _TWO_PROFILES)
     config = _isolated_config.read_bytes()
 
-    run = drive_screen(_build(_legacy()), ["shift-tab", "ctrl-u", Paste("prod"), "ctrl-s"])
+    run = drive_screen(_build(_envy()), ["shift-tab", "ctrl-u", Paste("prod"), "ctrl-s"])
 
     assert run.commands_run == ("load_profile",)
     assert run.model.current == "prod"
@@ -1052,13 +910,13 @@ def test_saving_after_leaving_the_profile_field_writes_the_typed_profile(
     write_config(_isolated_config, _TWO_PROFILES)
 
     run = drive_screen(
-        _build(_legacy()),
+        _build(_envy()),
         [
             "shift-tab",
             "ctrl-u",
             Paste("prod"),
             "tab",
-            *_keys("https://legacy", token="t"),
+            *_keys("https://envy", right=1),
             "esc",
             "esc",
         ],
@@ -1066,8 +924,8 @@ def test_saving_after_leaving_the_profile_field_writes_the_typed_profile(
 
     assert _result(run).profile == "prod"
     config = read_config_dict(_isolated_config)
-    assert config["profiles"]["prod"]["legacy"]["base_url"] == "https://legacy"
-    assert "legacy" not in config
+    assert config["profiles"]["prod"]["envy"]["server"] == {"url": "https://envy/"}
+    assert "envy" not in config
 
 
 def test_leaving_an_unchanged_or_empty_profile_field_does_not_load() -> None:
@@ -1131,7 +989,7 @@ def test_a_failure_is_kept_for_each_plugin(tmp_path: Path, monkeypatch: pytest.M
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
 
-    run = drive_screen(_build(_legacy(), _wiz()), ["down", *_keys("https://wiz", token="bad")])
+    run = drive_screen(_build(_envy(), _wiz()), ["down", *_keys("https://wiz", token="bad")])
 
     assert set(run.model.failed) == {"wiz"}
     assert "Save anyway" in _flat(run.frame)
@@ -1151,7 +1009,7 @@ def test_save_anyway_does_nothing_unless_this_plugin_failed_and_nothing_runs(
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
-    screen = _build(_legacy(), _wiz())
+    screen = _build(_envy(), _wiz())
     failed = drive_screen(screen, ["down", *_keys("https://wiz", token="bad")]).model
     assert set(failed.failed) == {"wiz"}
 
@@ -1162,9 +1020,9 @@ def test_save_anyway_does_nothing_unless_this_plugin_failed_and_nothing_runs(
     busy = replace(failed, phase="probing")
     assert _pressed_save_anyway(busy, screen) == (busy, [])
     # ... and not for a plugin that did not fail (a stale button), even though a candidate
-    # is pending: here wiz failed, legacy is selected.
+    # is pending: here wiz failed, envy is selected.
     other = replace(failed, selected=1)  # row 0 is this install
-    assert other.name == "legacy" and other.pending is not None and "legacy" not in other.failed
+    assert other.name == "envy" and other.pending is not None and "envy" not in other.failed
     assert _pressed_save_anyway(other, screen) == (other, [])
     nothing = replace(failed, failed={})
     assert nothing.pending is not None

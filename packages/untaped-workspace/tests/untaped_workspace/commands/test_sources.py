@@ -118,14 +118,14 @@ def test_a_ranked_provider_that_is_down_fails_with_its_own_exit_code(workspace_e
 
 
 def test_an_expired_token_exits_with_the_auth_code_and_its_hint(workspace_env: Path) -> None:
-    """S6: gitlab's token expired, nothing ranked: exit 4 and ``untaped auth set gitlab``."""
+    """S6: gitlab's token expired, nothing ranked: exit 4 and ``untaped auth login gitlab``."""
     expired = UntapedError(
-        "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth set gitlab`"
+        "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth login gitlab`"
     )
     with providers(github=[listing(repo("acme/api"))], gitlab=[listing(error=expired)]):
         result = run(["create", "J-1", "--repo", "acme/api"])
     assert result.exit == 4, err(result)
-    assert "hint: run `untaped auth set gitlab`" in err(result)
+    assert "hint: run `untaped auth login gitlab`" in err(result)
     assert "not found" not in err(result)
     assert _nothing_created(workspace_env)
 

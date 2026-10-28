@@ -5,8 +5,8 @@ runs (creating the profile first when it is new). :func:`write_candidate`
 writes one plugin's form once its check passed (or the user said so): create
 the profile once, write the settings the user changed in one change
 (:class:`~untaped.core.config.use_cases.SetSettings`), then each secret's branch
-(``store``, ``move``, ``enter``, ``command``, ``env`` or ``keep``), retiring
-the entry a replaced preset command read. Both run as the screen's write
+(``store``, ``command``, ``env`` or ``keep``), filed as ``auth login`` files
+it. Both run as the screen's write
 commands, so they print nothing: their lines come back as notes for the
 screen to print after it closes.
 
@@ -26,7 +26,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.core.commands.auth import delete_stored_token, save_token
 from untaped.core.commands.setup_state import ServiceState, profile_exists, service_marks
 from untaped.core.config.models import SettingOutcome
 from untaped.core.config.repository import SettingsFileRepository
@@ -41,12 +40,10 @@ from untaped.core.config.use_cases import (
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.core.profile.use_cases import CreateProfile
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run
 from untaped.runtime.settings import env_var_setting, load_settings_section
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.network._token_store import TokenStore, entry_name, preset_entry
-from untaped.sdk.network.auth import token_env_names
 from untaped.sdk.network.credentials import Credential, credential_key, describe_key, key_fields
 
 __all__ = [
@@ -70,10 +67,9 @@ saved it anyway after it failed."""
 class SecretChoice:
     """How the user chose to supply one secret: its tab, and what the tab holds.
 
-    ``name`` is the credential's (or, for the legacy fallback, its
-    ``token`` setting's); ``how`` is the tab (``keep``, ``move``,
-    ``store``, ``enter``, ``command``, ``env``); ``token`` is the typed
-    secret of ``store`` and ``enter``, ``argv`` the command of ``command``.
+    ``name`` is the credential's; ``how`` is the tab (``keep``, ``store``,
+    ``command``, ``env``); ``token`` is the typed secret of ``store``,
+    ``argv`` the command of ``command``.
     """
 
     name: str
@@ -120,15 +116,13 @@ class RankTarget:
     providers: tuple[str, ...] = ()
 
 
-def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, object]:
+def overlay_values(candidate: Candidate) -> dict[str, object]:
     """The settings overlay that stands in for ``candidate`` while it is checked.
 
     Each changed setting as the value a write would store; then each secret's
-    choice. A ``None`` unsets the key: a command source removes the
-    profile's token, the environment removes both the token and the
-    profile's own command (they would win over the variable); ``keep``
-    changes nothing. A declared credential reads its candidate from its
-    name and ``<name>_command`` (:meth:`~untaped.sdk.network.credentials.Credential.get`).
+    choice, under the credential's name (a typed secret) or ``<name>_command``
+    (an argv), where :meth:`~untaped.sdk.network.credentials.Credential.get` reads its
+    candidate; a ``None`` name stands for a variable, ``keep`` for nothing.
     """
     repo = SettingsFileRepository()
     section = candidate.section
@@ -139,18 +133,13 @@ def overlay_values(candidate: Candidate, current: ServiceState) -> dict[str, obj
     for secret in candidate.secrets:
         name, command = secret.name, f"{secret.name}_command"
         match secret.how:
-            case "store" | "enter":
+            case "store":
                 values[name] = secret.token
-            case "move":
-                values[name] = None if current.plaintext is None else SecretStr(current.plaintext)
             case "command":
                 values[command] = list(secret.argv or ())
                 values[name] = None
             case "env":
                 values[name] = None
-                # The profile's own command reads the token; it would win over the variable.
-                if current.own_command is not None and name == "token":
-                    values[command] = None
     return values
 
 
@@ -168,8 +157,6 @@ def landed(candidate: Candidate, state: ServiceState) -> tuple[str, ...]:
 def write_candidate(
     spec: PluginSpec,
     candidate: Candidate,
-    current: ServiceState,
-    store: TokenStore | None,
     preflight: Callable[[], None],
 ) -> list[Note]:
     """Write ``candidate``; return the lines to print about it.
@@ -184,7 +171,7 @@ def write_candidate(
     """
     notes: list[Note] = []
     section, profile = spec.name, candidate.profile
-    if any(secret.how in ("store", "move") for secret in candidate.secrets):
+    if any(secret.how == "store" for secret in candidate.secrets):
         preflight()
     notes.extend(ensure_profile(profile))
     repo = SettingsFileRepository()
@@ -198,65 +185,17 @@ def write_candidate(
     marks = service_marks(spec)
     for secret in candidate.secrets:
         marked = next(each for each in marks.secrets if each.key == secret.name)
-        if marked.credential is not None:
-            notes.extend(_login(marked.credential, candidate, secret, current, repo))
-            if secret.how != "keep" and secret.name == "token":
-                notes.extend(_retire(section, current.own_command, None))
-            continue
-        notes.extend(_legacy_token(spec, candidate, secret, current, store, repo))
+        assert marked.credential is not None, "every secret is a declared credential"
+        notes.extend(_login(marked.credential, candidate, secret))
     return list(dict.fromkeys(notes))  # a variable over a shared key is named once
 
 
-def _legacy_token(
-    spec: PluginSpec,
-    candidate: Candidate,
-    secret: SecretChoice,
-    current: ServiceState,
-    store: TokenStore | None,
-    repo: SettingsFileRepository,
-) -> list[Note]:
-    """Write the legacy fallback's ``token`` choice to the 11.0 settings, as 11.0 did."""
-    notes: list[Note] = []
-    section, profile, how = spec.name, candidate.profile, secret.how
-    argv = list(secret.argv) if secret.argv is not None else None
-    if how in ("store", "move") and store is not None:
-        typed = _typed(secret.token) if how == "store" else current.plaintext
-        if typed is not None:
-            save_token(repo, section, profile, typed, store)
-            argv = store.read_argv(entry_name(profile, section))
-    elif how == "enter" and secret.token is not None:
-        repo.set_value(f"{section}.token", _typed(secret.token) or "", profile=profile)
-    elif argv is not None:
-        repo.set_value(f"{section}.token_command", json.dumps(argv), profile=profile)
-        # A stored token wins over the command; drop it so the command is used.
-        repo.unset_value(f"{section}.token", profile=profile)
-    elif how == "env":
-        # The token and the profile's own command would both win over the variable.
-        repo.unset_value(f"{section}.token", profile=profile)
-        if current.own_command is not None:
-            repo.unset_value(f"{section}.token_command", profile=profile)
-            notes.append(("info", f"unset {section}.token_command in profile {profile}"))
-        env = token_env_names(settings_model(spec).model_construct())[0]
-        notes.append(("info", f"export ${env} in your shell for untaped {spec.name} to use it"))
-    if how != "keep":
-        notes.extend(_retire(section, current.own_command, argv))
-    return notes
-
-
-def _login(
-    credential: Credential[Any],
-    candidate: Candidate,
-    secret: SecretChoice,
-    current: ServiceState,
-    repo: SettingsFileRepository,
-) -> list[Note]:
+def _login(credential: Credential[Any], candidate: Candidate, secret: SecretChoice) -> list[Note]:
     """File a declared credential's choice under the key just saved, as ``auth login`` does.
 
     The key is read back from the profile once its settings are written, so
     the login is filed under exactly what later runs resolve; a variable
-    that sets part of it over the saved settings is named. The profile's
-    old ``<name>`` and ``<name>_command`` go, where its 11.0 model still
-    declares them: the stored login answers first.
+    that sets part of it over the saved settings is named.
     """
     section, profile, how = candidate.section, candidate.profile, secret.how
     if how == "keep":
@@ -288,17 +227,11 @@ def _login(
         if env is not None:
             notes.append(("info", f"export ${env} in your shell for untaped {section} to use it"))
     else:
-        typed = _typed(secret.token) if how == "store" else current.plaintext
+        typed = _typed(secret.token)
         if how == "command" and secret.argv is not None:
             credential.store(key, command=list(secret.argv))
         elif typed is not None:
             credential.store(key, token=typed)
-        else:
-            return notes
-    declared = type(settings).model_fields
-    for old in (credential.name, f"{credential.name}_command"):
-        if old in declared and repo.unset_value(f"{section}.{old}", profile=profile)[0]:
-            notes.append(("info", f"unset {section}.{old} in profile {profile}"))
     return notes
 
 
@@ -393,28 +326,3 @@ def write_ranking(
 def _typed(token: SecretStr | None) -> str | None:
     """The typed token's text (the one place it is unwrapped before it is stored)."""
     return None if token is None else token.get_secret_value()
-
-
-def _retire(section: str, old: list[str] | None, replacement: list[str] | None) -> list[Note]:
-    """Delete the entry the profile's replaced preset command read, so none is orphaned."""
-    if old is None or old == replacement:
-        return []
-    try:
-        deleted, where = delete_stored_token(old)
-    except ConfigError as exc:
-        # The new source is already in place; an unreachable old store must
-        # not abort setup over a leftover entry.
-        preset = preset_entry(old)
-        where = preset[0].describe(preset[1]) if preset else f"{section}.token_command"
-        return [
-            (
-                "warning",
-                f"could not delete the replaced {section} token from {where} ({exc}); "
-                "delete it yourself",
-            )
-        ]
-    if deleted == "deleted":
-        return [("info", f"deleted the replaced {section} token from {where}")]
-    if deleted == "gone":
-        return [("info", f"the replaced {section} token was already gone from {where}")]
-    return []

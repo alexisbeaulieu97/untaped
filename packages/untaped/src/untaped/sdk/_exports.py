@@ -150,7 +150,6 @@ from untaped.sdk.health.doctor import (
     ExecutableCheck,
     OnlineCheck,
     PluginContext,
-    connection_check,
     executable_check,
     online_check,
 )
@@ -166,11 +165,7 @@ from untaped.sdk.marks import (
     deprecated_parameters,
     experimental,
 )
-from untaped.sdk.network.auth import (  # type: ignore[deprecated]
-    TokenCommand,
-    TokenSources,
-    find_program,
-)
+from untaped.sdk.network.auth import find_program
 from untaped.sdk.network.credentials import (
     BoundSecret,
     Credential,
@@ -537,8 +532,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "RetryPolicy",
     "Suggest",
     "TlsVerify",
-    "TokenCommand",
-    "TokenSources",
     "TokenUrl",
     "connected_client",
     "paginate_link",
@@ -617,7 +610,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "run_editor",
     "ui_context",
     # doctor checks
-    "connection_check",
     "executable_check",
     "online_check",
     # conventions
