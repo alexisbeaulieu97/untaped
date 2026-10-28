@@ -113,7 +113,7 @@ PRODUCERS: list[tuple[list[str], str, str, int, Any, str, bool]] = [
         204,
         None,
         "jira.issue_outcome",
-        False,  # one row per issue, as a list even for one
+        True,  # one key: one record, as ``issues get KEY``
     ),
 ]
 
