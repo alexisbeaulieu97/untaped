@@ -650,3 +650,14 @@ def test_a_name_held_by_a_plugin_refused_for_its_kinds_is_free(
     assert [kind.kind for kind in declaration.kinds] == ["x.tag"]
     [refused] = declaration.quarantined
     assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
+
+
+def test_the_command_page_says_it_also_reads_each_provider_s_own_records(
+    install: Installer,
+) -> None:
+    ran = _counter(install).cli("docs counter commands show")
+    assert ran.exit == 0, ran.stderr
+    assert (
+        "Also accepts on stdin each `cards` provider's own records, read through it "
+        "(`untaped docs counter extensions cards`)."
+    ) in ran.stdout

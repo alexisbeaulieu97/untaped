@@ -287,4 +287,12 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
             for each in named
         )
         lines += ["", f"Accepts on stdin (`--stdin`): {listed}."]
+    found = None if command.stdin_via is None else site.point(command.stdin_via)
+    if found is not None:
+        owner, point = found
+        lines += [
+            "",
+            f"Also accepts on stdin each `{point.name}` provider's own records, read through "
+            f"it (`untaped docs {owner.name} extensions {point.name}`).",
+        ]
     return ["", "## Outputs", *lines[1:]] if lines else []
