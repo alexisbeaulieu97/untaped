@@ -94,7 +94,7 @@ def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> N
         "from untaped.sdk._ui import UiContext\n"
         "ctx = UiContext()\n"
         "ctx.collection([{'id': 1, 'name': 'alpha'}], fmt='json')\n"
-        "ctx.message('info', 'rendered')\n"
+        "ctx.styled('rendered')\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 

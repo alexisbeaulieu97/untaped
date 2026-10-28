@@ -8,7 +8,6 @@ core helpers select them.
 from __future__ import annotations
 
 import io
-from contextlib import redirect_stderr
 
 import pytest
 from cyclopts import App
@@ -103,17 +102,6 @@ def test_shared_numeric_options_reject_values_below_one_as_usage(args: list[str]
 
     assert result.exit_code == 2
     assert result.stderr.startswith("error:")
-
-
-def test_success_lines_honour_quiet() -> None:
-    loud, quiet = io.StringIO(), io.StringIO()
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(loud):
-        UiContext().success("created profile: prod")
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(quiet):
-        UiContext(quiet=True).success("created profile: prod")
-
-    assert "created profile: prod" in loud.getvalue()
-    assert quiet.getvalue() == ""
 
 
 def test_confirm_action_needs_a_terminal_or_yes() -> None:

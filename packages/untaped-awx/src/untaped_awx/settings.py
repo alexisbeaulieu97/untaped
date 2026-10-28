@@ -13,7 +13,6 @@ from untaped.sdk import (
     Credential,
     CredentialKey,
     NeedsSetup,
-    Renamed,
     TlsVerify,
     code_version,
     experimental,
@@ -42,9 +41,9 @@ class AwxServer(CredentialKey):
 class AwxSettings(BaseModel):
     """Connection + behaviour configuration for a single AWX/AAP target."""
 
-    retired_keys: ClassVar[Mapping[str, str]] = {"test_timeout": "test_timeout_seconds"}
-    renamed_keys: ClassVar[Mapping[str, Renamed]] = {
-        "base_url": Renamed("server.url", removed_in=12)
+    retired_keys: ClassVar[Mapping[str, str]] = {
+        "base_url": "server.url",
+        "test_timeout": "test_timeout_seconds",
     }
 
     model_config = ConfigDict(frozen=True)

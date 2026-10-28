@@ -47,8 +47,7 @@ These may change in any release:
 - `--format raw` without `--columns`: it prints the first default column,
   which may change. Name the field, as in `--format raw --columns name`.
 - Commands and file formats marked experimental (below).
-- The rules `untaped lint` and the deprecated
-  `untaped.sdk.testing.check_conventions` apply, and the checks and rows
+- The rules `untaped lint` applies, and the checks and rows
   `untaped.sdk.testing.check_plugin` returns: a minor release may add or move
   one, so a plugin's lint test can start failing. Mark a source
   line with `# untaped: allow <rule>` to waive a convention rule there, where

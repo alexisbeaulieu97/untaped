@@ -11,8 +11,6 @@ import pytest
 
 from untaped.core.plugin_check.stability import deprecation_text_violations
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._cli import echo, report_error
-from untaped.sdk._ui import UiContext
 from untaped.sdk.marks import (
     UntapedDeprecationWarning,
     callable_owner,
@@ -73,25 +71,17 @@ def test_an_object_replacement_reads_as_its_qualname() -> None:
 def test_core_s_callable_names_the_bare_version_and_a_plugin_s_its_distribution() -> None:
     def api() -> None: ...
 
+    def core() -> None: ...
+
+    core.__module__ = "untaped.sdk.probe"
     api.__module__ = "untaped_acme_tools.api"
     mark = deprecated(removed_in=3, replacement="new_api")
-    assert callable_owner(report_error) is None
+    assert callable_owner(core) is None
     assert callable_owner(api) == "untaped-acme-tools"
     assert deprecation_sentence(api, mark) == (
         "test_core_s_callable_names_the_bare_version_and_a_plugin_s_its_distribution.<locals>.api"
         " is deprecated and will be removed in untaped-acme-tools 3.0; use new_api"
     )
-
-
-@pytest.mark.parametrize(
-    "callable_",
-    [report_error, UiContext.message, UiContext.success, UiContext.progress],
-    ids=lambda each: each.__qualname__,
-)
-def test_core_s_literal_is_its_mark_s_sentence(callable_: object) -> None:
-    mark = function_mark(callable_)
-    assert mark is not None and isinstance(mark, type(deprecated()))
-    assert callable_.__deprecated__ == deprecation_sentence(callable_, mark)  # type: ignore[attr-defined]
 
 
 # --- deprecated_parameters -----------------------------------------------------------------
@@ -173,14 +163,6 @@ def test_a_classmethod_warns_and_keeps_its_signature() -> None:
 def test_hints_imported_for_type_checking_never_raise() -> None:
     assert set(parameter_marks(emit)) == {"kind"}
     assert warns_parameters(emit)
-
-
-def test_echo_s_err_warns_whatever_its_value() -> None:
-    for value in (True, False):
-        (shown,) = _caught(lambda value=value: echo("", err=value))
-        warning = shown.message
-        assert isinstance(warning, UntapedDeprecationWarning)
-        assert warning.id == "sdk echo(err=)"
 
 
 @deprecated_parameters

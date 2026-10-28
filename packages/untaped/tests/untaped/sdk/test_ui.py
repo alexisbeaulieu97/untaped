@@ -17,7 +17,6 @@ from untaped.sdk._run import Run
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext, ui_context
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.testing import progress_clock
 
 
 class TtyStringIO(io.StringIO):
@@ -207,92 +206,6 @@ def test_detail_uses_theme_view_preferences_for_terminal_rendering() -> None:
     assert "┌" in rendered
 
 
-def test_message_writes_semantic_status_to_stderr() -> None:
-    stderr = io.StringIO()
-    ui = UiContext(theme=ThemeSpec(symbols={"warning": "!"}))
-
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
-        ui.message("warning", "check this")
-
-    assert stderr.getvalue().splitlines() == ["! warning: check this"]
-
-
-def test_message_color_roles_style_full_line_only_for_tty_stderr() -> None:
-    theme = ThemeSpec(
-        symbols={"success": "+", "info": "i", "warning": "!", "error": "x"},
-        color_roles={
-            "success": "green",
-            "info": "blue",
-            "warning": "yellow",
-            "error": "red",
-        },
-    )
-    tty_stderr = TtyStringIO()
-    plain_stderr = io.StringIO()
-
-    ui = UiContext(theme=theme)
-    for kind in ("success", "info", "warning", "error"):
-        with (
-            pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-            redirect_stderr(tty_stderr),
-        ):
-            ui.message(kind, f"{kind} text")
-        with (
-            pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-            redirect_stderr(plain_stderr),
-        ):
-            ui.message(kind, f"{kind} text")
-
-    assert _has_ansi(tty_stderr.getvalue())
-    assert "+ success text" in tty_stderr.getvalue()
-    assert "warning: warning text" in tty_stderr.getvalue()
-    assert not _has_ansi(plain_stderr.getvalue())
-
-
-def test_success_message_preserves_plain_text_by_default() -> None:
-    stderr = io.StringIO()
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
-        UiContext().message("success", "created profile: dev")
-
-    assert stderr.getvalue().splitlines() == ["created profile: dev"]
-
-
-def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-    ui = UiContext(stdout=stdout)
-
-    with (
-        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-        progress_clock() as clock,
-        redirect_stderr(stderr),
-        ui.progress("Resolving deps") as p,
-    ):
-        p.update("pinning", phase="installing")
-        clock.advance(2)
-
-    assert stdout.getvalue() == ""
-    assert "Resolving deps" in stderr.getvalue()
-    assert "Resolving deps · installing · pinning (2s)" in stderr.getvalue()
-
-
-def test_progress_verbose_context_passes_through_without_animation() -> None:
-    stderr = io.StringIO()
-    ui = UiContext(stdout=io.StringIO(), verbose=True)
-
-    with (
-        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-        redirect_stderr(stderr),
-        ui.progress("Resolving deps") as p,
-    ):
-        p.update("downloading")
-
-    output = stderr.getvalue()
-    assert "Resolving deps" in output
-    assert "downloading" in output
-    assert "\r" not in output
-
-
 @pytest.mark.parametrize(
     ("rows", "fmt", "empty", "rendered", "hint"),
     [
@@ -399,23 +312,6 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
 # ---- --quiet gating --------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("quiet", "level", "shown"),
-    [
-        (True, "success", False),
-        (True, "info", False),
-        (True, "warning", True),
-        (True, "error", True),
-        (False, "success", True),
-    ],
-)
-def test_quiet_suppresses_only_success_and_info(quiet: bool, level: str, shown: bool) -> None:
-    buf = io.StringIO()
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(buf):
-        UiContext(quiet=quiet).message(level, "the message")  # type: ignore[arg-type]
-    assert ("the message" in buf.getvalue()) is shown
-
-
 @pytest.mark.usefixtures("_isolated_config")
 def test_ui_context_factory_reads_quiet_flag(home_run: Run) -> None:
     quiet(home_run)
@@ -459,16 +355,6 @@ def test_styled_writes_rich_text_to_stdout_with_color_only_on_a_tty() -> None:
     assert piped.getvalue() == "ok: host\n"
     assert _has_ansi(tty.getvalue())
     assert _strip_ansi(tty.getvalue()) == "ok: host\n"
-
-
-def test_styled_err_writes_to_stderr_and_ignores_quiet() -> None:
-    stdout, stderr = io.StringIO(), io.StringIO()
-
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"), redirect_stderr(stderr):
-        UiContext(stdout=stdout, quiet=True).styled("PLAY [all]", err=True)
-
-    assert stdout.getvalue() == ""
-    assert stderr.getvalue() == "PLAY [all]\n"
 
 
 def test_styled_tail_follows_verbatim_unwrapped_and_unexpanded() -> None:

@@ -117,7 +117,7 @@ writes the fact itself under Deprecated, unless an entry of that release
 names the thing:
 
 ```markdown
-- `report_error` will now be removed in 13.0 instead of 12.0.
+- `untaped.sdk.old_helper` will now be removed in 14.0 instead of 13.0.
 ```
 
 A date users have seen in a release never moves earlier.

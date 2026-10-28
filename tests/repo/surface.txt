@@ -17,7 +17,6 @@ cfg ansible.source_refresh_backend string default=auto
 cfg ansible.source_refresh_rate_limit_floor integer(minimum=0) default=500
 cfg ansible.source_refresh_repo_batch_size integer(minimum=1) default=100
 cfg awx.api_prefix string default=/api/controller/v2/
-cfg awx.base_url -> awx.server.url  [deprecated, removed in 12.0]
 cfg awx.caches.resources.max_age_seconds integer(minimum=0) default=3600
 cfg awx.default_organization string? default=unset
 cfg awx.page_size integer(exclusiveMinimum=0) default=200
@@ -7847,12 +7846,10 @@ sdk untaped.sdk.UiContext.confirm_or_cancel(refusal=) default="confirmation requ
 sdk untaped.sdk.UiContext.detail(columns=) default=None
 sdk untaped.sdk.UiContext.detail(kind=) default=None
 sdk untaped.sdk.UiContext.detail(record, *, fmt)
-sdk untaped.sdk.UiContext.message(kind, text)  [deprecated, removed in 12.0; use ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))]
 sdk untaped.sdk.UiContext.multiselect(defaults=) default=None
 sdk untaped.sdk.UiContext.multiselect(message, choices)
 sdk untaped.sdk.UiContext.multiselect(min_count=) default=0
 sdk untaped.sdk.UiContext.pick_many(request)
-sdk untaped.sdk.UiContext.progress(label)  [deprecated, removed in 12.0; use Diagnostics.progress]
 sdk untaped.sdk.UiContext.prompt_backend
 sdk untaped.sdk.UiContext.require_screen_terminal(*, command, alternative)  [experimental]
 sdk untaped.sdk.UiContext.run(screen)  [experimental]
@@ -7862,11 +7859,9 @@ sdk untaped.sdk.UiContext.secret(required=) default=true
 sdk untaped.sdk.UiContext.select(default=) default=None
 sdk untaped.sdk.UiContext.select(message, choices)
 sdk untaped.sdk.UiContext.select(search=) default=false
-sdk untaped.sdk.UiContext.styled(err=) default=false  [deprecated, removed in 12.0; use ctx.diag.info(text, unmuted=True), or ctx.diag.relay for another tool's output]
 sdk untaped.sdk.UiContext.styled(tail=) default=""
 sdk untaped.sdk.UiContext.styled(text)
 sdk untaped.sdk.UiContext.styled(truncate=) default=false
-sdk untaped.sdk.UiContext.success(text)  [deprecated, removed in 12.0; use Diagnostics.success]
 sdk untaped.sdk.UiContext.terminal()
 sdk untaped.sdk.UiContext.terminal(refusal=) default="interactive input requires a terminal"
 sdk untaped.sdk.UiContext.text(default=) default=None
@@ -8092,7 +8087,6 @@ sdk untaped.sdk.derive(doc=) default=None
 sdk untaped.sdk.derive(omit=) default=[]
 sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.echo()
-sdk untaped.sdk.echo(err=) default=false  [deprecated, removed in 12.0; use ctx.diag]
 sdk untaped.sdk.echo(message@1=) default=""
 sdk untaped.sdk.echo(nl=) default=true
 sdk untaped.sdk.emit(columns=) default=None
@@ -8406,7 +8400,6 @@ sdk untaped.sdk.plural(plural_form@3=) default=None
 sdk untaped.sdk.print_tree(graphs)  [experimental]
 sdk untaped.sdk.print_tree(ui=) default=None  [experimental]
 sdk untaped.sdk.project_at(path)  [experimental]
-sdk untaped.sdk.project_root(start)  [deprecated, removed in 12.0; use checkout_root]
 sdk untaped.sdk.projects.Project(*, id, root)  [experimental]
 sdk untaped.sdk.projects.Project(copy_of=) default=None  [experimental]
 sdk untaped.sdk.projects.Project.copy_of  [experimental]
@@ -8462,10 +8455,7 @@ sdk untaped.sdk.render_rows(empty=) default=None
 sdk untaped.sdk.render_rows(kind=) default=None
 sdk untaped.sdk.render_rows(rows, *, fmt)
 sdk untaped.sdk.render_rows(table_columns=) default=None
-sdk untaped.sdk.report_error(exc)  [deprecated, removed in 12.0; use Diagnostics.failure]
-sdk untaped.sdk.report_error(item=) default=None  [deprecated, removed in 12.0; use Diagnostics.failure]
 sdk untaped.sdk.report_errors()
-sdk untaped.sdk.report_row_errors(rows, *, item) callback(item, 1)  [deprecated, removed in 12.0; use ctx.diag.failure(row.error, item=…) for each row]
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_text_input(*, value, file)
 sdk untaped.sdk.resolve_text_input(what=) default=body
@@ -8879,9 +8869,6 @@ sdk untaped.sdk.testing.assert_surface(version@3=) default=None  [experimental]
 sdk untaped.sdk.testing.cache_clock()
 sdk untaped.sdk.testing.cache_clock(start@1=) default=None
 sdk untaped.sdk.testing.check(install)
-sdk untaped.sdk.testing.check_conventions(candidates=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
-sdk untaped.sdk.testing.check_conventions(plugin)  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
-sdk untaped.sdk.testing.check_conventions(tests_dir=) default=None  [deprecated, removed in 12.0; use untaped_lint.testing.assert_clean from untaped[lint]]
 sdk untaped.sdk.testing.check_plugin(candidates=) default=None
 sdk untaped.sdk.testing.check_plugin(name)
 sdk untaped.sdk.testing.compose_with()

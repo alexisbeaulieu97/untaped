@@ -14,8 +14,8 @@ def test_lint_rules_catch_each_banned_shape() -> None:
     source = """
 import sys
 def pluralize(n, noun): ...
-echo(f"error: {x} failed", err=True)
-echo("warning: stale", err=True)
+echo(f"error: {x} failed")
+echo("warning: stale")
 raise ConfigError("Something broke.")
 raise ConfigError("--a and --b are mutually exclusive")
 raise UsageError("--a and --b are mutually exclusive")
@@ -23,7 +23,7 @@ label = "Deleted 3 repo(s)"
 note = "Warning: careful"
 sys.stdin.read()
 print("x")
-echo(f"failed: {item}: {exc}", err=True)
+echo(f"failed: {item}: {exc}")
 warnings.warn("careful")
 warnings.warn("old", UserWarning)
 warnings.warn("use g()", DeprecationWarning, stacklevel=2)

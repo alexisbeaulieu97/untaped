@@ -32,11 +32,7 @@ def check(install: Install) -> None:
         # the live rows ask providers as a command of the install would, under its run
         entered(build_run(result.mount.declaration, result.mount.settings)),
     ):
-        rows = [
-            row
-            for candidate in found
-            for row in check_plugins(result, found, candidate.name, core_only=True)
-        ]
+        rows = [row for candidate in found for row in check_plugins(result, found, candidate.name)]
     failed = [row for row in rows if row.status in ("fail", "error")]
     assert not failed, "plugin checks failed:\n" + "\n".join(
         f"  {row.plugin} {row.check} {row.title}: {row.detail}" for row in failed

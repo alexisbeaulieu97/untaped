@@ -22,25 +22,21 @@ from contextlib import redirect_stderr
 from pathlib import Path
 
 import pytest
-from rich.text import Text
 
 from untaped.runtime import verbose
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.sink import Diagnostics, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import (
     clamp_parallel,
-    echo,
     raise_usage,
     report_declined,
-    report_error,
 )
 from untaped.sdk._run import Rendering
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext
 from untaped.sdk.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.sdk.testing import progress_clock
-from untaped.sdk.words import hint
 
 SNAPSHOTS = Path(__file__).parents[1] / "snapshots" / "stderr"
 #: Read at import: the hermetic test environment clears ``UNTAPED_*`` variables.
@@ -58,33 +54,24 @@ def _ui(theme: ThemeSpec | None = None) -> UiContext:
 
 
 def _messages(theme: ThemeSpec | None = None) -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        ui = _ui(theme)
-        for level in ("success", "info", "warning", "error"):
-            ui.message(level, f"a {level} line")
-        ui.success("done")
+    with entered(start_run()) as run:
+        run.render_with(Rendering(theme=theme or _COLOURED))
+        diag = Diagnostics()
+        diag.success("a success line")
+        diag.info("a info line")
+        diag.warning("a warning line")
 
 
 def _report_error_plain() -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        report_error(UntapedError("it broke"))
+    Diagnostics().failure(UntapedError("it broke"))
 
 
 def _report_error_item() -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        report_error(UntapedError("it broke"), item="acme/x")
+    Diagnostics().failure(UntapedError("it broke"), item="acme/x")
 
 
 def _report_error_hint() -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        report_error(ConfigError("no token", hint="run `untaped auth login`"))
-
-
-def _echo_lines() -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        echo("warning: something is off", err=True)
-        echo(hint("try again"), err=True)
-        echo("an info line", err=True)
+    Diagnostics().failure(ConfigError("no token", hint="run `untaped auth login`"))
 
 
 def _declined() -> None:
@@ -100,11 +87,6 @@ def _clamp() -> None:
     clamp_parallel(64, cap=8, policy="2 * os.cpu_count()")
 
 
-def _styled() -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        _ui().styled(Text("[job 42] ", style="bold"), err=True, tail="ok\tdone")
-
-
 def _empty_note() -> None:
     _ui().collection([], fmt="table", empty="No repos found.")
 
@@ -116,11 +98,7 @@ def _debug_line() -> None:
 
 
 def _progress_lines() -> None:
-    with (
-        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-        progress_clock() as clock,
-        _ui().progress("Syncing repos") as handle,
-    ):
+    with progress_clock() as clock, Diagnostics().progress("Syncing repos") as handle:
         handle.update("acme/x", done=1, total=2)
         clock.advance(2)
         Diagnostics().failure(UntapedError("it broke"), item="acme/x")
@@ -128,32 +106,25 @@ def _progress_lines() -> None:
 
 
 def _progress_verbose() -> None:
-    with (
-        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-        progress_clock(),
-        UiContext(theme=_COLOURED, verbose=True).progress("Syncing repos") as handle,
-    ):
+    with progress_clock(), current_sink().progress("Syncing repos", verbose=True) as handle:
         handle.update("acme/x", done=1, total=2)
         Diagnostics().relay("a relayed line")
 
 
 CASES: dict[str, Callable[[], None]] = {
-    "messages": _messages,
     "report-error": _report_error_plain,
     "report-error-item": _report_error_item,
     "report-error-hint": _report_error_hint,
-    "echo-lines": _echo_lines,
     "declined": _declined,
     "usage": _usage,
     "clamp-parallel": _clamp,
-    "styled": _styled,
     "empty-note": _empty_note,
     "debug-line": _debug_line,
     "progress-lines": _progress_lines,
     "progress-verbose": _progress_verbose,
 }
 #: Cases whose text a theme colours or decorates.
-THEMED = ("messages", "styled", "empty-note")
+THEMED = ("empty-note",)
 
 
 class _TtyStringIO(io.StringIO):
@@ -194,17 +165,6 @@ def test_no_color_wins_on_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _compare("messages.txt", _capture(_messages, _TtyStringIO()))
 
 
-@pytest.mark.parametrize("color", [False, True])
-def test_theme_symbols_are_unchanged(color: bool, monkeypatch: pytest.MonkeyPatch) -> None:
-    if color:
-        monkeypatch.setenv("FORCE_COLOR", "1")
-    suffix = "-color" if color else ""
-    _compare(
-        f"messages-symbols{suffix}.txt",
-        _capture(lambda: _messages(_SYMBOLS), _TtyStringIO() if color else None),
-    )
-
-
 def _json_lines(case: Callable[[], None]) -> list[dict[str, object]]:
     return [json.loads(line) for line in _capture(case).splitlines() if line]
 
@@ -226,23 +186,18 @@ def test_json_stderr_is_unchanged(case: str, monkeypatch: pytest.MonkeyPatch) ->
         ("messages-symbols-color.txt", _SYMBOLS, True),
     ],
 )
-def test_diag_messages_print_what_ui_message_prints(
+def test_diag_messages_keep_their_rendering(
     snapshot: str, theme: ThemeSpec, color: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With the policy's theme, ``ctx.diag`` renders success, info and warning as ``ui.message``."""
+    """With the policy's theme, ``ctx.diag`` renders success, info and warning as before."""
     if color:
         monkeypatch.setenv("FORCE_COLOR", "1")
 
     def case() -> None:
-        with entered(start_run()) as run:
-            run.render_with(Rendering(theme=theme))
-            diag = Diagnostics()
-            diag.success("a success line")
-            diag.info("a info line")
-            diag.warning("a warning line")
+        _messages(theme)
 
-    expected = (SNAPSHOTS / snapshot).read_text(encoding="utf-8").splitlines(keepends=True)[:3]
-    assert _capture(case, _TtyStringIO() if color else None) == "".join(expected)
+    expected = (SNAPSHOTS / snapshot).read_text(encoding="utf-8")
+    assert _capture(case, _TtyStringIO() if color else None) == expected
 
 
 def test_without_a_theme_diag_messages_print_plain(monkeypatch: pytest.MonkeyPatch) -> None:

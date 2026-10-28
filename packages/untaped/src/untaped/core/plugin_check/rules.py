@@ -6,8 +6,8 @@ structure's class checks, each family in its module beside this one. See
 
 Each check reads one installed package: its command subtree from the real
 composition and its own source files, wherever they are installed, so a
-third-party plugin is checked exactly like a first-party one. Plugin tests call
-:func:`untaped.sdk.testing.check_conventions`; this module is internal.
+third-party plugin is checked exactly like a first-party one. Plugin tests read
+its rows through :func:`untaped.sdk.testing.check_plugin`; this module is internal.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from __future__ import annotations
 import importlib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from importlib.util import find_spec
 from pathlib import Path
 
 from cyclopts import App
@@ -39,43 +38,22 @@ from untaped.runtime.registry import (
     owner_requirement,
     parse_requirement,
 )
-from untaped.sdk.plugin_records import InstalledPlugin, plugin_records
 
 
 def plugin_violations(
-    name: str,
-    *,
-    tests_dir: Path | None = None,
-    candidates: Sequence[PluginCandidate] | None = None,
-) -> list[str]:
-    """Every convention violation of the installed plugin ``name``.
-
-    Builds the root once (from discovered candidates), finds the
-    registered plugin, and runs :func:`core_plugin_violations`' checks plus,
-    when ``untaped[lint]`` is installed, the file rules it now owns
-    (:func:`file_lines`); the private-test-import rule runs only when
-    ``tests_dir`` is given. ``candidates`` replaces entry-point discovery (as in
-    :func:`untaped.runtime.bootstrap.compose_root`), so a test can check a provider
-    that is not installed. Lines are ``<where>::<rule>::<detail>``, sorted. A
-    quarantined plugin's one violation is the reason composition refused it.
-    """
-    found = _checked(name, candidates)
-    if isinstance(found, list):
-        return found
-    return sorted([*_core_lines(found), *_file_lines(found, tests_dir)])
-
-
-def core_plugin_violations(
     name: str, *, candidates: Sequence[PluginCandidate] | None = None
 ) -> list[str]:
-    """The violations only the composed root can tell: what ``check_plugin`` reports.
+    """Every convention violation only the composed root can tell: what ``check_plugin`` reports.
 
     Plugin and distribution names, provides requirements, the help tree,
     guides and overview lines, stability marks and structure's class checks
     (exceptions, ports, frozen settings, setting names). The rules that read
     the plugin's files, the import boundary among them, are lint's and are
-    not run here. Lines and a quarantined
-    plugin's one violation are as :func:`plugin_violations` gives them.
+    not run here. ``candidates`` replaces entry-point discovery (as in
+    :func:`untaped.runtime.bootstrap.compose_root`), so a test can check a
+    provider that is not installed. Lines are ``<where>::<rule>::<detail>``,
+    sorted. A quarantined plugin's one violation is the reason composition
+    refused it.
     """
     found = _checked(name, candidates)
     if isinstance(found, list):
@@ -149,56 +127,6 @@ def _sdk_deprecations(package: str) -> list[str]:
         for path in plugin_sdk_modules(package)
         for line in deprecation_text_violations(importlib.import_module(path))
     ]
-
-
-def _file_lines(checked: _Checked, tests_dir: Path | None) -> list[str]:
-    lines = file_lines(
-        checked.package,
-        checked.source_dir,
-        plugin=checked.name,
-        tests_dir=tests_dir,
-        plugins=plugin_records(composition(), checked.candidates),
-    )
-    return [] if lines is None else lines
-
-
-FILE_RULES_MISSING = "the file conventions moved to untaped[lint] and were not run"
-"""What the deprecated checks say when ``untaped[lint]`` is not installed."""
-
-
-def file_rules_installed() -> bool:
-    """Whether ``untaped[lint]``, which owns the file rules, is installed.
-
-    A namespace package (a tests folder named ``untaped_lint`` on the path)
-    is no install.
-    """
-    found = find_spec("untaped_lint")
-    return found is not None and found.origin is not None
-
-
-def file_lines(
-    package: str,
-    source_dir: Path,
-    *,
-    plugin: str,
-    tests_dir: Path | None = None,
-    plugins: Sequence[InstalledPlugin],
-) -> list[str] | None:
-    """The file rules' lines, from the lint plugin; ``None`` when it is not installed.
-
-    The rules that read only a plugin's files moved to ``untaped[lint]``; the
-    deprecated ``check_conventions`` reaches them here, by name, until it goes
-    at 12.0. This is the one place core calls a plugin.
-    ``plugins`` are every composed plugin's records, which the import
-    boundary reads.
-    """
-    if not file_rules_installed():
-        return None
-    conventions = importlib.import_module("untaped_lint.providers.conventions")
-    lines: list[str] = conventions.file_lines(
-        package, source_dir, plugin=plugin, tests_dir=tests_dir, plugins=plugins
-    )
-    return lines
 
 
 def _name_violations(name: str, package: str, candidate: PluginCandidate | None) -> list[str]:

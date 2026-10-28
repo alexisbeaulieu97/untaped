@@ -20,12 +20,10 @@ from untaped.sdk._batch import finish
 from untaped.sdk._cli import (
     FormatOption,
     apply_default_format,
-    echo,
     emit,
     render_rows,
     report_declined,
     report_errors,
-    report_row_errors,
     resolve_each,
 )
 from untaped.sdk._theme import ThemeSpec
@@ -39,7 +37,6 @@ from untaped.sdk.errors import (
 )
 from untaped.sdk.records import Failure, OutcomeRecord
 from untaped.sdk.testing import invoke_cli
-from untaped.sdk.words import hint
 
 
 def _app(body: Any) -> App:
@@ -133,14 +130,14 @@ def test_the_environment_variable_forces_either_format(monkeypatch: pytest.Monke
 
 def test_warnings_hints_and_notes_are_json_lines_and_stdout_is_unchanged() -> None:
     def body() -> None:
-        UiContext().message("warning", "--parallel 64 clamped to 16")
-        echo("warning: stale skill", err=True)
-        echo(hint("skills install"), err=True)
-        echo("sync: 2 cloned", err=True)
+        diag = Diagnostics()
+        diag.warning("--parallel 64 clamped to 16")
+        diag.warning("stale skill")
+        diag.hint("run `untaped skills install`")
+        diag.info("sync: 2 cloned", unmuted=True)
 
     plain = invoke_cli(_app(lambda: None), ["--format", "json"])
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        result = invoke_cli(_app(body), ["--format", "json"])
+    result = invoke_cli(_app(body), ["--format", "json"])
 
     assert result.exit_code == 0
     assert result.stdout == plain.stdout == '[{"id": 1}]\n'
@@ -165,26 +162,6 @@ def test_per_item_errors_name_their_item() -> None:
     (line,) = _lines(result.stderr)
     assert (line["item"], line["category"], line["system"]) == ("ABC-1", "not_found", "jira")
     assert result.exit_code == 1
-
-
-class _Row(OutcomeRecord):
-    name: str
-
-
-def test_report_row_errors_reports_only_failed_rows_under_their_item_with_the_hint() -> None:
-    error = Failure(
-        category="not_found", system="git", retryable=False, message="gone", hint="re-clone it"
-    )
-    rows = [
-        _Row(name="a", action="updated"),
-        _Row(name="b", action="failed", error=error),
-    ]
-
-    def body() -> None:
-        report_row_errors(rows, item=lambda row: f"ws/{row.name}")
-
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        assert invoke_cli(_app(body), []).stderr == "error: ws/b: gone\nhint: re-clone it\n"
 
 
 def test_the_most_severe_failure_in_the_run_selects_the_exit_code() -> None:
@@ -333,11 +310,10 @@ def test_a_declined_run_exits_1_with_its_bare_line() -> None:
 
 @pytest.mark.parametrize("structured", [False, True])
 def test_a_plain_error_message_is_a_counted_failure(structured: bool) -> None:
-    with pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"):
-        result = invoke_cli(
-            _app(lambda: UiContext().message("error", "it broke")),
-            ["--format", "json"] if structured else [],
-        )
+    result = invoke_cli(
+        _app(lambda: Diagnostics().failure(Failure.plain("it broke"))),
+        ["--format", "json"] if structured else [],
+    )
 
     assert result.exit_code == 1
     if structured:

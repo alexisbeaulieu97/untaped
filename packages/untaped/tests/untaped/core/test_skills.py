@@ -8,7 +8,7 @@ import pytest
 
 import untaped.core.skills as skills_module
 from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
-from untaped.sdk import SkillAsset, checkout_root, project_root
+from untaped.sdk import SkillAsset, checkout_root
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.git import run_git
 
@@ -275,18 +275,6 @@ def test_checkout_root_finds_a_worktree_by_its_git_file_without_running_git(
     (worktree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/worktree\n")
     monkeypatch.setattr("shutil.which", lambda *_, **__: None)
     assert checkout_root(worktree / "sub") == worktree.resolve()
-
-
-def test_project_root_keeps_its_answer_and_warns(tmp_path: Path) -> None:
-    (tmp_path / "repo" / ".git").mkdir(parents=True)
-    nested = tmp_path / "repo" / "a"
-    nested.mkdir(parents=True)
-    plain = tmp_path / "plain"
-    plain.mkdir()
-    with pytest.warns(DeprecationWarning, match=r"removed in 12\.0; use `checkout_root`"):
-        assert project_root(nested) == (tmp_path / "repo").resolve()  # type: ignore[deprecated]
-    with pytest.warns(DeprecationWarning, match="checkout_root"):
-        assert project_root(plain) == plain.resolve()  # type: ignore[deprecated]
 
 
 def test_updating_a_skill_no_plugin_ships_names_the_plugin_as_missing(tmp_path: Path) -> None:

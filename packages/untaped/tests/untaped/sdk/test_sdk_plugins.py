@@ -138,9 +138,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "not_found",
         "raise_usage",
         "rejected_token_error",
-        "report_error",
         "report_errors",
-        "report_row_errors",
         "run_hint",
     ),
     "input": (
@@ -199,7 +197,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "find_program",
         "git_toplevel",
         "nearest_pyproject",
-        "project_root",
         "run_git",
         "safe_path_segment",
         "same_origin",

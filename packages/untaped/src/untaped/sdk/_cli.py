@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 import os
 import sys
-import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import replace
 from functools import cache
 from pathlib import Path
-from typing import Annotated, Any, Literal, NoReturn, Protocol, get_args, overload
+from typing import Annotated, Any, Literal, NoReturn, get_args, overload
 
 from cyclopts import App, Argument, ArgumentCollection, Parameter, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
@@ -55,8 +54,6 @@ from untaped.sdk.errors import (
 from untaped.sdk.marks import (
     Stability,
     check_stability,
-    deprecated,
-    deprecated_parameters,
     mark_app,
 )
 from untaped.sdk.records import (
@@ -355,76 +352,13 @@ def create_app(*, name: str, help: str = "", stability: Stability | None = None)
     return app
 
 
-@deprecated_parameters
-def echo(
-    message: object = "",
-    *,
-    err: Annotated[bool, deprecated(removed_in=12, replacement="ctx.diag")] = False,
-    nl: bool = True,
-) -> None:
-    """Print a CLI message to stdout or stderr.
+def echo(message: object = "", *, nl: bool = True) -> None:
+    """Print a CLI message to stdout; stderr goes through ``ctx.diag``.
 
-    Each stdout message is flushed, so lines a command prints as it goes
-    stream through a pipe.
-
-    ``err=True``: deprecated, and its warning names the release that removes
-    it; write stderr through ``ctx.diag``.
-    A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON
-    diagnostics it becomes one JSON line, its level taken from an ``error:``
-    (counted, like any failure), ``warning:`` or ``hint:`` prefix (else
-    ``info``); a blank one is dropped.
+    Each message is flushed, so lines a command prints as it goes stream
+    through a pipe.
     """
-    end = "\n" if nl else ""
-    if err:
-        current_sink().echo(str(message), end=end)
-        return
-    print(message, end=end, flush=True)
-
-
-# untaped's mark dates each on the surface; the literal under it is what mypy reports
-# (the mark's sentence, kept equal by ``deprecation_text_violations``).
-@deprecated(removed_in=12, replacement=Diagnostics.failure)
-@warnings.deprecated(
-    "report_error is deprecated and will be removed in 12.0; use `Diagnostics.failure`"
-)
-def report_error(
-    exc: UntapedError | Failure,
-    *,
-    item: str | None = None,
-) -> None:
-    """Print one failure on stderr and count it toward the run's exit code.
-
-    Deprecated, and its warning names the release that removes it: use
-    ``ctx.diag.failure``.
-
-    Text is ``error: <msg>`` (``error: <item>: <msg>`` for a per-item
-    failure, as :func:`~untaped.sdk.diagnostic.format_error` renders it);
-    under JSON diagnostics it is one JSON line with the error's category,
-    system and hint. A failed row's :class:`~untaped.sdk.diagnostic.Failure`
-    reports the same way.
-    """
-    Diagnostics().failure(exc, item=item)
-
-
-class _FailableRow(Protocol):
-    """A row that may carry the :class:`~untaped.sdk.diagnostic.Failure` of its failure."""
-
-    @property
-    def error(self) -> Failure | None: ...
-
-
-@deprecated(removed_in=12, replacement="ctx.diag.failure(row.error, item=…) for each row")
-@warnings.deprecated(
-    "report_row_errors is deprecated and will be removed in 12.0; "
-    "use ctx.diag.failure(row.error, item=…) for each row"
-)
-def report_row_errors[RowT: _FailableRow](
-    rows: Iterable[RowT], *, item: Callable[[RowT], str]
-) -> None:
-    """Report each row that carries an ``error`` as a failure, labelled ``item(row)``."""
-    for row in rows:
-        if row.error is not None:
-            Diagnostics().failure(row.error, item=item(row))
+    print(message, end="\n" if nl else "", flush=True)
 
 
 def requested_format(tokens: Sequence[str]) -> str | None:
