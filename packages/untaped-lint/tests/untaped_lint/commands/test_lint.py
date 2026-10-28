@@ -286,7 +286,7 @@ def test_a_kind_no_installed_plugin_declares_is_refused() -> None:
 def test_an_empty_pipe_says_nothing_was_received() -> None:
     result = _lint(input="")
     assert result.exit_code == 1
-    assert "no identifiers received on stdin" in result.stderr
+    assert "nothing received on stdin" in result.stderr
 
 
 def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(

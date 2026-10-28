@@ -1158,20 +1158,15 @@ class Stdin[R: BaseModel](FieldBlock):
         return self.via is not None and envelope.kind not in self._kinds
 
     def _identifier(self, envelope: PipeEnvelope) -> str:
-        if self._through(envelope):
-            row = self._row(envelope)
-            model: type[BaseModel] = type(row)
-            record: Mapping[str, object] = row.model_dump()
-        else:
-            model, record = self._model(envelope), envelope.record
-        field = key_field(model)
+        row = self._row(envelope)  # validated whole, as values() reads it
+        field = key_field(type(row))
         if field is None:
             raise ConfigError(
                 "stdin is untaped pipe format but this command cannot map records to "
                 "identifiers: no field of the accepted model is marked Key",
                 category="invalid",
             )
-        value = record.get(field)
+        value = getattr(row, field, None)
         identifier = "" if value is None else str(value).strip()
         if not identifier:
             raise ConfigError(

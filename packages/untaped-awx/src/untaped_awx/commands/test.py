@@ -448,7 +448,7 @@ def _summary(outcome: SuiteRunOutcome) -> list[str]:
 
 
 def _read_baseline(path: Path) -> dict[tuple[str, str], Baseline]:
-    """The baseline saved in ``path``: `awx test run` JSON output, or its pipe records."""
+    """The baseline saved in ``path``: `awx test run --format json` output."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:

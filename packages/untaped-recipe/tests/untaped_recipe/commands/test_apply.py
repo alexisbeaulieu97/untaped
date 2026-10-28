@@ -570,7 +570,7 @@ def test_apply_stdin_empty_input_still_errors(tmp_path: Path) -> None:
     )
 
     assert result.exit_code != 0
-    assert "error: no identifiers received on stdin" in result.output
+    assert "error: nothing received on stdin" in result.output
 
 
 def test_apply_check_allows_stdin_without_yes(tmp_path: Path) -> None:

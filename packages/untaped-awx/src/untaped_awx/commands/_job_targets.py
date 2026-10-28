@@ -55,7 +55,7 @@ def job_targets(job_ids: Sequence[str], stdin: Stdin[Any]) -> tuple[list[str], d
         if isinstance(value, str):
             ids.append(value)
             continue
-        record = value.model_dump(mode="json", by_alias=True)
+        record = value.model_dump(mode="json")
         ident = str(record.get("id"))
         ids.append(ident)
         record_kind = record.get("kind")

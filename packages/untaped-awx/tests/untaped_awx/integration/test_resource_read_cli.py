@@ -127,7 +127,7 @@ def test_read_selection(
         ((*_JT, "get", "--stdin"), "alpha\nghost\n", 1, "ghost"),
         ((*_JT, "list", "--stdin"), "alpha\nghost\n", 1, "ghost"),
         (("projects", "list", "--stdin"), "missing-a\nmissing-b\n", 1, "missing-a"),
-        (("projects", "list", "--stdin"), "", 1, "error: no identifiers received on stdin"),
+        (("projects", "list", "--stdin"), "", 1, "error: nothing received on stdin"),
         ((*_JT, "get", "alpha", "--stdin"), "beta\n", 2, "stdin"),
         ((*_JT, "list", "--stdin", "--search", "foo"), "alpha\n", 2,
          "selection sources are exclusive"),

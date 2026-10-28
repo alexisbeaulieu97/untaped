@@ -80,5 +80,5 @@ def stdin_subjects(rows: Iterable[tuple[str | None, BaseModel]]) -> list[Subject
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
         if isinstance(row, InstalledPlugin) and row.root:
             continue
-        subjects.append(Subject(kind=kind, record=row.model_dump(mode="json", by_alias=True)))
+        subjects.append(Subject(kind=kind, record=row.model_dump(mode="json")))
     return subjects

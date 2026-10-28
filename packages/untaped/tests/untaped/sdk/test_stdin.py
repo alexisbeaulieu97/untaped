@@ -192,9 +192,9 @@ def test_read_stdin_input_returns_bare_values_or_records() -> None:
     assert piped.records is not None and piped.records[0].record == {"id": 1}
 
 
-def test_read_stdin_input_names_what_was_expected_when_empty() -> None:
-    with _feed(""), pytest.raises(ConfigError, match="no names received on stdin"):
-        read_stdin_input(what="names")
+def test_read_stdin_input_refuses_an_empty_pipe() -> None:
+    with _feed(""), pytest.raises(ConfigError, match="nothing received on stdin"):
+        read_stdin_input()
 
 
 @pytest.mark.parametrize("payload", ["", "\n  \n"], ids=["empty", "blank-lines"])
@@ -207,7 +207,7 @@ def test_allow_empty_still_refuses_a_terminal_with_nothing_piped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
-    with pytest.raises(ConfigError, match="no identifiers received on stdin"):
+    with pytest.raises(ConfigError, match="nothing received on stdin"):
         read_stdin_input(allow_empty=True)
 
 

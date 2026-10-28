@@ -596,7 +596,7 @@ class TestResults(BaseModel):
     compare: ExistingFile | None = Field(
         None,
         description=(
-            "Compare with an earlier `awx test run --format json` (or pipe) output: each row "
+            "Compare with an earlier `awx test run --format json` output: each row "
             "gains baseline and change, and a failure the baseline already had does not fail "
             "the run."
         ),

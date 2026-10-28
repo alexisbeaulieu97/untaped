@@ -12,8 +12,8 @@ examples live in ``docs/reference/conventions.md#piping``.
 
 Record values are serialized with ``json.dumps(default=str)`` (same as
 ``--format json``), so non-JSON-native types (datetime, Decimal, enum) become
-strings and do **not** round-trip to their original type — fidelity is
-JSON-native types only.
+strings on the wire; ``Stdin`` reads each row back as its kind's model, which
+turns them into their types again.
 
 Pipe envelope **v1**. ``Output[R]`` writes it and ``Stdin[R]`` reads it, so a
 plugin never handles a line. A change to the line's shape is a break, said in
@@ -35,12 +35,7 @@ SUPPORTED_PIPE_VERSIONS = frozenset({"1"})
 
 @dataclass(frozen=True)
 class PipeEnvelope:
-    """One decoded ``--format pipe`` line: a record plus its metadata.
-
-    This is the **v1** envelope, versioned independently of the SDK; any change
-    to its shape would bump the envelope version. See the module docstring and
-    ``docs/reference/conventions.md#piping``.
-    """
+    """One decoded ``--format pipe`` line: a record, its kind and its line number."""
 
     kind: str | None
     record: dict[str, object]
