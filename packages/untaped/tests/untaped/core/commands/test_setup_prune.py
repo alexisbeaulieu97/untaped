@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from core_test_support.commands.support import make_spec
+from core_test_support.commands.support import ghost_candidates, make_plugin
 from untaped.core.commands import setup_prune
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, named_plugin_dir
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("home_run")
 
 
 def _cli(*args: str, also: tuple[PluginCandidate, ...] = ()) -> CliResult:
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("acme")), *also])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_plugin("acme")), *also])
     return invoke_cli(root.meta, ["setup", "prune", *args])
 
 
@@ -111,7 +111,7 @@ def test_a_terminal_asks_once_after_the_preview(tmp_path: Path) -> None:
     _dead(tmp_path)
     gone = _folder("gone")
     backend = ScriptedPromptBackend(confirms=[True])
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("acme"))])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_plugin("acme"))])
 
     result = invoke_cli(root.meta, ["setup", "prune"], interactive=True, prompt_backend=backend)
 
@@ -272,10 +272,7 @@ def test_an_unreadable_reference_keeps_every_folder() -> None:
 
 def test_a_quarantined_plugins_folder_and_cores_are_never_offered() -> None:
     _folder("ghost")
-    ghosts = (
-        plugin_candidate(make_spec("ghost"), distribution="one-dist"),
-        plugin_candidate(make_spec("ghost"), distribution="other-dist"),
-    )
+    ghosts = ghost_candidates("one-dist", "other-dist")
     (named_plugin_dir("untaped") / "cached").mkdir(parents=True, exist_ok=True)
     (named_plugin_dir("untaped").parent / ".trash").mkdir()
 
@@ -332,7 +329,7 @@ def test_one_failure_fails_the_run_and_the_rest_still_go(
 def test_doctor_points_both_rows_at_prune(tmp_path: Path) -> None:
     _dead(tmp_path)
     _folder("gone")
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("acme"))])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(make_plugin("acme"))])
 
     result = invoke_cli(root.meta, ["doctor", "-f", "json"])
 

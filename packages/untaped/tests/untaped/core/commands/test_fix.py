@@ -15,12 +15,12 @@ from typing import Any
 
 import pytest
 
-from core_test_support.commands.support import age_stub, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_plugin, write_config
 from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
 from untaped.core.settings import NAME, CoreSettings
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Command, Plugin
 from untaped.sdk._home import config_path
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -64,7 +64,7 @@ def _check(
             automatic=automatic and fix_ is not None,
         )
 
-    return DoctorCheck(id=check_id, title=f"{check_id} title", run=run, online=online)
+    return DoctorCheck(title=f"{check_id} title", run=run, online=online)
 
 
 def _stub(
@@ -87,18 +87,26 @@ def _stub(
 _FIXES: dict[str, str] = {}
 
 
-def _spec(*checks: tuple[str, str | None, dict[str, Any]]) -> PluginSpec:
+class Repair(Command):
+    """Repair svc."""
+
+    def run(self) -> None:
+        return None
+
+
+def _spec(*checks: tuple[str, str | None, dict[str, Any]]) -> type[Plugin]:
+    """``svc`` holding a check per ``(svc.<attribute>, fix, options)``, and ``svc repair``."""
     _FIXES.clear()
-    built = []
+    built: dict[str, DoctorCheck] = {}
     for check_id, fix_, options in checks:
         if fix_ is not None:
             _FIXES[check_id] = fix_
-        built.append(_check(check_id, fix_, **options))
-    return make_spec("svc", doctor_checks=tuple(built))
+        built[check_id.removeprefix("svc.")] = _check(check_id, fix_, **options)
+    return make_plugin("svc", commands=(Repair,), **built)
 
 
 def _cli(
-    spec: PluginSpec,
+    spec: type[Plugin],
     *args: str,
     monkeypatch: pytest.MonkeyPatch,
     results: dict[str, ChildRun] | None = None,
@@ -370,9 +378,7 @@ def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.Monke
 
     _FIXES.clear()
     _FIXES["svc.api"] = "config migrate"
-    spec = make_spec(
-        "svc", doctor_checks=(DoctorCheck("svc.api", title="svc API", run=counted, online=True),)
-    )
+    spec = make_plugin("svc", api=DoctorCheck(title="svc API", run=counted, online=True))
     offline = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert (offline.stdout, calls) == ("[]\n", [])
     result = _cli(spec, "--yes", "--online", "--format", "json", monkeypatch=monkeypatch)
@@ -481,7 +487,7 @@ def test_an_ascii_theme_swaps_the_glyphs(
 # ── the hint on doctor and setup ─────────────────────────────────────────────
 
 
-def _doctor(spec: PluginSpec, *root_args: str) -> CliResult:
+def _doctor(spec: type[Plugin], *root_args: str) -> CliResult:
     root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
     return invoke_cli(root.meta, [*root_args, "doctor"])
 

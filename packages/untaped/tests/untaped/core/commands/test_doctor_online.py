@@ -1,7 +1,7 @@
 """``doctor --online``: plugin-contributed online checks and their fixes.
 
 Online checks (``DoctorCheck(online=True)``) never run in a plain
-``doctor``. The shared ``online_check`` factory probes a configured service
+``doctor``. The shared ``OnlineCheck`` block probes a configured service
 and names the ``untaped`` command that fixes a failure.
 """
 
@@ -19,11 +19,10 @@ import respx
 from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.support import (
-    make_spec,
+    make_plugin,
     root_group,
     write_config,
 )
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     ConfigError,
     Credential,
@@ -34,9 +33,10 @@ from untaped.sdk import (
     HttpStatusError,
     HttpTransportError,
     NeedsSetup,
+    OnlineCheck,
+    Plugin,
     PluginContext,
     RetryPolicy,
-    online_check,
 )
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -55,16 +55,14 @@ class ProbeProfile(BaseModel):
     server: Annotated[SvcServer | None, NeedsSetup] = None
 
 
-#: The ``svc`` token, read last from ``$SVC_TOKEN``.
-SVC_TOKEN = Credential("svc", "token", key=SvcServer, env=("SVC_TOKEN",))
+def _spec(api: DoctorCheck) -> type[Plugin]:
+    """``svc`` checking ``api``, with its token read last from ``$SVC_TOKEN``."""
+    token = Credential(key=SvcServer, env=("SVC_TOKEN",))
+    return make_plugin("svc", settings=ProbeProfile, token=token, api=api)
 
 
-def _spec(checks: tuple[DoctorCheck, ...]) -> PluginSpec:
-    return make_spec("svc", settings=ProbeProfile, doctor_checks=checks, credentials=(SVC_TOKEN,))
-
-
-def _doctor(checks: tuple[DoctorCheck, ...], *args: str) -> CliResult:
-    spec = _spec(checks)
+def _doctor(api: DoctorCheck, *args: str) -> CliResult:
+    spec = _spec(api)
     app = root_group("doctor", spec)
     return CliInvoker().invoke(app, ["--format", "json", *args])
 
@@ -94,8 +92,8 @@ def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
         calls.append("ran")
         return DoctorResult(id="svc.api", ok=False, detail="down")
 
-    check = DoctorCheck(id="svc.api", title="svc API", run=run, online=True)
-    result = _doctor((check,))
+    check = DoctorCheck(title="svc API", run=run, online=True)
+    result = _doctor(check)
     assert result.exit_code == 0, result.output
     assert calls == []
     assert all(row["check"] != "svc.api" for row in json.loads(result.stdout))
@@ -107,8 +105,8 @@ def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
             id="svc.api", ok=False, detail="token rejected", fix="config set svc.token --prompt"
         )
 
-    check = DoctorCheck(id="svc.api", title="svc API", run=run, online=True)
-    result = _doctor((check,), "--online")
+    check = DoctorCheck(title="svc API", run=run, online=True)
+    result = _doctor(check, "--online")
     assert result.exit_code == 1
     row = _row(result, "svc.api")
     assert row["status"] == "fail"
@@ -117,12 +115,12 @@ def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
 
 
 def _probe_check(probe: Any) -> DoctorCheck:
-    return online_check("svc.api", section="svc", probe=probe)
+    return OnlineCheck(probe=probe)
 
 
 def test_online_check_passes_with_the_probe_detail(_configured: Callable[..., None]) -> None:
     _configured(url="https://svc", token="t")
-    result = _doctor((_probe_check(lambda: "authenticated as alice"),), "--online")
+    result = _doctor(_probe_check(lambda: "authenticated as alice"), "--online")
     assert result.exit_code == 0, result.output
     row = _row(result, "svc.api")
     assert (row["status"], row["detail"]) == ("pass", "authenticated as alice")
@@ -132,7 +130,7 @@ def test_online_check_skips_an_unconfigured_service(_isolated_config: Path) -> N
     def probe() -> str:
         raise AssertionError("must not probe")
 
-    result = _doctor((_probe_check(probe),), "--online")
+    result = _doctor(_probe_check(probe), "--online")
     assert result.exit_code == 0, result.output
     assert _row(result, "svc.api")["detail"] == "skipped: not set up"
 
@@ -145,7 +143,7 @@ def test_an_ambient_token_variable_without_a_server_is_not_set_up(
     def probe() -> str:
         raise AssertionError("must not probe")
 
-    result = _doctor((_probe_check(probe),), "--online")
+    result = _doctor(_probe_check(probe), "--online")
     assert result.exit_code == 0, result.output
     assert _row(result, "svc.api")["detail"] == "skipped: not set up"
 
@@ -238,7 +236,7 @@ def test_online_check_failures_name_the_fix(
 ) -> None:
     _configured(**config)
     probe = _raise(error)
-    result = _doctor((_probe_check(probe),), "--online")
+    result = _doctor(_probe_check(probe), "--online")
     assert result.exit_code == 1
     row = _row(result, "svc.api")
     assert row["status"] == "fail"
@@ -263,7 +261,7 @@ def test_online_probes_do_not_retry_and_use_a_short_timeout(
 
     with respx.mock(base_url="https://svc") as mock:
         route = mock.get("/me").mock(side_effect=refuse)
-        result = _doctor((_probe_check(probe),), "--online")
+        result = _doctor(_probe_check(probe), "--online")
     assert _row(result, "svc.api")["status"] == "fail"
     assert route.call_count == 1
     assert timeouts == [10.0]
@@ -271,7 +269,7 @@ def test_online_probes_do_not_retry_and_use_a_short_timeout(
 
 def test_online_check_is_skipped_when_settings_are_invalid(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nsvc:\n  server: [1]\n")
-    result = _doctor((_probe_check(_raise(AssertionError("must not probe"))),), "--online")
+    result = _doctor(_probe_check(_raise(AssertionError("must not probe"))), "--online")
     assert _row(result, "svc.api")["detail"] == "skipped: settings are invalid"
 
 
@@ -279,7 +277,7 @@ def _fixing(fix: str | list[str]) -> DoctorCheck:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(id="svc.api", ok=False, detail="token rejected", fix=fix)
 
-    return DoctorCheck(id="svc.api", title="svc API", run=run, online=True)
+    return DoctorCheck(title="svc API", run=run, online=True)
 
 
 @pytest.mark.parametrize(
@@ -287,24 +285,24 @@ def _fixing(fix: str | list[str]) -> DoctorCheck:
     ["untaped config set svc.server.url '<URL>'", ["config", "set", "svc.server.url", "<URL>"]],
 )
 def test_a_string_or_argv_fix_becomes_the_same_argv(_isolated_config: Path, fix: Any) -> None:
-    row = _row(_doctor((_fixing(fix),), "--online"), "svc.api")
+    row = _row(_doctor(_fixing(fix), "--online"), "svc.api")
     assert row["fix"] == ["--profile", "default", "config", "set", "svc.server.url", "<URL>"]
 
 
 def test_a_fix_that_names_a_profile_keeps_only_its_own(_isolated_config: Path) -> None:
-    row = _row(_doctor((_fixing("--profile=prod auth login svc"),), "--online"), "svc.api")
+    row = _row(_doctor(_fixing("--profile=prod auth login svc"), "--online"), "svc.api")
     assert row["fix"] == ["--profile=prod", "auth", "login", "svc"]
 
 
 def test_an_unparsable_fix_fails_its_row(_isolated_config: Path) -> None:
-    row = _row(_doctor((_fixing("config set 'svc.server.url"),), "--online"), "svc.api")
+    row = _row(_doctor(_fixing("config set 'svc.server.url"), "--online"), "svc.api")
     assert row["status"] == "fail"
     assert row["detail"].startswith("check returned an unparsable fix")
     assert row["fix"] is None
 
 
 def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_config: Path) -> None:
-    spec = _spec((_fixing("auth login svc"),))
+    spec = _spec(_fixing("auth login svc"))
     app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--format", "table", "--online"])
     assert "token rejected\n" in result.stdout
@@ -312,7 +310,7 @@ def test_the_checklist_shows_the_fix_without_the_current_profile(_isolated_confi
 
 
 def test_the_table_keeps_a_profile_the_flag_chose(_isolated_config: Path) -> None:
-    spec = _spec((_fixing("auth login svc"),))
+    spec = _spec(_fixing("auth login svc"))
     app = root_group("doctor", spec)
     result = CliInvoker().invoke(app, ["--profile", "default", "--format", "table", "--online"])
     # Without the flag the same line would read the profiles UNTAPED_PROFILE picks.
@@ -331,7 +329,7 @@ def test_a_fix_writes_to_the_top_of_a_picked_stack(
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n  b: {}\n")
     if env:
         monkeypatch.setenv("UNTAPED_PROFILE", env)
-    spec = _spec((_fixing("auth login svc"),))
+    spec = _spec(_fixing("auth login svc"))
     app = root_group("doctor", spec)
     picked = ["--profile", ",".join(flag)] if flag else []
     listed = CliInvoker().invoke(app, [*picked, "--format", "table", "--online"])
@@ -348,7 +346,7 @@ def test_a_base_fix_keeps_its_profile_when_the_variable_picks(
 ) -> None:
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  a: {}\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "a")
-    spec = _spec((_fixing("auth login svc"),))
+    spec = _spec(_fixing("auth login svc"))
     app = root_group("doctor", spec)
     # `--profile default` sets the variable aside
     result = CliInvoker().invoke(app, ["--profile", "default", "--format", "table", "--online"])

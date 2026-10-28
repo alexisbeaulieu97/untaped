@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.commands.support import age_stub, asset, make_spec, root_group
+from core_test_support.commands.support import age_stub, asset, make_plugin, make_spec, root_group
 from untaped.core.commands import skills as skills_cli
 from untaped.core.skill_stubs import STUB_MARKER
 from untaped.sdk.errors import ConfigError
@@ -26,7 +26,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 def _skills_app(*names: str) -> object:
     specs = [
-        make_spec(f"plugin-{index}", skills=(asset(name),)) for index, name in enumerate(names)
+        make_plugin(name.removeprefix("untaped-"), skill=f"Teach agents how to use {name}.")
+        for name in names
     ]
     return root_group("skills", *specs)
 
@@ -242,7 +243,7 @@ def test_update_refreshes_only_outdated_installs_in_place(
     assert [(row["name"], row["scope"], row["action"]) for row in rows] == [
         ("untaped-one", "local", "updated"),
     ]
-    assert "`untaped docs plugin-0`" in local.joinpath("untaped-one", "SKILL.md").read_text()
+    assert "`untaped docs one`" in local.joinpath("untaped-one", "SKILL.md").read_text()
     assert local.joinpath("untaped-one", STUB_MARKER).is_file()
     assert not Path.home().joinpath(".agents", "skills", "untaped-one").exists()
 

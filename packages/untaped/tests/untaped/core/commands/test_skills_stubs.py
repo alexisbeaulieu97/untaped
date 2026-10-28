@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from core_test_support.commands.support import age_stub, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_plugin, make_spec, write_config
 from untaped.core import skill_stubs
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skill_stubs import STUB_MARKER
@@ -27,8 +27,7 @@ from untaped.core.skills import (
     update_installed_skill,
 )
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import SkillAsset
+from untaped.sdk import Plugin, SkillAsset
 from untaped.sdk.storage import data_file
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
@@ -54,11 +53,11 @@ def _outside_any_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.chdir(work)
 
 
-def _stub_spec(description: str = "Demo things: widgets and gadgets.") -> PluginSpec:
-    return make_spec("demo", skills=(SkillAsset(name="untaped-demo", description=description),))
+def _stub_spec(description: str = "Demo things: widgets and gadgets.") -> type[Plugin]:
+    return make_plugin("demo", skill=description)
 
 
-def _root(spec: PluginSpec | None = None) -> App:
+def _root(spec: type[Plugin] | None = None) -> App:
     return bootstrap.build_root_app(candidates=(plugin_candidate(spec or _stub_spec()),))
 
 

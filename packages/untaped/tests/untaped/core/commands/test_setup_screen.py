@@ -31,8 +31,8 @@ from core_test_support.commands.support import (
     WizProfile,
     WizServer,
     compose,
-    make_spec,
-    wiz_api_check,
+    make_plugin,
+    wiz_api,
     write_config,
     written_profile,
 )
@@ -50,12 +50,11 @@ from untaped.core.commands.setup_state import (
     setup_services,
 )
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
-from untaped.sdk import Credential, online_check
+from untaped.sdk import OnlineCheck, Plugin
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
@@ -77,16 +76,16 @@ def _reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeStores:
     return install_fake_stores(tmp_path, monkeypatch)
 
 
-def _wiz() -> PluginSpec:
-    return make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
+def _wiz() -> type[Plugin]:
+    return make_plugin("wiz", settings=WizProfile, api=wiz_api())
 
 
-def _envy() -> PluginSpec:
-    return make_spec("envy", settings=EnvProfile)
+def _envy() -> type[Plugin]:
+    return make_plugin("envy", settings=EnvProfile)
 
 
 def _build(
-    *specs: PluginSpec, profile: str = "default", only: list[str] | None = None
+    *specs: type[Plugin], profile: str = "default", only: list[str] | None = None
 ) -> Screen[SetupModel, SetupResult]:
     result = compose(*(specs or (_wiz(),)))
     services = setup_services(result, only)
@@ -299,13 +298,11 @@ def test_only_online_probes_run_before_saving(
         offline.append("ran")
         return DoctorResult(id="wiz.offline", ok=True, detail="x")
 
-    spec = make_spec(
+    spec = make_plugin(
         "wiz",
         settings=WizProfile,
-        doctor_checks=(
-            DoctorCheck(id="wiz.offline", title="offline", run=offline_run),  # type: ignore[arg-type]
-            wiz_api_check(),
-        ),
+        offline=DoctorCheck(title="offline", run=offline_run),  # type: ignore[arg-type]
+        api=wiz_api(),
     )
     install_fake_stores(tmp_path, monkeypatch, "pass")
 
@@ -379,11 +376,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
         seen.append((str(wiz.server.url), WIZ_TOKEN.get(server).get_secret_value()))
         return "ok"
 
-    spec = make_spec(
-        "wiz",
-        settings=WizProfile,
-        doctor_checks=(online_check("wiz.api", section="wiz", probe=probe),),
-    )
+    spec = make_plugin("wiz", settings=WizProfile, api=OnlineCheck(probe=probe))
     FAIL.clear()
     screen = _build(spec)
     host = FakeHost(threads=True)
@@ -664,10 +657,7 @@ def test_open_profile_completions_keep_the_frame_on_screen(_isolated_config: Pat
 def test_a_status_per_state(_isolated_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_READY__TOKEN", "t")
     specs = [
-        make_spec(
-            name, settings=WizProfile, credentials=(Credential(name, "token", key=WizServer),)
-        )
-        for name in ("ready", "bare", "fresh", "broken")
+        make_plugin(name, settings=WizProfile) for name in ("ready", "bare", "fresh", "broken")
     ]
     write_config(
         _isolated_config,
@@ -713,9 +703,10 @@ def test_tabs_offer_the_same_choices_as_before(
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     store = pick_store()
+    [wiz] = [each.spec for each in compose(_wiz()).plugins if each.spec.name == "wiz"]
 
     def offered(state: ServiceState, store: Any = store) -> list[str]:
-        return [c.value for c in _token_choices(_wiz(), state, store)]
+        return [c.value for c in _token_choices(wiz, state, store)]
 
     stored = ServiceState(values={}, secret_sources={"token": "stored 1a2b3c4d"})
     assert offered(stored) == ["keep", "store", "command", "env"]
@@ -805,11 +796,7 @@ def test_the_token_command_is_primed_before_the_background_check(tmp_path: Path)
         seen.append(WIZ_TOKEN.get(server).get_secret_value())  # cached by the suspended command
         return "ok"
 
-    spec = make_spec(
-        "wiz",
-        settings=WizProfile,
-        doctor_checks=(online_check("wiz.api", section="wiz", probe=probe),),
-    )
+    spec = make_plugin("wiz", settings=WizProfile, api=OnlineCheck(probe=probe))
 
     drive_screen(_build(spec), _keys("https://wiz", command=program))
 

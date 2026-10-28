@@ -27,19 +27,19 @@ from core_test_support.commands.support import (
     ExtProfile,
     WizProfile,
     WizServer,
-    make_spec,
-    wiz_api_check,
+    make_plugin,
+    wiz_api,
     write_config,
 )
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     Credential,
     CredentialKey,
     HttpError,
     HttpTransportError,
     NeedsSetup,
-    online_check,
+    OnlineCheck,
+    Plugin,
 )
 from untaped.sdk.marks import forget_notices
 from untaped.sdk.testing import (
@@ -67,9 +67,6 @@ class SoloProfile(BaseModel):
     """A plugin whose one need is its credential (section ``solo``)."""
 
 
-SOLO_TOKEN = Credential("solo", "token", key=SoloKey, env=("SOLO_TOKEN",))
-
-
 @pytest.fixture(autouse=True)
 def _clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No store, no ambient token, a fresh once-per-run warning memory."""
@@ -90,18 +87,18 @@ def _login(token: str = "t") -> None:
     WIZ_TOKEN.store(WizServer(url=HttpUrl("https://wiz")), token=token)
 
 
-def _wiz() -> PluginSpec:
-    return make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
+def _wiz() -> type[Plugin]:
+    return make_plugin("wiz", settings=WizProfile, api=wiz_api())
 
 
-def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
+def _cli(*args: str, specs: tuple[type[Plugin], ...] | None = None) -> CliResult:
     candidates = tuple(plugin_candidate(spec) for spec in (specs or (_wiz(),)))
     root = bootstrap.build_root_app(candidates=candidates)
     return invoke_cli(root.meta, list(args))
 
 
 def _doctor(
-    *args: str, specs: tuple[PluginSpec, ...] | None = None, exit_code: int = 0
+    *args: str, specs: tuple[type[Plugin], ...] | None = None, exit_code: int = 0
 ) -> dict[str, dict[str, Any]]:
     result = _cli("doctor", "--format", "json", *args, specs=specs)
     assert result.exit_code == exit_code, result.output
@@ -173,13 +170,13 @@ class NamedProfile(BaseModel):
 
 
 def test_a_blank_string_is_not_set(_isolated_config: Path) -> None:
-    named = make_spec("named", settings=NamedProfile)
+    named = make_plugin("named", settings=NamedProfile)
     write_config(_isolated_config, "format_version: 2\nnamed: {name: '  '}\n")
     assert _setup(specs=(named,), plugin="named")["detail"] == "not set up"
 
 
 def test_an_empty_list_is_set(_isolated_config: Path) -> None:
-    crew = make_spec("crew", settings=CrewProfile)
+    crew = make_plugin("crew", settings=CrewProfile)
     write_config(_isolated_config, "format_version: 2\ncrew: {teams: []}\n")
     row = _setup(specs=(crew,), plugin="crew")
     assert (row["status"], row["detail"]) == ("pass", "[]")
@@ -231,7 +228,7 @@ def test_a_rejected_token_names_auth_login(_isolated_config: Path) -> None:
 
 
 def test_a_plugin_without_a_service_never_warns() -> None:
-    result = _cli("doctor", "--format", "json", specs=(make_spec("ext", settings=ExtProfile),))
+    result = _cli("doctor", "--format", "json", specs=(make_plugin("ext", settings=ExtProfile),))
     assert "NeedsSetup" not in result.stderr
     assert all(row["check"] != "setup" for row in json.loads(result.stdout))
 
@@ -275,8 +272,7 @@ def _untrusted() -> Exception:
 def test_any_other_failure_names_the_first_marked_setting(
     _isolated_config: Path, error: Exception, detail: str, fix: list[str]
 ) -> None:
-    check = online_check("wiz.api", section="wiz", probe=_raising(error))
-    spec = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
+    spec = make_plugin("wiz", settings=WizProfile, api=OnlineCheck(probe=_raising(error)))
     write_config(_isolated_config, f"format_version: 2\n{_SERVER}\n")
     _login()
     row = _doctor("--online", specs=(spec,), exit_code=1)["wiz.api:wiz"]
@@ -287,9 +283,11 @@ def test_a_failure_of_a_plugin_marking_only_its_secret_has_no_fix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SOLO_TOKEN", "t")
-    check = online_check("solo.api", section="solo", probe=_raising(HttpTransportError("down")))
-    spec = make_spec(
-        "solo", settings=SoloProfile, doctor_checks=(check,), credentials=(SOLO_TOKEN,)
+    spec = make_plugin(
+        "solo",
+        settings=SoloProfile,
+        token=Credential(key=SoloKey, env=("SOLO_TOKEN",)),
+        api=OnlineCheck(probe=_raising(HttpTransportError("down"))),
     )
     rows = _doctor("--online", specs=(spec,), exit_code=1)
     assert rows["setup:solo"]["detail"] == "token from $SOLO_TOKEN"
@@ -308,11 +306,11 @@ class HookProfile(BaseModel):
     server: Annotated[HookServer | None, NeedsSetup] = None
 
 
-SIGNING_KEY = Credential("hook", "signing_key", key=HookServer)
-
-
-def _hook(*checks: Any) -> PluginSpec:
-    return make_spec("hook", settings=HookProfile, doctor_checks=checks, credentials=(SIGNING_KEY,))
+def _hook(**checks: Any) -> type[Plugin]:
+    """``hook``, holding its ``signing_key`` and ``checks``."""
+    return make_plugin(
+        "hook", settings=HookProfile, signing_key=Credential(key=HookServer), **checks
+    )
 
 
 def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
@@ -324,7 +322,7 @@ def test_a_credential_not_named_token_is_set_by_auth_login_with_its_name(
     assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]
 
 
-def _plan_rows(*specs: PluginSpec) -> dict[str, dict[str, Any]]:
+def _plan_rows(*specs: type[Plugin]) -> dict[str, dict[str, Any]]:
     result = _cli("setup", "plan", "--format", "json", specs=specs)
     assert result.exit_code == 0, result.output
     return {row["step"]: row for row in json.loads(result.stdout)}
@@ -337,20 +335,20 @@ class PinProfile(BaseModel):
 
 
 def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() -> None:
-    row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
+    row = _plan_rows(make_plugin("pin", settings=PinProfile))["pin.pin"]
     assert (row["state"], row["by"]) == ("todo", "user")
 
 
 def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:
     """``setup plan`` says ``set``, not the ``***`` a masked value prints as."""
     write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
-    row = _plan_rows(make_spec("pin", settings=PinProfile))["pin.pin"]
+    row = _plan_rows(make_plugin("pin", settings=PinProfile))["pin.pin"]
     assert (row["state"], row["detail"]) == ("done", "set")
 
 
 def test_a_failure_line_says_a_masked_value_is_set(_isolated_config: Path) -> None:
-    check = online_check("pin.api", section="pin", probe=_raising(HttpTransportError("down")))
-    spec = make_spec("pin", settings=PinProfile, doctor_checks=(check,))
+    check = OnlineCheck(probe=_raising(HttpTransportError("down")))
+    spec = make_plugin("pin", settings=PinProfile, api=check)
     write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
     row = _doctor("--online", specs=(spec,), exit_code=1)["pin.api:pin"]
     assert row["detail"] == "down (pin.pin is set)"
@@ -361,8 +359,8 @@ def test_a_rejected_credential_not_named_token_names_its_own_auth_login(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     rejected = HttpError("HTTP 401", status_code=401, url="https://hook/me", system="hook")
-    check = online_check("hook.api", section="hook", probe=_raising(rejected))
+    check = OnlineCheck(probe=_raising(rejected))
     write_config(_isolated_config, "format_version: 2\nhook: {server: {url: https://hook}}\n")
     monkeypatch.setenv("UNTAPED_HOOK__SIGNING_KEY", "k")
-    row = _doctor("--online", specs=(_hook(check),), exit_code=1)["hook.api:hook"]
+    row = _doctor("--online", specs=(_hook(api=check),), exit_code=1)["hook.api:hook"]
     assert row["fix"][-4:] == ["auth", "login", "hook", "signing_key"]

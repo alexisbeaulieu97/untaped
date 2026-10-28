@@ -17,7 +17,9 @@ from untaped.runtime.registry import (
     PluginSpec,
     SkillAsset,
 )
+from untaped.sdk import Plugin
 from untaped.sdk._cli import create_app
+from untaped.sdk._names import kebab
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability
 
@@ -94,8 +96,13 @@ def make_spec(
 _TARGETS = itertools.count()
 
 
+def plugin_name(spec: PluginSpec | type[Plugin]) -> str:
+    """The name a spec gives itself, or a plugin class's: its class name in kebab case."""
+    return spec.name if isinstance(spec, PluginSpec) else kebab(spec.__name__)
+
+
 def spec_target(
-    spec: PluginSpec,
+    spec: PluginSpec | type[Plugin],
     *,
     error: Exception | None = None,
     result: Any = None,
@@ -114,7 +121,7 @@ def spec_target(
 
     def attribute(key: str) -> Any:
         if calls is not None:
-            calls.append(spec.name)
+            calls.append(plugin_name(spec))
         if error is not None:
             raise error
         return spec if result is None else result
@@ -125,7 +132,7 @@ def spec_target(
 
 
 def make_candidate(
-    spec: PluginSpec,
+    spec: PluginSpec | type[Plugin],
     distribution: str = "example-dist",
     name: str | None = None,
     *,
@@ -136,7 +143,7 @@ def make_candidate(
 ) -> PluginCandidate:
     return PluginCandidate(
         distribution=distribution,
-        name=name or spec.name,
+        name=name or plugin_name(spec),
         target=spec_target(spec, **kwargs),
         distribution_version=distribution_version,
         entry_point_group=entry_point_group,

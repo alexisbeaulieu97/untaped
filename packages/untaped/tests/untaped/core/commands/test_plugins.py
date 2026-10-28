@@ -19,6 +19,7 @@ import pytest
 from core_test_support.commands.support import (
     GithubProfile,
     JiraProfile,
+    make_plugin,
     make_spec,
     write_config,
 )
@@ -50,7 +51,7 @@ def _every_row(candidates: list[PluginCandidate]) -> list[dict[str, object]]:
 
 def test_core_is_listed_as_the_root_with_untaped_s_version() -> None:
     """Core's row is the composition's like any plugin's, marked ``root``, in name order."""
-    rows = _every_row([make_candidate(make_spec("zeta"), "zeta-dist")])
+    rows = _every_row([make_candidate(make_plugin("zeta"), "zeta-dist")])
     assert [(row["name"], row["root"]) for row in rows] == [("untaped", True), ("zeta", False)]
     core = rows[0]
     assert (core["status"], core["distribution"]) == ("ready", "untaped")
@@ -62,7 +63,9 @@ _LOCATED = ("package", "source_dir", "tests_dir", "requires", "fills", "root")
 
 
 def test_lists_a_ready_provider_with_its_distribution_version() -> None:
-    rows = _listing([make_candidate(make_spec("acme"), "acme-dist", distribution_version="1.2.3")])
+    rows = _listing(
+        [make_candidate(make_plugin("acme"), "acme-dist", distribution_version="1.2.3")]
+    )
     assert [{key: row[key] for key in row if key not in _LOCATED} for row in rows] == [
         {"name": "acme", "status": "ready", "distribution": "acme-dist", "version": "1.2.3"}
     ]
@@ -70,7 +73,7 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
 
 def test_a_ready_plugin_says_where_its_code_is() -> None:
     """``untaped.installed_plugin`` records carry what lint's plugin subject reads."""
-    [row] = _listing([make_candidate(make_spec("acme"), "acme-dist")])
+    [row] = _listing([make_candidate(make_plugin("acme"), "acme-dist")])
     assert row["package"] == "core_test_support.commands"
     assert row["source_dir"] == str(Path(__file__).parents[3] / "core_test_support" / "commands")
     assert row["tests_dir"] is None  # no pyproject.toml declaring acme above it
@@ -79,7 +82,7 @@ def test_a_ready_plugin_says_where_its_code_is() -> None:
 def test_a_ready_plugin_says_what_it_may_import_from() -> None:
     """``requires``: its default requirements, canonical; an extra no owner names adds none."""
     requires = ("Untaped_Git>=1", "jinja2; python_version >= '3'", "rich; extra == 'pretty'")
-    [row] = _listing([make_candidate(make_spec("acme"), "acme-dist", requires_dist=requires)])
+    [row] = _listing([make_candidate(make_plugin("acme"), "acme-dist", requires_dist=requires)])
     assert (row["requires"], row["fills"]) == (["jinja2", "untaped-git"], [])
 
 
@@ -92,7 +95,7 @@ def test_an_extra_named_after_an_owner_it_fills_adds_to_requires() -> None:
 
 def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> None:
     broken = make_candidate(
-        make_spec("acme"), "  ", distribution_version="1.2.3", error=RuntimeError("x")
+        make_plugin("acme"), "  ", distribution_version="1.2.3", error=RuntimeError("x")
     )
     assert isinstance(broken.target, str)
     assert _listing([broken]) == [
@@ -112,9 +115,9 @@ def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> N
 
 
 def test_the_listing_is_in_name_order_across_statuses() -> None:
-    broken = make_candidate(make_spec("beta"), "aaa-dist", error=RuntimeError("x"))
-    alpha = make_candidate(make_spec("alpha"), "zzz-dist")
-    gamma = make_candidate(make_spec("gamma"), "mmm-dist")
+    broken = make_candidate(make_plugin("beta"), "aaa-dist", error=RuntimeError("x"))
+    alpha = make_candidate(make_plugin("alpha"), "zzz-dist")
+    gamma = make_candidate(make_plugin("gamma"), "mmm-dist")
     rows = _listing([gamma, broken, alpha])
     assert [(row["name"], row["status"]) for row in rows] == [
         ("alpha", "ready"),
@@ -154,7 +157,7 @@ def test_unresolvable_provider_uses_unknown_sentinels() -> None:
 
 
 def test_table_headers_name_the_listing_contract() -> None:
-    github = make_candidate(make_spec("github", settings=GithubProfile))
+    github = make_candidate(make_plugin("github", settings=GithubProfile))
     root = bootstrap.build_root_app(candidates=[github])
     invoked = CliInvoker().invoke(root.meta, ["plugin", "list"])
     assert invoked.exit_code == 0, invoked.output
@@ -172,8 +175,8 @@ def test_listing_is_not_blocked_by_invalid_settings(_isolated_config: Path) -> N
     get_settings.cache_clear()
     listed = _listing(
         [
-            make_candidate(make_spec("github", settings=GithubProfile)),
-            make_candidate(make_spec("jira", settings=JiraProfile)),
+            make_candidate(make_plugin("github", settings=GithubProfile)),
+            make_candidate(make_plugin("jira", settings=JiraProfile)),
         ]
     )
     assert {row["name"] for row in listed} == {"github", "jira"}
@@ -191,7 +194,7 @@ def test_the_table_is_not_blocked_by_a_broken_config(_isolated_config: Path, con
     """The listing that diagnoses a broken install draws the default theme."""
     write_config(_isolated_config, config)
     get_settings.cache_clear()
-    root = bootstrap.build_root_app(candidates=[make_candidate(make_spec("acme"), "acme-dist")])
+    root = bootstrap.build_root_app(candidates=[make_candidate(make_plugin("acme"), "acme-dist")])
     invoked = CliInvoker().invoke(root.meta, ["plugin", "list"])
     assert invoked.exit_code == 0, invoked.output
     assert "acme-dist" in invoked.stdout
@@ -209,7 +212,8 @@ def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., 
     ("candidates", "expect_hint"),
     [
         pytest.param([], True, id="bare"),
-        pytest.param([make_candidate(make_spec("demo"))], False, id="plugin"),
+        pytest.param([make_candidate(make_plugin("demo"))], False, id="plugin"),
+        # 11.x: a spec named apart from its candidate is quarantined; goes with PluginSpec
         pytest.param([make_candidate(make_spec("demo"), name="other")], False, id="quarantined"),
     ],
 )

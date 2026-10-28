@@ -16,7 +16,7 @@ import pytest
 from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import age_stub, asset, make_spec, write_config
+from core_test_support.commands.support import age_stub, asset, make_plugin, make_spec, write_config
 from untaped.core.commands import skills as skills_cli
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _root(name: str) -> object:
-    spec = make_spec(name.removeprefix("untaped-"), skills=(asset(name),))
+    spec = make_plugin(name.removeprefix("untaped-"), skill=f"Teach agents how to use {name}.")
     return bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
 
 

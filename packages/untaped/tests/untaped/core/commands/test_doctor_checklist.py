@@ -13,10 +13,15 @@ from pathlib import Path
 import pytest
 from rich.cells import cell_len
 
-from core_test_support.commands.support import check, make_spec, root_group, write_config
+from core_test_support.commands.support import (
+    check,
+    make_plugin,
+    root_group,
+    write_config,
+)
 from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import report_check_rows
-from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Plugin
 from untaped.sdk.fields import Output
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
@@ -36,21 +41,17 @@ def _fixing(check_id: str, fix: str, *, automatic: bool, ok: bool = False) -> Do
             id=check_id, ok=ok, warn=ok, detail=f"{check_id} broke", fix=fix, automatic=automatic
         )
 
-    return DoctorCheck(id=check_id, title=f"{check_id} title", run=run)
+    return DoctorCheck(title=f"{check_id} title", run=run)
 
 
-def _specs() -> tuple[PluginSpec, ...]:
+def _specs() -> tuple[type[Plugin], ...]:
     return (
-        make_spec(
+        make_plugin(
             "alpha",
-            doctor_checks=(
-                check("alpha.ok", detail="all fine", title="alpha ok"),
-                _fixing("alpha.auto", "skills update", automatic=True, ok=True),
-            ),
+            ok=check(detail="all fine", title="alpha ok"),
+            auto=_fixing("alpha.auto", "skills update", automatic=True, ok=True),
         ),
-        make_spec(
-            "beta", doctor_checks=(_fixing("beta.manual", "auth login beta", automatic=False),)
-        ),
+        make_plugin("beta", manual=_fixing("beta.manual", "auth login beta", automatic=False)),
     )
 
 
@@ -179,12 +180,7 @@ def test_a_long_detail_wraps_inside_its_group(
     monkeypatch: pytest.MonkeyPatch, columns: str
 ) -> None:
     monkeypatch.setenv("COLUMNS", columns)
-    spec = make_spec(
-        "alpha",
-        doctor_checks=(
-            check("alpha.long", warn=True, detail="a detail " * 12, title="alpha long"),
-        ),
-    )
+    spec = make_plugin("alpha", long=check(warn=True, detail="a detail " * 12, title="alpha long"))
     app = root_group("doctor", spec)
     lines = CliInvoker().invoke(app, []).stdout.splitlines()
     groups = [line for line in lines if line and not line.startswith(" ")]

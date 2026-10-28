@@ -16,7 +16,7 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.stores import FakeStores, install_fake_stores
-from core_test_support.commands.support import make_spec, root_group, write_config
+from core_test_support.commands.support import compose, make_plugin, root_group, write_config
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network import _token_store as token_store
@@ -26,7 +26,7 @@ from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network.auth import clear_token_cache
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
 
-pytestmark = pytest.mark.usefixtures("_isolated_config", "_real_stores", "_server")
+pytestmark = pytest.mark.usefixtures("_isolated_config", "_real_stores", "_server", "_composed")
 
 SENTINEL = "s3cr3t-'quoted' \"and\" back\\slash"
 
@@ -40,7 +40,8 @@ class SvcProfile(BaseModel):
     server: Annotated[SvcServer | None, NeedsSetup] = None
 
 
-TOKEN = Credential("svc", "token", key=SvcServer, env=("SVC_TOKEN",))
+SVC = make_plugin("svc", settings=SvcProfile, token=Credential(key=SvcServer, env=("SVC_TOKEN",)))
+TOKEN: Credential[SvcServer] = SVC.token  # type: ignore[attr-defined]
 KEY = SvcServer(url=HttpUrl("https://svc.example.com"))
 
 
@@ -60,6 +61,12 @@ def _real_stores() -> Iterator[None]:
 
 
 @pytest.fixture
+def _composed() -> None:
+    """``svc`` composed, so its token knows its plugin outside a command."""
+    compose(SVC)
+
+
+@pytest.fixture
 def _server(_isolated_config: Path) -> None:
     write_config(
         _isolated_config, "format_version: 2\nsvc: {server: {url: https://svc.example.com}}\n"
@@ -72,7 +79,7 @@ def stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeStores:
 
 
 def _login(*args: str, input: str | None = None, backend: Any = None) -> CliResult:
-    app = root_group("auth", make_spec("svc", settings=SvcProfile, credentials=(TOKEN,)))
+    app = root_group("auth", SVC)
     return CliInvoker().invoke(
         app,
         ["login", "svc", *args],

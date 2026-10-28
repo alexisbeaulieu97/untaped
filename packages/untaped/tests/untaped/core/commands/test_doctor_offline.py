@@ -1,5 +1,5 @@
 """Offline doctor rows: config permissions, unknown keys, outdated skills,
-and the shared ``executable_check`` factory."""
+and the shared ``ExecutableCheck`` block."""
 
 from __future__ import annotations
 
@@ -13,16 +13,15 @@ import pytest
 from core_test_support.commands.support import (
     GithubProfile,
     age_stub,
-    asset,
     compose,
     config_root,
-    make_spec,
+    make_plugin,
     root_group,
     write_config,
 )
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
-from untaped.sdk import executable_check
+from untaped.sdk import ExecutableCheck
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker
 
@@ -58,7 +57,7 @@ def test_unknown_keys_warn_with_their_full_path(_isolated_config: Path) -> None:
         "untaped:\n  http:\n    timout: 3\n  ui:\n    symbols: {success: y}\n"
         "profiles:\n  work:\n    nope: 1\n",
     )
-    row = _row(_rows(make_spec("github", settings=GithubProfile)), "untaped.unknown-keys")
+    row = _row(_rows(make_plugin("github", settings=GithubProfile)), "untaped.unknown-keys")
     assert row["status"] == "warn"
     assert row["detail"] == ("ignored: github.tokn, untaped.http.timout, profiles.work.nope")
 
@@ -134,7 +133,7 @@ def test_known_keys_pass(_isolated_config: Path) -> None:
 
 
 def test_outdated_installed_skill_warns() -> None:
-    spec = make_spec("demo", skills=(asset("untaped-demo"),))
+    spec = make_plugin("demo", skill="Teach agents how to use untaped-demo.")
     install_skills(
         composed_skills(compose(spec)),
         ["untaped-demo"],
@@ -154,7 +153,7 @@ def test_outdated_installed_skill_warns() -> None:
 
 
 def test_skill_no_longer_shipped_warns() -> None:
-    spec = make_spec("gone", skills=(asset("untaped-gone"),))
+    spec = make_plugin("gone", skill="Teach agents how to use untaped-gone.")
     install_skills(
         composed_skills(compose(spec)),
         ["untaped-gone"],
@@ -165,7 +164,7 @@ def test_skill_no_longer_shipped_warns() -> None:
         project_dir=None,
         target_dir=None,
     )
-    row = _row(_rows(make_spec("demo")), "skills")
+    row = _row(_rows(make_plugin("demo")), "skills")
     assert row["status"] == "warn"
     assert "orphaned skill:" in row["detail"]
     assert "no plugin installed here" in row["detail"]
@@ -175,17 +174,19 @@ def test_skill_no_longer_shipped_warns() -> None:
 
 
 def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    checks = (
-        executable_check("ext.present", "present-tool", purpose="present things"),
-        executable_check("ext.absent", "absent-tool", purpose="absent things"),
-    )
     real_which = shutil.which
     monkeypatch.setattr(
         shutil,
         "which",
         lambda name, *a, **k: "/bin/present-tool" if name == "present-tool" else real_which(name),
     )
-    rows = _rows(make_spec("ext", doctor_checks=checks))
+    rows = _rows(
+        make_plugin(
+            "ext",
+            present=ExecutableCheck("present-tool", purpose="present things"),
+            absent=ExecutableCheck("absent-tool", purpose="absent things"),
+        )
+    )
     assert _row(rows, "ext.present")["status"] == "pass"
     absent = _row(rows, "ext.absent")
     assert absent["status"] == "warn"

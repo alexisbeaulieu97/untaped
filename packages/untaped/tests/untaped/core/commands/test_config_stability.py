@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from core_test_support.commands.support import (
     compose,
     config_root,
-    make_spec,
+    make_plugin,
     root_group,
     write_config,
 )
@@ -76,10 +76,10 @@ class Moved(BaseModel):
 
 
 _SPECS = (
-    make_spec("trial", settings=Trial),
-    make_spec("beta", settings=Beta, stability=experimental),
-    make_spec("sunset", settings=Sunset, stability=deprecated(replacement="a newer service")),
-    make_spec("moved", settings=Moved),
+    make_plugin("trial", settings=Trial),
+    make_plugin("beta", settings=Beta, stability=experimental),
+    make_plugin("sunset", settings=Sunset, stability=deprecated(replacement="a newer service")),
+    make_plugin("moved", settings=Moved),
 )
 
 
@@ -380,7 +380,7 @@ def test_setting_a_deprecated_setting_warns_with_its_replacement(_isolated_confi
 def test_setting_a_deprecated_setting_through_the_root_warns_once_in_json(
     _isolated_config: Path,
 ) -> None:
-    specs = (make_spec("trial", settings=Trial),)
+    specs = (make_plugin("trial", settings=Trial),)
     root = bootstrap.build_root_app(candidates=tuple(plugin_candidate(s) for s in specs))
 
     result = invoke_cli(root.meta, ["config", "set", "trial.old_flag", "true", "--format", "json"])
