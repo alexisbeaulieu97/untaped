@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import (
     config_root,
-    make_spec,
+    make_plugin,
     write_config,
     written_profile,
 )
@@ -42,7 +42,7 @@ class RenamedProfile(BaseModel):
 
 
 def _config(*args: str) -> CliResult:
-    app = config_root(make_spec("renamed", settings=RenamedProfile))
+    app = config_root(make_plugin("renamed", settings=RenamedProfile))
     return CliInvoker().invoke(app, list(args))
 
 

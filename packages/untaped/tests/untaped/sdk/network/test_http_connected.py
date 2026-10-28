@@ -16,7 +16,7 @@ import pytest
 import respx
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.commands.support import compose, make_spec
+from core_test_support.commands.support import compose, make_plugin
 from untaped.runtime.settings import HttpSettings
 from untaped.sdk import BoundSecret, Credential, CredentialKey, NeedsSetup
 from untaped.sdk.errors import ConfigError, HttpError
@@ -153,9 +153,8 @@ class Duo(BaseModel):
 
 
 def test_a_rejected_credential_names_its_own_auth_login() -> None:
-    token = Credential("duo", "token", key=DuoServer)
-    hook = Credential("duo", "webhook_secret", key=DuoServer)
-    compose(make_spec("duo", settings=Duo, credentials=(token, hook)))
+    token, hook = Credential(key=DuoServer), Credential(key=DuoServer)
+    compose(make_plugin("duo", settings=Duo, token=token, webhook_secret=hook))
     cause = HttpError("HTTP 401", status_code=401, url=f"{_URL}/hooks", system="duo")
     error = rejected_token_error("duo", "rejected", cause=cause, field="webhook_secret")
     assert error.hint == "run `untaped auth login duo webhook_secret`"

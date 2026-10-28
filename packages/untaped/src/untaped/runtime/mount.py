@@ -140,6 +140,21 @@ class Mount:
             self._found[name] = self._commands(name)
         return self._found[name][decl.path]
 
+    def held(self, name: str, kind: str) -> tuple[tuple[BlockDecl, Any], ...]:
+        """Each block of ``kind`` plugin ``name``'s class holds, beside its declaration.
+
+        The class is imported only when its declaration lists one; an 11.x
+        spec, which has no declaration, holds none.
+        """
+        try:
+            declared = [b for b in self.declaration.plugin(name).blocks if b.block == kind]
+        except LookupError:
+            return ()
+        if not declared:
+            return ()
+        held = held_by(self.plugins[name])
+        return tuple((decl, held[decl.attribute]) for decl in declared)
+
     def _commands(self, name: str) -> Mapping[tuple[str, ...], type[Command[Any]]]:
         """Plugin ``name``'s commands by their words: its declaration walked beside its class."""
         found: dict[tuple[str, ...], type[Command[Any]]] = {}

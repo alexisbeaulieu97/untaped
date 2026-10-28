@@ -19,7 +19,7 @@ from rich.console import Console
 from core_test_support.commands.support import (
     WizProfile,
     compose,
-    make_spec,
+    make_plugin,
     write_config,
     written_profile,
 )
@@ -70,7 +70,7 @@ class KnobsProfile(BaseModel):
 
 
 def _knobs() -> PluginSpec:
-    return make_spec("knobs", settings=KnobsProfile)
+    return make_plugin("knobs", settings=KnobsProfile)
 
 
 def _build(
@@ -141,7 +141,7 @@ def test_a_row_set_by_a_variable_says_the_variable_wins(monkeypatch: pytest.Monk
 
 
 def test_sections_are_listed_services_first_then_core_then_plugins() -> None:
-    wiz = make_spec("wiz", settings=WizProfile)
+    wiz = make_plugin("wiz", settings=WizProfile)
     model, _ = _build(_knobs(), wiz).init()
 
     assert [row.name for row in model.rows] == [

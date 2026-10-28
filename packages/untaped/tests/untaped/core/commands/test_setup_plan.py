@@ -23,16 +23,16 @@ from core_test_support.commands.support import (
     WIZ_TOKEN,
     WizProfile,
     WizServer,
-    make_spec,
-    wiz_api_check,
+    make_plugin,
+    wiz_api,
     write_config,
 )
 from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk import (
     Credential,
     CredentialKey,
+    Plugin,
     Suggest,
 )
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -59,13 +59,14 @@ class HubProfile(BaseModel):
     server: HubServer = HubServer()
 
 
-HUB_TOKEN = Credential(
-    "hub",
-    "token",
-    key=HubServer,
-    env=("GH_TOKEN",),
-    suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
-)
+def _hub() -> type[Plugin]:
+    """``hub``, whose token is read from ``$GH_TOKEN`` or suggested from ``gh auth token``."""
+    token = Credential(
+        key=HubServer,
+        env=("GH_TOKEN",),
+        suggest=Suggest(("gh", "auth", "token"), note="after `gh auth login`"),
+    )
+    return make_plugin("hub", settings=HubProfile, token=token)
 
 
 @pytest.fixture(autouse=True)
@@ -78,22 +79,18 @@ def _clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def _wiz() -> PluginSpec:
-    return make_spec(
-        "wiz",
-        settings=WizProfile,
-        doctor_checks=(wiz_api_check(),),
-    )
+def _wiz() -> type[Plugin]:
+    return make_plugin("wiz", settings=WizProfile, api=wiz_api())
 
 
-def _cli(*args: str, specs: tuple[PluginSpec, ...] | None = None) -> CliResult:
+def _cli(*args: str, specs: tuple[type[Plugin], ...] | None = None) -> CliResult:
     candidates = tuple(plugin_candidate(spec) for spec in (specs or (_wiz(),)))
     root = bootstrap.build_root_app(candidates=candidates)
     return invoke_cli(root.meta, list(args))
 
 
 def _plan(
-    *args: str, profile: str | None = None, specs: tuple[PluginSpec, ...] | None = None
+    *args: str, profile: str | None = None, specs: tuple[type[Plugin], ...] | None = None
 ) -> list[dict[str, Any]]:
     root = ["--profile", profile] if profile else []
     result = _cli(*root, "setup", "plan", "--format", "json", *args, specs=specs)
@@ -230,7 +227,7 @@ def test_a_missing_profile_is_created_first_and_every_step_targets_it() -> None:
 
 
 def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> None:
-    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
+    hub = _hub()
     _configure(_isolated_config, "{server: {url: not a url}}")
     rows = _plan(specs=(_wiz(), hub))
     settings = _step(rows, "wiz.settings")
@@ -241,7 +238,7 @@ def test_invalid_settings_fail_their_service_only(_isolated_config: Path) -> Non
 
 
 def test_only_narrows_and_orders_the_services() -> None:
-    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
+    hub = _hub()
     rows = _plan("--only", "hub,wiz", specs=(_wiz(), hub))
     # hub marks only its token (its URL has a default), so it has one row
     assert [row["plugin"] for row in rows[2:]] == ["hub", "wiz", "wiz", "wiz"]
@@ -392,8 +389,8 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
             id="wiz.api", ok=False, detail="stale", fix="auth login wiz", automatic=automatic
         )
 
-    check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
-    wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
+    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", by)
@@ -409,8 +406,8 @@ def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
             id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "login", "wiz"]
         )
 
-    check = DoctorCheck(id="wiz.api", title="wiz API reachable", run=run, online=True)
-    wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(check,))
+    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
     assert (online["state"], online["by"]) == ("failed", "user")
@@ -476,7 +473,7 @@ def test_a_github_style_service_suggests_gh_without_running_it(
     gh = tmp_path / "fake-bin" / "gh"
     gh.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').close()\n", encoding="utf-8")
     gh.chmod(0o755)
-    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
+    hub = _hub()
     token = _step(_plan(specs=(hub,)), "hub.token")
     assert "after `gh auth login`, let `gh auth token` print it" in token["detail"]
     assert (
@@ -487,12 +484,12 @@ def test_a_github_style_service_suggests_gh_without_running_it(
 
 
 def test_without_gh_there_is_no_suggestion() -> None:
-    hub = make_spec("hub", settings=HubProfile, credentials=(HUB_TOKEN,))
+    hub = _hub()
     assert "gh auth" not in _step(_plan(specs=(hub,)), "hub.token")["detail"]
 
 
 def test_without_a_service_there_is_nothing_to_plan() -> None:
-    result = _cli("setup", "plan", specs=(make_spec("plain"),))
+    result = _cli("setup", "plan", specs=(make_plugin("plain"),))
     assert result.exit_code == 4
     assert "no composed plugin marks settings to set up" in result.stderr
 

@@ -136,16 +136,8 @@ def sections(
 
 def _held_rows(result: CompositionResult, name: str) -> tuple[Any, ...]:
     """The state rows plugin ``name``'s class holds, named as the declaration names them."""
-    from untaped.sdk.plugin import held_by  # noqa: PLC0415
-
-    cls = result.mount.plugins.get(name)
-    if cls is None:
-        return ()
-    held = held_by(cls)
     return tuple(
-        held[block.attribute]._spelled_as(name, block.name)  # type: ignore[attr-defined]
-        for block in result.mount.declaration.plugin(name).blocks
-        if block.block == "state-rows"
+        block._spelled_as(name, decl.name) for decl, block in result.mount.held(name, "state-rows")
     )
 
 

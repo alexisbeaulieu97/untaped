@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from types import ModuleType
+from typing import Annotated, Any, Literal, cast
 
 from cyclopts import App
 from pydantic import BaseModel, HttpUrl, SecretStr
 from rich.console import Console
 
+from core_test_support.runtime.run import hold_run
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
@@ -21,8 +24,10 @@ from untaped.sdk import (
     CredentialKey,
     HttpStatusError,
     NeedsSetup,
+    OnlineCheck,
+    Plugin,
+    StubSkill,
     TlsVerify,
-    online_check,
 )
 from untaped.sdk._cli import create_app, run_cyclopts_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
@@ -122,9 +127,9 @@ def wiz_probe() -> str:
     return "authenticated as alice"
 
 
-def wiz_api_check() -> DoctorCheck:
-    """The ``wiz.api`` online check over :func:`wiz_probe`."""
-    return online_check("wiz.api", section="wiz", probe=wiz_probe)
+def wiz_api() -> OnlineCheck:
+    """The plugin class's ``api`` online check over :func:`wiz_probe` (``wiz.api``)."""
+    return OnlineCheck(probe=wiz_probe)
 
 
 def make_spec(
@@ -161,13 +166,67 @@ def make_spec(
     )
 
 
-def compose(*specs: PluginSpec) -> CompositionResult:
-    """Compose ``specs`` as providers (registers settings sections)."""
-    return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
+def _credentials(settings: type[BaseModel]) -> dict[str, Credential[Any]]:
+    """The credentials a service double declares, made afresh for each plugin class."""
+    if settings is WizProfile:
+        return {"token": Credential(key=WizServer, env=("WIZ_TOKEN",))}
+    if settings is EnvProfile:
+        return {"token": Credential(key=EnvyServer, env=("ENVY_TOKEN",))}
+    return {}
+
+
+def make_plugin(
+    name: str,
+    *,
+    settings: type[BaseModel] = ExtProfile,
+    skill: str | None = None,
+    stability: Stability | None = None,
+    **blocks: object,
+) -> type[Plugin]:
+    """A plugin class double named ``name``: ``blocks`` are its attributes (``auth=check()``).
+
+    It lives in a module of its own, ``untaped_double_<name>``, so its blocks
+    know their plugin as an installed plugin's do.
+    A service double (:class:`WizProfile`, :class:`EnvProfile`) also holds its
+    ``token`` credential.
+    """
+    held: dict[str, object] = {**_credentials(settings), **blocks}
+    # its own top-level package, as an installed plugin has: core finds a block's plugin by it
+    module = ModuleType(f"untaped_double_{name.replace('-', '_')}")
+    cls = type(
+        name.title().replace("-", ""),
+        (Plugin,),
+        {
+            "__doc__": f"{name} plugin.",
+            "__module__": module.__name__,
+            "settings": settings,
+            "stability": stability,
+            "skill": None if skill is None else StubSkill(skill),
+            **held,
+        },
+    )
+    setattr(module, cls.__name__, cls)
+    sys.modules[module.__name__] = module
+    return cast("type[Plugin]", cls)
+
+
+def ghost_candidates(*distributions: str) -> list[PluginCandidate]:
+    """Plugin ``ghost`` from each of ``distributions``: two are quarantined as a duplicate name."""
+    ghost = make_plugin("ghost")
+    return [
+        PluginCandidate(distribution=each, name="ghost", target=ghost) for each in distributions
+    ]
+
+
+def compose(*plugins: PluginSpec | type[Plugin]) -> CompositionResult:
+    """Compose ``plugins`` (registers settings sections) and hold a run of it (``hold_run``)."""
+    result = bootstrap.compose_root(candidates=[plugin_candidate(each) for each in plugins])
+    hold_run(result)
+    return result
 
 
 def root_group(
-    word: str, *specs: PluginSpec, also: Sequence[PluginCandidate] = ()
+    word: str, *specs: PluginSpec | type[Plugin], also: Sequence[PluginCandidate] = ()
 ) -> Callable[..., None]:
     """The composed root with ``specs`` and ``also``'s candidates, run as ``untaped <word> …``."""
     candidates = [*(plugin_candidate(spec) for spec in specs), *also]
@@ -207,18 +266,23 @@ def asset(name: str) -> SkillAsset:
 
 
 def check(
-    check_id: str,
+    check_id: str | None = None,
     *,
     ok: bool = True,
     warn: bool = False,
     detail: str = "all good",
     title: str = "check",
 ) -> DoctorCheck:
-    """Return a doctor-check double reporting a fixed outcome."""
+    """Return a doctor-check double reporting a fixed outcome.
+
+    Without ``check_id`` it is a plugin class's check, named by its attribute.
+    """
 
     def _run(_ctx: object) -> DoctorResult:
         return DoctorResult(id=check_id, ok=ok, detail=detail, warn=warn)
 
+    if check_id is None:
+        return DoctorCheck(title=title, run=_run)  # type: ignore[arg-type]
     return DoctorCheck(id=check_id, title=title, run=_run)  # type: ignore[arg-type]
 
 
@@ -239,8 +303,10 @@ __all__ = [
     "asset",
     "check",
     "compose",
+    "ghost_candidates",
+    "make_plugin",
     "make_spec",
-    "wiz_api_check",
+    "wiz_api",
     "wiz_probe",
     "write_config",
 ]

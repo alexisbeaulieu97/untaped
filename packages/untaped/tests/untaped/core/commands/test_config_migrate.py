@@ -9,7 +9,7 @@ from typing import Annotated, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import config_root, make_spec, write_config
+from core_test_support.commands.support import config_root, make_plugin, write_config
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.marks import deprecated
 from untaped.sdk.storage._refs import RefHolder
@@ -41,7 +41,7 @@ class MigratedProfile(BaseModel):
 
 
 def _migrate(*args: str) -> CliResult:
-    app = config_root(make_spec("mig", settings=MigratedProfile))
+    app = config_root(make_plugin("mig", settings=MigratedProfile))
     return CliInvoker().invoke(app, ["migrate", *args])
 
 
@@ -223,7 +223,7 @@ def test_a_key_that_cannot_be_placed_stays_and_other_profiles_still_migrate(
         "profiles:\n  empty:\n  work:\n    blk:\n      workers: 2\n"
     )
     write_config(_isolated_config, text)
-    app = config_root(make_spec("blk", settings=BlockedProfile))
+    app = config_root(make_plugin("blk", settings=BlockedProfile))
 
     migrated = CliInvoker().invoke(app, ["migrate", "--format", "json"])
 
@@ -254,7 +254,7 @@ class DeletingProfile(BaseModel):
 
 
 def _migrate_deleting(*args: str) -> CliResult:
-    app = config_root(make_spec("del", settings=DeletingProfile))
+    app = config_root(make_plugin("del", settings=DeletingProfile))
     return CliInvoker().invoke(app, ["migrate", *args])
 
 

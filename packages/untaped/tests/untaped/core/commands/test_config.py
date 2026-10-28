@@ -19,6 +19,7 @@ from core_test_support.commands.support import (
     GithubState,
     JiraProfile,
     config_root,
+    make_plugin,
     make_spec,
     write_config,
 )
@@ -31,8 +32,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
 def _config_app() -> object:
-    github = make_spec("github", settings=GithubProfile, state=GithubState)
-    jira = make_spec("jira", settings=JiraProfile)
+    github = make_plugin("github", settings=GithubProfile)
+    jira = make_plugin("jira", settings=JiraProfile)
     return config_root(github, jira)
 
 
@@ -109,7 +110,9 @@ def test_core_s_key_resolves_to_core_settings(_isolated_config: Path) -> None:
     "argv", [["set", "github.cursor", "abc"], ["get", "github.cursor"], ["unset", "github.cursor"]]
 )
 def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: list[str]) -> None:
-    result = CliInvoker().invoke(_config_app(), argv)  # type: ignore[arg-type]
+    # 11.x: a state model shares its section with the settings; goes with PluginSpec
+    app = config_root(make_spec("github", settings=GithubProfile, state=GithubState))
+    result = CliInvoker().invoke(app, argv)  # type: ignore[arg-type]
     assert result.exit_code != 0
     assert "github.cursor" in result.output
     assert "managed by" in result.output

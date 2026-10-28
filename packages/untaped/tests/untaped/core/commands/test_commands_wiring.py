@@ -17,8 +17,8 @@ from core_test_support.commands.support import (
     ExtProfile,
     GithubProfile,
     JiraProfile,
-    asset,
     check,
+    make_plugin,
     make_spec,
     write_config,
 )
@@ -52,7 +52,7 @@ def test_default_root_help_lists_only_management() -> None:
 def test_management_commands_dispatch_through_root(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     get_settings.cache_clear()
-    root = _root(make_spec("github", settings=GithubProfile))
+    root = _root(make_plugin("github", settings=GithubProfile))
     for argv in (
         ["config", "get", "github.base_url"],
         ["config", "list"],
@@ -73,7 +73,7 @@ def test_root_options_work_around_management_commands(_isolated_config: Path) ->
         "format_version: 2\nprofiles:\n  work:\n    github:\n      base_url: https://w\n",
     )
     get_settings.cache_clear()
-    root = _root(make_spec("github", settings=GithubProfile))
+    root = _root(make_plugin("github", settings=GithubProfile))
     for argv in (
         ["--profile", "work", "config", "get", "github.base_url"],
         ["config", "get", "github.base_url", "--profile", "work"],
@@ -92,12 +92,8 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
     )
     get_settings.cache_clear()
     root = _root(
-        make_spec(
-            "github",
-            settings=GithubProfile,
-            doctor_checks=(check("github.auth", detail="github ok"),),
-        ),
-        make_spec("jira", settings=JiraProfile),
+        make_plugin("github", settings=GithubProfile, auth=check(detail="github ok")),
+        make_plugin("jira", settings=JiraProfile),
     )
     plugins = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])  # type: ignore[union-attr]
     assert plugins.exit_code == 0, plugins.output
@@ -116,7 +112,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
 
 
 def test_quarantined_provider_lists_and_fails_doctor_only() -> None:
-    good = make_candidate(make_spec("good", skills=(asset("untaped-good"),)))
+    good = make_candidate(make_plugin("good", skill="Teach agents how to use untaped-good."))
     bad = make_candidate(make_spec("good"), name="bad")
     root = _root(candidates=(good, bad))
 
@@ -134,7 +130,7 @@ def test_quarantined_provider_lists_and_fails_doctor_only() -> None:
 
 
 def test_skills_short_selector_through_root(tmp_path: Path) -> None:
-    root = _root(make_spec("tools", skills=(asset("untaped-demo"),)))
+    root = _root(make_plugin("demo", skill="Teach agents how to use untaped-demo."))
     target = tmp_path / "skills"
     result = CliInvoker().invoke(  # type: ignore[union-attr]
         root.meta, ["skills", "install", "demo", "--target-dir", str(target)]
@@ -154,7 +150,7 @@ def test_state_write_rejected_through_root(_isolated_config: Path) -> None:
 
 
 def test_profile_round_trip_through_root() -> None:
-    root = _root(make_spec("ghost", settings=ExtProfile))
+    root = _root(make_plugin("ghost", settings=ExtProfile))
     assert CliInvoker().invoke(root.meta, ["profile", "create", "work"]).exit_code == 0  # type: ignore[union-attr]
     argv = ["--profile", "work", "profile", "current"]
     current = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
@@ -170,7 +166,7 @@ def test_profile_round_trip_through_root() -> None:
 )
 def test_config_set_writes_into_the_root_profile(_isolated_config: Path, argv: list[str]) -> None:
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  prod: {}\n")
-    root = _root(make_spec("github", settings=GithubProfile))
+    root = _root(make_plugin("github", settings=GithubProfile))
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 0, result.output
     assert "in profile prod" in result.output
@@ -184,7 +180,7 @@ def test_config_unset_removes_from_the_root_profile(_isolated_config: Path) -> N
         _isolated_config,
         "format_version: 2\ngithub: {mode: 'on'}\nprofiles:\n  prod:\n    github: {mode: 'on'}\n",
     )
-    root = _root(make_spec("github", settings=GithubProfile))
+    root = _root(make_plugin("github", settings=GithubProfile))
     argv = ["--profile", "prod", "config", "unset", "github.mode"]
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 0, result.output
@@ -196,7 +192,7 @@ def test_config_unset_removes_from_the_root_profile(_isolated_config: Path) -> N
 @pytest.mark.parametrize("verb", [["set", "github.base_url", "x"], ["unset", "github.base_url"]])
 def test_target_profile_option_is_gone(_isolated_config: Path, verb: list[str]) -> None:
     write_config(_isolated_config, "format_version: 2\nprofiles:\n  prod: {}\n")
-    root = _root(make_spec("github", settings=GithubProfile))
+    root = _root(make_plugin("github", settings=GithubProfile))
     argv = ["config", *verb, "--target-profile", "prod"]
     result = CliInvoker().invoke(root.meta, argv)  # type: ignore[union-attr]
     assert result.exit_code == 2

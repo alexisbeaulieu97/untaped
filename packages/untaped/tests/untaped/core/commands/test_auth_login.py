@@ -9,7 +9,7 @@ from typing import Annotated, Any
 import pytest
 from pydantic import BaseModel, HttpUrl
 
-from core_test_support.commands.support import make_spec, root_group, write_config
+from core_test_support.commands.support import compose, make_plugin, root_group, write_config
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._credential_store import CredentialRow, index
@@ -34,8 +34,10 @@ class Vault(CredentialKey):
     vault_id: str
 
 
-TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
-VAULT = Credential("vlt", "password", key=Vault)
+WIZ = make_plugin("wiz", settings=WizProfile, token=Credential(key=WizServer, env=("WIZ_TOKEN",)))
+VLT = make_plugin("vlt", password=Credential(key=Vault))
+TOKEN: Credential[WizServer] = WIZ.token  # type: ignore[attr-defined]
+VAULT: Credential[Vault] = VLT.password  # type: ignore[attr-defined]
 SERVER = "format_version: 2\nwiz: {server: {url: https://wiz.example.com}}\n"
 KEY = WizServer(url=HttpUrl("https://wiz.example.com"))
 
@@ -44,13 +46,8 @@ def _auth(
     *args: str,
     input: str | None = None,
     backend: ScriptedPromptBackend | None = None,
-    settings: type[BaseModel] = WizProfile,
 ) -> CliResult:
-    app = root_group(
-        "auth",
-        make_spec("wiz", settings=settings, credentials=(TOKEN,)),
-        make_spec("vlt", credentials=(VAULT,)),
-    )
+    app = root_group("auth", WIZ, VLT)
     return CliInvoker().invoke(
         app,
         list(args),
@@ -68,6 +65,12 @@ def _secret(credential: Credential[Any], key: CredentialKey) -> str | None:
 def _json(result: CliResult) -> Any:
     assert result.exit_code == 0, result.output
     return json.loads(result.stdout)
+
+
+@pytest.fixture(autouse=True)
+def _composed(_isolated_config: Path) -> None:
+    """``wiz`` and ``vlt`` composed, so their credentials know their plugin outside a command."""
+    compose(WIZ, VLT)
 
 
 @pytest.fixture
@@ -214,7 +217,7 @@ def test_login_without_a_plugin_offers_a_menu_on_a_terminal() -> None:
 
 
 def test_no_declared_credential_is_a_usage_error() -> None:
-    result = CliInvoker().invoke(root_group("auth", make_spec("bare")), ["login"], input="t\n")
+    result = CliInvoker().invoke(root_group("auth", make_plugin("bare")), ["login"], input="t\n")
 
     assert result.exit_code == 2, result.output
     assert "no installed plugin declares a credential" in result.stderr

@@ -4,21 +4,19 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Iterator, Sequence
-from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from contextlib import contextmanager
 from datetime import timedelta
 from typing import ClassVar
 
 from pydantic import BaseModel
 
+from core_test_support.runtime.run import hold_run, holding_runs
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import BoundProvider, offers, reset
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
-from untaped.runtime.run import build_run, entered
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Plugin, experimental
 from untaped.sdk._home import config_path
-from untaped.sdk._run import Run, run_or_none
 from untaped.sdk.contracts import Contract, Issued, Provider, Record, cached
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.testing import plugin_candidate
@@ -174,17 +172,6 @@ def bound(name: str) -> Contract:
     return found
 
 
-@dataclass
-class _Held:
-    """The run :func:`compose` keeps current until :func:`fresh_providers` ends."""
-
-    stack: ExitStack
-    run: Run | None = None
-
-
-_HELD: list[_Held] = []
-
-
 def candidates(*plugins: PluginCandidate | PluginSpec) -> list[PluginCandidate]:
     """``plugins`` as candidates; a ``PluginSpec`` tests the 11.x path and goes with it."""
     return [
@@ -193,19 +180,10 @@ def candidates(*plugins: PluginCandidate | PluginSpec) -> list[PluginCandidate]:
 
 
 def compose(*plugins: PluginCandidate | PluginSpec) -> CompositionResult:
-    """Compose ``plugins``; under :func:`fresh_providers`, also enter a run of it until the end.
-
-    A provider reads its settings and context from the run, as it would
-    inside a command, so a test that gathers composes under the fixture.
-    A run the test entered itself (``home_run``, ``invocation()``) stays
-    current instead.
-    """
+    """Compose ``plugins``; under :func:`fresh_providers`, hold a run of it (``hold_run``)."""
     reset()
     result = bootstrap.compose_root(candidates=candidates(*plugins))
-    if _HELD and run_or_none() in (None, (held := _HELD[-1]).run):
-        held.stack.close()
-        held.run = build_run(result.mount.declaration, result.mount.settings)
-        held.stack.enter_context(entered(held.run))
+    hold_run(result)
     return result
 
 
@@ -239,10 +217,6 @@ def fresh_providers() -> Iterator[None]:
     Shop.total = 0
     Kiosk.rows = []
     reset()
-    with ExitStack() as stack:
-        _HELD.append(_Held(stack))
-        try:
-            yield
-        finally:
-            _HELD.pop()
+    with holding_runs():
+        yield
     reset()

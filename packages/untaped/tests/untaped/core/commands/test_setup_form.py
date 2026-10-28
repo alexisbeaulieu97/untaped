@@ -15,19 +15,23 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.stores import install_fake_stores
-from core_test_support.commands.support import compose, make_spec, write_config, written_profile
+from core_test_support.commands.support import (
+    compose,
+    make_plugin,
+    write_config,
+    written_profile,
+)
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands import setup_write
 from untaped.core.commands.setup_screen import SetupModel, SetupResult, setup_screen
 from untaped.core.commands.setup_state import ServiceState, setup_sections, setup_services
 from untaped.core.commands.setup_write import Candidate
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout, load_settings_section
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Key, Paste, Quit, Screen
 from untaped.screen.runtime import Runtime
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, online_check
+from untaped.sdk import Credential, CredentialKey, NeedsSetup, OnlineCheck, Plugin
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.testing import drive_screen
@@ -51,9 +55,6 @@ class DuoProfile(BaseModel):
     page_size: int = 50
 
 
-DUO_TOKEN = Credential("duo", "token", key=DuoServer, env=("DUO_TOKEN",))
-DUO_HOOK = Credential("duo", "webhook_secret", key=DuoServer)
-
 #: What the online check saw: each credential's value, under the settings checked.
 SEEN: list[tuple[str, str, int | None]] = []
 
@@ -71,13 +72,19 @@ def _probe() -> str:
     return "authenticated"
 
 
-def _duo() -> PluginSpec:
-    return make_spec(
-        "duo",
-        settings=DuoProfile,
-        credentials=(DUO_TOKEN, DUO_HOOK),
-        doctor_checks=(online_check("duo.api", section="duo", probe=_probe),),
-    )
+DUO = make_plugin(
+    "duo",
+    settings=DuoProfile,
+    token=Credential(key=DuoServer, env=("DUO_TOKEN",)),
+    webhook_secret=Credential(key=DuoServer),
+    api=OnlineCheck(probe=_probe),
+)
+DUO_TOKEN: Credential[DuoServer] = DUO.token  # type: ignore[attr-defined]
+DUO_HOOK: Credential[DuoServer] = DUO.webhook_secret  # type: ignore[attr-defined]
+
+
+def _duo() -> type[Plugin]:
+    return DUO
 
 
 @pytest.fixture(autouse=True)
@@ -243,7 +250,7 @@ def test_a_save_that_failed_after_its_settings_were_written_can_be_retried(
     failures = ["the store is locked"]
 
     def flaky(self: Credential[Any], *args: Any, **kwargs: Any) -> Any:
-        if self is DUO_HOOK and failures:
+        if self.name == "webhook_secret" and failures:
             raise ConfigError(failures.pop())
         return store(self, *args, **kwargs)
 
@@ -346,7 +353,7 @@ class RosterProfile(BaseModel):
 
 
 def test_an_empty_list_the_plugin_needs_is_refused(_isolated_config: Path) -> None:
-    result = compose(make_spec("roster", settings=RosterProfile))
+    result = compose(make_plugin("roster", settings=RosterProfile))
     screen = setup_screen(
         result, setup_services(result), sections=setup_sections(), profile="default", store=None
     )

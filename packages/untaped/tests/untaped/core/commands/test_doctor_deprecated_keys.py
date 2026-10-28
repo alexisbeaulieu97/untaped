@@ -9,7 +9,12 @@ from typing import Annotated, Any, ClassVar
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import compose, make_spec, root_group, write_config
+from core_test_support.commands.support import (
+    compose,
+    make_plugin,
+    root_group,
+    write_config,
+)
 from untaped.core.commands.doctor import selected_check_rows
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.marks import deprecated
@@ -42,7 +47,7 @@ class OldProfile(BaseModel):
 def _doctor(*args: str) -> Any:
     app = root_group(
         "doctor",
-        make_spec("old", settings=OldProfile),
+        make_plugin("old", settings=OldProfile),
     )
     return CliInvoker().invoke(app, list(args))  # type: ignore[arg-type]
 
@@ -119,7 +124,7 @@ def test_no_old_keys_pass(_isolated_config: Path) -> None:
 
 @pytest.mark.usefixtures("home_run")  # setup calls it inside its command's run
 def test_setup_keeps_a_warning_row(_isolated_config: Path) -> None:
-    result = compose(make_spec("old", settings=OldProfile))
+    result = compose(make_plugin("old", settings=OldProfile))
 
     def checks() -> set[str]:
         rows = selected_check_rows(result, "default", frozenset({"old"}))

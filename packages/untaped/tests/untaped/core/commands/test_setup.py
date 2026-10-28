@@ -22,8 +22,8 @@ from core_test_support.commands.support import (
     EnvProfile,
     ExtProfile,
     WizProfile,
-    make_spec,
-    wiz_api_check,
+    make_plugin,
+    wiz_api,
     write_config,
     written_profile,
 )
@@ -44,11 +44,11 @@ pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
 
 def _wiz_spec() -> Any:
-    return make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
+    return make_plugin("wiz", settings=WizProfile, api=wiz_api())
 
 
 def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = True) -> CliResult:
-    plain = make_spec("plain", settings=ExtProfile)
+    plain = make_plugin("plain", settings=ExtProfile)
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(plain))
     )
@@ -314,7 +314,7 @@ def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) ->
 
 def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://wiz}\n")
-    envy = make_spec("envy", settings=EnvProfile)
+    envy = make_plugin("envy", settings=EnvProfile)
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(envy))
     )
@@ -344,7 +344,7 @@ def test_written_keys_print_with_no_doctor_rows(_isolated_config: Path) -> None:
 
 
 def test_setup_opens_without_a_service(_isolated_config: Path) -> None:
-    plain = make_spec("plain", settings=ExtProfile)
+    plain = make_plugin("plain", settings=ExtProfile)
     root = bootstrap.build_root_app(candidates=(plugin_candidate(plain),))
     backend = _scripted("esc")
 

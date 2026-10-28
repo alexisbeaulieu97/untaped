@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
+from typing import Annotated
 
 import pytest
 from cyclopts import App
@@ -28,6 +29,9 @@ from core_test_support.commands.support import (
     JiraProfile,
     StrictProfile,
     check,
+    compose,
+    ghost_candidates,
+    make_plugin,
     make_spec,
     root_group,
     write_config,
@@ -40,6 +44,7 @@ from untaped.runtime.registry import (
     named_plugin_dir,
 )
 from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
+from untaped.sdk import Command, Key, Plugin
 from untaped.sdk.network._credential_store import CredentialRow, index
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.data_file import write_lines
@@ -55,8 +60,7 @@ def _doctor_app(*specs: PluginSpec, ghost: bool = False) -> object:
     """``untaped doctor`` composed with ``specs``; ``ghost`` adds a plugin quarantined by name."""
     ghosts = (
         [
-            plugin_candidate(make_spec("ghost"), distribution="example-dist"),
-            plugin_candidate(make_spec("ghost"), distribution="other-dist"),
+            *ghost_candidates("example-dist", "other-dist"),
         ]
         if ghost
         else []
@@ -71,8 +75,8 @@ def test_all_pass_exits_zero(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     get_settings.cache_clear()
     app = _doctor_app(
-        make_spec("github", settings=GithubProfile),
-        make_spec("jira", settings=JiraProfile),
+        make_plugin("github", settings=GithubProfile),
+        make_plugin("jira", settings=JiraProfile),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
@@ -91,7 +95,7 @@ def test_a_pass_credential_that_cannot_decrypt_is_a_failed_row(
     monkeypatch.setenv("STUB_MODE", "no-secret-key")
     _file_row(backend="pass", entry="github/token/aaaa")
     result = CliInvoker().invoke(
-        _doctor_app(make_spec("github", settings=GithubProfile)),  # type: ignore[arg-type]
+        _doctor_app(make_plugin("github", settings=GithubProfile)),  # type: ignore[arg-type]
         ["--format", "json"],
     )
     assert result.exit_code != 0
@@ -106,7 +110,7 @@ def test_a_working_pass_and_a_missing_pass_are_reported(
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     _file_row(backend="command", argv=["pass", "show", "hand/written"])
-    app = _doctor_app(make_spec("github", settings=GithubProfile))
+    app = _doctor_app(make_plugin("github", settings=GithubProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     [row] = [r for r in json.loads(result.stdout) if r["title"] == "pass token store"]
     assert row["status"] == "pass", "a hand-written pass command counts too"
@@ -127,7 +131,7 @@ def test_an_unused_pass_fails_nothing(
 
 
 def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> None:
-    app = _doctor_app(make_spec("ext", doctor_checks=(check("ext.auth", detail="token valid"),)))
+    app = _doctor_app(make_plugin("ext", auth=check(detail="token valid")))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.auth")
@@ -136,12 +140,8 @@ def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> Non
 
 def test_the_columns_table_shows_a_pass_row_detail(_isolated_config: Path) -> None:
     app = _doctor_app(
-        make_spec(
-            "ext",
-            doctor_checks=(
-                check("ext.auth", detail="token valid"),
-                check("ext.legacy", warn=True, detail="old key set"),
-            ),
+        make_plugin(
+            "ext", auth=check(detail="token valid"), legacy=check(warn=True, detail="old key set")
         )
     )
     columns = ["--columns", "check,status,detail,fix"]
@@ -159,9 +159,7 @@ def test_the_columns_table_shows_a_pass_row_detail(_isolated_config: Path) -> No
 def test_contributed_warning_check_is_a_warn_row_that_exits_zero(
     _isolated_config: Path,
 ) -> None:
-    app = _doctor_app(
-        make_spec("ext", doctor_checks=(check("ext.legacy", warn=True, detail="old key set"),))
-    )
+    app = _doctor_app(make_plugin("ext", legacy=check(warn=True, detail="old key set")))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
     row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.legacy")
@@ -170,9 +168,7 @@ def test_contributed_warning_check_is_a_warn_row_that_exits_zero(
 
 
 def test_failed_check_wins_over_warn(_isolated_config: Path) -> None:
-    app = _doctor_app(
-        make_spec("ext", doctor_checks=(check("ext.auth", ok=False, warn=True, detail="bad"),))
-    )
+    app = _doctor_app(make_plugin("ext", auth=check(ok=False, warn=True, detail="bad")))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 1
     row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.auth")
@@ -184,12 +180,8 @@ def test_failed_check_wins_over_warn(_isolated_config: Path) -> None:
 
 def test_failing_check_does_not_block_other_rows(_isolated_config: Path) -> None:
     app = _doctor_app(
-        make_spec(
-            "ext",
-            doctor_checks=(
-                check("ext.auth", ok=False, detail="token rejected"),
-                check("ext.latency", detail="fast"),
-            ),
+        make_plugin(
+            "ext", auth=check(ok=False, detail="token rejected"), latency=check(detail="fast")
         )
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
@@ -206,8 +198,8 @@ def test_raising_check_body_is_a_failed_row(_isolated_config: Path) -> None:
     def _boom(ctx: object) -> object:
         raise RuntimeError("kaput")
 
-    broken = DoctorCheck(id="ext.broken", title="t", run=_boom)  # type: ignore[arg-type]
-    app = _doctor_app(make_spec("ext", doctor_checks=(broken,)))
+    broken = DoctorCheck(title="t", run=_boom)  # type: ignore[arg-type]
+    app = _doctor_app(make_plugin("ext", broken=broken))
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "ext.broken" in result.stdout
@@ -224,12 +216,10 @@ def test_id_mismatch_and_bad_return_are_failed_rows(_isolated_config: Path) -> N
         return "fine"
 
     app = _doctor_app(
-        make_spec(
+        make_plugin(
             "ext",
-            doctor_checks=(
-                DoctorCheck(id="ext.a", title="t", run=_wrong_id),  # type: ignore[arg-type]
-                DoctorCheck(id="ext.b", title="t", run=_not_a_result),  # type: ignore[arg-type]
-            ),
+            a=DoctorCheck(title="t", run=_wrong_id),  # type: ignore[arg-type]
+            b=DoctorCheck(title="t", run=_not_a_result),  # type: ignore[arg-type]
         )
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
@@ -245,10 +235,7 @@ def test_a_result_without_an_id_takes_its_checks(_isolated_config: Path) -> None
         return DoctorResult(ok=True, warn=True, detail="worth a look")
 
     app = _doctor_app(
-        make_spec(
-            "ext",
-            doctor_checks=(DoctorCheck(id="ext.a", title="t", run=_unnamed),),  # type: ignore[arg-type]
-        )
+        make_plugin("ext", a=DoctorCheck(title="t", run=_unnamed))  # type: ignore[arg-type]
     )
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
 
@@ -263,10 +250,7 @@ def test_a_positional_id_fails_its_row_naming_the_order(_isolated_config: Path) 
         return DoctorResult("ext.a", True, "x")  # type: ignore[arg-type, call-arg]
 
     app = _doctor_app(
-        make_spec(
-            "ext",
-            doctor_checks=(DoctorCheck(id="ext.a", title="t", run=_positional),),  # type: ignore[arg-type]
-        )
+        make_plugin("ext", a=DoctorCheck(title="t", run=_positional))  # type: ignore[arg-type]
     )
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
 
@@ -285,12 +269,10 @@ def test_a_detail_that_is_not_a_string_fails_its_row_under_json(_isolated_config
         return DoctorResult(id="ext.b", ok=True, detail=3)  # type: ignore[arg-type]
 
     app = _doctor_app(
-        make_spec(
+        make_plugin(
             "ext",
-            doctor_checks=(
-                DoctorCheck(id="ext.a", title="t", run=_none_detail),  # type: ignore[arg-type]
-                DoctorCheck(id="ext.b", title="t", run=_int_detail),  # type: ignore[arg-type]
-            ),
+            a=DoctorCheck(title="t", run=_none_detail),  # type: ignore[arg-type]
+            b=DoctorCheck(title="t", run=_int_detail),  # type: ignore[arg-type]
         )
     )
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
@@ -312,12 +294,8 @@ def test_invalid_plugin_settings_fail_their_rows_only(_isolated_config: Path) ->
     )
     get_settings.cache_clear()
     app = _doctor_app(
-        make_spec(
-            "github",
-            settings=GithubProfile,
-            doctor_checks=(check("github.auth", detail="github ok"),),
-        ),
-        make_spec("jira", settings=JiraProfile),
+        make_plugin("github", settings=GithubProfile, auth=check(detail="github ok")),
+        make_plugin("jira", settings=JiraProfile),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
@@ -327,7 +305,7 @@ def test_invalid_plugin_settings_fail_their_rows_only(_isolated_config: Path) ->
 
 
 def test_missing_required_field_is_a_failed_row(_isolated_config: Path) -> None:
-    app = _doctor_app(make_spec("strict", settings=StrictProfile))
+    app = _doctor_app(make_plugin("strict", settings=StrictProfile))
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "endpoint" in result.stdout
@@ -339,7 +317,7 @@ def test_unparseable_config_fails_config_row_without_blocking_others(
     write_config(_isolated_config, "{ invalid: [yaml\n")
     get_settings.cache_clear()
     app = _doctor_app(
-        make_spec("ext", doctor_checks=(check("ext.auth", detail="still ran"),)),
+        make_plugin("ext", auth=check(detail="still ran")),
         ghost=True,
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
@@ -450,7 +428,7 @@ def test_undefined_active_profile_fails_section_rows(
     write_config(_isolated_config, "format_version: 2\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
     get_settings.cache_clear()
-    app = _doctor_app(make_spec("ext", settings=ExtProfile))
+    app = _doctor_app(make_plugin("ext", settings=ExtProfile))
     result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
     assert result.exit_code == 1
     rows = {(row["check"], row["plugin"]): row for row in json.loads(result.stdout)}
@@ -470,8 +448,8 @@ def test_doctor_performs_no_network_io(
 
     monkeypatch.setattr(socket, "socket", _blocked)
     app = _doctor_app(
-        make_spec("github", settings=GithubProfile),
-        make_spec("ext", doctor_checks=(check("ext.auth"),)),
+        make_plugin("github", settings=GithubProfile),
+        make_plugin("ext", auth=check()),
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
@@ -541,7 +519,7 @@ def test_bad_env_override_fails_its_row_and_names_the_variable(
 ) -> None:
     monkeypatch.setenv("UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS", "abc")
     monkeypatch.setenv("UNTAPED_JIRA__TIMEOUT", "soon")
-    code, rows = _rows(_doctor_app(make_spec("jira", settings=JiraProfile)))
+    code, rows = _rows(_doctor_app(make_plugin("jira", settings=JiraProfile)))
     assert code == 1
     failed = _failed(rows)
     assert "UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS" in failed["validate untaped.http"]
@@ -596,20 +574,28 @@ def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> N
 
 
 class _Row(BaseModel):
-    name: str
+    name: Annotated[str, Key]
     created_at: str
 
 
-_ROWS = StateRows(
-    "acme", "items", model=_Row, key_field="name", remove_hint="untaped acme rm {key}"
-)
-_HERE = StateRows.per_project("acme", "here", model=_Row, key_field="name")
+def _removes(self: Command) -> None:
+    return None
+
+
+def _acme(*, removes: object = None, **blocks: object) -> type[Plugin]:
+    """``acme`` holding ``blocks``; ``untaped acme rm`` removes the ``removes`` rows."""
+    rm = type("Rm", (Command,), {"__doc__": "Remove an item.", "removes": removes, "run": _removes})
+    acme = make_plugin("acme", commands=() if removes is None else (rm,), **blocks)
+    assert not compose(acme).quarantine  # its blocks know their plugin, as an installed one's do
+    return acme
 
 
 def test_typed_rows_are_counted_and_a_newer_installs_fields_pass(_isolated_config: Path) -> None:
-    write_rows(_ROWS, [{"name": "a", "created_at": "x", "pinned": True}])
+    items = StateRows[_Row]()
+    acme = _acme(items=items, removes=items)
+    write_rows(acme.items, [{"name": "a", "created_at": "x", "pinned": True}])  # type: ignore[attr-defined]
 
-    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
+    code, rows = _rows(_doctor_app(acme))
 
     assert code == 0, _failed(rows)
     (state,) = [row for row in rows if row["title"] == "validate state" and row["plugin"] == "acme"]
@@ -617,13 +603,16 @@ def test_typed_rows_are_counted_and_a_newer_installs_fields_pass(_isolated_confi
 
 
 def test_a_damaged_row_fails_with_its_fix(_isolated_config: Path) -> None:
-    write_rows(_ROWS, [{"name": "a"}])
+    items = StateRows[_Row]()
+    acme = _acme(items=items, removes=items)
+    write_rows(acme.items, [{"name": "a"}])  # type: ignore[attr-defined]
 
-    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
+    code, rows = _rows(_doctor_app(acme))
 
     assert code == 1
+    state_file = _isolated_config.parent / "plugins" / "acme" / "state.yml"
     assert _failed(rows)["validate state"] == (
-        f"acme.items row a in {_isolated_config.parent / 'state.yml'} is damaged: "
+        f"acme.items row a in {state_file} is damaged: "
         "created_at: Field required; correct that row by hand, or remove it with "
         "`untaped acme rm a`"
     )
@@ -633,14 +622,14 @@ def test_the_current_projects_rows_are_checked(
     _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     project = make_project(tmp_path / "PROJ-1")
-    write_rows(_HERE.of(project), [{"name": "a", "created_at": "x"}, {"name": "b"}])
-    spec = make_spec("acme", stores=(_HERE,))
+    acme = _acme(here=StateRows[_Row].per_project())
+    write_rows(acme.here.of(project), [{"name": "a", "created_at": "x"}, {"name": "b"}])  # type: ignore[attr-defined]
 
-    code, rows = _rows(_doctor_app(spec))
+    code, rows = _rows(_doctor_app(acme))
     assert code == 0, _failed(rows)
 
     monkeypatch.chdir(project.root)
-    code, rows = _rows(_doctor_app(spec))
+    code, rows = _rows(_doctor_app(acme))
     assert code == 1
     assert "acme.here row b" in _failed(rows)["validate state"]
 
@@ -681,7 +670,7 @@ def test_invalid_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path
 def test_quiet_keeps_the_checklist_but_mutes_its_footer(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\ngithub:\n  base_url: https://g\n")
     root = bootstrap.build_root_app(
-        candidates=(plugin_candidate(make_spec("github", settings=GithubProfile)),)
+        candidates=(plugin_candidate(make_plugin("github", settings=GithubProfile)),)
     )
     loud = CliInvoker().invoke(root.meta, ["doctor"])
     quiet = CliInvoker().invoke(root.meta, ["-q", "doctor"])
@@ -706,8 +695,11 @@ def test_the_caches_row_has_nothing_to_note_on_a_clean_home() -> None:
 
 
 def test_keys_of_another_version_only_pass_with_a_note() -> None:
-    typed = Cache("acme", "items", label="items", max_age=timedelta(hours=1), model=_Row)
-    plain = Cache("acme", "names", label="names", max_age=timedelta(hours=1), version=lambda: "2")
+    acme = _acme(
+        items=Cache(label="items", max_age=timedelta(hours=1), model=_Row),
+        names=Cache(label="names", max_age=timedelta(hours=1), version=lambda: "2"),
+    )
+    typed, plain = acme.items, acme.names  # type: ignore[attr-defined]
     stamp = {"key": "k", "version": None, "refreshed_at": "2026-10-01T00:00:00Z"}
     shape = typed._typing().shape  # type: ignore[union-attr]
     folder = typed._root() / "s"
@@ -724,9 +716,7 @@ def test_keys_of_another_version_only_pass_with_a_note() -> None:
     write_lines(folder / "i.v11111111.json", {**stamp, "key": "i", "type": "other"}, b"{}")
     write_lines(folder / "h.v00000000.json", {**attempt, "key": "h"}, None)
     write_lines(plain._root() / "s" / "h.json", {**attempt, "key": "h"}, None)
-    spec = make_spec("acme", caches=(typed, plain))
-
-    code, rows = _rows(_doctor_app(spec))
+    code, rows = _rows(_doctor_app(acme))
 
     assert code == 0, _failed(rows)
     row = _caches_row(rows)
@@ -741,9 +731,9 @@ def test_a_cache_whose_version_code_fails_is_named_and_doctor_goes_on() -> None:
     def broken() -> str:
         raise RuntimeError("no source")
 
-    cache = Cache("acme", "names", label="names", max_age=timedelta(hours=1), version=broken)
+    acme = _acme(names=Cache(label="names", max_age=timedelta(hours=1), version=broken))
 
-    code, rows = _rows(_doctor_app(make_spec("acme", caches=(cache,))))
+    code, rows = _rows(_doctor_app(acme))
 
     assert code == 0, _failed(rows)
     assert _caches_row(rows)["detail"] == "acme.names: could not check its files: no source"
@@ -759,7 +749,7 @@ def test_an_uninstalled_plugins_folder_warns_with_setup_prune_as_its_fix() -> No
     folder.mkdir(parents=True)
     (folder / "k.json").write_bytes(b"x" * 2048)
 
-    code, rows = _rows(_doctor_app(make_spec("acme")))
+    code, rows = _rows(_doctor_app(make_plugin("acme")))
 
     assert code == 0, _failed(rows)
     assert "not installed" not in _caches_row(rows)["detail"]
@@ -780,7 +770,7 @@ def test_a_symlinked_plugin_folder_is_listed_as_kept_and_passes(tmp_path: Path) 
     link.parent.mkdir(parents=True)
     link.symlink_to(shared)
 
-    _, rows = _rows(_doctor_app(make_spec("acme")))
+    _, rows = _rows(_doctor_app(make_plugin("acme")))
 
     row = _folders_row(rows)
     assert row["status"] == _PASS and row["fix"] is None
@@ -791,6 +781,6 @@ def test_a_quarantined_plugins_folder_and_a_folder_no_plugin_could_own_are_not_n
     for plugin in ("ghost", ".trash"):
         (named_plugin_dir("acme").parent / plugin / "cached" / "items").mkdir(parents=True)
 
-    _, rows = _rows(_doctor_app(make_spec("acme"), ghost=True))
+    _, rows = _rows(_doctor_app(make_plugin("acme"), ghost=True))
 
     assert _folders_row(rows)["detail"] == "nothing to note"

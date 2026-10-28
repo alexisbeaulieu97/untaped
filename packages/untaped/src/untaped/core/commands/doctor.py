@@ -320,23 +320,35 @@ def _scopes(result: CompositionResult) -> list[_SectionScope]:
     # The root's parts get a row each (_core_row), so its checks get no settings: one
     # reads its part with load_core_part.
     return [
-        _plugin_scope(registered.spec, settings=not registered.root)
+        _plugin_scope(
+            registered.spec,
+            settings=not registered.root,
+            held=tuple(block for _, block in result.mount.held(registered.spec.name, "state-rows")),
+        )
         for registered in result.plugins
     ]
 
 
-def _plugin_scope(spec: PluginSpec, *, settings: bool = True) -> _SectionScope:
-    """``spec``'s scope; without ``settings`` no section row."""
+def _plugin_scope(
+    spec: PluginSpec,
+    *,
+    settings: bool = True,
+    held: tuple[StateRows[Any] | ProjectStateRows[Any], ...] = (),
+) -> _SectionScope:
+    """``spec``'s scope; without ``settings`` no section row. ``held``: its class's state rows."""
     return _SectionScope(
         plugin=spec.name,
         section=spec.name,
         settings_model=section_settings(spec) if settings else None,
         state_model=state_model(spec),
         checks=tuple(spec.doctor_checks),
-        rows=tuple(
-            each
-            for each in state_declarations(spec)
-            if isinstance(each, StateRows | ProjectStateRows)
+        rows=(
+            *(
+                each
+                for each in state_declarations(spec)
+                if isinstance(each, StateRows | ProjectStateRows)
+            ),
+            *held,
         ),
     )
 

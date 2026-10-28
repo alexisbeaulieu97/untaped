@@ -17,24 +17,24 @@ import yaml
 from core_test_support.commands.support import (
     FAIL,
     WizProfile,
-    make_spec,
+    make_plugin,
     root_group,
-    wiz_api_check,
+    wiz_api,
     write_config,
 )
-from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Plugin
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-def _doctor(*specs: PluginSpec, args: tuple[str, ...] = ("--format", "json")) -> CliResult:
+def _doctor(*specs: type[Plugin], args: tuple[str, ...] = ("--format", "json")) -> CliResult:
     app = root_group("doctor", *specs)
     return CliInvoker().invoke(app, list(args))
 
 
-def _rows(*specs: PluginSpec, online: bool = False) -> list[dict[str, Any]]:
+def _rows(*specs: type[Plugin], online: bool = False) -> list[dict[str, Any]]:
     args = ("--format", "json", "--online") if online else ("--format", "json")
     rows: list[dict[str, Any]] = json.loads(_doctor(*specs, args=args).stdout)
     return rows
@@ -44,14 +44,15 @@ def _row(rows: list[dict[str, Any]], check: str) -> dict[str, Any]:
     return next(row for row in rows if row["check"] == check)
 
 
-def _declaring(*, ok: bool = False, warn: bool = False, fix: str | list[str] | None) -> PluginSpec:
+def _declaring(
+    *, ok: bool = False, warn: bool = False, fix: str | list[str] | None
+) -> type[Plugin]:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
             id="svc.check", ok=ok, warn=warn, detail="found it", fix=fix, automatic=True
         )
 
-    check = DoctorCheck(id="svc.check", title="svc check", run=run)
-    return make_spec("svc", doctor_checks=(check,))
+    return make_plugin("svc", check=DoctorCheck(title="svc check", run=run))
 
 
 def test_a_result_is_manual_by_default() -> None:
@@ -63,7 +64,7 @@ def test_an_online_fix_is_manual(_isolated_config: Path, monkeypatch: pytest.Mon
     write_config(_isolated_config, "format_version: 2\nwiz: {server: {url: https://w}}\n")
     FAIL.append(True)
     try:
-        wiz = make_spec("wiz", settings=WizProfile, doctor_checks=(wiz_api_check(),))
+        wiz = make_plugin("wiz", settings=WizProfile, api=wiz_api())
         row = _row(_rows(wiz, online=True), "wiz.api")
     finally:
         FAIL.clear()
@@ -86,7 +87,7 @@ def test_every_structured_format_carries_automatic() -> None:
 
 
 def test_a_row_without_a_fix_is_never_automatic() -> None:
-    rows = _rows(make_spec("svc"))
+    rows = _rows(make_plugin("svc"))
     assert {row["automatic"] for row in rows} == {False}
     assert _row(rows, "config")["status"] == "pass"
 
@@ -108,7 +109,7 @@ def test_a_row_without_a_fix_is_never_automatic() -> None:
 def test_an_impossible_automatic_fix_fails_its_row(
     fix: str | list[str] | None, detail: str
 ) -> None:
-    other = make_spec("other", doctor_checks=())
+    other = make_plugin("other")
     result = _doctor(_declaring(fix=fix), other)
     assert result.exit_code == 1
     rows: list[dict[str, Any]] = json.loads(result.stdout)

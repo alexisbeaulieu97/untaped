@@ -21,13 +21,13 @@ from core_test_support.commands.support import (
     WizProfile,
     WizServer,
     compose,
-    make_spec,
+    make_plugin,
     wiz_probe,
     write_config,
 )
 from untaped.core.commands.doctor import online_probe_rows
 from untaped.runtime.registry import CompositionResult
-from untaped.sdk import online_check
+from untaped.sdk import OnlineCheck
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
@@ -64,16 +64,14 @@ def _offline_check() -> DoctorCheck:
         OFFLINE_CALLS.append("ran")
         return DoctorResult(id="wiz.offline", ok=True, detail="offline")
 
-    return DoctorCheck(id="wiz.offline", title="wiz offline", run=run)  # type: ignore[arg-type]
+    return DoctorCheck(title="wiz offline", run=run)  # type: ignore[arg-type]
 
 
-def _composition(*extra: DoctorCheck, probe: Any = _seeing_probe) -> CompositionResult:
-    checks = (
-        _offline_check(),
-        online_check("wiz.api", section="wiz", probe=probe),
-        *extra,
+def _composition(*, probe: Any = _seeing_probe) -> CompositionResult:
+    wiz = make_plugin(
+        "wiz", settings=WizProfile, offline=_offline_check(), api=OnlineCheck(probe=probe)
     )
-    return compose(make_spec("wiz", settings=WizProfile, doctor_checks=checks))
+    return compose(wiz)
 
 
 @pytest.fixture(autouse=True)
