@@ -39,7 +39,7 @@ from untaped_recipe.commands._recipe import (
     merge_vars,
     recipe_errors,
 )
-from untaped_recipe.commands.preview import Look, PlanCounts, PreviewMode, preview_lines
+from untaped_recipe.commands.preview import PlanCounts, PreviewMode, preview_lines
 from untaped_recipe.domain.plan import TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
@@ -307,16 +307,11 @@ class Apply(RecipeCommand):
     def _preview(
         self, loaded: RecipeFile, plans: list[TargetPlan], preview: PreviewMode
     ) -> list[str]:
-        theme = self.ctx.terminal.theme
-        look = Look(
-            hide_empty_columns=theme.hide_empty_columns, as_list=theme.collection_view == "list"
-        )
         return preview_lines(
             loaded,
             plans,
             preview=preview,
             preview_max_rows=self.settings.preview_max_rows,
-            look=look,
         )
 
     def _write(self, todo: list[TargetPlan], *, ref: str) -> _Execution:

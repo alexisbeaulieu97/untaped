@@ -26,7 +26,7 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import resolve_theme_or_default
-from untaped.sdk._ui import Terminal, build_terminal
+from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError
 
 if TYPE_CHECKING:
@@ -98,7 +98,7 @@ class AppContext:
             self._resolved["untaped.ui"] = load_core_part("ui")
         return cast("UiSettings", self._resolved["untaped.ui"])
 
-    def ui(self, *, strict: bool = True) -> Terminal:
+    def ui(self, *, strict: bool = True) -> Ui:
         """The themed UI context for messages and prompts.
 
         ``untaped.ui`` is resolved once per context, so the theme is

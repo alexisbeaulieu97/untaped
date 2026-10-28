@@ -32,7 +32,7 @@ from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import load_settings_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_stdin_text
-from untaped.sdk._ui import Terminal, build_terminal
+from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, Output, Positional
 from untaped.sdk.network._credential_store import (
@@ -527,7 +527,7 @@ def _read_stdin_token() -> str:
     return token
 
 
-def _prompt_token(ui: Terminal, label: str) -> str:
+def _prompt_token(ui: Ui, label: str) -> str:
     with ui.terminal(refusal="no terminal to prompt for the token; pipe it on stdin"):
         return ui.secret(label).strip()
 

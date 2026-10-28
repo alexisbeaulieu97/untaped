@@ -229,7 +229,7 @@ wide a boxed row is.
 
 The one-shot prompts (`terminal.text`, `terminal.secret`, `terminal.select`,
 `terminal.confirm`) are inline screens built from `TextInput`, `SecretInput`,
-`SingleList`, `SearchList` and `MultiList`, so they look and key like every
+`SingleList` and `SearchList`, so they look and key like every
 other screen. Esc cancels one (its footer says `esc cancel`, `esc clear` while a
 search query is typed), and so does ctrl-d on an empty answer, as on a line
 prompt. The window of a list is cut to the terminal's height. Unlike `terminal.run`,

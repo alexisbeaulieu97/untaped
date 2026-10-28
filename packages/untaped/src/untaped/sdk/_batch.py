@@ -21,7 +21,7 @@ from typing import Any
 
 from untaped.runtime.sink import Diagnostics, current_sink, failure_exit_code
 from untaped.sdk._cli import report_declined
-from untaped.sdk._ui import Terminal
+from untaped.sdk._ui import Ui
 from untaped.sdk.errors import ExitCode, OperationCancelledError, UntapedError
 from untaped.sdk.words import plural
 
@@ -92,7 +92,7 @@ def batch_apply[T, R](
     noun: str,
     label: Callable[[T], str],
     describe: Callable[[T], dict[str, object]],
-    ui: Terminal,
+    ui: Ui,
     destructive: bool = False,
     assume_yes: bool = False,
     preview_only: bool = False,
@@ -144,7 +144,7 @@ def batch_apply[T, R](
                 return BatchOutcome(results=[], planned_rows=planned_rows, cancelled=True)
     results: list[tuple[T, R]] = []
     failures: list[tuple[T, UntapedError]] = []
-    # The sink, with the passed context's flags: a hand-built ``Terminal(quiet=True)`` stays quiet.
+    # The sink, with the passed context's flags: a hand-built ``Ui(quiet=True)`` stays quiet.
     task = current_sink().progress(
         f"{verb.capitalize()} {plural(total, noun)}", verbose=ui.verbose, quiet=ui.quiet
     )

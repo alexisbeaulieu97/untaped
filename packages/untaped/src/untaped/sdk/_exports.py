@@ -57,9 +57,17 @@ from untaped.sdk._cli import (
 )
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
-from untaped.sdk._run import Context, Diag, PluginHandle, http_of, now, plugin_of, settings_of
+from untaped.sdk._run import (
+    Context,
+    Diag,
+    PluginHandle,
+    http_of,
+    now,
+    plugin_of,
+    settings_of,
+)
 from untaped.sdk._stdin import read_stdin, read_stdin_text
-from untaped.sdk._ui import Terminal
+from untaped.sdk._terminal import Terminal
 from untaped.sdk.diagnostic import (
     NOT_COUNTED,
     Debug,

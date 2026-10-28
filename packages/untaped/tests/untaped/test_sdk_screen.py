@@ -28,12 +28,12 @@ from untaped.sdk import (
     SecretInput,
     Submitted,
     Tags,
-    Terminal,
     TextInput,
     Tree,
     TreeRow,
     Viewport,
 )
+from untaped.sdk._ui import Ui
 from untaped.sdk.testing import ScreenKeys, ScriptedPromptBackend, TtyStringIO, drive_screen
 
 
@@ -78,7 +78,7 @@ SCREEN: Screen[Model, str] = Screen(
 
 def test_a_plugin_screen_runs_through_ui_run_with_scripted_keys() -> None:
     backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "ctrl-r", "enter")])
-    ui = Terminal(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
 
     assert ui.run(SCREEN) == "AB"
     assert backend.ran == [SCREEN]

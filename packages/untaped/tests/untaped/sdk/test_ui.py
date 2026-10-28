@@ -15,7 +15,7 @@ from core_test_support.runtime.run import quiet
 from untaped.runtime.theme import BUILTIN_THEMES, UiSettings, resolve_theme
 from untaped.sdk._run import Run
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import Terminal, build_terminal, collection, detail, print_styled
+from untaped.sdk._ui import Ui, build_terminal, collection, detail, print_styled
 from untaped.sdk.errors import ConfigError
 
 
@@ -33,7 +33,7 @@ def _strip_ansi(value: str) -> str:
 
 
 def test_collection_uses_theme_view_preferences_for_terminal_rendering() -> None:
-    ui = Terminal(theme=ThemeSpec(collection_view="list"))
+    ui = Ui(theme=ThemeSpec(collection_view="list"))
 
     rendered = collection(
         ui,
@@ -54,7 +54,7 @@ def test_collection_uses_theme_view_preferences_for_terminal_rendering() -> None
 
 def test_collection_theme_does_not_change_structured_formats() -> None:
     rows = [{"id": 1, "name": "alpha"}]
-    ui = Terminal(theme=ThemeSpec(collection_view="list", border="square"))
+    ui = Ui(theme=ThemeSpec(collection_view="list", border="square"))
 
     assert json.loads(collection(ui, rows, fmt="json")) == rows
     assert yaml.safe_load(collection(ui, rows, fmt="yaml")) == rows
@@ -62,7 +62,7 @@ def test_collection_theme_does_not_change_structured_formats() -> None:
 
 
 def test_collection_border_style_is_themeable_for_table_rendering() -> None:
-    ui = Terminal(theme=ThemeSpec(border="square"))
+    ui = Ui(theme=ThemeSpec(border="square"))
 
     rendered = collection(ui, [{"id": 1, "name": "alpha"}], fmt="table")
 
@@ -71,7 +71,7 @@ def test_collection_border_style_is_themeable_for_table_rendering() -> None:
 
 
 def test_collection_border_none_renders_borderless_table() -> None:
-    ui = Terminal(theme=ThemeSpec(border="none"))
+    ui = Ui(theme=ThemeSpec(border="none"))
 
     rendered = collection(ui, [{"id": 1, "name": "alpha"}], fmt="table")
 
@@ -93,12 +93,12 @@ def test_table_color_roles_emit_ansi_only_for_tty_stdout() -> None:
     )
 
     tty_rendered = collection(
-        Terminal(stdout=TtyStringIO(), theme=theme),
+        Ui(stdout=TtyStringIO(), theme=theme),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
     plain_rendered = collection(
-        Terminal(stdout=io.StringIO(), theme=theme),
+        Ui(stdout=io.StringIO(), theme=theme),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
@@ -119,17 +119,17 @@ def test_list_color_roles_style_keys_and_values_only_for_tty_stdout() -> None:
     )
 
     listed = collection(
-        Terminal(stdout=TtyStringIO(), theme=theme),
+        Ui(stdout=TtyStringIO(), theme=theme),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
     shown = detail(
-        Terminal(stdout=TtyStringIO(), theme=theme),
+        Ui(stdout=TtyStringIO(), theme=theme),
         {"id": 1, "name": "alpha"},
         fmt="table",
     )
     plain = collection(
-        Terminal(stdout=io.StringIO(), theme=theme),
+        Ui(stdout=io.StringIO(), theme=theme),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
@@ -143,7 +143,7 @@ def test_list_color_roles_style_keys_and_values_only_for_tty_stdout() -> None:
 
 def test_structured_formats_ignore_color_roles_even_for_tty_stdout() -> None:
     rows = [{"id": 1, "name": "alpha"}]
-    ui = Terminal(
+    ui = Ui(
         stdout=TtyStringIO(),
         theme=ThemeSpec(collection_view="list", color_roles={"key": "cyan", "value": "red"}),
     )
@@ -172,7 +172,7 @@ def test_color_env_overrides_tty_detection(
     theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
 
     rendered = collection(
-        Terminal(stdout=TtyStringIO() if tty else io.StringIO(), theme=theme),
+        Ui(stdout=TtyStringIO() if tty else io.StringIO(), theme=theme),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
@@ -183,7 +183,7 @@ def test_color_env_overrides_tty_detection(
 
 def test_collection_accepts_explicit_theme() -> None:
     rendered = collection(
-        Terminal(theme=ThemeSpec(collection_view="list")),
+        Ui(theme=ThemeSpec(collection_view="list")),
         [{"id": 1, "name": "alpha"}],
         fmt="table",
     )
@@ -195,7 +195,7 @@ def test_collection_accepts_explicit_theme() -> None:
 
 def test_detail_renders_single_object_without_wrapping_structured_formats() -> None:
     record = {"id": 1, "name": "alpha"}
-    ui = Terminal()
+    ui = Ui()
 
     assert json.loads(detail(ui, record, fmt="json")) == record
     assert yaml.safe_load(detail(ui, record, fmt="yaml")) == record
@@ -203,7 +203,7 @@ def test_detail_renders_single_object_without_wrapping_structured_formats() -> N
 
 
 def test_detail_uses_theme_view_preferences_for_terminal_rendering() -> None:
-    ui = Terminal(theme=ThemeSpec(detail_view="table", border="square"))
+    ui = Ui(theme=ThemeSpec(detail_view="table", border="square"))
 
     rendered = detail(ui, {"id": 1, "name": "alpha"}, fmt="table")
 
@@ -231,7 +231,7 @@ def test_empty_hint_goes_to_stderr_only_for_an_empty_table(
 ) -> None:
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stderr(stderr):
-        out = collection(Terminal(stdout=stdout), rows, fmt=fmt, empty=empty)  # type: ignore[arg-type]
+        out = collection(Ui(stdout=stdout), rows, fmt=fmt, empty=empty)  # type: ignore[arg-type]
     if rendered is not None:
         assert out == rendered
     assert stdout.getvalue() == ""
@@ -241,11 +241,11 @@ def test_empty_hint_goes_to_stderr_only_for_an_empty_table(
 def test_quiet_mutes_the_empty_table_note() -> None:
     stderr = io.StringIO()
     with redirect_stderr(stderr):
-        collection(Terminal(stdout=io.StringIO(), quiet=True), [], fmt="table", empty=True)
+        collection(Ui(stdout=io.StringIO(), quiet=True), [], fmt="table", empty=True)
     assert stderr.getvalue() == ""
 
 
-def test_ui_context_reflects_active_verbose_state(
+def test_build_terminal_reflects_active_verbose_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from untaped.runtime import verbose
@@ -265,7 +265,7 @@ def test_ui_context_reflects_active_verbose_state(
             get_settings.cache_clear()
 
 
-def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
+def test_build_terminal_degrades_unknown_theme_to_default_when_not_strict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from untaped.runtime.settings import get_settings
@@ -280,7 +280,7 @@ def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
         get_settings.cache_clear()
 
 
-def test_ui_context_raises_on_unknown_theme_when_strict(
+def test_build_terminal_raises_on_unknown_theme_when_strict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from untaped.runtime.settings import get_settings
@@ -312,12 +312,12 @@ def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> No
     }
 
 
-def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None:
+def test_the_terminal_builds_default_prompt_backend_lazily_and_caches_it() -> None:
     """With no injected backend, the default terminal backend is built on
     first access (the only path that imports ``prompt_toolkit``) and reused."""
     from untaped.sdk.prompt.prompts import TerminalPromptBackend
 
-    ui = Terminal()
+    ui = Ui()
 
     backend = ui.prompt_backend
     assert isinstance(backend, TerminalPromptBackend)
@@ -328,7 +328,7 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
 
 
 @pytest.mark.usefixtures("_isolated_config")
-def test_ui_context_factory_reads_quiet_flag(home_run: Run) -> None:
+def test_build_terminal_reads_quiet_flag(home_run: Run) -> None:
     quiet(home_run)
     assert build_terminal().quiet is True
 
@@ -337,7 +337,7 @@ def test_default_prompt_backend_follows_reopened_terminal_streams() -> None:
     import io
 
     first = io.StringIO()
-    ui = Terminal(stdin=first)
+    ui = Ui(stdin=first)
     old = ui.prompt_backend
     first.close()
     second = io.StringIO()
@@ -352,7 +352,7 @@ def test_injected_prompt_backend_survives_stream_changes() -> None:
     from untaped.sdk.testing import ScriptedPromptBackend
 
     injected = ScriptedPromptBackend(confirms=[])
-    ui = Terminal(prompt_backend=injected, stdin=io.StringIO())
+    ui = Ui(prompt_backend=injected, stdin=io.StringIO())
     ui.stdin = io.StringIO()
     ui.stderr = io.StringIO()
     assert ui.prompt_backend is injected
@@ -364,8 +364,8 @@ def test_styled_writes_rich_text_to_stdout_with_color_only_on_a_tty() -> None:
     piped, tty = io.StringIO(), TtyStringIO()
     line = Text("ok: host", style="green")
 
-    print_styled(Terminal(stdout=piped), line)
-    print_styled(Terminal(stdout=tty), line)
+    print_styled(Ui(stdout=piped), line)
+    print_styled(Ui(stdout=tty), line)
 
     assert piped.getvalue() == "ok: host\n"
     assert _has_ansi(tty.getvalue())
@@ -378,8 +378,8 @@ def test_styled_tail_follows_verbatim_unwrapped_and_unexpanded() -> None:
     tty = TtyStringIO()
     tail = "\tweb01 : ok=1 " + "x" * 200
 
-    print_styled(Terminal(stdout=tty), Text("[deploy] ", style="dim cyan"), tail=tail)
-    print_styled(Terminal(stdout=tty), Text(""), tail=tail)
+    print_styled(Ui(stdout=tty), Text("[deploy] ", style="dim cyan"), tail=tail)
+    print_styled(Ui(stdout=tty), Text(""), tail=tail)
 
     first, second = tty.getvalue().splitlines()
     assert _has_ansi(first)
@@ -394,8 +394,8 @@ def test_styled_truncate_ends_each_too_wide_line_in_an_ellipsis(monkeypatch) -> 
     wrapped, truncated = io.StringIO(), io.StringIO()
     text = Text("├── acme/a-long-name@main  notes\n└── short")
 
-    print_styled(Terminal(stdout=wrapped), text)
-    print_styled(Terminal(stdout=truncated), text, truncate=True)
+    print_styled(Ui(stdout=wrapped), text)
+    print_styled(Ui(stdout=truncated), text, truncate=True)
 
     assert len(wrapped.getvalue().splitlines()) > 2
     assert truncated.getvalue() == "├── acme/a-long-nam…\n└── short\n"
@@ -413,14 +413,14 @@ def _closed() -> io.StringIO:
     ids=["terminal", "pipe", "closed"],
 )
 def test_can_prompt_follows_the_context_stdin(stdin: io.StringIO, expected: bool) -> None:
-    assert Terminal(stdin=stdin).can_prompt is expected
+    assert Ui(stdin=stdin).can_prompt is expected
 
 
 def test_can_prompt_is_true_inside_terminal_even_with_piped_stdin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", TtyStringIO)
-    ui = Terminal(stdin=io.StringIO("piped data"))
+    ui = Ui(stdin=io.StringIO("piped data"))
 
     assert ui.can_prompt is False
     with ui.terminal():

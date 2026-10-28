@@ -91,8 +91,8 @@ def test_screen_core_does_not_load_prompt_toolkit() -> None:
 
 def test_building_a_terminal_and_rendering_does_not_load_prompt_toolkit() -> None:
     snippet = (
-        "from untaped.sdk._ui import Terminal, collection\n"
-        "ctx = Terminal()\n"
+        "from untaped.sdk._ui import Ui, collection\n"
+        "ctx = Ui()\n"
         "collection(ctx, [{'id': 1, 'name': 'alpha'}], fmt='json')\n"
         "collection(ctx, [], fmt='table', empty=True)\n"
     )

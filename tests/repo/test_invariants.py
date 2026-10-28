@@ -5,8 +5,8 @@
 - Every ``HttpClient(...)`` under ``src/`` passes
   ``verify=resolve_verify(...)`` (TLS flows through OS trust +
   ``untaped.http.ca_bundle_path``, never a hard-coded ``True``/``False``/path).
-- Tree connectors are drawn only by core's tree module (``untaped.sdk.print_tree``
-  and ``tree_text``), never by a private copy.
+- Tree connectors are drawn only by core's tree module (a ``TreeGraph`` an
+  ``Output`` renderer returns, and ``tree_text``), never by a private copy.
 
 Each detector is a pure helper fed both the live tree and synthetic
 known-bad/known-good inputs, so a detector silently broken to
@@ -282,8 +282,8 @@ def test_trees_are_drawn_only_by_the_sdk_renderer() -> None:
     ]
     offenders = _tree_drawers(files)
     assert not offenders, (
-        "draw trees with untaped.sdk.print_tree or tree_text: one renderer keeps glyphs, the "
-        "ASCII fallback, numbering and cycle marks the same everywhere (#789):\n  "
+        "return a TreeGraph from an Output renderer, or use tree_text: one renderer keeps "
+        "glyphs, the ASCII fallback, numbering and cycle marks the same everywhere (#789):\n  "
         + "\n  ".join(offenders)
     )
 

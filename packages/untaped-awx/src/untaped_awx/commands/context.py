@@ -73,7 +73,7 @@ class AwxContext:
         return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
 
     def terminal(self) -> Terminal:
-        """The terminal, for prompts and styled lines."""
+        """The terminal, for prompts and screens."""
         return self._ctx.terminal
 
     def close(self) -> None:

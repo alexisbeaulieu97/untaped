@@ -34,7 +34,7 @@ from untaped.sdk._cli import (
 )
 from untaped.sdk._run import Rendering
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import Terminal, collection
+from untaped.sdk._ui import Ui, collection
 from untaped.sdk.errors import ConfigError, OperationCancelledError, UntapedError
 from untaped.sdk.testing import progress_clock
 
@@ -49,8 +49,8 @@ _SYMBOLS = _COLOURED.model_copy(
 )
 
 
-def _ui(theme: ThemeSpec | None = None) -> Terminal:
-    return Terminal(theme=theme or _COLOURED)
+def _ui(theme: ThemeSpec | None = None) -> Ui:
+    return Ui(theme=theme or _COLOURED)
 
 
 def _messages(theme: ThemeSpec | None = None) -> None:

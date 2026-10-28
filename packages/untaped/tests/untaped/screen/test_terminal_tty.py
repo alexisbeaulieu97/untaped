@@ -136,7 +136,7 @@ def test_ui_run_draws_on_the_controlling_terminal_when_stdin_is_piped(
     """The real backend, end to end: piped stdin and redirected stderr, one pty for both."""
     import io
 
-    from untaped.sdk._ui import Terminal
+    from untaped.sdk._ui import Ui
 
     master, slave = os.openpty()
     path = os.ttyname(slave)
@@ -145,7 +145,7 @@ def test_ui_run_draws_on_the_controlling_terminal_when_stdin_is_piped(
         return open(path, "w" if write else "r", encoding="utf-8")
 
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", controlling_terminal)
-    ui = Terminal(stdin=io.StringIO("piped data"), stderr=io.StringIO())
+    ui = Ui(stdin=io.StringIO("piped data"), stderr=io.StringIO())
     result: list[object] = []
 
     def work() -> None:
@@ -249,7 +249,7 @@ def test_a_prompt_draws_on_the_terminal_when_stderr_is_redirected_to_a_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """``untaped ... 2>log`` with a terminal on stdin: the frames never reach the log."""
-    from untaped.sdk._ui import Terminal
+    from untaped.sdk._ui import Ui
 
     master, slave = os.openpty()
     path = os.ttyname(slave)
@@ -260,7 +260,7 @@ def test_a_prompt_draws_on_the_terminal_when_stderr_is_redirected_to_a_file(
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", controlling_terminal)
     log = tmp_path / "log"
     with open(path, encoding="utf-8") as tty_in, log.open("w", encoding="utf-8") as stderr:
-        ui = Terminal(stdin=tty_in, stderr=stderr)
+        ui = Ui(stdin=tty_in, stderr=stderr)
         result: list[object] = []
 
         def work() -> None:

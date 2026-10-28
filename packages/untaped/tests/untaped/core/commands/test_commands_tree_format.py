@@ -21,7 +21,6 @@ from untaped.sdk import (
     Diagnostics,
     FormatOption,
     PluginSpec,
-    Terminal,
     TreeFormatOption,
     TreeGraph,
     TreeGraphEdge,
@@ -31,6 +30,7 @@ from untaped.sdk import (
     emit,
 )
 from untaped.sdk._cli import emit_with
+from untaped.sdk._ui import Ui
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -165,7 +165,7 @@ def test_emit_tree_prints_the_given_root_with_no_rows() -> None:
     stream = io.StringIO()
     lone = TreeGraph(root=TreeGraphNode(key="r", label="root  in nothing"))
 
-    emit_with([], ui=Terminal(stdout=stream), fmt="tree", tree=[lone, lone])
+    emit_with([], ui=Ui(stdout=stream), fmt="tree", tree=[lone, lone])
 
     assert stream.getvalue() == "root  in nothing\n\nroot  in nothing\n"
 

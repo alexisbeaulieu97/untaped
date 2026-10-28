@@ -7703,19 +7703,11 @@ sdk untaped.sdk.TargetRecord(error=) default=None
 sdk untaped.sdk.TargetRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.TargetRecord.error
 sdk untaped.sdk.TargetRecord.target_path
-sdk untaped.sdk.Terminal()
-sdk untaped.sdk.Terminal(prompt_backend=) default=None
-sdk untaped.sdk.Terminal(quiet=) default=false
-sdk untaped.sdk.Terminal(stderr=) default=None
-sdk untaped.sdk.Terminal(stdin=) default=None
-sdk untaped.sdk.Terminal(stdout=) default=None
-sdk untaped.sdk.Terminal(theme=) default=None
-sdk untaped.sdk.Terminal(verbose=) default=false
+sdk untaped.sdk.Terminal
 sdk untaped.sdk.Terminal.can_prompt
 sdk untaped.sdk.Terminal.confirm(default=) default=false
 sdk untaped.sdk.Terminal.confirm(message)
 sdk untaped.sdk.Terminal.pick_many(request)
-sdk untaped.sdk.Terminal.prompt_backend
 sdk untaped.sdk.Terminal.require_screen_terminal(*, command, alternative)  [experimental]
 sdk untaped.sdk.Terminal.run(screen)  [experimental]
 sdk untaped.sdk.Terminal.secret(confirmation=) default=false
@@ -8900,8 +8892,8 @@ sdk untaped.sdk.testing.write_reference(plugin=) default=None  [experimental]
 sdk untaped.sdk.testing.write_reference(plugins=) default=None  [experimental]
 sdk untaped.sdk.testing.write_reference(version=) default=None  [experimental]
 sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
+sdk untaped.sdk.tree_text(ascii_guides=) default=false  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]
-sdk untaped.sdk.tree_text(ui=) default=None  [experimental]
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
 sdk untaped.sdk.write_data_file(path, value)  [experimental]

@@ -1,4 +1,4 @@
-"""A command's terminal (``Terminal``): prompts, pickers and screens; and core's themed stdout."""
+"""Core's terminal (:class:`Ui`, a command's ``Terminal``): prompts, screens, themed stdout."""
 
 from __future__ import annotations
 
@@ -44,11 +44,12 @@ if TYPE_CHECKING:
     from untaped.screen.picker import PickRequest, PickResult
 
 
-class Terminal:
-    """The terminal a command asks through: prompts, pickers and screens (``self.ctx.terminal``).
+class Ui:
+    """Core's terminal: what a command gets as ``self.ctx.terminal`` (typed :class:`Terminal`).
 
-    The run makes the one instance; a command never builds its own. What it
-    prints to stdout goes through its ``Output``.
+    The run builds the one a command asks through; core also builds one for
+    its own output and for prompts outside a run. Its theme and streams draw
+    core's stdout (:func:`collection`, :func:`detail`, :func:`print_styled`).
     """
 
     def __init__(
@@ -123,9 +124,7 @@ class Terminal:
                 raise handle_prompt_exception(exc) from exc
 
     @contextmanager
-    def terminal(
-        self, *, refusal: str = "interactive input requires a terminal"
-    ) -> Iterator[Terminal]:
+    def terminal(self, *, refusal: str = "interactive input requires a terminal") -> Iterator[Ui]:
         """Point prompts at a terminal for the duration of the block.
 
         Gives a prompt its input: a TTY stdin is used as-is; piped stdin is swapped
@@ -151,7 +150,7 @@ class Terminal:
             terminal.close()
 
     @contextmanager
-    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[Terminal]:
+    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[Ui]:
         """Point a screen at a terminal for the duration of the block.
 
         What :meth:`run` and :meth:`pick_many` wrap a screen in. Raises
@@ -162,7 +161,7 @@ class Terminal:
             yield self
 
     @contextmanager
-    def _prompt_terminal(self) -> Iterator[Terminal]:
+    def _prompt_terminal(self) -> Iterator[Ui]:
         """Point a one-shot prompt at a terminal for the duration of the block.
 
         stdin must be a terminal already (:meth:`terminal` secures one for piped
@@ -383,7 +382,7 @@ def build_terminal(
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     strict: bool = True,
-) -> Terminal:
+) -> Ui:
     """Build a terminal from the built-in theme presets.
 
     When ``theme`` is given it is used as-is (callers holding a resolved
@@ -399,7 +398,7 @@ def build_terminal(
         from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
         theme = resolve_theme_or_default(lambda: load_core_part("ui"), strict=strict)
-    return Terminal(
+    return Ui(
         theme=theme,
         stdin=stdin,
         stdout=stdout,
@@ -413,7 +412,7 @@ def build_terminal(
 
 
 def collection(
-    terminal: Terminal,
+    terminal: Ui,
     rows: Sequence[Row],
     *,
     fmt: OutputFormat,
@@ -436,7 +435,7 @@ def collection(
 
 
 def detail(
-    terminal: Terminal,
+    terminal: Ui,
     record: Row,
     *,
     fmt: OutputFormat,
@@ -454,7 +453,7 @@ def detail(
     )
 
 
-def _empty_note(terminal: Terminal, text: str) -> None:
+def _empty_note(terminal: Ui, text: str) -> None:
     """An empty table's ``info`` line on stderr, with the terminal's own theme and ``quiet``."""
     if terminal.quiet:
         return
@@ -466,7 +465,7 @@ def _empty_note(terminal: Terminal, text: str) -> None:
 
 
 def print_styled(
-    terminal: Terminal,
+    terminal: Ui,
     text: Text | str,
     *,
     tail: str = "",

@@ -545,7 +545,7 @@ class Output[R: BaseModel](FieldBlock):
         self,
         *,
         columns: Sequence[SettingKey | str] = (),
-        render: Mapping[str, Callable[..., Any]] | None = None,
+        render: Mapping[str, Callable[..., Rendered]] | None = None,
         format: str = "table",
         stream: bool = False,
     ) -> None:
@@ -553,7 +553,7 @@ class Output[R: BaseModel](FieldBlock):
         self._declared = tuple(_column_names_of(columns, None))
         #: Each row prints as ``run`` yields it, not once the run ends.
         self.stream = stream
-        self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
+        self.render: Mapping[str, Callable[..., Rendered]] = dict(render or {})
         if format not in self.formats:
             raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
         #: The format a run without ``--format`` prints.
@@ -745,11 +745,14 @@ type Rendered = Printable | Sequence[Printable] | None
 def print_rendered(rendered: Rendered) -> None:
     """Print what a plugin renderer returned, in the run's theme.
 
-    A string prints as it is, then a newline; a :class:`Verbatim` prints
-    with nothing added. Styled text prints in colour
-    where stdout supports it. Trees print as one block, themed, a line too wide
-    for the terminal ending in an ellipsis. ``None`` prints nothing.
+    A string prints as it is, then a newline; a :class:`Verbatim` prints with
+    nothing added. Styled text prints in colour where stdout supports it.
+    Trees next to each other print as one block, a blank line between them,
+    themed, a line too wide for the terminal ending in an ellipsis. ``None``
+    prints nothing.
     """
+    from itertools import groupby  # noqa: PLC0415
+
     from rich.text import Text  # noqa: PLC0415 - rendering is heavy
 
     from untaped.sdk._ui import build_terminal, print_styled  # noqa: PLC0415
@@ -759,16 +762,15 @@ def print_rendered(rendered: Rendered) -> None:
         return
     items = [rendered] if isinstance(rendered, str | Text | TreeGraph) else list(rendered)
     terminal = build_terminal(strict=False)  # the run is over: a broken ``ui`` draws the default
-    if items and all(isinstance(item, TreeGraph) for item in items):
-        print_tree(cast("list[TreeGraph]", items), ui=terminal)
-        return
-    for item in items:
-        if isinstance(item, str):
-            print(item, end="" if isinstance(item, Verbatim) else "\n", flush=True)
-        elif isinstance(item, TreeGraph):
-            print_tree(item, ui=terminal)
-        else:
-            print_styled(terminal, item)
+    for trees, run in groupby(items, key=lambda item: isinstance(item, TreeGraph)):
+        if trees:
+            print_tree(cast("list[TreeGraph]", list(run)), ui=terminal)
+            continue
+        for item in run:
+            if isinstance(item, str):
+                print(item, end="" if isinstance(item, Verbatim) else "\n", flush=True)
+            else:
+                print_styled(terminal, cast("Text", item))
 
 
 class _Stream:

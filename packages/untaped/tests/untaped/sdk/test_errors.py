@@ -258,10 +258,10 @@ def test_attribution_carries_the_hint() -> None:
 def test_prompts_without_a_terminal_are_usage_errors_of_untaped() -> None:
     import io
 
-    from untaped.sdk._ui import Terminal
+    from untaped.sdk._ui import Ui
 
     with pytest.raises(UsageError) as caught:
-        Terminal(stdin=io.StringIO()).text("name")
+        Ui(stdin=io.StringIO()).text("name")
 
     assert (caught.value.category, caught.value.system) == ("usage", "untaped")
 

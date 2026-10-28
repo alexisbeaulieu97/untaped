@@ -13,7 +13,7 @@ import pytest
 from cyclopts import App
 
 from untaped.sdk._cli import LimitOption, ParallelOption, report_errors
-from untaped.sdk._ui import Terminal
+from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
     ConfigError,
     ExitCode,
@@ -82,7 +82,7 @@ def test_ctrl_c_at_a_prompt_exits_130() -> None:
     @app.default
     def run() -> None:
         with report_errors():
-            Terminal(stdin=TtyStringIO(), prompt_backend=_Interrupting()).confirm("Go?")
+            Ui(stdin=TtyStringIO(), prompt_backend=_Interrupting()).confirm("Go?")
 
     result = invoke_cli(app, [])
 
@@ -105,7 +105,7 @@ def test_shared_numeric_options_reject_values_below_one_as_usage(args: list[str]
 
 
 def test_the_terminal_guard_needs_a_terminal() -> None:
-    ui = Terminal(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(confirms=[True]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(confirms=[True]))
 
     with (
         pytest.raises(UsageError, match="prune requires --yes when not interactive"),

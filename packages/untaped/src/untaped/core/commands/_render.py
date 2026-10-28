@@ -24,7 +24,7 @@ from rich.text import Text
 from untaped.runtime.render import output_width, status_role_style
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._cli import emit_with
-from untaped.sdk._ui import Terminal, build_terminal, print_styled
+from untaped.sdk._ui import Ui, build_terminal, print_styled
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -139,7 +139,7 @@ def _wrap(text: str, width: int | None, column: int) -> list[str]:
     return [indent + line for line in wrapped]
 
 
-def _glyph_style(ui: Terminal, status: str) -> str:
+def _glyph_style(ui: Ui, status: str) -> str:
     """A status glyph's style: the theme's role colour, green/yellow/red by default."""
     role = _GLYPH_ROLES.get(status)
     return (status_role_style(ui.theme, role) if role else None) or ""
@@ -188,12 +188,12 @@ def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]],
     print_styled(ui, Text("\n").join(lines), truncate=True)
 
 
-def _glyphs(ui: Terminal) -> dict[str, str]:
+def _glyphs(ui: Ui) -> dict[str, str]:
     """ASCII glyphs under an ASCII border (the ``ansible graph tree`` rule)."""
     return _ASCII_GLYPHS if ui.theme.border == "ascii" else _UNICODE_GLYPHS
 
 
-def _glyph_line(ui: Terminal, glyphs: dict[str, str], status: str) -> Text:
+def _glyph_line(ui: Ui, glyphs: dict[str, str], status: str) -> Text:
     line = Text("  ")
     line.append(glyphs.get(status, "?"), style=_glyph_style(ui, status))
     line.append(" ")

@@ -2,7 +2,7 @@
 
 import pytest
 
-from untaped.sdk._ui import Terminal
+from untaped.sdk._ui import Ui
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
@@ -29,9 +29,9 @@ def test_scripted_backend_exhausted_queue_raises_config_error() -> None:
         backend.confirm("Continue?", default=False)
 
 
-def test_ui_context_uses_override_backend_on_a_tty_stdin() -> None:
+def test_the_terminal_uses_override_backend_on_a_tty_stdin() -> None:
     backend = ScriptedPromptBackend(confirms=[False])
-    ui = Terminal(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
     assert ui.confirm("Continue?") is False
     assert backend.calls == [("confirm", "Continue?")]
 
