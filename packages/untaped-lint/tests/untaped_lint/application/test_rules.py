@@ -81,7 +81,7 @@ def bad__name(widget: Widget) -> Iterator[Finding]:
         (_undocumented, "has no docstring: its first paragraph is the summary"),
         (_unannotated, "annotate 'widget' with the record model it reads"),
         (_no_record, "takes no record: its first parameter is what it reads"),
-        (_reads_kindless, "_Kindless declares no kind"),
+        (_reads_kindless, "rule _reads_kindless reads _Kindless, which declares no kind"),
         (bad__name, "its name is its id"),
     ],
 )
@@ -104,3 +104,19 @@ def test_only_the_record_annotation_is_evaluated() -> None:
     )
     declared = rule(severity="error")(namespace["unchecked"])  # type: ignore[arg-type]
     assert declared.model is Widget
+
+
+def test_a_wrapped_rule_resolves_its_model_where_it_is_defined() -> None:
+    """A ``functools.wraps`` decorator from another module keeps that module's globals."""
+    namespace: dict[str, object] = {}
+    exec(  # the wrapper's module knows no Widget
+        "import functools\n"
+        "def wrap(function):\n"
+        "    @functools.wraps(function)\n"
+        "    def wrapper(*args):\n"
+        "        return function(*args)\n"
+        "    return wrapper\n",
+        namespace,
+    )
+    wrapped = namespace["wrap"](long_summary)  # type: ignore[operator]
+    assert rule(severity="error")(wrapped).model is Widget

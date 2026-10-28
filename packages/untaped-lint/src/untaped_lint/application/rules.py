@@ -19,7 +19,7 @@ from typing import ClassVar, cast, evaluate_forward_ref
 
 from pydantic import ValidationError
 
-from untaped.sdk import Failure, Record, experimental
+from untaped.sdk import Failure, Record, experimental, kind_of
 from untaped.sdk.contracts import Contract, Provider
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.records import Finding, Location, Rule, Severity, Tree, declared_kind
@@ -99,9 +99,12 @@ def _reads(function: Callable[..., object]) -> type[Record]:
     """The record model ``function``'s first parameter (after ``self``) is annotated with.
 
     Only that annotation is evaluated: the others may name what the module
-    imports for type checking alone.
+    imports for type checking alone. It resolves in the module that defines
+    the function (under any ``functools.wraps`` decorator), so where that
+    module defers its annotations the model is a module-level name.
     """
     where = f"rule {function.__qualname__}"
+    defined = inspect.unwrap(function)
     signature = inspect.signature(function, annotation_format=Format.FORWARDREF)
     parameters = list(signature.parameters.values())
     if parameters[:1] and parameters[0].name == "self":
@@ -110,14 +113,16 @@ def _reads(function: Callable[..., object]) -> type[Record]:
         raise TypeError(f"{where} takes no record: its first parameter is what it reads")
     hint = parameters[0].annotation
     if isinstance(hint, str):  # the module defers its annotations
-        hint = ForwardRef(hint, module=function.__module__)
+        hint = ForwardRef(hint, module=defined.__module__)
     if isinstance(hint, ForwardRef):
         try:
-            hint = evaluate_forward_ref(hint, globals=getattr(function, "__globals__", None))
+            hint = evaluate_forward_ref(hint, globals=getattr(defined, "__globals__", None))
         except NameError as exc:
             raise TypeError(f"{where}: its record model doesn't resolve: {exc}") from None
     if not (isinstance(hint, type) and issubclass(hint, Record)):
         raise TypeError(f"{where}: annotate {parameters[0].name!r} with the record model it reads")
+    if kind_of(hint) is None:
+        raise TypeError(f"{where} reads {hint.__name__}, which declares no kind")
     return hint
 
 
