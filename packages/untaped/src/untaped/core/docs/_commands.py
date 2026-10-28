@@ -187,16 +187,11 @@ def command_body(site: Site, command: CommandDecl) -> list[str]:
     return lines
 
 
-def shown(option: OptionDecl) -> bool:
-    """Whether ``--help`` shows ``option`` without ``--deprecated``."""
-    return option.stability is None or option.stability.stability != "deprecated"
-
-
 def option_lines(options: Sequence[OptionDecl]) -> list[str]:
     """Every option ``--help`` shows, in its panels, in their order, arguments first in each."""
     panels: dict[str, list[OptionDecl]] = {}
     for option in options:
-        if shown(option):
+        if option.shown:
             panels.setdefault(option.panel, []).append(option)
     lines: list[str] = []
     for panel, unsorted in panels.items():
@@ -210,8 +205,7 @@ def option_lines(options: Sequence[OptionDecl]) -> list[str]:
 def option_line(option: OptionDecl) -> str:
     """One option as a page lists it: its spellings, help, choices and default."""
     if option.positional:
-        many = "..." if option.token.startswith("list[") else ""
-        names = f"`{option.metavar}{many}`"
+        names = f"`{option.argument}`"
     else:
         spelled = [option.flag, option.negative, option.short]
         names = ", ".join(f"`{name}`" for name in spelled if name)
@@ -273,12 +267,14 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
             for each in named
         )
         lines += ["", f"Accepts on stdin (`--stdin`): {listed}."]
-    found = None if command.stdin_via is None else site.point(command.stdin_via)
+    via = command.stdin_via
+    found = None if via is None or not site.fillers(via) else site.point(via)
     if found is not None:
         owner, point = found
         lines += [
             "",
-            f"Also accepts on stdin each `{point.name}` provider's own records, read through "
-            f"it (`untaped docs {owner.name} extensions {point.name}`).",
+            f"Also accepts on stdin each installed `{point.name}` provider's own records, which "
+            f"that provider turns into these (`untaped docs {owner.name} extensions "
+            f"{point.name}`).",
         ]
     return ["", "## Outputs", *lines[1:]] if lines else []

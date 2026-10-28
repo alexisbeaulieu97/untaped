@@ -318,6 +318,16 @@ def test_the_usage_line_names_an_optional_argument_as_its_page_does() -> None:
     assert "`untaped shapes kinds [LABEL] [OPTIONS]`" in page
 
 
+def test_a_group_that_runs_a_command_shows_its_usage_and_its_commands() -> None:
+    helped = _run("doctor", "--help").stdout
+    assert helped.startswith("Usage: untaped doctor [OPTIONS]\n       untaped doctor COMMAND ...\n")
+
+
+def test_the_usage_line_names_a_required_flag_with_its_value() -> None:
+    helped = _run("plugin", "new", "--help").stdout
+    assert helped.startswith("Usage: untaped plugin new NAME --fills FILLS [OPTIONS]\n")
+
+
 def test_an_unknown_column_is_refused_before_run() -> None:
     TOUCHED.clear()
     result = _run("shapes", "touch", "a", "--columns", "nope")

@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from untaped.sdk import Stdin
 from untaped.sdk.testing import Ran
 from untaped.sdk.testing.git import GitRemote
-from untaped_workspace.commands.run import command_argv
+from untaped_workspace.commands.run import run_argv
 from workspace_test_support import err, run
 
 
@@ -64,6 +65,21 @@ def test_relative_script_resolves_against_the_caller(
 def test_stdin_script(ws: Path) -> None:
     rows = _rows(run(["run", "J-1", "-", "--format", "json"], input='echo "$UNTAPED_BRANCH"\n'))
     assert rows[0]["stdout"].strip() == "J-1"
+
+
+def test_a_piped_script_is_its_text_never_a_file_it_names(
+    ws: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "s.sh").write_text("echo caller\n")
+    monkeypatch.chdir(tmp_path)
+    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input="s.sh\n"))
+    assert all(row["action"] == "failed" for row in rows)  # no s.sh in the repos
+    assert "caller" not in "".join(str(row["stdout"]) for row in rows)
+
+
+def test_a_piped_script_starting_with_dashes_is_no_mistyped_option(ws: Path) -> None:
+    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input="--version\n"))
+    assert rows  # it ran, and sh said what it made of it
 
 
 def test_stdin_script_with_stdin_selection_is_usage(ws: Path) -> None:
@@ -132,7 +148,7 @@ def test_command_starting_with_hyphen(ws: Path) -> None:
 def test_dash_with_nothing_piped_is_usage(ws: Path) -> None:
     result = run(["run", "J-1", "-"], input="")
     assert result.exit == 2
-    assert "the command is empty" in err(result)
+    assert "nothing was piped" in err(result)
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])
@@ -275,10 +291,11 @@ def test_stdin_record_of_another_kind_is_usage_naming_the_accepted_ones(ws: Path
         assert kind in err(result)
 
 
-def test_a_piped_script_runs_every_line(ws: Path) -> None:
-    script = 'first=one\nsecond=two\necho "$first $second"\n'
-    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input=script))
-    assert str(rows[0]["stdout"]).strip() == "one two"
+def test_stdin_script_temp_file_is_removed(ws: Path) -> None:
+    rows = _rows(run(["run", "J-1", "-", "--format", "json"], input='echo "$0"\n'))
+    script = Path(str(rows[0]["stdout"]).strip())
+    assert script.name.endswith(".sh")
+    assert not script.exists()
 
 
 def test_signal_death_names_the_signal(ws: Path) -> None:
@@ -315,4 +332,5 @@ def test_help_names_the_positionals() -> None:
 
 def test_unknown_user_tilde_is_a_command_string() -> None:
     command = "~no_such_user_untaped/x"
-    assert command_argv(command) == ["sh", "-c", "--", command]
+    with run_argv(command, Stdin()) as argv:
+        assert argv == ["sh", "-c", "--", command]

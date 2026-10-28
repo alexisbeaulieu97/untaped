@@ -658,6 +658,14 @@ def test_the_command_page_says_it_also_reads_each_provider_s_own_records(
     ran = _counter(install).cli("docs counter commands show")
     assert ran.exit == 0, ran.stderr
     assert (
-        "Also accepts on stdin each `cards` provider's own records, read through it "
-        "(`untaped docs counter extensions cards`)."
+        "Also accepts on stdin each installed `cards` provider's own records, which that "
+        "provider turns into these (`untaped docs counter extensions cards`)."
     ) in ran.stdout
+
+
+def test_the_command_page_names_no_provider_s_records_when_none_is_installed(
+    install: Installer,
+) -> None:
+    ran = install(Counter).cli("docs counter commands show")
+    assert ran.exit == 0, ran.stderr
+    assert "provider's own records" not in ran.stdout

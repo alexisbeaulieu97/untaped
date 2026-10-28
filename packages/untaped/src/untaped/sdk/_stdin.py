@@ -27,6 +27,11 @@ in the 12.0 move of the last plugin that calls it.
 """
 
 
+def stdin_is_terminal() -> bool:
+    """Whether stdin is a terminal, so a read would wait for typing."""
+    return stream_is_tty(sys.stdin)
+
+
 def read_stdin() -> list[str]:
     """Read newline-separated values from stdin.
 

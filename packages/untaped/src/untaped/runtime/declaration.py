@@ -61,6 +61,16 @@ class OptionDecl(_Frozen):
     reads_file: bool = False
     stability: StabilityDecl | None = None
 
+    @property
+    def shown(self) -> bool:
+        """Whether ``--help`` lists it without ``--deprecated``."""
+        return self.stability is None or self.stability.stability != "deprecated"
+
+    @property
+    def argument(self) -> str:
+        """An argument's name as usage and pages write it: ``PATHS...`` for a list."""
+        return self.metavar + ("..." if self.token.startswith("list[") else "")
+
 
 class AliasDecl(_Frozen):
     """An old spelling of a renamed command, which still works and warns until its removal."""
@@ -373,14 +383,10 @@ class Declaration(_Frozen):
         optional flag is left; a deprecated option is not listed, as in ``--help``.
         """
         words = ["untaped", *self.words(command)]
-        listed = [
-            option
-            for option in command.options
-            if option.stability is None or option.stability.stability != "deprecated"
-        ]
+        listed = [option for option in command.options if option.shown]
         for option in listed:
             if option.positional:
-                name = option.metavar + ("..." if option.token.startswith("list[") else "")
+                name = option.argument
                 words.append(name if option.required else f"[{name}]")
             elif option.required:
                 words.append(f"{option.flag} {option.metavar}")

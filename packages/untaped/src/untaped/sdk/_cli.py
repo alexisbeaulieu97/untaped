@@ -366,6 +366,7 @@ def echo(
 
     Each stdout message is flushed, so lines a command prints as it goes
     stream through a pipe.
+
     ``err=True``: deprecated, and its warning names the release that removes
     it; write stderr through ``ctx.diag``.
     A stderr message prints verbatim (``--quiet`` never mutes it). Under JSON

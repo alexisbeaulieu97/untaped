@@ -274,12 +274,12 @@ class Transition(JiraCommand):
     lists them for the issue's current status. ``--resolution`` and
     ``--comment`` go in the same request as the transition.
 
-    One key prints one record. Several keys, or ``--stdin`` with bare keys
-    or ``jira.issue`` and ``jira.issue_outcome`` records from ``--format
-    pipe``, transition as one batch and print rows: a key that fails prints
-    ``error: KEY: ...``, the rest continue, and the exit code is the most
-    severe failure. The ``issues`` group's page explains the preview and
-    when it asks first.
+    One key prints one record (none when it fails before sending). Several
+    keys, or ``--stdin`` with bare keys or ``jira.issue`` and
+    ``jira.issue_outcome`` records from ``--format pipe``, transition as one
+    batch and print rows: a key that fails prints ``error: KEY: ...``, the
+    rest continue, and the exit code is the most severe failure. The
+    ``issues`` group's page explains the preview and when it asks first.
 
     Examples
     --------
