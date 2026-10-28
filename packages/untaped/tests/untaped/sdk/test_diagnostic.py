@@ -148,7 +148,7 @@ def _stale(**overrides: object) -> Stale:
         "outdated-failed",
     ],
 )
-def test_stale_data_wording(overrides: dict[str, object], text: str) -> None:
+def test_stale_wording(overrides: dict[str, object], text: str) -> None:
     stream = io.StringIO()
     with redirect_stderr(stream), entered(start_run()):
         current_sink().emit(_stale(**overrides))
@@ -156,7 +156,7 @@ def test_stale_data_wording(overrides: dict[str, object], text: str) -> None:
     assert stream.getvalue() == f"warning: {text}\n"
 
 
-def test_stale_data_is_a_json_warning_and_counts_nothing(
+def test_stale_is_a_json_warning_and_counts_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
