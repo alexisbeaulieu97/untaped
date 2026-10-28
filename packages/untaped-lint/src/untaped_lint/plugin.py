@@ -10,6 +10,7 @@ from untaped.sdk import DoctorCheck, Plugin, StubSkill, experimental
 from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.commands.lint import Lint, New, Rules
 from untaped_lint.doctor import ignore_ids_check
+from untaped_lint.records import Tree
 from untaped_lint.settings import LintSettings
 
 
@@ -21,6 +22,7 @@ class LintPlugin(Plugin):
     runs = Lint
     commands = (Rules, New)
     offers = (Linter, TreeReader)
+    records = (Tree,)
     ignore_ids = DoctorCheck(title="lint.ignore ids", run=ignore_ids_check)
     skill = StubSkill(
         "untaped lint: a repository's conventions as rules (its own, named in "

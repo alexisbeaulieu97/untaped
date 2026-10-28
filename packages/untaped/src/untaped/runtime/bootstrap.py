@@ -13,6 +13,7 @@ import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import replace
 from importlib import metadata
 from itertools import chain
 from typing import Annotated, Any
@@ -64,7 +65,7 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk._run import Run, current_run
+from untaped.sdk._run import Run, current_run, run_or_none, run_scope
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import (
@@ -200,9 +201,22 @@ def kept_composition() -> Iterator[None]:
 
 @contextmanager
 def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[CompositionResult]:
-    """Compose ``candidates`` for the block, then bring back the composition before it."""
+    """Compose ``candidates`` for the block, then bring back the composition before it.
+
+    Under a composed run, the block runs under a child of it whose
+    composition is the block's, so the kinds it reads are those plugins'.
+    """
+    from untaped.runtime.run import composition_of  # noqa: PLC0415 - the run imports the root
+
     with kept_composition():
-        yield compose_root(candidates=candidates)
+        result = compose_root(candidates=candidates)
+        run = run_or_none()
+        if run is None or not run.attached:
+            yield result
+            return
+        composition = composition_of(result.mount.declaration, result.mount.settings)
+        with run_scope(replace(run, composition=composition)):
+            yield result
 
 
 def _reregister() -> None:

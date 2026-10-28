@@ -119,7 +119,7 @@ class Linted(_Model):
 
 
 @experimental
-class Resources(Record, kind="awx.resources"):
+class Resources(Record):
     """Every resource one run lints, with the catalog facts its rules need."""
 
     items: tuple[Linted, ...] = ()

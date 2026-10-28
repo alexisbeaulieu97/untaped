@@ -46,7 +46,7 @@ _ANY_ID = r"^([a-z][a-z0-9]*(-[a-z0-9]+)*\.)?[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 """A rule row's id: bare as a provider declares it, or public as ``lint rules`` lists it."""
 
 
-class Rule(Issued, kind="lint.rule"):
+class Rule(Issued):
     """One convention a provider enforces, as ``untaped lint rules`` lists it."""
 
     id: Annotated[
@@ -110,7 +110,7 @@ class ResourceLocation(_Location):
 type Location = FileLocation | DocumentLocation | ResourceLocation
 
 
-class Finding(Issued, kind="lint.finding"):
+class Finding(Issued):
     """One place where a subject breaks a rule."""
 
     rule: Annotated[str, Column] = Field(
@@ -138,7 +138,7 @@ class Finding(Issued, kind="lint.finding"):
     )
 
 
-class Tree(Record, kind="lint.tree"):
+class Tree(Record):
     """The files of a repository: tracked plus untracked-not-ignored, minus ``exclude:``.
 
     A rule reading ``Tree`` asks for files by glob (``*`` stops at ``/``,
@@ -212,7 +212,7 @@ def unreadable_files() -> Iterator[set[str]]:
         _UNREADABLE.reset(token)
 
 
-class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="lint.scaffold_outcome"):
+class ScaffoldOutcome(OutcomeRecord, TargetRecord):
     """One file ``lint new`` wrote (``created``, ``updated``) or would write (``planned``)."""
 
 

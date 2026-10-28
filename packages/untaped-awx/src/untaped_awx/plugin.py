@@ -15,6 +15,8 @@ from untaped_awx.commands.lint import Lint
 from untaped_awx.commands.resources import resource_groups
 from untaped_awx.commands.test import TestGroup
 from untaped_awx.commands.unified_templates import UnifiedTemplatesGroup
+from untaped_awx.domain.lint.resources import Resources
+from untaped_awx.infrastructure.resources.specs import ALL_SPECS
 from untaped_awx.providers.lint import AwxDocuments, AwxRules
 from untaped_awx.settings import RESOURCES, TOKEN, AwxSettings
 
@@ -35,6 +37,7 @@ class Awx(Plugin):
         *resource_groups(),
     )
     fills = (AwxRules, AwxDocuments)
+    records = (Resources, *(spec.require_record() for spec in ALL_SPECS))
     resources = RESOURCES
     token = TOKEN
     api = OnlineCheck(probe=probe)

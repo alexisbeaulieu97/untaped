@@ -11,7 +11,7 @@ composed declaration, so a start after the first reads it and
 from __future__ import annotations
 
 from untaped.sdk import Plugin, StubSkill
-from untaped_hello.commands.greet import Greet
+from untaped_hello.commands.greet import DefaultGreeting, Greet
 from untaped_hello.commands.motd import Motd
 from untaped_hello.commands.say import Say
 from untaped_hello.settings import MOTD, HelloSettings
@@ -22,6 +22,7 @@ class Hello(Plugin):
 
     settings = HelloSettings
     commands = (Greet, Say, Motd)
+    records = (DefaultGreeting,)
     motd = MOTD
     skill = StubSkill(
         "Uses the example hello plugin through `untaped hello`. "

@@ -62,7 +62,7 @@ def run_rule(rule: RuleFunction, record: Record) -> list[Finding]:
     marker is involved: the rule alone, as its test needs.
     """
     if type(record) is not rule.model:
-        raise TypeError(f"{rule.rule.id} reads {rule.model.__name__}, not {type(record).__name__}")
+        raise TypeError(f"{rule.id} reads {rule.model.__name__}, not {type(record).__name__}")
     return list(rule(record))
 
 
@@ -78,7 +78,7 @@ def repo_rule(rule_id: str, *, root: Path) -> RuleFunction:
         loaded = load(repo_file.read(path))
     for host in loaded.hosts.values():
         for function in host.RULES:
-            if function.rule.id == rule_id:
+            if function.id == rule_id:
                 return function
     problems = "; ".join(failure.message for failure in loaded.failures)
     raise LookupError(f"no rule {rule_id!r} in {path}" + (f" ({problems})" if problems else ""))

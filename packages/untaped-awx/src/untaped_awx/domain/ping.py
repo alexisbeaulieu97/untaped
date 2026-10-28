@@ -7,7 +7,7 @@ from pydantic import ConfigDict, Field
 from untaped.sdk import Record
 
 
-class PingStatus(Record, kind="awx.ping_status"):
+class PingStatus(Record):
     """Health status returned by AAP's ``/api/v2/ping/`` endpoint."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")

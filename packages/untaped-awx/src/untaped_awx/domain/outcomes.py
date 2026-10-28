@@ -94,7 +94,7 @@ class SaveOutcome(BaseModel):
     detail: str | None = None
 
 
-class CopyOutcome(OutcomeRecord, kind="awx.copy_outcome"):
+class CopyOutcome(OutcomeRecord):
     """One ``copy`` row: the new resource (``id``, ``name``) and its source.
 
     ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on
@@ -111,7 +111,7 @@ class CopyOutcome(OutcomeRecord, kind="awx.copy_outcome"):
     detail: str | None = None
 
 
-class RenameOutcome(OutcomeRecord, kind="awx.rename_outcome"):
+class RenameOutcome(OutcomeRecord):
     """One ``rename`` row: the resource (``id``), its new and previous names.
 
     ``kind`` is the resource kind (``JobTemplate``), so ``patch --stdin`` on

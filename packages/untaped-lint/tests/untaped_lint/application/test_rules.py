@@ -9,14 +9,15 @@ import pytest
 from lint_fakes import Widget, default_branch
 from untaped.sdk import Record
 from untaped_lint.api import Finding, Rules, finding, rule
+from untaped_lint.application.rules import rule_row
 from untaped_lint.testing import run_rule
 
 
 def test_the_id_summary_and_model_are_read_from_the_function() -> None:
-    assert default_branch.rule.id == "default-branch"
-    assert default_branch.rule.reads == "linttest.gadget"
-    assert default_branch.rule.severity == "error"
-    assert default_branch.rule.summary == "A gadget names its default branch."
+    declared = rule_row(default_branch)
+    assert (declared.id, declared.reads) == ("default-branch", "linttest.gadget")
+    assert declared.severity == "error"
+    assert declared.summary == "A gadget names its default branch."
 
 
 @rule(severity="warning")
@@ -30,7 +31,7 @@ def long_summary(widget: Widget) -> Iterator[Finding]:
 
 
 def test_the_summary_is_the_first_paragraph_on_one_line() -> None:
-    assert long_summary.rule.summary == (
+    assert long_summary.summary == (
         "A widget's summary is the docstring's first paragraph, read as one line."
     )
 
@@ -61,15 +62,6 @@ def _no_record() -> Iterator[Finding]:
     yield from ()
 
 
-class _Kindless(Record):
-    """A record that declares no kind."""
-
-
-def _reads_kindless(record: _Kindless) -> Iterator[Finding]:
-    """Reads a model with no kind."""
-    yield from ()
-
-
 def bad__name(widget: Widget) -> Iterator[Finding]:
     """Its name is no kebab-case id."""
     yield from ()
@@ -81,13 +73,27 @@ def bad__name(widget: Widget) -> Iterator[Finding]:
         (_undocumented, "has no docstring: its first paragraph is the summary"),
         (_unannotated, "annotate 'widget' with the record model it reads"),
         (_no_record, "takes no record: its first parameter is what it reads"),
-        (_reads_kindless, "rule _reads_kindless reads _Kindless, which declares no kind"),
         (bad__name, "its name is its id"),
     ],
 )
 def test_a_rule_the_function_cannot_declare_is_a_type_error(function: object, message: str) -> None:
     with pytest.raises(TypeError, match=message):
         rule(severity="error")(function)  # type: ignore[arg-type]
+
+
+class _Unclaimed(Record):
+    """A record no composed plugin claims."""
+
+
+@rule(severity="error")
+def reads_unclaimed(record: _Unclaimed) -> Iterator[Finding]:
+    """Reads a model with no kind."""
+    yield from ()
+
+
+def test_a_rule_reading_a_model_without_a_kind_has_no_row() -> None:
+    with pytest.raises(TypeError, match="_Unclaimed declares no kind"):
+        rule_row(reads_unclaimed)
 
 
 def test_run_rule_refuses_a_record_of_another_model() -> None:

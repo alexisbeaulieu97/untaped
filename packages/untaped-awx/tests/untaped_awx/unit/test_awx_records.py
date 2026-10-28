@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from untaped.sdk import Failure, kind_of
+from untaped.sdk.testing import compose_with
 from untaped_awx.document import Document
 from untaped_awx.domain.jobs.job import JobEvent
 from untaped_awx.domain.kinds import snake_kind
@@ -52,12 +53,14 @@ def test_every_catalog_resource_has_its_own_model_and_every_model_a_resource() -
     records = [spec.require_record() for spec in ALL_SPECS]
 
     assert len(set(records)) == len(records), "two catalog resources share a model"
-    assert set(records) == _catalog_models()
+    with compose_with("awx"):
+        assert set(records) == _catalog_models()
 
 
 @pytest.mark.parametrize("spec", ALL_SPECS, ids=lambda spec: spec.kind)
-def test_a_catalog_model_declares_awx_s_spelling_of_its_kind(spec: Any) -> None:
-    assert kind_of(spec.require_record()) == f"awx.{snake_kind(spec.kind)}"
+def test_a_catalog_model_takes_awx_s_spelling_of_its_kind(spec: Any) -> None:
+    with compose_with("awx"):
+        assert kind_of(spec.require_record()) == f"awx.{snake_kind(spec.kind)}"
 
 
 def test_a_catalog_row_keeps_every_field_awx_sent_and_leaves_out_what_it_did_not() -> None:
