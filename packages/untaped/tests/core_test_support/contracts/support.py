@@ -4,24 +4,24 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import ClassVar
 
 from pydantic import BaseModel
 
 from untaped.runtime import bootstrap
-from untaped.runtime.contracts.registry import reset
-from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.runtime.contracts.registry import BoundProvider, offers, reset
+from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
+from untaped.runtime.run import build_run, entered
 from untaped.runtime.settings import get_settings
-from untaped.sdk import experimental
+from untaped.sdk import Plugin, experimental
 from untaped.sdk._home import config_path
+from untaped.sdk._run import Run, run_or_none
 from untaped.sdk.contracts import Contract, Issued, Provider, Record, cached
-from untaped.sdk.storage.cache import Cache
+from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.testing import plugin_candidate
-
-BOOKS = Cache("shelf", "book_source_books", label="books", max_age=timedelta(hours=1))
-BY_AUTHOR = Cache("shelf", "book_source_by_author", label="books", max_age=timedelta(hours=1))
 
 
 class Book(Issued, kind="shelf.book"):
@@ -36,14 +36,14 @@ class BookSource[T: Record = Book](Contract):
     def to_book(self, item: T) -> Book:
         raise NotImplementedError
 
-    @cached(BOOKS)
+    @cached(max_age=timedelta(hours=1), label="books")
     @abstractmethod
     def books(self) -> list[Book]: ...
 
     def lookup(self, title: str) -> list[Book]:
         raise NotImplementedError
 
-    @cached(BY_AUTHOR)
+    @cached(max_age=timedelta(hours=1), label="books")
     def by_author(self, author: str, limit: int = 10) -> list[Book]:
         raise NotImplementedError
 
@@ -52,6 +52,10 @@ class BookSource[T: Record = Book](Contract):
 
     def count(self) -> int:
         raise NotImplementedError
+
+
+BOOKS = contract_of(BookSource).methods["books"].cache
+BY_AUTHOR = contract_of(BookSource).methods["by_author"].cache
 
 
 class Volume(Record, kind="library.volume"):
@@ -64,7 +68,11 @@ class SpecialVolume(Volume, kind="library.special_volume"):
 
 
 class ShelfSettings(BaseModel):
-    """What an 11.x shelf reads: nothing, but it locates the owner's package."""
+    """What the shelf reads: nothing."""
+
+
+class NoSettings(BaseModel):
+    """What a toy plugin reads: nothing."""
 
 
 class LibrarySettings(BaseModel):
@@ -86,7 +94,7 @@ class Library(BookSource[Volume], Provider[LibrarySettings]):
         return [self.to_book(volume) for volume in self.settings.volumes]
 
 
-class Shop(BookSource):
+class Shop(BookSource, Provider):
     rows: ClassVar[list[object]] = []
     error: ClassVar[Exception | None] = None
     asked: ClassVar[list[tuple[str, int]]] = []
@@ -111,33 +119,94 @@ class Shop(BookSource):
         return type(self).total  # type: ignore[return-value]  # tests plant bad values too
 
 
-class Kiosk(BookSource):
+class Kiosk(BookSource, Provider):
     rows: ClassVar[list[Book]] = []
 
     def books(self) -> list[Book]:
         return list(type(self).rows)
 
 
-def shelf_spec() -> PluginSpec:
-    return PluginSpec(name="shelf", contracts=lambda: (BookSource,), caches=(BOOKS, BY_AUTHOR))
+def plugin(
+    name: str,
+    *,
+    settings: type[BaseModel] = NoSettings,
+    offers: Sequence[type] = (),
+    fills: Sequence[type] = (),
+) -> PluginCandidate:
+    """A plugin class named ``name`` holding ``offers`` and ``fills``, as a candidate."""
+    cls = type(
+        name.title().replace("-", ""),
+        (Plugin,),
+        {
+            "__doc__": f"The {name} plugin.",
+            "__module__": __name__,
+            "settings": settings,
+            "offers": tuple(offers),
+            "fills": tuple(fills),
+        },
+    )
+    return PluginCandidate(distribution=f"untaped-{name}", name=name, target=cls)
 
 
-def library_spec(*providers: Contract) -> PluginSpec:
-    offered: Sequence[Contract] = providers or (Library(),)
-    return PluginSpec(name="library", settings=LibrarySettings, provides={"shelf": lambda: offered})
+def shelf_plugin() -> PluginCandidate:
+    return plugin("shelf", settings=ShelfSettings, offers=(BookSource,))
 
 
-def shop_spec() -> PluginSpec:
-    return PluginSpec(name="shop", provides={"shelf": lambda: (Shop(),)})
+def library_plugin(*providers: type) -> PluginCandidate:
+    return plugin("library", settings=LibrarySettings, fills=providers or (Library,))
 
 
-def kiosk_spec() -> PluginSpec:
-    return PluginSpec(name="kiosk", provides={"shelf": lambda: (Kiosk(),)})
+def shop_plugin() -> PluginCandidate:
+    return plugin("shop", fills=(Shop,))
 
 
-def compose(*specs: PluginSpec) -> CompositionResult:
+def kiosk_plugin() -> PluginCandidate:
+    return plugin("kiosk", fills=(Kiosk,))
+
+
+def bound(name: str) -> Contract:
+    """The ``BookSource`` provider instance plugin ``name`` answered with."""
+    [found] = [
+        each.instance
+        for each in offers(contract_of(BookSource))  # type: ignore[arg-type]  # a contract
+        if isinstance(each, BoundProvider) and each.plugin == name
+    ]
+    return found
+
+
+@dataclass
+class _Held:
+    """The run :func:`compose` keeps current until :func:`fresh_providers` ends."""
+
+    stack: ExitStack
+    run: Run | None = None
+
+
+_HELD: list[_Held] = []
+
+
+def candidates(*plugins: PluginCandidate | PluginSpec) -> list[PluginCandidate]:
+    """``plugins`` as candidates; a ``PluginSpec`` tests the 11.x path and goes with it."""
+    return [
+        each if isinstance(each, PluginCandidate) else plugin_candidate(each) for each in plugins
+    ]
+
+
+def compose(*plugins: PluginCandidate | PluginSpec) -> CompositionResult:
+    """Compose ``plugins``; under :func:`fresh_providers`, also enter a run of it until the end.
+
+    A provider reads its settings and context from the run, as it would
+    inside a command, so a test that gathers composes under the fixture.
+    A run the test entered itself (``home_run``, ``invocation()``) stays
+    current instead.
+    """
     reset()
-    return bootstrap.compose_root(candidates=[plugin_candidate(spec) for spec in specs])
+    result = bootstrap.compose_root(candidates=candidates(*plugins))
+    if _HELD and run_or_none() in (None, (held := _HELD[-1]).run):
+        held.stack.close()
+        held.run = build_run(result.mount.declaration, result.mount.settings)
+        held.stack.enter_context(entered(held.run))
+    return result
 
 
 def write_config(text: str) -> None:
@@ -170,5 +239,10 @@ def fresh_providers() -> Iterator[None]:
     Shop.total = 0
     Kiosk.rows = []
     reset()
-    yield
+    with ExitStack() as stack:
+        _HELD.append(_Held(stack))
+        try:
+            yield
+        finally:
+            _HELD.pop()
     reset()

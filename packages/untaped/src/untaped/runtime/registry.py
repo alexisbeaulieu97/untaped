@@ -1378,7 +1378,7 @@ def _compose(
     if declared is None:
         claims, mount = _mounted(ordered, provided, state, quarantined)
     else:
-        claims, mount = _replayed(ordered, provided, replayed, declared)
+        claims, mount = _replayed(provided, replayed, declared)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
@@ -1540,7 +1540,6 @@ def _mounted(
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
-    packages = functools.cache(functools.partial(_owner_packages, ordered, tuple(claims)))
     problems: dict[str, tuple[Problem, ...]] = {}
     while True:
         mount = compose_plugins(
@@ -1561,7 +1560,7 @@ def _mounted(
             try:
                 if candidate.name in refused:
                     raise _Quarantine("bad-plugin-class", refused[candidate.name].detail)
-                spec = plugin_spec(mount, candidate.name, packages)
+                spec = plugin_spec(mount, candidate.name)
                 _check_declaration(spec, state)
             except _Quarantine as failed:
                 quarantined[index] = failed.to_record(candidate)
@@ -1576,7 +1575,6 @@ def _mounted(
 
 
 def _replayed(
-    ordered: Sequence[PluginCandidate],
     provided: dict[int, PluginSpec | type[Plugin]],
     replayed: Mapping[int, PluginDecl],
     declared: Declaration,
@@ -1586,27 +1584,9 @@ def _replayed(
     from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
 
     mount = Mount.of(declared)
-    packages = functools.cache(functools.partial(_owner_packages, ordered, tuple(claims)))
     for index, plugin in replayed.items():
-        claims[index] = plugin_spec(mount, plugin.name, packages)
+        claims[index] = plugin_spec(mount, plugin.name)
     return dict(sorted(claims.items())), mount
-
-
-def _owner_packages(ordered: Sequence[PluginCandidate], claims: Iterable[int]) -> dict[str, str]:
-    """Each 11.x plugin by its top-level package, so a 12.0 provider of its contract reaches it.
-
-    One 11.x plugin per top-level package (``untaped_<name>``), the first
-    one winning; read only when a fill names no composed owner, so a start
-    pays nothing for it. The map goes with the 11.x seam.
-    """
-    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
-
-    packages: dict[str, str] = {}
-    for index in claims:
-        package = candidate_package(ordered[index].target)
-        if package is not None:
-            packages.setdefault(package.partition(".")[0], ordered[index].name)
-    return packages
 
 
 def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:

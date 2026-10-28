@@ -18,8 +18,8 @@ from core_test_support.contracts.support import (
     Shop,
     Volume,
     compose,
-    library_spec,
-    shelf_spec,
+    library_plugin,
+    shelf_plugin,
     write_config,
 )
 from untaped.runtime.registry import PluginSpec
@@ -141,7 +141,7 @@ def test_a_provider_override_is_rewrapped_with_the_owner_decorators() -> None:
 
 
 def test_the_bridge_stamps_source_even_inside_the_provider() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [answer] = gather(BookSource.books)()
     books = answer.value  # type: ignore[union-attr]  # an Ok
@@ -266,7 +266,7 @@ def test_a_method_filled_under_another_name_is_cached_as_the_contract_method() -
 
         books = _load
 
-    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Aliased(),)}))
+    compose(shelf_plugin(), PluginSpec(name="shop", provides={"shelf": lambda: (Aliased(),)}))
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert [book.title for book in answer.value] == ["Dune"]

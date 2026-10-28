@@ -771,7 +771,7 @@ _RANKED = (
 
 
 def _shelf() -> Screen[SetupModel, SetupResult]:
-    result = shelf.compose(shelf.shelf_spec(), shelf.library_spec(), shelf.shop_spec())
+    result = shelf.compose(shelf.shelf_plugin(), shelf.library_plugin(), shelf.shop_plugin())
     return setup_screen(
         result,
         setup_services(result, ["shelf"]),
@@ -930,7 +930,7 @@ def test_an_owner_named_add_and_a_new_profile_rank_as_plugin_rank_does(
 
     run = drive_screen(
         setup_screen(
-            shelf.compose(shelf.shelf_spec(), shelf.library_spec(), shelf.shop_spec()),
+            shelf.compose(shelf.shelf_plugin(), shelf.library_plugin(), shelf.shop_plugin()),
             {},
             sections=setup_sections(["shelf"]),
             profile="work",

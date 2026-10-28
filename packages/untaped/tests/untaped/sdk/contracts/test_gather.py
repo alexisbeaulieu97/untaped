@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field, SecretStr
@@ -20,15 +20,16 @@ from core_test_support.contracts.support import (
     Library,
     Shop,
     Volume,
+    bound,
     compose,
-    kiosk_spec,
-    library_spec,
-    shelf_spec,
-    shop_spec,
+    kiosk_plugin,
+    library_plugin,
+    plugin,
+    shelf_plugin,
+    shop_plugin,
     write_config,
 )
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run, invocation
 from untaped.runtime.sink import exit_on_counted_failure
 from untaped.sdk._run import recording
@@ -37,6 +38,7 @@ from untaped.sdk.contracts import (
     Errored,
     NoProviderReady,
     Ok,
+    Provider,
     Reason,
     Skipped,
     Source,
@@ -85,7 +87,7 @@ def _rewrite(entry: Path, *, stamp: dict[str, Any] | None = None, value: Any = N
 
 
 def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[no-untyped-def]
-    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
     write_config(LIBRARY_CONFIG)
     answers = gather(BookSource.books)()
     assert [answer.plugin for answer in answers] == ["kiosk", "library", "shop"]
@@ -103,12 +105,12 @@ def test_answers_come_in_rank_order_then_by_name(rank) -> None:  # type: ignore[
 
 
 def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     [library, shop] = gather(BookSource.books)()
     assert isinstance(library, Skipped)
     assert library.reason == "not-configured"
     assert isinstance(shop, Ok)
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     with pytest.raises(
         ConfigError, match=r"no provider of shelf\.book_source\.books is ready"
     ) as err:
@@ -118,13 +120,13 @@ def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None
 
 
 def test_only_providers_that_fill_the_method_are_asked() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
     write_config(LIBRARY_CONFIG)
     assert [a.plugin for a in gather(BookSource.lookup)("Dune")] == ["shop"]
 
 
 def test_plugins_picks_providers_by_class_or_by_name() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     assert [a.plugin for a in gather(BookSource.books, plugins=[Shop])()] == ["shop"]
     assert [a.plugin for a in gather(BookSource.books, plugins={"library"})()] == ["library"]
@@ -134,7 +136,7 @@ def test_plugins_picks_a_provider_class_exactly_and_refuses_a_bare_name() -> Non
     class Branch(Shop):
         pass
 
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     with pytest.raises(NoProviderReady):
         gather(BookSource.books, plugins=[Branch])()
     with pytest.raises(TypeError, match="collection of names or classes"):
@@ -150,7 +152,7 @@ def test_a_class_never_widens_to_its_plugins_other_providers(
         pass
 
     monkeypatch.setattr(_gather, "_plugin_of", lambda _: "shop")
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     with pytest.raises(NoProviderReady):
         gather(BookSource.books, plugins=[Branch])()
 
@@ -179,7 +181,7 @@ def test_a_field_named_like_its_section_is_still_a_field() -> None:
 
 
 def test_an_invalid_setting_names_its_key_in_full() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config("format_version: 2\nlibrary:\n  catalog: x\n  volumes: 5\n")
     with pytest.raises(NoProviderReady) as err:
         gather(BookSource.books)()
@@ -196,7 +198,7 @@ def test_not_ready_takes_a_key_not_a_string() -> None:
 
 
 def test_the_views_split_the_answers_by_outcome_in_rank_order() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
     write_config(LIBRARY_CONFIG)
     Shop.error = HttpTransportError("down", system="shop")
     answers = gather(BookSource.books, refresh=True)()
@@ -208,7 +210,7 @@ def test_the_views_split_the_answers_by_outcome_in_rank_order() -> None:
 
 
 def test_a_provider_that_raises_fails_its_own_answer_only() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     Shop.error = HttpTransportError("down", system="shop")
     [library, shop] = gather(BookSource.books, refresh=True)()
@@ -227,22 +229,23 @@ def test_a_provider_that_raises_fails_its_own_answer_only() -> None:
 def test_none_ready_names_the_quarantined_and_the_unconfigured_apart() -> None:
     """An owner tells "nobody fills it" from "every provider is broken" without the message."""
 
-    def broken() -> tuple[Contract, ...]:
-        raise RuntimeError("boom")
+    class Exploding(BookSource, Provider):
+        def __init__(self) -> None:
+            raise RuntimeError("boom")
 
-    compose(shelf_spec(), library_spec(), PluginSpec(name="shop", provides={"shelf": broken}))
+    compose(shelf_plugin(), library_plugin(), plugin("shop", fills=(Exploding,)))
     with pytest.raises(NoProviderReady) as err:
         gather(BookSource.books)()
     assert err.value.quarantined == {"shop": "bad-provider"}
     assert set(err.value.not_ready) == {"library"}
-    compose(shelf_spec())
+    compose(shelf_plugin())
     with pytest.raises(NoProviderReady) as none:
         gather(BookSource.books)()
     assert (none.value.quarantined, none.value.not_ready) == ({}, {})
 
 
 def test_a_listing_drops_an_invalid_row_and_keeps_the_rest() -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     Shop.rows = [Book(title="Dune"), Book.model_construct(title=3), "nonsense"]
     [shop] = gather(BookSource.books)()
     assert isinstance(shop, Ok)
@@ -252,7 +255,7 @@ def test_a_listing_drops_an_invalid_row_and_keeps_the_rest() -> None:
 
 
 def test_an_invalid_answer_that_is_no_listing_fails_whole_by_rank(rank) -> None:  # type: ignore[no-untyped-def]
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     Shop.rows = [Book.model_construct(title="Dune", pages="many")]
     [shop] = gather(BookSource.first)()
     assert isinstance(shop, Skipped)
@@ -266,7 +269,7 @@ def test_an_invalid_answer_that_is_no_listing_fails_whole_by_rank(rank) -> None:
 
 
 def test_items_are_validated_strictly_as_the_owner_model() -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     Shop.rows = [Book.model_construct(title="Dune", pages="7")]
     [shop] = gather(BookSource.books)()
     assert isinstance(shop, Ok)
@@ -275,7 +278,7 @@ def test_items_are_validated_strictly_as_the_owner_model() -> None:
 
 
 def test_a_forged_source_is_unbridged() -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     Shop.rows = [Book(title="Dune", source=Source(plugin="library", kind="library.volume"))]
     [shop] = gather(BookSource.books)()
     assert isinstance(shop, Skipped)
@@ -284,7 +287,7 @@ def test_a_forged_source_is_unbridged() -> None:
 
 
 def test_an_owner_model_item_gets_the_provider_source() -> None:
-    compose(shelf_spec(), kiosk_spec())
+    compose(shelf_plugin(), kiosk_plugin())
     Kiosk.rows = [Book(title="Dune")]
     [kiosk] = gather(BookSource.books)()
     assert isinstance(kiosk, Ok)
@@ -296,7 +299,7 @@ def test_a_bridged_provider_returning_an_unstamped_item_is_unbridged() -> None:
         def books(self) -> list[Book]:
             return [Book(title="Dune")]
 
-    compose(shelf_spec(), library_spec(Sloppy()))
+    compose(shelf_plugin(), library_plugin(Sloppy))
     write_config(LIBRARY_CONFIG)
     [library] = gather(BookSource.books)()
     assert isinstance(library, Skipped)
@@ -304,7 +307,7 @@ def test_a_bridged_provider_returning_an_unstamped_item_is_unbridged() -> None:
 
 
 def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [first] = gather(BookSource.books)()
     [second] = gather(BookSource.books)()
@@ -333,7 +336,7 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
 
 
 def test_refresh_false_without_a_cached_answer_is_skipped_no_cache() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [library] = gather(BookSource.books, refresh=False)()
     assert isinstance(library, Skipped)
@@ -342,7 +345,7 @@ def test_refresh_false_without_a_cached_answer_is_skipped_no_cache() -> None:
 
 
 def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [fresh] = gather(BookSource.books)()
     Library.error = HttpTransportError("HTTP 503", system="library")
@@ -358,7 +361,7 @@ def test_a_failed_live_call_serves_the_cached_answer_marked_stale() -> None:
 def test_a_provider_bug_keeps_its_traceback_in_the_debug_log(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     caplog.set_level(logging.DEBUG, logger="untaped")
     Shop.error = KeyError("bug")
@@ -370,7 +373,7 @@ def test_a_provider_bug_keeps_its_traceback_in_the_debug_log(
 
 
 def test_an_untaped_failure_logs_no_traceback(caplog: pytest.LogCaptureFixture) -> None:
-    compose(shelf_spec(), library_spec(), shop_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     caplog.set_level(logging.DEBUG, logger="untaped")
     Shop.error = HttpTransportError("down", system="shop")
@@ -381,7 +384,7 @@ def test_an_untaped_failure_logs_no_traceback(caplog: pytest.LogCaptureFixture) 
 def test_a_stale_answer_keeps_a_provider_bug_traceback_in_the_debug_log(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     caplog.set_level(logging.DEBUG, logger="untaped")
@@ -393,7 +396,7 @@ def test_a_stale_answer_keeps_a_provider_bug_traceback_in_the_debug_log(
 
 
 def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     Library.error = HttpTransportError("HTTP 503", system="library")
@@ -416,7 +419,7 @@ def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() 
 
 
 def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     with recording() as emitted, invocation():
         list(gather(BookSource.books, refresh=False)())  # nothing stored: skipped
@@ -431,7 +434,7 @@ def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
 
 
 def test_a_failed_live_call_with_no_cached_answer_fails() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     Library.error = HttpTransportError("HTTP 503", system="library")
     [library] = gather(BookSource.books)()
@@ -440,7 +443,7 @@ def test_a_failed_live_call_with_no_cached_answer_fails() -> None:
 
 def test_s20_a_changed_model_misses_the_cache_and_nothing_errors() -> None:
     """S20: the cached answer's type differs, so the next call refreshes."""
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [path] = _cache_files()
@@ -455,7 +458,7 @@ def test_s20_a_changed_model_misses_the_cache_and_nothing_errors() -> None:
 
 
 def test_an_expired_entry_is_refreshed() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [path] = _cache_files()
@@ -468,7 +471,7 @@ def test_an_expired_entry_is_refreshed() -> None:
 
 @pytest.mark.usefixtures("home_run")
 def test_the_cache_is_per_provider_settings() -> None:
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(
         LIBRARY_CONFIG
         + "profiles:\n"
@@ -490,7 +493,7 @@ def test_the_cache_is_per_provider_settings() -> None:
 
 
 def test_each_set_of_arguments_has_its_own_cache_entry() -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     ask = gather(BookSource.by_author)
     ask("Herbert")
     ask("Herbert", limit=10)
@@ -502,7 +505,7 @@ def test_each_set_of_arguments_has_its_own_cache_entry() -> None:
 
 
 def test_one_item_and_a_plain_value_are_validated_strictly_too() -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     Shop.rows = [Book(title="Dune")]
     [first] = gather(BookSource.first)()
     assert isinstance(first, Ok)
@@ -528,10 +531,10 @@ def test_a_cache_entry_names_the_provider_own_record_shape() -> None:
     from untaped.sdk.contracts._cache import _typing, _typing_of, return_type
     from untaped.sdk.contracts._declare import binding_of
 
-    provider = Library()
-    compose(shelf_spec(), library_spec(provider))
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books)()
+    provider = bound("library")
     binding = binding_of(provider)
     assert binding is not None
     hint = return_type(binding, "books")
@@ -549,7 +552,7 @@ def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
         raise OSError("read-only file system")
 
     monkeypatch.setattr("untaped.sdk.storage.data_file.atomic_write", refuse)
-    compose(shelf_spec(), library_spec())
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [library] = gather(BookSource.books)()
     assert isinstance(library, Ok)
@@ -560,7 +563,7 @@ def test_a_cache_that_cannot_be_written_keeps_the_live_answer(
 def test_an_answer_that_cannot_be_dumped_is_served_and_logged(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    compose(shelf_spec(), shop_spec())
+    compose(shelf_plugin(), shop_plugin())
     write_config(LIBRARY_CONFIG)
     caplog.set_level(logging.DEBUG, logger="untaped")
     Shop.rows = [Book(title="Dune"), object()]
@@ -581,7 +584,7 @@ def test_a_provider_whose_ready_raises_logs_its_traceback(
         def ready(self) -> None:
             raise error
 
-    compose(shelf_spec(), PluginSpec(name="shop", provides={"shelf": lambda: (Broken(),)}))
+    compose(shelf_plugin(), plugin("shop", fills=(Broken,)))
     caplog.set_level(logging.DEBUG, logger="untaped")
     with pytest.raises(NoProviderReady, match="ready\\(\\) raised RuntimeError: boom"):
         gather(BookSource.books)()
@@ -592,10 +595,10 @@ def test_a_provider_whose_ready_raises_logs_its_traceback(
 def test_own_reads_back_the_providers_record() -> None:
     from untaped.sdk.contracts._declare import binding_of
 
-    provider = Library()
-    compose(shelf_spec(), library_spec(provider))
+    compose(shelf_plugin(), library_plugin())
     write_config(LIBRARY_CONFIG)
     [answer] = gather(BookSource.books)()
+    provider = bound("library")
     assert isinstance(answer, Ok)
     dune = answer.value[0]
     assert provider.own(dune) == Volume(id=1, name="Dune")
@@ -638,7 +641,7 @@ class _TagSource(Contract):
         raise NotImplementedError
 
 
-class _Tagger(_TagSource):
+class _Tagger(_TagSource, Provider):
     def pairs(self) -> list[_Pair]:
         return [_Pair(1, 2)]
 
@@ -654,8 +657,8 @@ class _Tagger(_TagSource):
 
 def test_a_listing_drops_a_bad_row_where_a_bad_answer_fails_whole() -> None:
     compose(
-        PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
-        PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
+        plugin("tags", offers=(_TagSource,)),
+        plugin("tagger", fills=(_Tagger,)),
     )
     [listed] = gather(_TagSource.tags)()
     assert isinstance(listed, Ok)
@@ -668,8 +671,8 @@ def test_a_listing_drops_a_bad_row_where_a_bad_answer_fails_whole() -> None:
 
 def test_plain_answers_keep_secrets_aliases_and_dataclasses() -> None:
     compose(
-        PluginSpec(name="tags", contracts=lambda: (_TagSource,)),
-        PluginSpec(name="tagger", provides={"tags": lambda: (_Tagger(),)}),
+        plugin("tags", offers=(_TagSource,)),
+        plugin("tagger", fills=(_Tagger,)),
     )
     [token] = gather(_TagSource.token)()
     assert isinstance(token, Ok)
@@ -683,7 +686,7 @@ def test_plain_answers_keep_secrets_aliases_and_dataclasses() -> None:
 
 
 def test_plugins_asks_only_those_providers() -> None:
-    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
     Shop.rows = [Book(title="Dune")]
 
     answers = gather(BookSource.books, plugins={"shop"})()
@@ -711,7 +714,7 @@ def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() ->
             updates.append((message, done, total))
             threads.add(threading.get_ident())
 
-    compose(shelf_spec(), library_spec(), shop_spec(), kiosk_spec())
+    compose(shelf_plugin(), library_plugin(), shop_plugin(), kiosk_plugin())
     write_config(LIBRARY_CONFIG)
     gather(BookSource.books, progress=Recorder())()
     assert updates[0] == (None, 0, 3)
@@ -721,11 +724,10 @@ def test_progress_counts_the_providers_as_they_answer_on_the_calling_thread() ->
     assert "progress" not in inspect.signature(Library.books).parameters
 
 
-class _Composer(BookSource):
+class _Composer(BookSource, Provider):
     """A provider that composes the root from inside its call, one of three ways."""
 
-    def __init__(self, how: str) -> None:
-        self.how = how
+    how: ClassVar[str]
 
     def books(self) -> list[Book]:
         if self.how == "compose_root":
@@ -747,8 +749,8 @@ def test_composing_inside_a_contract_call_fails_that_provider(
 
     Alone, ``bounded_map`` calls the provider inline; beside another, in a thread.
     """
-    composer = PluginSpec(name="composer", provides={"shelf": lambda: (_Composer(how),)})
-    composed = compose(shelf_spec(), composer, *([shop_spec()] if beside else []))
+    composer = plugin("composer", fills=(type("Composing", (_Composer,), {"how": how}),))
+    composed = compose(shelf_plugin(), composer, *([shop_plugin()] if beside else []))
     reregistered: list[None] = []
     with monkeypatch.context() as patch:
         patch.setattr(bootstrap, "_reregister", lambda: reregistered.append(None))

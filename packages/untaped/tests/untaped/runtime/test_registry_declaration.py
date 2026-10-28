@@ -376,3 +376,74 @@ def test_doctor_counts_core_s_own_cache_as_installed(toys: Path) -> None:
     doctor = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
     [caches] = [row for row in json.loads(doctor.stdout) if row["check"] == "caches"]
     assert "of a plugin not installed" not in caches["detail"]
+
+
+OWNER_API = '''
+from untaped.sdk import experimental
+from untaped.sdk.contracts import Contract
+
+
+@experimental
+class Titles(Contract):
+    """Every title a plugin holds."""
+
+    def titles(self) -> list[str]:
+        raise NotImplementedError
+'''
+
+OWNER = '''
+from untaped.sdk import Plugin
+
+from {package}.api import Titles
+from {package}.settings import ToySettings
+
+
+class Toy(Plugin):
+    """Own the titles."""
+
+    settings = ToySettings
+    offers = (Titles,)
+'''
+
+FILLER = '''
+from untaped.sdk import Plugin
+from untaped.sdk.contracts import Provider
+
+from toyplugowner.api import Titles
+from {package}.settings import ToySettings
+
+
+class Shop(Titles, Provider):
+    def titles(self) -> list[str]:
+        return ["Dune"]
+
+
+class Toy(Plugin):
+    """Fill the titles."""
+
+    settings = ToySettings
+    fills = (Shop,)
+'''
+
+
+def test_a_second_start_routes_a_fill_to_its_owner_and_imports_the_owner_class_never(
+    toys: Path,
+) -> None:
+    from untaped.runtime import registry
+
+    owner = _package(toys, "toyplugowner", OWNER)
+    (toys / "toyplugowner" / "api.py").write_text(OWNER_API, encoding="utf-8")
+    filler = _package(toys, "toyplugfiller", FILLER)
+    ordered = [
+        PluginCandidate(distribution="untaped-owner", name="owner", target=owner.target),
+        PluginCandidate(distribution="untaped-filler", name="filler", target=filler.target),
+    ]
+    fresh = registry._compose(ordered)
+    _unload("toyplugowner")
+    _unload("toyplugfiller")
+    replayed = registry._compose(ordered, fresh.mount.declaration)
+    specs = {each.spec.name: each.spec for each in replayed.plugins}
+    assert list(specs["filler"].provides) == ["owner"]
+    [titles] = specs["owner"].contracts()
+    assert titles.__module__ == "toyplugowner.api"
+    assert "toyplugowner.plugin" not in sys.modules
