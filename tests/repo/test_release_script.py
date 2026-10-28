@@ -881,14 +881,11 @@ def test_smoke_docs_need_each_expected_skill_and_every_page(
     assert capsys.readouterr().out == "smoke ok: untaped 10.0.0a0, 1 plugins\n"
 
 
-def test_plugin_guides_are_each_packages_guide_files() -> None:
+def test_no_plugin_ships_guide_files() -> None:
     guides = release.plugin_guides(release.REPO_ROOT)
-    shipped = sorted(
-        path.stem
-        for path in (release.REPO_ROOT / "packages/untaped-awx/src/untaped_awx/guides").glob("*.md")
-    )
-    assert guides["awx"] == shipped != []
-    assert guides["lint"] == []  # a 12.0 plugin's guides are its docstrings, never files
+    assert "awx" in guides
+    # a 12.0 plugin's guides are its docstrings, never files
+    assert {name: found for name, found in guides.items() if found} == {}
 
 
 def test_page_guides_reads_only_the_read_first_section() -> None:

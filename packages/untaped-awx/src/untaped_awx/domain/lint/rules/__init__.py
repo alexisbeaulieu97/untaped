@@ -1,4 +1,4 @@
-"""The awx rules, one per module, each a pure function of :class:`AwxResources`.
+"""The awx rules, one per module, each a pure function of :class:`Resources`.
 
 ``RULES`` lists them in the order the ``linting`` guide's rule table does; ``AwxRules``
 hosts it, and ``untaped_awx.api`` exports each function, the constant

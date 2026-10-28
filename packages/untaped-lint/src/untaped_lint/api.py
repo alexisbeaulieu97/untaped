@@ -14,20 +14,21 @@ and lists ``AcmeRules`` in its plugin class's ``fills``. A plugin that turns
 a repository's files into its own subjects fills :class:`TreeReader`. A
 command of its own runs rules over its records from the :class:`LintConfig`
 :func:`lint_config` builds (the profile's ``lint.ignore`` and the
-repository's lint file), so the plugin never reads lint's settings: an 11.x
-command (``untaped awx lint``) through :func:`lint`, which prints and exits
-by lint's rules, with the ``*Option`` spellings; both go when awx moves.
+repository's lint file), so the plugin never reads lint's settings, with the
+:class:`Findings` bundle a lint command takes and :func:`lint_report`, which
+runs the engine.
 """
 
 from __future__ import annotations
 
 from untaped.sdk import InstalledPlugin
 from untaped_lint.application.lint_config import lint_config
-from untaped_lint.application.output import lint
+from untaped_lint.application.output import lint_report
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule
+from untaped_lint.commands._lint import Findings
 from untaped_lint.config import LintConfig
-from untaped_lint.options_seam import IgnoreOption, SelectOption, StrictOption
+from untaped_lint.domain.report import Report
 from untaped_lint.records import (
     DocumentLocation,
     File,
@@ -47,24 +48,23 @@ __all__ = [
     "File",
     "FileLocation",
     "Finding",
-    "IgnoreOption",
+    "Findings",
     "InstalledPlugin",
     "LintConfig",
     "Linter",
     "Location",
+    "Report",
     "ResourceLocation",
     "Rule",
     "RuleFunction",
     "Rules",
-    "SelectOption",
     "Severity",
-    "StrictOption",
     "Subject",
     "Tree",
     "TreeReader",
     "finding",
-    "lint",
     "lint_config",
+    "lint_report",
     "rule",
     "target_of",
 ]

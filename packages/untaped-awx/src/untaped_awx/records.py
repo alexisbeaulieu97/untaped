@@ -11,13 +11,14 @@ Two families:
   stays out. A foreign key is ``int | str``: ``--with-names`` (and a table)
   writes its name.
 - **Rows awx builds**: job events and log lines, the outcome of each
-  mutation and job action, a saved document, a test case. Their field order
+  mutation and job action, a test case (the saved document is
+  :mod:`untaped_awx.document`'s). Their field order
   and their fields are the dict rows they replaced, except that a field the
   row used to leave out when unset is now ``null``.
 
 A model a use case builds declares its kind in the domain module it belongs
 to (``PingStatus``, ``WorkflowNode``, ``WorkflowUsage``, ``CaseResult``, the
-copy and rename outcomes, and ``AwxResources``, the snapshot ``awx lint``'s
+copy and rename outcomes, and ``Resources``, the snapshot ``awx lint``'s
 rules read, in ``domain/lint/resources.py``).
 """
 
@@ -161,7 +162,7 @@ class Schedule(AwxResource, kind="awx.schedule"):
     unified_job_template: ForeignKey = None
 
 
-class JobRecord(AwxRecord, kind="awx.job"):
+class JobRecord(AwxRecord, kind="awx.job_record"):
     """An execution (job, workflow job, project or inventory update) as AWX reports it.
 
     ``jobs list`` and ``jobs get`` write AWX's whole row (its ``type`` names
@@ -187,8 +188,11 @@ class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
 # --------------------------------------------------------------------------- #
 
 
-class JobEventRow(Record, kind="awx.event"):
-    """One event of a job's run, under the ``job`` it belongs to."""
+class JobEventRow(Record, kind="awx.job_event_row"):
+    """One event of a job's run, under the ``job`` it belongs to.
+
+    ``counter`` comes first, so ``raw`` prints each event's number in its job.
+    """
 
     table_columns: ClassVar[tuple[str, ...]] = (
         "counter",
@@ -199,9 +203,9 @@ class JobEventRow(Record, kind="awx.event"):
         "failed",
     )
 
-    job: int
     counter: int
     event: str
+    job: int
     task: str | None
     host: int | None
     host_name: str | None
@@ -213,16 +217,16 @@ class JobEventRow(Record, kind="awx.event"):
     stdout: str
 
 
-class JobLogLine(Record, kind="awx.log"):
-    """One line of a job's stdout."""
+class JobLogLine(Record, kind="awx.job_log_line"):
+    """One line of a job's stdout; ``line`` comes first, so ``raw`` prints the bare lines."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("line",)
 
-    job: int
     line: str
+    job: int
 
 
-class JobCancelOutcome(OutcomeRecord, kind="awx.cancel_outcome"):
+class JobCancelOutcome(OutcomeRecord, kind="awx.job_cancel_outcome"):
     """One ``jobs cancel`` row: the execution, its status when read, and the result.
 
     ``action`` is ``planned``, ``skipped`` (already finished),
@@ -238,7 +242,7 @@ class JobCancelOutcome(OutcomeRecord, kind="awx.cancel_outcome"):
     detail: str | None = None
 
 
-class JobRelaunchOutcome(OutcomeRecord, kind="awx.relaunch_outcome"):
+class JobRelaunchOutcome(OutcomeRecord, kind="awx.job_relaunch_outcome"):
     """One ``jobs relaunch`` row: the new execution (``id``) and the job it repeats.
 
     ``action`` is ``planned``, ``relaunched`` or ``failed``; ``hosts`` is
@@ -304,7 +308,7 @@ class SyncOutcome(ActionOutcome, kind="awx.sync_outcome"):
     """One ``sync`` target."""
 
 
-class ApplyOutcomeRow(OutcomeRecord, kind="awx.apply_outcome"):
+class ApplyOutcomeRow(OutcomeRecord, kind="awx.apply_outcome_row"):
     """What ``apply``, ``patch`` or ``edit`` did to one resource.
 
     ``fields_changed`` names the fields written (a preserved secret is not
@@ -372,20 +376,7 @@ class MembershipOutcome(OutcomeRecord, kind="awx.membership_outcome"):
     detail: str | None = None
 
 
-class Document(Record, kind="awx.document"):
-    """A saved resource: the envelope ``save`` writes and ``apply`` reads.
-
-    ``metadata`` is the identity as written, unset keys left out: ``apply``
-    reads an ``organization: null`` as the org-less resource, not as unset.
-    """
-
-    kind: str
-    apiVersion: str
-    metadata: dict[str, JsonValue]
-    spec: dict[str, Any]
-
-
-class SuiteCase(Record, kind="awx.test_case"):
+class SuiteCase(Record, kind="awx.suite_case"):
     """One case ``test list`` would run, with the suite and template it belongs to."""
 
     table_columns: ClassVar[tuple[str, ...]] = (
@@ -426,7 +417,6 @@ __all__ = [
     "Credential",
     "CredentialType",
     "DeleteOutcome",
-    "Document",
     "ExecutionEnvironment",
     "ForeignKey",
     "Group",

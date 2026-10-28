@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.sdk.records import Record, record_kinds
-from untaped_awx.cli.commands import DOCUMENT_MODELS
+from untaped_awx.commands.controller import DOCUMENT_MODELS
 
 
 def attribute_docstrings(model: type[BaseModel]) -> list[str]:

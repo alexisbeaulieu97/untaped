@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Set
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources, Linted
+from untaped_awx.domain.lint.resources import Linted, Resources
 from untaped_awx.domain.lint.rules._support import described, referenced, report
 from untaped_awx.domain.lint.views import (
     JobTemplateDoc,
@@ -25,11 +25,11 @@ from untaped_lint.api import Finding, rule
 @experimental
 @rule(
     "survey-default-missing",
-    reads=AwxResources,
+    reads=Resources,
     severity="warning",
     summary="A scheduled launch answers every required survey question, or it has a default.",
 )
-def survey_default_missing(resources: AwxResources) -> Iterator[Finding]:
+def survey_default_missing(resources: Resources) -> Iterator[Finding]:
     for item in resources.of("Schedule"):
         template = referenced(resources, item, "parent")
         if template is not None:

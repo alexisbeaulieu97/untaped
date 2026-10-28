@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources, Linted, Reference
+from untaped_awx.domain.lint.resources import Linted, Reference, Resources
 from untaped_awx.domain.lint.rules._support import report
 from untaped_lint.api import Finding, rule
 
@@ -13,11 +13,11 @@ from untaped_lint.api import Finding, rule
 @experimental
 @rule(
     "missing-reference",
-    reads=AwxResources,
+    reads=Resources,
     severity="error",
     summary="Every reference names a resource that exists: in the batch or on the controller.",
 )
-def missing_reference(resources: AwxResources) -> Iterator[Finding]:
+def missing_reference(resources: Resources) -> Iterator[Finding]:
     for item in resources.items:
         for ref in item.references:
             if ref.resolution == "absent":

@@ -1,26 +1,21 @@
-"""A lint run's report from its subjects and selection, and 11.x's ``lint()`` printer.
+"""A lint run's report from its subjects and selection.
 
 :func:`lint_report` parses the selection and runs the engine; a command
 prints its findings as rows and its failures and warnings on stderr.
-:func:`lint` does both and exits by lint's codes for a plugin command that is
-still 11.x (``untaped awx lint``); it goes when awx moves to the 12.0 shape.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
-from untaped.sdk import Diagnostics, OutputFormat, emit, finish
 from untaped_lint.config import LintConfig
 from untaped_lint.domain.selection import parse_rule, parse_suppression
-from untaped_lint.records import Finding, Subject, location_text
+from untaped_lint.records import Finding, Subject
 
 if TYPE_CHECKING:
     from untaped.sdk.testing import PluginCandidate
     from untaped_lint.domain.report import Report
-
-_diag = Diagnostics()
 
 
 def lint_report(
@@ -80,73 +75,8 @@ def lint_report(
     return report
 
 
-def lint(
-    subjects: Iterable[Subject],
-    *,
-    config: LintConfig = LintConfig(),  # noqa: B008 - frozen
-    select: Iterable[str] = (),
-    ignore: Iterable[str] = (),
-    paths: Iterable[str] = (),
-    only: Iterable[str] = (),
-    exact: Iterable[str] = (),
-    locations: Iterable[str] = (),
-    strict: bool = False,
-    findings: Iterable[Finding] = (),
-    fmt: OutputFormat = "table",
-    columns: list[str] | None = None,
-    candidates: Sequence[PluginCandidate] | None = None,
-) -> NoReturn:
-    """Lint ``subjects``, print the rows and exit per the lint exit codes (11.x commands).
-
-    Findings go to stdout (``lint.finding``); failure rows, warnings and the
-    summary to stderr. Exit 3 on an error finding (any finding with
-    ``strict``), 1 on a failure row (or its category's code), 0 otherwise;
-    usage mistakes raise first (2). See :func:`lint_report` for the rest.
-    """
-    report = lint_report(
-        subjects,
-        config=config,
-        select=select,
-        ignore=ignore,
-        paths=paths,
-        only=only,
-        exact=exact,
-        locations=locations,
-        findings=findings,
-        candidates=candidates,
-    )
-    for warning in report.warnings:
-        _diag.warning(warning)
-    for failure in report.failures:
-        _diag.failure(failure)
-    rows = report.findings
-    if fmt == "table" and columns is None:
-        emit(
-            [_table_row(row) for row in rows],
-            fmt=fmt,
-            empty=False,
-            table_columns=Finding.table_columns,
-        )
-    else:
-        emit(rows, fmt=fmt, columns=columns, empty=False)
-    _diag.info(report.summary())
-    finish(bool(report.failures), predicate_hit=report.predicate_hit(strict=strict))
-    raise SystemExit(0)
-
-
 def _order(finding: Finding) -> tuple[str, int, str, str]:
     location = finding.location
     path = getattr(location, "path", None) or getattr(location, "id", None) or ""
     line = getattr(location, "line", None) or getattr(location, "index", None) or 0
     return (path, line, finding.rule, finding.target)
-
-
-def _table_row(finding: Finding) -> dict[str, object]:
-    row = finding.model_dump(mode="json")
-    row["location"] = location_text(finding.location)
-    if (
-        row["location"] == finding.target
-        or getattr(finding.location, "path", None) == finding.target
-    ):
-        row["target"] = ""
-    return row

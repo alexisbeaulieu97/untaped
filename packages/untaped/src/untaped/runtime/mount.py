@@ -55,7 +55,7 @@ from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
-from untaped.sdk.fields import Confirm, DryRun, File, Output, Stdin
+from untaped.sdk.fields import Confirm, DryRun, File, Output, Stdin, _Stream
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -801,15 +801,10 @@ def _instance(
         if option.block is not None:
             blocks[option.field][option.flag or ""] = value
         elif value is not None:
-            if option.or_stdin and value == "-" and _value_type(cls, option.field) is str:
-                from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - a dash only
-
-                name = option.flag or option.metavar
-                if piped:  # one stdin: the rows or this text, never both
-                    raise UsageError(f"{name}: - reads stdin, so it can't be combined with --stdin")
-                if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
-                    raise UsageError(f"{name}: - reads stdin; pipe it")
-                value = read_stdin_text()
+            if option.or_stdin and (value == "-" or (isinstance(value, list) and "-" in value)):
+                _check_dash(option, piped=piped)
+                if _value_type(cls, option.field) is str:
+                    value = read_stdin_text()
             _put(data, cls, option.field, value)
     for path, flags in blocks.items():
         info = _field(cls, path)
@@ -888,6 +883,21 @@ def _bundle_model(annotation: object) -> type[BaseModel]:
         if _is_model(arg):
             return arg
     raise TypeError(f"{annotation!r} is not a bundle")
+
+
+def _check_dash(option: OptionDecl, *, piped: bool) -> None:
+    """Refuse a ``-`` that can't read stdin: with ``--stdin``'s rows, or from a terminal.
+
+    A ``TextOrStdin`` value is read here; a ``PathOrStdin`` keeps ``-`` for
+    its command to read (:func:`~untaped.sdk.read_stdin_text`).
+    """
+    from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - a dash only
+
+    name = option.flag or option.metavar
+    if piped:  # one stdin: the rows or this text, never both
+        raise UsageError(f"{name}: - reads stdin, so it can't be combined with --stdin")
+    if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
+        raise UsageError(f"{name}: - reads stdin; pipe it")
 
 
 def _value_type(cls: type[BaseModel], path: str) -> object:
@@ -971,6 +981,9 @@ def _print(
         printed.rows.append(result)
         _print_rows(mount, decl, command, result)
         return
+    if decl.streams:
+        _print_stream(mount, decl, command, cast("Iterable[BaseModel]", result), printed)
+        return
     rows = printed.rows
     try:
         rows.extend(cast("Iterable[BaseModel]", result))
@@ -979,6 +992,27 @@ def _print(
             _print_rows(mount, decl, command, rows)
         raise
     _print_rows(mount, decl, command, rows)
+
+
+def _print_stream(
+    mount: Mount,
+    decl: CommandDecl,
+    command: Command[Any],
+    rows: Iterable[BaseModel],
+    printed: Printed,
+) -> None:
+    """Print each row as ``run`` yields it (``Output(stream=True)``), keeping it in ``printed``.
+
+    ``--columns ?`` lists the columns without running the stream.
+    """
+    output = _output(decl, command)
+    if output.requested == ["?"]:
+        output._print([], kind=decl.output)
+        return
+    stream = _Stream(output)
+    for row in rows:
+        printed.rows.append(row)
+        stream.row(row, kind=mount.kind_of(type(row)) or decl.output)
 
 
 def _print_rows(

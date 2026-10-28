@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from untaped.sdk import experimental, plural
-from untaped_awx.domain.lint.resources import AwxResources
+from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.domain.lint.rules._support import report
 from untaped_awx.domain.spec import unrecognized_names
 from untaped_lint.api import Finding, rule
@@ -19,11 +19,11 @@ from untaped_lint.api import Finding, rule
 @experimental
 @rule(
     "unknown-field",
-    reads=AwxResources,
+    reads=Resources,
     severity="warning",
     summary="A document's spec holds only fields untaped knows for its kind.",
 )
-def unknown_field(resources: AwxResources) -> Iterator[Finding]:
+def unknown_field(resources: Resources) -> Iterator[Finding]:
     for item in resources.items:
         facts = resources.kinds.get(item.resource.kind)
         if item.origin != "document" or facts is None:

@@ -15,7 +15,7 @@ from typing import Any
 from untaped.sdk import experimental
 from untaped_awx.domain.launch_prompts import PROMPT_FLAGS
 from untaped_awx.domain.lint.fixes import PATCH_GROUPS, patch_fix
-from untaped_awx.domain.lint.resources import AwxResources, Linted
+from untaped_awx.domain.lint.resources import Linted, Resources
 from untaped_awx.domain.lint.rules._support import described, is_set, referenced, report
 from untaped_awx.domain.lint.views import (
     JobTemplateDoc,
@@ -51,11 +51,11 @@ _SCHEDULE_FIELDS = {
 @experimental
 @rule(
     "ignored-launch-field",
-    reads=AwxResources,
+    reads=Resources,
     severity="error",
     summary="A schedule or workflow node sets only launch fields its template prompts for.",
 )
-def ignored_launch_field(resources: AwxResources) -> Iterator[Finding]:
+def ignored_launch_field(resources: Resources) -> Iterator[Finding]:
     for item in resources.of("Schedule"):
         template = referenced(resources, item, "parent")
         if template is None or template.resource.kind not in _TEMPLATES:
@@ -85,7 +85,7 @@ def ignored_launch_field(resources: AwxResources) -> Iterator[Finding]:
 
 
 def _judged(
-    resources: AwxResources,
+    resources: Resources,
     item: Linted,
     template: Linted,
     written: str,

@@ -93,7 +93,7 @@ def test_first_party_commit_carries_its_entry_point(
     result = compose([candidates["awx"]])
     (_, registered) = result.plugins
     assert registered.plugin_ref == PluginRef(
-        distribution="untaped-awx", entry_point="untaped_awx:SPEC"
+        distribution="untaped-awx", entry_point="untaped_awx.plugin:Awx"
     )
     assert result.quarantine == ()
 

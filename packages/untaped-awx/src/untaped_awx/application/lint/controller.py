@@ -1,4 +1,4 @@
-"""The controller loader: every resource the token can read, as an ``AwxResources`` snapshot.
+"""The controller loader: every resource the token can read, as an ``Resources`` snapshot.
 
 Two passes. The first lists each catalog kind once and seeds the resolver
 with the rows, so the second, which turns each row into the document
@@ -42,7 +42,7 @@ from untaped_awx.application.resources.ports import (
 )
 from untaped_awx.application.resources.save_resource import ResourceSnapshot, SaveResource
 from untaped_awx.domain import IdentityRef, Resource, ResourceSpec
-from untaped_awx.domain.lint.resources import AwxResources, ControllerFacts, Linted
+from untaped_awx.domain.lint.resources import ControllerFacts, Linted, Resources
 from untaped_awx.domain.lint.secrets import redact_variables
 from untaped_awx.errors import AwxApiError, PermissionDeniedError
 from untaped_lint.api import ResourceLocation
@@ -60,7 +60,7 @@ def load_controller(
     playbooks: ProjectPlaybooks,
     path_of: PathOf,
     progress: ProgressHandle = NO_PROGRESS,
-) -> AwxResources:
+) -> Resources:
     """Read every catalog kind from the controller into one snapshot."""
     kinds = catalog.kinds()
     listed: list[tuple[ResourceSpec, list[dict[str, Any]]]] = []
@@ -119,7 +119,7 @@ def load_controller(
         )
         for spec, snapshot, resource, location in located
     )
-    return AwxResources(items=items, kinds=kind_facts(catalog), loaded=loaded, online=True)
+    return Resources(items=items, kinds=kind_facts(catalog), loaded=loaded, online=True)
 
 
 def _parent_id(spec: ResourceSpec, record: Mapping[str, Any]) -> int | None:

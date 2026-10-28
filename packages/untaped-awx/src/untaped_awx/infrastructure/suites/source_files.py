@@ -21,10 +21,10 @@ from untaped_awx.domain.suites.temporary_set import TEMPLATE_KINDS
 from untaped_awx.infrastructure.git_source import GitSource
 from untaped_awx.infrastructure.resources.yaml_io import read_resource_files_at
 from untaped_awx.infrastructure.suites.filesystem import (
-    SPEC_ROOT,
     is_hidden,
     is_suite_text,
     kind_marker,
+    spec_root,
 )
 
 _SPEC_MARKER = kind_marker(TEMPLATE_KINDS)
@@ -70,7 +70,7 @@ class GitSuiteFiles:
 
 
 def template_specs(source: GitSource) -> list[tuple[str, Resource]]:
-    """Every job template and workflow spec under :data:`SPEC_ROOT` at the commit.
+    """Every job template and workflow spec under :func:`spec_root` at the commit.
 
     Each comes with the ``REF:PATH`` it was read from; none when the commit
     has no such directory. Suites are skipped first: a ``!ref {kind:
@@ -78,11 +78,11 @@ def template_specs(source: GitSource) -> list[tuple[str, Resource]]:
     """
 
     def skip(rel: str, text: str) -> bool:
-        hidden = is_hidden(PurePosixPath(rel).relative_to(SPEC_ROOT.as_posix()))
+        hidden = is_hidden(PurePosixPath(rel).relative_to(spec_root().as_posix()))
         return hidden or is_suite_text(text) or not _SPEC_MARKER.search(text)
 
     try:
-        found = read_resource_files_at(source, source.root / SPEC_ROOT, skip=skip)
+        found = read_resource_files_at(source, source.root / spec_root(), skip=skip)
     except ConfigError as exc:
         if exc.category == ErrorCategory.NOT_FOUND:
             return []

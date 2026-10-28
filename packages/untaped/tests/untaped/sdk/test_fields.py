@@ -128,8 +128,8 @@ def test_existing_file_must_exist(tmp_path: Path) -> None:
 
 
 def test_key_value_splits_on_the_first_equals() -> None:
-    run = Run(labels=["a=b=c", "empty="])
-    assert run.labels == [("a", "b=c"), ("empty", "")]
+    run = Run(labels=["a=b=c", "empty=", " spaced = kept "])
+    assert run.labels == [("a", "b=c"), ("empty", ""), ("spaced", " kept ")]
     with pytest.raises(ValidationError, match="KEY=VALUE"):
         Run(labels=["novalue"])
     with pytest.raises(ValidationError, match="KEY=VALUE"):

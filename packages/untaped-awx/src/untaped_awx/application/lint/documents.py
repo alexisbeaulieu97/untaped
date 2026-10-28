@@ -1,4 +1,4 @@
-"""The documents loader: apply documents as an ``AwxResources`` snapshot.
+"""The documents loader: apply documents as an ``Resources`` snapshot.
 
 ``FILES``, the repository reader and ``untaped_awx.testing.resources`` all
 load through :func:`load_documents`, so a document lints the same wherever
@@ -16,7 +16,7 @@ from untaped_awx.application.lint.snapshot import kind_facts
 from untaped_awx.application.resources.apply_prefetch import prefetch_plan
 from untaped_awx.application.resources.ports import Catalog, FkResolver
 from untaped_awx.domain import Resource
-from untaped_awx.domain.lint.resources import AwxResources, Linted, Unreadable
+from untaped_awx.domain.lint.resources import Linted, Resources, Unreadable
 from untaped_lint.api import DocumentLocation
 
 type Document = tuple[str, int, Resource | str]
@@ -26,7 +26,7 @@ it could not be read."""
 
 def load_documents(
     documents: Iterable[Document], *, catalog: Catalog, live: FkResolver | None = None
-) -> AwxResources:
+) -> Resources:
     """The snapshot of ``documents``: each a :class:`Linted` or an :class:`Unreadable`.
 
     Without ``live`` (``--offline``) a reference resolves in the batch only,
@@ -67,7 +67,7 @@ def load_documents(
     )
     if live is not None:  # every kind was searched, but those the token may not list
         loaded = tuple(kind for kind in catalog.kinds() if kind not in references.denied)
-    return AwxResources(
+    return Resources(
         items=items,
         kinds=kind_facts(catalog),
         loaded=loaded,

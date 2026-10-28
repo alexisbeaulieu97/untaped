@@ -707,6 +707,14 @@ def test_emit_unknown_column_on_an_open_record_warns_but_renders(
     assert "warning: unknown column 'nmae'; valid columns: id, name" in captured.err
 
 
+def test_check_columns_leaves_an_open_record_to_its_rows(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Up front, an open record's columns are unknown: its rows are checked when they render."""
+    check_columns(_Answer, columns=["host_config_key"], fmt="table")
+    assert capsys.readouterr().err == ""
+
+
 def test_emit_column_names_containing_dots_match_whole_keys(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -1,4 +1,4 @@
-"""``AwxResources``: the one snapshot every awx rule reads, from documents or the controller.
+"""``Resources``: the one snapshot every awx rule reads, from documents or the controller.
 
 Its unit is the export document (:class:`~untaped_awx.domain.envelope.Resource`)
 in both origins, so a rule sees ``project: web`` whether the resource came
@@ -59,7 +59,7 @@ class Reference(_Model):
             "reference, by id)."
         ),
     )
-    """With it, :meth:`AwxResources.find` needs no name."""
+    """With it, :meth:`Resources.find` needs no name."""
 
 
 @experimental
@@ -119,7 +119,7 @@ class Linted(_Model):
 
 
 @experimental
-class AwxResources(Record, kind="awx.resources"):
+class Resources(Record, kind="awx.resources"):
     """Every resource one run lints, with the catalog facts its rules need."""
 
     items: tuple[Linted, ...] = ()
@@ -220,22 +220,22 @@ def _same(have: IdentityRef | None, want: IdentityRef) -> bool:
     return want.parent is None or _same(have.parent, want.parent)
 
 
-def subject_of(resources: AwxResources) -> Subject:
+def subject_of(resources: Resources) -> Subject:
     """``resources`` as the lint subject the awx rules read."""
-    kind = kind_of(AwxResources)
+    kind = kind_of(Resources)
     if kind is None:  # pragma: no cover - declared above
         raise TypeError("the snapshot model declares no kind")
     return Subject(kind=kind, record=resources.model_dump(mode="json"))
 
 
 __all__ = [
-    "AwxResources",
     "ControllerFacts",
     "KindFacts",
     "Linted",
     "Origin",
     "Reference",
     "Resolution",
+    "Resources",
     "Unreadable",
     "organization_of",
     "subject_of",

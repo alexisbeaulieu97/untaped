@@ -10,7 +10,7 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped.sdk import HttpSettings, connected_client, same_origin
+from untaped.sdk import HttpFactory, same_origin
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.settings import TOKEN, AwxSettings
@@ -19,19 +19,17 @@ from untaped_awx.settings import TOKEN, AwxSettings
 class AwxClient:
     """Talks to AAP/AWX REST endpoints using the configured token."""
 
-    def __init__(self, config: AwxSettings, *, http: HttpSettings | None = None) -> None:
+    def __init__(self, config: AwxSettings, *, http: HttpFactory) -> None:
         # A token-less client can still hit unauthenticated endpoints like
         # `ping/`; when a token is found for the server, it is the bearer.
         server = config.server
         self._base_url = "" if server is None else str(server.url)
-        self._http = connected_client(
+        self._http = http.client(
             config,
-            section="awx",
             base_url=self._base_url,
             bearer=TOKEN.find(server),
             verify=True if server is None else server.verify_tls,
             headers={"Accept": "application/json"},
-            http=http,
         )
         self._api_prefix = config.api_prefix
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from untaped.sdk import experimental
-from untaped_awx.domain.lint.resources import AwxResources, Reference
+from untaped_awx.domain.lint.resources import Reference, Resources
 from untaped_awx.domain.lint.rules._support import report
 from untaped_lint.api import Finding, rule
 
@@ -18,11 +18,11 @@ from untaped_lint.api import Finding, rule
 @experimental
 @rule(
     "unresolved-reference",
-    reads=AwxResources,
+    reads=Resources,
     severity="warning",
     summary="A reference the run could not check: offline, or one the token cannot read.",
 )
-def unresolved_reference(resources: AwxResources) -> Iterator[Finding]:
+def unresolved_reference(resources: Resources) -> Iterator[Finding]:
     for item in resources.items:
         for ref in item.references:
             if ref.resolution != "unresolved":
@@ -36,7 +36,7 @@ def unresolved_reference(resources: AwxResources) -> Iterator[Finding]:
             )
 
 
-def _why(resources: AwxResources, ref: Reference) -> tuple[str, str]:
+def _why(resources: Resources, ref: Reference) -> tuple[str, str]:
     """Why ``ref`` went unchecked, and what would check it."""
     kind = ref.target.kind
     searched = kind in resources.loaded

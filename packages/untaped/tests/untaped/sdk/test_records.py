@@ -765,6 +765,7 @@ def _samples() -> dict[str, WireModel]:
 
 def _awx_samples() -> list[WireModel]:
     from untaped.sdk import ErrorCategory
+    from untaped_awx.document import Document
     from untaped_awx.domain.outcomes import CopyOutcome, RenameOutcome
     from untaped_awx.domain.ping import PingStatus
     from untaped_awx.domain.suites.case_failure import failure
@@ -775,7 +776,6 @@ def _awx_samples() -> list[WireModel]:
     from untaped_awx.records import (
         ApplyOutcomeRow,
         DeleteOutcome,
-        Document,
         JobCancelOutcome,
         JobEventRow,
         JobLogLine,
@@ -911,12 +911,12 @@ def _awx_samples() -> list[WireModel]:
 
 def _awx_resources() -> WireModel:
     from untaped_awx.api import (
-        AwxResources,
         ControllerFacts,
         KindFacts,
         Linted,
         Reference,
         Resource,
+        Resources,
         Unreadable,
     )
     from untaped_awx.domain import IdentityRef
@@ -926,7 +926,7 @@ def _awx_resources() -> WireModel:
         {"kind": "JobTemplate", "metadata": {"name": "deploy"}, "spec": {"project": "web"}}
     )
     project = Resource.model_validate({"kind": "Project", "metadata": {"name": "web"}})
-    return AwxResources(
+    return Resources(
         items=(
             Linted(
                 origin="document",

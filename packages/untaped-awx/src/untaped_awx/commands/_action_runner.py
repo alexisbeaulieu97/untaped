@@ -1,0 +1,516 @@
+"""Submit fixed launch/sync targets and preserve execution IDs through monitoring failures."""
+
+from __future__ import annotations
+
+import json
+from collections import Counter
+from collections.abc import Callable, Collection, Sequence
+from typing import TYPE_CHECKING, Any, NoReturn
+
+from untaped.sdk import (
+    Confirm,
+    Failure,
+    OutcomeRecord,
+    UntapedError,
+    UsageError,
+    plural,
+    run_hint,
+)
+from untaped_awx.application import RunAction
+from untaped_awx.application.jobs.abandon_jobs import AbandonJobs
+from untaped_awx.application.jobs.prepare_actions import (
+    TemplateReads,
+    launch_payload_preview,
+    prepare_action_targets,
+)
+from untaped_awx.application.jobs.selected_actions import (
+    ActionsInterruptedError,
+    SelectedActionOutcome,
+    run_selected_actions,
+)
+from untaped_awx.application.resources.mutation_values import redact_error
+from untaped_awx.application.resources.selection import SelectedResource
+from untaped_awx.commands._format import format_scope, format_value
+from untaped_awx.commands._options import Waiting
+from untaped_awx.commands.context import AwxContext
+from untaped_awx.commands.parallel import drain_parallel, wait_parallel
+from untaped_awx.domain import Job, ResourceSpec
+from untaped_awx.domain.jobs.job import still_running_detail
+from untaped_awx.errors import ActionResponseError, LaunchPromptError
+
+if TYPE_CHECKING:
+    from untaped.sdk import Diag
+
+
+def run_action_selection(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    *,
+    action: str,
+    confirm: Confirm,
+    waiting: Waiting,
+    payload: dict[str, Any] | None = None,
+    ask: bool = False,
+    parallel: int = 1,
+    fail_fast: bool = False,
+    compact: bool = False,
+) -> list[OutcomeRecord]:
+    """One bounded POST phase, then monitor every known execution even after failures.
+
+    ``ask`` (mass selections) previews the targets and asks once unless
+    ``--yes``; a declined prompt submits nothing, and ``--dry-run`` returns
+    the planned rows (with each target's payload, ``compact`` as JSON text
+    for a table). ``--timeout`` bounds each wait: an execution still running
+    then fails its row and is named in a ``jobs wait`` hint. With
+    ``--cancel``, an execution the wait stops watching (timeout, polling
+    error, Ctrl-C) is cancelled instead.
+    """
+    reads = TemplateReads(ctx.repo, spec)
+    spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload, reads=reads)
+    action_spec = next(a for a in spec.actions if a.name == action)
+    outcome_model = action_spec.outcome
+    result_kinds = action_spec.returns
+    result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
+    rows: list[dict[str, Any]] = [
+        {
+            "id": None,
+            "kind": result_kind,
+            "target_id": item.id,
+            "target_kind": item.kind,
+            "target_name": item.name,
+            "scope": item.scope,
+            "action": "planned",
+        }
+        for item in targets
+    ]
+    if confirm.dry_run:
+        _preview_payloads(rows, targets, payload, reads, compact=compact)
+    go = (
+        confirm(
+            f"{action.capitalize()} {plural(len(targets), 'resource')}?",
+            preview=lambda: _target_lines(targets, action=action),
+        )
+        if ask
+        else not confirm.dry_run
+    )
+    if not go:
+        return _rows(rows, outcome=outcome_model)
+
+    def safe_error(exc: Exception, target: SelectedResource) -> str:
+        return _action_error(exc, spec, target, payload)
+
+    labels = _monitor_labels(targets)
+    abandon = AbandonJobs(ctx.jobs.cancel if waiting.cancel else None, refresher=ctx.monitor.fetch)
+    outcomes = _submit(
+        targets,
+        labels,
+        lambda item: RunAction(ctx.repo).execute(spec, item.id, action=action, payload=payload),
+        parallel=parallel,
+        fail_fast=fail_fast,
+        error_detail=safe_error,
+        abandon=abandon,
+        diag=ctx.diag,
+    )
+    launched: list[tuple[str, Job]] = []
+    for index, outcome in enumerate(outcomes):
+        row = rows[index]
+        row.update(action=outcome.action, detail=outcome.detail, **outcome.row_error())
+        if isinstance(outcome.error, ActionResponseError):
+            row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
+        if outcome.result is not None:
+            row.update(outcome.result.model_dump(mode="json"))
+            launched.append((labels[index], outcome.result))
+    unfinished: dict[str, list[str]] = {}
+    if waiting.wait or waiting.follow:
+        unfinished = _watch(
+            ctx,
+            rows,
+            labels,
+            launched,
+            _unmonitored(outcomes, labels),
+            follow=waiting.follow,
+            timeout=waiting.timeout,
+            abandon=abandon,
+            error_detail=lambda exc, index: safe_error(exc, targets[index]),
+        )
+    _report_rows(ctx, rows)
+    for kind, ids in unfinished.items():
+        ctx.diag.hint(wait_hint(kind, ids))
+    return _rows(rows, outcome=outcome_model)
+
+
+def wait_hint(kind: str, ids: Sequence[str]) -> str:
+    """The hint naming ``jobs wait`` for executions still running."""
+    from untaped_awx.commands.jobs import Wait  # noqa: PLC0415 - jobs imports the runners
+
+    return run_hint(Wait.spelled(*ids, "--kind", kind))
+
+
+def _report_rows(ctx: AwxContext, rows: list[dict[str, Any]]) -> None:
+    """Report each row that did not complete on stderr.
+
+    A row whose request raised is an attributed error; a job that ended
+    unsuccessfully, ran out of time or was skipped is a warning, since the
+    row and the exit code already carry the failure.
+    """
+    for row in rows:
+        if row.get("error"):
+            ctx.diag.failure(Failure.model_validate(row["error"]), item=row["target_name"])
+        elif row.get("detail"):
+            ctx.diag.warning(f"{row['target_name']}: {row['detail']}")
+
+
+def _rows(rows: list[dict[str, Any]], *, outcome: type[OutcomeRecord]) -> list[OutcomeRecord]:
+    return [outcome.model_validate(row) for row in rows]
+
+
+def _preview_payloads(
+    rows: list[dict[str, Any]],
+    targets: Sequence[SelectedResource],
+    payload: dict[str, Any] | None,
+    reads: TemplateReads,
+    *,
+    compact: bool,
+) -> None:
+    """Show each ``--dry-run`` row the payload its target would get (secrets hidden).
+
+    ``compact`` (a table or raw output) shows it as JSON text; structured
+    formats keep the mapping.
+    """
+    if payload is None:
+        return
+    for row, item in zip(rows, targets, strict=True):
+        preview = launch_payload_preview(payload, reads.for_item(item))
+        row["payload"] = format_value(preview) if compact else preview
+
+
+def _watch(
+    ctx: AwxContext,
+    rows: list[dict[str, Any]],
+    labels: list[str],
+    launched: list[tuple[str, Job]],
+    unmonitored: list[tuple[str, Job]],
+    *,
+    follow: bool,
+    timeout: float | None,
+    abandon: AbandonJobs,
+    error_detail: Callable[[Exception, int], str],
+) -> dict[str, list[str]]:
+    """Monitor ``launched``, fold what it learns into ``rows``, abandon what it stops watching.
+
+    Each execution is abandoned as soon as its own watch stops, never after
+    the others'; executions AWX created for failed rows (``unmonitored``)
+    before the wait. Ctrl-C during the cancel requests is reported like
+    Ctrl-C while waiting. Returns the ids, by execution kind, that need a
+    ``jobs wait`` hint.
+    """
+    fates: dict[tuple[str, int], str] = {}
+
+    def abandon_now(job: Job) -> None:
+        fates[job.kind, job.id] = abandon(job)
+
+    try:
+        for _, job in unmonitored:
+            abandon_now(job)
+    except KeyboardInterrupt:
+        _interrupted(ctx.diag, [*launched, *unmonitored], abandon)
+    finals, errors = (
+        _monitor(
+            ctx,
+            launched,
+            unmonitored,
+            follow=follow,
+            timeout=timeout,
+            abandon=abandon,
+            on_abandon=abandon_now,
+        )
+        if launched
+        else ([], [])
+    )
+    row_of = {label: index for index, label in enumerate(labels)}
+    unfinished = _record_finals(
+        rows, row_of, launched, finals, timeout=timeout, abandon=abandon, fates=fates
+    )
+    jobs = dict(launched)
+    for label, exc in errors:
+        index = row_of[label]
+        detail = error_detail(exc, index)
+        rows[index]["error"] = Failure.from_exception(exc, message=detail).model_dump(mode="json")
+        _fail_abandoned(rows[index], detail, jobs[label], abandon, fates)
+    for label, job in unmonitored:
+        row = rows[row_of[label]]
+        _fail_abandoned(row, row["detail"], job, abandon, fates)
+    return unfinished
+
+
+def _record_finals(
+    rows: list[dict[str, Any]],
+    row_of: dict[str, int],
+    launched: list[tuple[str, Job]],
+    finals: list[Job],
+    *,
+    timeout: float | None,
+    abandon: AbandonJobs,
+    fates: dict[tuple[str, int], str],
+) -> dict[str, list[str]]:
+    """Fold each monitored execution's last state into its row.
+
+    An execution still running when ``timeout`` ended the wait fails its row
+    with what became of it once abandoned (its ``fates`` phrase). Returns
+    the ids, by execution kind, of those neither cancelled nor ended since:
+    they keep running on the controller.
+    """
+    row_by_job = {(job.kind, job.id): row_of[label] for label, job in launched}
+    unfinished: dict[str, list[str]] = {}
+    for job in finals:
+        row = rows[row_by_job[(job.kind, job.id)]]
+        row.update(job.model_dump(mode="json"))
+        if not job.is_terminal:
+            detail = f"{still_running_detail(job, timeout)}; {fates[job.kind, job.id]}"
+            latest = abandon.latest(job)
+            row.update(latest.model_dump(mode="json"), action="failed", detail=detail)
+            if not latest.is_terminal and (job.kind, job.id) not in abandon.cancelled:
+                unfinished.setdefault(job.kind, []).append(str(job.id))
+        elif job.status != "successful":
+            row.update(action="failed", detail=f"execution ended with status {job.status}")
+    return unfinished
+
+
+def _fail_abandoned(
+    row: dict[str, Any],
+    detail: str,
+    job: Job,
+    abandon: AbandonJobs,
+    fates: dict[tuple[str, int], str],
+) -> None:
+    """Fail ``row``; with ``--cancel``, its detail and error say what became of ``job``."""
+    if abandon.cancels:
+        fate = fates[job.kind, job.id]
+        detail = f"{detail}; {fate}"
+        row["error"]["message"] = f"{row['error']['message']}; {fate}"
+        if (latest := abandon.latest(job)) is not job:
+            row.update(latest.model_dump(mode="json"))
+    row.update(action="failed", detail=detail)
+
+
+def _submit(
+    targets: Sequence[SelectedResource],
+    labels: list[str],
+    worker: Callable[[SelectedResource], Job],
+    *,
+    parallel: int,
+    fail_fast: bool,
+    error_detail: Callable[[Exception, SelectedResource], str],
+    abandon: AbandonJobs,
+    diag: Diag,
+) -> list[SelectedActionOutcome[Job]]:
+    """Run the POST phase; Ctrl-C abandons and names the executions submitted so far."""
+    try:
+        return run_selected_actions(
+            targets,
+            worker,
+            parallel=parallel,
+            fail_fast=fail_fast,
+            error_detail=error_detail,
+        )
+    except ActionsInterruptedError as interrupted:
+        label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
+        _interrupted(
+            diag,
+            [
+                (label_by_target[id(outcome.target)], job)
+                for outcome in interrupted.outcomes
+                if (job := _submitted_execution(outcome)) is not None
+            ],
+            abandon,
+        )
+
+
+def _monitor(
+    ctx: AwxContext,
+    launched: list[tuple[str, Job]],
+    unmonitored: list[tuple[str, Job]],
+    *,
+    follow: bool,
+    timeout: float | None = None,
+    abandon: AbandonJobs,
+    on_abandon: Callable[[Job], None],
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Wait on launched executions; Ctrl-C stops polling, abandons and names what still runs.
+
+    ``on_abandon`` runs as soon as a watch stops on an execution still running.
+    """
+    finished: dict[str, Job] = {}
+    try:
+        if follow:
+            diag = ctx.diag
+            return drain_parallel(
+                ctx.job_monitor(timeout=timeout),
+                launched,
+                # Relayed as is: a log line is never wrapped or tab-expanded.
+                lambda prefix, line: diag.relay(prefix + line),
+                stop=ctx.stop,
+                finished=finished,
+                abandon=on_abandon,
+            )
+        return wait_parallel(
+            ctx.repo,
+            launched,
+            sleep=ctx.pause,
+            stop=ctx.stop,
+            finished=finished,
+            timeout=timeout,
+            abandon=on_abandon,
+        )
+    except KeyboardInterrupt:
+        _interrupted(
+            ctx.diag,
+            [(label, finished.get(label, job)) for label, job in launched] + unmonitored,
+            abandon,
+        )
+
+
+def _interrupted(
+    diag: Diag, executions: Sequence[tuple[str, Job]], abandon: AbandonJobs
+) -> NoReturn:
+    """Abandon every execution not known to have ended, then name them; exit 130.
+
+    Another Ctrl-C during the cancel requests stops them, but still names them.
+    """
+    try:
+        abandon.unfinished(job for _, job in executions)
+    finally:
+        report_interrupted(
+            diag,
+            [(label, abandon.latest(job)) for label, job in executions],
+            cancelled=abandon.cancelled,
+        )
+
+
+_ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
+
+
+def report_interrupted(
+    diag: Diag,
+    executions: Sequence[tuple[str | None, Job]],
+    *,
+    cancelled: Collection[tuple[str, int]] = (),
+) -> NoReturn:
+    """Name every execution not known to have ended, with a ``jobs wait`` hint; exit 130.
+
+    A status known locally to be terminal is skipped; one in ``cancelled``
+    (``(kind, id)``) had a "cancel requested" and needs no hint; an active
+    one "keeps running"; an unknown status (e.g. a job AWX created while
+    ignoring fields) is reported as "was launched".
+    """
+    by_kind: dict[str, list[str]] = {}
+    for label, job in executions:
+        if job.is_terminal:
+            continue
+        item = f"{label} ({job.kind} {job.id})" if label else f"{job.kind} {job.id}"
+        if (job.kind, job.id) in cancelled:
+            diag.warning(f"{item}: interrupted, cancel requested")
+            continue
+        state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
+        diag.warning(f"{item}: interrupted, {state}")
+        by_kind.setdefault(job.kind, []).append(str(job.id))
+    for kind, ids in by_kind.items():
+        diag.hint(wait_hint(kind, ids))
+    raise SystemExit(130)
+
+
+def _unmonitored(
+    outcomes: Sequence[SelectedActionOutcome[Job]], labels: list[str]
+) -> list[tuple[str, Job]]:
+    """Executions AWX created for failed rows (ignored fields); not waited on."""
+    return [
+        (labels[index], job)
+        for index, outcome in enumerate(outcomes)
+        if outcome.result is None and (job := _submitted_execution(outcome)) is not None
+    ]
+
+
+def _submitted_execution(outcome: SelectedActionOutcome[Job]) -> Job | None:
+    """The execution an outcome created: its result, or one AWX made despite errors."""
+    if outcome.result is not None:
+        return outcome.result
+    error = outcome.error
+    if isinstance(error, ActionResponseError) and error.execution_id is not None:
+        return Job(id=error.execution_id, kind=error.execution_kind or "job", status="unknown")
+    return None
+
+
+def _target_lines(targets: Sequence[SelectedResource], *, action: str) -> list[str]:
+    """The preview of a confirmed launch or sync: one line per target."""
+    return [
+        f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}"
+        for item in targets
+    ]
+
+
+def _prepare(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    *,
+    action: str,
+    payload: dict[str, Any] | None,
+    reads: TemplateReads,
+) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
+    """Launch-prompt preflight failures are usage errors (exit 2), not API errors."""
+    try:
+        return prepare_action_targets(
+            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload, reads=reads
+        )
+    except LaunchPromptError as exc:
+        raise UsageError(str(exc)) from exc
+
+
+def _action_error(
+    exc: Exception,
+    spec: ResourceSpec,
+    target: SelectedResource,
+    payload: dict[str, Any] | None,
+) -> str:
+    # Action payloads can carry arbitrary secret extra-vars. Suppress both the
+    # complete submitted string and individual values in controller exceptions.
+    secrets = dict(payload or {})
+    if isinstance(secrets.get("extra_vars"), str):
+        try:
+            decoded = json.loads(secrets["extra_vars"])
+        except json.JSONDecodeError:
+            decoded = None
+        secrets["extra_vars"] = [str(value) for value in _leaf_values(decoded)]
+    secret_spec = spec.model_copy(
+        update={"secret_paths": (*spec.secret_paths, "extra_vars", "extra_vars.*")}
+    )
+    return redact_error(exc, secret_spec, target.record, payload or {}, secrets)
+
+
+def _leaf_values(value: Any) -> list[Any]:
+    """Every scalar inside a decoded extra-vars document (bools/None excluded)."""
+    if isinstance(value, dict):
+        return [leaf for child in value.values() for leaf in _leaf_values(child)]
+    if isinstance(value, list):
+        return [leaf for child in value for leaf in _leaf_values(child)]
+    if value is None or isinstance(value, bool):
+        return []
+    return [value]
+
+
+def _monitor_labels(targets: Sequence[SelectedResource]) -> list[str]:
+    """Unique display labels must also avoid colliding with literal resource names."""
+    counts = Counter(item.name for item in targets)
+    reserved = {item.name for item in targets if item.name is not None}
+    labels: list[str] = []
+    for item in targets:
+        if item.name and counts[item.name] == 1:
+            label = item.name
+        else:
+            label = f"{item.name or item.kind}#{item.id}"
+            while label in reserved:
+                label += "#"
+            reserved.add(label)
+        labels.append(label)
+    return labels
