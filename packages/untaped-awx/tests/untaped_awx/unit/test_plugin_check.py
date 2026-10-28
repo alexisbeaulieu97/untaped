@@ -1,4 +1,4 @@
-"""awx's plugin check: its lint providers checked beside only their owner, under that composition."""
+"""awx's plugin check: its lint providers checked beside their owner, under that composition."""
 
 from __future__ import annotations
 
