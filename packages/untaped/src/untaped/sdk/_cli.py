@@ -319,7 +319,7 @@ def writes[F: Callable[..., Any]](
 
     A declared write must take ``--format``; a destructive one must also take
     ``--yes`` and ``--dry-run``. A command exposing ``--yes`` or ``--dry-run``
-    must be declared. ``untaped.sdk.testing.check_conventions`` enforces all three.
+    must be declared. ``untaped.sdk.testing.check_plugin`` enforces all three.
     Apply it under ``@app.command`` so the registered function carries the mark.
     """
     kind: WriteKind = "destructive" if destructive else "write"

@@ -1,8 +1,7 @@
 """The rows an installed plugin is checked by: ``check(install)`` and doctor read them.
 
 Every check runs against the installed code (a developer's editable install
-included). The conventions (and lint's file rules, when ``untaped[lint]`` is
-installed) read the plugin's package; the contract checks compose only the
+included). The conventions read the plugin's package; the contract checks compose only the
 plugin and the owners it provides for, so nothing else installed changes the
 verdict:
 
@@ -83,6 +82,7 @@ type _Row = Callable[..., PluginCheckRow]
 def _conventions(
     name: str, candidates: Sequence[PluginCandidate], row: _Row
 ) -> list[PluginCheckRow]:
+    # rules import the root
     from untaped.core.plugin_check.rules import plugin_violations  # noqa: PLC0415
 
     try:

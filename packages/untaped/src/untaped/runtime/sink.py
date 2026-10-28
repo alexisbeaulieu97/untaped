@@ -48,8 +48,8 @@ Rules the sink keeps:
 
 A presentation (``rendered``) may accompany a diagnostic: the exact text the
 text renderer prints (a callable taking whether to colour, or a string). It
-is not on the wire and never reaches a JSON line: a themed ``ui.message``
-line, a styled ``info`` line, an error with its ``hint:`` line, a debug log
+is not on the wire and never reaches a JSON line: a themed empty-table
+note, a styled ``info`` line, an error with its ``hint:`` line, a debug log
 record as its formatter writes it.
 """
 
@@ -603,9 +603,8 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
     """The text line of a diagnostic emitted without a presentation.
 
     An ``info``, ``success`` or ``warning`` message and a deprecation render
-    through the theme (``theme``: the policy's, else the default), as
-    ``ui.message`` does; its ``hint:`` line, a failure, a debug line and a
-    stale-data line do not.
+    through the theme (``theme``: the policy's, else the default); its
+    ``hint:`` line, a failure, a debug line and a stale-data line do not.
     """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):

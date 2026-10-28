@@ -835,7 +835,7 @@ class DeprecationNotice(Diagnostic, kind="untaped.deprecation"):
     """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
 
     ``id`` is its surface identity (``cli untaped awx put``,
-    ``cfg awx.base_url -> awx.server.url``;
+    ``cfg acme.base_url -> acme.server.url``;
     a setting's line adds its type and default after it), so a harness can
     allow-list exactly what it has reviewed. ``removed_in`` is the major that
     removes it (``None`` when its mark names none); ``distribution`` whose

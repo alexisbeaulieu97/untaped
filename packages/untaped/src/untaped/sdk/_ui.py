@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, TextIO
 
 from untaped.runtime.render import (
-    MessageKind,
     Row,
     render_collection,
     render_detail,
@@ -21,7 +20,7 @@ from untaped.runtime.sink import count_row_failures, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat, resolve_theme_or_default
 from untaped.sdk._run import is_quiet, is_verbose
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk.diagnostic import Failure, Message
+from untaped.sdk.diagnostic import Message
 from untaped.sdk.errors import (
     ConfigError,
     OperationCancelledError,
@@ -131,7 +130,7 @@ class UiContext:
             kind=kind,
         )
         if not rows and fmt == "table" and empty:
-            self._emit_message("info", empty if isinstance(empty, str) else "No results.")
+            self._empty_note(empty if isinstance(empty, str) else "No results.")
         return rendered
 
     def detail(
@@ -152,16 +151,15 @@ class UiContext:
             kind=kind,
         )
 
-    def _emit_message(self, kind: MessageKind, text: str) -> None:
-        """A ``kind`` line on stderr, rendered with this context's own theme and ``quiet``."""
-        if self.quiet and kind in ("success", "info"):
+    def _empty_note(self, text: str) -> None:
+        """An empty table's ``info`` line on stderr, with this context's own theme and ``quiet``."""
+        if self.quiet:
             return
-        diagnostic = Failure.plain(text) if kind == "error" else Message(level=kind, message=text)
 
         def rendered(color: bool) -> str:
-            return render_message(kind, text, theme=self.theme, colorize=color)
+            return render_message("info", text, theme=self.theme, colorize=color)
 
-        current_sink().emit(diagnostic, rendered=rendered)
+        current_sink().emit(Message(level="info", message=text), rendered=rendered)
 
     def styled(
         self,

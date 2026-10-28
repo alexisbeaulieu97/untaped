@@ -230,6 +230,13 @@ def test_empty_hint_goes_to_stderr_only_for_an_empty_table(
     assert stderr.getvalue().strip() == hint
 
 
+def test_quiet_mutes_the_empty_table_note() -> None:
+    stderr = io.StringIO()
+    with redirect_stderr(stderr):
+        UiContext(stdout=io.StringIO(), quiet=True).collection([], fmt="table", empty=True)
+    assert stderr.getvalue() == ""
+
+
 def test_ui_context_reflects_active_verbose_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

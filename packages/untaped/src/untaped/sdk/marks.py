@@ -730,7 +730,7 @@ def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
     model (``Annotated[int | None, experimental]``), never inside a union or
     generic argument, on a model-typed field, on a state model's field
     (``state=True``). A field with pydantic's own ``deprecated=`` is a style
-    problem for ``check_conventions`` (:func:`pydantic_deprecated_fields`), not
+    problem for ``check_plugin`` (:func:`pydantic_deprecated_fields`), not
     one that stops a provider loading.
     """
     errors: list[str] = []
@@ -973,7 +973,7 @@ def deprecation_sentence(obj: object, mark: Deprecated, *, subject: str | None =
     """The deprecation sentence of SDK callable ``obj``: what its ``warnings.deprecated`` says.
 
     ``<qualname> is deprecated and will be removed in <version>[; use <replacement>]``;
-    ``subject`` replaces the qualname (a parameter's ``echo(err=)``).
+    ``subject`` replaces the qualname (a parameter's ``fetch(retries=)``).
     """
     name = subject if subject is not None else str(getattr(obj, "__qualname__", obj))
     removal = removal_text(mark.removed_in, callable_owner(obj))
