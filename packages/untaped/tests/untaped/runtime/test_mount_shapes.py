@@ -90,6 +90,7 @@ class Count(Command):
 class Kinds(Command):
     """Print each piped row's kind as read, validated by nobody."""
 
+    label: Positional[TextOrStdin | None] = Field(None, description="A label, or - for stdin.")
     stdin: Stdin[Record]
 
     def run(self) -> str:
@@ -302,6 +303,12 @@ def test_stdin_of_any_record_reads_a_kind_less_row_with_every_field() -> None:
 def test_an_optional_text_or_stdin_reads_a_dash() -> None:
     assert _run("shapes", "note", "-", input="piped\n").stdout == "piped\n"
     assert _run("shapes", "note").stdout == ""
+
+
+def test_a_dash_and_stdin_rows_both_reading_stdin_is_a_usage_error() -> None:
+    result = _run("shapes", "kinds", "-", "--stdin", input="piped\n")
+    assert result.exit_code == 2
+    assert "- reads stdin, so it cannot be combined with --stdin" in result.stderr
 
 
 def test_an_unknown_column_is_refused_before_run() -> None:

@@ -55,7 +55,7 @@ from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
-from untaped.sdk.fields import Confirm, DryRun, File, Output
+from untaped.sdk.fields import Confirm, DryRun, File, Output, Stdin
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
     Deprecated,
@@ -787,6 +787,7 @@ def _instance(
     """The command ``cls`` validated from what was given; a bad value is exit 2 naming its flag."""
     data: dict[str, Any] = {}
     blocks: defaultdict[str, dict[str, object]] = defaultdict(dict)
+    piped = any(option.block == Stdin.field_kind and value for option, value in given)
     for option, value in given:
         if option.block is not None:
             blocks[option.field][option.flag or ""] = value
@@ -794,8 +795,11 @@ def _instance(
             if option.or_stdin and value == "-" and _value_type(cls, option.field) is str:
                 from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - a dash only
 
+                name = option.flag or option.metavar
+                if piped:  # one stdin: the rows or this text, never both
+                    raise UsageError(f"{name}: - reads stdin, so it cannot be combined with --stdin")
                 if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
-                    raise UsageError(f"{option.flag or option.metavar}: - reads stdin; pipe it")
+                    raise UsageError(f"{name}: - reads stdin; pipe it")
                 value = read_stdin_text()
             _put(data, cls, option.field, value)
     for path, flags in blocks.items():

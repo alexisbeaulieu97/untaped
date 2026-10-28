@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -15,16 +13,15 @@ from pydantic import Field
 
 from untaped.sdk import (
     AllowHyphen,
-    ConfigError,
     Failure,
     Output,
     Parallel,
     Positional,
     Short,
     Stdin,
+    TextOrStdin,
     UsageError,
     echo,
-    resolve_text_input,
 )
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.commands._workspace import WORKERS, WorkspaceCommand
@@ -79,13 +76,13 @@ class Run(WorkspaceCommand):
     ```
     """
 
-    name_or_cmd: Annotated[Positional[str], AllowHyphen] = Field(
+    name_or_cmd: Annotated[Positional[TextOrStdin], AllowHyphen] = Field(
         description=(
             "Workspace name, or the command when it is the only argument "
             "(the workspace is then found from the current directory)."
         )
     )
-    cmd: Annotated[Positional[str | None], AllowHyphen] = Field(
+    cmd: Annotated[Positional[TextOrStdin | None], AllowHyphen] = Field(
         None,
         description=(
             "The command: a shell string, a script file, or - to read a script "
@@ -114,7 +111,7 @@ class Run(WorkspaceCommand):
         name, command = (
             (None, self.name_or_cmd) if self.cmd is None else (self.name_or_cmd, self.cmd)
         )
-        _check_positionals(name, command, stdin=self.stdin.requested)
+        _check_positionals(name, command)
         record = self.locate(name)
         specs = self._selected(record.repos, workspace=record.name)
         root = self.workspace_dir(record.name)
@@ -123,15 +120,14 @@ class Run(WorkspaceCommand):
         if not targets:
             self.ctx.diag.warning("no repos to run in (read-only repos need --include-read-only)")
             return iter(())
-        with run_argv(command) as argv:
-            run = RunInRepos(
-                SubprocessRunner(),
-                parallel=self.parallel.value,
-                timeout=self.timeout,
-                fail_fast=self.fail_fast,
-                on_done=_echo_block if blocks else None,
-            )
-            rows = run(targets, argv)
+        run = RunInRepos(
+            SubprocessRunner(),
+            parallel=self.parallel.value,
+            timeout=self.timeout,
+            fail_fast=self.fail_fast,
+            on_done=_echo_block if blocks else None,
+        )
+        rows = run(targets, command_argv(command))
         if blocks:
             self._summary(rows)
         return iter(rows)
@@ -188,7 +184,7 @@ def _named(specs: Sequence[RepoSpec], names: Sequence[str]) -> set[RepoSpec]:
     return {by_name[name] for name in names}
 
 
-def _check_positionals(name: str | None, command: str, *, stdin: bool) -> None:
+def _check_positionals(name: str | None, command: str) -> None:
     """Usage errors ``run`` catches before touching anything.
 
     The positionals accept a leading hyphen (``-`` is a stdin script), so a
@@ -200,8 +196,10 @@ def _check_positionals(name: str | None, command: str, *, stdin: bool) -> None:
                 f"unknown option: {value}",
                 hint="a command that starts with -- needs quoting with a space, e.g. ' --x'",
             )
-    if command == "-" and stdin:
-        raise UsageError("a script on stdin (-) cannot be combined with --stdin")
+    if not command.strip():
+        raise UsageError(
+            "the command is empty: give a shell string, a script file, or - with a script piped"
+        )
 
 
 def _echo_block(row: RunOutcome) -> None:
@@ -220,32 +218,17 @@ def _echo_block(row: RunOutcome) -> None:
     sys.stdout.flush()
 
 
-@contextmanager
-def run_argv(command: str) -> Iterator[list[str]]:
+def command_argv(command: str) -> list[str]:
     """The argv for ``run``'s command argument.
 
-    ``-`` is a script read from stdin (kept in a temp file for the duration);
-    an existing file runs directly when executable, else through ``sh``;
-    anything else is a ``sh -c`` string.
+    An existing file runs directly when executable, else through ``sh``;
+    anything else, a script piped to ``-`` included, is a ``sh -c`` string.
     """
-    if command == "-":
-        try:
-            script = resolve_text_input(value=None, file=None, what="script")
-        except ConfigError:
-            raise UsageError("`-` reads a script from stdin, but nothing was piped") from None
-        with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as handle:
-            handle.write(script + "\n")
-        try:
-            yield ["sh", handle.name]
-        finally:
-            Path(handle.name).unlink(missing_ok=True)
-        return
     path = _existing_file(command)
     if path is not None:
         absolute = str(Path.cwd() / path)
-        yield [absolute] if _runs_directly(absolute) else ["sh", absolute]
-    else:
-        yield ["sh", "-c", "--", command]
+        return [absolute] if _runs_directly(absolute) else ["sh", absolute]
+    return ["sh", "-c", "--", command]
 
 
 def _existing_file(command: str) -> Path | None:
