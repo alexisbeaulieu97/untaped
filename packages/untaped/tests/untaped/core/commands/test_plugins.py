@@ -213,7 +213,8 @@ def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., 
     [
         pytest.param([], True, id="bare"),
         pytest.param([make_candidate(make_plugin("demo"))], False, id="plugin"),
-        pytest.param([make_candidate(make_plugin("demo"), name="other")], False, id="quarantined"),
+        # 11.x: a spec named apart from its candidate is quarantined; goes with PluginSpec
+        pytest.param([make_candidate(make_spec("demo"), name="other")], False, id="quarantined"),
     ],
 )
 def test_plugins_listing_install_hint_on_stderr(

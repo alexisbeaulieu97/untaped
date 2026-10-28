@@ -210,12 +210,12 @@ def make_plugin(
     return cast("type[Plugin]", cls)
 
 
-def ghost_candidates(*distributions: str) -> list[PluginCandidate]:
+def ghost_candidates(*distributions: str) -> tuple[PluginCandidate, ...]:
     """Plugin ``ghost`` from each of ``distributions``: two are quarantined as a duplicate name."""
     ghost = make_plugin("ghost")
-    return [
+    return tuple(
         PluginCandidate(distribution=each, name="ghost", target=ghost) for each in distributions
-    ]
+    )
 
 
 def compose(*plugins: PluginSpec | type[Plugin]) -> CompositionResult:

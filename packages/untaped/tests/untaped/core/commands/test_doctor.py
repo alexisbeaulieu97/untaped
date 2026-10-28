@@ -56,15 +56,9 @@ pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 _PASS = "pass"
 
 
-def _doctor_app(*specs: PluginSpec, ghost: bool = False) -> object:
+def _doctor_app(*specs: PluginSpec | type[Plugin], ghost: bool = False) -> object:
     """``untaped doctor`` composed with ``specs``; ``ghost`` adds a plugin quarantined by name."""
-    ghosts = (
-        [
-            *ghost_candidates("example-dist", "other-dist"),
-        ]
-        if ghost
-        else []
-    )
+    ghosts = ghost_candidates("example-dist", "other-dist") if ghost else ()
     return root_group("doctor", *specs, also=ghosts)
 
 
@@ -630,6 +624,44 @@ def test_the_current_projects_rows_are_checked(
 
     monkeypatch.chdir(project.root)
     code, rows = _rows(_doctor_app(acme))
+    assert code == 1
+    assert "acme.here row b" in _failed(rows)["validate state"]
+
+
+class _Row11(BaseModel):
+    name: str
+    created_at: str
+
+
+# 11.x: rows a spec lists on ``stores`` live in the shared state.yml; go with PluginSpec
+_ROWS = StateRows(
+    "acme", "items", model=_Row11, key_field="name", remove_hint="untaped acme rm {key}"
+)
+_HERE = StateRows.per_project("acme", "here", model=_Row11, key_field="name")
+
+
+def test_an_11x_damaged_row_fails_with_its_fix(_isolated_config: Path) -> None:
+    write_rows(_ROWS, [{"name": "a"}])
+
+    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
+
+    assert code == 1
+    assert _failed(rows)["validate state"] == (
+        f"acme.items row a in {_isolated_config.parent / 'state.yml'} is damaged: "
+        "created_at: Field required; correct that row by hand, or remove it with "
+        "`untaped acme rm a`"
+    )
+
+
+def test_an_11x_projects_rows_are_checked(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = make_project(tmp_path / "PROJ-1")
+    write_rows(_HERE.of(project), [{"name": "a", "created_at": "x"}, {"name": "b"}])
+    monkeypatch.chdir(project.root)
+
+    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_HERE,))))
+
     assert code == 1
     assert "acme.here row b" in _failed(rows)["validate state"]
 

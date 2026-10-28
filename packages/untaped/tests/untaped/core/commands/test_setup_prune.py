@@ -272,7 +272,7 @@ def test_an_unreadable_reference_keeps_every_folder() -> None:
 
 def test_a_quarantined_plugins_folder_and_cores_are_never_offered() -> None:
     _folder("ghost")
-    ghosts = (*ghost_candidates("one-dist", "other-dist"),)
+    ghosts = ghost_candidates("one-dist", "other-dist")
     (named_plugin_dir("untaped") / "cached").mkdir(parents=True, exist_ok=True)
     (named_plugin_dir("untaped").parent / ".trash").mkdir()
 

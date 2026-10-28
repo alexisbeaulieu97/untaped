@@ -31,7 +31,6 @@ from untaped.core.config.fields import editor, written
 from untaped.core.config.repository import SettingsFileRepository
 from untaped.core.config.use_cases import NamedValue, RankProviders, SetSetting
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import active_settings_layout
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.choices import Check, Cycle, Select, SingleList
@@ -39,6 +38,7 @@ from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput
 from untaped.screen.components.lists import ListEditor, MapEditor
 from untaped.screen.core import Frame, Paste, Screen
 from untaped.screen.runtime import Runtime
+from untaped.sdk import Plugin
 from untaped.sdk._schema import Argv, Choices, FieldDescriptor, walk_settings
 from untaped.sdk.health.deprecated_keys import Renamed
 from untaped.sdk.marks import deprecated, experimental
@@ -69,12 +69,12 @@ class KnobsProfile(BaseModel):
     secret: SecretStr | None = Field(default=None, description="A secret.")
 
 
-def _knobs() -> PluginSpec:
+def _knobs() -> type[Plugin]:
     return make_plugin("knobs", settings=KnobsProfile)
 
 
 def _build(
-    *specs: PluginSpec, profile: str = "default", only: list[str] | None = None
+    *specs: type[Plugin], profile: str = "default", only: list[str] | None = None
 ) -> Screen[SetupModel, SetupResult]:
     result = compose(*(specs or (_knobs(),)))
     raw = read_config_dict()
@@ -88,7 +88,7 @@ def _build(
     )
 
 
-def _to(section: str, *specs: PluginSpec, profile: str = "default") -> list[ScreenKey]:
+def _to(section: str, *specs: type[Plugin], profile: str = "default") -> list[ScreenKey]:
     """The keys from the list to ``section``'s rows."""
     model, _ = _build(*specs, profile=profile).init()
     index = next(i for i, row in enumerate(model.rows) if row.name == section)
