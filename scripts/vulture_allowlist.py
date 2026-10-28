@@ -164,6 +164,7 @@ WorkspacePlugin.workspaces
 WorkspacePlugin.checkouts
 Ansible.source_data
 RecipePlugin.uv
+LintPlugin.ignore_ids
 
 # Enum members read by value from manifests and the state file.
 Policy.ONCE  # dotfiles: `policy: once`
