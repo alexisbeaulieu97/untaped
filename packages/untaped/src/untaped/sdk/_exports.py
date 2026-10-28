@@ -75,7 +75,7 @@ from untaped.sdk.diagnostic import (
     Failure,
     Message,
     Progress,
-    StaleData,
+    Stale,
 )
 from untaped.sdk.diff import unified_diff_text
 from untaped.sdk.errors import (
@@ -444,7 +444,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Progress",
     "Record",
     "Source",
-    "StaleData",
+    "Stale",
     "TableGlyph",
     "TargetRecord",
     "TreeFormatOption",

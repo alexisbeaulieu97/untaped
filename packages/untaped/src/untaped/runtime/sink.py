@@ -14,7 +14,7 @@ Rules the sink keeps:
 
 - **Counting.** Emitting a :class:`~untaped.sdk.diagnostic.Failure` (a
   subclass too) counts its ``exit_code`` toward the run's exit code
-  (:func:`failure_exit_code`); a ``StaleData`` whose ``error`` is set is a
+  (:func:`failure_exit_code`); a ``Stale`` whose ``error`` is set is a
   warning and counts nothing.
 - **Muting.** ``--quiet`` mutes ``info``, ``success`` and progress, never a
   warning, a failure or a hint; ``debug`` prints only under ``--verbose``.
@@ -80,12 +80,12 @@ from untaped.sdk._run import OutputPolicy, recorder, run_clock, run_or_none
 from untaped.sdk.diagnostic import (
     NOT_COUNTED,
     Debug,
-    DeprecationNotice,
+    Deprecation,
     Diagnostic,
     Failure,
     Message,
     Progress,
-    StaleData,
+    Stale,
     format_error,
     kind_of,
 )
@@ -629,7 +629,7 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
 
 def _themed_level(diagnostic: Diagnostic) -> MessageKind | None:
     """The theme level ``diagnostic`` renders through, if it renders through the theme."""
-    if isinstance(diagnostic, DeprecationNotice):
+    if isinstance(diagnostic, Deprecation):
         return "warning"
     if isinstance(diagnostic, Message) and diagnostic.level != "hint":
         return diagnostic.level
@@ -745,7 +745,7 @@ class _RunSink:
                 f"{type(diagnostic).__qualname__} declares no kind, so it is not a line: "
                 "emit a subclass declared with kind=…"
             )
-        if isinstance(diagnostic, StaleData) and not self._first_stale(diagnostic):
+        if isinstance(diagnostic, Stale) and not self._first_stale(diagnostic):
             return
         if isinstance(diagnostic, Failure) and self._output is not None:
             self._output.note(diagnostic.exit_code)
@@ -846,7 +846,7 @@ class _RunSink:
                 return
         _write(text)
 
-    def _first_stale(self, stale: StaleData) -> bool:
+    def _first_stale(self, stale: Stale) -> bool:
         """Whether this is the run's first line about ``stale``'s cache entry."""
         key = (stale.cache, stale.key)
         with self._state_lock:
@@ -979,7 +979,7 @@ def _show_warning(
 
     if isinstance(message, UntapedDeprecationWarning):
         current_sink().emit(
-            DeprecationNotice(
+            Deprecation(
                 message=str(message),
                 id=message.id,
                 removed_in=message.removed_in,

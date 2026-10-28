@@ -21,7 +21,7 @@ from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import Plugin
 from untaped.sdk._run import run_scope
-from untaped.sdk.diagnostic import DeprecationNotice
+from untaped.sdk.diagnostic import Deprecation
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     DeprecatedBehaviour,
@@ -207,7 +207,7 @@ def test_notify_warns_once_per_key_as_its_record(monkeypatch: pytest.MonkeyPatch
         "message": "a row without a declared kind is deprecated and will be removed in "
         "untaped-svc 3.0; use kind= on the Record class",
     }
-    assert isinstance(result.diagnostics[0], DeprecationNotice)
+    assert isinstance(result.diagnostics[0], Deprecation)
 
 
 def _api() -> None:

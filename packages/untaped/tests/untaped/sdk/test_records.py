@@ -34,11 +34,11 @@ from untaped.runtime.sink import (
 )
 from untaped.sdk.diagnostic import (
     Debug,
-    DeprecationNotice,
+    Deprecation,
     Message,
     Progress,
     Pruned,
-    StaleData,
+    Stale,
     WireModel,
 )
 from untaped.sdk.errors import ConfigError, HttpStatusError, HttpTransportError
@@ -539,7 +539,7 @@ def _samples() -> dict[str, WireModel]:
         DoctorCheck,
         FixOutcome,
         InstalledSkill,
-        PluginCheckRow,
+        PluginCheck,
         ProjectOutcome,
         PruneOutcome,
         RecordedProject,
@@ -575,7 +575,7 @@ def _samples() -> dict[str, WireModel]:
             elapsed=3.0,
             state="running",
         ),
-        StaleData.describe(
+        Stale.describe(
             plugin="hello",
             subject="shelf",
             cache="hello.shelf_books",
@@ -632,7 +632,7 @@ def _samples() -> dict[str, WireModel]:
             detail="branch PROJ-123: 2 commits never pushed",
             hint="push it from /x/PROJ-123/web",
         ),
-        DeprecationNotice(
+        Deprecation(
             id="cli untaped hello old",
             removed_in=12,
             distribution="untaped-hello",
@@ -660,7 +660,7 @@ def _samples() -> dict[str, WireModel]:
             providers=["github", "gitlab"],
             ranked=["github"],
         ),
-        PluginCheckRow(
+        PluginCheck(
             plugin="bin", check="live", title="rack.item_source.items", status="pass", detail="2"
         ),
         ScaffoldOutcome(action="created", target_path=Path("/tmp/untaped-bin/pyproject.toml")),

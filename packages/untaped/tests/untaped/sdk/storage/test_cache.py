@@ -28,7 +28,7 @@ from untaped.runtime.sink import (
 )
 from untaped.sdk._cli import create_app, echo, report_errors
 from untaped.sdk._run import recording
-from untaped.sdk.diagnostic import Failure, Progress, StaleData
+from untaped.sdk.diagnostic import Failure, Progress, Stale
 from untaped.sdk.errors import ConfigError, ErrorCategory, HttpTransportError, UntapedError
 from untaped.sdk.network.upstream import PROBE_TIMEOUT
 from untaped.sdk.progress import ProgressHandle
@@ -123,8 +123,8 @@ def _show(*args: str) -> CliResult:
     return invoke_cli(app, ["show", *args])
 
 
-def _stale(result: CliResult) -> list[StaleData]:
-    return [each for each in result.diagnostics if isinstance(each, StaleData)]
+def _stale(result: CliResult) -> list[Stale]:
+    return [each for each in result.diagnostics if isinstance(each, Stale)]
 
 
 def _refreshed(clock: CacheClock, *keys: str, ago: timedelta) -> None:
@@ -299,7 +299,7 @@ def test_a_failed_refresh_serves_stale_data_after_the_failed_task(clock: CacheCl
 
     assert (result.exit_code, json.loads(result.stdout)) == (0, ["a1"])
     kinds = [(type(each).__name__, getattr(each, "state", None)) for each in result.diagnostics]
-    assert kinds == [("Progress", "running"), ("Progress", "failed"), ("StaleData", None)]
+    assert kinds == [("Progress", "running"), ("Progress", "failed"), ("Stale", None)]
     [line] = _stale(result)
     assert (line.plugin, line.cache, line.key, line.partial) == ("toy", "toy.items", "a", False)
     assert line.error is not None and line.error.category is ErrorCategory.UNAVAILABLE
@@ -835,7 +835,7 @@ def test_two_serves_of_one_key_say_it_once_and_the_first_line_wins(clock: CacheC
     with recording() as emitted, invocation():
         TOY.serve({"a": "toy a"}, refresh=False, fill=UP.fill, read=lambda: [])
         TOY.serve({"a": "toy a"}, refresh=True, fill=UP.fill, read=lambda: [])
-    [line] = [each for each in emitted if isinstance(each, StaleData)]
+    [line] = [each for each in emitted if isinstance(each, Stale)]
     assert line.message.endswith("(--cached)")
 
 

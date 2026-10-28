@@ -33,7 +33,7 @@ from ansible_index_support import (
     table,
 )
 from ansible_test_support import Awx, Result, run, use_config
-from untaped.sdk import Failure, Message, StaleData
+from untaped.sdk import Failure, Message, Stale
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.domain.payloads import (
     IndexedDependency,
@@ -441,7 +441,7 @@ def test_graph_cached_reads_sources_without_refreshing(
     assert calls == []
     assert _tree(result.stdout) == ["acme/deploy@main", "acme/site@main"]
     # Nothing refreshed: stderr carries only a stale line per source past its max age.
-    stale = {d.key for d in result.diagnostics if isinstance(d, StaleData)}
+    stale = {d.key for d in result.diagnostics if isinstance(d, Stale)}
     old = {"source:ops", *(["source:platform"] if age > timedelta(days=1) else [])}
     assert stale == old
     assert len(result.diagnostics) == len(old)
@@ -456,7 +456,7 @@ def test_graph_cached_on_stale_data_emits_one_stale_line(tmp_path: Path, monkeyp
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main"]
     [stale] = result.diagnostics
-    assert isinstance(stale, StaleData)
+    assert isinstance(stale, Stale)
     assert (stale.plugin, stale.cache, stale.key) == (
         "ansible",
         "ansible.source_data",
@@ -675,7 +675,7 @@ def test_graph_refresh_with_partial_failures_warns_with_a_stale_line(
     result = run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     assert result.exit_code == 0, result.output
-    [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+    [stale] = [d for d in result.diagnostics if isinstance(d, Stale)]
     assert (stale.plugin, stale.key, stale.partial) == ("ansible", "source:platform", True)
     assert stale.error is not None
     assert stale.error.details == {"repos": ["acme/gone"]}
@@ -709,7 +709,7 @@ def test_graph_refresh_budget_pause_serves_cached_data_or_exits(
         # Paused at the rate-limit floor over cached data: served with a warning.
         assert result.exit_code == 0, result.output
         assert _tree(result.stdout) == ["acme/site@main"]
-        [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+        [stale] = [d for d in result.diagnostics if isinstance(d, Stale)]
         assert stale.error is not None
         assert stale.error.category == "unavailable"
         assert stale.retry_at == reset
@@ -735,7 +735,7 @@ def test_graph_refresh_global_graphql_error_serves_cached_data_with_a_warning(
 
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main"]
-    [stale] = [d for d in result.diagnostics if isinstance(d, StaleData)]
+    [stale] = [d for d in result.diagnostics if isinstance(d, Stale)]
     assert stale.error is not None
     assert stale.error.category == "unavailable"
     assert result.stderr.count("github graphql rate limit exceeded") == 1

@@ -929,7 +929,7 @@ def notify_deprecation(
     if not first_notice(id if key is None else key):
         return
     from untaped.runtime.sink import Diagnostics  # noqa: PLC0415
-    from untaped.sdk.diagnostic import DeprecationNotice  # noqa: PLC0415 - off the CLI path
+    from untaped.sdk.diagnostic import Deprecation  # noqa: PLC0415 - off the CLI path
 
     removal = removal_text(removed_in, owner)
     if kept is None:
@@ -937,7 +937,7 @@ def notify_deprecation(
     else:
         message = deprecated_ignored_message(subject, kept, replacement or kept, removal)
     Diagnostics().emit(
-        DeprecationNotice(
+        Deprecation(
             message=message,
             hint=hint,
             id=id,

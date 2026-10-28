@@ -42,7 +42,7 @@ from untaped.sdk.contracts import (
     Source,
     gather,
 )
-from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.diagnostic import Stale
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
 from untaped.sdk.storage._digest import settings_digest
 
@@ -404,7 +404,7 @@ def test_a_stale_answer_prints_one_stale_warning_when_used_and_counts_nothing() 
 
     [stale] = emitted
     [path] = _cache_files()
-    assert isinstance(stale, StaleData)
+    assert isinstance(stale, Stale)
     assert (stale.plugin, stale.cache, stale.key) == (
         "library",
         "shelf.book_source_books",
@@ -427,7 +427,7 @@ def test_fresh_missing_and_cached_only_answers_print_no_stale_line() -> None:
         _cache_files()[0].unlink()
         list(gather(BookSource.books)())  # a miss that fails
 
-    assert [each for each in emitted if isinstance(each, StaleData)] == []
+    assert [each for each in emitted if isinstance(each, Stale)] == []
 
 
 def test_a_failed_live_call_with_no_cached_answer_fails() -> None:

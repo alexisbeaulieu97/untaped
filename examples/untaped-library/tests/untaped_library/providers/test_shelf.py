@@ -11,7 +11,7 @@ from untaped_library.providers.shelf import LibraryBooks
 from untaped_library.records import Volume
 from untaped_library.settings import LibrarySettings, VolumeEntry
 
-from untaped.sdk import StaleData, home
+from untaped.sdk import Stale, home
 from untaped.sdk.testing import Install, ManualClock, assert_fills
 
 Installer = Callable[..., Install]
@@ -105,7 +105,7 @@ def test_a_failed_refresh_serves_the_cached_books_with_one_stale_warning(
     assert ran.exit == 0, ran.stderr
     assert [row["title"] for row in json.loads(ran.stdout)] == ["Dune", "Emma"]
     [stale] = ran.diagnostics
-    assert isinstance(stale, StaleData)
+    assert isinstance(stale, Stale)
     assert (stale.plugin, stale.cache) == ("library", "shelf.book_source_books")
     assert stale.message.startswith("library: refresh failed (the catalogue is down)")
 

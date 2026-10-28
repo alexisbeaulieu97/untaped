@@ -24,7 +24,7 @@ from untaped.runtime.registry import PluginSpec, settings_model
 from untaped.runtime.settings import get_settings
 from untaped.sdk._cli import create_app, echo, report_errors
 from untaped.sdk._home import config_path
-from untaped.sdk.diagnostic import DeprecationNotice, Message
+from untaped.sdk.diagnostic import Deprecation, Message
 from untaped.sdk.health.deprecated_keys import Retired, key_mappings, mapping_errors
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.storage.cache import Cache, Filled, refresh_option
@@ -90,7 +90,7 @@ def _warnings(result: CliResult) -> list[str]:
     return [
         d.message
         for d in result.diagnostics
-        if isinstance(d, DeprecationNotice) or (isinstance(d, Message) and d.level == "warning")
+        if isinstance(d, Deprecation) or (isinstance(d, Message) and d.level == "warning")
     ]
 
 

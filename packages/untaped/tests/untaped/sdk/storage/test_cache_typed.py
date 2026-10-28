@@ -20,7 +20,7 @@ from untaped.runtime.registry import named_plugin_dir
 from untaped.runtime.run import invocation
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import cached
-from untaped.sdk.diagnostic import Diagnostic, StaleData
+from untaped.sdk.diagnostic import Diagnostic, Stale
 from untaped.sdk.errors import ConfigError, HttpTransportError
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.storage import data_file
@@ -92,8 +92,8 @@ def _serve(
     return served, list(emitted)
 
 
-def _stale(emitted: list[Diagnostic]) -> list[StaleData]:
-    return [each for each in emitted if isinstance(each, StaleData)]
+def _stale(emitted: list[Diagnostic]) -> list[Stale]:
+    return [each for each in emitted if isinstance(each, Stale)]
 
 
 def _files(cache: Cache[Any] = SNAPSHOTS) -> list[Path]:

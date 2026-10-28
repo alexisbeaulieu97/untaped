@@ -28,7 +28,7 @@ from ansible_index_support import (
     seed_index,
 )
 from ansible_test_support import Result, run, run_root, running, use_config, write_config
-from untaped.sdk import ErrorCategory, Failure, Freshness, Message, Progress, StaleData
+from untaped.sdk import ErrorCategory, Failure, Freshness, Message, Progress, Stale
 from untaped.sdk.testing import cache_clock, progress_clock
 from untaped_ansible import refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult
@@ -107,8 +107,8 @@ def _freshness(key: str) -> Freshness:
         return SOURCE_DATA.freshness(key)
 
 
-def _stale(result: Result) -> list[StaleData]:
-    return [d for d in result.diagnostics if isinstance(d, StaleData)]
+def _stale(result: Result) -> list[Stale]:
+    return [d for d in result.diagnostics if isinstance(d, Stale)]
 
 
 def _failures(result: Result) -> list[Failure]:
@@ -541,7 +541,7 @@ def test_the_failed_task_precedes_the_stale_line_and_the_roots_warnings_follow(
     failed = next(
         i for i, d in enumerate(diagnostics) if isinstance(d, Progress) and d.state == "failed"
     )
-    stale = next(i for i, d in enumerate(diagnostics) if isinstance(d, StaleData))
+    stale = next(i for i, d in enumerate(diagnostics) if isinstance(d, Stale))
     root = next(
         i
         for i, d in enumerate(diagnostics)

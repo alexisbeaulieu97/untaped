@@ -232,7 +232,7 @@ class SetupStep(Record, kind="untaped.setup_step"):
     )
 
 
-class PluginCheckRow(CheckRecord, kind="untaped.plugin_check"):
+class PluginCheck(CheckRecord, kind="untaped.plugin_check"):
     """One finding of a plugin check (:func:`untaped.sdk.testing.check_plugin`)."""
 
     plugin: Annotated[str, Column]

@@ -17,7 +17,7 @@ EXPECTED_ALL = [
     "MemoryCredentials",
     "MemoryStore",
     "PluginCandidate",
-    "PluginCheckRow",
+    "PluginCheck",
     "ProgressClock",
     "PromptBackend",
     "Ran",

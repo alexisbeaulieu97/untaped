@@ -25,7 +25,7 @@ from lint_test_support import Result, run
 from untaped.sdk import InstalledPlugin, Plugin
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.health.doctor import PluginContext
-from untaped.sdk.testing import PluginCheckRow, install
+from untaped.sdk.testing import PluginCheck, install
 from untaped_git.plugin import Git
 from untaped_lint.api import Rule
 from untaped_lint.plugin import LintPlugin
@@ -298,7 +298,7 @@ def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(
     events: list[str] = []
     check_plugin = conventions.check_plugin
 
-    def spied(name: str, **kwargs: Any) -> list[PluginCheckRow]:
+    def spied(name: str, **kwargs: Any) -> list[PluginCheck]:
         events.append("conventions")
         return check_plugin(name, **kwargs)
 

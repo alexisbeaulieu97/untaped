@@ -14,7 +14,7 @@ from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import kind_of
-from untaped.sdk.testing import PluginCheckRow, check_plugin, plugin_candidate
+from untaped.sdk.testing import PluginCheck, check_plugin, plugin_candidate
 
 # A plugin package outside src/untaped, one file per convention family:
 # an undeclared write (help tree), a print (messages, one allowed), a
@@ -304,14 +304,14 @@ def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
 ) -> None:
     """S13's core half: check names and a status, no file conventions, the same record kind."""
     rows = check_plugin("demo", candidates=demo)
-    assert all(isinstance(row, PluginCheckRow) for row in rows)
+    assert all(isinstance(row, PluginCheck) for row in rows)
     assert {(row.check, row.title, row.status) for row in rows} == {
         ("conventions", "undeclared-write", "fail"),
         ("conventions", "plugin-name", "fail"),
         ("conventions", "protocol-location", "fail"),
     }
-    assert kind_of(PluginCheckRow) == "untaped.plugin_check"
-    assert "severity" not in PluginCheckRow.model_fields
+    assert kind_of(PluginCheck) == "untaped.plugin_check"
+    assert "severity" not in PluginCheck.model_fields
 
 
 def test_check_plugin_checks_an_uninstalled_spec_through_candidates() -> None:

@@ -1,4 +1,4 @@
-"""The stderr kinds: ``Failure``'s fill and agreement, plain lines, and ``StaleData``'s wording."""
+"""The stderr kinds: ``Failure``'s fill and agreement, plain lines, and ``Stale``'s wording."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from untaped.runtime.sink import (
     current_sink,
     exit_on_counted_failure,
 )
-from untaped.sdk.diagnostic import Failure, StaleData
+from untaped.sdk.diagnostic import Failure, Stale
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.records import OutcomeRecord
 
@@ -83,10 +83,10 @@ def test_a_plain_failure_is_failed_and_untaped() -> None:
     )
 
 
-# ---- StaleData -----------------------------------------------------------------
+# ---- Stale -----------------------------------------------------------------
 
 
-def _stale(**overrides: object) -> StaleData:
+def _stale(**overrides: object) -> Stale:
     fields: dict[str, object] = {
         "plugin": "hello",
         "subject": "shelf",
@@ -96,7 +96,7 @@ def _stale(**overrides: object) -> StaleData:
         "now": _NOW,
         "max_age": timedelta(hours=1),
     }
-    return StaleData.describe(**(fields | overrides))  # type: ignore[arg-type]
+    return Stale.describe(**(fields | overrides))  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

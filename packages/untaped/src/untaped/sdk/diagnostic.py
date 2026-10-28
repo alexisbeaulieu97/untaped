@@ -15,9 +15,9 @@ Every stderr line is a :class:`Diagnostic`:
 - :class:`Failure` (``untaped.failure``): an ``error``, counted toward the
   exit code; also the ``error`` of a failed row;
 - :class:`Debug` (``untaped.debug``): a log record under ``--verbose``;
-- :class:`StaleData` (``untaped.stale``): a ``warning`` that cached data was
+- :class:`Stale` (``untaped.stale``): a ``warning`` that cached data was
   served stale, and why;
-- :class:`DeprecationNotice` (``untaped.deprecation``): a ``warning`` that a
+- :class:`Deprecation` (``untaped.deprecation``): a ``warning`` that a
   deprecated thing was used, and the major that removes it.
 
 ``level`` is a class constant on every fixed-level kind (only ``Message``
@@ -719,7 +719,7 @@ class Progress(Diagnostic, kind="untaped.progress"):
     state: Literal["running", "done", "failed"]
 
 
-class StaleData(Diagnostic, kind="untaped.stale"):
+class Stale(Diagnostic, kind="untaped.stale"):
     """Cached data served past its freshness, and why: a ``warning``, never counted.
 
     ``plugin`` names whose data it is: the plugin that declared the cache
@@ -765,7 +765,7 @@ class StaleData(Diagnostic, kind="untaped.stale"):
         outdated: bool = False,
         hint: str | None = None,
         cached: bool = False,
-    ) -> StaleData:
+    ) -> Stale:
         """A stale line about ``subject`` (``source prod``, a provider), worded for its case.
 
         A failed refresh (``error``, not ``partial``): ``refresh failed
@@ -831,7 +831,7 @@ class Pruned(Diagnostic, kind="untaped.pruned"):
     bytes: int
 
 
-class DeprecationNotice(Diagnostic, kind="untaped.deprecation"):
+class Deprecation(Diagnostic, kind="untaped.deprecation"):
     """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
 
     ``id`` is its surface identity (``cli untaped awx put``,
@@ -999,7 +999,7 @@ __all__ = [
     "KIND_PATTERN",
     "NOT_COUNTED",
     "Debug",
-    "DeprecationNotice",
+    "Deprecation",
     "Diagnostic",
     "DuplicateKindError",
     "Failure",
@@ -1008,7 +1008,7 @@ __all__ = [
     "Level",
     "Message",
     "Pruned",
-    "StaleData",
+    "Stale",
     "UtcTimestamp",
     "WireModel",
     "attribute",

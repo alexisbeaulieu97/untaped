@@ -43,7 +43,7 @@ from untaped.sdk.contracts._declare import (
     record_kind,
 )
 from untaped.sdk.contracts._reasons import ErrorReason, QuarantineReason, Reason, SkipReason
-from untaped.sdk.diagnostic import StaleData
+from untaped.sdk.diagnostic import Stale
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Issued, Source
@@ -135,7 +135,7 @@ class Answers[R](Sequence[Answer[R]]):
         owner: str,
         contract: str,
         method: str,
-        pending: Mapping[str, Sequence[StaleData]] | None = None,
+        pending: Mapping[str, Sequence[Stale]] | None = None,
     ) -> None:
         self._items = tuple(items)
         self.owner = owner
@@ -174,7 +174,7 @@ class Answers[R](Sequence[Answer[R]]):
         """The providers that were not asked, or whose answer doesn't count."""
         return tuple(answer for answer in self if isinstance(answer, Skipped))
 
-    def take_stale(self) -> tuple[StaleData, ...]:
+    def take_stale(self) -> tuple[Stale, ...]:
         """The stale lines not yet said, which nothing says afterwards.
 
         For a consumer that reports staleness itself: it prints, drops or
@@ -192,7 +192,7 @@ class Answers[R](Sequence[Answer[R]]):
         """The answers, their stale lines left pending (``select_one`` says them per answer)."""
         return self._items
 
-    def _take(self, plugin: str) -> tuple[StaleData, ...]:
+    def _take(self, plugin: str) -> tuple[Stale, ...]:
         """``plugin``'s pending stale lines, which nothing says afterwards."""
         with self._lock:
             return self._pending.pop(plugin, ())
@@ -277,14 +277,14 @@ def gather[C: Contract, **P, R](
                 quarantined=quarantined,
             )
 
-        stale: dict[str, list[StaleData]] = {}
+        stale: dict[str, list[Stale]] = {}
 
-        def ask(job: tuple[BoundProvider, int | None]) -> tuple[Answer[R], list[StaleData]]:
+        def ask(job: tuple[BoundProvider, int | None]) -> tuple[Answer[R], list[Stale]]:
             provider, rank = job
             return _ask(provider, wanted, rank, refresh, args, kwargs)
 
         def keep(
-            job: tuple[BoundProvider, int | None], asked: tuple[Answer[R], list[StaleData]]
+            job: tuple[BoundProvider, int | None], asked: tuple[Answer[R], list[Stale]]
         ) -> None:
             answers[job[0].plugin], stale[job[0].plugin] = asked
             progress.update(job[0].plugin, done=len(stale), total=len(runnable))
@@ -364,7 +364,7 @@ def _ask[R](
     refresh: bool | None,
     args: Any,
     kwargs: Any,
-) -> tuple[Answer[R], list[StaleData]]:
+) -> tuple[Answer[R], list[Stale]]:
     """``provider``'s answer, and the stale lines its caches left for whoever reads it."""
     caller = f"{provider.plugin}'s {provider.binding.contract.cls.__name__}.{method.name}"
     with call_state(refresh, caller=caller) as state:

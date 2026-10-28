@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING, Any, TextIO
 from cyclopts import App
 from rich.console import Console
 
-from untaped.core.commands.records import PluginCheckRow
+from untaped.core.commands.records import PluginCheck
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.sink import cadence_clock, cadence_is_set, frozen_cadence, tick
 from untaped.sdk._cli import run_cyclopts_app
@@ -115,7 +115,7 @@ __all__ = [
     "MemoryCredentials",
     "MemoryStore",
     "PluginCandidate",
-    "PluginCheckRow",
+    "PluginCheck",
     "ProgressClock",
     "PromptBackend",
     "Ran",
@@ -767,11 +767,11 @@ def plugin_candidate(
 
 def check_plugin(
     name: str, *, candidates: Sequence[PluginCandidate] | None = None
-) -> list[PluginCheckRow]:
+) -> list[PluginCheck]:
     """The rows of the checks only an installed, composed plugin can answer.
 
     Composes ``name`` hermetically, as :func:`check` does, and
-    returns one :class:`PluginCheckRow` per check: the conventions that read
+    returns one :class:`PluginCheck` per check: the conventions that read
     the composed root (names, provides requirements, the help tree, guides
     and overview lines, stability marks, structure's class checks, the import
     boundary), then ``contracts``,

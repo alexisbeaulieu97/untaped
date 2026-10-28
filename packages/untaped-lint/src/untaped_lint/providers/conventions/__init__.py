@@ -18,7 +18,7 @@ from pathlib import Path
 
 from untaped.sdk import InstalledPlugin, UsageError, installed_plugins
 from untaped.sdk.contracts import providing
-from untaped.sdk.testing import PluginCandidate, PluginCheckRow, check_plugin
+from untaped.sdk.testing import PluginCandidate, PluginCheck, check_plugin
 from untaped_lint.errors import UnreadableSourceError
 from untaped_lint.infrastructure.files import SourceFile, source_files
 from untaped_lint.providers.conventions.blob_reader import blob_reader_violations
@@ -227,7 +227,7 @@ def _relative(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
-def _from_row(plugin: str, row: PluginCheckRow, base: Path | None) -> Finding | None:
+def _from_row(plugin: str, row: PluginCheck, base: Path | None) -> Finding | None:
     if row.status == "pass":
         return None
     severity: Severity = "warning" if row.status == "warn" else "error"

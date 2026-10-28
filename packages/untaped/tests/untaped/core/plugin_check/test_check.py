@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
-from untaped.core.plugin_check.check import PluginCheckRow, check_plugins
+from untaped.core.plugin_check.check import PluginCheck, check_plugins
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
@@ -16,13 +16,13 @@ from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 
 
-def _check(name: str | None = "bin", **kwargs: object) -> list[PluginCheckRow]:
+def _check(name: str | None = "bin", **kwargs: object) -> list[PluginCheck]:
     found = candidates(**kwargs)  # type: ignore[arg-type]
     result = bootstrap.compose_root(candidates=found)
     return check_plugins(result, found, name)
 
 
-def _rows(rows: list[PluginCheckRow]) -> list[tuple[str, str, str, str]]:
+def _rows(rows: list[PluginCheck]) -> list[tuple[str, str, str, str]]:
     return [(row.check, row.title, row.status, row.detail) for row in rows]
 
 
