@@ -441,8 +441,8 @@ def _body_snippet(response: httpx.Response, limit: int) -> str:
 
     Used at every site that attaches a response body to ``HttpError``:
     the bytes are already buffered by httpx, but the decoded string
-    survives on the exception (often through ``report_errors`` to
-    stderr) long after the ``Response`` is collected — so the *string*
+    survives on the exception (often through core's error boundary
+    to stderr) long after the ``Response`` is collected — so the *string*
     needs the cap, not the buffer. ``errors="replace"`` keeps the error
     path crash-free on a truncated multi-byte sequence at the cost of
     a few ``\\ufffd`` characters; charset from the response header is

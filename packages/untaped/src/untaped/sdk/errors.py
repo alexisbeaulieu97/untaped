@@ -5,8 +5,8 @@ Every user-facing failure is an :class:`UntapedError`. Each one carries a
 and whether a retry can help), a ``system`` (who is responsible: ``untaped``,
 ``local``, ``git``, or a service section such as ``awx``), an optional ``hint``
 and a ``details`` mapping. Classes declare defaults; an instance overrides them
-with keyword arguments. :func:`untaped.sdk._cli.report_errors` exits with the
-error's ``exit_code``, so the exit-code contract (:class:`ExitCode`) lives next
+with keyword arguments. Core's error boundary exits with the error's
+``exit_code``, so the exit-code contract (:class:`ExitCode`) lives next
 to the exceptions that select it.
 """
 
@@ -247,7 +247,7 @@ class UntapedError(Exception):
 
     @property
     def exit_code(self) -> int:
-        """The process exit code :func:`untaped.sdk._cli.report_errors` uses for this error."""
+        """The process exit code core exits with for this error."""
         return self.category.exit_code
 
     @property
@@ -405,7 +405,7 @@ class HttpError(UntapedError):
     domain layers map status + payload into typed errors without
     re-running the request. **Capped at 2048 bytes** (``_BODY_LIMIT`` in
     :mod:`untaped.sdk.network.http`) so a multi-MB proxy error page doesn't
-    live on the exception — and through ``report_errors`` to stderr —
+    live on the exception — and through core's error boundary to stderr —
     long after the underlying response is collected.
 
     An error status (``>= 400``) selects the category unless one is given
