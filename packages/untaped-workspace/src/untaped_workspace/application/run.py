@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import signal
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,7 +39,7 @@ class RunInRepos:
         self._timeout = timeout
         self._fail_fast = fail_fast
 
-    def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> Iterator[RunOutcome]:
+    def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> Generator[RunOutcome]:
         """Each target's row as its run finishes; those ``fail_fast`` never started come last."""
         finished: list[RunOutcome] = []
         pending: dict[Future[CommandResult], RunTarget] = {}
