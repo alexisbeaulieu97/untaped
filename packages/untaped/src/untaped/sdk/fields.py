@@ -82,6 +82,8 @@ Column = Mark("Column")
 """A record field a list's table shows by default: ``name: Annotated[str, Column]``.
 
 None marked: every field. A single record's table shows every field either way.
+An outcome's ``action`` and a check's ``status`` are marked by their base; a
+subclass redeclaring one keeps the mark only by marking it again.
 """
 
 Key = Mark("Key")
@@ -460,6 +462,18 @@ class SettingKey:
         return {"type": "string"}
 
 
+def _column_name(column: str | SettingKey) -> str:
+    """The table column ``column`` names: a field reference's dumped name."""
+    if isinstance(column, str):
+        return column
+    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
+
+    path = SettingKey.path_of(column)
+    if len(path) != 1:
+        raise TypeError(f"a table column is one field of the record, not {column!r}")
+    return dumped_names(SettingKey.model_of(column))[path[0]]
+
+
 def _model_in(annotation: object) -> type[BaseModel] | None:
     """The one pydantic model ``annotation`` is (``Model`` or ``Model | None``), if any."""
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
@@ -471,9 +485,13 @@ def _model_in(annotation: object) -> type[BaseModel] | None:
 
 
 def key(model: type[BaseModel]) -> SettingKey:
-    """A typed reference to a settings field: ``key(HelloSettings).greeting``."""
+    """A typed reference to a model's field: ``key(HelloSettings).greeting``.
+
+    A settings field names a setting; a record's field names a table column,
+    ``Output(columns=(key(Repo).full_name,))``.
+    """
     if not (isinstance(model, type) and issubclass(model, BaseModel)):
-        raise TypeError(f"key() takes a settings model class, not {model!r}")
+        raise TypeError(f"key() takes a model class, not {model!r}")
     return SettingKey(model)
 
 
@@ -497,8 +515,8 @@ class Output[R: BaseModel](FieldBlock):
     default columns (a single record's table shows every field), and
     ``--columns`` names its fields (checked before ``run``, so a subclass's
     own fields are not columns). The default configures it:
-    ``Output(columns=("key", "summary"))`` gives this command its own default
-    columns (a one-record table shows them even when empty),
+    ``Output(columns=(key(Issue).key, key(Issue).summary))`` gives this
+    command its own default columns (a one-record table shows them even when empty),
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it, though ``--columns`` still
     prints core's table), and ``Output(format="raw")`` makes another
@@ -522,12 +540,13 @@ class Output[R: BaseModel](FieldBlock):
     def __init__(
         self,
         *,
-        columns: Sequence[str] = (),
+        columns: Sequence[str | SettingKey] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
         format: str = "table",
         stream: bool = False,
     ) -> None:
-        self._declared = tuple(columns)
+        self._keys = tuple(column for column in columns if isinstance(column, SettingKey))
+        self._declared = tuple(_column_name(column) for column in columns)
         #: Each row prints as ``run`` yields it, not once the run ends.
         self.stream = stream
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
@@ -573,6 +592,9 @@ class Output[R: BaseModel](FieldBlock):
         from untaped.sdk._cli import check_columns  # noqa: PLC0415 - rendering is heavy
 
         model = _type_argument(call.annotation)
+        for column in self._keys:
+            if model is not None and not issubclass(model, SettingKey.model_of(column)):
+                raise TypeError(f"Output[{model.__name__}](columns=) names {column!r}")
         requested = flags.get("--columns")
         filled = _copy(self)
         filled.format = str(flags.get("--format") or self.default_format)
@@ -941,7 +963,10 @@ def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
     own fields shows every field, so the base's marks alone are no default.
     """
     from untaped.sdk.diagnostic import WireModel, _field_order, dumped_names  # noqa: PLC0415
-    from untaped.sdk.records import CheckRecord, OutcomeRecord  # noqa: PLC0415
+    from untaped.sdk.records import (  # noqa: PLC0415 - records import fields
+        CheckRecord,
+        OutcomeRecord,
+    )
 
     marked = set(column_fields(model))
     joining = {

@@ -30,7 +30,7 @@ from untaped.core.commands.records import PruneOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.settings import PLUGIN_NAME_PATTERN, plugins_root
 from untaped.sdk.errors import UntapedError
-from untaped.sdk.fields import Confirm, Output, table_row
+from untaped.sdk.fields import Confirm, Output, key, table_row
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._fs import dir_bytes
 from untaped.sdk.words import plural, shown_path, size_text
@@ -138,7 +138,14 @@ class Prune(Command[CoreSettings]):
 
     repairs = True
     confirm: Confirm
-    output: Output[PruneOutcome]
+    output: Output[PruneOutcome] = Output(
+        columns=(
+            key(PruneOutcome).what,
+            key(PruneOutcome).target_path,
+            key(PruneOutcome).action,
+            key(PruneOutcome).detail,
+        )
+    )
 
     def run(self) -> Iterator[PruneOutcome]:
         # Lazy: bootstrap is the CLI's root and imports this module.

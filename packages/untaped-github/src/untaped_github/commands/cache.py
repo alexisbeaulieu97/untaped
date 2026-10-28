@@ -46,7 +46,15 @@ from untaped_github.settings import SWEEP, GithubSettings
 #: The columns a list of stored copies shows.
 STORED_COLUMNS = ("full_name", "ref", "profile", "archived", "disk_bytes", "fetched_at", "path")
 #: What a ``cache delete`` or ``prune`` table shows: each repo's outcome in ``status``.
-DELETED_COLUMNS = ("full_name", "ref", "status", "archived", "disk_bytes", "fetched_at", "path")
+DELETED_COLUMNS = (
+    key(CorpusRepo).full_name,
+    key(CorpusRepo).ref,
+    key(CorpusRepo).status,
+    key(CorpusRepo).archived,
+    key(CorpusRepo).disk_bytes,
+    key(CorpusRepo).fetched_at,
+    key(CorpusRepo).path,
+)
 
 
 class Status(GithubCommand):

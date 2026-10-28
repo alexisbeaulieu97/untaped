@@ -168,10 +168,9 @@ class PruneOutcome(OutcomeRecord, TargetRecord, kind="untaped.prune_outcome"):
     or ``failed``, with ``error``.
     """
 
-    what: Annotated[PruneWhat, Column]
-    detail: Annotated[str, Column]
+    what: PruneWhat
+    detail: str
     bytes: int = Field(description="Its size on disk when it was listed.")
-    target_path: Annotated[AbsolutePath, Column]
 
 
 ProjectState = Literal["present", "unreadable", "missing", "unknown"]

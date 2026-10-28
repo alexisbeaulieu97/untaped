@@ -508,7 +508,13 @@ class Validate(_SuiteCommand):
         ),
     )
     output: Output[ProvisionOutcome] = Output(
-        columns=("kind", "name", "template", "prompts", "path")
+        columns=(
+            key(ProvisionOutcome).kind,
+            key(ProvisionOutcome).name,
+            key(ProvisionOutcome).template,
+            key(ProvisionOutcome).prompts,
+            key(ProvisionOutcome).path,
+        )
     )
 
     def run(self) -> Iterator[ProvisionOutcome]:
@@ -654,7 +660,14 @@ class Prune(AwxCommand):
     )
     confirm: Confirm
     output: Output[PruneOutcome] = Output(
-        columns=("kind", "id", "name", "ref", "created_at", "action")
+        columns=(
+            key(PruneOutcome).kind,
+            key(PruneOutcome).id,
+            key(PruneOutcome).name,
+            key(PruneOutcome).ref,
+            key(PruneOutcome).created_at,
+            key(PruneOutcome).action,
+        )
     )
 
     def run(self) -> Iterator[PruneOutcome]:

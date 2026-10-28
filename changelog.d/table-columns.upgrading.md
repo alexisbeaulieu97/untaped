@@ -5,4 +5,5 @@ fields. The table shows them in the order json shows the fields. An
 so they join the record's own marks. To mark another inherited field, such as
 a `TargetRecord`'s `target_path`, redeclare it. A command whose columns its
 record's fields can't give (a subclass that wants none of its base's
-columns, say) sets `Output(columns=(...))`.
+columns, say) names them as the record's fields:
+`Output(columns=(key(Repo).full_name, key(Repo).pushed_at))`.

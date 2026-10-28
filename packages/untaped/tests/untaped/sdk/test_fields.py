@@ -161,7 +161,7 @@ def test_a_key_typo_fails_where_it_is_written() -> None:
         _ = key(AcmeSettings).gretting
     with pytest.raises(AttributeError, match="is a value, not a model"):
         _ = key(AcmeSettings).greeting.length
-    with pytest.raises(TypeError, match="settings model class"):
+    with pytest.raises(TypeError, match="takes a model class"):
         key("acme")  # type: ignore[arg-type]
 
 
@@ -216,6 +216,28 @@ def test_an_unfilled_output_is_a_table_with_its_declared_columns() -> None:
     assert (output.format, list(output.columns)) == ("table", ["name"])
     output.columns.add("size", "name")
     assert list(output.columns) == ["name", "size"]
+
+
+class Aliased(BaseModel):
+    from_: str = Field(default="", serialization_alias="from")
+    model_config = ConfigDict(serialize_by_alias=True)
+
+
+def test_an_outputs_columns_name_the_records_fields() -> None:
+    filled = Output(columns=(key(Row).size, key(Row).name))._fill({}, _call(Output[Row]))
+    assert list(filled.columns) == ["size", "name"]
+    aliased = Output(columns=(key(Aliased).from_,))._fill({}, _call(Output[Aliased]))
+    assert list(aliased.columns) == ["from"]  # the column is the dumped name
+
+
+def test_an_outputs_columns_refuse_another_records_field() -> None:
+    with pytest.raises(TypeError, match=r"Output\[Row\]\(columns=\) names key\(Hold\)\.item"):
+        Output(columns=(key(Hold).item,))._fill({}, _call(Output[Row]))
+
+
+def test_an_outputs_column_is_one_field() -> None:
+    with pytest.raises(TypeError, match="one field of the record"):
+        Output(columns=(key(AcmeSettings).server.url,))
 
 
 def test_a_filled_output_is_a_copy_and_falls_back_to_the_column_marks() -> None:

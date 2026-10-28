@@ -980,6 +980,23 @@ def test_a_core_model_writes_its_old_row_keys_in_their_order(kind: str) -> None:
     assert list(json.loads(sample.model_dump_json())) == _ROW_KEYS[kind]
 
 
+def test_a_failed_prune_row_keeps_its_error_before_the_inherited_target_path(
+    tmp_path: Path,
+) -> None:
+    from untaped.core.commands.records import PruneOutcome
+
+    row = PruneOutcome(
+        what="folder",
+        action="failed",
+        detail="",
+        bytes=0,
+        target_path=tmp_path,
+        error=Failure.from_exception(ConfigError("x")),
+    )
+    keys = list(json.loads(row.model_dump_json()))
+    assert keys == ["what", "action", "detail", "bytes", "error", "target_path"]
+
+
 class _Answered(Record, kind="acme-tools.answered"):
     """A service's row passed through: two typed fields, every other one kept."""
 

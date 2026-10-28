@@ -198,8 +198,8 @@ free, but a command that writes declares it with `@writes`, or
 - The columns come in the order json shows the fields. An outcome's `action`
   and a check's `status` are marked by their base and join the record's own
   marks; a record marking none of its own fields shows every field. Redeclare
-  an inherited field to mark it. `Output(columns=(…))` sets one command's
-  defaults; a single record shows every field.
+  an inherited field to mark it. `Output(columns=(key(Repo).full_name, …))`
+  sets one command's defaults; a single record shows every field.
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
