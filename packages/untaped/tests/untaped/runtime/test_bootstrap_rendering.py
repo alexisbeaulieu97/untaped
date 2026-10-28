@@ -61,7 +61,7 @@ class Chords(Command):
 class Old(Command):
     """List the chords the old way."""
 
-    stability = deprecated(removed_in=99, replacement="untaped chime chords")
+    stability = deprecated(removed_in=99, replacement=Chords)
     output: Output[Chord]
 
     def run(self) -> Iterator[Chord]:

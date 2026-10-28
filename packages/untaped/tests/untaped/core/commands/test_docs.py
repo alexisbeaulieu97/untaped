@@ -193,7 +193,7 @@ class Start(Command[AcmeSettings]):
 class Drop(Command[AcmeSettings]):
     """Drop a widget for good."""
 
-    stability = deprecated(removed_in=99, replacement="untaped acme widgets add")
+    stability = deprecated(removed_in=99, replacement=Add)
 
     def run(self) -> None:
         return None
