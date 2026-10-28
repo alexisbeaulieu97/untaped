@@ -86,6 +86,31 @@ def test_install_short_via_stdin_keeps_full_id(tmp_path: Path) -> None:
     assert (target / "untaped-demo" / "SKILL.md").is_file()
 
 
+def test_install_reads_the_rows_skills_list_pipes(tmp_path: Path) -> None:
+    app = _skills_app("untaped-one", "untaped-two")
+    listed = CliInvoker().invoke(app, ["list", "--format", "pipe"])  # type: ignore[arg-type]
+    rows = [line for line in listed.output.splitlines() if '"untaped-two"' in line]
+    target = tmp_path / "skills"
+    result = CliInvoker().invoke(
+        app,  # type: ignore[arg-type]
+        ["install", "--stdin", "--target-dir", str(target)],
+        input="\n".join(rows) + "\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert [path.name for path in target.iterdir()] == ["untaped-two"]
+
+
+def test_install_refuses_names_and_stdin_together(tmp_path: Path) -> None:
+    app = _skills_app("untaped-demo")
+    result = CliInvoker().invoke(
+        app,  # type: ignore[arg-type]
+        ["install", "demo", "--stdin", "--target-dir", str(tmp_path)],
+        input="demo\n",
+    )
+    assert result.exit_code == 2
+    assert "not both" in result.output
+
+
 def test_install_all_keeps_full_ids(tmp_path: Path) -> None:
     app = _skills_app("untaped-one", "untaped-two")
     target = tmp_path / "skills"
@@ -231,6 +256,27 @@ def test_update_selected_names_leaves_others() -> None:
 
     rows = _json(app, "update", "two")
 
+    assert [(row["name"], row["action"]) for row in rows] == [("untaped-two", "updated")]
+    assert root.joinpath("untaped-one", "SKILL.md").read_text() == "older wording\n"
+
+
+def test_update_reads_the_rows_status_pipes() -> None:
+    app = _skills_app("untaped-one", "untaped-two")
+    _install(app, "--all")
+    root = Path.home() / ".agents" / "skills"
+    for name in ("untaped-one", "untaped-two"):
+        age_stub(root / name)
+    listed = CliInvoker().invoke(app, ["status", "--format", "pipe"])  # type: ignore[arg-type]
+    piped = [line for line in listed.stdout.splitlines() if '"untaped-two"' in line]
+
+    result = CliInvoker().invoke(
+        app,  # type: ignore[arg-type]
+        ["update", "--stdin", "--format", "json"],
+        input="\n".join(piped) + "\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
     assert [(row["name"], row["action"]) for row in rows] == [("untaped-two", "updated")]
     assert root.joinpath("untaped-one", "SKILL.md").read_text() == "older wording\n"
 

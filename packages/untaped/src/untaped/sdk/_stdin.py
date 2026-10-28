@@ -6,11 +6,9 @@ import json
 import sys
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 from untaped.runtime.render import stream_is_tty
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
-from untaped.sdk.diagnostic import WireModel, kind_of
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.words import q
 
@@ -53,37 +51,6 @@ def read_stdin_text() -> str:
     return _trim_terminal_newline(sys.stdin.read())
 
 
-def resolve_text_input(*, value: str | None, file: Path | None, what: str = "body") -> str:
-    """Resolve one text input from flag value > file > piped stdin.
-
-    ``value`` and ``file`` together are refused; by convention ``what`` is
-    also the flag stem (``--<what>`` / ``--<what>-file``). A file read trims
-    its terminal newline like :func:`read_stdin_text`. Empty resolved text
-    raises :class:`ConfigError` naming ``what``.
-    """
-    if value is not None and file is not None:
-        raise UsageError(f"provide --{what} or --{what}-file, not both")
-    if value is not None:
-        return _require_text(value, what=what)
-    if file is not None:
-        try:
-            with open(file, encoding="utf-8", newline="") as handle:
-                return _require_text(_trim_terminal_newline(handle.read()), what=what)
-        except OSError as exc:
-            raise ConfigError(f"could not read {file}: {exc}", category="invalid") from exc
-    text = read_stdin_text()
-    return _require_text(text, what=what)
-
-
-def _require_text(text: str, *, what: str) -> str:
-    if not text.strip():
-        raise ConfigError(
-            f"no {what} provided (use --{what}, --{what}-file, or pipe it on stdin)",
-            category="invalid",
-        )
-    return text
-
-
 def _read_raw_lines() -> list[tuple[int, str]] | None:
     """Read stdin as ``(1-based line number, stripped line)`` pairs.
 
@@ -117,27 +84,21 @@ class StdinInput:
 
 def read_stdin_input(
     *,
-    accepts: Collection[type[WireModel]] | None = None,
     accept_kinds: Collection[str] | None = None,
     allow_empty: bool = False,
 ) -> StdinInput:
     """Read stdin as bare values or a pipe stream, detected from the first line.
 
-    The one core stdin reader for commands that accept either shape (a
-    name/ID list or another command's ``--format pipe`` output). Raises
-    :class:`ConfigError` on empty stdin (``nothing received on stdin``), on
-    mixed bare/envelope input, and on malformed envelopes (line-precise).
-    With ``allow_empty`` an empty (or blank) pipe is no values instead, for
-    commands where "nothing piped" means "nothing to do"; a terminal stdin
-    (nothing piped at all) still raises.
-    ``accepts`` names the record models the command understands: an envelope
-    whose ``kind`` is set and is none of theirs is a :class:`UsageError`
+    ``Stdin``'s reader: a name/ID list or another command's ``--format pipe``
+    output. Raises :class:`ConfigError` on empty stdin (``nothing received on
+    stdin``), on mixed bare/envelope input, and on malformed envelopes
+    (line-precise). With ``allow_empty`` an empty (or blank) pipe is no values
+    instead, for commands where "nothing piped" means "nothing to do"; a
+    terminal stdin (nothing piped at all) still raises. An envelope whose
+    ``kind`` is set and is none of ``accept_kinds`` is a :class:`UsageError`
     (exit 2), so ``awx hosts list -f pipe | awx jobs get --stdin`` can never
-    treat host IDs as job IDs. Records without a kind are accepted. A model
-    that declares no kind is a ``TypeError``. ``accept_kinds`` names the
-    same as kind strings; pass one or the other.
+    treat host IDs as job IDs; records without a kind are accepted.
     """
-    accept_kinds = _accepted_kinds(accepts, accept_kinds)
     pairs = _read_raw_lines()
     if not pairs:
         if pairs is None or not allow_empty:
@@ -161,26 +122,6 @@ def read_stdin_input(
     return StdinInput(values=tuple(values), records=None)
 
 
-def _accepted_kinds(
-    accepts: Collection[type[WireModel]] | None, accept_kinds: Collection[str] | None
-) -> Collection[str] | None:
-    """The kinds a reader accepts: those its models declare, else the strings given."""
-    if accepts is None:
-        return accept_kinds
-    if accept_kinds is not None:
-        raise TypeError("pass accepts= or accept_kinds=, not both")
-    kinds: set[str] = set()
-    for model in accepts:
-        kind = kind_of(model)
-        if kind is None:
-            raise TypeError(
-                f"accepts= takes record models that declare a kind; "
-                f"{model.__module__}.{model.__qualname__} declares none"
-            )
-        kinds.add(kind)
-    return kinds
-
-
 def _check_kinds(records: Sequence[PipeEnvelope], accept_kinds: Collection[str]) -> None:
     accepted = sorted(accept_kinds)
     for env in records:
@@ -190,60 +131,6 @@ def _check_kinds(records: Sequence[PipeEnvelope], accept_kinds: Collection[str])
                 f"line {env.lineno}: record kind {q(env.kind)} is not accepted here; "
                 f"expected {expected}"
             )
-
-
-def read_identifiers(
-    positional: list[str],
-    *,
-    stdin: bool,
-    id_field: str | None = None,
-    accepts: Collection[type[WireModel]] | None = None,
-    accept_kinds: Collection[str] | None = None,
-) -> list[str]:
-    """Resolve identifiers from positional args or stdin (exactly one).
-
-    Used by every CLI command that takes a list of names/IDs to honour
-    the documented pipeline shape (``list --format raw | get --stdin``).
-    Mixing positional + ``--stdin`` is a :class:`UsageError`: a misplaced flag
-    would silently act on the wrong set. No identifiers at all is also a
-    usage error, and empty stdin a :class:`ConfigError`, so commands don't
-    no-op when given nothing to do.
-
-    On stdin the input may be either bare newline-separated identifiers or an
-    untaped ``--format pipe`` stream (see :func:`read_stdin_input`). In
-    envelope mode each record's ``id_field`` is extracted, so a producer's rich
-    output pipes straight into an identifier consumer; ``accepts`` (the
-    models) or ``accept_kinds`` (their kinds) rejects records of any other
-    kind with exit 2.
-    """
-    _accepted_kinds(accepts, accept_kinds)  # a wrong argument fails without --stdin too
-    if stdin and positional:
-        raise UsageError("provide identifiers as positional args or via --stdin, not both")
-    if stdin:
-        piped = read_stdin_input(accepts=accepts, accept_kinds=accept_kinds)
-        if piped.records is None:
-            return list(piped.values)
-        if id_field is None:
-            raise ConfigError(
-                "stdin is untaped pipe format but this command cannot map records to identifiers",
-                category="invalid",
-            )
-        return [_extract_id(env, id_field) for env in piped.records]
-    if not positional:
-        raise UsageError("at least one identifier is required (or use --stdin)")
-    return positional
-
-
-def _extract_id(env: PipeEnvelope, id_field: str) -> str:
-    value = env.record.get(id_field)
-    if value is None:
-        raise ConfigError(
-            f"line {env.lineno}: record {id_field!r} is missing or null", category="invalid"
-        )
-    identifier = str(value).strip()
-    if not identifier:
-        raise ConfigError(f"line {env.lineno}: record {id_field!r} is blank", category="invalid")
-    return identifier
 
 
 def _looks_like_envelope(text: str) -> bool:

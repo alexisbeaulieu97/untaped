@@ -14,7 +14,6 @@ from uuid import uuid4
 
 from untaped.core import skill_stubs
 from untaped.core.skill_stubs import STUB_MARKER, Comparison, StubAuthor
-from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.projects import checkout_root
 from untaped.sdk.storage._fs import atomic_write, is_write_temp
@@ -123,7 +122,6 @@ def install_skills(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     all_skills: bool,
     target: SkillInstallTarget,
     force: bool,
@@ -133,12 +131,7 @@ def install_skills(
     on_installed: Callable[[SkillInstallResult], None] | None = None,
 ) -> list[SkillInstallResult]:
     """Install selected skills after validating the full plan up front."""
-    selected_names = _selected_skill_names(
-        skills,
-        skill_names,
-        stdin=stdin,
-        all_skills=all_skills,
-    )
+    selected_names = _selected_skill_names(skills, skill_names, all_skills=all_skills)
     targets = _install_targets(
         target,
         scope=scope,
@@ -374,13 +367,11 @@ def _selected_skill_names(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     all_skills: bool,
 ) -> list[str]:
-    selector_count = int(bool(skill_names)) + int(stdin) + int(all_skills)
-    if selector_count != 1:
+    if int(bool(skill_names)) + int(all_skills) != 1:
         raise UsageError("provide skill names, --stdin, or --all; not more than one")
-    selected = sorted(skills) if all_skills else read_identifiers(skill_names, stdin=stdin)
+    selected = sorted(skills) if all_skills else list(skill_names)
     duplicate = _first_duplicate(selected)
     if duplicate is not None:
         raise UsageError(f"duplicate skill selected: {duplicate}")

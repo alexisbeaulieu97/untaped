@@ -5833,7 +5833,9 @@ record untaped.installed_plugin.status string
 record untaped.installed_plugin.tests_dir string(format=path)?
 record untaped.installed_plugin.version string
 record untaped.installed_skill
+record untaped.installed_skill(name, scope, state, target, target_path)
 record untaped.installed_skill.error Failure?
+record untaped.installed_skill.error default=None
 record untaped.installed_skill.name string
 record untaped.installed_skill.scope string
 record untaped.installed_skill.state string
@@ -5958,6 +5960,7 @@ record untaped.setup_step.state choice=todo
 record untaped.setup_step.state string
 record untaped.setup_step.step string
 record untaped.skill
+record untaped.skill(description, name)
 record untaped.skill.description string
 record untaped.skill.name string
 record untaped.skill_outcome
@@ -8409,10 +8412,6 @@ sdk untaped.sdk.raise_usage(message)
 sdk untaped.sdk.read_data_file(legacy_stamps=) default=[]  [experimental]
 sdk untaped.sdk.read_data_file(path, model)  [experimental]
 sdk untaped.sdk.read_data_file(unstamped=) default=refuse  [experimental]
-sdk untaped.sdk.read_identifiers(accept_kinds=) default=None
-sdk untaped.sdk.read_identifiers(accepts=) default=None
-sdk untaped.sdk.read_identifiers(id_field=) default=None
-sdk untaped.sdk.read_identifiers(positional, *, stdin)
 sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_text()
 sdk untaped.sdk.read_structured_file(flag=) default=None
@@ -8429,8 +8428,6 @@ sdk untaped.sdk.render_rows(rows, *, fmt)
 sdk untaped.sdk.render_rows(table_columns=) default=None
 sdk untaped.sdk.report_errors()
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
-sdk untaped.sdk.resolve_text_input(*, value, file)
-sdk untaped.sdk.resolve_text_input(what=) default=body
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.retired_values(section, key)
 sdk untaped.sdk.run_editor(argv=) default=None
