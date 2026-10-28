@@ -3,22 +3,23 @@
 Inside a plugin repository the nearest ``pyproject.toml`` (up to the project
 root) names its plugins under ``[project.entry-points."untaped.plugins"]``;
 each installed one is an ``untaped.installed_plugin`` subject, and one that is not
-installed is a finding, never a subject. ``--stdin`` reads pipe envelopes,
+installed is a finding, never a subject. ``--stdin`` reads piped rows,
 each one subject of its kind.
 """
 
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import InstalledPlugin, PipeEnvelope, UsageError, nearest_pyproject
-from untaped_lint.providers import conventions
-from untaped_lint.records import Finding, Subject, declared_kind, public
+from pydantic import JsonValue
 
-PLUGIN_KIND = declared_kind(InstalledPlugin)
+from untaped.sdk import InstalledPlugin, UsageError, nearest_pyproject
+from untaped_lint.providers import conventions
+from untaped_lint.records import Finding, Subject, declared_kind, is_kind, public
+
 _GROUP = "untaped.plugins"
 
 
@@ -31,7 +32,7 @@ class Found:
 
 
 def plugin_subject(plugin: InstalledPlugin) -> Subject:
-    return Subject(kind=PLUGIN_KIND, record=plugin.model_dump(mode="json"))
+    return Subject(kind=declared_kind(InstalledPlugin), record=plugin.model_dump(mode="json"))
 
 
 def declared_plugins(start: Path) -> list[str]:
@@ -67,17 +68,17 @@ def not_installed(name: str) -> Finding:
     return public(conventions.KEY, conventions.not_installed(name))
 
 
-def stdin_subjects(envelopes: Iterable[PipeEnvelope]) -> list[Subject]:
-    """Each pipe envelope as a subject of its kind; a kind-less one is a usage error.
+def stdin_subjects(rows: Iterable[tuple[str | None, Mapping[str, JsonValue]]]) -> list[Subject]:
+    """Each piped row, as its kind and its record, a subject; a kind-less one is a usage error.
 
     untaped's own row of ``plugin list`` (``root``) is skipped: the plugin
     check does not read untaped itself as an installed plugin yet.
     """
     subjects: list[Subject] = []
-    for envelope in envelopes:
-        if not envelope.kind:
+    for kind, record in rows:
+        if not kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
-        if envelope.kind == PLUGIN_KIND and envelope.record.get("root"):
+        if is_kind(kind, InstalledPlugin) and record.get("root"):
             continue
-        subjects.append(Subject(kind=envelope.kind, record=dict(envelope.record)))
+        subjects.append(Subject(kind=kind, record=dict(record)))
     return subjects

@@ -8,7 +8,7 @@ from textwrap import dedent
 
 import pytest
 
-from lint.support import Install
+from lint_test_support import Site
 from untaped.core.plugin_check.rules import plugin_violations
 from untaped.sdk import PluginSpec
 from untaped.sdk.testing import plugin_candidate
@@ -79,8 +79,8 @@ def test_clean_files_pass(tmp_path: Path, source: str) -> None:
     assert _violations(tmp_path, source) == []
 
 
-def test_check_conventions_reports_it_for_a_plugin(install: Install) -> None:
-    install(
+def test_check_conventions_reports_it_for_a_plugin(site: Site) -> None:
+    site(
         {
             "demo/__init__.py": """
                 from __future__ import annotations

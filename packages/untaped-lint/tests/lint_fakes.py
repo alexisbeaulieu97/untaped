@@ -1,7 +1,7 @@
 """Fake record kinds and rule providers for lint's engine and command tests.
 
-Compose them with ``compose_with("lint", provides={"acme": [Acme()]})``: the
-``provides`` key is the fake plugin's name, so ``acme``'s ids read
+Install them with ``install(LintPlugin, providers={"acme": [Acme]})``: the
+``providers`` key is the fake plugin's name, so ``acme``'s ids read
 ``acme.<id>``.
 """
 
@@ -11,7 +11,7 @@ import json
 from collections.abc import Iterator
 
 from untaped.sdk import InstalledPlugin, Record
-from untaped_lint.api import Finding, Linter, Rule, Rules, Subject, finding, rule
+from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, Subject, finding, rule
 
 
 class Widget(Record, kind="linttest.widget"):
@@ -58,6 +58,17 @@ def default_branch(gadget: Gadget) -> Iterator[Finding]:
     yield finding(default_branch, gadget.name, "no default branch")
 
 
+@rule("placed", reads=Widget, severity="warning", summary="A widget's lines are placed.")
+def placed(widget: Widget) -> Iterator[Finding]:
+    for line in (1, 2):
+        location = FileLocation(path="src/a.py", line=line)
+        yield finding(placed, widget.name, "misplaced", location=location)
+
+
+class Placing(Rules):
+    RULES = (placed,)
+
+
 class Counting(Rules):
     """A ``Rules`` host that counts the subjects it is asked about, by kind."""
 
@@ -85,6 +96,16 @@ class WarnOnly(Rules):
     RULES = (tall,)
 
 
+class NotAProvider(Linter):
+    """Fills ``Linter`` without being a ``Provider``: composition quarantines its plugin."""
+
+    def rules(self) -> list[Rule]:
+        return []
+
+    def findings(self, subject: Subject) -> list[Finding]:
+        return []
+
+
 class Malformed(Linter):
     """Declares ``wide`` and answers one valid finding and one with a bad severity."""
 
@@ -97,10 +118,12 @@ class Malformed(Linter):
 
 
 class MalformedRule(Linter):
-    """Declares ``wide`` and a rule whose id is dotted, which no ``Rule`` validates."""
+    """Declares ``wide`` and a rule whose id is dotted, which the engine never prefixes."""
 
     def rules(self) -> list[Rule]:
-        bad = Rule.model_construct(id="acme.dotted", reads=wide.rule.reads, severity="error")
+        bad = Rule.model_construct(
+            id="acme.dotted", reads=wide.rule.reads, severity="error", summary="Dotted."
+        )
         return [bad, wide.rule]
 
     def findings(self, subject: Subject) -> list[Finding]:

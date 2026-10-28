@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from untaped.sdk import DoctorResult, PluginContext
 
-IGNORE_IDS = "lint.ignore-ids"
-
 
 def ignore_ids_check(ctx: PluginContext) -> DoctorResult:
     """``lint.ignore-ids``: warns about a ``lint.ignore`` id no installed rule declares."""
@@ -15,10 +13,10 @@ def ignore_ids_check(ctx: PluginContext) -> DoctorResult:
 
     settings = ctx.settings if isinstance(ctx.settings, LintSettings) else LintSettings()
     if not settings.ignore:
-        return DoctorResult(id=IGNORE_IDS, ok=True, detail="lint.ignore is empty")
+        return DoctorResult(ok=True, detail="lint.ignore is empty")
     resolver = Resolver(loaded_rules())
     for each in settings.ignore:
         resolver.resolve(parse_suppression(each, option="lint.ignore").rule)
     if resolver.warnings:
-        return DoctorResult(id=IGNORE_IDS, ok=True, warn=True, detail="; ".join(resolver.warnings))
-    return DoctorResult(id=IGNORE_IDS, ok=True, detail="every lint.ignore id is installed")
+        return DoctorResult(ok=True, warn=True, detail="; ".join(resolver.warnings))
+    return DoctorResult(ok=True, detail="every lint.ignore id is installed")

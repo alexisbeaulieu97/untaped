@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from lint.fakes import Acme, Widget
+from lint_fakes import Acme, Widget
 from untaped.sdk import ConfigError
 from untaped.sdk.testing import compose_with
 from untaped_lint.api import Subject, Tree, TreeReader

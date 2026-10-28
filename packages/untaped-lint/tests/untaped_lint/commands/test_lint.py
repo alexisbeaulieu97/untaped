@@ -1,4 +1,4 @@
-"""``untaped lint`` and ``untaped lint rules``: subjects in, findings out, exit by the table."""
+"""``untaped lint``, ``rules`` and ``new``: subjects in, findings out, exit by the table."""
 
 from __future__ import annotations
 
@@ -9,17 +9,27 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from lint.fakes import Acme, Gizmo, PluginReader, Raising, Sprocket, WarnOnly, Widget, pipe
-from untaped.sdk import InstalledPlugin, PluginSpec, key
+from lint_fakes import (
+    Acme,
+    Gizmo,
+    NotAProvider,
+    Placing,
+    PluginReader,
+    Raising,
+    Sprocket,
+    WarnOnly,
+    Widget,
+    pipe,
+)
+from lint_test_support import Result, run
+from untaped.sdk import InstalledPlugin, Plugin
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.health.doctor import PluginContext
-from untaped.sdk.testing import CliResult, PluginCheckRow, compose_with, invoke_cli, invoke_root
-from untaped_lint import SPEC
+from untaped.sdk.testing import PluginCheckRow, install
+from untaped_git.plugin import Git
 from untaped_lint.api import Rule
-from untaped_lint.cli import app
+from untaped_lint.plugin import LintPlugin
 from untaped_lint.settings import LintSettings
-
-pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 WIDGET = pipe(Widget(name="w"))
 
@@ -30,38 +40,60 @@ def _outside_this_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.chdir(tmp_path)
 
 
-def _lint(*args: str, input: str = WIDGET) -> CliResult:
-    return invoke_cli(app, ["--stdin", "-f", "json", *args], input=input)
+def _lint(
+    *args: str,
+    input: str = WIDGET,
+    providers: dict[str, list[type]] | None = None,
+    settings: LintSettings | None = None,
+) -> Result:
+    return run(
+        ["--stdin", "-f", "json", *args],
+        input=input,
+        providers=providers if providers is not None else {"acme": [Acme]},
+        settings=() if settings is None else settings,
+    )
 
 
-def _rules(result: CliResult) -> list[str]:
+def _rules(result: Result) -> list[str]:
     return sorted(row["rule"] for row in json.loads(result.stdout))
 
 
-def _warnings(result: CliResult) -> list[str]:
-    return [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+def _warnings(result: Result) -> list[str]:
+    return [
+        f"warning: {each.message}"
+        for each in result.ran.diagnostics
+        if getattr(each, "level", None) == "warning"
+    ]
 
 
 # --- exit codes -------------------------------------------------------------
 
 
 def test_an_error_finding_exits_3() -> None:
-    with compose_with("lint", provides={"acme": [Acme()]}):
-        result = _lint()
+    result = _lint()
     assert result.exit_code == 3
     assert _rules(result) == ["acme.tall", "acme.wide"]
     assert "lint: 1 error, 1 warning" in result.stderr
 
 
+def test_a_table_shows_each_target_and_its_location_as_a_file_line() -> None:
+    result = run(
+        ["--stdin", "-c", "rule,target,location"], input=WIDGET, providers={"acme": [Placing]}
+    )
+    rows = [[cell.strip() for cell in line.split("│")[1:-1]] for line in result.stdout.splitlines()]
+    assert [row for row in rows if row[:1] == ["acme.placed"]] == [
+        ["acme.placed", "w", "src/a.py:1"],
+        ["acme.placed", "w", "src/a.py:2"],
+    ]
+
+
 def test_warnings_only_exit_0_and_3_with_strict() -> None:
-    with compose_with("lint", provides={"acme": [WarnOnly()]}):
-        assert _lint().exit_code == 0
-        assert _lint("--strict").exit_code == 3
+    assert _lint(providers={"acme": [WarnOnly]}).exit_code == 0
+    assert _lint("--strict", providers={"acme": [WarnOnly]}).exit_code == 3
 
 
 def test_a_failure_row_exits_1_even_with_error_findings() -> None:
-    with compose_with("lint", provides={"acme": [Raising()]}):
-        result = _lint()
+    result = _lint(providers={"acme": [Raising]})
     assert result.exit_code == 1
     assert _rules(result) == ["acme.wide"]
     assert "acme.boom" in result.stderr
@@ -78,40 +110,44 @@ def test_a_failure_row_exits_1_even_with_error_findings() -> None:
     ids=["stdin-with-paths", "kind-less-record", "bad-select", "bad-ignore"],
 )
 def test_usage_mistakes_exit_2(args: list[str], input: str) -> None:
-    with compose_with("lint", provides={"acme": [Acme()]}):
-        result = _lint(*args, input=input)
+    result = _lint(*args, input=input)
     assert result.exit_code == 2, result.stderr
     assert not result.stdout
 
 
 def test_bare_values_on_stdin_are_a_usage_mistake() -> None:
-    with compose_with("lint", provides={"acme": [Acme()]}):
-        result = _lint(input="w\n")
+    result = _lint(input="w\n")
     assert result.exit_code == 2, result.stderr
     assert not result.stdout
     assert "--stdin reads records: pipe untaped's --format pipe output" in result.stderr
 
 
-def test_every_provider_quarantined_exits_4() -> None:
-    def broken() -> tuple[()]:
-        raise RuntimeError("cannot offer")
+class ShopSettings(BaseModel):
+    """Nothing to configure."""
 
-    with compose_with("lint", PluginSpec(name="shop", provides={"lint": broken})):
-        result = _lint()
-    assert result.exit_code == 4
-    assert "shop's rules did not run: quarantined" in result.stderr
+
+class Shop(Plugin):
+    """Fills lint's ``Linter`` with a class that is no ``Provider``: composition quarantines it."""
+
+    settings = ShopSettings
+    fills = (NotAProvider,)
+
+
+def test_a_quarantined_plugin_offers_no_rules_and_composition_says_why() -> None:
+    result = run(["--stdin", "-f", "json"], input=WIDGET, plugins=[Shop])
+    assert result.exit_code == 0, result.stderr
+    assert any("plugin 'shop'" in each and "quarantined" in each for each in _warnings(result))
+    assert _warnings(result)[-1] == (
+        "warning: no installed rule reads linttest.widget records; see `untaped lint rules`"
+    )
 
 
 def test_a_provider_that_is_not_ready_says_so_when_it_is_the_only_one() -> None:
-    class AcmeSettings(BaseModel):
-        token: str | None = None
-
     class Lazy(Acme):
         def ready(self) -> NotReady:
-            return NotReady("needs a token", key(AcmeSettings).token)
+            return NotReady("needs a token")
 
-    with compose_with("lint", provides={"acme": [Lazy()]}):
-        result = _lint()
+    result = _lint(providers={"acme": [Lazy]})
     assert result.exit_code == 0
     assert "warning: acme's rules did not run: needs a token" in _warnings(result)
 
@@ -119,23 +155,21 @@ def test_a_provider_that_is_not_ready_says_so_when_it_is_the_only_one() -> None:
 # --- suppression ------------------------------------------------------------
 
 
-def test_the_profile_ignore_flags_and_select_add_up(_isolated_config: Path) -> None:
-    _isolated_config.write_text(
-        "format_version: 2\nlint:\n  ignore: [acme.tall, nope]\n", encoding="utf-8"
-    )
+def test_the_profile_ignore_flags_and_select_add_up() -> None:
     widgets = pipe(Widget(name="legacy-a"), Widget(name="b"))
-    with compose_with("lint", provides={"acme": [Acme()], "gizmo": [Gizmo()]}):
-        result = _lint(
-            "--ignore",
-            "acme.wide:legacy-*",
-            "--ignore",
-            "nope",
-            "--select",
-            "acme.wide",
-            "--select",
-            "acme.tall",
-            input=widgets,
-        )
+    result = _lint(
+        "--ignore",
+        "acme.wide:legacy-*",
+        "--ignore",
+        "nope",
+        "--select",
+        "acme.wide",
+        "--select",
+        "acme.tall",
+        input=widgets,
+        providers={"acme": [Acme], "gizmo": [Gizmo]},
+        settings=LintSettings(ignore=["acme.tall", "nope"]),
+    )
     assert [(row["rule"], row["target"]) for row in json.loads(result.stdout)] == [
         ("acme.wide", "b")
     ]
@@ -143,11 +177,11 @@ def test_the_profile_ignore_flags_and_select_add_up(_isolated_config: Path) -> N
 
 
 def test_doctor_warns_about_an_ignored_id_no_rule_declares() -> None:
-    (check,) = SPEC.doctor_checks
-    with compose_with("lint", provides={"acme": [Acme()]}):
+    check = LintPlugin.ignore_ids
+    with install(LintPlugin, providers={"acme": [Acme]}).running():
         known = check.run(PluginContext(settings=LintSettings(ignore=["acme.wide"])))
         unknown = check.run(PluginContext(settings=LintSettings(ignore=["acme.wide", "nope"])))
-    assert (check.id, known.ok, known.warn) == ("lint.ignore-ids", True, False)
+    assert (known.ok, known.warn) == (True, False)
     assert (unknown.ok, unknown.warn) == (True, True)
     assert "nope" in unknown.detail
 
@@ -156,8 +190,7 @@ def test_doctor_warns_about_an_ignored_id_no_rule_declares() -> None:
 
 
 def test_a_kind_no_rule_reads_warns_naming_lint_rules() -> None:
-    with compose_with("lint", provides={"acme": [Acme()]}):
-        result = _lint(input=pipe(Sprocket(name="s"), Sprocket(name="t"), kind="linttest.sprocket"))
+    result = _lint(input=pipe(Sprocket(name="s"), Sprocket(name="t"), kind="linttest.sprocket"))
     assert result.exit_code == 0
     assert _warnings(result) == [
         "warning: no installed rule reads linttest.sprocket records; see `untaped lint rules`"
@@ -176,13 +209,12 @@ def test_in_a_plugin_repository_its_plugins_are_checked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An entry point whose plugin is not installed is a finding, never a subject."""
-    _project(tmp_path, lint="untaped_lint:SPEC", ghost="untaped_ghost:SPEC")
+    _project(tmp_path, lint="untaped_lint.plugin:LintPlugin", ghost="untaped_ghost.plugin:Ghost")
     (tmp_path / ".git").mkdir()
     (tmp_path / "src").mkdir()
     monkeypatch.chdir(tmp_path / "src")
     PluginReader.read.clear()
-    with compose_with("lint", provides={"acme": [PluginReader()]}):
-        result = invoke_cli(app, ["-f", "json"])
+    result = run(["-f", "json"], providers={"acme": [PluginReader]})
     assert result.exit_code == 3, result.stderr
     rows = json.loads(result.stdout)
     assert [(row["rule"], row["target"]) for row in rows if row["rule"].startswith("lint.")] == [
@@ -193,8 +225,7 @@ def test_in_a_plugin_repository_its_plugins_are_checked(
 
 def test_nothing_to_lint_warns_and_exits_0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    with compose_with("lint"):
-        result = invoke_cli(app, [])
+    result = run([])
     assert result.exit_code == 0
     assert _warnings(result) == [
         "warning: nothing to lint here: run it in a plugin repository, a repository with "
@@ -206,21 +237,24 @@ def test_a_malformed_ignore_is_a_usage_error_even_with_nothing_to_lint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    with compose_with("lint"):
-        result = invoke_cli(app, ["--ignore", "Bad..x"])
+    result = run(["--ignore", "Bad..x"])
     assert result.exit_code == 2
 
 
 def test_piped_plugin_list_checks_each_plugin() -> None:
     """``untaped plugin list -f pipe | untaped lint --stdin``, the list cut to two plugins
     and untaped's own row, which lint skips."""
-    listed = invoke_root(["plugin", "list", "-f", "pipe"]).stdout.splitlines()
+    listed = install(LintPlugin, Git).cli(["plugin", "list", "-f", "pipe"]).stdout.splitlines()
     wanted = ("git", "lint", "untaped")
     piped = [line for line in listed if json.loads(line)["record"]["name"] in wanted]
     assert len(piped) == 3
     PluginReader.read.clear()
-    with compose_with("git", "lint", provides={"acme": [PluginReader()]}):
-        result = _lint(input="\n".join(piped) + "\n")
+    result = run(
+        ["--stdin", "-f", "json"],
+        input="\n".join(piped) + "\n",
+        providers={"acme": [PluginReader]},
+        plugins=[Git],
+    )
     assert result.exit_code == 0, result.stderr
     assert sorted(plugin.name for plugin in PluginReader.read) == ["git", "lint"]
     assert _rules(result) == ["acme.seen", "acme.seen"]
@@ -245,11 +279,10 @@ def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(
             return super().rules()
 
     monkeypatch.setattr(conventions, "check_plugin", spied)
-    listed = json.loads(invoke_root(["plugin", "list", "-f", "json"]).stdout)
+    listed = json.loads(install(LintPlugin).cli(["plugin", "list", "-f", "json"]).stdout)
     lint = InstalledPlugin.model_validate(next(each for each in listed if each["name"] == "lint"))
     PluginReader.read.clear()
-    with compose_with("lint", provides={"acme": [Reader()]}):
-        result = _lint(input=pipe(lint, kind="untaped.installed_plugin"))
+    result = _lint(input=pipe(lint, kind="untaped.installed_plugin"), providers={"acme": [Reader]})
     assert result.exit_code == 0, result.stderr
     assert events[:2] == ["conventions", "rules"]
     assert PluginReader.read == [lint]
@@ -268,8 +301,7 @@ def test_lint_rules_lists_every_rule_and_composes_nothing(
 
     monkeypatch.setattr(conventions, "check_plugin", never)
     monkeypatch.chdir(tmp_path)
-    with compose_with("lint", provides={"acme": [Gizmo()]}):
-        result = invoke_cli(app, ["rules", "-f", "json"])
+    result = run(["rules", "-f", "json"], providers={"acme": [Gizmo]})
     assert result.exit_code == 0, result.stderr
     rows = {row["id"]: row for row in json.loads(result.stdout)}
     assert {"lint.error-case", "lint.plugin-not-installed", "acme.default-branch"} <= set(rows)
@@ -282,7 +314,6 @@ def test_lint_rules_lists_every_rule_and_composes_nothing(
 NO_PRINT = '''\
 """No print() in library code."""
 
-from collections.abc import Iterator
 
 from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
@@ -317,14 +348,12 @@ def test_in_a_repository_with_a_lint_file_its_rules_run_from_any_subdirectory(
 ) -> None:
     _house(tmp_path, **{"src/a.py": "print(1)\n", "src/deep/b.py": "x = 1\n"})
     monkeypatch.chdir(tmp_path / "src" / "deep")
-    with compose_with("lint"):
-        result = invoke_cli(app, ["-f", "json"])
+    result = run(["-f", "json"])
     assert result.exit_code == 3, result.stderr
     assert [(row["rule"], row["target"]) for row in json.loads(result.stdout)] == [
         ("house.no-print", "src/a.py")
     ]
-    with compose_with("lint"):
-        rules = invoke_cli(app, ["rules", "-f", "json"])
+    rules = run(["rules", "-f", "json"])
     assert "house.no-print" in {row["id"] for row in json.loads(rules.stdout)}
 
 
@@ -341,15 +370,11 @@ def test_config_lints_the_current_directory_with_that_files_rules(
     )
     bad = tmp_path / ".untaped/lint/fixtures/no-print/bad"
     monkeypatch.chdir(bad)
-    with compose_with("lint"):
-        result = invoke_cli(
-            app, ["--config", "../../../../lint.yml", "--select", "house.no-print", "-f", "json"]
-        )
+    result = run(["--config", "../../../../lint.yml", "--select", "house.no-print", "-f", "json"])
     assert result.exit_code == 3, result.stderr
     assert [row["target"] for row in json.loads(result.stdout)] == ["src/x.py"]
     monkeypatch.chdir(bad.parent / "good")
-    with compose_with("lint"):
-        result = invoke_cli(app, ["--config", "../../../../lint.yml"])
+    result = run(["--config", "../../../../lint.yml"])
     assert result.exit_code == 0, result.stderr
 
 
@@ -372,8 +397,7 @@ def test_a_lint_file_problem_exits_by_its_category(
 ) -> None:
     _house(tmp_path, lint_yml, **files)
     monkeypatch.chdir(tmp_path)
-    with compose_with("lint"):
-        result = invoke_cli(app, [])
+    result = run([])
     assert result.exit_code == code, result.stderr
 
 
@@ -383,8 +407,7 @@ def test_lint_new_writes_the_rule_and_says_what_to_run(
     (tmp_path / ".git").mkdir()
     (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    with compose_with("lint"):
-        result = invoke_cli(app, ["new", "no-print", "--key", "house", "-f", "json"])
+    result = run(["new", "no-print", "--key", "house", "-f", "json"])
     assert result.exit_code == 0, result.stderr
     rows = json.loads(result.stdout)
     assert [Path(row["target_path"]).name for row in rows] == [
@@ -393,6 +416,5 @@ def test_lint_new_writes_the_rule_and_says_what_to_run(
         "lint.yml",
     ]
     assert "untaped lint --select house.no-print" in result.stderr
-    with compose_with("lint"):
-        again = invoke_cli(app, ["--select", "house.no-print", "-f", "json"])
-        assert again.exit_code == 0, again.stdout
+    again = run(["--select", "house.no-print", "-f", "json"])
+    assert again.exit_code == 0, again.stdout

@@ -23,20 +23,28 @@ from pathlib import Path
 from types import ModuleType
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure
+from untaped_lint.application.hints import rules_hint
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Rules
 from untaped_lint.records import FileLocation, Finding, Rule, Tree, declared_kind
 
-TREE_KIND = declared_kind(Tree)
-RULE_IMPORTS = Rule(
-    id="rule-imports",
-    reads=TREE_KIND,
-    severity="error",
-    summary=(
-        "A repository rule module imports only the standard library, untaped_lint.api and an "
-        "installed plugin's untaped_<plugin>.api."
-    ),
-)
+RULE_IMPORTS = "rule-imports"
+"""Lint's own rule over repository rule modules, an error."""
+
+
+def rule_imports() -> Rule:
+    """The ``rule-imports`` rule, as ``untaped lint rules`` lists it: it reads the ``Tree``."""
+    return Rule(
+        id=RULE_IMPORTS,
+        reads=declared_kind(Tree),
+        severity="error",
+        summary=(
+            "A repository rule module imports only the standard library, untaped_lint.api and "
+            "an installed plugin's untaped_<plugin>.api."
+        ),
+    )
+
+
 _API = re.compile(r"^untaped_[a-z0-9_]+\.api$")
 _PLUGIN_PACKAGE = re.compile(r"^untaped_(?P<plugin>[a-z0-9_]+)$")
 _MODULE_PREFIX = "untaped_lint_repo_rules"
@@ -87,8 +95,8 @@ def rule_import_findings(tree: ast.Module, path: str) -> list[Finding]:
             if not _allowed(target):
                 found.append(
                     Finding(
-                        rule=RULE_IMPORTS.id,
-                        severity=RULE_IMPORTS.severity,
+                        rule=RULE_IMPORTS,
+                        severity="error",
                         target=path,
                         message=(
                             f"imports {target}; a rule module imports only the standard library, "
@@ -158,7 +166,7 @@ def _failure(key: str, relative: str, error: BaseException) -> Failure:
         system=key,
         item=key,
         message=f"{key}'s rules in {relative} did not load: {error}",
-        hint="untaped lint rules",
+        hint=rules_hint(),
         details={"reason": "raised"},
     )
 

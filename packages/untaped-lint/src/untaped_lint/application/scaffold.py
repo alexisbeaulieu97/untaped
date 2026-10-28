@@ -22,6 +22,7 @@ import yaml
 
 from untaped.sdk import ErrorCategory, UntapedError, UsageError, checkout_root
 from untaped_lint.application import repo_file
+from untaped_lint.application.hints import lint_line
 from untaped_lint.records import RULE_ID, ScaffoldOutcome
 
 _ID = re.compile(RULE_ID)
@@ -50,7 +51,7 @@ def scaffold(
     root = (
         repo_file.root_of(found) if found is not None else checkout_root(start) or start.resolve()
     )
-    lint_file = found or root / repo_file.RELATIVE
+    lint_file = found or repo_file.lint_file(root)
     current = repo_file.read(found, installed=installed or ()) if found is not None else None
     key = key or (current.name if current is not None else None)
     if key is None:
@@ -71,7 +72,7 @@ def scaffold(
         files[root / "tests" / "lint" / f"test_{_python_name(rule_id)}.py"] = _test(rule_id, key)
         done.next_steps.append(
             f"write the bad and good examples in the test, then the rule, until "
-            f"`uv run pytest tests/lint` passes and `untaped lint --select {public}` exits 0"
+            f"`uv run pytest tests/lint` passes and `{lint_line('--select', public)}` exits 0"
         )
     else:
         fixtures = rules_dir / repo_file.FIXTURES / rule_id
@@ -82,7 +83,7 @@ def scaffold(
             done.next_steps.append(
                 f"the {kind} example exits {exit_code}: "
                 f"(cd {(fixtures / kind).relative_to(root).as_posix()} && "
-                f"untaped lint --config {config} --select {public})"
+                f"{lint_line('--config', config, '--select', public)})"
             )
     taken = [path for path in files if path.exists()]
     if taken:

@@ -888,7 +888,7 @@ def test_plugin_guides_are_each_packages_guide_files() -> None:
         for path in (release.REPO_ROOT / "packages/untaped-awx/src/untaped_awx/guides").glob("*.md")
     )
     assert guides["awx"] == shipped != []
-    assert guides["lint"] != []
+    assert guides["lint"] == []  # a 12.0 plugin's guides are its docstrings, never files
 
 
 def test_page_guides_reads_only_the_read_first_section() -> None:

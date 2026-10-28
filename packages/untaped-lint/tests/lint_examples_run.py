@@ -15,7 +15,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-EXAMPLES = Path(__file__).resolve().parents[5] / "examples"
+EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
 NAMES = ("hello", "shelf", "library")
 
 
@@ -60,7 +60,7 @@ def main() -> None:
         PluginCandidate(
             distribution="untaped-lint",
             name="lint",
-            target="untaped_lint:SPEC",
+            target="untaped_lint.plugin:LintPlugin",
             distribution_version=metadata.version("untaped-lint"),
         )
     )

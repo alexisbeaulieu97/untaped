@@ -128,10 +128,10 @@ def test_root_help_imports_no_plugin_cli() -> None:
 
 def test_plugin_help_imports_only_its_own_cli() -> None:
     # an 11.x plugin; a 12.0 plugin's commands load with its class
-    loaded = _plugin_cli_modules(["lint", "--help"])
+    loaded = _plugin_cli_modules(["awx", "--help"])
     assert loaded
     owners = {module.split(".")[0].removeprefix("untaped_") for module in loaded}
-    assert owners == {"lint"}
+    assert owners == {"awx"}
 
 
 _STARTUP_PROBE = (

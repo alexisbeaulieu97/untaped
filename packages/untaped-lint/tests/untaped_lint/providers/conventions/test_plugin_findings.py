@@ -7,7 +7,7 @@ from typing import Literal
 
 import pytest
 
-from lint.support import Install
+from lint_test_support import Site
 from untaped.sdk import InstalledPlugin
 from untaped.sdk.testing import PluginCandidate, PluginCheckRow, compose_with
 from untaped_lint.providers import conventions
@@ -98,9 +98,9 @@ def _plugin(site: Path) -> InstalledPlugin:
 
 
 def test_core_rows_and_file_lines_become_findings(
-    install: Install, monkeypatch: pytest.MonkeyPatch
+    site: Site, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    site = install(_PLUGIN)
+    site = site(_PLUGIN)
     monkeypatch.chdir(site)
     found = Conventions().findings(_plugin(site), candidates=_DEMO)
     by_rule = {finding.rule: finding for finding in found}
@@ -115,23 +115,23 @@ def test_core_rows_and_file_lines_become_findings(
     assert by_rule["layer"].location == FileLocation(path="demo_plugin/domain/model.py")
 
 
-def test_a_file_outside_the_cwd_is_shown_absolute(install: Install, tmp_path: Path) -> None:
-    site = install(_PLUGIN)
+def test_a_file_outside_the_cwd_is_shown_absolute(site: Site, tmp_path: Path) -> None:
+    site = site(_PLUGIN)
     found = Conventions().findings(_plugin(site), candidates=_DEMO)
     [printed] = [finding for finding in found if finding.rule == "print"]
     assert isinstance(printed.location, FileLocation)
     assert printed.location.path == (site / "demo_plugin" / "cli.py").as_posix()
 
 
-def test_a_plugin_not_installed_is_one_finding(install: Install) -> None:
-    site = install(_PLUGIN)
+def test_a_plugin_not_installed_is_one_finding(site: Site) -> None:
+    site = site(_PLUGIN)
     [finding] = Conventions().findings(_plugin(site), candidates=[])
     assert (finding.rule, finding.target) == ("plugin-not-installed", "demo")
     assert finding.hint is not None
 
 
-def test_an_unreadable_file_is_one_line_and_stops_the_file_rules(install: Install) -> None:
-    site = install({**_PLUGIN})
+def test_an_unreadable_file_is_one_line_and_stops_the_file_rules(site: Site) -> None:
+    site = site({**_PLUGIN})
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
     lines = file_lines("demo_plugin", site / "demo_plugin", plugin="demo", plugins=[])
     [line] = lines
@@ -139,9 +139,9 @@ def test_an_unreadable_file_is_one_line_and_stops_the_file_rules(install: Instal
 
 
 def test_an_unreadable_file_is_one_finding_from_the_whole_run(
-    install: Install, monkeypatch: pytest.MonkeyPatch
+    site: Site, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    site = install(_PLUGIN)
+    site = site(_PLUGIN)
     monkeypatch.chdir(site)
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
     found = Conventions().findings(_plugin(site), candidates=_DEMO)
@@ -152,10 +152,10 @@ def test_an_unreadable_file_is_one_finding_from_the_whole_run(
 
 @pytest.mark.parametrize("status", ["ready", "quarantined"])
 def test_a_plugin_composition_refuses_is_the_quarantined_finding(
-    install: Install, status: Literal["ready", "quarantined"]
+    site: Site, status: Literal["ready", "quarantined"]
 ) -> None:
     """Read from what the check found now, whatever the (maybe stale) record says."""
-    install(_PLUGIN)
+    site(_PLUGIN)
     broken = PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:NOPE")
     record = InstalledPlugin(
         name="demo", status=status, distribution="demo-plugin", version="0.1.0"
@@ -165,9 +165,9 @@ def test_a_plugin_composition_refuses_is_the_quarantined_finding(
 
 
 def test_a_stale_quarantined_record_of_a_plugin_that_composes_keeps_its_rules(
-    install: Install,
+    site: Site,
 ) -> None:
-    site = install(_PLUGIN)
+    site = site(_PLUGIN)
     record = _plugin(site).model_copy(update={"status": "quarantined"})
     rules = {finding.rule for finding in Conventions().findings(record, candidates=_DEMO)}
     assert "quarantined" not in rules
@@ -196,8 +196,8 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
     ]
 
 
-def test_a_narrowed_run_still_reports_an_unreadable_file(install: Install) -> None:
-    site = install(_PLUGIN)
+def test_a_narrowed_run_still_reports_an_unreadable_file(site: Site) -> None:
+    site = site(_PLUGIN)
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")
     with compose_with("lint"):
         report = run([subject(_plugin(site))], select=["lint.print"], candidates=_DEMO)
@@ -236,8 +236,8 @@ _API = '''
     '''
 
 
-def test_the_deprecation_rules_run_as_lint_ids(install: Install) -> None:
-    site = install({**_PLUGIN, "demo_plugin/api.py": _API})
+def test_the_deprecation_rules_run_as_lint_ids(site: Site) -> None:
+    site = site({**_PLUGIN, "demo_plugin/api.py": _API})
     rules = ["lint.deprecation-text", "lint.unwarned-parameter", "lint.mark-on-overload"]
     with compose_with("lint"):
         report = run([subject(_plugin(site))], select=rules, candidates=_DEMO)
@@ -275,8 +275,8 @@ _SERVICE = '''
     '''
 
 
-def test_an_unmarked_service_is_a_warning(install: Install) -> None:
-    install({"svc_plugin/__init__.py": _SERVICE})
+def test_an_unmarked_service_is_a_warning(site: Site) -> None:
+    site({"svc_plugin/__init__.py": _SERVICE})
     candidate = PluginCandidate(distribution="untaped-old", name="old", target="svc_plugin:OLD")
     record = InstalledPlugin(
         name="old", status="ready", distribution="untaped-old", version="0.1.0"
@@ -290,9 +290,9 @@ def test_an_unmarked_service_is_a_warning(install: Install) -> None:
     assert not report.predicate_hit(strict=False)
 
 
-def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(install: Install) -> None:
+def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(site: Site) -> None:
     """The records come from the candidates given, not from what is installed."""
-    site = install(_PLUGIN)
+    site = site(_PLUGIN)
     (site / "demo_plugin" / "reach.py").write_text(
         '"""Reaching into another plugin."""\n\n\n'
         "def reach() -> None:\n"

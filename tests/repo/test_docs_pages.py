@@ -111,10 +111,13 @@ def test_every_command_page_lists_the_options_its_help_shows_in_order(
     for command in site.declaration.commands():
         words = site.declaration.words(command)
         address = (command.path[0], "commands", *command.path[1:])
+        heading = "##"
         if command.path[0] == "untaped":
             address = ("untaped", "commands", *words)
-        usage = page(root, composition(), address).split("## Usage\n", 1)[1]
-        usage = usage.split("\n## ", 1)[0]
+        elif len(command.path) == 1:  # a plugin's own command: its usage is on the plugin's page
+            address, heading = (command.path[0],), "###"
+        usage = page(root, composition(), address).split(f"{heading} Usage\n", 1)[1]
+        usage = usage.split(f"\n{heading} ", 1)[0]
         listed = [m.group(1) for line in usage.splitlines() if (m := _USAGE_ROW.match(line))]
         helped = CliInvoker().invoke(root.meta, [*words, "--help"]).stdout
         assert [name.removesuffix("...") for name in listed] == _help_rows(helped), " ".join(words)

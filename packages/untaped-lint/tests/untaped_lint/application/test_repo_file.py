@@ -16,7 +16,7 @@ from untaped_lint.application import repo_file
 from untaped_lint.application.subjects import declared_plugins
 from untaped_lint.testing import conformance, repo_rule, run, run_rule, tree
 
-pytestmark = pytest.mark.usefixtures("fresh_composition")
+pytestmark = pytest.mark.usefixtures("lint_run")
 
 NO_PRINT = '''\
 """No print() in library code."""

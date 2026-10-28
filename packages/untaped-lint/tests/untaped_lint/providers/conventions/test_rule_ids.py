@@ -18,7 +18,7 @@ from pathlib import Path
 from untaped_lint.providers.conventions import RULES
 from untaped_lint.records import RULE_ID
 
-PACKAGES = Path(__file__).resolve().parents[4]
+PACKAGES = Path(__file__).resolve().parents[5]
 CORE = PACKAGES / "untaped" / "src" / "untaped"
 SOURCES = (
     *sorted((CORE / "core" / "plugin_check").glob("*.py")),

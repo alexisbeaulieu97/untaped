@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from lint.fakes import (
+from lint_fakes import (
     Acme,
     Gadget,
     Gizmo,
@@ -73,7 +73,7 @@ def test_a_malformed_rule_is_dropped_and_its_provider_s_others_run() -> None:
     (failure,) = report.failures
     assert (failure.item, failure.details["reason"]) == ("acme", "invalid-item")
     assert "acme's malformed rule was dropped" in failure.message
-    assert "row 1: id" in failure.message
+    assert "'acme.dotted' is not a bare id" in failure.message
 
 
 def test_ids_are_prefixed_with_the_providing_plugin() -> None:

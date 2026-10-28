@@ -2,7 +2,7 @@
 
 ``tests/fixtures/plugin_check/<name>.json`` is ``untaped plugin check <name>
 --format json`` from before lint, with ``library.volumes`` configured as CI
-does. The examples run in their own process (``examples_run.py``).
+does. The examples run in their own process (``lint_examples_run.py``).
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "plugin_check"
-SCRIPT = Path(__file__).with_name("examples_run.py")
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "plugin_check"
+SCRIPT = Path(__file__).parents[1] / "lint_examples_run.py"
 CONFIG = "format_version: 2\nlibrary:\n  volumes:\n    - {shelf_mark: A1, name: Dune}\n"
 
 

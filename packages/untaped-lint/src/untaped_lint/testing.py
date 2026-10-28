@@ -32,7 +32,7 @@ from untaped_lint.application.subjects import plugin_subject
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.providers.conventions import KEY
-from untaped_lint.records import RULE_ID, Finding, Subject, Tree
+from untaped_lint.records import RULE_ID, Finding, Subject, Tree, is_kind
 
 __all__ = ["assert_clean", "conformance", "repo_rule", "run", "run_rule", "subject", "tree"]
 
@@ -71,17 +71,21 @@ def run_rule(rule: RuleFunction, subject: Subject) -> list[Finding]:
     Unlike :func:`run`, no provider, selection or ``# untaped: allow``
     marker is involved: the rule alone, as its test needs.
     """
-    if subject.kind != rule.rule.reads:
+    if not is_kind(subject.kind, rule.model):
         raise TypeError(f"{rule.rule.id} reads {rule.rule.reads}, not {subject.kind}")
     return list(rule(rule.model.model_validate(subject.record)))
 
 
 def repo_rule(rule_id: str, *, root: Path) -> RuleFunction:
     """Rule ``rule_id`` (bare) of the ``.untaped/lint.yml`` found from ``root``, loaded."""
-    path = repo_file.find(root)
-    if path is None:
-        raise LookupError(f"no {repo_file.RELATIVE} at or above {root}")
-    loaded = load(repo_file.read(path))
+    from untaped.sdk.testing import install  # noqa: PLC0415 - the kit loads only when called
+    from untaped_lint.plugin import LintPlugin  # noqa: PLC0415 - every command
+
+    with install(LintPlugin).running():  # the lint file's path is lint's, named by the run
+        path = repo_file.find(root)
+        if path is None:
+            raise LookupError(f"no {repo_file.lint_file(Path()).as_posix()} at or above {root}")
+        loaded = load(repo_file.read(path))
     for host in loaded.hosts.values():
         for function in host.RULES:
             if function.rule.id == rule_id:
@@ -156,7 +160,7 @@ def _with_lint(candidates: Sequence[PluginCandidate]) -> list[PluginCandidate]:
     lint = PluginCandidate(
         distribution=_DISTRIBUTION,
         name=KEY,
-        target="untaped_lint:SPEC",
+        target="untaped_lint.plugin:LintPlugin",
         distribution_version=metadata.version(_DISTRIBUTION),
         requires_dist=tuple(metadata.requires(_DISTRIBUTION) or ()),
     )

@@ -12,7 +12,7 @@ import yaml
 from untaped.sdk import UntapedError, UsageError
 from untaped_lint.application.scaffold import scaffold
 
-pytestmark = pytest.mark.usefixtures("fresh_composition")
+pytestmark = pytest.mark.usefixtures("lint_run")
 
 
 def _checkout(root: Path, *, pytest_config: bool) -> Path:

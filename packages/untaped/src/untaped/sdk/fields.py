@@ -33,12 +33,10 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
-    Protocol,
     Union,
     cast,
     get_args,
     get_origin,
-    runtime_checkable,
 )
 
 from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
@@ -122,21 +120,6 @@ ObjectName = Mark("ObjectName")
 
 Only the table changes: json, yaml, raw and pipe keep the whole name.
 """
-
-
-@runtime_checkable
-class TableText(Protocol):
-    """A nested model that reads as one table cell: ``table_text()`` is the cell's text.
-
-    A record's field holding such a model (a file location reading
-    ``src/a.py:3``) shows that text in a table; a nested model without it
-    flattens to ``key=value`` pairs. Only the table changes: json, yaml, raw
-    and pipe keep the nested record.
-    """
-
-    def table_text(self) -> str:
-        """The cell's text."""
-        ...
 
 
 class Status:
@@ -799,6 +782,8 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
         return elapsed_text(value)
     if ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
         return value[:_SHORT_NAME]
+    from untaped.sdk.records import TableText  # noqa: PLC0415 - records import fields
+
     if isinstance(value, BaseModel) and isinstance(value, TableText):
         return value.table_text()
     return cell
