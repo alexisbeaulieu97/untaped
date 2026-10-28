@@ -26,8 +26,9 @@ from collections.abc import Iterator
 from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
 
-@rule("no-print", reads=Tree, severity="error", summary="No print() in library code.")
+@rule(severity="error")
 def no_print(tree: Tree) -> Iterator[Finding]:
+    """No print() in library code."""
     for file in tree.files("src/**/*.py"):
         for number, line in enumerate(file.lines, start=1):
             if "print(" in line:
@@ -45,8 +46,9 @@ from collections.abc import Iterator
 from untaped_lint.api import Finding, Tree, finding, rule, target_of
 
 
-@rule("short-readme", reads=Tree, severity="warning", summary="A README is short.")
+@rule(severity="warning")
 def short_readme(tree: Tree) -> Iterator[Finding]:
+    """A README is short."""
     for file in tree.files("README.md"):
         if len(file.lines) > 2:
             yield finding(short_readme, target_of(file), "too long")
@@ -385,10 +387,11 @@ def test_conformance_fails_a_host_reading_an_undeclared_kind() -> None:
 
 
 def test_conformance_passes_a_tree_reader_which_has_no_rule_table() -> None:
-    from untaped_lint.api import Subject, Tree, TreeReader
+    from untaped.sdk import Record
+    from untaped_lint.api import Tree, TreeReader
 
     class Reader(TreeReader):
-        def read(self, tree: Tree) -> list[Subject]:
+        def read(self, tree: Tree) -> list[Record]:
             return []
 
     conformance(Reader())

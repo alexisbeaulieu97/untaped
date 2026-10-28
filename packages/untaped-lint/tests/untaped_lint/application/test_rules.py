@@ -1,0 +1,106 @@
+"""``@rule``: the id, summary and model a rule reads come from the function itself."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+
+from lint_fakes import Widget, default_branch
+from untaped.sdk import Record
+from untaped_lint.api import Finding, Rules, finding, rule
+from untaped_lint.testing import run_rule
+
+
+def test_the_id_summary_and_model_are_read_from_the_function() -> None:
+    assert default_branch.rule.id == "default-branch"
+    assert default_branch.rule.reads == "linttest.gadget"
+    assert default_branch.rule.severity == "error"
+    assert default_branch.rule.summary == "A gadget names its default branch."
+
+
+@rule(severity="warning")
+def long_summary(widget: Widget) -> Iterator[Finding]:
+    """A widget's summary is the docstring's first paragraph,
+    read as one line.
+
+    The rest says how the check works.
+    """
+    yield finding(long_summary, widget.name, "seen")
+
+
+def test_the_summary_is_the_first_paragraph_on_one_line() -> None:
+    assert long_summary.rule.summary == (
+        "A widget's summary is the docstring's first paragraph, read as one line."
+    )
+
+
+class _Methods(Rules):
+    @rule(severity="error")
+    def narrow(self, widget: Widget) -> Iterator[Finding]:
+        """A widget is narrow."""
+        yield finding(self.narrow, widget.name, "too wide")
+
+
+def test_a_method_reads_the_parameter_after_self() -> None:
+    (declared,) = _Methods().rules()
+    assert (declared.id, declared.reads) == ("narrow", "linttest.widget")
+
+
+def _undocumented(widget: Widget) -> Iterator[Finding]:
+    yield from ()
+
+
+def _unannotated(widget) -> Iterator[Finding]:  # type: ignore[no-untyped-def]  # noqa: ANN001
+    """Reads nothing it names."""
+    yield from ()
+
+
+def _no_record() -> Iterator[Finding]:
+    """Takes nothing."""
+    yield from ()
+
+
+class _Kindless(Record):
+    """A record that declares no kind."""
+
+
+def _reads_kindless(record: _Kindless) -> Iterator[Finding]:
+    """Reads a model with no kind."""
+    yield from ()
+
+
+def bad__name(widget: Widget) -> Iterator[Finding]:
+    """Its name is no kebab-case id."""
+    yield from ()
+
+
+@pytest.mark.parametrize(
+    ("function", "message"),
+    [
+        (_undocumented, "has no docstring: its first paragraph is the summary"),
+        (_unannotated, "annotate 'widget' with the record model it reads"),
+        (_no_record, "takes no record: its first parameter is what it reads"),
+        (_reads_kindless, "_Kindless declares no kind"),
+        (bad__name, "its name is its id"),
+    ],
+)
+def test_a_rule_the_function_cannot_declare_is_a_type_error(function: object, message: str) -> None:
+    with pytest.raises(TypeError, match=message):
+        rule(severity="error")(function)  # type: ignore[arg-type]
+
+
+def test_run_rule_refuses_a_record_of_another_model() -> None:
+    with pytest.raises(TypeError, match="default-branch reads Gadget, not Widget"):
+        run_rule(default_branch, Widget(name="w"))
+
+
+def test_only_the_record_annotation_is_evaluated() -> None:
+    """A deferred return annotation may name what the module imports for type checking only."""
+    namespace: dict[str, object] = {"Widget": Widget}
+    exec(  # noqa: S102 - a module without `from __future__ import annotations`
+        "def unchecked(widget: Widget) -> Unimported:\n    '''Reads a widget.'''\n",
+        namespace,
+    )
+    declared = rule(severity="error")(namespace["unchecked"])  # type: ignore[arg-type]
+    assert declared.model is Widget

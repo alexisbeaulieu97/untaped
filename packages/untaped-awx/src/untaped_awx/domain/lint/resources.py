@@ -24,9 +24,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from untaped.sdk import Record, experimental, kind_of
+from untaped.sdk import Record, experimental
 from untaped_awx.domain.envelope import IdentityRef, Resource
-from untaped_lint.api import DocumentLocation, ResourceLocation, Subject
+from untaped_lint.api import DocumentLocation, ResourceLocation
 
 type Origin = Literal["document", "controller"]
 """Where a linted resource was read: an apply document or the controller."""
@@ -220,14 +220,6 @@ def _same(have: IdentityRef | None, want: IdentityRef) -> bool:
     return want.parent is None or _same(have.parent, want.parent)
 
 
-def subject_of(resources: Resources) -> Subject:
-    """``resources`` as the lint subject the awx rules read."""
-    kind = kind_of(Resources)
-    if kind is None:  # pragma: no cover - declared above
-        raise TypeError("the snapshot model declares no kind")
-    return Subject(kind=kind, record=resources.model_dump(mode="json"))
-
-
 __all__ = [
     "ControllerFacts",
     "KindFacts",
@@ -238,5 +230,4 @@ __all__ = [
     "Resources",
     "Unreadable",
     "organization_of",
-    "subject_of",
 ]

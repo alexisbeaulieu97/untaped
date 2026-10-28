@@ -13,7 +13,7 @@ from untaped_awx.domain.lint.rules import RULES
 from untaped_awx.providers.lint import AwxDocuments, AwxRules
 from untaped_awx.testing import resources
 from untaped_lint.api import Tree
-from untaped_lint.testing import conformance, run, subject
+from untaped_lint.testing import conformance, run
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
@@ -45,7 +45,7 @@ def test_awx_fills_both_lint_contracts() -> None:
 
 
 def test_the_rules_run_over_an_awx_subject() -> None:
-    found = AwxRules().findings(subject(resources(DOCUMENTS)))
+    found = AwxRules().findings(resources(DOCUMENTS))
     assert sorted(each.rule for each in found) == [
         "branch-override-ignored",
         "ignored-launch-field",
@@ -55,9 +55,8 @@ def test_the_rules_run_over_an_awx_subject() -> None:
 
 def test_the_reader_is_the_offline_loader(tmp_path: Path) -> None:
     root = _repository(tmp_path, {"specs/a.yml": DOCUMENTS, "specs/b.yml": CLEAN})
-    subjects = AwxDocuments().read(Tree(root=root, paths=("specs/a.yml", "specs/b.yml")))
-    assert len(subjects) == 1
-    read = Resources.model_validate(subjects[0].record)
+    (read,) = AwxDocuments().read(Tree(root=root, paths=("specs/a.yml", "specs/b.yml")))
+    assert isinstance(read, Resources)
     assert read.loaded == ("Project", "Inventory", "JobTemplate", "Schedule")
     assert {each.location.path for each in read.items} == {"specs/a.yml", "specs/b.yml"}  # type: ignore[union-attr]
 

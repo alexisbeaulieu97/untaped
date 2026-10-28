@@ -33,7 +33,7 @@ from untaped_awx.domain.lint.rules import RULES
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.testing import resources
 from untaped_lint.api import Finding, ResourceLocation, RuleFunction
-from untaped_lint.testing import run_rule, subject
+from untaped_lint.testing import run_rule
 
 _TEMPLATE = """\
 kind: JobTemplate
@@ -48,7 +48,7 @@ spec:
 def _run(rule: RuleFunction, snapshot: Resources) -> list[Finding]:
     """``rule``'s findings on ``snapshot``, checking it left the snapshot as it was."""
     before = snapshot.model_dump(mode="json")
-    found = run_rule(rule, subject(snapshot))
+    found = run_rule(rule, snapshot)
     assert snapshot.model_dump(mode="json") == before
     return found
 

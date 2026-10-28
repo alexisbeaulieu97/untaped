@@ -44,7 +44,6 @@ def main() -> None:
         sys.path.insert(0, str(EXAMPLES / f"untaped-{name}" / "src"))
     from untaped.sdk import installed_plugins
     from untaped.sdk.testing import PluginCandidate, compose_with
-    from untaped_lint.application.subjects import plugin_subject
     from untaped_lint.testing import run
 
     candidates = [
@@ -68,7 +67,7 @@ def main() -> None:
     for name in NAMES:
         with compose_with(*candidates):
             plugin = next(each for each in installed_plugins() if each.name == name)
-            report = run([plugin_subject(plugin)], candidates=candidates)
+            report = run([plugin], candidates=candidates)
         out[name] = {
             "findings": sorted([each.rule, each.severity] for each in report.findings),
             "failures": [each.message for each in report.failures],

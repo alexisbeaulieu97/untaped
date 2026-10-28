@@ -17,13 +17,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "playbook-missing",
-    reads=Resources,
-    severity="error",
-    summary="A job template's playbook is one its project found at its last sync.",
-)
+@rule(severity="error")
 def playbook_missing(resources: Resources) -> Iterator[Finding]:
+    """A job template's playbook is one its project found at its last sync."""
     for item in resources.of("JobTemplate"):
         playbook = JobTemplateDoc.model_validate(item.resource.spec).playbook
         project = referenced(resources, item, "project")

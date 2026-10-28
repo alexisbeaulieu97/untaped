@@ -25,7 +25,7 @@ from untaped_awx.application.resources.save_resources import (
 )
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.lint.resources import Resources, subject_of
+from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.infrastructure.lint.documents import documents_of, file_texts
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import awx_api_path
@@ -81,7 +81,7 @@ def run_lint(
                         ctx.diag.warning("no resource matches --filter/--search; nothing to report")
                         return None
     return lint_report(
-        [subject_of(resources)],
+        [resources],
         config=lint_config(Path.cwd(), tree=False),
         select=findings.select,
         ignore=findings.ignore,

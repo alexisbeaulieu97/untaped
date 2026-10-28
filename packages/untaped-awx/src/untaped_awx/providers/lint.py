@@ -11,13 +11,13 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from untaped.sdk import Record
 from untaped.sdk.contracts import Provider
 from untaped_awx.application.lint.documents import load_documents
-from untaped_awx.domain.lint.resources import subject_of
 from untaped_awx.domain.lint.rules import RULES
 from untaped_awx.infrastructure.lint.documents import documents_of
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
-from untaped_lint.api import RuleFunction, Rules, Subject, Tree, TreeReader
+from untaped_lint.api import RuleFunction, Rules, Tree, TreeReader
 
 
 class AwxRules(Rules):
@@ -33,12 +33,12 @@ class AwxDocuments(TreeReader, Provider):
     that is not UTF-8 is lint's to report (``lint.unreadable-file``).
     """
 
-    def read(self, tree: Tree) -> list[Subject]:
+    def read(self, tree: Tree) -> list[Record]:
         texts = [(file.path, file.text) for file in tree.files()]
         if not texts:
             return []
         resources = load_documents(documents_of(texts), catalog=AwxResourceCatalog())
-        return [subject_of(resources)]
+        return [resources]
 
 
 __all__ = ["AwxDocuments", "AwxRules"]

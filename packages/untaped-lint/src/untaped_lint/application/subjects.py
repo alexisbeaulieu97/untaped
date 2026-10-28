@@ -2,9 +2,9 @@
 
 Inside a plugin repository the nearest ``pyproject.toml`` (up to the project
 root) names its plugins under ``[project.entry-points."untaped.plugins"]``;
-each installed one is an ``untaped.installed_plugin`` subject, and one that is not
+each installed one is an ``InstalledPlugin`` subject, and one that is not
 installed is a finding, never a subject. ``--stdin`` reads piped rows,
-each one subject of its kind.
+each one subject as its model.
 """
 
 from __future__ import annotations
@@ -14,11 +14,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pydantic import BaseModel
-
-from untaped.sdk import InstalledPlugin, UsageError, nearest_pyproject
+from untaped.sdk import InstalledPlugin, Record, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
-from untaped_lint.records import Finding, Subject, declared_kind, public
+from untaped_lint.records import Finding, public
 
 _GROUP = "untaped.plugins"
 
@@ -27,12 +25,8 @@ _GROUP = "untaped.plugins"
 class Found:
     """The subjects of a run and the findings that kept a declared one from being one."""
 
-    subjects: list[Subject] = field(default_factory=list)
+    subjects: list[Record] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
-
-
-def plugin_subject(plugin: InstalledPlugin) -> Subject:
-    return Subject(kind=declared_kind(InstalledPlugin), record=plugin.model_dump(mode="json"))
 
 
 def declared_plugins(start: Path) -> list[str]:
@@ -59,7 +53,7 @@ def repository_subjects(names: Iterable[str], installed: Sequence[InstalledPlugi
         if plugin is None:
             found.findings.append(not_installed(name))
         else:
-            found.subjects.append(plugin_subject(plugin))
+            found.subjects.append(plugin)
     return found
 
 
@@ -68,17 +62,17 @@ def not_installed(name: str) -> Finding:
     return public(conventions.KEY, conventions.not_installed(name))
 
 
-def stdin_subjects(rows: Iterable[tuple[str | None, BaseModel]]) -> list[Subject]:
-    """Each piped row, with its kind, as a subject; a kind-less one is a usage error.
+def stdin_subjects(rows: Iterable[tuple[str | None, Record]]) -> list[Record]:
+    """Each piped row as a subject; a kind-less one is a usage error.
 
     untaped's own row of ``plugin list`` (``root``) is skipped: the plugin
     check does not read untaped itself as an installed plugin yet.
     """
-    subjects: list[Subject] = []
+    subjects: list[Record] = []
     for kind, row in rows:
         if not kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
         if isinstance(row, InstalledPlugin) and row.root:
             continue
-        subjects.append(Subject(kind=kind, record=row.model_dump(mode="json")))
+        subjects.append(row)
     return subjects

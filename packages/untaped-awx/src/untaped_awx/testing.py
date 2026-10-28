@@ -5,9 +5,9 @@
 references, states and facts a real run would::
 
     from untaped_awx.testing import resources
-    from untaped_lint.testing import run_rule, subject
+    from untaped_lint.testing import run_rule
 
-    found = run_rule(vault_credential, subject(resources(TEMPLATES_YAML)))
+    found = run_rule(vault_credential, resources(TEMPLATES_YAML))
 """
 
 from __future__ import annotations

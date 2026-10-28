@@ -21,13 +21,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "branch-override-ignored",
-    reads=Resources,
-    severity="error",
-    summary="A job template sets scm_branch only when its project allows the override.",
-)
+@rule(severity="error")
 def branch_override_ignored(resources: Resources) -> Iterator[Finding]:
+    """A job template sets scm_branch only when its project allows the override."""
     for item in resources.of("JobTemplate"):
         own = JobTemplateDoc.model_validate(item.resource.spec).scm_branch
         project = referenced(resources, item, "project")

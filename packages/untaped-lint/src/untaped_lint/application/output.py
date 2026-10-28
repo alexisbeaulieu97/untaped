@@ -9,9 +9,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING
 
+from untaped.sdk import Record
 from untaped_lint.config import LintConfig
 from untaped_lint.domain.selection import parse_rule, parse_suppression
-from untaped_lint.records import Finding, Subject
+from untaped_lint.records import Finding
 
 if TYPE_CHECKING:
     from untaped.sdk.testing import PluginCandidate
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def lint_report(
-    subjects: Iterable[Subject],
+    subjects: Iterable[Record],
     *,
     config: LintConfig = LintConfig(),  # noqa: B008 - frozen
     select: Iterable[str] = (),

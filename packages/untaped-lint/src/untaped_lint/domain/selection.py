@@ -4,8 +4,7 @@ A suppression is ``<rule>[:<target-glob>]``, one spelling wherever it is
 written (the profile's ``lint.ignore``, ``--ignore``); ``--select`` narrows
 to rules, PATHS to ``location.path`` globs. Selection narrows what is
 reported, never what is read. A public id is ``<key>.<id>``; a bare id is a
-shorthand honoured when exactly one loaded rule carries it, and an id a rule
-was renamed from is honoured with a warning naming the new one.
+shorthand honoured when exactly one loaded rule carries it.
 """
 
 from __future__ import annotations
@@ -54,13 +53,9 @@ class Resolver:
     _said: set[str] = field(default_factory=set)
 
     def resolve(self, typed: str) -> set[str]:
-        """The public ids ``typed`` names: itself, its new id, or a bare id's one owner."""
+        """The public ids ``typed`` names: itself, or a bare id's one owner."""
         if typed in self.rules:
             return {typed}
-        renamed = {public for public, rule in self.rules.items() if typed in _renamed(public, rule)}
-        if renamed:
-            self._warn(typed, f"`{typed}` is now `{', '.join(sorted(renamed))}`")
-            return renamed
         if "." not in typed:
             owners = sorted(public for public in self.rules if public.split(".", 1)[1] == typed)
             if len(owners) == 1:
@@ -75,11 +70,6 @@ class Resolver:
         if typed not in self._said:
             self._said.add(typed)
             self.warnings.append(text)
-
-
-def _renamed(public: str, rule: Rule) -> set[str]:
-    key = public.rsplit(".", 1)[0] if "." in public else ""
-    return {f"{key}.{old}" for old in rule.renamed_from} | set(rule.renamed_from)
 
 
 @dataclass(frozen=True)

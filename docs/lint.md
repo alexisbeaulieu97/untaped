@@ -74,8 +74,9 @@ from collections.abc import Iterator
 from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_of
 
 
-@rule("no-print", reads=Tree, severity="error", summary="No print() in library code.")
+@rule(severity="error")
 def no_print(tree: Tree) -> Iterator[Finding]:
+    """No print() in library code."""
     for file in tree.files("src/**/*.py"):
         for number, line in enumerate(file.lines, start=1):
             if "print(" in line:
@@ -83,7 +84,9 @@ def no_print(tree: Tree) -> Iterator[Finding]:
                               location=FileLocation(path=file.path, line=number))
 ```
 
-`tree.files(*globs)` yields each matching file with its `path`, `text`,
+The function's name is the rule's id (`no_print` is `no-print`), its
+docstring's first paragraph the summary, and its parameter's model what it
+reads. `tree.files(*globs)` yields each matching file with its `path`, `text`,
 `lines`, and `json()`, `yaml()` and `python()` (the parsed file).
 `untaped lint new ID` writes such a module and its test: in
 `tests/lint/` through `untaped_lint.testing` (`repo_rule`, `run_rule`,
@@ -96,7 +99,7 @@ and its `linters:` entry when missing.
 
 A rule's public id is `<key>.<id>`: the key is the plugin that declares it
 (`lint` for lint's own) or the repository file's key (`house`), the id is
-what the rule wrote (`error-case`). The
+the rule's function name in kebab case (`error-case`). The
 id alone is accepted where exactly one installed rule carries it.
 `untaped lint rules` lists every rule installed, with what it reads, its
 severity and its summary. A source line may carry
@@ -146,11 +149,12 @@ Write each rule with `@rule` and host them in a `Rules` subclass:
 ```python
 from collections.abc import Iterator
 
-from untaped_lint.api import Finding, Plugin, Rules, finding, rule
+from untaped_lint.api import Finding, InstalledPlugin, Rules, finding, rule
 
 
-@rule("readme", reads=Plugin, severity="warning", summary="A plugin ships a README.md.")
-def readme(plugin: Plugin) -> Iterator[Finding]:
+@rule(severity="warning")
+def readme(plugin: InstalledPlugin) -> Iterator[Finding]:
+    """A plugin ships a README.md."""
     if plugin.source_dir and not (plugin.source_dir.parent.parent / "README.md").is_file():
         yield finding(readme, plugin.name, "no README.md beside pyproject.toml")
 
@@ -161,25 +165,27 @@ class AcmeRules(Rules):
 
 A plugin lists `AcmeRules` in its plugin class's `fills`
 and declares the dependency under an extra named `lint`, as for
-[any owner](contracts.md). Its ids are then `acme.readme`. `Rules` validates
-each subject once as the model a rule reads, runs each rule on its own, and
-turns a rule that raises into a failure row (exit 1) while the other rules'
-findings still count. A rule over `untaped.installed_plugin` sees the record, never
-the composed root: composing inside a contract call fails.
+[any owner](contracts.md). Its ids are then `acme.readme`. `Rules` hands
+each record to the rules that read its model, as its own copy, runs each
+rule on its own, and turns a rule that raises into a failure row (exit 1)
+while the other rules' findings still count. A rule over `InstalledPlugin`
+sees the record, never the composed root: composing inside a contract call
+fails.
 
 A plugin that turns a repository's files into its own records fills
-`TreeReader` (`read(tree) -> list[Subject]`): it runs where a `readers:`
+`TreeReader` (`read(tree) -> list[Record]`): it runs where a `readers:`
 entry names it, on the files its globs match, and the rules reading those
-records run on what it returns. A file it can't read is carried in the
-subject for its own rule to report, never raised. awx's reader takes apply
+records run on what it returns. A file it can't read is carried in a
+record for its own rule to report, never raised. awx's reader takes apply
 documents (`readers: awx: [...]`) and lints them as
 `untaped awx lint FILES --offline` does.
 
 A plugin with a lint command of its own (`untaped awx lint`) builds its
-subjects and calls `untaped_lint.api.lint(subjects, config=lint_config(Path.cwd(),
-tree=False), ...)`: `lint_config` reads the profile's `lint.ignore` and the
-repository's lint file, so the plugin never reads lint's settings, and
-`lint` prints the rows and exits by the table above. `only=` (target globs)
+records and calls `untaped_lint.api.lint_report(records,
+config=lint_config(Path.cwd(), tree=False), ...)`: `lint_config` reads the
+profile's `lint.ignore` and the repository's lint file, so the plugin never
+reads lint's settings, and the command prints the report's rows and exits by
+the table above. `only=` (target globs)
 and `exact=` (literal targets) narrow what it reports by target;
 `locations=` narrows by location, as the table writes it
 (`job_templates/14`), where targets are not unique.

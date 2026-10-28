@@ -21,8 +21,8 @@ A plugin also follows these rules:
 [`untaped lint`](#enforcement) flags part of this:
 
 - `plugin-name`: a distribution or import package not named after the plugin;
-- `foreign-section`: a `get_config_section(...)` or `.section(...)` call
-  naming another plugin's section as a string literal;
+- `foreign-section`: an `app_context().section(...)` call naming another
+  plugin's section as a string literal;
 - `layer`: an import against the layer direction, and `settings`: settings
   resolved outside `cli`;
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an

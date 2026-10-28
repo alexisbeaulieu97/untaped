@@ -17,13 +17,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "unknown-field",
-    reads=Resources,
-    severity="warning",
-    summary="A document's spec holds only fields untaped knows for its kind.",
-)
+@rule(severity="warning")
 def unknown_field(resources: Resources) -> Iterator[Finding]:
+    """A document's spec holds only fields untaped knows for its kind."""
     for item in resources.items:
         facts = resources.kinds.get(item.resource.kind)
         if item.origin != "document" or facts is None:

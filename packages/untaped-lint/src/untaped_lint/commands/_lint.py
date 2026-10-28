@@ -8,9 +8,8 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from untaped.sdk import Command, Document
-from untaped_lint.application.lint_config import lint_config
 from untaped_lint.application.repo_file import LintFile
-from untaped_lint.config import LintConfig
+from untaped_lint.config import LintConfig, lint_config
 from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.settings import LintSettings
 

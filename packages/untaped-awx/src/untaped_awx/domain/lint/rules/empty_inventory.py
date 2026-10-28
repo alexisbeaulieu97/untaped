@@ -11,13 +11,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "empty-inventory",
-    reads=Resources,
-    severity="warning",
-    summary="An inventory on the controller holds at least one host.",
-)
+@rule(severity="warning")
 def empty_inventory(resources: Resources) -> Iterator[Finding]:
+    """An inventory on the controller holds at least one host."""
     for item in resources.of("Inventory"):
         if item.controller is not None and item.controller.total_hosts == 0:
             yield report(

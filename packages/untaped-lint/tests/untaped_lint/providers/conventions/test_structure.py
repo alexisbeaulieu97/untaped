@@ -24,11 +24,11 @@ _CLEAN = {
     "acme/cli.py": '''
         """Acme commands."""
 
-        from untaped.sdk import get_config_section
+        from untaped.sdk import app_context
 
 
         def settings() -> object:
-            return get_config_section("acme")
+            return app_context().section("acme", object)
         ''',
 }
 

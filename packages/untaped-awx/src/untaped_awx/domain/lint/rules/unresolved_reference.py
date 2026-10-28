@@ -16,13 +16,9 @@ from untaped_lint.api import Finding, rule
 
 
 @experimental
-@rule(
-    "unresolved-reference",
-    reads=Resources,
-    severity="warning",
-    summary="A reference the run could not check: offline, or one the token cannot read.",
-)
+@rule(severity="warning")
 def unresolved_reference(resources: Resources) -> Iterator[Finding]:
+    """A reference the run could not check: offline, or one the token cannot read."""
     for item in resources.items:
         for ref in item.references:
             if ref.resolution != "unresolved":

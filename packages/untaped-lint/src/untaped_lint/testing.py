@@ -2,10 +2,9 @@
 
 - :func:`assert_clean` fails where ``untaped lint`` would exit non-zero for
   an installed plugin: what each plugin's convention test calls.
-- :func:`subject` builds a :class:`~untaped_lint.records.Subject` from a record,
-  :func:`tree` one from a few files.
-- :func:`run` lints subjects and returns the report's findings and failures;
-  :func:`run_rule` runs one rule on one subject.
+- :func:`tree` builds a :class:`~untaped_lint.records.Tree` from a few files.
+- :func:`run` lints records and returns the report's findings and failures;
+  :func:`run_rule` runs one rule on one record.
 - :func:`repo_rule` loads a rule of the repository's ``.untaped/lint.yml``.
 - :func:`conformance` checks a ``Linter`` provider's rule table.
 """
@@ -20,7 +19,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from importlib import metadata
 from pathlib import Path
 
-from untaped.sdk import Failure, Record, installed_plugins, kind_of, record_model
+from untaped.sdk import Failure, Record, installed_plugins, record_model
 from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application import repo_file
 from untaped_lint.application.engine import Options
@@ -28,27 +27,18 @@ from untaped_lint.application.engine import run as _run
 from untaped_lint.application.modules import load
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.application.rules import Linter, TreeReader
-from untaped_lint.application.subjects import plugin_subject
 from untaped_lint.domain.report import Report
 from untaped_lint.domain.selection import parse_rule, parse_suppression
 from untaped_lint.providers.conventions import KEY
-from untaped_lint.records import RULE_ID, Finding, Subject, Tree, is_kind
+from untaped_lint.records import RULE_ID, Finding, Tree
 
-__all__ = ["assert_clean", "conformance", "repo_rule", "run", "run_rule", "subject", "tree"]
+__all__ = ["assert_clean", "conformance", "repo_rule", "run", "run_rule", "tree"]
 
 _DISTRIBUTION = "untaped-lint"
 
 
-def subject(record: Record) -> Subject:
-    """``record`` as the subject a rule reading its kind receives."""
-    kind = kind_of(type(record))
-    if kind is None:
-        raise TypeError(f"{type(record).__name__} declares no kind")
-    return Subject(kind=kind, record=record.model_dump(mode="json"))
-
-
-def tree(files: Mapping[str, str], *, root: Path | None = None) -> Subject:
-    """A ``Tree`` subject holding ``files`` (path to text), written under ``root``.
+def tree(files: Mapping[str, str], *, root: Path | None = None) -> Tree:
+    """A ``Tree`` holding ``files`` (path to text), written under ``root``.
 
     ``root`` defaults to a new temporary directory, removed at exit; a ``bytes`` text
     can't be given, so write an undecodable file yourself and list it.
@@ -62,18 +52,18 @@ def tree(files: Mapping[str, str], *, root: Path | None = None) -> Subject:
         target = base / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
-    return subject(Tree(root=base.resolve(), paths=tuple(sorted(files))))
+    return Tree(root=base.resolve(), paths=tuple(sorted(files)))
 
 
-def run_rule(rule: RuleFunction, subject: Subject) -> list[Finding]:
-    """The findings ``rule`` yields for ``subject``, ids bare; a raise propagates.
+def run_rule(rule: RuleFunction, record: Record) -> list[Finding]:
+    """The findings ``rule`` yields for ``record``, ids bare; a raise propagates.
 
     Unlike :func:`run`, no provider, selection or ``# untaped: allow``
     marker is involved: the rule alone, as its test needs.
     """
-    if not is_kind(subject.kind, rule.model):
-        raise TypeError(f"{rule.rule.id} reads {rule.rule.reads}, not {subject.kind}")
-    return list(rule(rule.model.model_validate(subject.record)))
+    if type(record) is not rule.model:
+        raise TypeError(f"{rule.rule.id} reads {rule.model.__name__}, not {type(record).__name__}")
+    return list(rule(record))
 
 
 def repo_rule(rule_id: str, *, root: Path) -> RuleFunction:
@@ -95,14 +85,14 @@ def repo_rule(rule_id: str, *, root: Path) -> RuleFunction:
 
 
 def run(
-    subjects: Iterable[Subject] = (),
+    subjects: Iterable[Record] = (),
     *,
     select: Iterable[str] = (),
     ignore: Iterable[str] = (),
     candidates: Sequence[PluginCandidate] | None = None,
     root: Path | None = None,
 ) -> Report:
-    """Lint ``subjects`` with the providers of the current run; nothing is printed.
+    """Lint ``subjects`` (records) with the providers of the current run; nothing is printed.
 
     Call it under a run, as ``install(LintPlugin, ...).running()`` makes one:
     the run names the providers and where the lint file is.
@@ -149,7 +139,7 @@ def assert_clean(
             raise LookupError(f"no installed plugin named {name!r}")
         if tests_dir is not None:
             plugin = plugin.model_copy(update={"tests_dir": tests_dir.resolve()})
-        report = run([plugin_subject(plugin)], ignore=ignore, candidates=candidates)
+        report = run([plugin], ignore=ignore, candidates=candidates)
     problems = [_finding_text(each) for each in report.findings]
     problems += [_failure_text(each) for each in report.failures]
     if report.failures or report.predicate_hit(strict=strict):

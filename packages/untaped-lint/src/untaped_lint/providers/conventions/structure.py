@@ -22,7 +22,7 @@ from pathlib import Path
 from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import SourceFile, callee, source_files
 
-SECTION_READERS = frozenset({"get_config_section", "section"})
+SECTION_READERS = frozenset({"section"})
 
 
 def structure_source_violations(

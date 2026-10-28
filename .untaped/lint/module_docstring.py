@@ -8,17 +8,13 @@ from untaped_lint.api import FileLocation, Finding, Tree, finding, rule, target_
 SOURCES = ("packages/*/src/**/*.py", "examples/*/src/**/*.py")
 
 
-@rule(
-    "module-docstring",
-    reads=Tree,
-    severity="error",
-    summary=(
-        "Every source module opens with a docstring saying what it owns; re-export stubs "
-        "(only imports and __all__) are exempt."
-    ),
-)
+@rule(severity="error")
 def module_docstring(tree: Tree) -> Iterator[Finding]:
-    """One finding per source module with code and no docstring."""
+    """Every source module opens with a docstring saying what it owns; re-export stubs (only
+    imports and __all__) are exempt.
+
+    One finding per source module with code and no docstring.
+    """
     for file in tree.files(*SOURCES):
         module = file.python()
         if ast.get_docstring(module) is None and not _stub(module):
