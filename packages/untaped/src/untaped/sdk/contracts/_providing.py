@@ -79,9 +79,9 @@ def providing(
         yield result
 
 
-#: The empty settings model of each name :func:`providers_plugin` made a plugin of:
+#: The empty settings model of each name and module :func:`providers_plugin` made a plugin of:
 #: composing that name again (a test installing twice) is the same section.
-_EMPTY: dict[str, type[BaseModel]] = {}
+_EMPTY: dict[tuple[str, str], type[BaseModel]] = {}
 
 
 def providers_plugin(
@@ -124,16 +124,20 @@ def providers_plugin(
             "a plugin has one settings model"
         )
     model = next(iter(read), None)
+    home = module or classes[0].__module__
     if model is None:
-        if name not in _EMPTY:
-            _EMPTY[name] = create_model(f"{title}Settings", __config__=ConfigDict(frozen=True))
-        model = _EMPTY[name]
+        # Made in the plugin's module, so its package is the providers', not core's.
+        if (name, home) not in _EMPTY:
+            _EMPTY[name, home] = create_model(
+                f"{title}Settings", __config__=ConfigDict(frozen=True), __module__=home
+            )
+        model = _EMPTY[name, home]
     plugin = type(
         title,
         (Plugin,),
         {
             "__doc__": f"The providers {name}.",
-            "__module__": module or classes[0].__module__,
+            "__module__": home,
             "settings": model,
             "fills": tuple(classes),
         },
