@@ -212,9 +212,9 @@ def _call(annotation: object, **kinds: type[BaseModel]) -> Invocation:
 
 
 def test_an_unfilled_output_is_a_table_with_its_declared_columns() -> None:
-    output: Output[Row] = Output(columns=("name",))
+    output: Output[Row] = Output(columns=(key(Row).name,))
     assert (output.format, list(output.columns)) == ("table", ["name"])
-    output.columns.add("size", "name")
+    output.columns.add(key(Row).size, key(Row).name)
     assert list(output.columns) == ["name", "size"]
 
 
@@ -231,19 +231,67 @@ def test_an_outputs_columns_name_the_records_fields() -> None:
 
 
 def test_an_outputs_columns_refuse_another_records_field() -> None:
-    with pytest.raises(TypeError, match=r"Output\[Row\]\(columns=\) names key\(Hold\)\.item"):
+    with pytest.raises(TypeError, match=r"Row's columns do not include key\(Hold\)\.item"):
         Output(columns=(key(Hold).item,))._fill({}, _call(Output[Row]))
 
 
-def test_an_outputs_column_is_one_field() -> None:
-    with pytest.raises(TypeError, match="one field of the record"):
-        Output(columns=(key(AcmeSettings).server.url,))
+def test_an_outputs_column_is_a_field_not_the_record() -> None:
+    with pytest.raises(TypeError, match="a field of the record"):
+        Output(columns=(key(Row),))
+
+
+class Failure(BaseModel):
+    message: str = ""
+
+
+class CaseRow(BaseModel):
+    case: str
+    failure: Failure | None = None
+
+
+def test_a_nested_field_is_its_dotted_column() -> None:
+    filled = Output(columns=(key(CaseRow).case, key(CaseRow).failure.message))._fill(
+        {}, _call(Output[CaseRow])
+    )
+    assert list(filled.columns) == ["case", "failure.message"]
+
+
+def test_a_string_column_naming_a_field_is_refused() -> None:
+    with pytest.raises(TypeError, match=r"by its field: key\(Row\)\.size"):
+        Output(columns=("size",))._fill({}, _call(Output[Row]))
+    filled = Output()._fill({}, _call(Output[Row]))
+    with pytest.raises(TypeError, match=r"by its field: key\(Row\)\.size"):
+        filled.columns.add("size")
+
+
+class Open(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: int
+
+
+def test_a_string_column_is_a_key_no_field_declares() -> None:
+    """A model that keeps undeclared keys (an AWX row) shows one by name; a closed one has none."""
+    filled = Output(columns=(key(Open).id, "launch_type"))._fill({}, _call(Output[Open]))
+    assert list(filled.columns) == ["id", "launch_type"]
+    with pytest.raises(TypeError, match="Row has no field 'launch_type'"):
+        Output(columns=("launch_type",))._fill({}, _call(Output[Row]))
+
+
+def test_columns_add_drop_and_show() -> None:
+    filled = Output()._fill({}, _call(Output[Row]))
+    filled.columns.add(key(Row).size, first=True)
+    assert list(filled.columns) == ["size", "name"]
+    filled.columns.drop(key(Row).size)
+    assert list(filled.columns) == ["name"]
+    filled.columns.show(key(Row).size, key(Row).name)
+    assert list(filled.columns) == ["size", "name"]
 
 
 def test_a_filled_output_is_a_copy_and_falls_back_to_the_column_marks() -> None:
     default: Output[Row] = Output()
     filled = default._fill({"--format": "json", "--columns": ["+size"]}, _call(Output[Row]))
-    filled.columns.add("size")
+    filled.columns.add(key(Row).size)
     filled.empty("none")
     assert (filled.format, list(filled.columns)) == ("json", ["name", "size"])
     assert (default.format, list(default.columns)) == ("table", [])
@@ -294,7 +342,7 @@ class Note(BaseModel):
 def test_declared_columns_stay_in_a_one_record_table_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    filled = Output(columns=("key", "value"))._fill({}, _call(Output[Note]))
+    filled = Output(columns=(key(Note).key, key(Note).value))._fill({}, _call(Output[Note]))
     filled._print(Note(key="k"), kind=None)  # a detail view would hide the empty value
     assert "value" in capsys.readouterr().out
     filled._print([Note(key="k"), Note(key="j")], kind=None)

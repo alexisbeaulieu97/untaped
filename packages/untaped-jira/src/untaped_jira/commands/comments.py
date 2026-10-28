@@ -6,11 +6,13 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import Group, Limit, Output, Positional
+from untaped.sdk import Group, Limit, Output, Positional, key
 from untaped_jira.commands._jira import ISSUE_KEY, JiraCommand
 from untaped_jira.keys import validate_issue_key
 from untaped_jira.parse import parse_comment
 from untaped_jira.records import Comment
+
+_COLUMNS = (key(Comment).author, key(Comment).created_at, key(Comment).body)
 
 
 class List(JiraCommand):
@@ -18,7 +20,7 @@ class List(JiraCommand):
 
     key: Positional[str] = Field(description=ISSUE_KEY)
     limit: Limit
-    output: Output[Comment] = Output(columns=("author", "created_at", "body"))
+    output: Output[Comment] = Output(columns=_COLUMNS)
 
     def run(self) -> Iterator[Comment]:
         self.output.empty("No comments found.")

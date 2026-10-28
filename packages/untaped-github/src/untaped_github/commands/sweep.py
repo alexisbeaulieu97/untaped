@@ -7,7 +7,17 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
-from untaped.sdk import Group, Matched, Output, Parallel, Refresh, Short, UsageError, key
+from untaped.sdk import (
+    Group,
+    Matched,
+    Output,
+    Parallel,
+    Refresh,
+    SettingKey,
+    Short,
+    UsageError,
+    key,
+)
 from untaped_github.application import (
     GitCorpus,
     RepositoryInventoryScope,
@@ -212,12 +222,13 @@ class Sweep(_Sweep):
         # a matching ref has no hits for a negated predicate, so its column would read 0
         negated = ("not-grep:", "lacks-file:")
         labels = query.labels()
-        columns = ["full_name", *(label for label in labels if not label.startswith(negated))]
+        columns: list[SettingKey | str] = [key(SweepRepo).full_name]
+        columns += [label for label in labels if not label.startswith(negated)]
         if query.refs.beyond_default():
-            columns.append("refs_matched")
+            columns.append(key(SweepRepo).refs_matched)
         if self.owners:
-            columns.append("owners")
-        self.output.columns[:] = columns
+            columns.append(key(SweepRepo).owners)
+        self.output.columns.show(*columns)
         self.output.columns.offer(*(label for label in labels if label.startswith(negated)))
         return self
 

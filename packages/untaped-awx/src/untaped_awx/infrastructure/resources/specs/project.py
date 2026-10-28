@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import ActionSpec, DerivedField, FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -59,7 +60,7 @@ PROJECT_SPEC = AwxResourceSpec(
             name="sync", outcome=SyncOutcome, path="update", returns=frozenset({"project_update"})
         ),
     ),
-    list_columns=("id", "name", "status"),
+    list_columns=(key(Project).id, key(Project).name, "status"),
     commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",
 )

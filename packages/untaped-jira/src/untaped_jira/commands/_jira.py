@@ -6,10 +6,10 @@ import textwrap
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager
 
-from untaped.sdk import Command, Confirm, DryRun, Output
+from untaped.sdk import Command, Confirm, DryRun, Output, key
 from untaped_jira.client import JiraClient
 from untaped_jira.keys import validate_issue_key
-from untaped_jira.records import IssueOutcome
+from untaped_jira.records import Issue, IssueOutcome
 from untaped_jira.settings import JiraSettings
 
 #: One write request as previewed: method, path and its readable change lines.
@@ -17,21 +17,29 @@ PreviewRequest = tuple[str, str, list[str]]
 Preview = Sequence[PreviewRequest] | Callable[[JiraClient], Sequence[PreviewRequest]]
 
 #: A compact row per issue; a detail view prints one issue's own fields.
-ISSUE_COLUMNS = ("key", "issue_type", "status", "priority", "assignee", "summary", "updated_at")
+ISSUE_COLUMNS = (
+    key(Issue).key,
+    key(Issue).issue_type,
+    key(Issue).status,
+    key(Issue).priority,
+    key(Issue).assignee,
+    key(Issue).summary,
+    key(Issue).updated_at,
+)
 ISSUE_DETAIL_COLUMNS = (
-    "key",
-    "summary",
-    "issue_type",
-    "status",
-    "resolution",
-    "priority",
-    "assignee",
-    "reporter",
-    "labels",
-    "created_at",
-    "updated_at",
-    "url",
-    "description",
+    key(Issue).key,
+    key(Issue).summary,
+    key(Issue).issue_type,
+    key(Issue).status,
+    key(Issue).resolution,
+    key(Issue).priority,
+    key(Issue).assignee,
+    key(Issue).reporter,
+    key(Issue).labels,
+    key(Issue).created_at,
+    key(Issue).updated_at,
+    key(Issue).url,
+    key(Issue).description,
 )
 
 #: How a positional issue key reads in help.

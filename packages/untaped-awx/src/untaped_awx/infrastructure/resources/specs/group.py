@@ -14,6 +14,7 @@ declaring both directions would produce ambiguous round-trips.
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -53,7 +54,7 @@ GROUP_SPEC = AwxResourceSpec(
             scope_field="inventory",
         ),
     ),
-    list_columns=("id", "name", "description", "inventory"),
+    list_columns=(key(Group).id, key(Group).name, "description", key(Group).inventory),
     commands=("list", "get", "save", "apply", "delete"),
     apply_strategy="inventory_child",
     parent_field="inventory",

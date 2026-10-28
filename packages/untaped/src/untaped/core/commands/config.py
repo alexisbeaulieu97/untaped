@@ -46,7 +46,7 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk._cli import echo, emit
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import DryRun, Output, Positional, default_columns
+from untaped.sdk.fields import DryRun, Output, Positional, default_columns, key
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,
@@ -204,6 +204,9 @@ class List(Command[CoreSettings]):
         yield from (setting_entry_row(entry, human=human) for entry in entries)
 
 
+_GET_COLUMNS = (key(Setting).key, key(Setting).value, key(Setting).default, key(Setting).source)
+
+
 class Get(Command[CoreSettings]):
     """Print one setting's value as this run reads it.
 
@@ -219,7 +222,7 @@ class Get(Command[CoreSettings]):
     show_secrets: bool = Field(False, description="Reveal a secret value instead of ***.")
     output: Output[Setting] = Output(
         format="raw",
-        columns=("key", "value", "default", "source"),
+        columns=_GET_COLUMNS,
         render={"raw": lambda row: _print_value(row)},
     )
 

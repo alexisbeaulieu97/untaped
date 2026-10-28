@@ -20,7 +20,7 @@ from pydantic import Field
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
 from untaped.core.settings import CoreSettings
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional, default_columns, table_row
+from untaped.sdk.fields import Confirm, Output, Positional, key, table_row
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (
@@ -259,7 +259,16 @@ class Prune(Command[CoreSettings]):
     check: bool = Field(False, description=_CHECK)
     confirm: Confirm
     # it acts on several projects at once
-    output: Output[HoldOutcome] = Output(columns=("holder", *default_columns(HoldOutcome)))
+    output: Output[HoldOutcome] = Output(
+        columns=(
+            key(HoldOutcome).holder,
+            key(HoldOutcome).action,
+            key(HoldOutcome).plugin,
+            key(HoldOutcome).item,
+            key(HoldOutcome).detail,
+            key(HoldOutcome).hint,
+        )
+    )
 
     def run(self) -> Iterator[HoldOutcome]:
         from untaped.core.project_lifecycle import (  # noqa: PLC0415 - runs only here

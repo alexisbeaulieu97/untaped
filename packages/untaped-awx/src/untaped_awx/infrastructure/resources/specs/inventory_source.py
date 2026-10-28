@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import ActionSpec, FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -63,5 +64,11 @@ INVENTORY_SOURCE_SPEC = AwxResourceSpec(
         ),
     ),
     commands=("list", "get", "save", "apply", "delete"),
-    list_columns=("id", "name", "source", "status", "inventory"),
+    list_columns=(
+        key(InventorySource).id,
+        key(InventorySource).name,
+        "source",
+        "status",
+        key(InventorySource).inventory,
+    ),
 )

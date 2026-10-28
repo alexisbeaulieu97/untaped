@@ -9,6 +9,7 @@ here satisfy that interface structurally via inheritance.
 
 from __future__ import annotations
 
+from untaped.sdk import SettingKey
 from untaped_awx.domain import CommandName, ResourceSpec
 
 
@@ -18,7 +19,8 @@ class AwxResourceSpec(ResourceSpec):
     cli_name: str
     api_path: str
     relationship_api_path: str | None = None
-    list_columns: tuple[str, ...] = ()
+    #: A list's default columns: record fields, and keys AWX sends that it does not declare.
+    list_columns: tuple[SettingKey | str, ...] = ()
     commands: tuple[CommandName, ...] = ("list", "get", "save", "apply")
 
 

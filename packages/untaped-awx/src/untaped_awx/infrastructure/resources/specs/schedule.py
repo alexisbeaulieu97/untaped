@@ -8,6 +8,7 @@ for create and PATCHes the global ``/schedules/<id>/`` for update.
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -61,7 +62,13 @@ SCHEDULE_SPEC = AwxResourceSpec(
     optional_secret_paths=("extra_data.*[=$encrypted$]",),
     apply_strategy="schedule",
     parent_field="unified_job_template",
-    list_columns=("id", "name", "unified_job_template", "next_run", "enabled"),
+    list_columns=(
+        key(Schedule).id,
+        key(Schedule).name,
+        key(Schedule).unified_job_template,
+        "next_run",
+        "enabled",
+    ),
     commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",
 )

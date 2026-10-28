@@ -26,6 +26,7 @@ from untaped.sdk import (
     UntapedError,
     UsageError,
     attribution,
+    key,
     not_found,
     plural,
     q,
@@ -302,7 +303,9 @@ class Transition(JiraCommand):
     resolution: str | None = Field(None, description="Set this resolution (e.g. Fixed, Done).")
     stdin: Stdin[Issue | IssueOutcome]
     confirm: Confirm
-    output: Output[IssueOutcome] = Output(columns=("key", "transition_id", "action"))
+    output: Output[IssueOutcome] = Output(
+        columns=(key(IssueOutcome).key, key(IssueOutcome).transition_id, key(IssueOutcome).action)
+    )
 
     def run(self) -> IssueOutcome | Iterator[IssueOutcome]:
         if bool(self.id) == bool(self.to):

@@ -15,6 +15,7 @@ from untaped.sdk import (
     Positional,
     UntapedError,
     UsageError,
+    key,
     unified_diff_text,
 )
 from untaped_recipe.application.harness import (
@@ -68,7 +69,7 @@ class Test(RecipeCommand):
             selection = _select(self.library(), self.ref)
             results = self._execute(selection)
         if len({result.pack for result in results}) > 1:
-            self.output.columns.insert(0, "pack")
+            self.output.columns.add(key(TestRow).pack, first=True)
         yield from (_row(result) for result in results)
         if not self.update:
             self._diffs(results)

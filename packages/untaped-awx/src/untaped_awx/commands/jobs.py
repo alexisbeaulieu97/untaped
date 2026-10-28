@@ -17,6 +17,7 @@ from untaped.sdk import (
     Short,
     UntapedError,
     UsageError,
+    key,
     ui_context,
 )
 from untaped_awx.application import TailJobLogs, WatchJob
@@ -29,10 +30,32 @@ from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.jobs.job import JOB_ROUTES
 from untaped_awx.records import JobEventRow, JobLogLine, JobRecord
 
-# Default ``table`` columns (raw AWX field names); json, yaml and pipe keep whole records.
-_JOB_LIST_COLUMNS = ("id", "name", "status", "launch_type", "started", "elapsed")
-_JOB_GET_COLUMNS = ("id", "name", "status", "started", "finished", "elapsed", "job_explanation")
-_JOB_WAIT_COLUMNS = ("id", "name", "status", "finished_at", "elapsed")
+# Default ``table`` columns; a string is a key AWX sends that JobRecord does not declare.
+# json, yaml and pipe keep whole records.
+_JOB_LIST_COLUMNS = (
+    key(JobRecord).id,
+    key(JobRecord).name,
+    key(JobRecord).status,
+    "launch_type",
+    "started",
+    key(JobRecord).elapsed,
+)
+_JOB_GET_COLUMNS = (
+    key(JobRecord).id,
+    key(JobRecord).name,
+    key(JobRecord).status,
+    "started",
+    "finished",
+    key(JobRecord).elapsed,
+    "job_explanation",
+)
+_JOB_WAIT_COLUMNS = (
+    key(JobRecord).id,
+    key(JobRecord).name,
+    key(JobRecord).status,
+    "finished_at",
+    key(JobRecord).elapsed,
+)
 
 
 class List(AwxCommand):

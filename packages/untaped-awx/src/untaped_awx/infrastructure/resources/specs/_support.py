@@ -6,6 +6,7 @@ These specs declare just enough for ``name → id`` resolution and
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.records import (
@@ -42,7 +43,7 @@ ORGANIZATION_SPEC = AwxResourceSpec(
     identity_keys=("name",),
     canonical_fields=("description",),
     read_only_fields=UNIVERSAL_READ_ONLY,
-    list_columns=("id", "name"),
+    list_columns=(key(Organization).id, key(Organization).name),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="untaped does not save or apply organizations",
@@ -61,7 +62,7 @@ CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
         "managed",
         "namespace",
     ),
-    list_columns=("id", "name", "kind"),
+    list_columns=(key(CredentialType).id, key(CredentialType).name, "kind"),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="untaped does not save or apply credential types",
@@ -82,7 +83,7 @@ EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
     identity_keys=("name",),
     canonical_fields=("description", "image"),
     read_only_fields=UNIVERSAL_READ_ONLY,
-    list_columns=("id", "name", "image"),
+    list_columns=(key(ExecutionEnvironment).id, key(ExecutionEnvironment).name, "image"),
     commands=(),
     fidelity="read_only",
     fidelity_note="untaped does not save or apply execution environments",
@@ -98,7 +99,7 @@ LABEL_SPEC = AwxResourceSpec(
     canonical_fields=("name",),
     read_only_fields=UNIVERSAL_READ_ONLY,
     fk_refs=(FkRef(field="organization", kind="Organization"),),
-    list_columns=("id", "name", "organization"),
+    list_columns=(key(Label).id, key(Label).name, key(Label).organization),
     commands=(),
     fidelity="read_only",
     fidelity_note="untaped does not save or apply labels",
@@ -113,7 +114,7 @@ INSTANCE_GROUP_SPEC = AwxResourceSpec(
     identity_keys=("name",),  # globally unique in AWX
     canonical_fields=("name",),
     read_only_fields=UNIVERSAL_READ_ONLY,
-    list_columns=("id", "name"),
+    list_columns=(key(InstanceGroup).id, key(InstanceGroup).name),
     commands=(),
     fidelity="read_only",
     fidelity_note="untaped does not save or apply instance groups",
@@ -128,7 +129,7 @@ SYSTEM_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     identity_keys=("name",),  # management jobs are global
     canonical_fields=("name",),
     read_only_fields=UNIVERSAL_READ_ONLY,
-    list_columns=("id", "name"),
+    list_columns=(key(SystemJobTemplate).id, key(SystemJobTemplate).name),
     commands=(),
     fidelity="read_only",
     fidelity_note="management jobs are built into AWX",
