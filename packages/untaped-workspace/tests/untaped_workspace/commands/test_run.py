@@ -31,8 +31,8 @@ def ws(make_upstream: Callable[..., GitRemote], workspace_env: Path) -> Path:
 
 
 def _rows(result: Ran) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = json.loads(result.stdout)
-    return rows
+    """The rows ``--format json`` streamed, one object per line, in finishing order."""
+    return [json.loads(line) for line in result.stdout.splitlines()]
 
 
 def test_command_string_with_a_pipe(ws: Path) -> None:
