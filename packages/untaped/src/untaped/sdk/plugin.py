@@ -12,7 +12,7 @@ instead of failing an import.
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, NoReturn, get_args, get_origin
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, create_model, model_validator
 
@@ -161,7 +161,8 @@ class Plugin:
     skill: ClassVar[StubSkill | None] = None
     runs: ClassVar[type[Command[Any]] | None] = None
 
-    def __init__(self) -> NoReturn:
+    # ``-> None``, not ``NoReturn``, as on Group: a type checker would take the class for a function
+    def __init__(self) -> None:
         raise TypeError(
             f"{type(self).__name__} is a plugin; core reads the class, never an instance"
         )

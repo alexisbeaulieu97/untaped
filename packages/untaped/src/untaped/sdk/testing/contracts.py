@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import BoundProvider
@@ -233,8 +233,7 @@ def _installed_for(cls: type) -> list[str]:
         if isinstance(spec, PluginSpec):
             return [candidate.name, *(owner for owner in spec.provides if owner in installed)]
         if isinstance(spec, type) and issubclass(spec, Plugin):
-            plugin = cast("type[Plugin]", spec)  # mypy keeps type[object] past issubclass here
-            return [candidate.name, *_offering(installed.values(), plugin.fills)]
+            return [candidate.name, *_offering(installed.values(), spec.fills)]
     raise LookupError(
         f"no installed plugin offers {cls.__qualname__}; compose it with compose_with(...)"
     )
@@ -255,7 +254,6 @@ def _offering(candidates: Iterable[PluginCandidate], fills: Sequence[type]) -> l
             continue
         if not (isinstance(plugin, type) and issubclass(plugin, Plugin)):
             continue
-        offered = cast("type[Plugin]", plugin)
-        if wanted & set(offered.offers):
+        if wanted & set(plugin.offers):
             found.append(candidate.name)
     return found

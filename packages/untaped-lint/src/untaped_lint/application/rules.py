@@ -1,6 +1,6 @@
 """The ``Linter`` contract and the one way to write a rule: ``@rule`` in a ``Rules`` host.
 
-A provider fills ``Linter`` (``PluginSpec.provides={"lint": ...}``). The stock
+A provider fills ``Linter`` (its plugin class lists it in ``fills``). The stock
 filling is :class:`Rules`: list the rule functions in ``RULES`` (or write
 ``@rule`` methods on the subclass), and it validates each subject once as the
 model its rules read, runs each rule under its own ``try`` and carries a
@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from untaped.sdk import Failure, Record, experimental, kind_of
 from untaped.sdk.contracts import Contract, Provider
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree
+from untaped_lint.records import Finding, Location, Rule, Severity, Subject, Tree, is_kind
 
 #: Marks a provider base's own helper, so doctor's unused-method check skips it
 #: (``untaped.sdk.contracts`` reads the same attribute).
@@ -144,7 +144,7 @@ class Rules(Linter, Provider):
         found: list[Finding] = []
         models: dict[type[Record], Record | ValidationError] = {}
         for function in self._functions():
-            if function.rule.reads != subject.kind:
+            if not is_kind(subject.kind, function.model):
                 continue
             if function.model not in models:  # validated once per model read
                 try:

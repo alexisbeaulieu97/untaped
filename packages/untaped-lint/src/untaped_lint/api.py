@@ -10,23 +10,24 @@ functions and import only this module)::
     class AcmeRules(Rules):
         RULES = (no_print,)
 
-and offers ``AcmeRules()`` in ``PluginSpec.provides={"lint": ...}``. A
-plugin that turns a repository's files into its own subjects fills
-:class:`TreeReader`. A command of its own runs rules over its records with
-:func:`lint`, which prints and exits by lint's rules, from the
-:class:`LintConfig` :func:`lint_config` builds (the profile's ``lint.ignore``
-and the repository's lint file), so the plugin never reads lint's settings.
+and lists ``AcmeRules`` in its plugin class's ``fills``. A plugin that turns
+a repository's files into its own subjects fills :class:`TreeReader`. A
+command of its own runs rules over its records from the :class:`LintConfig`
+:func:`lint_config` builds (the profile's ``lint.ignore`` and the
+repository's lint file), so the plugin never reads lint's settings: an 11.x
+command (``untaped awx lint``) through :func:`lint`, which prints and exits
+by lint's rules, with the ``*Option`` spellings; both go when awx moves.
 """
 
 from __future__ import annotations
 
 from untaped.sdk import InstalledPlugin
+from untaped_lint.application.lint_config import lint_config
 from untaped_lint.application.output import lint
 from untaped_lint.application.ports import RuleFunction
 from untaped_lint.application.rules import Linter, Rules, TreeReader, finding, rule
-from untaped_lint.cli.lint_config import lint_config
-from untaped_lint.cli.options import IgnoreOption, SelectOption, StrictOption
 from untaped_lint.config import LintConfig
+from untaped_lint.options_seam import IgnoreOption, SelectOption, StrictOption
 from untaped_lint.records import (
     DocumentLocation,
     File,

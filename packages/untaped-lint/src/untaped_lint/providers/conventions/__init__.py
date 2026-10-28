@@ -34,8 +34,6 @@ from untaped_lint.records import FileLocation, Finding, Rule, Severity, declared
 KEY = "lint"
 """The key of every Conventions id: ``lint.error-case``."""
 
-_PLUGIN = declared_kind(InstalledPlugin)
-
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
     # The composed checks: names, requirements, the help tree, guides, marks, structure.
     ("plugin-name", "error", "A plugin's distribution and import package are named after it."),
@@ -119,7 +117,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
 )
 
 RULES: tuple[Rule, ...] = tuple(
-    Rule(id=id_, reads=_PLUGIN, severity=severity, summary=summary)
+    Rule(id=id_, reads=declared_kind(InstalledPlugin), severity=severity, summary=summary)
     for id_, severity, summary in _TABLE
 )
 _BY_ID = {rule.id: rule for rule in RULES}

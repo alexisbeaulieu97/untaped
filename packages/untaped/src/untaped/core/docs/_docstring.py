@@ -5,12 +5,15 @@ An ``Examples`` section (NumPy style) is the one place an author writes
 examples: ``--help`` leaves it out and the page prints it, with Markdown
 ``console`` fences passed through as written; bare ``$`` lines (Google
 style, as core's own commands write them) are fenced, so a terminal keeps
-one per line. RST double backticks become Markdown ones.
+one per line. RST double backticks become Markdown ones. A fenced block is
+passed through as written: neither the parser nor the backticks rule reads
+inside it, so a ``@decorator`` line in a code example is code.
 """
 
 from __future__ import annotations
 
 import inspect
+import re
 from dataclasses import dataclass
 
 import docstring_parser
@@ -25,9 +28,15 @@ class Described:
     examples: str
 
 
+#: A Markdown fenced block, from its opening fence to its closing one.
+_FENCE = re.compile(r"^```.*?^```[ \t]*$", re.MULTILINE | re.DOTALL)
+#: RST double backticks: two, never part of a fence's three.
+_DOUBLE = re.compile(r"(?<!`)``(?!`)")
+
+
 def markdown(text: str) -> str:
     """``text`` with RST double backticks written as Markdown ones."""
-    return text.replace("``", "`")
+    return _DOUBLE.sub("`", text)
 
 
 def first_line(text: str | None) -> str:
@@ -39,15 +48,22 @@ def first_line(text: str | None) -> str:
 def describe(doc: str | None) -> Described:
     """The summary (the first paragraph), behaviour and examples of the docstring ``doc``."""
     text = inspect.cleandoc(doc or "")
-    parsed = docstring_parser.parse(text)
+    fences: list[str] = []
+
+    def held(match: re.Match[str]) -> str:
+        fences.append(match.group(0))
+        return f"\0{len(fences) - 1}\0"
+
+    parsed = docstring_parser.parse(_FENCE.sub(held, text))
     description = "\n\n" if parsed.blank_after_short_description else "\n"
     description = description.join(
         part for part in (parsed.short_description, parsed.long_description) if part
     )
     summary, _, body = description.partition("\n\n")
+    body = re.sub(r"\0(\d+)\0", lambda match: fences[int(match.group(1))], markdown(body.strip()))
     return Described(
         summary=markdown(" ".join(summary.split())),
-        body=markdown(body.strip()),
+        body=body,
         examples=_fenced(examples_in(text)),
     )
 

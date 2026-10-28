@@ -3,7 +3,7 @@
 Inside a plugin repository the nearest ``pyproject.toml`` (up to the project
 root) names its plugins under ``[project.entry-points."untaped.plugins"]``;
 each installed one is an ``untaped.installed_plugin`` subject, and one that is not
-installed is a finding, never a subject. ``--stdin`` reads pipe envelopes,
+installed is a finding, never a subject. ``--stdin`` reads piped rows,
 each one subject of its kind.
 """
 
@@ -16,9 +16,8 @@ from pathlib import Path
 
 from untaped.sdk import InstalledPlugin, PipeEnvelope, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
-from untaped_lint.records import Finding, Subject, declared_kind, public
+from untaped_lint.records import Finding, Subject, declared_kind, is_kind, public
 
-PLUGIN_KIND = declared_kind(InstalledPlugin)
 _GROUP = "untaped.plugins"
 
 
@@ -31,7 +30,7 @@ class Found:
 
 
 def plugin_subject(plugin: InstalledPlugin) -> Subject:
-    return Subject(kind=PLUGIN_KIND, record=plugin.model_dump(mode="json"))
+    return Subject(kind=declared_kind(InstalledPlugin), record=plugin.model_dump(mode="json"))
 
 
 def declared_plugins(start: Path) -> list[str]:
@@ -77,7 +76,7 @@ def stdin_subjects(envelopes: Iterable[PipeEnvelope]) -> list[Subject]:
     for envelope in envelopes:
         if not envelope.kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
-        if envelope.kind == PLUGIN_KIND and envelope.record.get("root"):
+        if is_kind(envelope.kind, InstalledPlugin) and envelope.record.get("root"):
             continue
         subjects.append(Subject(kind=envelope.kind, record=dict(envelope.record)))
     return subjects

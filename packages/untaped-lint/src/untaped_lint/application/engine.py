@@ -13,12 +13,13 @@ other than ``not-configured`` is one failure row.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, InstalledPlugin, plural
 from untaped.sdk.contracts import (
@@ -32,10 +33,10 @@ from untaped.sdk.contracts import (
     providing,
 )
 from untaped.sdk.testing import PluginCandidate
-from untaped_lint.application.modules import RULE_IMPORTS, TREE_KIND, Loaded, load
+from untaped_lint.application.hints import new_line, rules_hint, rules_line, select_hint
+from untaped_lint.application.modules import Loaded, load, rule_imports
 from untaped_lint.application.repo_file import RepoFile
 from untaped_lint.application.rules import Linter, TreeReader
-from untaped_lint.application.subjects import PLUGIN_KIND
 from untaped_lint.application.tree_paths import tree_paths
 from untaped_lint.domain.allow import allowed_names
 from untaped_lint.domain.glob import matches
@@ -49,26 +50,23 @@ from untaped_lint.providers.conventions import (
     installed,
 )
 from untaped_lint.records import (
+    RULE_ID,
     FileLocation,
     Finding,
     Rule,
     Subject,
     Tree,
     declared_kind,
+    is_kind,
     public,
     unreadable_files,
 )
 
-_RULES_HINT = "untaped lint rules"
+_BARE = re.compile(RULE_ID)
 _NOTHING = (
     "nothing to lint here: run it in a plugin repository, a repository with "
     ".untaped/lint.yml, or pipe records with --stdin"
 )
-_NO_TREE_RULE = (
-    "nothing to lint here: no installed rule reads the repository's files; "
-    "write one with `untaped lint new`"
-)
-_RULE_KIND = declared_kind(Rule)
 
 
 @dataclass(frozen=True)
@@ -92,6 +90,11 @@ class _Providers:
     declared: dict[str, set[str]] = field(default_factory=dict)
     """Each provider's bare ids."""
     readers: dict[str, list[str]] = field(default_factory=dict)
+    """The plugins whose rules read each kind, as their rules spell it."""
+
+    def reading(self, model: type[BaseModel]) -> list[str]:
+        """The plugins whose rules read ``model``."""
+        return next((who for kind, who in self.readers.items() if is_kind(kind, model)), [])
 
 
 def loaded_rules(
@@ -129,19 +132,25 @@ def run(
         if repo is not None:
             marked.extend((public(KEY, each), repo.root) for each in loaded.findings)
         tree = None
-        if tree_root is not None and (TREE_KIND in providers.readers or (repo and repo.readers)):
+        tree_readers = providers.reading(Tree)
+        if tree_root is not None and (tree_readers or (repo and repo.readers)):
             tree = _tree(tree_root, repo)
         with unreadable_files() as skipped:
             if tree is not None and repo is not None:
                 subjects.extend(_read(tree, repo, report))
             raw.extend(_dispatch(subjects, providers, report))
-            if tree is not None and TREE_KIND in providers.readers:
-                asked = _ask(_subject(tree), providers.readers[TREE_KIND], providers, report)
+            if tree is not None and tree_readers:
+                asked = _ask(_subject(tree), tree_readers, providers, report)
                 marked.extend((each, Path(tree.root)) for each in asked)
         if tree is not None:
             marked.extend((_unreadable(path), Path(tree.root)) for path in sorted(skipped))
     if not subjects and tree is None and not raw and not marked:
-        report.warnings.append(_NOTHING if repo is None else _NO_TREE_RULE)
+        report.warnings.append(
+            _NOTHING
+            if repo is None
+            else "nothing to lint here: no installed rule reads the repository's files; "
+            f"write one with `{new_line()}`"
+        )
     resolver = Resolver(providers.rules)
     raw.extend(each for each, root in marked if not _allowed(each, root, resolver))
     selection = Selection.build(
@@ -166,7 +175,7 @@ def _conventions(
     found: list[Finding] = []
     plugins: list[InstalledPlugin] | None = None
     for subject in subjects:
-        if subject.kind != PLUGIN_KIND:
+        if not is_kind(subject.kind, InstalledPlugin):
             continue
         try:
             plugin = InstalledPlugin.model_validate(subject.record)
@@ -188,10 +197,10 @@ def _dispatch(subjects: list[Subject], providers: _Providers, report: Report) ->
         readers = providers.readers.get(subject.kind, [])
         if readers:
             found.extend(_ask(subject, readers, providers, report))
-        elif subject.kind != PLUGIN_KIND and subject.kind not in unread:
+        elif not is_kind(subject.kind, InstalledPlugin) and subject.kind not in unread:
             unread.add(subject.kind)
             report.warnings.append(
-                f"no installed rule reads {subject.kind} records; see `{_RULES_HINT}`"
+                f"no installed rule reads {subject.kind} records; see `{rules_line()}`"
             )
     return found
 
@@ -218,7 +227,7 @@ def _tree(root: Path, repo: RepoFile | None) -> Tree:
 
 
 def _subject(record: Tree) -> Subject:
-    return Subject(kind=TREE_KIND, record=record.model_dump(mode="json"))
+    return Subject(kind=declared_kind(Tree), record=record.model_dump(mode="json"))
 
 
 def _read(tree: Tree, repo: RepoFile, report: Report) -> list[Subject]:
@@ -275,11 +284,11 @@ def _allowed(finding: Finding, root: Path, resolver: Resolver) -> bool:
 
 
 def _load(report: Report) -> _Providers:
-    own = Source(plugin=KEY, kind=_RULE_KIND)
+    own = Source(plugin=KEY, kind=declared_kind(Rule))
     providers = _Providers(
         rules={
             f"{KEY}.{rule.id}": rule.model_copy(update={"source": own})
-            for rule in (*Conventions().rules(), RULE_IMPORTS)
+            for rule in (*Conventions().rules(), rule_imports())
         }
     )
     try:
@@ -302,7 +311,17 @@ def _load(report: Report) -> _Providers:
     return providers
 
 
-def _declare(plugin: str, rules: list[Rule], providers: _Providers, report: Report) -> None:
+def _declare(plugin: str, declared: list[Rule], providers: _Providers, report: Report) -> None:
+    rules = [rule for rule in declared if _BARE.match(rule.id)]  # the engine prefixes
+    for each in [rule for rule in declared if not _BARE.match(rule.id)]:
+        report.failures.append(
+            _failure(
+                plugin,
+                "invalid-item",
+                f"{each.id!r} is not a bare id; the run prefixes {plugin}",
+                lead="malformed rule was dropped",
+            )
+        )
     ids = {rule.id for rule in rules}
     if plugin == KEY:
         report.failures.append(
@@ -350,7 +369,7 @@ def _ask(
                     each.error.model_copy(
                         update={
                             "item": public_id,
-                            "hint": f"untaped lint --select {public_id}",
+                            "hint": select_hint(public_id),
                             "details": {**each.error.details, "reason": "raised", "rules": 1},
                         }
                     )
@@ -368,7 +387,7 @@ def _not_checked(answer: Errored | Skipped, report: Report, *, rules: int | None
             failure.model_copy(
                 update={
                     "item": answer.plugin,
-                    "hint": failure.hint or _RULES_HINT,
+                    "hint": failure.hint or rules_hint(),
                     "details": {**failure.details, "reason": answer.reason or "failed", **details},
                 }
             )
@@ -395,18 +414,19 @@ def _failure(
         system=plugin,
         item=plugin,
         message=f"{plugin}'s {lead}: {reason}: {detail}",
-        hint=_RULES_HINT,
+        hint=rules_hint(),
         details={"reason": reason, **(details or {})},
     )
 
 
 def _invalid_plugin(subject: Subject, error: ValidationError) -> Failure:
-    name = str(subject.record.get("name") or PLUGIN_KIND)
+    plugin_kind = declared_kind(InstalledPlugin)
+    name = str(subject.record.get("name") or plugin_kind)
     return Failure(
         category=ErrorCategory.INVALID,
         system=KEY,
         item=name,
-        message=f"{name} was not checked: its {PLUGIN_KIND} record is invalid: "
+        message=f"{name} was not checked: its {plugin_kind} record is invalid: "
         f"{plural(error.error_count(), 'field error')}",
         hint="pipe `untaped plugin list --format pipe` output",
         details={"reason": "invalid-record"},

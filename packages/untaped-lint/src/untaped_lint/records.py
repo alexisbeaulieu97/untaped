@@ -34,6 +34,7 @@ from untaped.sdk import (
     Source,
     TargetRecord,
     kind_of,
+    record_model,
 )
 from untaped_lint.domain.glob import matches
 
@@ -43,13 +44,23 @@ type Severity = Literal["error", "warning"]
 RULE_ID = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 """What a provider declares: a bare kebab-case id; the owner prefixes it."""
 
+_ANY_ID = r"^([a-z][a-z0-9]*(-[a-z0-9]+)*\.)?[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+"""A rule row's id: bare as a provider declares it, or public as ``lint rules`` lists it."""
+
 
 class Rule(Issued, kind="lint.rule"):
     """One convention a provider enforces, as ``untaped lint rules`` lists it."""
 
     table_columns: ClassVar[tuple[str, ...]] = ("id", "reads", "severity", "summary")
 
-    id: Annotated[str, Field(pattern=RULE_ID)]
+    id: Annotated[
+        str,
+        Field(
+            pattern=_ANY_ID,
+            description="Bare as its provider declares it (`no-print`); `lint rules` lists "
+            "it public (`house.no-print`).",
+        ),
+    ]
     reads: str = Field(
         description="The kind of subject the rule reads, written by `rule()` from the model."
     )
@@ -69,6 +80,12 @@ class FileLocation(_Location):
     line: int | None = None
     column: int | None = None
 
+    def table_text(self) -> str:
+        """``path:line:column``, as far as it is known."""
+        if self.line is None:
+            return self.path
+        return ":".join([self.path, *(str(n) for n in (self.line, self.column) if n is not None)])
+
 
 class DocumentLocation(_Location):
     """One document of a multi-document file, from 1: ``templates.yml#2``."""
@@ -76,12 +93,20 @@ class DocumentLocation(_Location):
     path: str
     index: int
 
+    def table_text(self) -> str:
+        """``path#index``."""
+        return f"{self.path}#{self.index}"
+
 
 class ResourceLocation(_Location):
     """A resource with no file: ``job_templates/14``, maybe with its URL."""
 
     id: str
     url: str | None = None
+
+    def table_text(self) -> str:
+        """The resource's id."""
+        return self.id
 
 
 type Location = FileLocation | DocumentLocation | ResourceLocation
@@ -211,16 +236,7 @@ def target_of(item: File | InstalledPlugin) -> str:
 
 def location_text(location: Location | None) -> str:
     """How a location reads in a table: ``path:line:col``, ``path#index`` or the id."""
-    match location:
-        case FileLocation(path=path, line=line, column=column):
-            parts = [path, *(str(n) for n in (line, column) if n is not None)]
-            return ":".join(parts) if line is not None else path
-        case DocumentLocation(path=path, index=index):
-            return f"{path}#{index}"
-        case ResourceLocation(id=identifier):
-            return identifier
-        case None:
-            return ""
+    return "" if location is None else location.table_text()
 
 
 def public(key: str, finding: Finding) -> Finding:
@@ -230,8 +246,13 @@ def public(key: str, finding: Finding) -> Finding:
 
 
 def declared_kind(model: type[BaseModel]) -> str:
-    """The kind ``model`` declares: the one place lint names a kind, by its model."""
+    """The kind ``model`` declares, spelled only to write a record: the one place lint names one."""
     kind = kind_of(model)
     if kind is None:
         raise TypeError(f"{model.__qualname__} declares no kind")
     return kind
+
+
+def is_kind(kind: str, model: type[BaseModel]) -> bool:
+    """Whether ``kind`` is ``model``'s: lint decides by class, never by a kind string."""
+    return record_model(kind) is model

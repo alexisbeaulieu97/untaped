@@ -1,9 +1,9 @@
-"""``lint()``: run, print the findings and the failure rows, and exit by the rules.
+"""A lint run's report from its subjects and selection, and 11.x's ``lint()`` printer.
 
-Findings go to stdout (``lint.finding``); failure rows, warnings and the
-summary to stderr. Exit 3 on an error finding (any finding with ``strict``),
-1 on a failure row (or its category's code), 0 otherwise; usage mistakes
-raise first (2).
+:func:`lint_report` parses the selection and runs the engine; a command
+prints its findings as rows and its failures and warnings on stderr.
+:func:`lint` does both and exits by lint's codes for a plugin command that is
+still 11.x (``untaped awx lint``); it goes when awx moves to the 12.0 shape.
 """
 
 from __future__ import annotations
@@ -18,11 +18,12 @@ from untaped_lint.records import Finding, Subject, location_text
 
 if TYPE_CHECKING:
     from untaped.sdk.testing import PluginCandidate
+    from untaped_lint.domain.report import Report
 
 _diag = Diagnostics()
 
 
-def lint(
+def lint_report(
     subjects: Iterable[Subject],
     *,
     config: LintConfig = LintConfig(),  # noqa: B008 - frozen
@@ -32,24 +33,21 @@ def lint(
     only: Iterable[str] = (),
     exact: Iterable[str] = (),
     locations: Iterable[str] = (),
-    strict: bool = False,
     findings: Iterable[Finding] = (),
-    fmt: OutputFormat = "table",
-    columns: list[str] | None = None,
     candidates: Sequence[PluginCandidate] | None = None,
-) -> NoReturn:
-    """Lint ``subjects``, print the rows and exit per the lint exit codes.
+) -> Report:
+    """Lint ``subjects``: the report, its findings in the order a table shows them.
 
     ``only`` takes target globs and ``exact`` literal targets (a name with
     ``[`` or ``?`` is never read as a pattern); ``locations`` keeps only the
     findings at those locations, written as a table reads them
     (``job_templates/14``, ``templates.yml#2``), for a caller whose targets
-    are not unique. ``findings`` are ones the
-    caller already made, with public ids, reported and selected like the rest.
+    are not unique. ``findings`` are ones the caller already made, with
+    public ids, reported and selected like the rest.
     """
     # The engine (contracts, providers, the plugin checks) loads when a run
-    # starts, so a command that imports ``untaped_lint.api`` for its option
-    # types pays for none of it until it lints.
+    # starts, so a command that imports ``untaped_lint.api`` for its types
+    # pays for none of it until it lints.
     from untaped_lint.application.engine import Options, run  # noqa: PLC0415
 
     repo = config.repo
@@ -78,11 +76,50 @@ def lint(
         repo=repo,
         tree_root=config.tree_root,
     )
+    report.findings.sort(key=_order)
+    return report
+
+
+def lint(
+    subjects: Iterable[Subject],
+    *,
+    config: LintConfig = LintConfig(),  # noqa: B008 - frozen
+    select: Iterable[str] = (),
+    ignore: Iterable[str] = (),
+    paths: Iterable[str] = (),
+    only: Iterable[str] = (),
+    exact: Iterable[str] = (),
+    locations: Iterable[str] = (),
+    strict: bool = False,
+    findings: Iterable[Finding] = (),
+    fmt: OutputFormat = "table",
+    columns: list[str] | None = None,
+    candidates: Sequence[PluginCandidate] | None = None,
+) -> NoReturn:
+    """Lint ``subjects``, print the rows and exit per the lint exit codes (11.x commands).
+
+    Findings go to stdout (``lint.finding``); failure rows, warnings and the
+    summary to stderr. Exit 3 on an error finding (any finding with
+    ``strict``), 1 on a failure row (or its category's code), 0 otherwise;
+    usage mistakes raise first (2). See :func:`lint_report` for the rest.
+    """
+    report = lint_report(
+        subjects,
+        config=config,
+        select=select,
+        ignore=ignore,
+        paths=paths,
+        only=only,
+        exact=exact,
+        locations=locations,
+        findings=findings,
+        candidates=candidates,
+    )
     for warning in report.warnings:
         _diag.warning(warning)
     for failure in report.failures:
         _diag.failure(failure)
-    rows = sorted(report.findings, key=_order)
+    rows = report.findings
     if fmt == "table" and columns is None:
         emit(
             [_table_row(row) for row in rows],

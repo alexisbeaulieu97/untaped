@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from datetime import timedelta
@@ -367,6 +368,12 @@ class Plain(Books):
 def test_providers_compose_as_one_plugin_per_key(install: Installer) -> None:
     shelf = install(Reader, providers={"fake": (Fixed,), "spare": (Fixed,)})
     assert shelf.run(Titles()).text == "fake:Dune,spare:Dune"
+
+
+def test_a_providers_plugin_is_never_listed_as_core_s_package(install: Installer) -> None:
+    listed = install(Reader, providers={"fake": (Fixed,)}).cli("plugin list -f json")
+    fake = next(row for row in json.loads(listed.stdout) if row["name"] == "fake")
+    assert not (fake["package"] or "").startswith("untaped.")
 
 
 def test_one_name_installed_again_with_other_providers_runs_the_new_ones(

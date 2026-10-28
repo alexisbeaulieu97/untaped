@@ -104,13 +104,13 @@ All three preview with `--dry-run`; `remove` and `prune` exit 3 under
 Every name in `.untaped/` is core's (`project.json`, `config.yml`,
 `state.yml`, `plugins/`, `.gitignore`, and the lock files beside
 `config.yml` and `state.yml`) or one plugin's. A plugin names the
-files people write, and may commit, through `committed_path` in
-`untaped.sdk`:
+files people write, and may commit, through its handle's `committed` in a
+run:
 
 ```python
-from untaped.sdk import checkout_root, committed_path
+from untaped.sdk import checkout_root, plugin_of
 
-lint_file = committed_path(SPEC, "lint.yml", root=checkout_root(start) or start)
+lint_file = plugin_of(LintSettings).committed("lint.yml", root=checkout_root(start) or start)
 ```
 
 The name is the plugin's own: its name (`awx`), `<plugin>.<ext>`

@@ -706,7 +706,8 @@ def table_rows(
 
     A ``Bytes`` field's cell is its size in words, an ``Age`` field's how long
     ago it was by :func:`untaped.sdk.now`'s clock, a ``Duration`` field's its
-    run time, an ``ObjectName`` field's its short name, and a ``Spread`` field gives
+    run time, an ``ObjectName`` field's its short name, a :class:`TableText` model's
+    its ``table_text()``, and a ``Spread`` field gives
     way to a column per key (a key a row already has keeps the row's value). A
     word its field's ``Status`` names is a :class:`Roled` cell.
     """
@@ -773,6 +774,10 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
         return elapsed_text(value)
     if ObjectName in marks and isinstance(value, str) and _FULL_NAME.fullmatch(value):
         return value[:_SHORT_NAME]
+    from untaped.sdk.records import TableText  # noqa: PLC0415 - records import fields
+
+    if isinstance(value, BaseModel) and isinstance(value, TableText):
+        return value.table_text()
     return cell
 
 
@@ -1000,6 +1005,17 @@ class Stdin[R: BaseModel](FieldBlock):
             for value in self._read(given, allow_empty=allow_empty)
         ]
 
+    def envelopes(self, *, allow_empty: bool = False) -> list[str | PipeEnvelope]:
+        """What stdin carried, unvalidated: each a bare line or a row's kind, record and line.
+
+        For a command whose readers validate each row by its kind (lint's
+        providers), so a row its model refuses is that reader's to report
+        instead of ending the read. ``Stdin[Record]`` takes every kind, one no
+        installed plugin declares included; a narrower ``Stdin[X]`` still
+        refuses a kind that is none of its models'.
+        """
+        return self._read((), allow_empty=allow_empty, what="records")
+
     def kind(self, row: BaseModel) -> str | None:
         """The kind of ``row``'s model among those this command reads (``None``: none of them).
 
@@ -1016,7 +1032,9 @@ class Stdin[R: BaseModel](FieldBlock):
             rows.append(value)
         return rows
 
-    def _read(self, given: Sequence[str], *, allow_empty: bool) -> list[str | PipeEnvelope]:
+    def _read(
+        self, given: Sequence[str], *, allow_empty: bool, what: str = "identifiers"
+    ) -> list[str | PipeEnvelope]:
         from untaped.sdk._stdin import read_stdin_input  # noqa: PLC0415 - only a reader pays
 
         if not self._requested:
@@ -1026,7 +1044,7 @@ class Stdin[R: BaseModel](FieldBlock):
         if given:
             raise UsageError("provide identifiers as positional args or via --stdin, not both")
         kinds = None if self._any or self.via is not None else tuple(self._kinds)
-        piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
+        piped = read_stdin_input(accept_kinds=kinds, what=what, allow_empty=allow_empty)
         return list(piped.values) if piped.records is None else list(piped.records)
 
     def _model(self, envelope: PipeEnvelope) -> type[BaseModel]:

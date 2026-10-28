@@ -207,7 +207,7 @@ def _plugin_class(declaration: Declaration, name: str) -> type[Plugin]:
     cls = resolve_target(target)
     if not (isinstance(cls, type) and issubclass(cls, Plugin)):
         raise TypeError(f"{target} is no longer a plugin class; run `untaped doctor`")
-    return cast("type[Plugin]", cls)
+    return cls
 
 
 def _settings_model(

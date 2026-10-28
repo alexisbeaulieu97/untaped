@@ -16,7 +16,8 @@ for the fields the pipe contract fixes (``docs/reference/conventions.md#output-r
   RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``), shown to the
   second in tables;
 - :class:`TableGlyph` — a field annotation that shows a value as a glyph in
-  tables only.
+  tables only;
+- :class:`TableText` — a nested model that shows as one table cell.
 
 A record type picks the columns a table of it shows by default with a
 ``table_columns`` class variable (:func:`table_columns_of`).
@@ -44,6 +45,8 @@ from typing import (
     ClassVar,
     Final,
     Literal,
+    Protocol,
+    runtime_checkable,
 )
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue
@@ -63,6 +66,7 @@ from untaped.sdk.diagnostic import (
     record_model,
 )
 from untaped.sdk.fields import Status
+from untaped.sdk.marks import experimental
 
 
 def _absolute(value: Path) -> Path:
@@ -126,6 +130,22 @@ class TableGlyph:
         else:
             return value
         return value if glyph is None else glyph
+
+
+@experimental
+@runtime_checkable
+class TableText(Protocol):
+    """A nested model that reads as one table cell: ``table_text()`` is the cell's text.
+
+    A record's field holding such a model (a file location reading
+    ``src/a.py:3``) shows that text in a table; a nested model without it
+    flattens to ``key=value`` pairs. Only the table changes: json, yaml, raw
+    and pipe keep the nested record.
+    """
+
+    def table_text(self) -> str:
+        """The cell's text."""
+        ...
 
 
 def table_columns_of(model: type[BaseModel]) -> tuple[str, ...]:

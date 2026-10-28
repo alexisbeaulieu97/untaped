@@ -19,34 +19,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from untaped.sdk import (
     ConfigError,
     UsageError,
     checkout_root,
-    committed_path,
     first_validation_error,
+    plugin_of,
     read_structured_file,
 )
-from untaped_lint import SPEC
 from untaped_lint.domain.selection import parse_suppression
 from untaped_lint.records import RULE_ID
+from untaped_lint.settings import LintSettings
 
 
 def lint_file(root: Path) -> Path:
     """The lint file under ``root``: ``<root>/.untaped/lint.yml``, lint's name there."""
-    return committed_path(SPEC, "lint.yml", root=root)
+    return plugin_of(LintSettings).committed("lint.yml", root=root)
 
 
 def rules_dir(root: Path) -> Path:
     """The default rules directory under ``root``: ``<root>/.untaped/lint/``."""
-    return committed_path(SPEC, "lint", root=root)
+    return plugin_of(LintSettings).committed("lint", root=root)
 
 
-RELATIVE = lint_file(Path()).as_posix()
-"""Where the file sits under its root."""
-_FOLDER = lint_file(Path()).parent.name
 RESERVED = "untaped"
 """Core's prefix: no repository key may take it."""
 FIXTURES = "fixtures"
@@ -62,7 +59,7 @@ class _Model(BaseModel):
 class LinterEntry(_Model):
     """One ``linters:`` key: the directory of its rule modules."""
 
-    rules: str
+    rules: str = Field(description="The directory of the key's rule modules: each *.py in it.")
 
     @model_validator(mode="before")
     @classmethod
@@ -72,15 +69,63 @@ class LinterEntry(_Model):
         return value
 
 
-class RepoFileModel(_Model):
-    """``.untaped/lint.yml``, version 1, as written."""
+class LintFile(_Model):
+    """A repository's `.untaped/lint.yml`: its keys, where it is found, and what loading runs.
 
-    version: Literal[1]
-    name: str
-    exclude: list[str] = []
-    linters: dict[str, LinterEntry] = {}
-    readers: dict[str, list[str]] = {}
-    ignore: list[str] = []
+    Read before writing or editing `.untaped/lint.yml`.
+
+    ```yaml
+    version: 1
+    name: house                  # the key of the repository's own rules: house.no-print
+    exclude: ["vendor/**"]       # left out of the files, on top of what git ignores
+    linters:
+      house:
+        rules: .untaped/lint     # a directory: each *.py directly in it
+    readers:
+      awx: ["specs/**/*.yml"]    # an installed plugin reads these files into its records
+    ignore:
+      - house.no-print:scripts/**
+    ```
+
+    - `untaped lint` finds the file walking up from the current directory to the
+      checkout root (the nearest directory holding `.git`). `--config PATH` reads
+      another file and lints the current directory with its rules.
+    - `name:` and each `linters:` key are spelled like a plugin name and are never
+      `untaped` or an installed plugin's name; such a key exits 2. A `readers:`
+      key names an installed plugin.
+    - The files linted are what git tracks plus untracked files git doesn't
+      ignore, so a new file is linted before `git add`; outside a checkout, every
+      file under the root. `fixtures/` under a rules directory is never linted.
+    - A `readers:` key no installed plugin fills exits 4.
+
+    ## What loading the rules runs
+
+    A rule module is Python that `untaped lint` imports in its own process, as
+    pytest imports a `conftest.py`: no sandbox and no confirmation, so a
+    repository's `.untaped/lint/` runs as you when you lint that checkout. A
+    module may import only the standard library, `untaped_lint.api` and an
+    installed plugin's `untaped_<plugin>.api`, because it runs in untaped's
+    environment, not the repository's (`lint.rule-imports` reports anything
+    else). Importing a plugin that isn't installed exits 4 naming the extra to
+    install. A rule that needs another library belongs in a plugin
+    (`untaped plugin new`).
+    """
+
+    version: Literal[1] = Field(description="The lint file's format: 1.")
+    name: str = Field(description="The key of the repository's own rules: `house.no-print`.")
+    exclude: list[str] = Field(
+        default_factory=list, description="Globs left out of the files, beyond what git ignores."
+    )
+    linters: dict[str, LinterEntry] = Field(
+        default_factory=dict, description="Each key's rules directory, relative to the root."
+    )
+    readers: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Which installed plugin reads which files (globs) into its records.",
+    )
+    ignore: list[str] = Field(
+        default_factory=list, description="Suppressions for every run here, as lint.ignore."
+    )
 
 
 @dataclass(frozen=True)
@@ -121,7 +166,8 @@ def find(start: Path) -> Path | None:
 def root_of(path: Path) -> Path:
     """The root a repo file's paths are relative to: the directory holding ``.untaped/``."""
     path = path.resolve()
-    return path.parent.parent if path.parent.name == _FOLDER else path.parent
+    folder = lint_file(Path()).parent.name
+    return path.parent.parent if path.parent.name == folder else path.parent
 
 
 def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:
@@ -134,7 +180,7 @@ def read(path: Path, *, installed: Iterable[str] = ()) -> RepoFile:
     """
     raw = read_structured_file(path)
     try:
-        model = RepoFileModel.model_validate(raw)
+        model = LintFile.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(
             f"{path} is invalid: {first_validation_error(exc)}", category="invalid"

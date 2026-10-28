@@ -167,7 +167,7 @@ class AcmeRules(Rules):
     RULES = (readme,)
 ```
 
-A plugin offers the host with `provides={"lint": lambda: (AcmeRules(),)}`
+A plugin lists `AcmeRules` in its plugin class's `fills`
 and declares the dependency under an extra named `lint`, as for
 [any owner](contracts.md). Its ids are then `acme.readme`. `Rules` validates
 each subject once as the model a rule reads, runs each rule on its own, and
