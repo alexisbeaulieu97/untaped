@@ -580,6 +580,13 @@ class Output[R: BaseModel](FieldBlock):
         """The text a table shows when ``run`` printed no row."""
         self._empty = text
 
+    def _check_declared(self, model: type[BaseModel]) -> None:
+        """Refuse a declared column ``model`` has no field or key for (a ``TypeError``).
+
+        Composition calls it when the plugin loads, so a bad column fails there.
+        """
+        _column_names_of(self._given, model)
+
     def _option_default(self, option: FieldOption) -> str | int | None:
         # ``table`` is every command's, so only another default is recorded
         if option.flag == "--format" and self.default_format != "table":
@@ -595,7 +602,8 @@ class Output[R: BaseModel](FieldBlock):
         from untaped.sdk._cli import check_columns  # noqa: PLC0415 - rendering is heavy
 
         model = _type_argument(call.annotation)
-        _column_names_of(self._given, model)
+        if model is not None:
+            self._check_declared(model)
         requested = flags.get("--columns")
         filled = _copy(self)
         filled.format = str(flags.get("--format") or self.default_format)

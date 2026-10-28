@@ -535,6 +535,20 @@ def test_a_document_mark_makes_its_model_an_input_core_never_reads() -> None:
     assert (suite.positional, suite.token, suite.reads_file) == (True, "str", False)
 
 
+def test_a_declared_column_naming_a_field_by_string_is_refused_when_the_plugin_loads() -> None:
+    class Listing(Command):
+        """List."""
+
+        output: Output[Salutation] = Output(columns=("text",))
+
+        def run(self) -> Iterator[Salutation]:
+            yield from ()
+
+    problems = _problems(_plugin_with(Listing))
+    assert [(p.rule, p.where.rpartition(".")[2]) for p in problems] == [("field-type", "output")]
+    assert "key(Salutation).text" in problems[0].detail
+
+
 def test_field_problems_name_the_field() -> None:
     class Messy(Command):
         """Messy."""

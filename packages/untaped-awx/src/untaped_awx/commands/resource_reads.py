@@ -11,6 +11,7 @@ from pydantic import Field
 
 from untaped.sdk import Limit, Output, Positional, Record, Short, Stdin, UsageError, key
 from untaped_awx.application.resources.mutation_values import redact_value
+from untaped_awx.application.resources.template_scm import SCM_FIELDS
 from untaped_awx.application.resources.template_scm import with_scm as add_scm_fields
 from untaped_awx.commands._awx import ResourceCommand
 from untaped_awx.commands._options import (
@@ -29,12 +30,8 @@ from untaped_awx.document import Document
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.records import JobTemplate
 
-_SCM_COLUMNS = (
-    key(JobTemplate).scm_url,
-    key(JobTemplate).effective_scm_ref,
-    key(JobTemplate).project_allow_override,
-)
-"""The columns ``--with-scm`` adds: the fields :func:`add_scm_fields` fills."""
+_SCM_COLUMNS = tuple(getattr(key(JobTemplate), name) for name in SCM_FIELDS)
+"""The columns ``--with-scm`` adds: the job template fields :func:`add_scm_fields` fills."""
 
 WITH_NAMES = (
     "Replace FK ids with names from summary_fields in every format (a table always shows "
