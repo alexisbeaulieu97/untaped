@@ -183,8 +183,7 @@ free, but a command that writes declares it with `@writes`, or
   `--yes`. In tests, `untaped.sdk.testing.invoke_cli(..., terminal=True,
   prompt_backend=...)` simulates that terminal; without `terminal=True` there
   is none.
-- Read stdin only through the helpers in [Piping](#piping)
-  (`read_identifiers`, `read_stdin_input`), never
+- Read stdin only through a `Stdin[R]` field ([Piping](#piping)), never
   `sys.stdin` directly; that section also covers empty pipes.
 - Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
   without a terminal, fail with a hint naming the flag that supplies the value.
@@ -308,22 +307,27 @@ def items_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}
 ```
 
-For a `--stdin` command, `read_identifiers()` reads bare identifiers or a
-pipe stream. Pass the record models you understand to `accepts`, so a record
-of any other kind exits 2 instead of being misread:
+A command that reads stdin declares a `Stdin[R]` field, which adds
+`--stdin`. It reads bare identifiers or a pipe stream; a row of a kind that is
+none of `R`'s exits 2 instead of being misread, and each row is validated as
+its kind's record (strictly, as JSON). In `run`, `self.stdin.identifiers(given)`
+gives each bare line or each row's `Key` field, `self.stdin.values(given)`
+each bare line or validated row, and `self.stdin.rows()` whole rows only:
 
 ```python
-from untaped.sdk import read_identifiers
+class Import(Command):
+    items: Positional[list[str]] = Field(default_factory=list)
+    stdin: Stdin[Item]
 
-identifiers = read_identifiers([], stdin=True, id_field="id", accepts=(Item,))
+    def run(self) -> None:
+        for name in self.stdin.identifiers(self.items):
+            ...
 ```
 
-For whole records, `read_stdin_input(accepts=...)` returns the bare values or
-the parsed envelopes (a `StdinInput`). `read_identifiers` and
-`read_stdin_input` raise on empty stdin. When an empty pipe (a filter that
-matched nothing) should do nothing, pass `read_stdin_input(allow_empty=True)`:
-it returns no values, which the command must treat as "nothing to do", never
-as "everything". A terminal stdin with nothing piped still raises.
+Each raises on empty stdin. When an empty pipe (a filter that matched
+nothing) should do nothing, pass `allow_empty=True`: it returns no values,
+which the command must treat as "nothing to do", never as "everything". A
+terminal stdin with nothing piped still raises.
 
 A plugin joins pipelines with the first-party plugins:
 

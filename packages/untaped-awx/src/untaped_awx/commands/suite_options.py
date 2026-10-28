@@ -533,10 +533,9 @@ class TestResults(BaseModel):
 
     ## Comparing with a baseline
 
-    `--compare FILE` compares the run with the saved `--format json` or
-    `--format pipe` output of an earlier run; `--baseline REF` runs every
-    selected case on `REF` first and compares with that (an `idempotent` case
-    then launches 4 jobs).
+    `--compare FILE` compares the run with the saved `--format json` output
+    of an earlier run; `--baseline REF` runs every selected case on `REF`
+    first and compares with that (an `idempotent` case then launches 4 jobs).
 
     - The baseline run exits 1 when the base branch already fails some cases;
       those become `still_failing` rows.

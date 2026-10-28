@@ -14,9 +14,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import InstalledPlugin, PipeEnvelope, UsageError, nearest_pyproject
+from pydantic import BaseModel
+
+from untaped.sdk import InstalledPlugin, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
-from untaped_lint.records import Finding, Subject, declared_kind, is_kind, public
+from untaped_lint.records import Finding, Subject, declared_kind, public
 
 _GROUP = "untaped.plugins"
 
@@ -66,17 +68,17 @@ def not_installed(name: str) -> Finding:
     return public(conventions.KEY, conventions.not_installed(name))
 
 
-def stdin_subjects(envelopes: Iterable[PipeEnvelope]) -> list[Subject]:
-    """Each pipe envelope as a subject of its kind; a kind-less one is a usage error.
+def stdin_subjects(rows: Iterable[tuple[str | None, BaseModel]]) -> list[Subject]:
+    """Each piped row, with its kind, as a subject; a kind-less one is a usage error.
 
     untaped's own row of ``plugin list`` (``root``) is skipped: the plugin
     check does not read untaped itself as an installed plugin yet.
     """
     subjects: list[Subject] = []
-    for envelope in envelopes:
-        if not envelope.kind:
+    for kind, row in rows:
+        if not kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
-        if is_kind(envelope.kind, InstalledPlugin) and envelope.record.get("root"):
+        if isinstance(row, InstalledPlugin) and row.root:
             continue
-        subjects.append(Subject(kind=envelope.kind, record=dict(envelope.record)))
+        subjects.append(Subject(kind=kind, record=row.model_dump(mode="json", by_alias=True)))
     return subjects

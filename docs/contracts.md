@@ -130,8 +130,8 @@ class Library(Plugin):
   whose row arrived, or a bridge returning an invalid `Book`, exits 4. A
   fake given to `compose_with(provides=)` is an 11.x offer composition never
   walks, so its own record keeps `kind=` until the kit composes fakes as
-  plugins. `convert`, the
-  11.x reader, leaves in 12.0.
+  plugins. A provider's tests read one of its rows the same way with
+  `untaped.sdk.testing.piped_through(Contract.bridge, row)`.
   [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
   gives the rules they follow.
 

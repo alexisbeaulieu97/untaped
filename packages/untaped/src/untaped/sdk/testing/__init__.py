@@ -4,8 +4,8 @@
 answer, for a linter to judge; its ``candidates`` argument composes a plugin
 passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
-plugins. :func:`compose_with` and :func:`assert_fills` test contracts
-(``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
+plugins. :func:`compose_with`, :func:`assert_fills` and :func:`piped_through`
+test contracts (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
 public surface and :func:`check` runs its plugin check (``untaped.sdk.testing.guards``).
 
 Blocks read time from one clock (``untaped.sdk._run.run_clock``): cache
@@ -94,7 +94,7 @@ from untaped.sdk.storage.holds import (
 )
 from untaped.sdk.storage.holds import release_ask as _release_ask
 from untaped.sdk.storage.state import StateRows
-from untaped.sdk.testing.contracts import assert_fills, compose_with
+from untaped.sdk.testing.contracts import assert_fills, compose_with, piped_through
 from untaped.sdk.testing.fixtures import MemoryCredentials, ScriptedTerminal
 from untaped.sdk.testing.schema import assert_schema_pinned
 from untaped.sdk.testing.screens import ScreenKeys, ScreenRun, drive_screen
@@ -144,6 +144,7 @@ __all__ = [
     "manual_clock",
     "memory_store",
     "move_ask",
+    "piped_through",
     "plan_release",
     "plugin_candidate",
     "progress_clock",

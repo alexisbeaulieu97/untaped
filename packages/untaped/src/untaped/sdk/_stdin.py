@@ -12,19 +12,7 @@ from untaped.runtime.render import stream_is_tty
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.sdk.diagnostic import WireModel, kind_of
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.marks import deprecated_behaviour
 from untaped.sdk.words import q
-
-PIPE_ENVELOPE = deprecated_behaviour(
-    "pipe-envelope",
-    removed_in=12,
-    replacement="Stdin[R] reading the rows, as a command's field",
-)
-"""A plugin reading pipe lines itself (``PipeEnvelope`` and its line parsers).
-
-``PipeEnvelope``, ``is_envelope_line`` and ``parse_envelope_line`` each leave
-in the 12.0 move of the last plugin that calls it.
-"""
 
 
 def stdin_is_terminal() -> bool:

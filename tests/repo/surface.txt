@@ -1,6 +1,4 @@
-# untaped surface 2
-behaviour untaped.contracts-convert  [deprecated, removed in 12.0; use Stdin(via=Contract.bridge) and its values()]
-behaviour untaped.pipe-envelope  [deprecated, removed in 12.0; use Stdin[R] reading the rows, as a command's field]
+# untaped surface 1
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -7178,10 +7176,6 @@ sdk untaped.sdk.Picked(item)
 sdk untaped.sdk.Picked(settings@2=) default={}
 sdk untaped.sdk.Picked.item
 sdk untaped.sdk.Picked.settings
-sdk untaped.sdk.PipeEnvelope(kind, record, lineno)
-sdk untaped.sdk.PipeEnvelope.kind
-sdk untaped.sdk.PipeEnvelope.lineno
-sdk untaped.sdk.PipeEnvelope.record
 sdk untaped.sdk.Plugin implement=
 sdk untaped.sdk.Plugin.commands class
 sdk untaped.sdk.Plugin.fills class
@@ -7600,8 +7594,6 @@ sdk untaped.sdk.Status(warning=) default=[]
 sdk untaped.sdk.Status.roles
 sdk untaped.sdk.Stdin()
 sdk untaped.sdk.Stdin(via=) default=None callback(*)
-sdk untaped.sdk.Stdin.envelopes()
-sdk untaped.sdk.Stdin.envelopes(allow_empty=) default=false
 sdk untaped.sdk.Stdin.field_kind class
 sdk untaped.sdk.Stdin.identifiers()
 sdk untaped.sdk.Stdin.identifiers(allow_empty=) default=false
@@ -7617,9 +7609,6 @@ sdk untaped.sdk.Stdin.text(*, what)
 sdk untaped.sdk.Stdin.values()
 sdk untaped.sdk.Stdin.values(allow_empty=) default=false
 sdk untaped.sdk.Stdin.values(given@1=) default=[]
-sdk untaped.sdk.StdinInput(values, records)
-sdk untaped.sdk.StdinInput.records
-sdk untaped.sdk.StdinInput.values
 sdk untaped.sdk.StdinOption
 sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Store(layout=) default=1  [experimental]
@@ -8061,7 +8050,6 @@ sdk untaped.sdk.contracts.cached()
 sdk untaped.sdk.contracts.cached(cache@1/=) default=None
 sdk untaped.sdk.contracts.cached(label=) default=None
 sdk untaped.sdk.contracts.cached(max_age=) default=None
-sdk untaped.sdk.contracts.convert(bridge, envelope) callback(bridge, *)
 sdk untaped.sdk.contracts.gather(method, /) callback(method, P)
 sdk untaped.sdk.contracts.gather(plugins=) default=None
 sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
@@ -8238,7 +8226,6 @@ sdk untaped.sdk.http_of(model)
 sdk untaped.sdk.installed_code()
 sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
-sdk untaped.sdk.is_envelope_line(obj)
 sdk untaped.sdk.key(model)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.known_projects()  [experimental]
@@ -8388,7 +8375,6 @@ sdk untaped.sdk.paginate_offset(size_param=) default=limit
 sdk untaped.sdk.paginate_offset(start_param=) default=offset
 sdk untaped.sdk.paginate_pages(fetch, *, limit) callback(fetch, 1)
 sdk untaped.sdk.paginate_pages(max_pages=) default=100
-sdk untaped.sdk.parse_envelope_line(lineno, text)
 sdk untaped.sdk.parse_json_pairs(values, *, flag)
 sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
@@ -8437,11 +8423,6 @@ sdk untaped.sdk.read_identifiers(accepts=) default=None
 sdk untaped.sdk.read_identifiers(id_field=) default=None
 sdk untaped.sdk.read_identifiers(positional, *, stdin)
 sdk untaped.sdk.read_stdin()
-sdk untaped.sdk.read_stdin_input()
-sdk untaped.sdk.read_stdin_input(accept_kinds=) default=None
-sdk untaped.sdk.read_stdin_input(accepts=) default=None
-sdk untaped.sdk.read_stdin_input(allow_empty=) default=false
-sdk untaped.sdk.read_stdin_input(what=) default=identifiers
 sdk untaped.sdk.read_stdin_text()
 sdk untaped.sdk.read_structured_file(flag=) default=None
 sdk untaped.sdk.read_structured_file(path)
@@ -8941,6 +8922,7 @@ sdk untaped.sdk.testing.manual_clock(start@1=) default=None
 sdk untaped.sdk.testing.memory_store()
 sdk untaped.sdk.testing.memory_store(store@1=) default=None
 sdk untaped.sdk.testing.move_ask(store, item, *, moved_from)  [experimental]
+sdk untaped.sdk.testing.piped_through(bridge, row) callback(bridge, *)
 sdk untaped.sdk.testing.plan_release(project, store)  [experimental]
 sdk untaped.sdk.testing.plugin_candidate(distribution=) default=None
 sdk untaped.sdk.testing.plugin_candidate(requires_dist=) default=[]

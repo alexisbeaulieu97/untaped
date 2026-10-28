@@ -168,7 +168,13 @@ def test_copy_pipes_into_patch_on_the_new_template(fake_aap: Any) -> None:
 
 def test_copy_outcome_of_another_kind_is_refused_by_patch(fake_aap: Any) -> None:
     _seed(fake_aap)
-    record = {"id": 60, "name": "x", "source_id": 1, "kind": "WorkflowJobTemplate"}
+    record = {
+        "id": 60,
+        "name": "x",
+        "source_id": 1,
+        "kind": "WorkflowJobTemplate",
+        "action": "copied",
+    }
     envelope = json.dumps({"untaped": "1", "kind": "awx.copy_outcome", "record": record})
 
     result = run(

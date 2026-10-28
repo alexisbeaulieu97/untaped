@@ -125,7 +125,15 @@ def test_cancel_refused_by_controller_is_a_failed_row(
 
 def test_cancel_uses_the_piped_execution_kind(fake_aap: Any) -> None:
     fake_aap.seed("workflow_jobs", id=7, name="pipeline", status="running")
-    record = {"id": 7, "kind": "workflow_job", "action": "completed"}
+    record = {
+        "id": 7,
+        "kind": "workflow_job",
+        "action": "completed",
+        "target_id": 3,
+        "target_kind": "WorkflowJobTemplate",
+        "target_name": "pipeline",
+        "scope": {},
+    }
     piped = json.dumps({"untaped": "1", "kind": "awx.launch_outcome", "record": record})
 
     result = run(["jobs", "cancel", "--stdin", "--yes"], input=piped + "\n")

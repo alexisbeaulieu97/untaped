@@ -1,7 +1,7 @@
 """AWX-owned selection resolution for reads and mutations.
 
 Selection is intentionally separate from mutation planning.  It resolves
-names, explicit IDs, typed v1 pipe envelopes, or server filters into concrete
+names, explicit IDs, piped records, or server filters into concrete
 records once; callers pass the resulting IDs into a mutation plan and never
 re-resolve a name after preview or confirmation.
 """
@@ -12,7 +12,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.sdk import ConfigError, PipeEnvelope, UsageError, kind_of, record_model
+from pydantic import BaseModel
+
+from untaped.sdk import ConfigError, UsageError, kind_of
 from untaped_awx.application.resources.ports import Catalog, ResourceClient
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.kinds import unified_template_kind
@@ -30,13 +32,13 @@ class SelectionRequest:
     """One mutually-exclusive selection source.
 
     ``names`` and ``ids`` are deliberately separate so numeric resource names
-    remain usable.  ``pipe`` is already parsed with the shared v1 parser; the
-    resolver validates its producer kind and numeric IDs before fetching.
+    remain usable.  ``pipe`` holds the rows ``Stdin`` read, each validated as
+    its kind; the resolver checks that kind and the numeric IDs before fetching.
     """
 
     names: tuple[str, ...] = ()
     ids: tuple[str, ...] = ()
-    pipe: tuple[PipeEnvelope, ...] | None = None
+    pipe: tuple[BaseModel, ...] | None = None
     filters: Mapping[str, str] = field(default_factory=dict)
     search: str | None = None
     scope: Mapping[str, str] = field(default_factory=dict)
@@ -134,28 +136,28 @@ class SelectionResolver:
     def _from_pipe(
         self,
         spec: ResourceSpec,
-        envelopes: tuple[PipeEnvelope, ...],
+        rows: tuple[BaseModel, ...],
         scope: dict[str, str],
     ) -> tuple[SelectedResource, ...]:
         expected = spec.require_record()
         outcomes = set(RESOURCE_OUTCOMES.values())
         selected: list[SelectedResource] = []
-        for envelope in envelopes:
-            piped = None if envelope.kind is None else record_model(envelope.kind)
+        for row in rows:
+            piped = type(row)
             if piped in outcomes:
-                if envelope.record.get("kind") != spec.kind:
+                target = getattr(row, "kind", None)
+                if target != spec.kind:
                     raise ConfigError(
-                        f"pipe record line {envelope.lineno} is a {envelope.kind!r} for "
-                        f"{envelope.record.get('kind')!r}; expected {spec.kind!r}",
+                        f"a piped {kind_of(piped)!r} record is for {target!r}; "
+                        f"expected {spec.kind!r}",
                         category="invalid",
                     )
             elif piped is not expected:
                 raise ConfigError(
-                    f"pipe record line {envelope.lineno} has kind {envelope.kind!r}; "
-                    f"expected {kind_of(expected)!r}",
+                    f"a piped record has kind {kind_of(piped)!r}; expected {kind_of(expected)!r}",
                     category="invalid",
                 )
-            record = as_dict(self._client.get(spec, pipe_record_id(envelope)))
+            record = as_dict(self._client.get(spec, pipe_record_id(row)))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -309,16 +311,16 @@ def validate_scope(
             current = referenced
 
 
-def pipe_record_id(envelope: PipeEnvelope) -> int:
+def pipe_record_id(row: BaseModel) -> int:
     """The positive integer ``id`` a piped record names its resource by.
 
     A typed record is a fixed identity: consumers act on its ``id`` and never
     re-resolve its name, which may be shared across organizations or stale.
     """
-    id_ = envelope.record.get("id")
+    id_ = getattr(row, "id", None)
     if not isinstance(id_, int) or isinstance(id_, bool) or id_ <= 0:
         raise ConfigError(
-            f"line {envelope.lineno}: pipe record requires a positive integer id",
+            f"a piped {kind_of(type(row))!r} record requires a positive integer id",
             category="invalid",
         )
     return id_

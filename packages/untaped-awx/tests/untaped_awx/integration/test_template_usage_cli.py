@@ -123,9 +123,9 @@ def test_usage_stdin_typed_records_use_their_id_not_their_name(graph: Any) -> No
         (["job-templates", "usage", "--stdin", "--by-id"],
          _records("awx.job_template", {"id": 10, "name": "smoke-test"}), "200"),
         # a record without a kind is read by its id too
-        (["job-templates", "usage", "--stdin"], _records(None, {"id": 10}), "200"),
+        (["job-templates", "usage", "--stdin"], _records(None, {"id": 10, "name": "x"}), "200"),
         (["workflow-templates", "usage", "--stdin"],
-         _records("awx.workflow_job_template", {"id": 200}), "100"),
+         _records("awx.workflow_job_template", {"id": 200, "name": "flow"}), "100"),
     ],
 )  # fmt: skip
 def test_usage_stdin_bare_lines_and_records(
@@ -145,7 +145,7 @@ def test_usage_stdin_bare_lines_and_records(
         # a record is never re-resolved by name, with or without a kind
         (_records("awx.job_template", {"name": "smoke-test"}), 1, "id"),
         (_records(None, {"name": "smoke-test"}), 1, "id"),
-        (_records("awx.job_template", {"id": "10"}), 1, "id"),
+        (_records("awx.job_template", {"id": 0, "name": "smoke-test"}), 1, "id"),
         (_records("awx.workflow_job_template", {"id": 200}), 2, "awx.workflow_job_template"),
     ],
 )  # fmt: skip

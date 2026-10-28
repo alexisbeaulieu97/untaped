@@ -6,8 +6,9 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
+from pydantic import BaseModel
 
-from untaped.sdk import ConfigError, UsageError, parse_envelope_line
+from untaped.sdk import ConfigError, Record, UsageError
 from untaped_awx.application.resources.ports import Catalog, ResourceClient
 from untaped_awx.application.resources.selection import (
     SelectionRequest,
@@ -15,6 +16,7 @@ from untaped_awx.application.resources.selection import (
 )
 from untaped_awx.domain import ResourceSpec, ServerRecord
 from untaped_awx.infrastructure.resources.specs import PROJECT_SPEC
+from untaped_awx.records import Inventory, Project
 
 
 class _Client:
@@ -82,13 +84,9 @@ def _resolver(client: _Client) -> SelectionResolver:
 
 def test_pipe_selection_validates_kind_and_freezes_ids_without_name_lookup() -> None:
     client = _Client()
-    envelope = parse_envelope_line(
-        1,
-        '{"untaped":"1","kind":"awx.project","record":{"id":7,"name":"wrong"}}',
-    )
     selected = _resolver(client).resolve(
         PROJECT_SPEC,
-        SelectionRequest(pipe=(envelope,)),
+        SelectionRequest(pipe=(Project(id=7, name="wrong"),)),
     )
     assert [(item.id, item.name) for item in selected] == [(7, "one")]
     assert client.find_calls == []
@@ -217,15 +215,14 @@ def test_nested_scope_follows_numeric_parent_ids_and_builds_name_filters() -> No
 
 
 @pytest.mark.parametrize(
-    "kind,id_value", [(None, 7), ("awx.inventory", 7), ("awx.project", True), ("awx.project", "7")]
+    "model,id_value", [(Record, 7), (Inventory, 7), (Project, True), (Project, "7"), (Project, 0)]
 )
-def test_typed_pipe_requires_correct_kind_and_integer_id(kind: Any, id_value: Any) -> None:
-    from untaped.sdk import PipeEnvelope
-
+def test_typed_pipe_requires_correct_kind_and_integer_id(
+    model: type[BaseModel], id_value: Any
+) -> None:
+    row = model.model_construct(id=id_value, name="x")
     with pytest.raises((ConfigError, UsageError)) as caught:
-        _resolver(_Client()).resolve(
-            PROJECT_SPEC, SelectionRequest(pipe=(PipeEnvelope(kind, {"id": id_value}, 1),))
-        )
+        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(row,)))
     assert caught.value.category == "invalid"
 
 

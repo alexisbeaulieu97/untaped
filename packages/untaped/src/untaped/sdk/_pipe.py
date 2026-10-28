@@ -16,9 +16,8 @@ strings and do **not** round-trip to their original type — fidelity is
 JSON-native types only.
 
 Pipe envelope **v1**. ``Output[R]`` writes it and ``Stdin[R]`` reads it, so a
-12.0 plugin never handles a line; ``PipeEnvelope`` and its parsers stay for
-the 11.x plugins that still do (:data:`~untaped.sdk._stdin.PIPE_ENVELOPE`). A
-change to the line's shape is a break, said in the changelog.
+plugin never handles a line. A change to the line's shape is a break, said in
+the changelog.
 """
 
 from __future__ import annotations

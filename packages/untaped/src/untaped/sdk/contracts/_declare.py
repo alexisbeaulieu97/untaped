@@ -245,7 +245,7 @@ def _stamp(provider: Contract, item: Any, result: Any) -> Any:
     if binding is None:
         raise UntapedError(
             f"{type(provider).__qualname__} is not bound to a plugin, so it can't stamp a source",
-            hint="ask for providers through untaped.sdk.contracts (gather, convert)",
+            hint="ask for providers through untaped.sdk.contracts (gather, select_one)",
         )
     if binding.owns_item or not isinstance(item, BaseModel):
         kind = record_kind(type(result)) or binding.owner_kind
@@ -377,7 +377,7 @@ class Provider[S: BaseModel = BaseModel]:
         if binding is None:
             raise UntapedError(
                 f"{type(self).__qualname__} is not bound to a plugin, so it has no context",
-                hint="ask for providers through untaped.sdk.contracts (gather, convert)",
+                hint="ask for providers through untaped.sdk.contracts (gather, select_one)",
             )
         return provider_context(binding.plugin)
 

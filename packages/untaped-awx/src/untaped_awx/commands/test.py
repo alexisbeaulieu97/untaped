@@ -9,7 +9,7 @@ from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, get_args
 
 from pydantic import Field
 
@@ -26,11 +26,8 @@ from untaped.sdk import (
     checkout_root,
     experimental,
     key,
-    kind_of,
-    parse_envelope_line,
     plural,
     q,
-    record_model,
     run_hint,
     summary,
 )
@@ -459,30 +456,13 @@ def _read_baseline(path: Path) -> dict[tuple[str, str], Baseline]:
             f"--compare file {path} cannot be read: {exc}", category="invalid"
         ) from exc
     try:
-        return saved_baselines(_saved_rows(text))
+        return saved_baselines(json.loads(text))
     except (ValueError, UntapedError) as exc:
         raise ConfigError(
             f"--compare file {path} is not the output of "
             f"`untaped awx test run --format json`: {exc}",
             category="invalid",
         ) from exc
-
-
-def _saved_rows(text: str) -> Any:
-    """JSON output as parsed, or the records of ``--format pipe`` output."""
-    if not text.lstrip().startswith("{"):
-        return json.loads(text)
-    rows = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        if line.strip():
-            envelope = parse_envelope_line(lineno, line)
-            if envelope.kind is not None and record_model(envelope.kind) is not CaseResult:
-                raise ValueError(
-                    f"line {lineno}: record kind {q(envelope.kind)} is not accepted here; "
-                    f"expected {q(str(kind_of(CaseResult)))}"
-                )
-            rows.append(envelope.record)
-    return rows
 
 
 # ---- list ----------------------------------------------------------------
