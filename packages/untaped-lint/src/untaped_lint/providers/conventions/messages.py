@@ -3,8 +3,8 @@
 An AST scan over a package's source flags:
 
 - ``echo-error`` / ``echo-warning`` — ``echo("error: …")`` or
-  ``echo("warning: …")``: raise an ``UntapedError`` (``report_errors``
-  prints it) or use ``ctx.diag.warning(…)``;
+  ``echo("warning: …")``: raise an ``UntapedError`` (core's error
+  boundary prints it) or use ``ctx.diag.warning(…)``;
 - ``echo-failed`` — ``echo("failed: …")``: ``ctx.diag.failure(exc, item=…)``
   reports a per-item failure (an error line, with its category under JSON
   diagnostics);

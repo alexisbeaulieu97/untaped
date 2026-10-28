@@ -198,7 +198,7 @@ def _validate_kinds(kinds: Sequence[str]) -> tuple[RefKind, ...]:
 
 def _parse_repo_target(value: str) -> _RepoTarget:
     # UntapedError, not ValueError: repo strings can originate from user
-    # source config (typos), and core ``report_errors`` renders
+    # source config (typos), and core's error boundary renders
     # UntapedError as a message instead of a traceback.
     owner, sep, name = value.partition("/")
     if not sep or not owner or not name or "/" in name:

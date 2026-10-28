@@ -1,7 +1,7 @@
 """Recipe plugin exception hierarchy.
 
 Every error the plugin raises on purpose derives from :class:`RecipeError`
-(itself an :class:`~untaped.sdk.UntapedError`), so ``report_errors``
+(itself an :class:`~untaped.sdk.UntapedError`), so core's error boundary
 prints it as a clean ``error: ...`` line instead of a traceback. Recipe, pack
 and hook files and the inputs a command reads are local input, so an error is
 ``invalid`` in ``local`` unless its class (or the raise) says otherwise.

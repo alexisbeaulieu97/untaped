@@ -18,7 +18,7 @@ import importlib as _importlib
 import typing as _typing
 
 from untaped.runtime.registry import PluginSpec, SkillAsset, plugin_dir
-from untaped.runtime.settings import HttpSettings, get_config_section
+from untaped.runtime.settings import HttpSettings
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, TreeOutputFormat
 from untaped.runtime.yaml_roundtrip import yaml_mapping_indent
@@ -52,7 +52,6 @@ from untaped.sdk._cli import (
     parse_kv_pairs,
     raise_usage,
     render_rows,
-    report_errors,
     resolve_each,
     writes,
 )
@@ -418,7 +417,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "StateMap",
     "StateRows",
     "app_context",
-    "get_config_section",
     # output and records
     "CheckRecord",
     "ColumnsOption",
@@ -474,7 +472,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "not_found",
     "raise_usage",
     "rejected_token_error",
-    "report_errors",
     "run_hint",
     # input
     "AbsolutePath",

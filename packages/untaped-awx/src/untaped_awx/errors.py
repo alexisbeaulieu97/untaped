@@ -2,10 +2,10 @@
 
 Concrete mapping from HTTP status to exception type lives in
 ``infrastructure.errors`` (it consumes the response body for actionable
-messages). These types are surfaced to the CLI via
-:func:`untaped.report_errors`. Every class is attributed to the ``awx``
-system and declares the category (and so the exit code) of its failure;
-an explicit HTTP ``status`` still selects the category of one instance.
+messages). Core's error boundary surfaces these types to the CLI. Every
+class is attributed to the ``awx`` system and declares the category (and
+so the exit code) of its failure; an explicit HTTP ``status`` still
+selects the category of one instance.
 """
 
 from __future__ import annotations

@@ -45,7 +45,7 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     Returns an empty dict if the file does not exist or is empty.
     Translates YAML syntax errors, read failures (e.g. permissions), and a
     non-mapping document root into :class:`ConfigError` so they surface via
-    ``report_errors`` instead of a traceback.
+    core's error boundary instead of a traceback.
     """
     return load_config_yaml(path or resolve_config_path())
 

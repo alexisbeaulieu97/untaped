@@ -77,7 +77,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "StateMap",
         "StateRows",
         "app_context",
-        "get_config_section",
     ),
     "output and records": (
         "CheckRecord",
@@ -135,7 +134,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "not_found",
         "raise_usage",
         "rejected_token_error",
-        "report_errors",
         "run_hint",
     ),
     "input": (

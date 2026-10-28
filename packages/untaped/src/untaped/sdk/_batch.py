@@ -120,7 +120,7 @@ def batch_apply[T, R](
 
     Per-item :class:`UntapedError` is caught, kept in ``failures``, and
     reported as ``error: <label>: …`` on stderr (``Diagnostics.failure``:
-    formatted like ``report_errors``, a JSON line under JSON diagnostics,
+    formatted like core's error line, a JSON line under JSON diagnostics,
     without garbling the progress line); anything else propagates. The
     helper never renders the summary or raises ``SystemExit`` — the caller
     owns stdout and the exit code.

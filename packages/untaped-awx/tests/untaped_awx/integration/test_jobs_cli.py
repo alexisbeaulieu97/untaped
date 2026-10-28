@@ -267,7 +267,7 @@ def test_jobs_logs_follow_prints_long_event_output_whole(fake_aap: Any) -> None:
 def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> None:
     """An unterminated character class is user input, not a bug — it must
     surface as a clean usage error, not a Python
-    traceback through ``report_errors`` (which only translates
+    traceback through core's error boundary (which only translates
     ``UntapedError``)."""
     fake_aap.seed("jobs", id=42, status="successful", stdout="anything\n")
     result = run(["jobs", "logs", "42", "--grep", "[unclosed"])

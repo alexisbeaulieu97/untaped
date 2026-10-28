@@ -397,9 +397,9 @@ def report_declined(exc: OperationCancelledError) -> None:
 def raise_usage(message: str) -> NoReturn:
     """Print ``error: <message>`` and exit ``2`` (usage) immediately.
 
-    For code outside :func:`report_errors` (cyclopts validators, option
-    parsing). Inside a ``report_errors`` block prefer
-    ``raise UsageError(message)``, which exits the same way.
+    For code outside core's error boundary (cyclopts validators, option
+    parsing). Inside a command prefer ``raise UsageError(message)``, which
+    core prints and exits on the same way.
     """
     Diagnostics().failure(UsageError(message))
     raise SystemExit(ExitCode.USAGE)
@@ -1179,8 +1179,8 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
 def report_errors() -> Iterator[None]:
     """Convert :class:`UntapedError` into a clean stderr message + its exit code.
 
-    Wrap every Cyclopts command body in this so users see ``error: ...``
-    instead of a Python traceback. The exit code follows the error's
+    Core's error boundary: the mount and the root dispatch run commands in
+    it, so users see ``error: ...`` instead of a Python traceback. The exit code follows the error's
     ``category`` (``2`` usage, ``4`` environment, ``5`` unavailable, ``130``
     interrupted, ``1`` otherwise), raised to the most severe failure already
     reported in the run (:func:`~untaped.runtime.sink.failure_exit_code`). A
