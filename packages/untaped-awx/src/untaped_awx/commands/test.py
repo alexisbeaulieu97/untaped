@@ -73,16 +73,16 @@ if TYPE_CHECKING:
 # bodies: ``awx ping`` and ``awx --help`` shouldn't pay for them.
 
 _RESULT_TABLE_COLUMNS = (
-    "suite",
-    "case",
-    "result",
-    "change",
-    "job_status",
-    "job_id",
-    "duration_s",
-    "failure.system",
-    "failure.message",
-    "job_url",
+    key(CaseResult).suite,
+    key(CaseResult).case,
+    key(CaseResult).result,
+    key(CaseResult).change,
+    key(CaseResult).job_status,
+    key(CaseResult).job_id,
+    key(CaseResult).duration_s,
+    key(CaseResult).failure.system,
+    key(CaseResult).failure.message,
+    key(CaseResult).job_url,
 )
 """``change`` (against a baseline) and a failure's columns show only when a row has them."""
 

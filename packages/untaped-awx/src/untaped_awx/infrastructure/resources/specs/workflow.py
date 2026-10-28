@@ -6,6 +6,7 @@ through AWX's node endpoints; see ``domain.workflow_graph`` for its format.
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import ActionSpec, FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -85,7 +86,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
             ),
         ),
     ),
-    list_columns=("id", "name"),
+    list_columns=(key(WorkflowJobTemplate).id, key(WorkflowJobTemplate).name),
     commands=("list", "get", "save", "apply", "delete", "copy", "rename"),
     fidelity="full",
 )

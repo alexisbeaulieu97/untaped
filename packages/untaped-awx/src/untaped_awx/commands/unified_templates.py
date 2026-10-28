@@ -36,6 +36,7 @@ from untaped.sdk import (
     Positional,
     Stdin,
     UsageError,
+    key,
     not_found,
     q,
 )
@@ -45,7 +46,11 @@ from untaped_awx.commands._template_targets import template_targets
 from untaped_awx.errors import AwxError
 from untaped_awx.records import UnifiedTemplate
 
-_DEFAULT_LIST_COLUMNS = ("id", "name", "type")
+_DEFAULT_LIST_COLUMNS = (
+    key(UnifiedTemplate).id,
+    key(UnifiedTemplate).name,
+    key(UnifiedTemplate).type,
+)
 """Strict-minimal projection: identity + the polymorphic discriminator.
 
 Kept tight on purpose — the four kinds carry different health fields

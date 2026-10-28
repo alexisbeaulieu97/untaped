@@ -462,16 +462,18 @@ class SettingKey:
         return {"type": "string"}
 
 
-def _column_name(column: str | SettingKey) -> str:
-    """The table column ``column`` names: a field reference's dumped name."""
-    if isinstance(column, str):
-        return column
+def _column_name(column: SettingKey) -> str:
+    """The table column ``column`` names: its fields' dumped names, dotted for a nested one."""
     from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
 
-    path = SettingKey.path_of(column)
-    if len(path) != 1:
-        raise TypeError(f"a table column is one field of the record, not {column!r}")
-    return dumped_names(SettingKey.model_of(column))[path[0]]
+    if not SettingKey.path_of(column):
+        raise TypeError(f"a table column is a field of the record, not {column!r}")
+    model = SettingKey.model_of(column)
+    names: list[str] = []
+    for attr in SettingKey.path_of(column):  # ``key()`` only steps into a nested model
+        names.append(dumped_names(model)[attr])
+        model = _model_in(model.model_fields[attr].annotation) or model
+    return ".".join(names)
 
 
 def _model_in(annotation: object) -> type[BaseModel] | None:
@@ -540,13 +542,13 @@ class Output[R: BaseModel](FieldBlock):
     def __init__(
         self,
         *,
-        columns: Sequence[str | SettingKey] = (),
+        columns: Sequence[SettingKey | str] = (),
         render: Mapping[str, Callable[..., Any]] | None = None,
         format: str = "table",
         stream: bool = False,
     ) -> None:
-        self._keys = tuple(column for column in columns if isinstance(column, SettingKey))
-        self._declared = tuple(_column_name(column) for column in columns)
+        self._given = tuple(columns)
+        self._declared = tuple(_column_names_of(columns, None))
         #: Each row prints as ``run`` yields it, not once the run ends.
         self.stream = stream
         self.render: Mapping[str, Callable[..., Any]] = dict(render or {})
@@ -557,7 +559,8 @@ class Output[R: BaseModel](FieldBlock):
         #: The format ``--format`` chose (the default when unfilled).
         self.format = format
         #: The table's default columns this run: the declared ones, or ``R``'s
-        #: (:func:`default_columns`); ``.add(...)`` adds more. ``--columns`` applies on top.
+        #: (:func:`default_columns`); ``.add``, ``.drop`` and ``.show`` change them.
+        #: ``--columns`` applies on top.
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
         self._empty: str | None = None
@@ -577,6 +580,13 @@ class Output[R: BaseModel](FieldBlock):
         """The text a table shows when ``run`` printed no row."""
         self._empty = text
 
+    def _check_declared(self, model: type[BaseModel]) -> None:
+        """Refuse a declared column ``model`` has no field or key for (a ``TypeError``).
+
+        Composition calls it when the plugin loads, so a bad column fails there.
+        """
+        _column_names_of(self._given, model)
+
     def _option_default(self, option: FieldOption) -> str | int | None:
         # ``table`` is every command's, so only another default is recorded
         if option.flag == "--format" and self.default_format != "table":
@@ -592,14 +602,15 @@ class Output[R: BaseModel](FieldBlock):
         from untaped.sdk._cli import check_columns  # noqa: PLC0415 - rendering is heavy
 
         model = _type_argument(call.annotation)
-        for column in self._keys:
-            if model is not None and not issubclass(model, SettingKey.model_of(column)):
-                raise TypeError(f"Output[{model.__name__}](columns=) names {column!r}")
+        if model is not None:
+            self._check_declared(model)
         requested = flags.get("--columns")
         filled = _copy(self)
         filled.format = str(flags.get("--format") or self.default_format)
         filled._requested = list(requested) if isinstance(requested, list) else None
-        filled.columns = Columns(self._declared or (default_columns(model) if model else ()))
+        filled.columns = Columns(
+            self._declared or (default_columns(model) if model else ()), model=model
+        )
         filled._empty = None
         filled._model = model
         if filled.format in self.render and filled.format != "table":
@@ -787,21 +798,85 @@ def _named(row: BaseModel, number: int) -> str:
     return str(getattr(row, field)) if field is not None else f"row {number}"
 
 
-class Columns(list[str]):
-    """A command's default table columns for one run: ``self.output.columns.add("url")``."""
+class Columns:
+    """A command's default table columns for one run: ``self.output.columns.add(key(Repo).url)``.
 
-    def __init__(self, names: Iterable[str] = ()) -> None:
-        super().__init__(names)
+    A column is a reference to a field of ``R`` (or of a base it inherits);
+    a string is a ``Spread`` key, the one column no field names. Iterating
+    gives the column names in order.
+    """
+
+    def __init__(self, names: Iterable[str] = (), *, model: type[BaseModel] | None = None) -> None:
+        self._names = list(dict.fromkeys(names))
+        self._model = model
         #: ``Spread`` keys ``--columns`` may pick that the table hides by default.
         self.offered: list[str] = []
 
-    def add(self, *names: str) -> None:
-        """Show ``names`` too, after the columns already shown."""
-        self.extend(name for name in names if name not in self)
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._names)
 
-    def offer(self, *names: str) -> None:
-        """Let ``--columns`` pick the ``Spread`` keys ``names`` without showing them by default."""
-        self.offered.extend(name for name in names if name not in self.offered)
+    def __len__(self) -> int:
+        return len(self._names)
+
+    def __contains__(self, name: object) -> bool:
+        return name in self._names
+
+    def __repr__(self) -> str:
+        return f"Columns({self._names!r})"
+
+    def add(self, *columns: SettingKey | str, first: bool = False) -> None:
+        """Show ``columns`` too: after the columns already shown, or before them with ``first``."""
+        added = [name for name in self._named(columns) if name not in self._names]
+        self._names = [*added, *self._names] if first else [*self._names, *added]
+
+    def drop(self, *columns: SettingKey | str) -> None:
+        """Hide ``columns`` (a column the table does not show is no error)."""
+        dropped = set(self._named(columns))
+        self._names = [name for name in self._names if name not in dropped]
+
+    def show(self, *columns: SettingKey | str) -> None:
+        """Show exactly ``columns``, in this order, instead of the defaults."""
+        self._names = list(dict.fromkeys(self._named(columns)))
+
+    def offer(self, *keys: str) -> None:
+        """Let ``--columns`` pick the ``Spread`` keys ``keys`` without showing them by default."""
+        named = self._named(keys)
+        self.offered.extend(name for name in named if name not in self.offered)
+
+    def _named(self, columns: Iterable[SettingKey | str]) -> list[str]:
+        """Each column's name, checked against ``R`` (:func:`_column_names_of`)."""
+        return _column_names_of(columns, self._model)
+
+
+def _column_names_of(
+    columns: Iterable[SettingKey | str], model: type[BaseModel] | None
+) -> list[str]:
+    """Each column's name: a field by reference, a string only for a key no field declares.
+
+    Such a key is a ``Spread`` key, or one a model that keeps undeclared keys
+    carries (an AWX row's ``launch_type``). With no model yet, a reference is
+    taken as given and a string waits for the check once the model is known.
+    """
+    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
+
+    names: list[str] = []
+    for column in columns:
+        if isinstance(column, SettingKey):
+            if model is not None and not issubclass(model, SettingKey.model_of(column)):
+                raise TypeError(f"{model.__name__}'s columns do not include {column!r}")
+            names.append(_column_name(column))
+            continue
+        if model is not None:
+            fields = {dumped: attr for attr, dumped in dumped_names(model).items()}
+            if column in fields:
+                raise TypeError(
+                    f"name the column {column!r} by its field: "
+                    f"key({model.__name__}).{fields[column]}"
+                )
+            if not spreads(model) and model.model_config.get("extra") != "allow":
+                raise TypeError(f"{model.__name__} has no field {column!r} to show as a column")
+        names.append(column)
+    return names
 
 
 def table_rows(

@@ -20,6 +20,7 @@ from untaped.sdk import (
     Output,
     UntapedError,
     UsageError,
+    key,
     plural,
     q,
 )
@@ -29,9 +30,21 @@ from untaped_awx.commands.context import AwxContext
 from untaped_awx.domain.jobs.job import JOB_ROUTES, TERMINAL_STATUSES
 from untaped_awx.records import JobCancelOutcome, JobRelaunchOutcome
 
-_CANCEL_COLUMNS = ("id", "name", "action", "detail")
+_CANCEL_COLUMNS = (
+    key(JobCancelOutcome).id,
+    key(JobCancelOutcome).name,
+    key(JobCancelOutcome).action,
+    key(JobCancelOutcome).detail,
+)
 """A cancel row's ``status`` is the one read before the request, so the table leaves it out."""
-_RELAUNCH_COLUMNS = ("id", "name", "status", "target_id", "action", "detail")
+_RELAUNCH_COLUMNS = (
+    key(JobRelaunchOutcome).id,
+    key(JobRelaunchOutcome).name,
+    key(JobRelaunchOutcome).status,
+    key(JobRelaunchOutcome).target_id,
+    key(JobRelaunchOutcome).action,
+    key(JobRelaunchOutcome).detail,
+)
 
 
 class Cancel(JobsCommand):

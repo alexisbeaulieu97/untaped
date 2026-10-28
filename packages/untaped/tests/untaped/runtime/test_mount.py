@@ -25,6 +25,7 @@ from untaped.sdk import (
     TextOrStdin,
     deprecated,
     experimental,
+    key,
 )
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -110,7 +111,7 @@ class Lengths(Command):
     output: Output[Salutation]
 
     def run(self) -> Iterator[Salutation]:
-        self.output.columns.add("length")
+        self.output.columns.add(key(Salutation).length)
         self.output.empty("Nobody to measure.")
         for name in self.names:
             yield Salutation(name=name, text=name, length=len(name))

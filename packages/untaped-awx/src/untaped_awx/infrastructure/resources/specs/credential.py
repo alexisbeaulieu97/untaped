@@ -8,6 +8,7 @@ credentials and copy IDs into manifests.
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
@@ -37,7 +38,7 @@ CREDENTIAL_SPEC = AwxResourceSpec(
         FkRef(field="credential_type", kind="CredentialType"),  # global; no scope
     ),
     secret_paths=("inputs.*",),
-    list_columns=("id", "name", "credential_type"),
+    list_columns=(key(Credential).id, key(Credential).name, "credential_type"),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="AWX returns its secrets as $encrypted$, so it cannot be applied back",

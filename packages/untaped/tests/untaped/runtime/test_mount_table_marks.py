@@ -25,6 +25,7 @@ from untaped.sdk import (
     Record,
     Spread,
     Status,
+    key,
     now,
 )
 from untaped.sdk.fields import status_roles, table_row, table_rows
@@ -86,7 +87,7 @@ class Narrow(Command[Nothing]):
 
     @model_validator(mode="after")
     def _keys(self) -> Self:
-        self.output.columns[:] = ["name", "grep:a"]
+        self.output.columns.show(key(Stored).name, "grep:a")
         return self
 
     def run(self) -> Iterator[Stored]:

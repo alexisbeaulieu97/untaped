@@ -199,7 +199,10 @@ free, but a command that writes declares it with `@writes`, or
   and a check's `status` are marked by their base and join the record's own
   marks; a record marking none of its own fields shows every field. Redeclare
   an inherited field to mark it. `Output(columns=(key(Repo).full_name, …))`
-  sets one command's defaults; a single record shows every field.
+  sets one command's defaults; a single record shows every field. `run`
+  changes them with `self.output.columns.add`, `.drop` and `.show`. A column
+  is a field reference; a string names a key no field declares (a `Spread`
+  key, or one an `extra="allow"` row carries).
 - Never pass defaults as `columns=` (`columns or DEFAULTS`):
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;

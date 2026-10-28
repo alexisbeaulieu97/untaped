@@ -44,7 +44,15 @@ from untaped_github.records import Worktree as WorktreeRow
 from untaped_github.settings import SWEEP, GithubSettings
 
 #: The columns a list of stored copies shows.
-STORED_COLUMNS = ("full_name", "ref", "profile", "archived", "disk_bytes", "fetched_at", "path")
+STORED_COLUMNS = (
+    key(CorpusRepo).full_name,
+    key(CorpusRepo).ref,
+    key(CorpusRepo).profile,
+    key(CorpusRepo).archived,
+    key(CorpusRepo).disk_bytes,
+    key(CorpusRepo).fetched_at,
+    key(CorpusRepo).path,
+)
 #: What a ``cache delete`` or ``prune`` table shows: each repo's outcome in ``status``.
 DELETED_COLUMNS = (
     key(CorpusRepo).full_name,
@@ -154,10 +162,13 @@ class _Delete(GithubCommand):
         noun = plural(len(selected), "cached GitHub repo")
         preview = lambda: [f"{row.full_name} ({row.ref}): {row.path}" for row in selected]  # noqa: E731
         if not self.confirm(f"Delete {noun}?", preview=preview):
-            self.output.columns.add("disk_bytes")  # a preview's table shows what each frees
+            # a preview's table shows what each frees
+            self.output.columns.add(key(CorpusRepo).disk_bytes)
             yield from (with_disk_bytes(row) for row in selected)
             return
-        self.output.columns[:] = ("full_name", "status", "detail")
+        self.output.columns.show(
+            key(CorpusRepo).full_name, key(CorpusRepo).status, key(CorpusRepo).detail
+        )
         cleaner = CleanCorpus(self.corpus())
         for row in selected:
             try:

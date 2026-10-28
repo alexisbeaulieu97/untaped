@@ -85,7 +85,7 @@ def test_saveable_list_columns_are_domain_known_filter_fields() -> None:
             continue
         missing.extend(
             f"{spec.kind}.{column}"
-            for column in spec.list_columns
+            for column in map(str, spec.list_columns)  # a field reference prints as its name
             if column.split("__", 1)[0] not in spec.known_fields
         )
 

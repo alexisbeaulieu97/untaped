@@ -40,7 +40,7 @@ def test_row_source_first_key(row_keys: Callable[[], Mapping[str, object]], expe
 
 def test_awx_resource_spec_list_columns_leads_with_id() -> None:
     """Every spec-driven ``list`` (catalog-only stubs included) leads with ``id``."""
-    assert [spec.kind for spec in ALL_SPECS if spec.list_columns[:1] != ("id",)] == []
+    assert [spec.kind for spec in ALL_SPECS if str(spec.list_columns[0]) != "id"] == []
 
 
 @pytest.mark.parametrize("spec", ALL_SPECS, ids=lambda spec: spec.kind)

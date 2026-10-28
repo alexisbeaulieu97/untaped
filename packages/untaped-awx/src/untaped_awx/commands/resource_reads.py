@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from untaped.sdk import Limit, Output, Positional, Record, Short, Stdin, UsageError
+from untaped.sdk import Limit, Output, Positional, Record, Short, Stdin, UsageError, key
 from untaped_awx.application.resources.mutation_values import redact_value
 from untaped_awx.application.resources.template_scm import SCM_FIELDS
 from untaped_awx.application.resources.template_scm import with_scm as add_scm_fields
@@ -28,6 +28,10 @@ from untaped_awx.commands.names import name_fks
 from untaped_awx.commands.save_runner import print_yaml, save_selection
 from untaped_awx.document import Document
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+from untaped_awx.records import JobTemplate
+
+_SCM_COLUMNS = tuple(getattr(key(JobTemplate), name) for name in SCM_FIELDS)
+"""The columns ``--with-scm`` adds: the job template fields :func:`add_scm_fields` fills."""
 
 WITH_NAMES = (
     "Replace FK ids with names from summary_fields in every format (a table always shows "
@@ -53,10 +57,10 @@ class _Read(ResourceCommand):
             records = add_scm_fields(
                 records, client=awx.repo, catalog=awx.catalog, warn=awx.diag.warning
             )
-        defaults = (*spec.list_columns, *SCM_FIELDS) if self.with_scm else spec.list_columns
-        self.output.columns[:] = defaults
+        defaults = (*spec.list_columns, *_SCM_COLUMNS) if self.with_scm else spec.list_columns
+        self.output.columns.show(*defaults)
         table = self.output.format == "table"
-        shown = defaults if self.output.format in {"table", "raw"} else ()
+        shown = list(self.output.columns) if self.output.format in {"table", "raw"} else ()
         # Display-only FK columns (e.g. Host's ``inventory``, which lives in
         # ``read_only_fields`` rather than ``fk_refs``) are named too.
         named = name_fks(

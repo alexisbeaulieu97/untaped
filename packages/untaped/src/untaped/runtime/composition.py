@@ -1462,6 +1462,10 @@ class _CommandWalk:
                 "field-type", where, "Output[R] takes the pydantic model of the records printed"
             )
             return
+        try:
+            default._check_declared(model)
+        except TypeError as exc:
+            self.problem("field-type", where, str(exc))
         self.seen.output = model
         self.seen.formats = default.formats
         self.seen.streams = default.stream

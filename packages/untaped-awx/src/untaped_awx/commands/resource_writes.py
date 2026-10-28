@@ -19,6 +19,7 @@ from untaped.sdk import (
     Record,
     Stdin,
     UsageError,
+    key,
     plural,
 )
 from untaped_awx.application import DeleteResource, SaveResource
@@ -75,7 +76,7 @@ class _ConfigWrite(_Write):
         )
         gate.check()
         # one kind's rows: the constant ``kind`` column says nothing
-        self.output.columns[:] = [c for c in self.output.columns if c != "kind"]
+        self.output.columns.drop(key(ApplyOutcomeRow).kind)
         return gate
 
 

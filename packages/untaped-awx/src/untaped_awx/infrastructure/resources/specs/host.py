@@ -9,6 +9,7 @@ URL rather than carried in the body.
 
 from __future__ import annotations
 
+from untaped.sdk import key
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs._support import UNIVERSAL_READ_ONLY
 from untaped_awx.records import Host
@@ -30,7 +31,7 @@ HOST_SPEC = AwxResourceSpec(
         "last_job_host_summary",
         "ansible_facts_modified",
     ),
-    list_columns=("id", "name", "inventory", "enabled"),
+    list_columns=(key(Host).id, key(Host).name, key(Host).inventory, "enabled"),
     commands=("list", "get", "save", "apply", "delete"),
     apply_strategy="inventory_child",
     parent_field="inventory",

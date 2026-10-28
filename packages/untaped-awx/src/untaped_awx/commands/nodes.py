@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import KeyValue, Output, Positional, Stdin, UntapedError
+from untaped.sdk import KeyValue, Output, Positional, Stdin, UntapedError, key
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.commands._options import OrganizationScope, resolve_max_depth, scope_values
@@ -21,7 +21,12 @@ from untaped_awx.domain import WorkflowNode, WorkflowNodeType
 from untaped_awx.infrastructure.resources.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 from untaped_awx.records import WorkflowJobTemplate
 
-_DEFAULT_COLUMNS = ("id", "name", "type", "depth")
+_DEFAULT_COLUMNS = (
+    key(WorkflowNode).id,
+    key(WorkflowNode).name,
+    key(WorkflowNode).type,
+    key(WorkflowNode).depth,
+)
 
 
 class Nodes(AwxCommand):

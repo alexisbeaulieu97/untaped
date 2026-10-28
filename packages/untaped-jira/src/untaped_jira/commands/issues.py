@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import Group, Limit, Output, Positional, Stdin, UntapedError, UsageError
+from untaped.sdk import Group, Limit, Output, Positional, Stdin, UntapedError, UsageError, key
 from untaped_jira.client import JiraClient
 from untaped_jira.commands._jira import (
     ISSUE_COLUMNS,
@@ -53,7 +53,7 @@ class Get(JiraCommand):
         keys = issue_keys(self.stdin.identifiers(self.keys))
         if len(self.keys) != 1:
             return self._each(keys)
-        self.output.columns[:] = ISSUE_DETAIL_COLUMNS
+        self.output.columns.show(*ISSUE_DETAIL_COLUMNS)
         with self.client() as client, self.ctx.diag.progress("Fetching issues"):
             return self._issue(client, keys[0])
 
@@ -150,7 +150,9 @@ class Assigned(_Search):
     """
 
     jql: str | None = Field(None, description="Extra JQL ANDed with jira.assigned_jql.")
-    output: Output[Issue] = Output(columns=[c for c in ISSUE_COLUMNS if c != "assignee"])
+    output: Output[Issue] = Output(
+        columns=[column for column in ISSUE_COLUMNS if column != key(Issue).assignee]
+    )
 
     def run(self) -> Iterator[Issue]:
         self.output.empty("No issues assigned to you.")

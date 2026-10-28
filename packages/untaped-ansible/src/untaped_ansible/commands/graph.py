@@ -247,7 +247,7 @@ class Uses(_Reaching):
                 # With a dependent unanalysed, "no dependents use it" is not known.
                 self.output.empty(f"No dependents use {' or '.join(names)}{within(depth)}.")
             if len(names) > 1:
-                self.output.columns[:] = ["variable", *self.output.columns]
+                self.output.columns.add(key(VariableUseHit).variable, first=True)
             table = self.output.format == "table"
             for hit in dependent_uses(rows, facts, names):
                 yield _table_key(hit) if table else hit

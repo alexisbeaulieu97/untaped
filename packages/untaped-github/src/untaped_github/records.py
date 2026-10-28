@@ -23,6 +23,7 @@ from untaped.sdk import (
     Status,
     TargetRecord,
     UtcTimestamp,
+    key,
 )
 
 
@@ -102,7 +103,13 @@ class Repo(Record):
 
 
 #: The columns ``search repos`` shows by default.
-REPO_HIT_COLUMNS = ("full_name", "description", "language", "stargazers_count", "updated_at")
+REPO_HIT_COLUMNS = (
+    key(Repo).full_name,
+    key(Repo).description,
+    key(Repo).language,
+    key(Repo).stargazers_count,
+    key(Repo).updated_at,
+)
 
 
 class CorpusRepo(Repo):
