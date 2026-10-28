@@ -61,9 +61,9 @@ import shutil
 import sys
 import threading
 import warnings
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, Literal, Protocol, TextIO
+from typing import TYPE_CHECKING, Literal, Protocol, TextIO, cast
 
 from pydantic import BaseModel
 
@@ -1122,8 +1122,18 @@ class Diagnostics:
         """Emit any registered kind, core's or a plugin's own (``kind=`` declared)."""
         self._sink().emit(diagnostic)
 
-    def info(self, text: str | Text, *, hint: str | None = None, unmuted: bool = False) -> None:
+    def info(
+        self,
+        text: str | Text | Sequence[BaseModel],
+        *,
+        hint: str | None = None,
+        unmuted: bool = False,
+    ) -> None:
         """An ``info`` line; a Rich ``Text`` renders styled on a terminal, plain elsewhere.
+
+        Records print as one table in the run's theme, as core prints stdout
+        rows: their ``Column`` fields, empty columns hidden and the list view
+        where the theme says so. No records print nothing.
 
         ``-q`` mutes commentary: lines the user did not ask for and need not
         act on. A preview before a prompt, a stream the user asked to watch,
@@ -1137,6 +1147,9 @@ class Diagnostics:
         if isinstance(text, str):
             self._sink().emit(Message(level="info", message=text, hint=hint), unmuted=unmuted)
             return
+        if isinstance(text, Sequence):  # records: a Text is no sequence
+            self._records(cast("Sequence[BaseModel]", text), hint=hint, unmuted=unmuted)
+            return
         tail = "" if hint is None else f"\n{_HINT_PREFIX}{hint}"
 
         def styled(color: bool) -> str:
@@ -1144,6 +1157,20 @@ class Diagnostics:
 
         self._sink().emit(
             Message(level="info", message=text.plain, hint=hint), rendered=styled, unmuted=unmuted
+        )
+
+    def _records(self, records: Sequence[BaseModel], *, hint: str | None, unmuted: bool) -> None:
+        """``records`` as one ``info`` table: the stdout table's layout, on stderr."""
+        from untaped.sdk._cli import stderr_table  # noqa: PLC0415 - tables are heavy
+
+        if not records:
+            return
+        tail = "" if hint is None else f"\n{_HINT_PREFIX}{hint}"
+        plain = stderr_table(records, colorize=False, plain=True)  # what JSON diagnostics carry
+        self._sink().emit(
+            Message(level="info", message=plain, hint=hint),
+            rendered=lambda color: stderr_table(records, colorize=color) + tail,
+            unmuted=unmuted,
         )
 
     def success(self, text: str) -> None:

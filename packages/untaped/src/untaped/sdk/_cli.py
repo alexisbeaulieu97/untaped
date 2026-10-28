@@ -19,7 +19,7 @@ from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.runtime.render import column_value, render_document
+from untaped.runtime.render import column_value, render_collection, render_document
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
@@ -488,13 +488,7 @@ def _render(
     )
     if fmt == "table":
         ui = ui or build_terminal()
-        shown = _table_columns(rows, selection, named, hide_empty=ui.theme.hide_empty_columns)
-        if selection is None and ui.theme.collection_view == "list" and shown is not None:
-            # A record list shows each row's own keys, not the union of them all.
-            kept = set(shown)
-            rows = [{key: value for key, value in row.items() if key in kept} for row in rows]
-            shown = None
-        selection = shown
+        rows, selection = _table_layout(rows, selection, named, theme=ui.theme)
         if glyphs:
             rows = [_glyphed(row, glyph) for row, glyph in zip(rows, glyphs, strict=True)]
     else:
@@ -502,6 +496,38 @@ def _render(
     if single:
         return detail(ui, rows[0], fmt=fmt, columns=selection, kind=kind)
     return collection(ui, rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
+
+
+def _table_layout(
+    rows: Sequence[dict[str, object]],
+    selection: list[str] | None,
+    named: frozenset[str],
+    *,
+    theme: ThemeSpec,
+) -> tuple[Sequence[dict[str, object]], list[str] | None]:
+    """A table's rows and columns in ``theme``: empty columns hidden, the list view's own keys."""
+    shown = _table_columns(rows, selection, named, hide_empty=theme.hide_empty_columns)
+    if selection is None and theme.collection_view == "list" and shown is not None:
+        # A record list shows each row's own keys, not the union of them all.
+        kept = set(shown)
+        return [{key: value for key, value in row.items() if key in kept} for row in rows], None
+    return rows, shown
+
+
+def stderr_table(records: Sequence[BaseModel], *, colorize: bool, plain: bool = False) -> str:
+    """``records`` as the table core prints on stdout, for stderr: their ``Column`` fields.
+
+    The run's theme lays it out (empty columns hidden, the list view, glyphs);
+    a broken ``ui`` section draws the default. ``plain`` gives the text a
+    structured diagnostic carries instead: one ``key: value`` block per record.
+    """
+    theme = ThemeSpec(collection_view="list") if plain else build_terminal(strict=False).theme
+    rows = [_as_row(record) for record in records]
+    shown, selection = _table_layout(rows, _record_table_columns(records), frozenset(), theme=theme)
+    glyphs = _row_glyphs(records)
+    if glyphs:
+        shown = [_glyphed(row, glyph) for row, glyph in zip(shown, glyphs, strict=True)]
+    return render_collection(shown, fmt="table", columns=selection, theme=theme, colorize=colorize)
 
 
 def _selected_columns(

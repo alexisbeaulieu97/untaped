@@ -741,6 +741,9 @@ type Printable = str | Text | TreeGraph
 type Rendered = Printable | Sequence[Printable] | None
 """What an ``Output`` renderer returns: one printable, several in order, or nothing."""
 
+type PreviewItem = str | Text | Sequence[BaseModel]
+"""What a preview yields: a line, a styled line, or records printed as one table on stderr."""
+
 
 def print_rendered(rendered: Rendered) -> None:
     """Print what a plugin renderer returned, in the run's theme.
@@ -1454,7 +1457,7 @@ class Confirm(FieldBlock):
         self,
         question: str,
         *,
-        preview: Callable[[], Iterable[str | Text]] | None = None,
+        preview: Callable[[], Iterable[PreviewItem]] | None = None,
         needed: bool = True,
     ) -> bool:
         """Whether to carry out what the command is about to do.
@@ -1463,8 +1466,9 @@ class Confirm(FieldBlock):
         nothing happens, and the command prints its planned rows. A decline never
         returns (exit 1); without a terminal and ``--yes`` it raises
         :class:`NeedsYesError` (exit 2), and so does an unfilled field, so a command
-        built outside a run never goes ahead unasked. ``preview`` returns the lines
-        printed on stderr before the question; ``--yes`` and ``needed=False`` skip it.
+        built outside a run never goes ahead unasked. ``preview`` returns what is
+        printed on stderr before the question (lines, or records as a table);
+        ``--yes`` and ``needed=False`` skip it.
         """
         from untaped.sdk._run import current_run  # noqa: PLC0415 - only a command asking pays
 
@@ -1487,8 +1491,8 @@ class Confirm(FieldBlock):
         return True
 
 
-def _print_preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
-    """The preview's lines on stderr, unmuted: what the user decides on or would get."""
+def _print_preview(preview: Callable[[], Iterable[PreviewItem]] | None) -> None:
+    """The preview on stderr, unmuted: what the user decides on or would get."""
     if preview is None:
         return
     from untaped.sdk._run import current_run  # noqa: PLC0415 - only a preview pays
@@ -1501,11 +1505,11 @@ def _print_preview(preview: Callable[[], Iterable[str | Text]] | None) -> None:
 class DryRun(FieldBlock):
     """This command writes without asking and can preview instead: adds ``--dry-run`` alone.
 
-    ``if self.dry_run.go_ahead(preview=lines): write()`` prints the preview,
-    as :class:`Confirm` does, and writes nothing after ``--dry-run``; ``if
-    self.dry_run: ...`` is true after ``--dry-run``. A command that asks first
-    takes :class:`Confirm`, which has its own ``--dry-run``; one command takes
-    one of the two.
+    ``if self.dry_run.go_ahead(preview=items): write()`` prints the preview
+    (lines, or rows as a table) as :class:`Confirm` does, and writes nothing
+    after ``--dry-run``; ``if self.dry_run: ...`` is true after ``--dry-run``.
+    A command that asks first takes :class:`Confirm`, which has its own
+    ``--dry-run``; one command takes one of the two.
     """
 
     field_kind = "dry_run"
@@ -1519,7 +1523,7 @@ class DryRun(FieldBlock):
         """``--dry-run`` was passed."""
         return self._dry_run
 
-    def go_ahead(self, preview: Callable[[], Iterable[str | Text]] | None = None) -> bool:
+    def go_ahead(self, preview: Callable[[], Iterable[PreviewItem]] | None = None) -> bool:
         """``True``: write. After ``--dry-run``, ``False`` once the preview is on stderr."""
         if not self._dry_run:
             return True

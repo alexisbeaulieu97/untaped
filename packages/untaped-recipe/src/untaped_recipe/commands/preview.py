@@ -1,7 +1,7 @@
-"""``recipe apply``'s preview: the lines a person reads on stderr before the question.
+"""``recipe apply``'s preview: what a person reads on stderr before the question.
 
-Text, not records: the same whatever ``--format`` asks of stdout, and kept
-under ``--quiet``.
+Lines and tables of rows, which core prints on stderr in the run's theme: the
+same whatever ``--format`` asks of stdout, and kept under ``--quiet``.
 """
 
 from __future__ import annotations
@@ -9,9 +9,11 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from untaped.sdk import plural, unified_diff_text
+from pydantic import BaseModel
+
+from untaped.sdk import Column, PreviewItem, plural, unified_diff_text
 from untaped_recipe.application.inputs import has_sensitive_inputs
 from untaped_recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped_recipe.domain.recipe import RecipeFile
@@ -19,30 +21,50 @@ from untaped_recipe.domain.recipe import RecipeFile
 PreviewMode = Literal["table", "diff", "none"]
 
 
-@dataclass(frozen=True)
-class Look:
-    """How the user's theme lays out a preview table."""
+class ChangeRow(BaseModel):
+    """One file a target's change writes."""
 
-    hide_empty_columns: bool = True
-    as_list: bool = False
+    path: Annotated[str, Column]
+    action: Annotated[str, Column]
+    changes: Annotated[str, Column]
 
 
-def preview_lines(
+class TargetRow(BaseModel):
+    """One target's changes, summed, when its files are too many to list."""
+
+    target: Annotated[str, Column]
+    files: Annotated[int, Column]
+    changes: Annotated[str, Column]
+
+
+class HiddenRow(BaseModel):
+    """A target whose changes are not shown, because its inputs are sensitive."""
+
+    target: Annotated[str, Column]
+    files_changed: Annotated[int, Column]
+
+
+class ErrorRow(BaseModel):
+    """A target that failed planning, and why (``detail`` wraps, never cut)."""
+
+    target: Annotated[str, Column]
+    detail: Annotated[str | None, Column]
+
+
+def preview_items(
     recipe: RecipeFile,
     plans: list[TargetPlan],
     *,
     preview: PreviewMode,
     preview_max_rows: int = 50,
-    look: Look | None = None,
-) -> list[str]:
+) -> list[PreviewItem]:
     """The selected preview of the planned targets, after their summary line."""
-    look = look or Look()
-    lines = [preview_summary(plans)]
+    items: list[PreviewItem] = [preview_summary(plans)]
     if preview == "diff":
-        lines.extend(_diff_preview(recipe, plans, look))
+        items.extend(_diff_preview(recipe, plans))
     elif preview == "table":
-        lines.extend(_table_preview(recipe, plans, preview_max_rows=preview_max_rows, look=look))
-    return lines
+        items.extend(_table_preview(recipe, plans, preview_max_rows=preview_max_rows))
+    return [item for item in items if isinstance(item, str) or item]
 
 
 @dataclass(frozen=True)
@@ -85,9 +107,9 @@ def preview_summary(plans: list[TargetPlan]) -> str:
     )
 
 
-def _diff_preview(recipe: RecipeFile, plans: list[TargetPlan], look: Look) -> list[str]:
-    diffable_plans, suppressed_rows, error_rows = _preview_groups(recipe, plans)
-    lines: list[str] = []
+def _diff_preview(recipe: RecipeFile, plans: list[TargetPlan]) -> list[PreviewItem]:
+    diffable_plans, hidden_rows, error_rows = _preview_groups(recipe, plans)
+    lines: list[PreviewItem] = []
     for plan in diffable_plans:
         target = _display_target(plan)
         for change in plan.changes:
@@ -99,8 +121,7 @@ def _diff_preview(recipe: RecipeFile, plans: list[TargetPlan], look: Look) -> li
             if diff:
                 lines.append(f"# {target}")
                 lines.append(diff.removesuffix("\n"))
-    lines.extend(_table(suppressed_rows, columns=["target", "files_changed"], look=look))
-    lines.extend(_table(error_rows, columns=["target", "error"], look=look))
+    lines.extend([hidden_rows, error_rows])
     return lines
 
 
@@ -109,95 +130,55 @@ def _table_preview(
     plans: list[TargetPlan],
     *,
     preview_max_rows: int,
-    look: Look,
-) -> list[str]:
-    diffable_plans, suppressed_rows, error_rows = _preview_groups(recipe, plans)
-    lines: list[str] = []
+) -> list[PreviewItem]:
+    diffable_plans, hidden_rows, error_rows = _preview_groups(recipe, plans)
+    lines: list[PreviewItem] = []
     total_rows = sum(len(plan.changes) for plan in diffable_plans)
     if preview_max_rows == 0 or total_rows <= preview_max_rows:
-        normal_rows: list[dict[str, object]] = []
-        for plan in diffable_plans:
-            normal_rows.extend(
-                {
-                    "path": str(_display_change_path(change)),
-                    "action": change.kind,
-                    "changes": _change_counts(change),
-                }
+        lines.append(
+            [
+                ChangeRow(
+                    path=str(_display_change_path(change)),
+                    action=change.kind,
+                    changes=_change_counts(change),
+                )
+                for plan in diffable_plans
                 for change in plan.changes
-            )
-        lines.extend(_table(normal_rows, columns=["path", "action", "changes"], look=look))
+            ]
+        )
     else:
         target_rows = [_target_summary_row(plan) for plan in diffable_plans]
-        rendered_rows = target_rows
-        if len(target_rows) > preview_max_rows:
-            rendered_rows = target_rows[:preview_max_rows]
-        lines.extend(_table(rendered_rows, columns=["target", "files", "changes"], look=look))
+        lines.append(target_rows[:preview_max_rows])
         if len(target_rows) > preview_max_rows:
             lines.append(
                 "showing first "
                 f"{preview_max_rows} of {len(target_rows)} targets "
                 "(use --preview diff for full detail)"
             )
-    lines.extend(_table(suppressed_rows, columns=["target", "files_changed"], look=look))
-    lines.extend(_table(error_rows, columns=["target", "error"], look=look))
+    lines.extend([hidden_rows, error_rows])
     return lines
 
 
 def _preview_groups(
     recipe: RecipeFile,
     plans: list[TargetPlan],
-) -> tuple[list[TargetPlan], list[dict[str, object]], list[dict[str, object]]]:
+) -> tuple[list[TargetPlan], list[HiddenRow], list[ErrorRow]]:
     diffable_plans: list[TargetPlan] = []
-    suppressed_rows: list[dict[str, object]] = []
-    error_rows: list[dict[str, object]] = []
+    hidden_rows: list[HiddenRow] = []
+    error_rows: list[ErrorRow] = []
     for plan in plans:
         if plan.status == "error":
-            error_rows.append({"target": str(_display_target(plan)), "error": plan.error})
+            error_rows.append(ErrorRow(target=str(_display_target(plan)), detail=plan.error))
             continue
         if not plan.changes:
             continue
         if has_sensitive_inputs(recipe.inputs, plan.display_inputs):
-            suppressed_rows.append(
-                {
-                    "target": str(_display_target(plan)),
-                    "files_changed": plan.files_changed,
-                }
+            hidden_rows.append(
+                HiddenRow(target=str(_display_target(plan)), files_changed=plan.files_changed)
             )
             continue
         diffable_plans.append(plan)
-    return diffable_plans, suppressed_rows, error_rows
-
-
-def _table(rows: list[dict[str, object]], *, columns: list[str], look: Look) -> list[str]:
-    """``rows`` as aligned columns, or ``key: value`` lines (the theme's ``list`` view).
-
-    As in any table, a column empty on every row is left out under the theme's
-    ``hide_empty_columns``, unless every column is empty.
-    """
-    if not rows:
-        return []
-    if look.hide_empty_columns:
-        shown = [column for column in columns if any(_cell(row.get(column)) for row in rows)]
-        columns = shown or columns
-    cells = [[_cell(row.get(column)) for column in columns] for row in rows]
-    if look.as_list:
-        blocks = (
-            "\n".join(f"{name}: {value}" for name, value in zip(columns, line, strict=True))
-            for line in cells
-        )
-        return ["\n\n".join(blocks)]
-    lines = [columns, *cells]
-    widths = [max(len(line[index]) for line in lines) for index in range(len(columns))]
-    return [
-        "\n".join(
-            "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=True)).rstrip()
-            for line in lines
-        )
-    ]
-
-
-def _cell(value: object) -> str:
-    return "" if value is None else str(value)
+    return diffable_plans, hidden_rows, error_rows
 
 
 def _display_change_path(change: FileChange) -> Path:
@@ -214,18 +195,18 @@ def _absolute_display_path(path: Path) -> Path:
     return Path.cwd() / path
 
 
-def _target_summary_row(plan: TargetPlan) -> dict[str, object]:
+def _target_summary_row(plan: TargetPlan) -> TargetRow:
     additions = 0
     deletions = 0
     for change in plan.changes:
         change_additions, change_deletions = _count_change_lines(change)
         additions += change_additions
         deletions += change_deletions
-    return {
-        "target": str(_display_target(plan)),
-        "files": plan.files_changed,
-        "changes": f"+{additions} -{deletions}",
-    }
+    return TargetRow(
+        target=str(_display_target(plan)),
+        files=plan.files_changed,
+        changes=f"+{additions} -{deletions}",
+    )
 
 
 def _change_counts(change: FileChange) -> str:

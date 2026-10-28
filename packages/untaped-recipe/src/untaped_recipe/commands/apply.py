@@ -19,6 +19,7 @@ from untaped.sdk import (
     Output,
     Parallel,
     Positional,
+    PreviewItem,
     Record,
     Stdin,
     UntapedError,
@@ -39,7 +40,7 @@ from untaped_recipe.commands._recipe import (
     merge_vars,
     recipe_errors,
 )
-from untaped_recipe.commands.preview import PlanCounts, PreviewMode, preview_lines
+from untaped_recipe.commands.preview import PlanCounts, PreviewMode, preview_items
 from untaped_recipe.domain.plan import TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
@@ -226,13 +227,13 @@ class Apply(RecipeCommand):
             targets = self._targets()
             plans = self._plan(loaded, resolved.path, resolved.local_hook_project, targets)
             preview = self.preview or ("none" if self.check else "table")
-            lines = self._preview(loaded, plans, preview)
-            for line in lines:
-                self.ctx.diag.info(line, unmuted=True)
+            items = self._preview(loaded, plans, preview)
+            for item in items:
+                self.ctx.diag.info(item, unmuted=True)
             todo = [plan for plan in plans if plan.status != "error" and plan.changes]
-            if todo and len(lines) > 1 and not (confirm.yes or confirm.dry_run):
+            if todo and len(items) > 1 and not (confirm.yes or confirm.dry_run):
                 # The summary again, beside the question a long preview pushed away.
-                self.ctx.diag.info(lines[0], unmuted=True)
+                self.ctx.diag.info(items[0], unmuted=True)
             go = confirm(f"Apply to {plural(len(todo), 'target')}?", needed=bool(todo))
             execution = self._write(todo, ref=resolved.ref) if go else _Execution()
         rows = [_row(plan, execution, ref=resolved.ref, planned=not go) for plan in plans]
@@ -306,8 +307,8 @@ class Apply(RecipeCommand):
 
     def _preview(
         self, loaded: RecipeFile, plans: list[TargetPlan], preview: PreviewMode
-    ) -> list[str]:
-        return preview_lines(
+    ) -> list[PreviewItem]:
+        return preview_items(
             loaded,
             plans,
             preview=preview,
