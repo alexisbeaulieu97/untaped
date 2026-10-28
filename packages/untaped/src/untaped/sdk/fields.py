@@ -1009,8 +1009,10 @@ class Stdin[R: BaseModel](FieldBlock):
         """What stdin carried, unvalidated: each a bare line or a row's kind, record and line.
 
         For a command whose readers validate each row by its kind (lint's
-        providers), so a row no installed plugin declares, or one its model
-        refuses, is that reader's to report instead of ending the read.
+        providers), so a row its model refuses is that reader's to report
+        instead of ending the read. ``Stdin[Record]`` takes every kind, one no
+        installed plugin declares included; a narrower ``Stdin[X]`` still
+        refuses a kind that is none of its models'.
         """
         return self._read((), allow_empty=allow_empty, what="records")
 
