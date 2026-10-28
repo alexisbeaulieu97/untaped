@@ -30,9 +30,18 @@ from untaped_workspace.infrastructure import SubprocessRunner
 from untaped_workspace.records import RepoOutcome, RepoStatus, RunOutcome
 
 
-def _blocks(rows: list[RunOutcome]) -> None:
-    """Table format: ``run`` already printed each repo's block as it finished."""
-    del rows
+def _block(row: RunOutcome) -> None:
+    """Table format: one finished repo's header (with the reason unless it ran), stdout, stderr.
+
+    Skipped rows print nothing (the summary counts them).
+    """
+    if row.action == "skipped":
+        return
+    reason = f" · {row.detail}" if row.action != "ran" and row.detail else ""
+    echo(f"── {row.repo} ({row.dir}){reason} ──")
+    for text in (row.stdout, row.stderr):
+        if text:
+            echo(text.rstrip("\n"))
 
 
 class Run(WorkspaceCommand):
@@ -62,9 +71,11 @@ class Run(WorkspaceCommand):
 
     Every selected repo runs, and the exit is 1 when any failed: a non-zero
     status, a timeout (the whole process tree is killed), a signal or a
-    missing directory. In table format each finished repo prints a header,
-    its stdout, then its stderr, and a summary follows on stderr; other
-    formats print `workspace.run_outcome` records only.
+    missing directory. Each repo's row prints as it finishes, so rows come in
+    finishing order, and repos --fail-fast never started come last. In table
+    format a row is a header, its stdout, then its stderr, and a summary
+    follows on stderr; other formats print `workspace.run_outcome` records
+    only (json one object per line, yaml one document per row).
 
     Examples
     --------
@@ -105,7 +116,7 @@ class Run(WorkspaceCommand):
         description="Seconds allowed per repo before it is killed.",
     )
     parallel: Parallel = WORKERS
-    output: Output[RunOutcome] = Output(render={"table": _blocks})
+    output: Output[RunOutcome] = Output(stream=True, render={"table": _block})
 
     def run(self) -> Iterator[RunOutcome]:
         name, command = (
@@ -117,22 +128,22 @@ class Run(WorkspaceCommand):
         specs = self._selected(record.repos, workspace=record.name)
         root = self.workspace_dir(record.name)
         targets = [RunTarget(record.name, spec, root / spec.dir) for spec in specs]
-        blocks = self.output.format == "table" and self.output.requested is None
         if not targets:
             self.ctx.diag.warning("no repos to run in (read-only repos need --include-read-only)")
-            return iter(())
+            return
+        rows: list[RunOutcome] = []
         with run_argv(command, script) as argv:
             run = RunInRepos(
                 SubprocessRunner(),
                 parallel=self.parallel.value,
                 timeout=self.timeout,
                 fail_fast=self.fail_fast,
-                on_done=_echo_block if blocks else None,
             )
-            rows = run(targets, argv)
-        if blocks:
+            for row in run(targets, argv):
+                rows.append(row)
+                yield row
+        if self.output.format == "table" and self.output.requested is None:
             self._summary(rows)
-        return iter(rows)
 
     def _selected(self, specs: Sequence[RepoSpec], *, workspace: str) -> list[RepoSpec]:
         """The repos to run in: ``--repo`` and ``--stdin`` names (display or dir), else all.
@@ -198,21 +209,6 @@ def _check_positionals(name: str | None, command: str) -> None:
                 f"unknown option: {value}",
                 hint="a command that starts with -- needs quoting with a space, e.g. ' --x'",
             )
-
-
-def _echo_block(row: RunOutcome) -> None:
-    """One finished repo's output: a header (with the reason unless it ran), stdout, stderr.
-
-    Skipped rows print nothing (the summary counts them); ``echo`` flushes,
-    so blocks stream through pipes.
-    """
-    if row.action == "skipped":
-        return
-    reason = f" · {row.detail}" if row.action != "ran" and row.detail else ""
-    echo(f"── {row.repo} ({row.dir}){reason} ──")
-    for text in (row.stdout, row.stderr):
-        if text:
-            echo(text.rstrip("\n"))
 
 
 def _piped_script(stdin: Stdin[Any]) -> str:

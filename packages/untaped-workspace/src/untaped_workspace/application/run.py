@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import signal
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Iterator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,62 +32,56 @@ class RunInRepos:
     """Run ``argv`` in each target; every target runs unless ``fail_fast`` stops scheduling."""
 
     def __init__(
-        self,
-        runner: CommandRunner,
-        *,
-        parallel: int,
-        timeout: float,
-        fail_fast: bool,
-        on_done: Callable[[RunOutcome], None] | None = None,
+        self, runner: CommandRunner, *, parallel: int, timeout: float, fail_fast: bool
     ) -> None:
         self._runner = runner
         self._parallel = max(1, parallel)
         self._timeout = timeout
         self._fail_fast = fail_fast
-        self._on_done = on_done
 
-    def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> list[RunOutcome]:
-        rows: dict[int, RunOutcome] = {}
-        pending: dict[Future[CommandResult], int] = {}
-        queue = deque(enumerate(targets))
+    def __call__(self, targets: Sequence[RunTarget], argv: Sequence[str]) -> Iterator[RunOutcome]:
+        """Each target's row as its run finishes; those ``fail_fast`` never started come last."""
+        finished: list[RunOutcome] = []
+        pending: dict[Future[CommandResult], RunTarget] = {}
+        queue = deque(targets)
         stop = False
         pool = ThreadPoolExecutor(max_workers=self._parallel)
         try:
             while True:
                 # Rows that already finished come first: a failure stops the next start.
-                stop = self._reap(rows, targets, pending, block=False) or stop
+                stop = self._reap(finished, pending, block=False) or stop
+                if finished:
+                    yield from finished
+                    finished.clear()
+                    continue  # runs that ended while a row was read count before the next start
                 if queue and not stop and len(pending) < self._parallel:
-                    index, target = queue.popleft()
+                    target = queue.popleft()
                     if target.path.is_dir():
-                        pending[pool.submit(self._execute, target, argv)] = index
+                        pending[pool.submit(self._execute, target, argv)] = target
                     else:
-                        stop = self._finish(rows, index, self._missing(target)) or stop
+                        stop = self._finish(finished, self._missing(target)) or stop
                     continue
                 if not pending:
                     break
-                stop = self._reap(rows, targets, pending, block=True) or stop
+                stop = self._reap(finished, pending, block=True) or stop
         except BaseException:
-            # Ctrl-C: the commands run in their own sessions, so stop them explicitly.
+            # Ctrl-C, or the reader stopped: the commands run in their own sessions,
+            # so stop them explicitly.
             pool.shutdown(wait=False, cancel_futures=True)
             self._runner.cancel()
             raise
         pool.shutdown()
-        for index, target in queue:
-            self._finish(rows, index, _skipped(target))
-        return [rows[i] for i in sorted(rows)]
+        yield from finished
+        yield from (_skipped(target) for target in queue)
 
     def _reap(
         self,
-        rows: dict[int, RunOutcome],
-        targets: Sequence[RunTarget],
-        pending: dict[Future[CommandResult], int],
+        finished: list[RunOutcome],
+        pending: dict[Future[CommandResult], RunTarget],
         *,
         block: bool,
     ) -> bool:
-        """Record every finished run (waiting for one when ``block``); whether to stop.
-
-        Runs that finish while ``on_done`` reports a row are recorded too.
-        """
+        """Record every finished run (waiting for one when ``block``); whether to stop."""
         timeout = None if block else 0
         stop = False
         while pending:
@@ -96,16 +90,13 @@ class RunInRepos:
                 break
             timeout = 0
             for future in done:
-                index = pending.pop(future)
-                row = self._row(targets[index], future.result())
-                stop = self._finish(rows, index, row) or stop
+                target = pending.pop(future)
+                stop = self._finish(finished, self._row(target, future.result())) or stop
         return stop
 
-    def _finish(self, rows: dict[int, RunOutcome], index: int, row: RunOutcome) -> bool:
+    def _finish(self, finished: list[RunOutcome], row: RunOutcome) -> bool:
         """Record ``row``; whether scheduling should stop (a failure under ``fail_fast``)."""
-        rows[index] = row
-        if self._on_done is not None:
-            self._on_done(row)
+        finished.append(row)
         return self._fail_fast and row.action == "failed"
 
     def _execute(self, target: RunTarget, argv: Sequence[str]) -> CommandResult:

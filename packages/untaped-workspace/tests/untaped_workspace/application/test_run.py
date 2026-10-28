@@ -60,8 +60,10 @@ def _targets(tmp_path: Path, *names: str, read_only: tuple[str, ...] = ()) -> li
 
 def test_every_repo_runs_with_context_env(tmp_path: Path) -> None:
     runner = FakeRunner({})
-    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api", "web"), ["true"]
+    rows = list(
+        RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api", "web"), ["true"]
+        )
     )
     assert [r.action for r in rows] == ["ran", "ran"]
     env = dict(runner.calls)["api"]
@@ -85,31 +87,39 @@ def test_every_repo_runs_with_context_env(tmp_path: Path) -> None:
 
 def test_read_only_env(tmp_path: Path) -> None:
     runner = FakeRunner({})
-    RunInRepos(runner, parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "docs", read_only=("docs",)), ["true"]
+    list(
+        RunInRepos(runner, parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "docs", read_only=("docs",)), ["true"]
+        )
     )
     env = dict(runner.calls)["docs"]
     assert (env["UNTAPED_BRANCH"], env["UNTAPED_READ_ONLY"]) == ("", "1")
 
 
 def test_failures_do_not_stop_the_others(tmp_path: Path) -> None:
-    rows = RunInRepos(FakeRunner({"api": 2}), parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api", "web"), ["x"]
+    rows = list(
+        RunInRepos(FakeRunner({"api": 2}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api", "web"), ["x"]
+        )
     )
     assert [(r.action, r.returncode) for r in rows] == [("failed", 2), ("ran", 0)]
     assert rows[0].error is not None and rows[0].error.category == "failed"
 
 
 def test_fail_fast_skips_unstarted_repos(tmp_path: Path) -> None:
-    rows = RunInRepos(FakeRunner({"a": 1}), parallel=1, timeout=5, fail_fast=True)(
-        _targets(tmp_path, "a", "b", "c"), ["x"]
+    rows = list(
+        RunInRepos(FakeRunner({"a": 1}), parallel=1, timeout=5, fail_fast=True)(
+            _targets(tmp_path, "a", "b", "c"), ["x"]
+        )
     )
     assert [r.action for r in rows] == ["failed", "skipped", "skipped"]
 
 
 def test_timeout_is_a_failure(tmp_path: Path) -> None:
-    [row] = RunInRepos(FakeRunner({"api": None}), parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api"), ["x"]
+    [row] = list(
+        RunInRepos(FakeRunner({"api": None}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api"), ["x"]
+        )
     )
     assert (row.action, row.returncode, row.detail) == ("failed", None, "timed out after 5s")
 
@@ -124,8 +134,10 @@ class CancelledRunner(FakeRunner):
 
 
 def test_cancelled_run_is_skipped(tmp_path: Path) -> None:
-    [row] = RunInRepos(CancelledRunner({}), parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api"), ["x"]
+    [row] = list(
+        RunInRepos(CancelledRunner({}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api"), ["x"]
+        )
     )
     assert (row.action, row.returncode, row.detail, row.error) == (
         "skipped",
@@ -141,18 +153,6 @@ def test_missing_dir_fails_without_running(tmp_path: Path) -> None:
     runner = FakeRunner({})
     [row] = RunInRepos(runner, parallel=1, timeout=5, fail_fast=False)([target], ["x"])
     assert (row.action, row.detail, runner.calls) == ("failed", "missing", [])
-
-
-def test_on_done_streams_each_row(tmp_path: Path) -> None:
-    seen: list[str] = []
-    RunInRepos(
-        FakeRunner({}),
-        parallel=2,
-        timeout=5,
-        fail_fast=False,
-        on_done=lambda r: seen.append(r.repo),
-    )(_targets(tmp_path, "api", "web"), ["x"])
-    assert sorted(seen) == ["acme/api", "acme/web"]
 
 
 class SlowRunner:
@@ -209,8 +209,10 @@ class SlowRunner:
 
 def test_parallelism_is_bounded(tmp_path: Path) -> None:
     runner = SlowRunner(overlap=2)
-    RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "a", "b", "c", "d", "e"), ["x"]
+    list(
+        RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "a", "b", "c", "d", "e"), ["x"]
+        )
     )
     assert runner.max_active == 2
 
@@ -220,34 +222,37 @@ def test_fail_fast_with_parallel_lets_running_jobs_finish(tmp_path: Path) -> Non
     # b keeps running until a's failure has been reported
     runner = SlowRunner({"a": 1}, slow="b", overlap=2, slow_until=a_reported)
 
-    def on_done(row: RunOutcome) -> None:
+    rows: list[RunOutcome] = []
+    for row in RunInRepos(runner, parallel=2, timeout=5, fail_fast=True)(
+        _targets(tmp_path, "a", "b", "c", "d"), ["x"]
+    ):
+        rows.append(row)
         if row.dir == "a":
             a_reported.set()
-
-    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True, on_done=on_done)(
-        _targets(tmp_path, "a", "b", "c", "d"), ["x"]
-    )
     assert [r.action for r in rows] == ["failed", "ran", "skipped", "skipped"]
     assert sorted(runner.started) == ["a", "b"]
 
 
-def test_rows_keep_target_order(tmp_path: Path) -> None:
-    rows = RunInRepos(SlowRunner(slow="a"), parallel=2, timeout=5, fail_fast=False)(
+def test_each_row_comes_as_its_run_finishes(tmp_path: Path) -> None:
+    a_may_finish = threading.Event()
+    runner = SlowRunner(slow="a", overlap=2, slow_until=a_may_finish)
+    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
         _targets(tmp_path, "a", "b"), ["x"]
     )
-    assert [r.repo for r in rows] == ["acme/a", "acme/b"]
+
+    first = next(rows)  # b's row, while a still runs
+    a_may_finish.set()
+
+    assert (first.dir, [row.dir for row in rows]) == ("b", ["a"])
 
 
-def test_on_done_called_once_per_row(tmp_path: Path) -> None:
-    seen: list[str] = []
-    RunInRepos(
-        SlowRunner({"a": 1}),
-        parallel=2,
-        timeout=5,
-        fail_fast=True,
-        on_done=lambda r: seen.append(r.repo),
-    )(_targets(tmp_path, "a", "b", "c"), ["x"])
-    assert sorted(seen) == ["acme/a", "acme/b", "acme/c"]
+def test_every_target_gets_one_row_under_fail_fast(tmp_path: Path) -> None:
+    rows = list(
+        RunInRepos(SlowRunner({"a": 1}), parallel=2, timeout=5, fail_fast=True)(
+            _targets(tmp_path, "a", "b", "c"), ["x"]
+        )
+    )
+    assert sorted(row.repo for row in rows) == ["acme/a", "acme/b", "acme/c"]
 
 
 def test_interrupt_cancels_the_runner_and_propagates(tmp_path: Path) -> None:
@@ -259,22 +264,28 @@ def test_interrupt_cancels_the_runner_and_propagates(tmp_path: Path) -> None:
 
     runner = Interrupting({})
     with pytest.raises(KeyboardInterrupt):
-        RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
-            _targets(tmp_path, "a", "b"), ["x"]
+        list(
+            RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+                _targets(tmp_path, "a", "b"), ["x"]
+            )
         )
     assert runner.cancelled
 
 
 def test_signal_death_names_the_signal(tmp_path: Path) -> None:
-    [row] = RunInRepos(FakeRunner({"api": -15}), parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api"), ["x"]
+    [row] = list(
+        RunInRepos(FakeRunner({"api": -15}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api"), ["x"]
+        )
     )
     assert (row.action, row.returncode, row.detail) == ("failed", -15, "killed by SIGTERM")
 
 
 def test_unknown_signal_number_still_reads_as_killed(tmp_path: Path) -> None:
-    [row] = RunInRepos(FakeRunner({"api": -200}), parallel=1, timeout=5, fail_fast=False)(
-        _targets(tmp_path, "api"), ["x"]
+    [row] = list(
+        RunInRepos(FakeRunner({"api": -200}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api"), ["x"]
+        )
     )
     assert (row.returncode, row.detail) == (-200, "killed by signal 200")
 
@@ -312,14 +323,14 @@ def test_fail_fast_reports_finished_failures_before_starting_more(
 
     monkeypatch.setattr(run_module, "ThreadPoolExecutor", RecordingPool)
 
-    def on_done(row: RunOutcome) -> None:
+    rows: list[RunOutcome] = []
+    for row in RunInRepos(runner, parallel=2, timeout=5, fail_fast=True)(
+        _targets(tmp_path, "a", "b", "c"), ["x"]
+    ):
+        rows.append(row)
         if row.dir == "a":
             runner.a_reported.set()
-            # b's future, not just its run(), is done before a's report returns
+            # b's future, not just its run(), is done before the run goes on from a's row
             assert not wait([futures["b"]], timeout=10).not_done
-
-    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=True, on_done=on_done)(
-        _targets(tmp_path, "a", "b", "c"), ["x"]
-    )
     assert [r.action for r in rows] == ["ran", "failed", "skipped"]
     assert [name for name, _ in runner.calls] == ["a", "b"]
