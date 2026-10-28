@@ -6,7 +6,7 @@ import os
 import tempfile
 from collections import Counter
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -139,9 +139,11 @@ class Run(WorkspaceCommand):
                 timeout=self.timeout,
                 fail_fast=self.fail_fast,
             )
-            for row in run(targets, argv):
-                rows.append(row)
-                yield row
+            # closed before the script file goes, so a reader that stops cancels the commands
+            with closing(run(targets, argv)) as finished:
+                for row in finished:
+                    rows.append(row)
+                    yield row
         if self.output.format == "table" and self.output.requested is None:
             self._summary(rows)
 

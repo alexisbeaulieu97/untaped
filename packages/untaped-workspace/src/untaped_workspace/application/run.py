@@ -71,7 +71,6 @@ class RunInRepos:
             self._runner.cancel()
             raise
         pool.shutdown()
-        yield from finished
         yield from (_skipped(target) for target in queue)
 
     def _reap(

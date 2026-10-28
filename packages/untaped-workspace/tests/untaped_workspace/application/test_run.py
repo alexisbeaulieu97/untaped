@@ -272,6 +272,20 @@ def test_interrupt_cancels_the_runner_and_propagates(tmp_path: Path) -> None:
     assert runner.cancelled
 
 
+def test_a_reader_that_stops_cancels_the_runner(tmp_path: Path) -> None:
+    a_may_finish = threading.Event()
+    runner = SlowRunner(slow="a", overlap=2, slow_until=a_may_finish)
+    rows = RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+        _targets(tmp_path, "a", "b"), ["x"]
+    )
+    next(rows)  # b's row; a still runs
+
+    rows.close()
+    a_may_finish.set()
+
+    assert runner.cancelled
+
+
 def test_signal_death_names_the_signal(tmp_path: Path) -> None:
     [row] = list(
         RunInRepos(FakeRunner({"api": -15}), parallel=1, timeout=5, fail_fast=False)(
