@@ -14,7 +14,7 @@ project's own skills are never written by a run.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from pydantic import Field
@@ -39,10 +39,9 @@ from untaped.core.skills import (
 from untaped.runtime.registry import CompositionResult
 from untaped.runtime.settings import SkillsSettings, load_core_part
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, DryRun, Output, Positional
+from untaped.sdk.fields import Confirm, DryRun, Output, Positional, Stdin
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import not_found, plural, run_hint, shown_path
 
@@ -76,7 +75,8 @@ def _skills() -> dict[str, PackagedSkill]:
 
 
 _NAMES = "Skill names (the untaped- prefix is optional)."
-_STDIN = "Read skill names from stdin."
+#: The rows naming a skill: ``skills list`` and ``skills status`` output.
+_Piped = records.Skill | records.InstalledSkill
 _PROJECT = "Project whose local skills to include (default: the current git root)."
 
 
@@ -105,7 +105,7 @@ class Install(Command[CoreSettings]):
 
     repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
-    stdin: bool = Field(False, description=_STDIN)
+    stdin: Stdin[_Piped]
     all: bool = Field(False, description="Install every registered skill.")
     target: SkillInstallTarget = Field(
         SkillInstallTarget.codex, description="Agent target to install for."
@@ -118,13 +118,12 @@ class Install(Command[CoreSettings]):
     )
 
     def run(self) -> None:
-        if not self.skill_names and not self.stdin and not self.all:
+        if not self.skill_names and not self.stdin.requested and not self.all:
             raise UsageError("provide skill names, --stdin, or --all")
         _existing(self.project_dir)
         _install(
             _skills(),
-            list(self.skill_names),
-            stdin=self.stdin,
+            _selectors(self.skill_names, self.stdin, all_skills=self.all),
             all_skills=self.all,
             target=self.target,
             force=self.force,
@@ -144,7 +143,7 @@ class Status(Command[CoreSettings]):
 
     repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
-    stdin: bool = Field(False, description=_STDIN)
+    stdin: Stdin[_Piped]
     project_dir: Path | None = Field(None, description=_PROJECT)
     check: bool = Field(
         False,
@@ -156,7 +155,7 @@ class Status(Command[CoreSettings]):
         _existing(self.project_dir)
         self.output.empty("No installed skills found.")
         found = _select_installed(
-            _skills(), list(self.skill_names), stdin=self.stdin, project_dir=self.project_dir
+            _skills(), _selectors(self.skill_names, self.stdin), project_dir=self.project_dir
         )
         yield from (_installed_row(item) for item in found)
         if self.check and any(_stale(item) for item in found):
@@ -176,7 +175,7 @@ class Update(Command[CoreSettings]):
 
     repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
-    stdin: bool = Field(False, description=_STDIN)
+    stdin: Stdin[_Piped]
     project_dir: Path | None = Field(None, description=_PROJECT)
     force: bool = Field(
         False, description="Also rewrite stubs someone edited or a newer untaped wrote."
@@ -189,8 +188,7 @@ class Update(Command[CoreSettings]):
         self.output.empty("No outdated skills found.")
         yield from _update(
             _skills(),
-            list(self.skill_names),
-            stdin=self.stdin,
+            _selectors(self.skill_names, self.stdin),
             project_dir=self.project_dir,
             force=self.force,
             dry_run=bool(self.dry_run),
@@ -207,7 +205,7 @@ class Remove(Command[CoreSettings]):
 
     repairs = True
     skill_names: Positional[list[str]] = Field(default_factory=list, description=_NAMES)
-    stdin: bool = Field(False, description=_STDIN)
+    stdin: Stdin[_Piped]
     all: bool = Field(False, description="Remove every installed untaped skill.")
     target: SkillInstallTarget = Field(
         SkillInstallTarget.all, description="Agent target to remove from."
@@ -220,14 +218,13 @@ class Remove(Command[CoreSettings]):
     output: Output[SkillOutcome]
 
     def run(self) -> Iterator[SkillOutcome]:
-        if not self.skill_names and not self.stdin and not self.all:
+        if not self.skill_names and not self.stdin.requested and not self.all:
             raise UsageError("provide skill names, --stdin, or --all")
         _existing(self.project_dir)
         self.output.empty("No installed skills found.")
         yield from _remove(
             _skills(),
-            list(self.skill_names),
-            stdin=self.stdin,
+            _selectors(self.skill_names, self.stdin, all_skills=self.all),
             all_skills=self.all,
             target=self.target,
             scope=self.scope,
@@ -330,19 +327,16 @@ def _select_installed(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     project_dir: Path | None,
     all_skills: bool = False,
 ) -> list[InstalledSkill]:
     """Return installed skills, narrowed to the selected names when any are given."""
-    if int(bool(skill_names)) + int(stdin) + int(all_skills) > 1:
-        raise UsageError("provide skill names, --stdin, or --all; not more than one")
     found = _found(skills, project_dir=project_dir)
-    if all_skills or (not skill_names and not stdin):
+    if all_skills or not skill_names:
         return found
     installed = {item.name: item for item in found}
     selected: list[str] = []
-    for selector in read_identifiers(skill_names, stdin=stdin):
+    for selector in skill_names:
         name = _resolve_short(selector, installed)
         if name not in installed:
             raise ConfigError(
@@ -357,13 +351,12 @@ def _update(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     project_dir: Path | None,
     force: bool,
     dry_run: bool,
 ) -> Iterator[SkillOutcome]:
-    found = _select_installed(skills, skill_names, stdin=stdin, project_dir=project_dir)
-    named = bool(skill_names) or stdin
+    found = _select_installed(skills, skill_names, project_dir=project_dir)
+    named = bool(skill_names)
     rows: list[SkillOutcome] = []
     for item in found:
         if item.state in (SkillState.newer, SkillState.edited) and not force:
@@ -405,16 +398,13 @@ def _remove(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     all_skills: bool,
     target: SkillInstallTarget,
     scope: SkillInstallScope | None,
     project_dir: Path | None,
     confirm: Confirm,
 ) -> Iterator[SkillOutcome]:
-    found = _select_installed(
-        skills, skill_names, stdin=stdin, project_dir=project_dir, all_skills=all_skills
-    )
+    found = _select_installed(skills, skill_names, project_dir=project_dir, all_skills=all_skills)
     chosen = [
         item
         for item in found
@@ -450,6 +440,17 @@ def _outcome(item: InstalledSkill, action: str, *, error: Failure | None = None)
     )
 
 
+def _selectors(
+    names: Sequence[str], stdin: Stdin[_Piped], *, all_skills: bool = False
+) -> list[str]:
+    """The skills named as arguments or on stdin (none: no selection); ``--all`` takes neither."""
+    if all_skills and (names or stdin.requested):
+        raise UsageError("provide skill names, --stdin, or --all; not more than one")
+    if not names and not stdin.requested:
+        return []
+    return stdin.identifiers(names)
+
+
 def _resolve_short(selector: str, skills: Mapping[str, object]) -> str:
     """Resolve one skill selector, accepting the ``untaped-``-less short form."""
     if selector in skills:
@@ -464,7 +465,6 @@ def _install(
     skills: dict[str, PackagedSkill],
     skill_names: list[str],
     *,
-    stdin: bool,
     all_skills: bool,
     target: SkillInstallTarget,
     force: bool,
@@ -472,18 +472,13 @@ def _install(
     project_dir: Path | None,
     target_dir: Path | None,
 ) -> None:
-    if int(bool(skill_names)) + int(stdin) + int(all_skills) > 1:
-        raise UsageError("provide skill names, --stdin, or --all; not more than one")
     if all_skills:
         selected = sorted(skills)
     else:
-        selected = [
-            _resolve_short(name, skills) for name in read_identifiers(skill_names, stdin=stdin)
-        ]
+        selected = [_resolve_short(name, skills) for name in skill_names]
     install_skills(
         skills,
         selected,
-        stdin=False,
         all_skills=False,
         target=target,
         force=force,

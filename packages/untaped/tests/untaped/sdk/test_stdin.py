@@ -1,6 +1,5 @@
 import io
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -8,14 +7,11 @@ import pytest
 from untaped.sdk._pipe import PIPE_MARKER_KEY
 from untaped.sdk._stdin import (
     StdinInput,
-    read_identifiers,
     read_stdin,
     read_stdin_input,
     read_stdin_text,
-    resolve_text_input,
 )
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.records import Record, kind_of
 from untaped.sdk.testing import TtyStringIO
 
 
@@ -59,100 +55,12 @@ def test_read_stdin_input_names_the_malformed_envelope_line() -> None:
         read_stdin_input()
 
 
-# ---- read_identifiers ------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("payload", "id_field", "expected"),
-    [
-        (
-            _env({"full_name": "a/b"}) + "\n" + _env({"full_name": "c/d"}),
-            "full_name",
-            ["a/b", "c/d"],
-        ),
-        (_env({"id": 123}), "id", ["123"]),
-        ("a/b\nc/d\n", None, ["a/b", "c/d"]),
-        # 123 (int) and "untaped" (str) parse as JSON but aren't marker-dicts → bare.
-        ('123\n"untaped"\n', None, ["123", '"untaped"']),
-    ],
-    ids=["envelope", "envelope-non-string-id", "bare", "bare-scalar-json"],
-)
-def test_read_identifiers(payload: str, id_field: str | None, expected: list[str]) -> None:
-    with _feed(payload + "\n"):
-        assert read_identifiers([], stdin=True, id_field=id_field) == expected
-
-
-@pytest.mark.parametrize(
-    ("payload", "id_field", "error"),
-    [
-        (_env({"full_name": "a/b"}), None, "pipe format"),
-        (
-            _env({"full_name": "a/b"}) + "\n" + _env({"other": "x"}),
-            "full_name",
-            "line 2: record 'full_name' is missing or null",
-        ),
-        (_env({"full_name": "   "}), "full_name", "line 1: record 'full_name' is blank"),
-        ("a/b\n" + _env({"full_name": "c/d"}), "full_name", "mixed bare/envelope input on stdin"),
-    ],
-    ids=["no-id-field", "missing-field", "blank-field", "mixed"],
-)
-def test_read_identifiers_errors(payload: str, id_field: str | None, error: str) -> None:
-    with _feed(payload + "\n"), pytest.raises(ConfigError, match=error):
-        read_identifiers([], stdin=True, id_field=id_field)
-
-
-# ---- accepted kinds ---------------------------------------------------------
-
-
-def test_read_identifiers_accepts_declared_kinds_and_kindless_records() -> None:
-    payload = _env({"id": 1}, kind="awx.job") + "\n" + _env({"id": 2}, kind=None) + "\n"
-    with _feed(payload):
-        assert read_identifiers([], stdin=True, id_field="id", accept_kinds={"awx.job"}) == [
-            "1",
-            "2",
-        ]
-
-
-def test_read_identifiers_rejects_other_kinds_as_usage_error() -> None:
-    payload = _env({"id": 1}, kind="awx.job") + "\n" + _env({"id": 7}, kind="awx.host") + "\n"
-    with (
-        _feed(payload),
-        pytest.raises(
-            UsageError,
-            match=r"line 2: record kind 'awx\.host' is not accepted here; expected 'awx\.job'",
-        ),
-    ):
-        read_identifiers([], stdin=True, id_field="id", accept_kinds={"awx.job"})
-
-
 def test_read_stdin_input_checks_accepted_kinds() -> None:
     with _feed(_env({"id": 1}, kind="github.repo") + "\n"), pytest.raises(UsageError):
         read_stdin_input(accept_kinds={"workspace.repo"})
 
 
-class _Run(Record, kind="forge.run"):
-    id: int
-
-
-class _RunOutcome(Record, kind="forge.run_outcome"):
-    id: int
-
-
-class _Plain(Record):
-    id: int
-
-
-def test_accepts_takes_the_models_whose_kinds_a_command_reads() -> None:
-    payload = "".join(
-        _env({"id": n}, kind=kind) + "\n"
-        for n, kind in [(1, kind_of(_Run)), (2, kind_of(_RunOutcome)), (3, None)]
-    )
-    with _feed(payload):
-        ids = read_identifiers([], stdin=True, id_field="id", accepts=(_Run, _RunOutcome))
-    assert ids == ["1", "2", "3"]
-
-
-def test_accepts_rejects_another_kind_naming_the_accepted_kinds() -> None:
+def test_another_kind_is_refused_naming_the_accepted_kinds() -> None:
     with (
         _feed(_env({"id": 7}, kind="forge.host") + "\n"),
         pytest.raises(
@@ -163,22 +71,7 @@ def test_accepts_rejects_another_kind_naming_the_accepted_kinds() -> None:
             ),
         ),
     ):
-        read_stdin_input(accepts=(_RunOutcome, _Run))
-
-
-def test_accepts_refuses_a_model_without_a_kind() -> None:
-    with pytest.raises(TypeError, match=r"declare a kind; .*_Plain declares none"):
-        read_stdin_input(accepts=(_Plain,))
-
-
-def test_accepts_is_checked_when_identifiers_come_from_arguments() -> None:
-    with pytest.raises(TypeError, match=r"_Plain declares none"):
-        read_identifiers(["a"], stdin=False, accepts=(_Plain,))
-
-
-def test_accepts_and_accept_kinds_are_one_or_the_other() -> None:
-    with pytest.raises(TypeError, match="not both"):
-        read_identifiers([], stdin=True, accepts=(_Run,), accept_kinds={"forge.run"})
+        read_stdin_input(accept_kinds={"forge.run_outcome", "forge.run"})
 
 
 def test_read_stdin_input_returns_bare_values_or_records() -> None:
@@ -230,43 +123,3 @@ def test_read_stdin_text(
 ) -> None:
     monkeypatch.setattr("sys.stdin", stdin)
     assert read_stdin_text() == expected
-
-
-def test_resolve_text_input_flag_wins() -> None:
-    assert resolve_text_input(value="inline", file=None) == "inline"
-
-
-def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
-    f = tmp_path / "body.txt"
-    f.write_text("filed", encoding="utf-8")
-    with pytest.raises(UsageError, match="not both"):
-        resolve_text_input(value="inline", file=f)
-
-
-@pytest.mark.parametrize(
-    ("content", "expected"),
-    [(b"from file\n", "from file"), (b"one\r\ntwo\r\n", "one\r\ntwo")],
-    ids=["trims-terminal-newline", "newlines-verbatim"],
-)
-def test_resolve_text_input_reads_file(tmp_path: Path, content: bytes, expected: str) -> None:
-    f = tmp_path / "body.txt"
-    f.write_bytes(content)
-    assert resolve_text_input(value=None, file=f) == expected
-
-
-def test_resolve_text_input_falls_back_to_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.stdin", io.StringIO("piped body\n"))
-    assert resolve_text_input(value=None, file=None) == "piped body"
-
-
-@pytest.mark.parametrize("source", ["flag", "file", "stdin"])
-def test_resolve_text_input_empty_body_is_config_error(
-    source: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    f = tmp_path / "body.txt"
-    f.write_text("", encoding="utf-8")
-    monkeypatch.setattr("sys.stdin", TtyStringIO())
-    with pytest.raises(ConfigError, match="no body provided"):
-        resolve_text_input(
-            value="" if source == "flag" else None, file=f if source == "file" else None
-        )

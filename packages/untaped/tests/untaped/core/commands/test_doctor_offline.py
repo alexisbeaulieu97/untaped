@@ -138,7 +138,6 @@ def test_outdated_installed_skill_warns() -> None:
     install_skills(
         composed_skills(compose(spec)),
         ["untaped-demo"],
-        stdin=False,
         all_skills=False,
         target=SkillInstallTarget.claude,
         force=False,
@@ -159,7 +158,6 @@ def test_skill_no_longer_shipped_warns() -> None:
     install_skills(
         composed_skills(compose(spec)),
         ["untaped-gone"],
-        stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
         force=False,

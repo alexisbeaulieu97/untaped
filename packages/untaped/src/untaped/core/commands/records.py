@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk.diagnostic import _is_none, _Omitted
-from untaped.sdk.fields import Column
+from untaped.sdk.fields import Column, Key
 from untaped.sdk.records import (
     AbsolutePath,
     CheckRecord,
@@ -254,14 +254,14 @@ class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcom
 class Skill(Record, kind="untaped.skill"):
     """A stub skill the installed plugins ship (``skills list``)."""
 
-    name: str
+    name: Annotated[str, Key]
     description: str
 
 
 class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
     """An untaped-installed skill directory and whether it matches this version."""
 
-    name: Annotated[str, Column]
+    name: Annotated[str, Key, Column]
     target: Annotated[str, Column]
     scope: Annotated[str, Column]
     state: Annotated[str, Column]

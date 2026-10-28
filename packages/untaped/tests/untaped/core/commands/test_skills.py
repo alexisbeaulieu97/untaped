@@ -86,6 +86,27 @@ def test_install_short_via_stdin_keeps_full_id(tmp_path: Path) -> None:
     assert (target / "untaped-demo" / "SKILL.md").is_file()
 
 
+def test_install_reads_the_rows_skills_list_pipes(tmp_path: Path) -> None:
+    app = _skills_app("untaped-one", "untaped-two")
+    listed = CliInvoker().invoke(app, ["list", "--format", "pipe"])  # type: ignore[arg-type]
+    rows = [line for line in listed.output.splitlines() if '"untaped-two"' in line]
+    target = tmp_path / "skills"
+    result = CliInvoker().invoke(
+        app,  # type: ignore[arg-type]
+        ["install", "--stdin", "--target-dir", str(target)],
+        input="\n".join(rows) + "\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert [path.name for path in target.iterdir()] == ["untaped-two"]
+
+
+def test_install_refuses_names_and_all_together(tmp_path: Path) -> None:
+    app = _skills_app("untaped-demo")
+    result = CliInvoker().invoke(app, ["install", "demo", "--all", "--target-dir", str(tmp_path)])  # type: ignore[arg-type]
+    assert result.exit_code == 2
+    assert "not more than one" in result.output
+
+
 def test_install_all_keeps_full_ids(tmp_path: Path) -> None:
     app = _skills_app("untaped-one", "untaped-two")
     target = tmp_path / "skills"

@@ -280,7 +280,7 @@ StdinOption = Annotated[
         help="Read identifiers, or --format pipe records, from stdin.",
     ),
 ]
-"""Shared ``--stdin``: pair with :func:`untaped.sdk._stdin.read_identifiers`."""
+"""The 11.x ``--stdin`` flag; a 12.0 command declares a ``Stdin[R]`` field instead."""
 
 ParallelOption = Annotated[
     int,
@@ -1144,8 +1144,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
     Reports ``error: <id>: <exc>`` (``Diagnostics.failure``) for any
     :class:`UntapedError` and
     returns ``(results, any_failed)`` so the caller decides exit code and
-    aggregate rendering. Companion to :func:`read_identifiers` for stdin-fed
-    list commands across domains.
+    aggregate rendering, for commands acting on many identifiers.
 
     Only :class:`UntapedError` is caught: non-:class:`UntapedError` exceptions
     (including :class:`SystemExit` raised by interactive prompts) propagate

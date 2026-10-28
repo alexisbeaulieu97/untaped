@@ -30,7 +30,6 @@ def test_install_skills_installs_one_skill_and_returns_metadata(tmp_path: Path) 
     results = skills_module.install_skills(
         {skill.name: skill},
         ["untaped-demo"],
-        stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
         force=False,
@@ -61,7 +60,6 @@ def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path)
     results = skills_module.install_skills(
         {one.name: one, two.name: two},
         [],
-        stdin=False,
         all_skills=True,
         target=SkillInstallTarget.all,
         force=False,
@@ -82,7 +80,6 @@ def _install_local_from_cwd(skill: PackagedSkill) -> list[skills_module.SkillIns
     return skills_module.install_skills(
         {skill.name: skill},
         [skill.name],
-        stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
         force=False,
@@ -142,7 +139,6 @@ def test_install_skills_later_conflict_aborts_before_earlier_install(tmp_path: P
         skills_module.install_skills(
             {one.name: one, two.name: two},
             [],
-            stdin=False,
             all_skills=True,
             target=SkillInstallTarget.codex,
             force=False,
@@ -156,18 +152,17 @@ def test_install_skills_later_conflict_aborts_before_earlier_install(tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("skill_names", "stdin", "all_skills", "message"),
+    ("skill_names", "all_skills", "message"),
     [
-        (["untaped-demo", "untaped-demo"], False, False, "duplicate skill selected"),
-        (["untaped-missing"], False, False, "unknown skill: untaped-missing"),
-        (["untaped-demo"], False, True, "provide skill names, --stdin, or --all"),
-        ([], True, True, "provide skill names, --stdin, or --all"),
+        (["untaped-demo", "untaped-demo"], False, "duplicate skill selected"),
+        (["untaped-missing"], False, "unknown skill: untaped-missing"),
+        (["untaped-demo"], True, "provide skill names, --stdin, or --all"),
+        ([], False, "provide skill names, --stdin, or --all"),
     ],
 )
 def test_install_skills_selector_errors_preserve_messages(
     tmp_path: Path,
     skill_names: list[str],
-    stdin: bool,
     all_skills: bool,
     message: str,
 ) -> None:
@@ -177,7 +172,6 @@ def test_install_skills_selector_errors_preserve_messages(
         skills_module.install_skills(
             {skill.name: skill},
             skill_names,
-            stdin=stdin,
             all_skills=all_skills,
             target=SkillInstallTarget.codex,
             force=False,
@@ -198,7 +192,6 @@ def test_install_skills_force_replaces_existing_without_merging(tmp_path: Path) 
     results = skills_module.install_skills(
         {skill.name: skill},
         ["untaped-demo"],
-        stdin=False,
         all_skills=False,
         target=SkillInstallTarget.codex,
         force=True,
@@ -242,7 +235,6 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
         skills_module.install_skills(
             {skill.name: skill},
             ["untaped-demo"],
-            stdin=False,
             all_skills=False,
             target=SkillInstallTarget.codex,
             force=True,

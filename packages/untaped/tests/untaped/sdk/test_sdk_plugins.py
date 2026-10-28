@@ -144,12 +144,10 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "existing_file",
         "parse_json_pairs",
         "parse_kv_pairs",
-        "read_identifiers",
         "read_stdin",
         "read_stdin_text",
         "read_structured_file",
         "resolve_each",
-        "resolve_text_input",
     ),
     "batch and concurrency": (
         "BatchOutcome",
