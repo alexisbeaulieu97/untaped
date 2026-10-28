@@ -51,7 +51,7 @@ def _undocumented(widget: Widget) -> Iterator[Finding]:
     yield from ()
 
 
-def _unannotated(widget) -> Iterator[Finding]:  # type: ignore[no-untyped-def]  # noqa: ANN001
+def _unannotated(widget) -> Iterator[Finding]:  # type: ignore[no-untyped-def]
     """Reads nothing it names."""
     yield from ()
 
@@ -98,7 +98,7 @@ def test_run_rule_refuses_a_record_of_another_model() -> None:
 def test_only_the_record_annotation_is_evaluated() -> None:
     """A deferred return annotation may name what the module imports for type checking only."""
     namespace: dict[str, object] = {"Widget": Widget}
-    exec(  # noqa: S102 - a module without `from __future__ import annotations`
+    exec(
         "def unchecked(widget: Widget) -> Unimported:\n    '''Reads a widget.'''\n",
         namespace,
     )
