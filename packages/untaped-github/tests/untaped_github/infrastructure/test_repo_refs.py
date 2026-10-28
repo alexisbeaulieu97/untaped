@@ -515,7 +515,7 @@ def test_http_error_message_is_extracted_from_common_body_shapes(
 @pytest.mark.parametrize("bad", ["site", "acme/", "/site", "acme/site/extra", ""])
 def test_batch_repo_refs_rejects_invalid_repo_strings(bad: str, composed: Running) -> None:
     # UntapedError, not ValueError: repo strings can come from user source
-    # config, and report_errors renders UntapedError as a message.
+    # config, and core's error boundary renders UntapedError as a message.
     with pytest.raises(UntapedError, match="owner/name"):
         _probe(composed.http, [], [bad])
 

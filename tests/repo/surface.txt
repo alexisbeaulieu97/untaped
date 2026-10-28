@@ -8086,7 +8086,6 @@ sdk untaped.sdk.find_program(name)
 sdk untaped.sdk.finish(outcome)
 sdk untaped.sdk.finish(predicate_hit=) default=false
 sdk untaped.sdk.first_validation_error(exc)
-sdk untaped.sdk.get_config_section(section, model_cls)
 sdk untaped.sdk.git.GitCommandError(category=) default=None
 sdk untaped.sdk.git.GitCommandError(hint=) default=None
 sdk untaped.sdk.git.GitCommandError(message)
@@ -8426,7 +8425,6 @@ sdk untaped.sdk.render_rows(empty=) default=None
 sdk untaped.sdk.render_rows(kind=) default=None
 sdk untaped.sdk.render_rows(rows, *, fmt)
 sdk untaped.sdk.render_rows(table_columns=) default=None
-sdk untaped.sdk.report_errors()
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.retired_values(section, key)

@@ -6,9 +6,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from untaped.sdk import get_config_section, home
+from untaped.sdk import home, settings_of
 from untaped.sdk.health.deprecated_keys import key_mappings
-from untaped.sdk.testing import invoke_root
+from untaped.sdk.testing import install, invoke_root
+from untaped_github.plugin import Github
 from untaped_github.settings import SWEEP, GithubSettings
 
 
@@ -31,9 +32,11 @@ def test_the_inventory_file_settings_are_deleted() -> None:
     "inventory", [{"path": "/tmp/inv.json"}, {"max_age_seconds": 0}], ids=["path", "max-age"]
 )
 def test_a_deleted_inventory_setting_is_not_read(inventory: dict[str, object]) -> None:
+    installed = install(Github)  # before the config it reads: install writes its sections
     _write({"inventory": {**inventory, "orgs": ["acme"]}})
 
-    settings = get_config_section("github", GithubSettings)
+    with installed.running():
+        settings = settings_of(GithubSettings)
 
     assert settings.inventory.orgs == ["acme"]
     assert set(settings.inventory.model_dump()) == {"orgs", "teams"}
@@ -52,9 +55,11 @@ def _write(data: dict[str, object]) -> None:
 
 
 def test_a_retired_key_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
+    installed = install(Github)  # before the config it reads: install writes its sections
     _write({"sweep": {"sync_concurrency": 3}})
 
-    settings = get_config_section("github", GithubSettings)
+    with installed.running():
+        settings = settings_of(GithubSettings)
 
     assert settings.sweep.parallel == GithubSettings().sweep.parallel != 3
     assert "sweep.sync_concurrency" not in capsys.readouterr().err
@@ -74,9 +79,11 @@ def test_the_corpus_directory_settings_are_deleted() -> None:
 
 @pytest.mark.parametrize("data", [{"cache_dir": "/c"}, {"corpus_path": "/c"}])
 def test_a_deleted_corpus_directory_is_not_read(data: dict[str, object]) -> None:
+    installed = install(Github)  # before the config it reads: install writes its sections
     _write(data)
 
-    settings = get_config_section("github", GithubSettings)
+    with installed.running():
+        settings = settings_of(GithubSettings)
 
     assert not hasattr(settings, "cache_dir")
 

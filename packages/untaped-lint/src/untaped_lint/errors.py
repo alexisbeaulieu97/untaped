@@ -1,7 +1,7 @@
 """Lint plugin exception hierarchy.
 
 Every error the plugin raises on purpose derives from :class:`LintError`, so
-``report_errors`` prints it as a clean ``error: ...`` line.
+core's error boundary prints it as a clean ``error: ...`` line.
 """
 
 from __future__ import annotations

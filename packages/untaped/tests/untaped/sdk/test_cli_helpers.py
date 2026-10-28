@@ -34,10 +34,9 @@ from untaped.sdk import (
     parse_json_pairs,
     parse_kv_pairs,
     render_rows,
-    report_errors,
     resolve_each,
 )
-from untaped.sdk._cli import echo, run_cyclopts_app
+from untaped.sdk._cli import echo, report_errors, run_cyclopts_app
 from untaped.sdk.testing import CliInvoker
 
 

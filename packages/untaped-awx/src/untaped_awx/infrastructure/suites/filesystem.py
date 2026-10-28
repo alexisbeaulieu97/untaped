@@ -2,7 +2,7 @@
 
 Wraps :class:`OSError` (missing file, permission denied, …) in an
 ``invalid`` :class:`ConfigError` (exit ``1``: the input file is the problem)
-so the CLI's ``report_errors`` boundary catches it instead of leaking a raw
+so core's error boundary catches it instead of leaking a raw
 stack trace.
 """
 

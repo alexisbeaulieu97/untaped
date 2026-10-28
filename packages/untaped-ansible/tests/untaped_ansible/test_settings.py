@@ -14,8 +14,10 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ansible_test_support import run_root
-from untaped.sdk import get_config_section, home
+from untaped.sdk import home, settings_of
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
+from untaped.sdk.testing import install
+from untaped_ansible.plugin import Ansible
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 
 _SOURCE = {"name": "prod", "repos": ["acme/site"]}
@@ -67,11 +69,13 @@ def test_source_definition_is_frozen_and_normalized() -> None:
 def test_a_retired_key_is_not_read(
     capsys: pytest.CaptureFixture[str], data: dict[str, object], old: str, new: str, value: object
 ) -> None:
+    installed = install(Ansible)  # before the config it reads: install writes its sections
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"format_version": 2, "ansible": data}))
 
-    settings = get_config_section("ansible", AnsibleSettings)
+    with installed.running():
+        settings = settings_of(AnsibleSettings)
 
     assert getattr(settings, new) == getattr(AnsibleSettings(), new) != value
     assert old not in capsys.readouterr().err

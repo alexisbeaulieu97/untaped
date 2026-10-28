@@ -104,7 +104,7 @@ __all__ = [
 
 
 def error_text(error: BaseException) -> str:
-    """``str(error)`` and its ``hint`` on its own ``hint:`` line, as ``report_errors`` prints it.
+    """``str(error)`` and its ``hint`` on its own ``hint:`` line, as core prints an error.
 
     A row's ``detail`` keeps the follow-up of, e.g., a rejected token.
     """

@@ -101,7 +101,7 @@ the helpers do this for you, so never print a JSON line yourself.
 
 | Message | Shape | Helper |
 |---|---|---|
-| Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; `report_errors()` prints it. |
+| Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; core prints it. |
 | Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `ctx.diag.failure(exc, item=…)` (a failed row: `row.error`) |
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
@@ -267,9 +267,9 @@ one owner's `api` module, never forked into both.
 lists every export, and each helper's docstring is its reference.
 The sections above name the helper for each rule. Beyond those:
 
-- Read settings with `app_context().section(name, Model)` or
-  `get_config_section(name, Model)`, which validate only your section, rather
-  than `app_context().settings`.
+- A command reads its plugin's settings as `self.settings`; other code in
+  the run reads them with `settings_of(Model)`, which validates only that
+  section. A test reads them inside `install(Plugin).running()`.
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
   setting and declare each secret as a `Credential` on the spec, and build
   its client with

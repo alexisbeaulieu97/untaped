@@ -3,7 +3,7 @@
 For one plugin package this flags:
 
 - ``exception-base`` — an ``Exception`` subclass that is not an
-  ``UntapedError`` (``report_errors`` would show a traceback); ``Warning``
+  ``UntapedError`` (core's error boundary would show a traceback); ``Warning``
   categories are exempt;
 - ``exception-name`` — an exception class whose name does not end in ``Error``;
 - ``error-system`` — a plugin error base (no plugin parent) that does
