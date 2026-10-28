@@ -167,8 +167,13 @@ FILE_RULES_MISSING = "the file conventions moved to untaped[lint] and were not r
 
 
 def file_rules_installed() -> bool:
-    """Whether ``untaped[lint]``, which owns the file rules, is importable."""
-    return find_spec("untaped_lint") is not None
+    """Whether ``untaped[lint]``, which owns the file rules, is installed.
+
+    A namespace package (a tests folder named ``untaped_lint`` on the path)
+    is no install.
+    """
+    found = find_spec("untaped_lint")
+    return found is not None and found.origin is not None
 
 
 def file_lines(
@@ -187,10 +192,9 @@ def file_lines(
     ``plugins`` are every composed plugin's records, which the import
     boundary reads.
     """
-    try:
-        conventions = importlib.import_module("untaped_lint.providers.conventions")
-    except ImportError:
+    if not file_rules_installed():
         return None
+    conventions = importlib.import_module("untaped_lint.providers.conventions")
     lines: list[str] = conventions.file_lines(
         package, source_dir, plugin=plugin, tests_dir=tests_dir, plugins=plugins
     )
