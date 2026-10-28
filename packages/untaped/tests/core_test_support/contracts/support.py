@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from collections.abc import Iterator, Sequence
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import ClassVar
 
@@ -17,7 +18,7 @@ from untaped.runtime.run import build_run, entered
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Plugin, experimental
 from untaped.sdk._home import config_path
-from untaped.sdk._run import run_or_none
+from untaped.sdk._run import Run, run_or_none
 from untaped.sdk.contracts import Contract, Issued, Provider, Record, cached
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.testing import plugin_candidate
@@ -68,6 +69,10 @@ class SpecialVolume(Volume, kind="library.special_volume"):
 
 class ShelfSettings(BaseModel):
     """What the shelf reads: nothing."""
+
+
+class NoSettings(BaseModel):
+    """What a toy plugin reads: nothing."""
 
 
 class LibrarySettings(BaseModel):
@@ -124,7 +129,7 @@ class Kiosk(BookSource, Provider):
 def plugin(
     name: str,
     *,
-    settings: type[BaseModel] = ShelfSettings,
+    settings: type[BaseModel] = NoSettings,
     offers: Sequence[type] = (),
     fills: Sequence[type] = (),
 ) -> PluginCandidate:
@@ -144,7 +149,7 @@ def plugin(
 
 
 def shelf_plugin() -> PluginCandidate:
-    return plugin("shelf", offers=(BookSource,))
+    return plugin("shelf", settings=ShelfSettings, offers=(BookSource,))
 
 
 def library_plugin(*providers: type) -> PluginCandidate:
@@ -169,7 +174,15 @@ def bound(name: str) -> Contract:
     return found
 
 
-_HELD: list[ExitStack] = []
+@dataclass
+class _Held:
+    """The run :func:`compose` keeps current until :func:`fresh_providers` ends."""
+
+    stack: ExitStack
+    run: Run | None = None
+
+
+_HELD: list[_Held] = []
 
 
 def candidates(*plugins: PluginCandidate | PluginSpec) -> list[PluginCandidate]:
@@ -184,15 +197,15 @@ def compose(*plugins: PluginCandidate | PluginSpec) -> CompositionResult:
 
     A provider reads its settings and context from the run, as it would
     inside a command, so a test that gathers composes under the fixture.
-    A run the test entered itself stays current instead.
+    A run the test entered itself (``home_run``, ``invocation()``) stays
+    current instead.
     """
     reset()
     result = bootstrap.compose_root(candidates=candidates(*plugins))
-    if _HELD:
-        _HELD[-1].close()
-        if run_or_none() is None:  # a run the test entered (``home_run``) is the test's
-            held = build_run(result.mount.declaration, result.mount.settings)
-            _HELD[-1].enter_context(entered(held))
+    if _HELD and run_or_none() in (None, (held := _HELD[-1]).run):
+        held.stack.close()
+        held.run = build_run(result.mount.declaration, result.mount.settings)
+        held.stack.enter_context(entered(held.run))
     return result
 
 
@@ -226,8 +239,8 @@ def fresh_providers() -> Iterator[None]:
     Shop.total = 0
     Kiosk.rows = []
     reset()
-    with ExitStack() as held:
-        _HELD.append(held)
+    with ExitStack() as stack:
+        _HELD.append(_Held(stack))
         try:
             yield
         finally:

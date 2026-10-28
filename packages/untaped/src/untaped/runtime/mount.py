@@ -329,12 +329,13 @@ def _contract_fields(mount: Mount, plugin: PluginDecl) -> dict[str, Any]:
 def _offered(mount: Mount, name: str, targets: Sequence[str]) -> tuple[Any, ...]:
     """The contracts the plugin offers, imported by name so a start imports no plugin class.
 
-    A contract made in a function (a test's) has no importable name, so it is
-    read from the plugin class, as its fills always are.
+    A contract made at run time (a test's, in a function) has no importable
+    name, so it is read from the plugin class, as its fills always are.
     """
-    if any("<locals>" in target for target in targets):
+    try:
+        return tuple(resolve_target(target) for target in targets)
+    except ImportError, AttributeError:
         return tuple(mount.plugins[name].offers)
-    return tuple(resolve_target(target) for target in targets)
 
 
 def _instances(mount: Mount, name: str, indexes: Sequence[int]) -> tuple[Any, ...]:

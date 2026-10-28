@@ -31,7 +31,7 @@ from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gath
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import DuplicateKindError, ForeignKindError
+from untaped.sdk.records import DuplicateKindError, ForeignKindError, Record
 
 
 def _rows() -> list[tuple[str, str, str, str]]:
@@ -132,6 +132,64 @@ def test_a_provider_breaking_a_rule_is_quarantined_alone() -> None:
     [quarantined] = [entry for entry in every_offer() if isinstance(entry, Quarantined)]
     assert quarantined.reason == "missing-bridge"
     assert "must fill to_book" in quarantined.detail
+    answers = {a.plugin: a for a in gather(BookSource.books)()}
+    assert isinstance(answers["shop"], Ok)
+
+
+class _Kindless(Record):
+    name: str
+
+
+class _NoKind(BookSource[_Kindless]):
+    def to_book(self, item: _Kindless) -> Book:
+        return Book(title=item.name)
+
+    def books(self) -> list[Book]:
+        return []
+
+
+class _Elsewhere(Contract):
+    def names(self) -> list[str]:
+        raise NotImplementedError
+
+
+class _ElsewhereProvider(_Elsewhere):
+    def names(self) -> list[str]:
+        return []
+
+
+class _OtherSettings(BaseModel):
+    catalog: str = ""
+
+
+class _WrongSettings(BookSource, Provider[_OtherSettings]):
+    def books(self) -> list[Book]:
+        return []
+
+
+@pytest.mark.parametrize(
+    ("value", "reason", "detail"),
+    [
+        (_NoBridge(), "missing-bridge", "must fill to_book"),
+        (_NoKind(), "unresolved-item-type", "_Kindless has no kind"),
+        ("not a provider", "bad-provider", "which is not a provider"),
+        (_ElsewhereProvider(), "bad-provider", "which shelf does not declare"),
+        (_WrongSettings(), "bad-provider", "Provider[_OtherSettings]"),
+    ],
+)
+def test_an_11x_offer_breaking_a_rule_is_quarantined_alone(
+    value: object, reason: str, detail: str
+) -> None:
+    """The 11.x offer's rules; a plugin class can break only the bridge one at the offer."""
+    offered = (value, Library())
+    library = PluginSpec(
+        name="library", settings=LibrarySettings, provides={"shelf": lambda: offered}
+    )
+    compose(shelf_plugin(), library, shop_plugin())
+    write_config(LIBRARY_CONFIG)
+    [quarantined] = [entry for entry in every_offer() if isinstance(entry, Quarantined)]
+    assert quarantined.reason == reason
+    assert detail in quarantined.detail
     answers = {a.plugin: a for a in gather(BookSource.books)()}
     assert isinstance(answers["shop"], Ok)
 
@@ -291,8 +349,9 @@ def test_an_owner_that_does_not_list_a_cached_methods_cache_is_unreadable() -> N
     compose(PluginSpec(name="shelf", contracts=lambda: (Listed,)))
     assert unreadable_owners() == ["shelf"]
     rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
-    assert rows[("shelf", "bad-contracts")].endswith(
-        "Listed.rows is cached in "
+    assert rows[("shelf", "bad-contracts")] == (
+        "contracts couldn't be read: TypeError: test_an_owner_that_does_not_list_a_cached_"
+        "methods_cache_is_unreadable.<locals>.Listed.rows is cached in "
         "shelf.listed_rows, which is not one of shelf's caches (list it on "
         "PluginSpec.caches)"
     )

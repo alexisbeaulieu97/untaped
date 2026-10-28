@@ -1378,7 +1378,7 @@ def _compose(
     if declared is None:
         claims, mount = _mounted(ordered, provided, state, quarantined)
     else:
-        claims, mount = _replayed(ordered, provided, replayed, declared)
+        claims, mount = _replayed(provided, replayed, declared)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
@@ -1575,7 +1575,6 @@ def _mounted(
 
 
 def _replayed(
-    ordered: Sequence[PluginCandidate],
     provided: dict[int, PluginSpec | type[Plugin]],
     replayed: Mapping[int, PluginDecl],
     declared: Declaration,
