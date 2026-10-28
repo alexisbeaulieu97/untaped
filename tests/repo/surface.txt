@@ -4460,6 +4460,11 @@ record awx.ContainedTemplate.type choice=job_template
 record awx.ContainedTemplate.type choice=project
 record awx.ContainedTemplate.type choice=workflow_job_template
 record awx.ContainedTemplate.type string
+record awx.ControllerFacts  [experimental]
+record awx.ControllerFacts.last_job_failed boolean?  [experimental]
+record awx.ControllerFacts.playbooks string[]?  [experimental]
+record awx.ControllerFacts.status string?  [experimental]
+record awx.ControllerFacts.total_hosts integer?  [experimental]
 record awx.ExpectationResult  [experimental]
 record awx.ExpectationResult.actual string?  [experimental]
 record awx.ExpectationResult.check choice=changed  [experimental]
@@ -4500,17 +4505,55 @@ record awx.HostSummary.ok integer  [experimental]
 record awx.HostSummary.rescued integer  [experimental]
 record awx.HostSummary.skipped integer  [experimental]
 record awx.HostSummary.unreachable integer  [experimental]
+record awx.IdentityRef  [experimental]
+record awx.IdentityRef.kind string  [experimental]
+record awx.IdentityRef.name string  [experimental]
+record awx.IdentityRef.organization string?  [experimental]
+record awx.IdentityRef.parent IdentityRef?  [experimental]
+record awx.KindFacts  [experimental]
+record awx.KindFacts.known_fields string[]  [experimental]
+record awx.KindFacts.read_only boolean  [experimental]
+record awx.KindFacts.secret_paths string[]  [experimental]
+record awx.Linted  [experimental]
+record awx.Linted.controller ControllerFacts?  [experimental]
+record awx.Linted.location DocumentLocation|ResourceLocation  [experimental]
+record awx.Linted.origin choice=controller  [experimental]
+record awx.Linted.origin choice=document  [experimental]
+record awx.Linted.origin string  [experimental]
+record awx.Linted.references Reference[]  [experimental]
+record awx.Linted.resource Resource  [experimental]
+record awx.Metadata  [experimental]
+record awx.Metadata.name string  [experimental]
+record awx.Metadata.organization string?  [experimental]
+record awx.Metadata.parent IdentityRef?  [experimental]
 record awx.NodeResult  [experimental]
 record awx.NodeResult.id string?  [experimental]
 record awx.NodeResult.job_id integer?  [experimental]
 record awx.NodeResult.status string  [experimental]
 record awx.NodeResult.template string?  [experimental]
+record awx.Reference  [experimental]
+record awx.Reference.field string  [experimental]
+record awx.Reference.location DocumentLocation|ResourceLocation?  [experimental]
+record awx.Reference.resolution choice=absent  [experimental]
+record awx.Reference.resolution choice=resolved  [experimental]
+record awx.Reference.resolution choice=unresolved  [experimental]
+record awx.Reference.resolution string  [experimental]
+record awx.Reference.target IdentityRef  [experimental]
 record awx.RelatedExecution  [experimental]
 record awx.RelatedExecution.id integer  [experimental]
 record awx.RelatedExecution.kind string  [experimental]
 record awx.RelatedExecution.name string?  [experimental]
 record awx.RelatedExecution.status string  [experimental]
 record awx.RelatedExecution.url string?  [experimental]
+record awx.Resource  [experimental]
+record awx.Resource.apiVersion string  [experimental]
+record awx.Resource.kind string  [experimental]
+record awx.Resource.metadata Metadata  [experimental]
+record awx.Resource.spec object  [experimental]
+record awx.Unreadable  [experimental]
+record awx.Unreadable.error string  [experimental]
+record awx.Unreadable.index integer  [experimental]
+record awx.Unreadable.path string  [experimental]
 record awx.apply_outcome_row
 record awx.apply_outcome_row.action string
 record awx.apply_outcome_row.detail string
@@ -4599,6 +4642,11 @@ record awx.document.apiVersion string
 record awx.document.kind string
 record awx.document.metadata object
 record awx.document.spec object
+record awx.execution_environment
+record awx.execution_environment.id integer
+record awx.execution_environment.name string
+record awx.execution_environment.organization integer|string?
+record awx.execution_environment.type string?
 record awx.group
 record awx.group(id, name)
 record awx.group.id integer
@@ -4826,6 +4874,12 @@ record awx.rename_outcome.id integer
 record awx.rename_outcome.kind string
 record awx.rename_outcome.name string
 record awx.rename_outcome.old_name string
+record awx.resources  [experimental]
+record awx.resources.items Linted[]  [experimental]
+record awx.resources.kinds object  [experimental]
+record awx.resources.loaded string[]  [experimental]
+record awx.resources.online boolean  [experimental]
+record awx.resources.unreadable Unreadable[]  [experimental]
 record awx.schedule
 record awx.schedule(id, name)
 record awx.schedule.id integer
@@ -4873,6 +4927,10 @@ record awx.sync_outcome.status string?
 record awx.sync_outcome.target_id integer
 record awx.sync_outcome.target_kind string
 record awx.sync_outcome.target_name string?
+record awx.system_job_template
+record awx.system_job_template.id integer
+record awx.system_job_template.name string
+record awx.system_job_template.type string?
 record awx.unified_template
 record awx.unified_template(id, name)
 record awx.unified_template.id integer
@@ -5407,9 +5465,15 @@ record jira.user.display_name string?
 record jira.user.email_address string?
 record jira.user.key string?
 record jira.user.name string?
+record lint.DocumentLocation  [experimental]
+record lint.DocumentLocation.index integer  [experimental]
+record lint.DocumentLocation.path string  [experimental]
 record lint.LinterEntry  [experimental]
 record lint.LinterEntry(rules)  [experimental]
 record lint.LinterEntry.rules string  [experimental]
+record lint.ResourceLocation  [experimental]
+record lint.ResourceLocation.id string  [experimental]
+record lint.ResourceLocation.url string?  [experimental]
 record lint.finding  [experimental]
 record lint.finding.error Failure?  [experimental]
 record lint.finding.fix string[]?  [experimental]
@@ -5447,6 +5511,9 @@ record lint.scaffold_outcome  [experimental]
 record lint.scaffold_outcome.action string  [experimental]
 record lint.scaffold_outcome.error Failure?  [experimental]
 record lint.scaffold_outcome.target_path string(format=path)  [experimental]
+record lint.tree  [experimental]
+record lint.tree.paths string[]  [experimental]
+record lint.tree.root string(format=path)  [experimental]
 record recipe.BackupFile
 record recipe.BackupFile.after_hash string?
 record recipe.BackupFile.backup_file string?
@@ -9445,8 +9512,10 @@ sdk untaped_lint.api.Rule.reads  [experimental]
 sdk untaped_lint.api.Rule.severity  [experimental]
 sdk untaped_lint.api.Rule.summary  [experimental]
 sdk untaped_lint.api.RuleFunction  [experimental]
+sdk untaped_lint.api.RuleFunction.id  [experimental]
 sdk untaped_lint.api.RuleFunction.model  [experimental]
-sdk untaped_lint.api.RuleFunction.rule  [experimental]
+sdk untaped_lint.api.RuleFunction.severity  [experimental]
+sdk untaped_lint.api.RuleFunction.summary  [experimental]
 sdk untaped_lint.api.Rules base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.Rules base=untaped.sdk.contracts.Provider  [experimental]
 sdk untaped_lint.api.Rules base=untaped_lint.api.Linter  [experimental]
@@ -9485,6 +9554,7 @@ sdk untaped_lint.api.lint_report(paths=) default=[]  [experimental]
 sdk untaped_lint.api.lint_report(select=) default=[]  [experimental]
 sdk untaped_lint.api.lint_report(subjects)  [experimental]
 sdk untaped_lint.api.rule(*, severity)  [experimental]
+sdk untaped_lint.api.rule_row(function) callback(function, *)  [experimental]
 sdk untaped_lint.api.target_of(item)  [experimental]
 sdk untaped_lint.testing.assert_clean(candidates=) default=None  [experimental]
 sdk untaped_lint.testing.assert_clean(ignore=) default=[]  [experimental]

@@ -35,8 +35,9 @@ def _repository(root: Path, files: dict[str, str | bytes]) -> Path:
 
 
 def test_the_rule_table_conforms() -> None:
-    conformance(AwxRules())
-    assert [each.id for each in AwxRules().rules()] == [each.rule.id for each in RULES]
+    with compose_with("awx"):
+        conformance(AwxRules())
+        assert [each.id for each in AwxRules().rules()] == [each.id for each in RULES]
 
 
 def test_awx_fills_both_lint_contracts() -> None:

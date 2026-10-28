@@ -122,8 +122,8 @@ a prompt, a stream the user asked to watch or output a flag asks for. Never `pri
 (take a `warn` callback; a deprecated Python API warns through its [mark](deprecation.md)) or your own `Console`.
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
-`Message` or `Failure` with `kind="<plugin>.<name>"` (add fields, never
-levels) and emit it with `app_context().diag.emit(...)`. Relay another tool's
+`Message` or `Failure` (add fields, never levels), list it in your plugin
+class's `records` and emit it with `app_context().diag.emit(...)`. Relay another tool's
 output (a hook's stderr, a job log) with `diag.relay(text)`: it never counts.
 
 ## Options
@@ -207,11 +207,10 @@ free, but a command that writes declares it with `@writes`, or
   `--columns +name/-name` edits the defaults, and a named column is always
   shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
   a command whose other rows follow a side effect calls `check_columns` first.
-- Declare a record's kind on its class, `class Widget(Record, kind="acme-tools.widget")`, in a
-  `records` module your app imports: `<plugin>.<noun>` (another prefix is `foreign-kind`),
-  `<plugin>.<verb>_outcome` for mutations, `.summary` the only third segment. One model per kind;
-  `emit` reads it from the rows. Elsewhere name the model (`kind_of(Widget)`), never the string, so
-  a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
+- A record's kind is the plugin whose package defines it and its class in snake case
+  (`acme-tools.widget` for `Widget`), given at composition: name a noun, `<Verb>Outcome` for a
+  mutation. One model per kind; `emit` reads it from the rows. Elsewhere name the model
+  (`kind_of(Widget)`), never the string, so a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
   fail). A document is no row: `emit_document`. Records refuse undeclared fields; `extra="ignore"`
   keeps a service answer's typed part, `"allow"` all of it (extras `JsonValue`, base fields first).
 - A record no command's output names (a diagnostic, a row a stream prints) goes in your plugin
@@ -288,14 +287,14 @@ The sections above name the helper for each rule. Beyond those:
   `self.ctx.plugin`, an 11.x `SPEC`). Read blobs through
   `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
-A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`, and
-its records declare their kind:
+A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`; its
+records take their kinds from their classes:
 
 ```python
 from untaped.sdk import ColumnsOption, FormatOption, Record, emit
 
 
-class Item(Record, kind="acme.item"):
+class Item(Record):
     id: str
 
 

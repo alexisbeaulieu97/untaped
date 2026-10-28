@@ -57,21 +57,21 @@ class AwxResource(AwxRecord):
     )
 
 
-class Organization(AwxResource, kind="awx.organization"):
+class Organization(AwxResource):
     """An organization."""
 
 
-class CredentialType(AwxResource, kind="awx.credential_type"):
+class CredentialType(AwxResource):
     """A credential type (global)."""
 
 
-class Credential(AwxResource, kind="awx.credential"):
+class Credential(AwxResource):
     """A credential; AWX returns its secrets as ``$encrypted$``."""
 
     organization: ForeignKey = None
 
 
-class Project(AwxResource, kind="awx.project"):
+class Project(AwxResource):
     """A project: where its playbooks come from."""
 
     organization: ForeignKey = None
@@ -84,51 +84,51 @@ class Project(AwxResource, kind="awx.project"):
     )
 
 
-class Inventory(AwxResource, kind="awx.inventory"):
+class Inventory(AwxResource):
     """An inventory."""
 
     organization: ForeignKey = None
 
 
-class InventorySource(AwxResource, kind="awx.inventory_source"):
+class InventorySource(AwxResource):
     """An inventory source, under its inventory."""
 
     inventory: ForeignKey = None
 
 
-class Host(AwxResource, kind="awx.host"):
+class Host(AwxResource):
     """A host, under its inventory."""
 
     inventory: ForeignKey = None
 
 
-class Group(AwxResource, kind="awx.group"):
+class Group(AwxResource):
     """A group, under its inventory."""
 
     inventory: ForeignKey = None
 
 
-class ExecutionEnvironment(AwxResource, kind="awx.execution_environment"):
+class ExecutionEnvironment(AwxResource):
     """An execution environment."""
 
     organization: ForeignKey = None
 
 
-class Label(AwxResource, kind="awx.label"):
+class Label(AwxResource):
     """A label."""
 
     organization: ForeignKey = None
 
 
-class InstanceGroup(AwxResource, kind="awx.instance_group"):
+class InstanceGroup(AwxResource):
     """An instance group (global)."""
 
 
-class SystemJobTemplate(AwxResource, kind="awx.system_job_template"):
+class SystemJobTemplate(AwxResource):
     """A management job template, built into AWX."""
 
 
-class JobTemplate(AwxResource, kind="awx.job_template"):
+class JobTemplate(AwxResource):
     """A job template; ``--with-scm`` adds the repository and ref its jobs check out."""
 
     organization: ForeignKey = None
@@ -150,19 +150,19 @@ class JobTemplate(AwxResource, kind="awx.job_template"):
     )
 
 
-class WorkflowJobTemplate(AwxResource, kind="awx.workflow_job_template"):
+class WorkflowJobTemplate(AwxResource):
     """A workflow job template."""
 
     organization: ForeignKey = None
 
 
-class Schedule(AwxResource, kind="awx.schedule"):
+class Schedule(AwxResource):
     """A schedule, under the template, project or inventory source it runs."""
 
     unified_job_template: ForeignKey = None
 
 
-class JobRecord(AwxRecord, kind="awx.job_record"):
+class JobRecord(AwxRecord):
     """An execution (job, workflow job, project or inventory update) as AWX reports it.
 
     ``jobs list`` and ``jobs get`` write AWX's whole row (its ``type`` names
@@ -175,7 +175,7 @@ class JobRecord(AwxRecord, kind="awx.job_record"):
     scm_revision: Annotated[str | None, ObjectName] = None
 
 
-class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
+class UnifiedTemplate(AwxRecord):
     """A template, project or inventory source through AWX's unified view."""
 
     name: str
@@ -188,7 +188,7 @@ class UnifiedTemplate(AwxRecord, kind="awx.unified_template"):
 # --------------------------------------------------------------------------- #
 
 
-class JobEventRow(Record, kind="awx.job_event_row"):
+class JobEventRow(Record):
     """One event of a job's run, under the ``job`` it belongs to.
 
     ``counter`` comes first, so ``raw`` prints each event's number in its job.
@@ -208,14 +208,14 @@ class JobEventRow(Record, kind="awx.job_event_row"):
     stdout: str
 
 
-class JobLogLine(Record, kind="awx.job_log_line"):
+class JobLogLine(Record):
     """One line of a job's stdout; ``line`` comes first, so ``raw`` prints the bare lines."""
 
     line: Annotated[str, Column]
     job: int
 
 
-class JobCancelOutcome(OutcomeRecord, kind="awx.job_cancel_outcome"):
+class JobCancelOutcome(OutcomeRecord):
     """One ``jobs cancel`` row: the execution, its status when read, and the result.
 
     ``action`` is ``planned``, ``skipped`` (already finished),
@@ -231,7 +231,7 @@ class JobCancelOutcome(OutcomeRecord, kind="awx.job_cancel_outcome"):
     detail: str | None = None
 
 
-class JobRelaunchOutcome(OutcomeRecord, kind="awx.job_relaunch_outcome"):
+class JobRelaunchOutcome(OutcomeRecord):
     """One ``jobs relaunch`` row: the new execution (``id``) and the job it repeats.
 
     ``action`` is ``planned``, ``relaunched`` or ``failed``; ``hosts`` is
@@ -280,15 +280,15 @@ class ActionOutcome(OutcomeRecord):
     scm_revision: Annotated[str | None, ObjectName] = None
 
 
-class LaunchOutcome(ActionOutcome, kind="awx.launch_outcome"):
+class LaunchOutcome(ActionOutcome):
     """One ``launch`` target."""
 
 
-class SyncOutcome(ActionOutcome, kind="awx.sync_outcome"):
+class SyncOutcome(ActionOutcome):
     """One ``sync`` target."""
 
 
-class ApplyOutcomeRow(OutcomeRecord, kind="awx.apply_outcome_row"):
+class ApplyOutcomeRow(OutcomeRecord):
     """What ``apply``, ``patch`` or ``edit`` did to one resource.
 
     ``fields_changed`` names the fields written (a preserved secret is not
@@ -310,7 +310,7 @@ class ApplyOutcomeRow(OutcomeRecord, kind="awx.apply_outcome_row"):
     detail: Annotated[str, Column]
 
 
-class DeleteOutcome(OutcomeRecord, kind="awx.delete_outcome"):
+class DeleteOutcome(OutcomeRecord):
     """One resource ``delete`` removed, asked AWX to remove, or skipped."""
 
     id: Annotated[int, Column]
@@ -321,7 +321,7 @@ class DeleteOutcome(OutcomeRecord, kind="awx.delete_outcome"):
     detail: Annotated[str | None, Column] = None
 
 
-class MembershipOutcome(OutcomeRecord, kind="awx.membership_outcome"):
+class MembershipOutcome(OutcomeRecord):
     """What an ``add``/``remove`` of members did to one parent's ``field``."""
 
     id: Annotated[int, Column]
@@ -336,7 +336,7 @@ class MembershipOutcome(OutcomeRecord, kind="awx.membership_outcome"):
     detail: Annotated[str | None, Column] = None
 
 
-class SuiteCase(Record, kind="awx.suite_case"):
+class SuiteCase(Record):
     """One case ``test list`` would run, with the suite and template it belongs to."""
 
     suite: Annotated[str, Column]
@@ -350,11 +350,11 @@ class SuiteCase(Record, kind="awx.suite_case"):
     )
 
 
-class ProvisionOutcome(TemporaryCopyOutcome, kind="awx.provision_outcome"):
+class ProvisionOutcome(TemporaryCopyOutcome):
     """A temporary copy ``test validate --source-ref`` plans."""
 
 
-class PruneOutcome(TemporaryCopyOutcome, kind="awx.prune_outcome"):
+class PruneOutcome(TemporaryCopyOutcome):
     """A temporary copy ``test prune`` deleted, would delete, or failed to."""
 
 

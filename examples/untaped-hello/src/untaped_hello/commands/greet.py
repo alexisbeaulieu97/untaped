@@ -8,7 +8,7 @@ from untaped.sdk import Command, Message
 from untaped_hello.settings import HelloSettings
 
 
-class DefaultGreeting(Message, kind="hello.default_greeting"):
+class DefaultGreeting(Message):
     """A plugin's own stderr kind: the greeting is the default; name the setting that changes it."""
 
     level: Literal["hint"] = "hint"

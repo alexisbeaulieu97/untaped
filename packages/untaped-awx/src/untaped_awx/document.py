@@ -10,7 +10,7 @@ from pydantic import JsonValue, PrivateAttr
 from untaped.sdk import Record
 
 
-class Document(Record, kind="awx.document"):
+class Document(Record):
     """A saved resource: the YAML document `export` writes and `apply` reads.
 
     `export` writes resources as portable YAML documents, and `untaped awx apply`

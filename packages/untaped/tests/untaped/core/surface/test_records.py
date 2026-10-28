@@ -337,3 +337,17 @@ def test_a_model_two_deprecations_reach_names_no_replacement() -> None:
     )
     assert _model_mark({login, forget}, stable_export=False) == DeprecatedMark(12)
     assert _model_mark({login, DeprecatedMark(11, "x")}, stable_export=False) == login
+
+
+class Ledger(BaseModel):
+    """A record the plugin prints that no command names."""
+
+    name: Annotated[str, Key]
+
+
+def test_a_listed_record_no_command_reaches_takes_its_own_mark_else_its_plugin_s() -> None:
+    lister = _plugin(Books)
+    lister.records = (Draft, Ledger)
+    marks = {line.text: line.mark for line in _lines(lister)}
+    assert marks["record shop.draft"] == "experimental"
+    assert marks["record shop.ledger"] is None

@@ -11,19 +11,20 @@ engine counts as a failure, never as a finding.
 from __future__ import annotations
 
 import inspect
+import re
 from abc import abstractmethod
 from annotationlib import Format, ForwardRef
 from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
 from typing import ClassVar, cast, evaluate_forward_ref
 
-from pydantic import ValidationError
-
 from untaped.sdk import Failure, Record, experimental, kind_of
 from untaped.sdk.contracts import Contract, Provider
 from untaped_lint.application.ports import RuleFunction
-from untaped_lint.records import Finding, Location, Rule, Severity, Tree, declared_kind
+from untaped_lint.records import RULE_ID, Finding, Location, Rule, Severity, Tree, declared_kind
 
+#: Marks a function ``@rule`` declared.
+_RULE = "__untaped_lint_rule__"
 #: Marks a provider base's own helper, so doctor's unused-method check skips it
 #: (``untaped.sdk.contracts`` reads the same attribute).
 _PROVIDER_HELPER = "__untaped_provider_helper__"
@@ -69,30 +70,42 @@ def rule(*, severity: Severity) -> Callable[[Callable[..., Iterable[Finding]]], 
     ``no-print``), its summary the docstring's first paragraph, and what it
     reads the model its first parameter (after ``self``) is annotated with.
     The function is the rule's constant: ``finding(my_rule, ...)`` reads its
-    id and severity from it, and ``my_rule.rule`` is its :class:`Rule`.
+    id and severity from it, and :func:`rule_row` is its :class:`Rule`.
     """
 
     def mark(function: Callable[..., Iterable[Finding]]) -> RuleFunction:
-        reads = _reads(function)
-        try:
-            declared = Rule(
-                id=function.__name__.replace("_", "-"),
-                reads=declared_kind(reads),
-                severity=severity,
-                summary=_summary(function),
-            )
-        except ValidationError:
+        model, summary = _reads(function), _summary(function)
+        id_ = function.__name__.replace("_", "-")
+        if not re.match(RULE_ID, id_):
             raise TypeError(
                 f"rule {function.__qualname__}: its name is its id, so it is lower-case "
                 "words joined by `_` (no_print is no-print)"
-            ) from None
+            )
         marked = cast("RuleFunction", function)
-        marked.rule = declared
-        marked.model = reads
+        marked.model = model
+        marked.id = id_
+        marked.severity = severity
+        marked.summary = summary
+        setattr(function, _RULE, True)
         setattr(function, _PROVIDER_HELPER, True)
         return marked
 
     return mark
+
+
+def rule_row(function: RuleFunction) -> Rule:
+    """``function``'s :class:`Rule`, the kind it reads named by the run's composition."""
+    return Rule(
+        id=function.id,
+        reads=declared_kind(function.model),
+        severity=function.severity,
+        summary=function.summary,
+    )
+
+
+def is_rule(value: object) -> bool:
+    """Whether ``value`` is a function ``@rule`` declared."""
+    return inspect.isfunction(value) and getattr(value, _RULE, False) is True
 
 
 def _reads(function: Callable[..., object]) -> type[Record]:
@@ -121,8 +134,6 @@ def _reads(function: Callable[..., object]) -> type[Record]:
             raise TypeError(f"{where}: its record model doesn't resolve: {exc}") from None
     if not (isinstance(hint, type) and issubclass(hint, Record)):
         raise TypeError(f"{where}: annotate {parameters[0].name!r} with the record model it reads")
-    if kind_of(hint) is None:
-        raise TypeError(f"{where} reads {hint.__name__}, which declares no kind")
     return hint
 
 
@@ -146,10 +157,9 @@ def finding(
     fix: list[str] | None = None,
 ) -> Finding:
     """A finding of ``rule`` about ``target``, with the rule's id and severity."""
-    declared = rule if isinstance(rule, Rule) else rule.rule
     return Finding(
-        rule=declared.id,
-        severity=declared.severity,
+        rule=rule.id,
+        severity=rule.severity,
         target=target,
         message=message,
         location=location,
@@ -175,15 +185,13 @@ class Rules(Linter, Provider):
             cast("RuleFunction", value)
             for module in modules
             for value in vars(module).values()
-            if inspect.isfunction(value)
-            and value.__module__ == module.__name__
-            and isinstance(getattr(value, "rule", None), Rule)
+            if is_rule(value) and value.__module__ == module.__name__
         )
         host = type("ModuleRules", (cls,), {"RULES": functions, "__module__": cls.__module__})
         return cast("type[Rules]", host)
 
     def rules(self) -> list[Rule]:
-        return [function.rule for function in self._functions()]
+        return [rule_row(function) for function in self._functions()]
 
     def findings(self, record: Record) -> list[Finding]:
         found: list[Finding] = []
@@ -194,7 +202,7 @@ class Rules(Linter, Provider):
             try:
                 found.extend(function(record))
             except Exception as exc:  # one rule's raise is its row; the others still run
-                found.append(_raised(function.rule, record, exc))
+                found.append(_raised(function, record, exc))
         return found
 
     def _functions(self) -> Iterator[RuleFunction]:
@@ -209,17 +217,13 @@ class Rules(Linter, Provider):
                 seen.add(name)
                 # Only a function defined here is a method; an alias of a listed
                 # rule, or of a module, is not bound a second time.
-                if (
-                    inspect.isfunction(value)
-                    and value not in listed
-                    and isinstance(getattr(value, "rule", None), Rule)
-                ):
+                if is_rule(value) and value not in listed:
                     listed = (*listed, value)  # a second name for it binds nothing new
                     yield cast("RuleFunction", getattr(self, name))
 
 
-def _raised(declared: Rule, record: Record, error: Exception) -> Finding:
-    target = str(getattr(record, "name", None) or declared.reads)
+def _raised(declared: RuleFunction, record: Record, error: Exception) -> Finding:
+    target = str(getattr(record, "name", None) or kind_of(declared.model) or declared.id)
     return Finding(
         rule=declared.id,
         severity="error",

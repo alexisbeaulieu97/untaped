@@ -73,7 +73,7 @@ def _live(snapshot: Resources, **facts: ControllerFacts) -> Resources:
 
 
 def test_rules_are_listed_once_each_in_table_order() -> None:
-    ids = [each.rule.id for each in RULES]
+    ids = [each.id for each in RULES]
     assert ids == [
         "missing-reference",
         "unresolved-reference",
@@ -88,16 +88,16 @@ def test_rules_are_listed_once_each_in_table_order() -> None:
     ]
 
 
-@pytest.mark.parametrize("function", RULES, ids=lambda each: each.rule.id)
+@pytest.mark.parametrize("function", RULES, ids=lambda each: each.id)
 def test_each_rule_is_the_constant_its_module_names_and_experimental(
     function: RuleFunction,
 ) -> None:
-    assert function.rule.id == function.__name__.replace("_", "-")
+    assert function.id == function.__name__.replace("_", "-")
     assert function.__module__.rsplit(".", 1)[-1] == function.__name__
     assert isinstance(function_mark(function), Experimental)
 
 
-@pytest.mark.parametrize("function", RULES, ids=lambda each: each.rule.id)
+@pytest.mark.parametrize("function", RULES, ids=lambda each: each.id)
 def test_no_rule_fires_on_a_clean_batch(function: RuleFunction) -> None:
     assert _run(function, resources(CLEAN)) == []
 

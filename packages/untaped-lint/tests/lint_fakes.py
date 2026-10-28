@@ -11,7 +11,7 @@ import json
 from collections.abc import Iterator
 
 from untaped.sdk import InstalledPlugin, Record, kind_of
-from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule
+from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule, rule_row
 
 
 class Widget(Record, kind="linttest.widget"):
@@ -109,7 +109,7 @@ class Malformed(Linter):
     """Declares ``wide`` and answers one valid finding and one with a bad severity."""
 
     def rules(self) -> list[Rule]:
-        return [wide.rule]
+        return [rule_row(wide)]
 
     def findings(self, record: Record) -> list[Finding]:
         bad = Finding.model_construct(rule="wide", severity="fatal", target="b", message="m")
@@ -121,9 +121,9 @@ class MalformedRule(Linter):
 
     def rules(self) -> list[Rule]:
         bad = Rule.model_construct(
-            id="acme.dotted", reads=wide.rule.reads, severity="error", summary="Dotted."
+            id="acme.dotted", reads=rule_row(wide).reads, severity="error", summary="Dotted."
         )
-        return [bad, wide.rule]
+        return [bad, rule_row(wide)]
 
     def findings(self, record: Record) -> list[Finding]:
         return [finding(wide, "w", "too wide")]

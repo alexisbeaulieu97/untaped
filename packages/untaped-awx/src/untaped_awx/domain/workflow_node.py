@@ -54,7 +54,7 @@ def normalise_unified_job_type(raw: str | None) -> WorkflowNodeType | None:
     return _JOB_TYPE_TO_TEMPLATE_TYPE.get(raw)
 
 
-class WorkflowNode(Record, kind="awx.workflow_node"):
+class WorkflowNode(Record):
     """One node of a workflow (``nodes``), flattened from AWX's row."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
