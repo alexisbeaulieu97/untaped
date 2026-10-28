@@ -514,18 +514,19 @@ def _table_layout(
     return rows, shown
 
 
-def stderr_table(records: Sequence[BaseModel], *, colorize: bool) -> str:
+def stderr_table(records: Sequence[BaseModel], *, colorize: bool, plain: bool = False) -> str:
     """``records`` as the table core prints on stdout, for stderr: their ``Column`` fields.
 
-    The run's theme lays it out (empty columns hidden, the list view); a broken
-    ``ui`` section draws the default.
+    The run's theme lays it out (empty columns hidden, the list view, glyphs);
+    a broken ``ui`` section draws the default. ``plain`` gives the text a
+    structured diagnostic carries instead: one ``key: value`` block per record.
     """
-    from untaped.sdk.fields import default_columns  # noqa: PLC0415 - fields imports this module
-
-    theme = build_terminal(strict=False).theme
+    theme = ThemeSpec(collection_view="list") if plain else build_terminal(strict=False).theme
     rows = [_as_row(record) for record in records]
-    defaults = list(default_columns(type(records[0]))) or None
-    shown, selection = _table_layout(rows, defaults, frozenset(), theme=theme)
+    shown, selection = _table_layout(rows, _record_table_columns(records), frozenset(), theme=theme)
+    glyphs = _row_glyphs(records)
+    if glyphs:
+        shown = [_glyphed(row, glyph) for row, glyph in zip(shown, glyphs, strict=True)]
     return render_collection(shown, fmt="table", columns=selection, theme=theme, colorize=colorize)
 
 

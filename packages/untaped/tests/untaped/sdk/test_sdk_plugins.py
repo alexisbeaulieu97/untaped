@@ -22,6 +22,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "AllowHyphen",
         "Output",
         "Verbatim",
+        "PreviewItem",
         "Stdin",
         "Lines",
         "Confirm",

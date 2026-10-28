@@ -213,7 +213,11 @@ class _Walker:
         if isinstance(obj, types.ModuleType):
             raise SurfaceError(f"{subject} exports a module; export its names instead")
         if isinstance(obj, typing.TypeAliasType):
-            values = literal_values(obj.__value__)
+            # FORWARDREF: an alias may name types its module imports for checking only
+            value = annotationlib.call_evaluate_function(
+                obj.evaluate_value, annotationlib.Format.FORWARDREF
+            )
+            values = literal_values(value)
         else:
             values = literal_values(obj)
         if values is not None:

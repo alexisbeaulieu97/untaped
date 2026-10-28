@@ -7228,6 +7228,7 @@ sdk untaped.sdk.Positional()
 sdk untaped.sdk.Pressed(id)  [experimental]
 sdk untaped.sdk.Pressed.id  [experimental]
 sdk untaped.sdk.PrevField()  [experimental]
+sdk untaped.sdk.PreviewItem
 sdk untaped.sdk.Progress(*, message, label, phase, done, total, elapsed, state)
 sdk untaped.sdk.Progress(hint=) default=None
 sdk untaped.sdk.Progress.__init_subclass__(kind=) default=None

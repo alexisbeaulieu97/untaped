@@ -19,6 +19,7 @@ from untaped.sdk import (
     Output,
     Parallel,
     Positional,
+    PreviewItem,
     Record,
     Stdin,
     UntapedError,
@@ -39,7 +40,7 @@ from untaped_recipe.commands._recipe import (
     merge_vars,
     recipe_errors,
 )
-from untaped_recipe.commands.preview import PlanCounts, PreviewItem, PreviewMode, preview_items
+from untaped_recipe.commands.preview import PlanCounts, PreviewMode, preview_items
 from untaped_recipe.domain.plan import TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError

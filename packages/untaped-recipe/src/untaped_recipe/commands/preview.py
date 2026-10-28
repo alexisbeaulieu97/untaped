@@ -7,14 +7,13 @@ same whatever ``--format`` asks of stdout, and kept under ``--quiet``.
 from __future__ import annotations
 
 import difflib
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel
 
-from untaped.sdk import Column, plural, unified_diff_text
+from untaped.sdk import Column, PreviewItem, plural, unified_diff_text
 from untaped_recipe.application.inputs import has_sensitive_inputs
 from untaped_recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped_recipe.domain.recipe import RecipeFile
@@ -46,14 +45,10 @@ class HiddenRow(BaseModel):
 
 
 class ErrorRow(BaseModel):
-    """A target that failed planning."""
+    """A target that failed planning, and why (``detail`` wraps, never cut)."""
 
     target: Annotated[str, Column]
-    error: Annotated[str | None, Column]
-
-
-#: A preview line, or a table of rows.
-type PreviewItem = str | Sequence[BaseModel]
+    detail: Annotated[str | None, Column]
 
 
 def preview_items(
@@ -173,7 +168,7 @@ def _preview_groups(
     error_rows: list[ErrorRow] = []
     for plan in plans:
         if plan.status == "error":
-            error_rows.append(ErrorRow(target=str(_display_target(plan)), error=plan.error))
+            error_rows.append(ErrorRow(target=str(_display_target(plan)), detail=plan.error))
             continue
         if not plan.changes:
             continue

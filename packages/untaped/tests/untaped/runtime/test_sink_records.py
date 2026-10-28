@@ -63,12 +63,47 @@ def test_no_records_print_nothing_and_quiet_mutes_them_unless_unmuted() -> None:
     assert "a.txt" in _stderr(_ROWS, muted=True, unmuted=True)
 
 
-def test_under_json_diagnostics_the_table_is_one_info_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+class Target(BaseModel):
+    target: Annotated[str, Column]
+    files: Annotated[int, Column]
+
+
+def test_records_of_several_models_keep_each_ones_fields() -> None:
+    printed = _stderr([Change(path="a.txt", action="create"), Target(target="repo", files=2)])
+
+    assert "a.txt" in printed
+    assert "repo" in printed
+    assert "files" in printed
+
+
+def test_a_hint_follows_the_table_and_an_empty_string_column_is_left_out() -> None:
+    stream = io.StringIO()
+    with redirect_stderr(stream), entered(start_run()):
+        Diagnostics().info([Change(path="a.txt", action="create", note="")], hint="run it again")
+
+    printed = stream.getvalue()
+    assert printed.rstrip().endswith("hint: run it again")
+    assert "note" not in printed
+
+
+def test_a_long_detail_wraps_where_a_long_cell_is_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Failed(BaseModel):
+        target: Annotated[str, Column]
+        detail: Annotated[str, Column]
+
+    monkeypatch.setenv("COLUMNS", "60")
+    why = "hook failed: command 'make lint' exited 2 after printing a long explanation"
+
+    printed = _stderr([Failed(target="t" * 80, detail=why)])
+
+    assert "…" in printed  # the target is cut to fit
+    assert "explanation" in printed  # the detail wraps, whole
+
+
+def test_json_diagnostics_carry_plain_key_value_text(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
 
-    lines = [json.loads(line) for line in _stderr(_ROWS).splitlines()]
+    (line,) = [json.loads(line) for line in _stderr(_ROWS).splitlines()]
 
-    assert [line["level"] for line in lines] == ["info"]
-    assert "a.txt" in lines[0]["message"]
+    assert "path: a.txt" in line["message"]
+    assert "│" not in line["message"]

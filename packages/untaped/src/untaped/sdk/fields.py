@@ -739,10 +739,10 @@ type Printable = str | Text | TreeGraph
 """One thing a renderer returns for core to print: a line or block, styled text, a tree."""
 
 type Rendered = Printable | Sequence[Printable] | None
-
-#: What a preview yields: a line, a styled line, or records printed as one table on stderr.
-type PreviewItem = str | Text | Sequence[BaseModel]
 """What an ``Output`` renderer returns: one printable, several in order, or nothing."""
+
+type PreviewItem = str | Text | Sequence[BaseModel]
+"""What a preview yields: a line, a styled line, or records printed as one table on stderr."""
 
 
 def print_rendered(rendered: Rendered) -> None:
@@ -1505,11 +1505,11 @@ def _print_preview(preview: Callable[[], Iterable[PreviewItem]] | None) -> None:
 class DryRun(FieldBlock):
     """This command writes without asking and can preview instead: adds ``--dry-run`` alone.
 
-    ``if self.dry_run.go_ahead(preview=lines): write()`` prints the preview,
-    as :class:`Confirm` does, and writes nothing after ``--dry-run``; ``if
-    self.dry_run: ...`` is true after ``--dry-run``. A command that asks first
-    takes :class:`Confirm`, which has its own ``--dry-run``; one command takes
-    one of the two.
+    ``if self.dry_run.go_ahead(preview=items): write()`` prints the preview
+    (lines, or rows as a table) as :class:`Confirm` does, and writes nothing
+    after ``--dry-run``; ``if self.dry_run: ...`` is true after ``--dry-run``.
+    A command that asks first takes :class:`Confirm`, which has its own
+    ``--dry-run``; one command takes one of the two.
     """
 
     field_kind = "dry_run"

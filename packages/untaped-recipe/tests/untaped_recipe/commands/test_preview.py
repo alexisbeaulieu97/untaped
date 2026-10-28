@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from untaped_recipe.commands.preview import ErrorRow, PreviewItem, preview_items
+from untaped.sdk import PreviewItem
+from untaped_recipe.commands.preview import ErrorRow, preview_items
 from untaped_recipe.domain.plan import FileChange, TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.settings import RecipeSettings
@@ -208,4 +209,4 @@ def test_table_preview_hands_core_the_rows_and_leaves_no_empty_table(
         preview="table",
     )
 
-    assert items[1:] == [[ErrorRow(target=str(failed), error="")]]
+    assert items[1:] == [[ErrorRow(target=str(failed), detail="")]]

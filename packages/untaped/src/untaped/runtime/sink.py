@@ -1166,8 +1166,9 @@ class Diagnostics:
         if not records:
             return
         tail = "" if hint is None else f"\n{_HINT_PREFIX}{hint}"
+        plain = stderr_table(records, colorize=False, plain=True)  # what JSON diagnostics carry
         self._sink().emit(
-            Message(level="info", message=stderr_table(records, colorize=False), hint=hint),
+            Message(level="info", message=plain, hint=hint),
             rendered=lambda color: stderr_table(records, colorize=color) + tail,
             unmuted=unmuted,
         )
