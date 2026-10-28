@@ -214,6 +214,8 @@ free, but a command that writes declares it with `@writes`, or
   a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
   fail). A document is no row: `emit_document`. Records refuse undeclared fields; `extra="ignore"`
   keeps a service answer's typed part, `"allow"` all of it (extras `JsonValue`, base fields first).
+- A record no command's output names (a diagnostic, a row a stream prints) goes in your plugin
+  class's `records`, which gives it the kind `<plugin>.<snake_case of the class>`.
 - Fields are snake_case, with `id` and then `name` first. `url` is the web
   URL and `api_url` is the API link.
 - A record's own fields come before the fields it inherits from the bases

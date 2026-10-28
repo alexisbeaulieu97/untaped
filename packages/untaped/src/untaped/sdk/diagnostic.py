@@ -70,7 +70,9 @@ from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 
 from untaped.runtime.redaction import redact_url_password
-from untaped.sdk._run import is_verbose
+from untaped.sdk._home import CORE
+from untaped.sdk._names import snake
+from untaped.sdk._run import is_verbose, run_or_none
 from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
 from untaped.sdk.words import ago_text, duration_text
 
@@ -175,17 +177,35 @@ _KINDS: dict[type[BaseModel], str] = {}
 
 
 def kind_of(model: type[BaseModel]) -> str | None:
-    """The kind ``model`` declares (``None``: a kind-less model, such as the record bases).
+    """``model``'s kind (``None``: a kind-less model, such as the record bases).
 
-    A parametrized generic record (``Page[int]``) has its generic's kind.
+    The current run's composition gives it; before or without one, core's
+    own records (``Core.records``) have theirs, and an 11.x ``kind=`` is
+    read last. A parametrized generic record (``Page[int]``) has its
+    generic's kind.
     """
-    origin = model.__pydantic_generic_metadata__["origin"]
-    return _KINDS.get(model) or (None if origin is None else _KINDS.get(origin))
+    model = model.__pydantic_generic_metadata__["origin"] or model
+    run = run_or_none()
+    composed = None if run is None else run.composition.kind_of(model)
+    return composed or _core_kinds().get(model) or _KINDS.get(model)
 
 
-def record_model(kind: str) -> type[WireModel] | None:
-    """The record or diagnostic model that declares ``kind`` (``None``: no model declares it)."""
-    return _MODELS.get(kind)
+def record_model(kind: str) -> type[BaseModel] | None:
+    """The record or diagnostic model of ``kind`` (``None``: none), read as :func:`kind_of` is."""
+    run = run_or_none()
+    composed = None if run is None else run.composition.model_of(kind)
+    if isinstance(composed, type) and issubclass(composed, BaseModel):
+        return composed
+    core = next((model for model, given in _core_kinds().items() if given == kind), None)
+    return core or _MODELS.get(kind)
+
+
+@cache
+def _core_kinds() -> dict[type[BaseModel], str]:
+    """Core's own records and their kinds, read before or without a composition."""
+    from untaped.core.commands.records import CORE_RECORDS  # noqa: PLC0415 - core's records
+
+    return {model: f"{CORE}.{snake(model.__name__)}" for model in CORE_RECORDS}
 
 
 def record_kinds() -> Mapping[str, type[WireModel]]:

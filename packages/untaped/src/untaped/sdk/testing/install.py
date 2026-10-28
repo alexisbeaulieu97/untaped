@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel, SecretBytes, SecretStr
 from pydantic_core import to_jsonable_python
 
+from untaped.sdk._names import kebab
 from untaped.sdk.plugin import Command, Plugin
 from untaped.sdk.testing.fixtures import ScriptedTerminal
 
@@ -327,7 +328,6 @@ def candidate_of(
     cls: type[Plugin], name: str | None, discovered: Sequence[PluginCandidate]
 ) -> PluginCandidate:
     """``cls`` as installed (its entry point), else named ``name`` or after its class."""
-    from untaped.runtime.composition import kebab  # noqa: PLC0415
     from untaped.runtime.declaration import target_of  # noqa: PLC0415
     from untaped.runtime.registry import PluginCandidate  # noqa: PLC0415
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import collections.abc
 import enum
-import re
 import sys
 import types
 import typing
@@ -55,6 +54,7 @@ from untaped.runtime.describe import (
 )
 from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
+from untaped.sdk._names import _WORDS, kebab, snake
 from untaped.sdk.fields import (
     CORE_SHORTS,
     AllowHyphen,
@@ -110,7 +110,6 @@ RESERVED_FIELDS: frozenset[str] = frozenset(
     }
 )
 
-_WORDS = re.compile(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+|[A-Z]+")
 _ITERATORS = frozenset(
     {
         collections.abc.Iterator,
@@ -123,25 +122,10 @@ _ITERATORS = frozenset(
 )
 
 
-def words(name: str) -> list[str]:
-    """The words of a class name, a run of capitals one word: ``SSHKeys`` is ``ssh``, ``keys``."""
-    return [word.lower() for word in _WORDS.findall(name)]
-
-
 def bundle_panel(model: type) -> str:
     """A bundle's help panel: its class name as words, ``SourceData`` is ``Source data``."""
     first, *rest = _WORDS.findall(model.__name__)
     return " ".join([first, *(word if word.isupper() else word.lower() for word in rest)])
-
-
-def kebab(name: str) -> str:
-    """A class name as a command word: ``JobTemplates`` is ``job-templates``."""
-    return "-".join(words(name))
-
-
-def snake(name: str) -> str:
-    """A class name as a kind's last part: ``TestResult`` is ``test_result``."""
-    return "_".join(words(name))
 
 
 @dataclass(frozen=True)
@@ -595,6 +579,8 @@ class _PluginWalk:
         self.provided: set[type] = set()
         #: The owner models of the contracts it offers.
         self.offered: set[type] = set()
+        #: The models its ``records`` lists: its own, whichever package defines them.
+        self.listed: set[type] = set()
         self.decl: PluginDecl | None = None
         self.settings: type[BaseModel] | None = None
         #: The guides its commands link, by target, in the order first reached.
@@ -646,6 +632,8 @@ class _PluginWalk:
             return "offered"
         if cls in self.provided:
             return "provided"
+        if cls in self.listed:
+            return "own"
         owner = self.owners.get(cls.__module__.partition(".")[0], self.name)
         return "own" if owner == self.name else "reached"
 
@@ -757,6 +745,7 @@ class _PluginWalk:
             )
         self.offers = _tuple(self, cls, "offers")
         self.fills = _tuple(self, cls, "fills")
+        self._records(where, _tuple(self, cls, "records"))
         if not (self.offers or self.fills):
             return
         from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts' cost
@@ -786,6 +775,17 @@ class _PluginWalk:
                 )
             elif isinstance(filled, type):
                 self._provider(where, filled)
+
+    def _records(self, where: str, listed: tuple[object, ...]) -> None:
+        """The models ``records`` lists are the plugin's, claimed with its commands' records."""
+        for model in listed:
+            if not (isinstance(model, type) and issubclass(model, BaseModel)):
+                self.problem(
+                    "reserved-name", f"{where}.records", f"{model!r} is not a record model"
+                )
+                continue
+            self.kinds.setdefault(model, f"{self.name}.{snake(model.__name__)}")
+            self.listed.add(model)
 
     def _answer_caches(self, cls: type[Plugin], info: ContractInfo) -> None:
         """The name each answer cache of an offered contract takes is the plugin's to give.

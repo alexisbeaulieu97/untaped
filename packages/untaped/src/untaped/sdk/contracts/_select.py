@@ -33,10 +33,11 @@ from pydantic import BaseModel, ValidationError
 from untaped.runtime.contracts.registry import BoundProvider, offers, ready_of, upgrade_hint
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
-from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract, record_kind
+from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract
 from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue
 from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
+from untaped.sdk.records import kind_of
 
 
 class NotFound(UsageError):
@@ -157,7 +158,7 @@ def bridged[R](
     """
     info, method = bridge_of(bridge)
     model = method.hints["return"]
-    owner_kind = record_kind(model)
+    owner_kind = kind_of(model)
     kind = envelope.kind
     if kind is None:
         raise UsageError(f"line {envelope.lineno}: a piped record needs a kind to be read")

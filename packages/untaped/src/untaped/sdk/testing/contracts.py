@@ -168,10 +168,10 @@ def piped_through[R](bridge: Callable[..., R], row: BaseModel) -> R:
     """
     from untaped.sdk._cli import _as_row  # noqa: PLC0415 - the pipe writer's dump
     from untaped.sdk._pipe import PipeEnvelope  # noqa: PLC0415
-    from untaped.sdk.contracts._declare import record_kind  # noqa: PLC0415
     from untaped.sdk.contracts._select import bridged  # noqa: PLC0415
+    from untaped.sdk.records import kind_of  # noqa: PLC0415
 
-    envelope = PipeEnvelope(kind=record_kind(type(row)), record=_as_row(row), lineno=1)
+    envelope = PipeEnvelope(kind=kind_of(type(row)), record=_as_row(row), lineno=1)
     return bridged(bridge, envelope, type(row))
 
 

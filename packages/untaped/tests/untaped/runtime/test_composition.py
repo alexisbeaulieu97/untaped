@@ -12,8 +12,9 @@ import pytest
 from pydantic import BaseModel, Field
 
 from core_test_support.contracts.support import BOOKS, Book, BookSource, Shop
-from untaped.runtime.composition import PluginEntry, bundle_panel, compose, kebab, snake, words
+from untaped.runtime.composition import PluginEntry, bundle_panel, compose
 from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
+from untaped.runtime.run import build_run, entered
 from untaped.sdk import (
     Cache,
     Column,
@@ -46,7 +47,10 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk._block import Block
+from untaped.sdk._names import kebab, snake, words
 from untaped.sdk.contracts import Contract, Provider, cached
+from untaped.sdk.diagnostic import Failure
+from untaped.sdk.records import kind_of, record_model
 
 PACKAGE = __name__.partition(".")[0]
 
@@ -244,6 +248,58 @@ def test_kinds_are_the_plugin_and_the_snake_case_class(declaration: Declaration)
         ("hello.salutation", "hello"),
         ("hello.suite", "hello"),
     ]
+
+
+class Progressed(BaseModel):
+    """A record a plugin prints that no command names."""
+
+    step: str
+
+
+def _plugin_listing(*listed: object) -> type[Plugin]:
+    class Lister(Plugin):
+        """Lister."""
+
+        settings = HelloSettings
+        commands = (Version,)
+        records = listed  # type: ignore[assignment]
+
+    return Lister
+
+
+def test_a_record_no_command_names_is_listed_by_the_plugin() -> None:
+    declaration = compose([_entry(_plugin_listing(Progressed))])
+    assert [(kind.kind, kind.plugin) for kind in declaration.kinds] == [
+        ("hello.progressed", "hello")
+    ]
+
+
+def test_a_run_reads_a_listed_record_s_kind_from_its_composition() -> None:
+    declaration = compose([_entry(_plugin_listing(Progressed))])
+    assert (kind_of(Progressed), kind_of(Failure)) == (None, "untaped.failure")
+    with entered(build_run(declaration, {"hello": HelloSettings})):
+        assert kind_of(Progressed) == "hello.progressed"
+        assert record_model("hello.progressed") is Progressed
+
+
+def test_a_listed_record_a_command_also_prints_is_one_kind() -> None:
+    lister = _plugin_with(Say)
+    lister.records = (Salutation,)
+    declaration = compose([_entry(lister)])
+    assert [kind.kind for kind in declaration.kinds] == ["hello.salutation", "hello.suite"]
+
+
+def test_records_holds_only_models() -> None:
+    assert _rules(_plugin_listing(Progressed, "progress")) == [("reserved-name", "Lister.records")]
+
+
+def test_two_plugins_listing_one_record_is_a_kind_clash() -> None:
+    declaration = compose(
+        [_entry(_plugin_listing(Progressed), "hello"), _entry(_plugin_listing(Progressed), "other")]
+    )
+    assert [plugin.name for plugin in declaration.plugins] == ["hello"]
+    [refused] = declaration.quarantined
+    assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
 
 
 def test_a_block_on_the_plugin_class_is_named_by_its_attribute() -> None:

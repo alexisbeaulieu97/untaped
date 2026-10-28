@@ -17,7 +17,18 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk.diagnostic import _is_none, _Omitted
+from untaped.sdk.diagnostic import (
+    Debug,
+    Deprecation,
+    Failure,
+    Message,
+    Progress,
+    Pruned,
+    Stale,
+    WireModel,
+    _is_none,
+    _Omitted,
+)
 from untaped.sdk.fields import Column, Key
 from untaped.sdk.records import (
     AbsolutePath,
@@ -277,3 +288,18 @@ class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):
     target_path: Annotated[AbsolutePath, Column]
     action: Annotated[str, Column]
     error: _RowError = None
+
+
+#: What core prints that no command of its names: its diagnostics and the plugin
+#: check's rows. ``Core.records`` declares them, and before or without a
+#: composition a kind is read from this tuple alone.
+CORE_RECORDS: tuple[type[WireModel], ...] = (
+    Message,
+    Failure,
+    Debug,
+    Progress,
+    Stale,
+    Pruned,
+    Deprecation,
+    PluginCheck,
+)

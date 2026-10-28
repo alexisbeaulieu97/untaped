@@ -954,7 +954,7 @@ def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyP
 
 def test_the_root_mounts_exactly_the_commands_on_core_s_class_in_its_order() -> None:
     from untaped.core.plugin import Core
-    from untaped.runtime.composition import kebab
+    from untaped.sdk._names import kebab
 
     root = bootstrap.build_root_app(candidates=[])
 

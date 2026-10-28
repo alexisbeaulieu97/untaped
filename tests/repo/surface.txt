@@ -5845,6 +5845,16 @@ record untaped.message.level choice=success
 record untaped.message.level choice=warning
 record untaped.message.level string
 record untaped.message.message string
+record untaped.plugin_check
+record untaped.plugin_check.check string
+record untaped.plugin_check.detail string
+record untaped.plugin_check.plugin string
+record untaped.plugin_check.status choice=error
+record untaped.plugin_check.status choice=fail
+record untaped.plugin_check.status choice=pass
+record untaped.plugin_check.status choice=warn
+record untaped.plugin_check.status string
+record untaped.plugin_check.title string
 record untaped.profile
 record untaped.profile.keys integer
 record untaped.profile.name string
@@ -7174,6 +7184,7 @@ sdk untaped.sdk.Plugin implement=
 sdk untaped.sdk.Plugin.commands class
 sdk untaped.sdk.Plugin.fills class
 sdk untaped.sdk.Plugin.offers class
+sdk untaped.sdk.Plugin.records class
 sdk untaped.sdk.Plugin.runs class
 sdk untaped.sdk.Plugin.settings
 sdk untaped.sdk.Plugin.skill class

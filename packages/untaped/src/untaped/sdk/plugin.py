@@ -143,11 +143,13 @@ class Group:
 class Plugin:
     """Base of a plugin: a class whose attributes are what the plugin has.
 
-    Seven names are reserved, each one thing: ``settings`` (the settings
+    Eight names are reserved, each one thing: ``settings`` (the settings
     model, the plugin's identity and its config section), ``commands``,
     ``stability``, ``offers`` (contracts the plugin owns), ``fills``
-    (providers of other plugins' contracts), ``skill`` (a :class:`StubSkill`)
-    and ``runs`` (the command the plugin's root runs). Every other attribute
+    (providers of other plugins' contracts), ``records`` (the record models
+    it prints that no command names, each ``<plugin>.<snake_case>``),
+    ``skill`` (a :class:`StubSkill`) and ``runs`` (the command the plugin's
+    root runs). Every other attribute
     holding a core block (a cache, a credential, a doctor check...) is the
     plugin's, named by its attribute. The entry point key is the plugin's
     name: ``hello = "untaped_hello.plugin:Hello"``, in a leaf module.
@@ -158,6 +160,7 @@ class Plugin:
     stability: ClassVar[Stability | None] = None
     offers: ClassVar[tuple[type, ...]] = ()
     fills: ClassVar[tuple[type, ...]] = ()
+    records: ClassVar[tuple[type[BaseModel], ...]] = ()
     skill: ClassVar[StubSkill | None] = None
     runs: ClassVar[type[Command[Any]] | None] = None
 
@@ -175,6 +178,7 @@ RESERVED_NAMES: tuple[str, ...] = (
     "stability",
     "offers",
     "fills",
+    "records",
     "skill",
     "runs",
 )

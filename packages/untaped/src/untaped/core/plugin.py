@@ -15,6 +15,7 @@ from untaped.core.commands.doctor import Doctor
 from untaped.core.commands.plugins import PluginGroup
 from untaped.core.commands.profile import ProfileGroup
 from untaped.core.commands.project import ProjectGroup
+from untaped.core.commands.records import CORE_RECORDS
 from untaped.core.commands.setup import Setup
 from untaped.core.commands.skills import Skills
 from untaped.core.doctor_checks import CONFIG_PERMISSIONS, TOKEN_STORE, UNKNOWN_KEYS
@@ -38,6 +39,7 @@ class Core(Plugin):
         Skills,
         PluginGroup,
     )
+    records = CORE_RECORDS
     declaration = DECLARATION
     skill = StubSkill(
         "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
