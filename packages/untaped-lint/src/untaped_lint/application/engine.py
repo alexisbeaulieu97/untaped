@@ -311,9 +311,9 @@ def _load(report: Report) -> _Providers:
     return providers
 
 
-def _declare(plugin: str, rules: list[Rule], providers: _Providers, report: Report) -> None:
-    for each in [rule for rule in rules if not _BARE.match(rule.id)]:  # the engine prefixes
-        rules.remove(each)
+def _declare(plugin: str, declared: list[Rule], providers: _Providers, report: Report) -> None:
+    rules = [rule for rule in declared if _BARE.match(rule.id)]  # the engine prefixes
+    for each in [rule for rule in declared if not _BARE.match(rule.id)]:
         report.failures.append(
             _failure(
                 plugin,

@@ -7458,6 +7458,8 @@ sdk untaped.sdk.Status(warning=) default=[]
 sdk untaped.sdk.Status.roles
 sdk untaped.sdk.Stdin()
 sdk untaped.sdk.Stdin(via=) default=None callback(*)
+sdk untaped.sdk.Stdin.envelopes()
+sdk untaped.sdk.Stdin.envelopes(allow_empty=) default=false
 sdk untaped.sdk.Stdin.field_kind class
 sdk untaped.sdk.Stdin.identifiers()
 sdk untaped.sdk.Stdin.identifiers(allow_empty=) default=false

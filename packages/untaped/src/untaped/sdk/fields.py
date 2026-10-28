@@ -29,15 +29,7 @@ from enum import Enum
 from functools import cache
 from pathlib import Path
 from types import UnionType
-from typing import (
-    TYPE_CHECKING,
-    Annotated,
-    Any,
-    Union,
-    cast,
-    get_args,
-    get_origin,
-)
+from typing import TYPE_CHECKING, Annotated, Any, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
 from pydantic.types import PathType
@@ -1013,6 +1005,15 @@ class Stdin[R: BaseModel](FieldBlock):
             for value in self._read(given, allow_empty=allow_empty)
         ]
 
+    def envelopes(self, *, allow_empty: bool = False) -> list[str | PipeEnvelope]:
+        """What stdin carried, unvalidated: each a bare line or a row's kind, record and line.
+
+        For a command whose readers validate each row by its kind (lint's
+        providers), so a row no installed plugin declares, or one its model
+        refuses, is that reader's to report instead of ending the read.
+        """
+        return self._read((), allow_empty=allow_empty, what="records")
+
     def kind(self, row: BaseModel) -> str | None:
         """The kind of ``row``'s model among those this command reads (``None``: none of them).
 
@@ -1029,7 +1030,9 @@ class Stdin[R: BaseModel](FieldBlock):
             rows.append(value)
         return rows
 
-    def _read(self, given: Sequence[str], *, allow_empty: bool) -> list[str | PipeEnvelope]:
+    def _read(
+        self, given: Sequence[str], *, allow_empty: bool, what: str = "identifiers"
+    ) -> list[str | PipeEnvelope]:
         from untaped.sdk._stdin import read_stdin_input  # noqa: PLC0415 - only a reader pays
 
         if not self._requested:
@@ -1039,7 +1042,7 @@ class Stdin[R: BaseModel](FieldBlock):
         if given:
             raise UsageError("provide identifiers as positional args or via --stdin, not both")
         kinds = None if self._any or self.via is not None else tuple(self._kinds)
-        piped = read_stdin_input(accept_kinds=kinds, allow_empty=allow_empty)
+        piped = read_stdin_input(accept_kinds=kinds, what=what, allow_empty=allow_empty)
         return list(piped.values) if piped.records is None else list(piped.records)
 
     def _model(self, envelope: PipeEnvelope) -> type[BaseModel]:

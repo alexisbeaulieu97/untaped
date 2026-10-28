@@ -31,3 +31,10 @@ def test_the_root_mounts_the_plugin() -> None:
     listed = invoke_root(["plugin", "list", "--format", "json"])
     assert ("lint", "ready") in [(r["name"], r["status"]) for r in json.loads(listed.stdout)]
     assert "rules" in invoke_root(["lint", "--help"]).stdout
+
+
+def test_the_rule_module_guide_prints_its_examples_whole() -> None:
+    page = invoke_root(["docs", "lint", "guides", "rule-module"]).stdout
+    assert "```python\n# .untaped/lint/no_print.py\n" in page
+    assert "def test_no_print_passes_the_good_example() -> None:" in page
+    assert "`untaped docs lint inputs lint_file`.\n\n## Options" in page

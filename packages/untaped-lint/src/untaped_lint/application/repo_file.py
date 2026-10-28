@@ -111,7 +111,7 @@ class LintFile(_Model):
     (`untaped plugin new`).
     """
 
-    version: Literal[1]
+    version: Literal[1] = Field(description="The lint file's format: 1.")
     name: str = Field(description="The key of the repository's own rules: `house.no-print`.")
     exclude: list[str] = Field(
         default_factory=list, description="Globs left out of the files, beyond what git ignores."

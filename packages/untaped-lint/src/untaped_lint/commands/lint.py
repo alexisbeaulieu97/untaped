@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field
 
 from untaped.sdk import (
     Command,
     DryRun,
     Matched,
     Output,
+    PipeEnvelope,
     Positional,
     Record,
     Stdin,
@@ -97,11 +98,12 @@ class Lint(LintCommand):
         if report.predicate_hit(strict=self.findings.strict):
             raise Matched
 
-    def _piped(self) -> Iterator[tuple[str | None, dict[str, JsonValue]]]:
-        for value in self.stdin.values():
+    def _piped(self) -> Iterator[PipeEnvelope]:
+        # unvalidated: each provider validates the rows of the kind it reads
+        for value in self.stdin.envelopes():
             if isinstance(value, str):
                 raise UsageError("--stdin reads records: pipe untaped's --format pipe output")
-            yield self.stdin.kind(value), value.model_dump(mode="json")
+            yield value
 
 
 class Rules(LintCommand):

@@ -102,7 +102,10 @@ def run(
     candidates: Sequence[PluginCandidate] | None = None,
     root: Path | None = None,
 ) -> Report:
-    """Lint ``subjects`` with the installed providers; nothing is printed.
+    """Lint ``subjects`` with the providers of the current run; nothing is printed.
+
+    Call it under a run, as ``install(LintPlugin, ...).running()`` makes one:
+    the run names the providers and where the lint file is.
 
     ``root`` also lints that directory as ``untaped lint`` run there would:
     its ``Tree`` and the ``.untaped/lint.yml`` found from it (rules, readers,

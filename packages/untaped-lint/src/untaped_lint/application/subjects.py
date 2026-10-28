@@ -10,13 +10,11 @@ each one subject of its kind.
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pydantic import JsonValue
-
-from untaped.sdk import InstalledPlugin, UsageError, nearest_pyproject
+from untaped.sdk import InstalledPlugin, PipeEnvelope, UsageError, nearest_pyproject
 from untaped_lint.providers import conventions
 from untaped_lint.records import Finding, Subject, declared_kind, is_kind, public
 
@@ -68,17 +66,17 @@ def not_installed(name: str) -> Finding:
     return public(conventions.KEY, conventions.not_installed(name))
 
 
-def stdin_subjects(rows: Iterable[tuple[str | None, Mapping[str, JsonValue]]]) -> list[Subject]:
-    """Each piped row, as its kind and its record, a subject; a kind-less one is a usage error.
+def stdin_subjects(envelopes: Iterable[PipeEnvelope]) -> list[Subject]:
+    """Each pipe envelope as a subject of its kind; a kind-less one is a usage error.
 
     untaped's own row of ``plugin list`` (``root``) is skipped: the plugin
     check does not read untaped itself as an installed plugin yet.
     """
     subjects: list[Subject] = []
-    for kind, record in rows:
-        if not kind:
+    for envelope in envelopes:
+        if not envelope.kind:
             raise UsageError("a record on stdin has no kind; pipe untaped's --format pipe output")
-        if is_kind(kind, InstalledPlugin) and record.get("root"):
+        if is_kind(envelope.kind, InstalledPlugin) and envelope.record.get("root"):
             continue
-        subjects.append(Subject(kind=kind, record=dict(record)))
+        subjects.append(Subject(kind=envelope.kind, record=dict(envelope.record)))
     return subjects

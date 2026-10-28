@@ -260,6 +260,38 @@ def test_piped_plugin_list_checks_each_plugin() -> None:
     assert _rules(result) == ["acme.seen", "acme.seen"]
 
 
+def test_an_invalid_plugin_record_fails_that_plugin_and_the_rest_are_checked() -> None:
+    listed = install(LintPlugin, Git).cli(["plugin", "list", "-f", "pipe"]).stdout.splitlines()
+    rows = [json.loads(line) for line in listed if json.loads(line)["record"]["name"] == "git"]
+    broken = {**rows[0], "record": {**rows[0]["record"], "name": "broken", "status": 7}}
+    PluginReader.read.clear()
+    result = run(
+        ["--stdin", "-f", "json"],
+        input="\n".join(json.dumps(row) for row in (broken, rows[0])) + "\n",
+        providers={"acme": [PluginReader]},
+        plugins=[Git],
+    )
+    assert result.exit_code == 1
+    assert [plugin.name for plugin in PluginReader.read] == ["git"]
+    failures = [each for each in result.ran.diagnostics if each.level == "error"]
+    assert any("broken was not checked" in each.message for each in failures), failures
+
+
+def test_a_kind_no_installed_plugin_declares_warns_and_exits_0() -> None:
+    piped = json.dumps({"untaped": "1", "kind": "elsewhere.thing", "record": {"id": 1}})
+    result = _lint(input=piped + "\n")
+    assert result.exit_code == 0, result.stderr
+    assert _warnings(result)[0] == (
+        "warning: no installed rule reads elsewhere.thing records; see `untaped lint rules`"
+    )
+
+
+def test_an_empty_pipe_says_no_records_were_received() -> None:
+    result = _lint(input="")
+    assert result.exit_code == 1
+    assert "no records received on stdin" in result.stderr
+
+
 def test_a_rule_over_plugins_reads_the_record_after_conventions_ran(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
