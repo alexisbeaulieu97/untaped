@@ -307,24 +307,12 @@ def items_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None)
 {"untaped": "1", "kind": "acme.item", "record": {"repo": "octocat/Hello-World"}}
 ```
 
-A command that reads stdin declares a `Stdin[R]` field, which adds
-`--stdin`. It reads bare identifiers or a pipe stream; a row of a kind that is
-none of `R`'s exits 2 instead of being misread, and each row is validated as
-its kind's record (strictly, as JSON). In `run`, `self.stdin.identifiers(given)`
-gives each bare line or each row's `Key` field, `self.stdin.values(given)`
-each bare line or validated row, and `self.stdin.rows()` whole rows only:
-
-```python
-class Import(Command):
-    items: Positional[list[str]] = Field(default_factory=list)
-    stdin: Stdin[Item]
-
-    def run(self) -> None:
-        for name in self.stdin.identifiers(self.items):
-            ...
-```
-
-Each raises on empty stdin. When an empty pipe (a filter that matched
+A command that reads stdin declares `stdin: Stdin[Item]`, which adds
+`--stdin` and reads bare identifiers or a pipe stream: a row of a kind not
+`Item`'s exits 2 instead of being misread, and each row is validated strictly as
+its kind's record. `self.stdin.identifiers(given)` gives each bare line or
+row's `Key` field, `values(given)` each bare line or row, and `rows()` whole
+rows only. Each raises on empty stdin. When an empty pipe (a filter that matched
 nothing) should do nothing, pass `allow_empty=True`: it returns no values,
 which the command must treat as "nothing to do", never as "everything". A
 terminal stdin with nothing piped still raises.
