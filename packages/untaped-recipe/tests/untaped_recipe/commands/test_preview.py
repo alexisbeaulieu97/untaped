@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from untaped_recipe.commands.preview import preview_lines
+from untaped_recipe.commands.preview import ErrorRow, PreviewItem, preview_items
 from untaped_recipe.domain.plan import FileChange, TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.settings import RecipeSettings
@@ -38,9 +38,18 @@ def _plan(
     )
 
 
+def _text(item: PreviewItem) -> str:
+    """A line as is; rows as a header of their fields and one line of values each."""
+    if isinstance(item, str):
+        return item
+    names = list(type(item[0]).model_fields)
+    rows = ["  ".join(str(getattr(row, name)) for name in names) for row in item]
+    return "\n".join(["  ".join(names), *rows])
+
+
 def _preview(*args: object, **options: object) -> str:
-    """The preview's lines as one text, as the command prints them."""
-    return "\n".join(preview_lines(*args, **options))  # type: ignore[arg-type]
+    """The preview as one text: what the command prints, before core lays out its tables."""
+    return "\n".join(_text(item) for item in preview_items(*args, **options))  # type: ignore[arg-type]
 
 
 def test_recipe_settings_default_preview_max_rows_and_zero_unlimited() -> None:
@@ -188,16 +197,15 @@ def test_diff_preview_ignores_preview_row_limit(
     assert "showing first" not in stderr
 
 
-def test_table_preview_leaves_out_a_column_empty_on_every_row(
+def test_table_preview_hands_core_the_rows_and_leaves_no_empty_table(
     tmp_path: Path,
 ) -> None:
     failed = tmp_path / "failed"
 
-    shown = _preview(
+    items = preview_items(
         _recipe(),
         [TargetPlan(target=failed, status="error", error="")],
         preview="table",
     )
 
-    lines = shown.splitlines()
-    assert lines[1:] == ["target", str(failed)]
+    assert items[1:] == [[ErrorRow(target=str(failed), error="")]]

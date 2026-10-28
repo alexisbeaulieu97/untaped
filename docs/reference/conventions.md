@@ -114,6 +114,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: return the `Text` from an `Output` renderer (core prints it, in colour on a terminal); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
+| Preview table | Records a user reads on stderr before a question (planned changes) | `ctx.diag.info(rows, unmuted=True)`, or rows in a `preview=`: core lays them out as a stdout table, `Column` fields in the run's theme; never lay out a table or read the theme yourself |
 
 `ctx.diag` writes every stderr line; never `echo()` an `error:`, `warning:`
 or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before

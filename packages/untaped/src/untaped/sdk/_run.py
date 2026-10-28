@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import importlib
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -50,7 +50,13 @@ class Diag(Protocol):
 
     def emit(self, diagnostic: Diagnostic) -> None: ...
 
-    def info(self, text: str | Text, *, hint: str | None = None, unmuted: bool = False) -> None: ...
+    def info(
+        self,
+        text: str | Text | Sequence[BaseModel],
+        *,
+        hint: str | None = None,
+        unmuted: bool = False,
+    ) -> None: ...
 
     def success(self, text: str) -> None: ...
 
