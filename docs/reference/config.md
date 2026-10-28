@@ -174,7 +174,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
 | `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.source_data.max_age_seconds |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | none | deleted in 12.0; use ansible.caches.source_data.max_age_seconds |
-| `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | renamed |
+| `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | retired |
 | `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
 | `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | retired |
 | `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |

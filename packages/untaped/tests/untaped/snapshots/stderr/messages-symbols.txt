@@ -1,5 +1,3 @@
 ✓ a success line
 i a info line
 ! warning: a warning line
-✗ error: a error line
-✓ done

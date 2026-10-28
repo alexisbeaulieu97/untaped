@@ -868,7 +868,7 @@ class RepoStore:
         """Run a local ``git <argv>`` on the store repo (never a fetch: use :meth:`fetch`).
 
         Blob readers (``grep``, ``cat-file``, ``show``, ``archive``) belong on
-        a :meth:`prefetched` handle; ``check_conventions`` flags them here.
+        a :meth:`prefetched` handle; ``untaped lint`` flags them here.
         """
         if (
             not argv

@@ -194,11 +194,10 @@ def file_lines(
 ) -> list[str]:
     """The file rules' ``<where>::<rule>::<detail>`` lines for ``package`` in ``source_dir``.
 
-    Core's deprecated ``check_conventions`` reads
-    these lines to keep its rows unchanged until it is removed. An unreadable file is
-    one ``unreadable-file`` line and the other rules don't run. ``plugins``
-    are every installed plugin's records, which the import boundary reads;
-    a ``plugin`` without one there is checked as requiring nothing.
+    An unreadable file is one ``unreadable-file`` line and the other rules
+    don't run. ``plugins`` are every installed plugin's records, which the
+    import boundary reads; a ``plugin`` without one there is checked as
+    requiring nothing.
     """
     subject = next((each for each in plugins if each.name == plugin), None) or InstalledPlugin(
         name=plugin, status="ready", distribution="", version="", package=package

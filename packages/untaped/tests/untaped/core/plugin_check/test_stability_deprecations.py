@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core_test_support.plugin_check.support import Install
-from untaped.core.plugin_check.rules import core_plugin_violations
+from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime.registry import PluginCandidate
 
 _API = '''
@@ -169,7 +169,7 @@ def _rows(install: Install, plugin: dict[str, str] = _PLUGIN) -> list[str]:
         distribution="untaped-acme", name="acme", target="untaped_acme:SPEC"
     )
     rules = ("undated-deprecation", "untyped-deprecation", "deprecation-text", "unwarned-parameter")
-    found = core_plugin_violations("acme", candidates=[candidate])
+    found = plugin_violations("acme", candidates=[candidate])
     return [line for line in found if any(f"::{rule}::" in line for rule in rules)]
 
 

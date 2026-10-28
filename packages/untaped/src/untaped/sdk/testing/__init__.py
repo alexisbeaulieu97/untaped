@@ -1,10 +1,8 @@
 """Testing helpers for driving Cyclopts command apps with captured output.
 
-:func:`check_conventions` checks one installed plugin against
-``docs/reference/conventions.md``; its ``candidates`` argument composes a plugin
-passed in directly instead of one discovered through entry points.
 :func:`check_plugin` returns the rows of the checks only the composed root can
-answer, for a linter to judge.
+answer, for a linter to judge; its ``candidates`` argument composes a plugin
+passed in directly instead of one discovered through entry points.
 :func:`invoke_root` runs ``untaped ...`` in-process against the installed
 plugins. :func:`compose_with` and :func:`assert_fills` test contracts
 (``untaped.sdk.testing.contracts``); :func:`assert_surface` guards a plugin's
@@ -48,7 +46,6 @@ import copy
 import io
 import sys
 import threading
-import warnings
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
@@ -72,7 +69,7 @@ from untaped.sdk._run import (
 )
 from untaped.sdk._run import recording as _recording
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.marks import apply_marks, deprecated, experimental
+from untaped.sdk.marks import apply_marks, experimental
 from untaped.sdk.projects import Project, holder_of, init
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
@@ -134,7 +131,6 @@ __all__ = [
     "assert_surface",
     "cache_clock",
     "check",
-    "check_conventions",
     "check_plugin",
     "compose_with",
     "current_memory_store",
@@ -750,7 +746,7 @@ def plugin_candidate(
     distribution (the installed one, else ``untaped-<name>``), so
     ``distribution`` and ``requires_dist`` are refused.
 
-    Pass the result to ``check_conventions(..., candidates=[...])`` or
+    Pass the result to ``check_plugin(..., candidates=[...])`` or
     ``untaped.runtime.bootstrap.build_root_app(candidates=[...])``.
     """
     if isinstance(spec, type):
@@ -794,51 +790,7 @@ def check_plugin(
 
     found = list(discover_candidates()) if candidates is None else list(candidates)
     with bootstrap.composed_with(found) as result:
-        return check_plugins(result, found, name, core_only=True)
-
-
-# untaped's mark dates it on the surface; the literal under it is what mypy reports
-# (``deprecated_message``'s wording for that mark).
-@deprecated(removed_in=12, replacement="untaped_lint.testing.assert_clean from untaped[lint]")
-@warnings.deprecated(
-    "check_conventions is deprecated and will be removed in 12.0; "
-    "use untaped_lint.testing.assert_clean from untaped[lint]"
-)
-def check_conventions(
-    plugin: str,
-    *,
-    tests_dir: Path | None = None,
-    candidates: Sequence[PluginCandidate] | None = None,
-) -> None:
-    """Fail with every convention violation of ``plugin``.
-
-    The rules are in ``docs/reference/conventions.md#enforcement``.
-
-    Checks the installed plugin's command subtree and its own source
-    files: command grammar, stderr wording, package structure and layering.
-    ``tests_dir`` adds the private-test-import check over those tests.
-    ``candidates`` replaces entry-point discovery, so a test can compose a
-    provider that is not installed. ``# untaped: allow <rule>`` on the flagged
-    node's first line allows that one violation. A quarantined plugin
-    fails with the reason it was refused, such as a broken rename declaration.
-    The rules that read only the plugin's files run only when ``untaped[lint]``
-    is installed, which now owns them; without it a warning says so.
-    Composing, it brings back the composition it started with (and warns
-    about no quarantined plugin), and can't run inside a contract call.
-    """
-    from untaped.core.plugin_check.rules import (  # noqa: PLC0415
-        FILE_RULES_MISSING,
-        file_rules_installed,
-        plugin_violations,
-    )
-    from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
-
-    if not file_rules_installed():
-        warnings.warn(FILE_RULES_MISSING, UserWarning, stacklevel=3)  # past the deprecated wrapper
-
-    with bootstrap.kept_composition():
-        found = plugin_violations(plugin, tests_dir=tests_dir, candidates=candidates)
-    assert not found, "convention violations:\n" + "\n".join(f"  {line}" for line in found)
+        return check_plugins(result, found, name)
 
 
 class TtyStringIO(io.StringIO):

@@ -33,7 +33,6 @@ EXPECTED_ALL = [
     "assert_surface",
     "cache_clock",
     "check",
-    "check_conventions",
     "check_plugin",
     "compose_with",
     "current_memory_store",

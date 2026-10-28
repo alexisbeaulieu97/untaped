@@ -1,8 +1,7 @@
 """The rows an installed plugin is checked by: ``check(install)`` and doctor read them.
 
 Every check runs against the installed code (a developer's editable install
-included). The conventions (and lint's file rules, when ``untaped[lint]`` is
-installed) read the plugin's package; the contract checks compose only the
+included). The conventions read the plugin's package; the contract checks compose only the
 plugin and the owners it provides for, so nothing else installed changes the
 verdict:
 
@@ -36,35 +35,24 @@ if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import BoundProvider
 
 
-type _Violations = Callable[..., list[str]]
-
-
 def check_plugins(
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
     name: str | None,
-    *,
-    core_only: bool = False,
 ) -> list[PluginCheckRow]:
     """Every finding for plugin ``name``, or for every installed plugin when it is ``None``.
 
-    ``core_only`` leaves out the conventions that read only the plugin's
-    files (``untaped.sdk.testing.check_plugin``'s rows).
+    The conventions that read only the plugin's files are lint's, not run here.
     """
-    from untaped.core.plugin_check.rules import (  # noqa: PLC0415 - rules import the root
-        core_plugin_violations,
-        plugin_violations,
-    )
     from untaped.runtime.bootstrap import kept_composition  # noqa: PLC0415 - bootstrap is the root
 
     installed = sorted({candidate.name for candidate in candidates})
     if name is not None and name not in installed:
         raise UsageError(not_found("plugin", name, known=installed))
-    violations = core_plugin_violations if core_only else plugin_violations
     rows: list[PluginCheckRow] = []
     with kept_composition():
         for each in [name] if name is not None else installed:
-            rows += _check(each, result, candidates, violations)
+            rows += _check(each, result, candidates)
     return rows
 
 
@@ -72,7 +60,6 @@ def _check(
     name: str,
     result: CompositionResult,
     candidates: Sequence[PluginCandidate],
-    violations: _Violations,
 ) -> list[PluginCheckRow]:
     def row(check: str, title: str, status: str, detail: str = "") -> PluginCheckRow:
         return PluginCheckRow(plugin=name, check=check, title=title, status=status, detail=detail)
@@ -80,7 +67,7 @@ def _check(
     quarantined = next((record for record in result.quarantine if record.name == name), None)
     if quarantined is not None:
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
-    rows = _conventions(name, candidates, row, violations)
+    rows = _conventions(name, candidates, row)
     spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
     if owns_contracts(spec):
         rows += _contracts(name, candidates, row)
@@ -93,10 +80,13 @@ type _Row = Callable[..., PluginCheckRow]
 
 
 def _conventions(
-    name: str, candidates: Sequence[PluginCandidate], row: _Row, violations: _Violations
+    name: str, candidates: Sequence[PluginCandidate], row: _Row
 ) -> list[PluginCheckRow]:
+    # rules import the root
+    from untaped.core.plugin_check.rules import plugin_violations  # noqa: PLC0415
+
     try:
-        found = violations(name, candidates=candidates)
+        found = plugin_violations(name, candidates=candidates)
     except LookupError as exc:
         return [row("conventions", "plugin-name", "fail", str(exc))]
     if not found:

@@ -20,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("_isolated_config", "fresh_composition")
 _CONFIG = """\
 format_version: 2
 awx:
-  base_url: https://aap.example.com
+  server: {url: https://aap.example.com}
 jira:
   server: {url: https://jira.example.com}
 """

@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
 from lint_test_support import Site
-from untaped.core.plugin_check.rules import plugin_violations
-from untaped.sdk import PluginSpec
-from untaped.sdk.testing import plugin_candidate
 from untaped_lint.infrastructure.files import source_files
+from untaped_lint.providers.conventions import file_lines
 from untaped_lint.providers.conventions.terminal_boundary import RULE, terminal_boundary_violations
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -79,41 +76,9 @@ def test_clean_files_pass(tmp_path: Path, source: str) -> None:
     assert _violations(tmp_path, source) == []
 
 
-def test_check_conventions_reports_it_for_a_plugin(site: Site) -> None:
-    site(
-        {
-            "demo/__init__.py": """
-                from __future__ import annotations
-
-                from pydantic import BaseModel, ConfigDict
-
-                from untaped.sdk import PluginSpec
-
-
-                class Settings(BaseModel):
-                    model_config = ConfigDict(frozen=True)
-
-
-                def build_app():
-                    from untaped.sdk import create_app
-
-                    return create_app(name="demo", help="Demo.")
-
-
-                SPEC = PluginSpec(
-                    name="demo",
-                    app_factory=build_app,
-                    settings=Settings,
-                )
-            """,
-            "demo/tool.py": "from prompt_toolkit import Application\n",
-        }
+def test_lint_reports_it_for_a_plugin(site: Site) -> None:
+    root = site(
+        {"demo/__init__.py": "", "demo/tool.py": "from prompt_toolkit import Application\n"}
     )
-    found = plugin_violations("demo", candidates=[plugin_candidate(_spec())])
+    found = file_lines("demo", root / "demo", plugin="demo", plugins=[])
     assert f"demo/tool.py:1::terminal-boundary::{MESSAGE}" in found
-
-
-def _spec() -> PluginSpec:
-    spec = importlib.import_module("demo").SPEC
-    assert isinstance(spec, PluginSpec)
-    return spec

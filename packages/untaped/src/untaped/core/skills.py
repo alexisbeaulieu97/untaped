@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-import warnings
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -17,7 +16,6 @@ from untaped.core import skill_stubs
 from untaped.core.skill_stubs import STUB_MARKER, Comparison, StubAuthor
 from untaped.sdk._stdin import read_identifiers
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.marks import deprecated
 from untaped.sdk.projects import checkout_root
 from untaped.sdk.storage._fs import atomic_write, is_write_temp
 
@@ -195,18 +193,6 @@ class InstalledSkill:
     def home(self) -> bool:
         """Whether it sits in a home-folder skill root, decided by path alone."""
         return self.path.parent.resolve() in {root.resolve() for root in home_skill_roots()}
-
-
-# untaped's mark dates it on the surface; the literal under it is what mypy reports.
-@deprecated(removed_in=12, replacement=checkout_root)
-@warnings.deprecated("project_root is deprecated and will be removed in 12.0; use `checkout_root`")
-def project_root(start: Path) -> Path:
-    """Return :func:`checkout_root` of ``start``, else ``start`` itself.
-
-    Deprecated, and its warning names the release that removes it: use
-    ``checkout_root(start) or start``.
-    """
-    return checkout_root(start) or start.resolve()
 
 
 def home_skill_roots() -> frozenset[Path]:

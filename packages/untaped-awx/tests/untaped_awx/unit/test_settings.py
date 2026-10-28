@@ -36,3 +36,16 @@ def test_the_retired_test_timeout_is_not_read(capsys: pytest.CaptureFixture[str]
 
     assert settings.test_timeout_seconds == AwxSettings().test_timeout_seconds
     assert "test_timeout" not in capsys.readouterr().err
+
+
+def test_the_retired_base_url_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
+    config = home().expanduser() / "config.yml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        yaml.safe_dump({"format_version": 2, "awx": {"base_url": "https://aap.example.com"}})
+    )
+
+    settings = get_config_section("awx", AwxSettings)
+
+    assert settings.server is None
+    assert "base_url" not in capsys.readouterr().err

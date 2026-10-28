@@ -17,7 +17,6 @@ from __future__ import annotations
 import importlib as _importlib
 import typing as _typing
 
-from untaped.core.skills import project_root  # type: ignore[deprecated]
 from untaped.runtime.registry import PluginSpec, SkillAsset, plugin_dir
 from untaped.runtime.settings import HttpSettings, get_config_section
 from untaped.runtime.sink import Diagnostics
@@ -33,9 +32,7 @@ from untaped.screen.picker import (
 )
 from untaped.sdk._app_context import AppContext, app_context
 from untaped.sdk._batch import BatchOutcome, batch_apply, finish
-
-# report_error and report_row_errors are deprecated; the SDK exports them until their removal.
-from untaped.sdk._cli import (  # type: ignore[deprecated]
+from untaped.sdk._cli import (
     ColumnsOption,
     DryRunOption,
     FormatOption,
@@ -55,9 +52,7 @@ from untaped.sdk._cli import (  # type: ignore[deprecated]
     parse_kv_pairs,
     raise_usage,
     render_rows,
-    report_error,
     report_errors,
-    report_row_errors,
     resolve_each,
     writes,
 )
@@ -490,9 +485,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "not_found",
     "raise_usage",
     "rejected_token_error",
-    "report_error",
     "report_errors",
-    "report_row_errors",
     "run_hint",
     # input
     "AbsolutePath",
@@ -547,7 +540,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "find_program",
     "git_toplevel",
     "nearest_pyproject",
-    "project_root",
     "run_git",
     "safe_path_segment",
     "same_origin",

@@ -48,8 +48,8 @@ Rules the sink keeps:
 
 A presentation (``rendered``) may accompany a diagnostic: the exact text the
 text renderer prints (a callable taking whether to colour, or a string). It
-is not on the wire and never reaches a JSON line: a themed ``ui.message``
-line, a styled ``info`` line, an error with its ``hint:`` line, a debug log
+is not on the wire and never reaches a JSON line: a themed empty-table
+note, a styled ``info`` line, an error with its ``hint:`` line, a debug log
 record as its formatter writes it.
 """
 
@@ -88,7 +88,6 @@ from untaped.sdk.diagnostic import (
     StaleData,
     format_error,
     kind_of,
-    split_hint,
 )
 from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
 from untaped.sdk.progress import ProgressHandle
@@ -104,7 +103,6 @@ type Rendered = Callable[[bool], str] | str
 """A line's text presentation: a string, or a callable given whether to colour."""
 
 _HINT_PREFIX = "hint: "
-_ECHO_LEVELS = (("warning: ", "warning"), (_HINT_PREFIX, "hint"))
 
 # --------------------------------------------------------------------------- #
 # The writer: one lock, one write per line, the spinner cleared and redrawn
@@ -605,9 +603,8 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
     """The text line of a diagnostic emitted without a presentation.
 
     An ``info``, ``success`` or ``warning`` message and a deprecation render
-    through the theme (``theme``: the policy's, else the default), as
-    ``ui.message`` does; its ``hint:`` line, a failure, a debug line and a
-    stale-data line do not.
+    through the theme (``theme``: the policy's, else the default); its
+    ``hint:`` line, a failure, a debug line and a stale-data line do not.
     """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):
@@ -661,26 +658,6 @@ def _json(diagnostic: Diagnostic) -> str:
     return json.dumps(record | fields, default=str)
 
 
-def echo_diagnostic(text: str) -> Diagnostic | None:
-    """The diagnostic an ``echo(text, err=True)`` line stands for (``None``: a blank one).
-
-    An ``error:`` prefix is a :meth:`~untaped.sdk.diagnostic.Failure.plain`
-    (its ``hint:`` lines become ``hint``); ``warning:`` and ``hint:`` are a
-    :class:`~untaped.sdk.diagnostic.Message` of that level; anything else
-    is ``info``. URL passwords are masked.
-    """
-    if not text.strip():
-        return None
-    text = redact_url_password(text)
-    if text.startswith("error: "):
-        message, hint = split_hint(text.removeprefix("error: "))
-        return Failure.plain(message, hint=hint)
-    for prefix, level in _ECHO_LEVELS:
-        if text.startswith(prefix):
-            return Message(level=level, message=text.removeprefix(prefix).strip())
-    return Message(level="info", message=text.strip())
-
-
 # --------------------------------------------------------------------------- #
 # A run's output and its sink
 # --------------------------------------------------------------------------- #
@@ -693,10 +670,6 @@ class Sink(Protocol):
         self, diagnostic: Diagnostic, *, rendered: Rendered | None = None, unmuted: bool = False
     ) -> None:
         """Count, render and write one line (``unmuted``: ``--quiet`` never mutes it)."""
-        ...
-
-    def echo(self, text: str, *, end: str = "\n") -> None:
-        """Print ``text`` verbatim, or its diagnostic as a JSON line (:func:`echo_diagnostic`)."""
         ...
 
     def relay(self, text: str, *, end: str = "\n") -> None:
@@ -751,13 +724,6 @@ class _RunSink:
         self, diagnostic: Diagnostic, *, rendered: Rendered | None = None, unmuted: bool = False
     ) -> None:
         self._emit(diagnostic, rendered, unmuted=unmuted, end="\n")
-
-    def echo(self, text: str, *, end: str = "\n") -> None:
-        diagnostic = echo_diagnostic(text)
-        if diagnostic is not None:
-            self._emit(diagnostic, text, unmuted=True, end=end)
-        elif self.policy.diagnostics == "text":
-            self._out(text + end)
 
     def _emit(
         self,
@@ -1211,7 +1177,7 @@ class Diagnostics:
     def relay(self, text: str) -> None:
         """Print another tool's output (a hook's stderr, a job log) as is, never counted.
 
-        Unlike ``echo(err=True)``, an ``error:`` line it relays is not a failure.
+        An ``error:`` line it relays is not a failure.
         """
         self._sink().relay(text)
 

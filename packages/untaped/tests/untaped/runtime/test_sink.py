@@ -25,12 +25,11 @@ from untaped.runtime.sink import (
     failure_exit_code,
 )
 from untaped.screen.core import Cmd, Quit, Screen
-from untaped.sdk._cli import echo
 from untaped.sdk._run import Run, recording, run_or_none
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import UiContext
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
 
 _DEADLINE = 10.0
@@ -478,15 +477,11 @@ def test_the_fix_relay_writes_through_the_sink_around_the_spinner() -> None:
     assert into == ["child line one\n", "child line two\n"]
 
 
-def test_an_echoed_error_line_counts() -> None:
-    with (
-        pytest.warns(DeprecationWarning, match=r"ctx\.diag|Diagnostics"),
-        redirect_stderr(io.StringIO()),
-        _opened(),
-    ):
-        echo("warning: y", err=True)
+def test_a_failure_line_counts_and_a_warning_does_not() -> None:
+    with redirect_stderr(io.StringIO()), _opened():
+        Diagnostics().warning("y")
         exit_on_counted_failure()  # a warning counts nothing
-        echo("error: x", err=True)
+        Diagnostics().failure(UntapedError("x"))
         with pytest.raises(SystemExit) as exited:
             exit_on_counted_failure()
 

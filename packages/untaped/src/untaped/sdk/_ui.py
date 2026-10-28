@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import sys
-import warnings
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, Annotated, TextIO
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, TextIO
 
 from untaped.runtime.render import (
-    MessageKind,
     Row,
     render_collection,
     render_detail,
@@ -18,19 +16,18 @@ from untaped.runtime.render import (
     should_colorize,
     stream_is_tty,
 )
-from untaped.runtime.sink import Diagnostics, count_row_failures, current_sink
+from untaped.runtime.sink import count_row_failures, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat, resolve_theme_or_default
 from untaped.sdk._run import is_quiet, is_verbose
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk.diagnostic import Failure, Message
+from untaped.sdk.diagnostic import Message
 from untaped.sdk.errors import (
     ConfigError,
     OperationCancelledError,
     PromptInterruptedError,
     UsageError,
 )
-from untaped.sdk.marks import deprecated, deprecated_parameters, experimental
-from untaped.sdk.progress import ProgressHandle
+from untaped.sdk.marks import experimental
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
     PromptChoice,
@@ -133,7 +130,7 @@ class UiContext:
             kind=kind,
         )
         if not rows and fmt == "table" and empty:
-            self._emit_message("info", empty if isinstance(empty, str) else "No results.")
+            self._empty_note(empty if isinstance(empty, str) else "No results.")
         return rendered
 
     def detail(
@@ -154,76 +151,33 @@ class UiContext:
             kind=kind,
         )
 
-    # untaped's mark dates each on the surface; the literal under it is what mypy
-    # reports (the mark's sentence, kept equal by ``deprecation_text_violations``).
-    @deprecated(
-        removed_in=12,
-        replacement="ctx.diag.info, .success or .warning, or ctx.diag.failure(Failure.plain(text))",
-    )
-    @warnings.deprecated(
-        "UiContext.message is deprecated and will be removed in 12.0; use ctx.diag.info, "
-        ".success or .warning, or ctx.diag.failure(Failure.plain(text))"
-    )
-    def message(self, kind: MessageKind, text: str) -> None:
-        """Print a ``success``/``info``/``warning``/``error`` line to stderr.
-
-        Deprecated, and its warning names the release that removes it:
-        write through ``ctx.diag`` instead.
-
-        ``--quiet`` (or a context built with ``quiet=True``) mutes ``success``
-        and ``info``. An ``error`` line is a counted failure (category
-        ``failed``). Under JSON diagnostics the line is
-        ``{"level": kind, "kind": …, "message": text}``.
-        """
-        self._emit_message(kind, text)
-
-    def _emit_message(self, kind: MessageKind, text: str) -> None:
-        """:meth:`message`'s body, rendered with this context's own theme and ``quiet``."""
-        if self.quiet and kind in ("success", "info"):
+    def _empty_note(self, text: str) -> None:
+        """An empty table's ``info`` line on stderr, with this context's own theme and ``quiet``."""
+        if self.quiet:
             return
-        diagnostic = Failure.plain(text) if kind == "error" else Message(level=kind, message=text)
 
         def rendered(color: bool) -> str:
-            return render_message(kind, text, theme=self.theme, colorize=color)
+            return render_message("info", text, theme=self.theme, colorize=color)
 
-        current_sink().emit(diagnostic, rendered=rendered)
+        current_sink().emit(Message(level="info", message=text), rendered=rendered)
 
-    @deprecated(removed_in=12, replacement=Diagnostics.success)
-    @warnings.deprecated(
-        "UiContext.success is deprecated and will be removed in 12.0; use `Diagnostics.success`"
-    )
-    def success(self, text: str) -> None:
-        """Print a success line to stderr (muted by ``--quiet``); deprecated: ``ctx.diag``."""
-        self._emit_message("success", text)
-
-    @deprecated_parameters
     def styled(
         self,
         text: Text | str,
         *,
-        err: Annotated[
-            bool,
-            deprecated(
-                removed_in=12,
-                replacement="ctx.diag.info(text, unmuted=True), or ctx.diag.relay for "
-                "another tool's output",
-            ),
-        ] = False,
         tail: str = "",
         truncate: bool = False,
     ) -> None:
-        """Print a Rich-styled line to stdout, or to stderr with ``err``.
+        """Print a Rich-styled line to stdout.
 
         Color is emitted only where the stream supports it (TTY, honoring
         ``NO_COLOR``/``FORCE_COLOR``). Use it for streamed human-readable
-        output such as live job events; unlike :meth:`message`, ``--quiet``
-        does not mute it. ``tail`` follows the styled text verbatim: never
-        wrapped, tab-expanded or styled (a streamed log line after a styled
+        output such as live job events; ``--quiet`` does not mute it.
+        ``tail`` follows the styled text verbatim: never wrapped,
+        tab-expanded or styled (a streamed log line after a styled
         ``[label] ``). With ``truncate``, each line of ``text`` too wide for
         the terminal ends in an ellipsis instead of wrapping (aligned output
-        such as trees). Under JSON diagnostics a stderr line is an ``info``
-        JSON line. ``err=True``: deprecated, and its warning names the release
-        that removes it; write stderr through ``ctx.diag.info(text, unmuted=True)``.
+        such as trees). Write stderr through ``ctx.diag.info(text, unmuted=True)``.
         """
         plain = text if isinstance(text, str) else text.plain
         # Rendering may drop trailing spaces: render without them, then restore.
@@ -235,26 +189,7 @@ class UiContext:
             styled = render_styled(text, colorize=color, truncate=truncate) if plain.strip() else ""
             return styled + trailing + tail
 
-        if err:
-            message = Message(level="info", message=plain + tail)
-            current_sink().emit(message, rendered=rendered, unmuted=True)
-            return
         print(rendered(should_colorize(self.stdout)), file=self.stdout, flush=True)
-
-    @deprecated(removed_in=12, replacement=Diagnostics.progress)
-    @warnings.deprecated(
-        "UiContext.progress is deprecated and will be removed in 12.0; use `Diagnostics.progress`"
-    )
-    def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
-        """Report progress for a blocking operation on stderr (deprecated: ``ctx.diag``).
-
-        TTY renders an animated spinner; elsewhere it prints lines at the
-        sink's cadence (``untaped.progress`` lines under JSON diagnostics);
-        under ``verbose`` every update is a line. stdout stays untouched so
-        piped data is never polluted. ``--quiet`` (or a context built with
-        ``quiet=True``) silences it.
-        """
-        return current_sink().progress(label, verbose=self.verbose, quiet=self.quiet)
 
     def confirm(self, message: str, *, default: bool = False) -> bool:
         """Prompt for a yes/no response."""
