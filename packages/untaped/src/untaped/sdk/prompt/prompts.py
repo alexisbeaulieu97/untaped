@@ -35,12 +35,12 @@ class PromptBackend(Protocol):
 
     A backend may also set ``needs_terminal = False`` (an optional attribute,
     read with a default of ``True``) to say it never draws on a terminal, so
-    :class:`UiContext` does not look for one before handing it a screen
-    (:meth:`UiContext.run`) or a request (:meth:`UiContext.pick_many`), and
+    :class:`Terminal` does not look for one before handing it a screen
+    (:meth:`Terminal.run`) or a request (:meth:`Terminal.pick_many`), and
     leaves a prompt's streams as they are. A prompt still requires a TTY stdin
     (:class:`untaped.sdk.testing.TtyStringIO` in tests).
 
-    To run screens (:meth:`UiContext.run`) a backend also defines
+    To run screens (:meth:`Terminal.run`) a backend also defines
     ``run_screen(screen, *, theme) -> Quit | Cancel``, which runs ``screen``
     and returns how it ended. The method is optional, so a backend written
     before screens still type-checks; ``ui.run`` on one without it raises
@@ -61,14 +61,6 @@ class PromptBackend(Protocol):
         default: T | None,
         search: bool,
     ) -> T: ...
-
-    def multiselect(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[T]],
-        *,
-        defaults: Sequence[T],
-    ) -> list[T]: ...
 
     def pick_many(self, request: PickRequest) -> PickResult | None: ...
 
@@ -137,11 +129,11 @@ def reset_terminal_override(token: Token[Callable[[], TextIO] | None]) -> None:
 class TerminalPromptBackend:
     """The interactive backend: every prompt is a screen run on the terminal streams.
 
-    Text, secret, select, multiselect and confirm are the inline screens of
+    Text, secret, select and confirm are the inline screens of
     :mod:`untaped.screen.prompts`, and :meth:`pick_many` the picker's full-screen
     one, all run by :meth:`run_screen`. How a screen ends maps onto the line
     prompts' exceptions: an interrupt raises :class:`KeyboardInterrupt` (exit
-    130 through ``UiContext``) and a cancel raises :class:`EOFError` (exit 1).
+    130 through ``Terminal``) and a cancel raises :class:`EOFError` (exit 1).
     """
 
     def __init__(
@@ -200,25 +192,11 @@ class TerminalPromptBackend:
         self._record(message, choices[index].label)
         return choices[index].value
 
-    def multiselect(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[T]],
-        *,
-        defaults: Sequence[T],
-    ) -> list[T]:
-        from untaped.screen.prompts import multiselect_screen  # noqa: PLC0415
-
-        checked = [i for i, item in enumerate(choices) if item.value in defaults]
-        picked = self._answer(multiselect_screen(message, choices, checked))
-        self._record(message, ", ".join(choices[index].label for index in picked))
-        return [choices[index].value for index in picked]
-
     def pick_many(self, request: PickRequest) -> PickResult | None:
         """Run the two-pane picker as a screen on this backend's terminal streams.
 
         Returns ``None`` when the user cancelled; an interrupt raises
-        :class:`KeyboardInterrupt`, which ``UiContext`` maps like every prompt.
+        :class:`KeyboardInterrupt`, which ``Terminal`` maps like every prompt.
         """
         from untaped.screen.core import Quit  # noqa: PLC0415
         from untaped.screen.picker.screen import picker_screen  # noqa: PLC0415

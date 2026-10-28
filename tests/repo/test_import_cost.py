@@ -89,12 +89,12 @@ def test_screen_core_does_not_load_prompt_toolkit() -> None:
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 
 
-def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> None:
+def test_building_a_terminal_and_rendering_does_not_load_prompt_toolkit() -> None:
     snippet = (
-        "from untaped.sdk._ui import UiContext\n"
-        "ctx = UiContext()\n"
-        "ctx.collection([{'id': 1, 'name': 'alpha'}], fmt='json')\n"
-        "ctx.collection([], fmt='table', empty=True)\n"
+        "from untaped.sdk._ui import Ui, collection\n"
+        "ctx = Ui()\n"
+        "collection(ctx, [{'id': 1, 'name': 'alpha'}], fmt='json')\n"
+        "collection(ctx, [], fmt='table', empty=True)\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 

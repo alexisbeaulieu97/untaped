@@ -1,12 +1,12 @@
-"""The one-shot prompts (text, secret, select, multiselect, confirm) as inline screens.
+"""The one-shot prompts (text, secret, select, confirm) as inline screens.
 
-``ui.text``, ``ui.secret``, ``ui.select``, ``ui.multiselect`` and ``ui.confirm``
+``terminal.text``, ``terminal.secret``, ``terminal.select`` and ``terminal.confirm``
 ask one question each, so each is a small ``layout="inline"`` screen built from
 the same components as every other screen (``TextInput``, ``SecretInput``,
-``SingleList``, ``SearchList``, ``MultiList``): one prompt stack, one look, the
+``SingleList``, ``SearchList``): one prompt stack, one look, the
 theme's symbols, colors and border. :class:`~untaped.sdk.prompt.prompts.TerminalPromptBackend`
-builds a screen and runs it; nothing here touches a terminal. ``select_screen`` and
-``multiselect_screen`` take the caller's choices and answer with positions, so the
+builds a screen and runs it; nothing here touches a terminal. ``select_screen``
+takes the caller's choices and answers with a position, so the
 backend maps an answer back to its choice (two rows may share a value).
 
 The question is the box's label. A question too long for the border (or one that
@@ -16,7 +16,7 @@ answer (``EOFError`` at the backend, exit 1) and ctrl-c is an interrupt (exit
 130). A ``secret_screen`` quits with the secrets as ``SecretStr`` so nothing
 secret is ever a frame or a ``repr``.
 
-The screens say ``this prompt`` where a screen names its command: ``UiContext`` secures
+The screens say ``this prompt`` where a screen names its command: ``Terminal`` secures
 the terminal (stdin and stderr, the controlling terminal when either is redirected)
 before a prompt runs and refuses with its own message, so the no-terminal message of a
 screen is never shown for them. Esc cancels a prompt, so the footer says ``esc cancel``
@@ -35,7 +35,7 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.screen.components.choices import ListItem, MultiList, SingleList, rows_budget
+from untaped.screen.components.choices import ListItem, SingleList, rows_budget
 from untaped.screen.components.draw import role_style
 from untaped.screen.components.inputs import SecretInput, TextInput
 from untaped.screen.components.lists import SearchList, default_rows
@@ -55,14 +55,13 @@ from untaped.sdk.prompt.prompts import PromptChoice
 
 __all__ = [
     "confirm_screen",
-    "multiselect_screen",
     "secret_screen",
     "select_screen",
     "text_screen",
 ]
 
 #: What a prompt screen names where other screens name their command and alternative;
-#: never shown, because ``UiContext`` has secured a terminal before a prompt runs.
+#: never shown, because ``Terminal`` has secured a terminal before a prompt runs.
 PROMPT_COMMAND = "this prompt"
 PROMPT_ALTERNATIVE = "the command's options"
 
@@ -78,7 +77,7 @@ CONFIRM_NO = ("n", "no")
 #: Esc cancels a one-shot prompt, so its footer says so instead of ``esc back``.
 _CANCEL_LABEL = MappingProxyType({"esc": "cancel"})
 
-type _Labelled = TextInput | SecretInput | SingleList | SearchList | MultiList
+type _Labelled = TextInput | SecretInput | SingleList | SearchList
 
 
 @dataclass(frozen=True)
@@ -101,7 +100,7 @@ def _fitted(frame: Frame, field: _Labelled, *, spent: int) -> _Labelled:
 
     ``spent`` is the lines the prompt draws besides the field's own box.
     """
-    if isinstance(field, SingleList | MultiList):
+    if isinstance(field, SingleList):
         natural, chrome = rows_budget(frame), _LIST_CHROME
     elif isinstance(field, SearchList):
         natural, chrome = default_rows(frame), _SEARCH_CHROME
@@ -314,41 +313,6 @@ def _typing(model: _Choose) -> bool:
 def _select_esc_label(model: _Choose) -> str:
     """Esc clears a typed query before it cancels the prompt."""
     return "clear" if _typing(model) else "cancel"
-
-
-@dataclass(frozen=True)
-class _Multi:
-    field: MultiList
-
-
-def multiselect_screen(
-    message: str, choices: Sequence[PromptChoice[Any]], defaults: Sequence[int] = ()
-) -> Screen[_Multi, list[int]]:
-    """Several choices: space toggles a row, enter answers with the checked positions in order.
-
-    ``defaults`` are the positions that start checked.
-    """
-    items = _items(choices)
-    checked = frozenset(str(index) for index in defaults)
-
-    def update(model: _Multi, msg: object) -> tuple[_Multi, list[Cmd]]:
-        match msg:
-            case Activate():
-                return model, [Cmd.send(Quit([int(item_id) for item_id in model.field.value]))]
-        field, cmds = model.field.update(msg)
-        return (model if field is model.field else replace(model, field=field)), cmds
-
-    return Screen(
-        init=lambda: (_Multi(MultiList(message, items, selected=checked)), []),
-        update=_ends_on_end_of_input(update),
-        view=lambda model, frame: _draw(frame, model.field),
-        title=message,
-        command=PROMPT_COMMAND,
-        alternative=PROMPT_ALTERNATIVE,
-        keys=(Binding(" ", "toggle", None), _end_of_input()),
-        shared_labels=_CANCEL_LABEL,
-        layout="inline",
-    )
 
 
 # --- confirm ------------------------------------------------------------------

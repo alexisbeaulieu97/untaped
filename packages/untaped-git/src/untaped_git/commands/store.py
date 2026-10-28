@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from untaped.sdk import Command, Output, echo, plural, shown_path, size_text
+from untaped.sdk import Command, Output, plural, shown_path, size_text
 from untaped_git.records import RepoCount, StoreReport
 from untaped_git.report import store_report
 from untaped_git.settings import GitSettings, store_root
 from untaped_git.version import git_version, version_text
 
 
-def _print_lines(report: StoreReport) -> None:
-    for line in report_lines(report):
-        echo(line)
+def _lines(report: StoreReport) -> list[str]:
+    return list(report_lines(report))
 
 
 class Store(Command[GitSettings]):
@@ -37,7 +36,7 @@ class Store(Command[GitSettings]):
     and the store.
     """
 
-    output: Output[StoreReport] = Output(render={"table": _print_lines})
+    output: Output[StoreReport] = Output(render={"table": _lines})
 
     def run(self) -> StoreReport:
         version = git_version()

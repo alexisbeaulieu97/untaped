@@ -2,7 +2,7 @@
 
 import pytest
 
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Ui
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.testing import CliResult, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
@@ -29,18 +29,18 @@ def test_scripted_backend_exhausted_queue_raises_config_error() -> None:
         backend.confirm("Continue?", default=False)
 
 
-def test_ui_context_uses_override_backend_on_a_tty_stdin() -> None:
+def test_the_terminal_uses_override_backend_on_a_tty_stdin() -> None:
     backend = ScriptedPromptBackend(confirms=[False])
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
     assert ui.confirm("Continue?") is False
     assert backend.calls == [("confirm", "Continue?")]
 
 
 def test_invoke_cli_injects_backend_and_fake_tty() -> None:
-    from untaped.sdk._ui import ui_context
+    from untaped.sdk._ui import build_terminal
 
     def command(args, *, console=None, error_console=None):
-        ui = ui_context(strict=False)
+        ui = build_terminal(strict=False)
         answer = ui.confirm("Proceed?")
         raise SystemExit(0 if answer else 1)
 
@@ -62,13 +62,13 @@ def test_invoke_cli_default_stdin_is_not_a_tty() -> None:
 def test_destructive_contract_passes_for_a_conforming_command() -> None:
     """A command wired through batch_apply(destructive=True) satisfies both legs."""
     from untaped.sdk._batch import batch_apply
-    from untaped.sdk._ui import ui_context
+    from untaped.sdk._ui import build_terminal
     from untaped.sdk.testing import assert_destructive_contract
 
     executed: list[str] = []
 
     def command(args, *, console=None, error_console=None):
-        ui = ui_context(strict=False)
+        ui = build_terminal(strict=False)
         outcome = batch_apply(
             ["a"],
             lambda item: executed.append(item),

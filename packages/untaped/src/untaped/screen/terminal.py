@@ -220,7 +220,7 @@ def run_screen_on[M, R](
 ) -> Outcome[R]:
     """:func:`run_terminal_screen` reading ``stdin`` and drawing on ``stderr``.
 
-    The streams are the ones ``UiContext`` prompts on: the process's own, or
+    The streams are the ones ``Terminal`` prompts on: the process's own, or
     the controlling terminal opened for the block.
     """
     return run_terminal_screen(

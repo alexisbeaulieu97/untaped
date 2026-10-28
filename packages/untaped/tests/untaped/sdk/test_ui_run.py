@@ -1,4 +1,4 @@
-"""``UiContext.run``: results, cancellation, and the terminal rule every screen shares."""
+"""``Terminal.run``: results, cancellation, and the terminal rule every screen shares."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from untaped.screen.core import Cancel, Cmd, Key, Quit, Screen
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.sdk._cli import create_app, report_errors
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import UiContext, no_terminal_message
+from untaped.sdk._ui import Ui, no_terminal_message
 from untaped.sdk.errors import (
     ConfigError,
     OperationCancelledError,
@@ -51,8 +51,8 @@ def _screen(title: str = "Name it") -> Screen[str, str]:
     )
 
 
-def _interactive(backend: ScriptedPromptBackend) -> UiContext:
-    return UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+def _interactive(backend: ScriptedPromptBackend) -> Ui:
+    return Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
 
 
 def test_run_returns_the_quit_result() -> None:
@@ -91,7 +91,7 @@ def test_run_without_a_terminal_names_the_command_and_alternative() -> None:
     @app.default
     def go() -> None:
         with report_errors():
-            UiContext(stdin=io.StringIO()).run(_screen())
+            Ui(stdin=io.StringIO()).run(_screen())
 
     result = CliInvoker().invoke(app, [])  # the harness has no controlling terminal
     assert result.exit_code == 2
@@ -104,7 +104,7 @@ def test_a_command_test_runs_a_screen_through_the_scripted_backend_without_a_ter
     @app.default
     def go() -> None:
         with report_errors():
-            name = UiContext().run(_screen())  # the context the command builds itself
+            name = Ui().run(_screen())  # the context the command builds itself
             sys.stdout.write(f"hello {name}\n")
 
     backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
@@ -120,7 +120,7 @@ def test_a_command_test_with_an_interactive_stdin_needs_no_terminal_for_a_screen
     @app.default
     def go() -> None:
         with report_errors():
-            sys.stdout.write(f"{UiContext().run(_screen())}\n")
+            sys.stdout.write(f"{Ui().run(_screen())}\n")
 
     backend = ScriptedPromptBackend(screens=["typed"])
     result = CliInvoker().invoke(app, [], interactive=True, prompt_backend=backend)
@@ -131,7 +131,7 @@ def test_a_backend_that_needs_a_terminal_still_gets_the_refusal() -> None:
     class Plain(ScriptedPromptBackend):
         needs_terminal = True
 
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=Plain(screens=["x"]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=Plain(screens=["x"]))
     with pytest.raises(UsageError, match="needs a terminal"):
         ui.run(_screen())
 
@@ -155,18 +155,13 @@ class _BeforeScreens:
     ) -> T:
         return choices[0].value
 
-    def multiselect[T](
-        self, message: str, choices: Sequence[PromptChoice[T]], *, defaults: Sequence[T]
-    ) -> list[T]:
-        return list(defaults)
-
     def pick_many(self, request: PickRequest) -> PickResult | None:
         return None
 
 
 def test_a_backend_without_run_screen_is_still_a_backend_and_run_names_the_method() -> None:
     backend: PromptBackend = _BeforeScreens()  # type-checks: run_screen is optional
-    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
     assert ui.confirm("ok?", default=True)
     with pytest.raises(ConfigError, match=r"_BeforeScreens.*run_screen"):
         ui.run(_screen())
@@ -200,7 +195,7 @@ class _Spy(ScriptedPromptBackend):
 
     needs_terminal = True  # the terminal rules are what these tests are about
 
-    def __init__(self, ui_holder: list[UiContext], answer: object = "ok") -> None:
+    def __init__(self, ui_holder: list[Ui], answer: object = "ok") -> None:
         super().__init__(screens=[answer])
         self._holder = ui_holder
         self.streams: list[tuple[TextIO, TextIO]] = []
@@ -213,12 +208,12 @@ class _Spy(ScriptedPromptBackend):
 
 def _spied(
     monkeypatch: pytest.MonkeyPatch, *, stdin: TextIO, stderr: TextIO, answer: object = "ok"
-) -> tuple[UiContext, _Spy, Opened]:
+) -> tuple[Ui, _Spy, Opened]:
     opened = Opened([], [])
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opened)
-    holder: list[UiContext] = []
+    holder: list[Ui] = []
     spy = _Spy(holder, answer)
-    ui = UiContext(stdin=stdin, stderr=stderr, prompt_backend=spy)
+    ui = Ui(stdin=stdin, stderr=stderr, prompt_backend=spy)
     holder.append(ui)
     return ui, spy, opened
 
@@ -278,7 +273,7 @@ def test_a_terminal_that_opens_for_input_but_not_output_is_closed_and_refused(
         return handles[-1]
 
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opener)
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=_Spy([], "x"))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=_Spy([], "x"))
     with pytest.raises(UsageError, match="needs a terminal"):
         ui.run(_screen())
     assert handles[0].closed
@@ -346,7 +341,7 @@ def test_pick_many_opens_the_controlling_terminal_when_stdin_is_piped(
     opened = Opened([], [])
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opened)
     stdin, stderr = io.StringIO("piped"), TtyStringIO()
-    ui = UiContext(stdin=stdin, stderr=stderr, prompt_backend=_OnATerminal(picks=[_PICKED]))
+    ui = Ui(stdin=stdin, stderr=stderr, prompt_backend=_OnATerminal(picks=[_PICKED]))
 
     assert ui.pick_many(_PICK_REQUEST) is _PICKED
     assert opened.modes == [False, True]
@@ -359,7 +354,7 @@ def test_pick_many_uses_the_streams_when_both_are_terminals(
 ) -> None:
     opened = Opened([], [])
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opened)
-    ui = UiContext(
+    ui = Ui(
         stdin=TtyStringIO(),
         stderr=TtyStringIO(),
         prompt_backend=_OnATerminal(picks=[_PICKED]),
@@ -370,7 +365,7 @@ def test_pick_many_uses_the_streams_when_both_are_terminals(
 
 def test_pick_many_needs_no_terminal_for_a_scripted_backend() -> None:
     # The harness has no controlling terminal and stderr is not a terminal either.
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(picks=[_PICKED]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(picks=[_PICKED]))
     assert ui.pick_many(_PICK_REQUEST) is _PICKED
 
 
@@ -380,7 +375,7 @@ def _refused(request: PickRequest) -> str:
     @app.default
     def go() -> None:
         with report_errors():
-            UiContext(stdin=io.StringIO()).pick_many(request)
+            Ui(stdin=io.StringIO()).pick_many(request)
 
     result = CliInvoker().invoke(app, [])  # the harness has no controlling terminal
     assert result.exit_code == 2
@@ -448,7 +443,7 @@ def test_a_falsy_injected_backend_is_still_the_one_asked_about_the_terminal() ->
         def __bool__(self) -> bool:
             return False
 
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=Falsy(screens=["x"]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=Falsy(screens=["x"]))
     assert ui.run(_screen()) == "x"  # needs_terminal=False read from it, not from the override
 
 
@@ -470,4 +465,4 @@ def test_scripted_interrupt_applies_to_screens() -> None:
 
 
 def test_ui_run_is_marked_experimental() -> None:
-    assert isinstance(function_mark(UiContext.run), Experimental)
+    assert isinstance(function_mark(Ui.run), Experimental)

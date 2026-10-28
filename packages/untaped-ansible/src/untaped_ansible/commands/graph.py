@@ -30,14 +30,12 @@ from untaped.sdk import (
     Record,
     Short,
     Stdin,
+    TreeGraph,
     UsageError,
-    echo,
     key,
     plural,
-    print_tree,
     run_hint,
     tree_text,
-    ui_context,
 )
 from untaped_ansible.commands._graph import (
     ALL_REFS,
@@ -446,16 +444,16 @@ class GraphDocument(DependencyGraph):
     """What the tree's first line says after the target: the data read and the depth."""
 
 
-def _tree(document: GraphDocument) -> None:
-    print_tree(graph_tree(document, header_note=document.header), ui=ui_context(strict=False))
+def _tree(document: GraphDocument) -> TreeGraph:
+    return graph_tree(document, header_note=document.header)
 
 
-def _mermaid(document: GraphDocument) -> None:
-    echo(render_graph(document, "mermaid"))
+def _mermaid(document: GraphDocument) -> str:
+    return render_graph(document, "mermaid")
 
 
-def _json(document: GraphDocument) -> None:
-    echo(render_graph(document, "json"))
+def _json(document: GraphDocument) -> str:
+    return render_graph(document, "json")
 
 
 class Graph(GraphCommand):
@@ -536,9 +534,7 @@ class Graph(GraphCommand):
         if self.out is None:
             return document
         if self.output.format == "tree":
-            text = tree_text(
-                graph_tree(document, header_note=document.header), ui=ui_context(strict=False)
-            )
+            text = tree_text(graph_tree(document, header_note=document.header))
         else:
             text = render_graph(document, "mermaid" if self.output.format == "mermaid" else "json")
         path = self.out.expanduser()

@@ -21,7 +21,6 @@ from untaped.sdk import (
     Short,
     Stdin,
     UsageError,
-    echo,
 )
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.commands._workspace import WORKERS, WorkspaceCommand
@@ -30,18 +29,17 @@ from untaped_workspace.infrastructure import SubprocessRunner
 from untaped_workspace.records import RepoOutcome, RepoStatus, RunOutcome
 
 
-def _block(row: RunOutcome) -> None:
+def _block(row: RunOutcome) -> list[str]:
     """Table format: one finished repo's header (with the reason unless it ran), stdout, stderr.
 
     Skipped rows print nothing (the summary counts them).
     """
     if row.action == "skipped":
-        return
+        return []
     reason = f" · {row.detail}" if row.action != "ran" and row.detail else ""
-    echo(f"── {row.repo} ({row.dir}){reason} ──")
-    for text in (row.stdout, row.stderr):
-        if text:
-            echo(text.rstrip("\n"))
+    lines = [f"── {row.repo} ({row.dir}){reason} ──"]
+    lines += [text.rstrip("\n") for text in (row.stdout, row.stderr) if text]
+    return lines
 
 
 class Run(WorkspaceCommand):

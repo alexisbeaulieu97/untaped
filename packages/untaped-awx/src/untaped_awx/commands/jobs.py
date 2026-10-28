@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from pydantic import Field
 
@@ -18,7 +18,6 @@ from untaped.sdk import (
     UntapedError,
     UsageError,
     key,
-    ui_context,
 )
 from untaped_awx.application import TailJobLogs, WatchJob
 from untaped_awx.commands._awx import AwxCommand
@@ -29,6 +28,9 @@ from untaped_awx.commands.job_actions import Cancel, Relaunch
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.jobs.job import JOB_ROUTES
 from untaped_awx.records import JobEventRow, JobLogLine, JobRecord
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 # Default ``table`` columns; a string is a key AWX sends that JobRecord does not declare.
 # json, yaml and pipe keep whole records.
@@ -125,11 +127,12 @@ def _job(awx: AwxContext, ident: str, kind: str) -> tuple[int, Job]:
     return job_id, Job.model_validate({**record, "kind": kind})
 
 
-def _print_events(row: JobEventRow | list[JobEventRow]) -> None:
+def _event_lines(row: JobEventRow | list[JobEventRow]) -> list[Text]:
     """``--format table``: each event as a line like the AWX UI's Output tab, coloured on a TTY."""
-    ui = ui_context(strict=False)
-    for each in [row] if isinstance(row, JobEventRow) else row:
-        ui.styled(render_event_text(JobEvent.model_validate(each.model_dump(exclude={"job"}))))
+    return [
+        render_event_text(JobEvent.model_validate(each.model_dump(exclude={"job"})))
+        for each in ([row] if isinstance(row, JobEventRow) else row)
+    ]
 
 
 class Events(JobsCommand):
@@ -153,7 +156,7 @@ class Events(JobsCommand):
         default_factory=list,
         description="Server-side AWX filter, KEY=VALUE (repeatable). E.g. event=runner_on_failed.",
     )
-    output: Output[JobEventRow] = Output(stream=True, render={"table": _print_events})
+    output: Output[JobEventRow] = Output(stream=True, render={"table": _event_lines})
 
     def run(self) -> Iterator[JobEventRow]:
         filters = dict(self.filter_)

@@ -21,7 +21,7 @@ An AST scan over a package's source flags:
 - ``sys-stdin`` — direct ``sys.stdin`` access: use the core stdin helpers;
 - ``local-plural`` — a local pluralize helper: use ``plural()``;
 - ``print`` / ``rich-console`` — ``print(…)`` or a direct
-  ``rich.console.Console``: use ``echo`` / ``UiContext`` for stdout,
+  ``rich.console.Console``: return what to print from an ``Output`` renderer,
   ``ctx.diag`` for stderr;
 - ``hand-typed-deprecation`` — a string, f-string or docstring shaped like a
   deprecation sentence (:data:`DEPRECATION_SHAPES`): every deprecation is a

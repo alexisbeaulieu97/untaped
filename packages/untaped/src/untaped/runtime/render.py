@@ -2,7 +2,7 @@
 
 This module owns *what output looks like* (the format renderers plus the
 pure format helpers) and imports nothing of ``ui.py``, which owns
-*interaction* (``UiContext``: prompts, confirmations, screens) and renders
+*interaction* (``Terminal``: prompts, confirmations, screens) and renders
 through it.
 """
 

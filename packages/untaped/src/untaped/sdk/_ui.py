@@ -1,4 +1,4 @@
-"""A command's interaction: prompts, confirmations, screens and styled stdout (``UiContext``)."""
+"""Core's terminal (:class:`Ui`, a command's ``Terminal``): prompts, screens, themed stdout."""
 
 from __future__ import annotations
 
@@ -36,7 +36,6 @@ from untaped.sdk.prompt.prompts import (
     open_controlling_terminal,
     prompt_backend_override,
 )
-from untaped.sdk.words import plural
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -45,8 +44,13 @@ if TYPE_CHECKING:
     from untaped.screen.picker import PickRequest, PickResult
 
 
-class UiContext:
-    """Theme-aware UI context for tool commands."""
+class Ui:
+    """Core's terminal: what a command gets as ``self.ctx.terminal`` (typed :class:`Terminal`).
+
+    The run builds the one a command asks through; core also builds one for
+    its own output and for prompts outside a run. Its theme and streams draw
+    core's stdout (:func:`collection`, :func:`detail`, :func:`print_styled`).
+    """
 
     def __init__(
         self,
@@ -111,86 +115,6 @@ class UiContext:
         self._default_prompt_backend = backend
         return backend
 
-    def collection(
-        self,
-        rows: Sequence[Row],
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None = None,
-        empty: str | bool | None = None,
-        kind: str | None = None,
-    ) -> str:
-        count_row_failures(rows)
-        rendered = render_collection(
-            rows,
-            fmt=fmt,
-            columns=columns,
-            theme=self.theme,
-            colorize=should_colorize(self.stdout),
-            kind=kind,
-        )
-        if not rows and fmt == "table" and empty:
-            self._empty_note(empty if isinstance(empty, str) else "No results.")
-        return rendered
-
-    def detail(
-        self,
-        record: Row,
-        *,
-        fmt: OutputFormat,
-        columns: list[str] | None = None,
-        kind: str | None = None,
-    ) -> str:
-        count_row_failures([record])
-        return render_detail(
-            record,
-            fmt=fmt,
-            columns=columns,
-            theme=self.theme,
-            colorize=should_colorize(self.stdout),
-            kind=kind,
-        )
-
-    def _empty_note(self, text: str) -> None:
-        """An empty table's ``info`` line on stderr, with this context's own theme and ``quiet``."""
-        if self.quiet:
-            return
-
-        def rendered(color: bool) -> str:
-            return render_message("info", text, theme=self.theme, colorize=color)
-
-        current_sink().emit(Message(level="info", message=text), rendered=rendered)
-
-    def styled(
-        self,
-        text: Text | str,
-        *,
-        tail: str = "",
-        truncate: bool = False,
-    ) -> None:
-        """Print a Rich-styled line to stdout.
-
-        Color is emitted only where the stream supports it (TTY, honoring
-        ``NO_COLOR``/``FORCE_COLOR``). Use it for streamed human-readable
-        output such as live job events; ``--quiet`` does not mute it.
-        ``tail`` follows the styled text verbatim: never wrapped,
-        tab-expanded or styled (a streamed log line after a styled
-        ``[label] ``). With ``truncate``, each line of ``text`` too wide for
-        the terminal ends in an ellipsis instead of wrapping (aligned output
-        such as trees). Write stderr through ``ctx.diag.info(text, unmuted=True)``.
-        """
-        plain = text if isinstance(text, str) else text.plain
-        # Rendering may drop trailing spaces: render without them, then restore.
-        trailing = plain[len(plain.rstrip()) :] if tail else ""
-        if trailing:
-            text = text[: len(plain) - len(trailing)]
-
-        def rendered(color: bool) -> str:
-            styled = render_styled(text, colorize=color, truncate=truncate) if plain.strip() else ""
-            return styled + trailing + tail
-
-        print(rendered(should_colorize(self.stdout)), file=self.stdout, flush=True)
-
     def confirm(self, message: str, *, default: bool = False) -> bool:
         """Prompt for a yes/no response."""
         with self._prompt_terminal():
@@ -199,54 +123,8 @@ class UiContext:
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
 
-    def confirm_action(
-        self,
-        message: str,
-        *,
-        assume_yes: bool = False,
-        default: bool = False,
-        refusal: str = "confirmation requires --yes when not interactive",
-    ) -> bool:
-        """Confirm a destructive or remote action, reaching the terminal if needed.
-
-        ``assume_yes`` (``--yes``) skips the prompt. Otherwise the prompt
-        reads from stdin when it is a TTY, or from the controlling terminal
-        when stdin carries piped data. With no terminal at all it raises
-        :class:`UsageError` (exit 2) with ``refusal``. Returns the answer;
-        on ``False`` the caller raises :class:`OperationCancelledError`
-        (or lets :func:`untaped.sdk._batch.finish` do it) after printing nothing
-        else.
-        """
-        if assume_yes:
-            return True
-        with self.terminal(refusal=refusal):
-            return self.confirm(message, default=default)
-
-    def confirm_or_cancel(
-        self,
-        message: str,
-        *,
-        assume_yes: bool = False,
-        refusal: str = "confirmation requires --yes when not interactive",
-        preview: Callable[[], None] | None = None,
-    ) -> None:
-        """:meth:`confirm_action` that raises :class:`OperationCancelledError` on a decline.
-
-        ``preview`` (optional) prints what is about to happen once a terminal
-        is secured, right before the prompt; ``assume_yes`` skips both.
-        """
-        if assume_yes:
-            return
-        with self.terminal(refusal=refusal):
-            if preview is not None:
-                preview()
-            if not self.confirm(message):
-                raise OperationCancelledError
-
     @contextmanager
-    def terminal(
-        self, *, refusal: str = "interactive input requires a terminal"
-    ) -> Iterator[UiContext]:
+    def terminal(self, *, refusal: str = "interactive input requires a terminal") -> Iterator[Ui]:
         """Point prompts at a terminal for the duration of the block.
 
         Gives a prompt its input: a TTY stdin is used as-is; piped stdin is swapped
@@ -272,7 +150,7 @@ class UiContext:
             terminal.close()
 
     @contextmanager
-    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[UiContext]:
+    def _screen_terminal(self, *, command: str, alternative: str) -> Iterator[Ui]:
         """Point a screen at a terminal for the duration of the block.
 
         What :meth:`run` and :meth:`pick_many` wrap a screen in. Raises
@@ -283,7 +161,7 @@ class UiContext:
             yield self
 
     @contextmanager
-    def _prompt_terminal(self) -> Iterator[UiContext]:
+    def _prompt_terminal(self) -> Iterator[Ui]:
         """Point a one-shot prompt at a terminal for the duration of the block.
 
         stdin must be a terminal already (:meth:`terminal` secures one for piped
@@ -433,30 +311,6 @@ class UiContext:
             except (ConfigError, EOFError, KeyboardInterrupt) as exc:
                 raise handle_prompt_exception(exc) from exc
 
-    def multiselect[T](
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[T]],
-        *,
-        defaults: Sequence[T] | None = None,
-        min_count: int = 0,
-    ) -> list[T]:
-        """Prompt for multiple typed choices."""
-        self._validate_choices(choices)
-        selected_defaults = list(defaults or ())
-        with self._prompt_terminal():
-            try:
-                values = self.prompt_backend.multiselect(
-                    message,
-                    choices,
-                    defaults=selected_defaults,
-                )
-            except (ConfigError, EOFError, KeyboardInterrupt) as exc:
-                raise handle_prompt_exception(exc) from exc
-        if len(values) < min_count:
-            raise ConfigError(f"select at least {plural(min_count, 'value')}", category="invalid")
-        return values
-
     def pick_many(self, request: PickRequest) -> PickResult:
         """Run the two-pane multi-select picker, a full-screen screen like every other.
 
@@ -521,15 +375,15 @@ def no_terminal_message(command: str, alternative: str) -> str:
     return f"{named} needs a terminal; use {offer}"
 
 
-def ui_context(
+def build_terminal(
     *,
     theme: ThemeSpec | None = None,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     strict: bool = True,
-) -> UiContext:
-    """Build a UI context from the built-in theme presets.
+) -> Ui:
+    """Build a terminal from the built-in theme presets.
 
     When ``theme`` is given it is used as-is (callers holding a resolved
     settings snapshot — e.g. ``AppContext.ui()`` — pass it so the context is
@@ -544,7 +398,7 @@ def ui_context(
         from untaped.runtime.settings import load_core_part  # noqa: PLC0415
 
         theme = resolve_theme_or_default(lambda: load_core_part("ui"), strict=strict)
-    return UiContext(
+    return Ui(
         theme=theme,
         stdin=stdin,
         stdout=stdout,
@@ -552,3 +406,90 @@ def ui_context(
         verbose=is_verbose(),
         quiet=is_quiet(),
     )
+
+
+# --- core's stdout in a terminal's theme: not plugin API, plugins print through Output ---
+
+
+def collection(
+    terminal: Ui,
+    rows: Sequence[Row],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+) -> str:
+    count_row_failures(rows)
+    rendered = render_collection(
+        rows,
+        fmt=fmt,
+        columns=columns,
+        theme=terminal.theme,
+        colorize=should_colorize(terminal.stdout),
+        kind=kind,
+    )
+    if not rows and fmt == "table" and empty:
+        _empty_note(terminal, empty if isinstance(empty, str) else "No results.")
+    return rendered
+
+
+def detail(
+    terminal: Ui,
+    record: Row,
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None = None,
+    kind: str | None = None,
+) -> str:
+    count_row_failures([record])
+    return render_detail(
+        record,
+        fmt=fmt,
+        columns=columns,
+        theme=terminal.theme,
+        colorize=should_colorize(terminal.stdout),
+        kind=kind,
+    )
+
+
+def _empty_note(terminal: Ui, text: str) -> None:
+    """An empty table's ``info`` line on stderr, with the terminal's own theme and ``quiet``."""
+    if terminal.quiet:
+        return
+
+    def rendered(color: bool) -> str:
+        return render_message("info", text, theme=terminal.theme, colorize=color)
+
+    current_sink().emit(Message(level="info", message=text), rendered=rendered)
+
+
+def print_styled(
+    terminal: Ui,
+    text: Text | str,
+    *,
+    tail: str = "",
+    truncate: bool = False,
+) -> None:
+    """Print a Rich-styled line to stdout.
+
+    Color is emitted only where the stream supports it (TTY, honoring
+    ``NO_COLOR``/``FORCE_COLOR``). Use it for streamed human-readable
+    output such as live job events; ``--quiet`` does not mute it.
+    ``tail`` follows the styled text verbatim: never wrapped,
+    tab-expanded or styled (a streamed log line after a styled
+    ``[label] ``). With ``truncate``, each line of ``text`` too wide for
+    the terminal ends in an ellipsis instead of wrapping (aligned output
+    such as trees). Write stderr through ``ctx.diag.info(text, unmuted=True)``.
+    """
+    plain = text if isinstance(text, str) else text.plain
+    # Rendering may drop trailing spaces: render without them, then restore.
+    trailing = plain[len(plain.rstrip()) :] if tail else ""
+    if trailing:
+        text = text[: len(plain) - len(trailing)]
+
+    def rendered(color: bool) -> str:
+        styled = render_styled(text, colorize=color, truncate=truncate) if plain.strip() else ""
+        return styled + trailing + tail
+
+    print(rendered(should_colorize(terminal.stdout)), file=terminal.stdout, flush=True)

@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Ui, collection, detail
 from untaped.sdk.fields import Roled
 
 
@@ -26,7 +26,7 @@ def rows() -> list[dict[str, object]]:
 
 
 def _render(rows, **kwargs) -> str:
-    return UiContext().collection(rows, **kwargs)
+    return collection(Ui(), rows, **kwargs)
 
 
 def test_json_format_round_trips(rows: list[dict[str, object]]) -> None:
@@ -215,7 +215,7 @@ def test_output_does_not_wrap_when_stdout_is_not_a_terminal(
         monkeypatch.setenv("FORCE_COLOR", "1")  # styled record lines render through Rich
     rows = [{"name": "x" * 300, "description": "y " * 100}]
     theme = BUILTIN_THEMES["default" if renderer == "table" else "quiet"]
-    lines = UiContext(theme=theme).collection(rows, fmt="table").splitlines()
+    lines = collection(Ui(theme=theme), rows, fmt="table").splitlines()
     assert any("x" * 300 in line for line in lines)
     assert any(("y " * 100).strip() in line for line in lines)
 
@@ -269,7 +269,7 @@ def test_pipe_tags_kind_when_supplied(rows: list[dict[str, object]]) -> None:
 
 
 def _table(rows: list[dict[str, object]], **kwargs: object) -> str:
-    return UiContext().collection(rows, fmt="table", **kwargs)  # type: ignore[arg-type]
+    return collection(Ui(), rows, fmt="table", **kwargs)  # type: ignore[arg-type]
 
 
 def test_table_columns_are_the_union_of_every_row() -> None:
@@ -354,7 +354,7 @@ def test_a_roled_cell_is_drawn_in_its_role_and_a_plain_status_is_not(
 
 
 def test_detail_view_flattens_nested_values() -> None:
-    out = UiContext().detail({"name": "r", "inputs": [{"name": "a"}, {"name": "b"}]}, fmt="table")
+    out = detail(Ui(), {"name": "r", "inputs": [{"name": "a"}, {"name": "b"}]}, fmt="table")
     assert "inputs: name=a; name=b" in out
 
 
@@ -382,7 +382,7 @@ def test_datetimes_in_plain_rows_render_as_utc_timestamps(fmt: OutputFormat) -> 
 def test_tables_show_timestamps_to_the_second(value: object) -> None:
     row = {"created_at": value, "events": [{"at": "2026-01-02T03:04:05.5Z"}]}
 
-    for out in (_render([row], fmt="table"), UiContext().detail(row, fmt="table")):
+    for out in (_render([row], fmt="table"), detail(Ui(), row, fmt="table")):
         assert "2026-01-02T03:04:05Z" in out
         assert ".1" not in out
         assert ".5" not in out
@@ -417,7 +417,7 @@ def test_fitting_keeps_every_column_visible_when_the_terminal_is_narrow(
 
 def test_detail_table_view_flattens_each_field() -> None:
     theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
-    out = UiContext(theme=theme).detail({"duration_s": 102.5, "scope": {}}, fmt="table")
+    out = detail(Ui(theme=theme), {"duration_s": 102.5, "scope": {}}, fmt="table")
     assert "102.5" in out
     assert "{}" not in out
 
@@ -426,7 +426,7 @@ def test_a_status_role_set_to_empty_turns_its_color_off(monkeypatch: pytest.Monk
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.delenv("NO_COLOR", raising=False)
     theme = BUILTIN_THEMES["default"].model_copy(update={"color_roles": {"error": ""}})
-    out = UiContext(theme=theme).collection([{"status": Roled("failed", "error")}], fmt="table")
+    out = collection(Ui(theme=theme), [{"status": Roled("failed", "error")}], fmt="table")
     assert "\x1b[31m" not in out
 
 
@@ -436,9 +436,7 @@ def test_detail_table_view_draws_a_roled_field_in_its_role(
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.delenv("NO_COLOR", raising=False)
     theme = BUILTIN_THEMES["default"].model_copy(update={"detail_view": "table"})
-    out = UiContext(theme=theme).detail(
-        {"name": "a", "status": Roled("failed", "error")}, fmt="table"
-    )
+    out = detail(Ui(theme=theme), {"name": "a", "status": Roled("failed", "error")}, fmt="table")
     assert "\x1b[31mfailed" in out
     assert "\x1b[31ma" not in out
 
@@ -478,7 +476,7 @@ def test_screen_tokens_do_not_change_tables(name: str, tty: bool, view: str) -> 
 
     def render(theme: object) -> tuple[str, str]:
         stdout = TtyStringIO() if tty else io.StringIO()
-        ui = UiContext(stdout=stdout, theme=theme)  # type: ignore[arg-type]
-        return ui.collection(records, fmt="table"), ui.detail(records[0], fmt="table")
+        ui = Ui(stdout=stdout, theme=theme)  # type: ignore[arg-type]
+        return collection(ui, records, fmt="table"), detail(ui, records[0], fmt="table")
 
     assert render(full) == render(bare)

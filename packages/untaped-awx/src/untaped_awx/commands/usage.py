@@ -23,8 +23,6 @@ from untaped.sdk import (
     TreeGraph,
     UntapedError,
     plural,
-    print_tree,
-    ui_context,
 )
 from untaped_awx.application import ListTemplateUsage
 from untaped_awx.commands._awx import ResourceCommand
@@ -39,14 +37,9 @@ def _no_tree(rows: object) -> None:
     """``--format tree`` before ``run`` drew its targets: a run that failed draws nothing."""
 
 
-def _drawing(trees: list[TreeGraph]) -> Callable[[object], None]:
+def _drawing(trees: list[TreeGraph]) -> Callable[[object], list[TreeGraph]]:
     """``--format tree``: one tree per target, a target in no workflow too (it has no row)."""
-
-    def draw(_rows: object) -> None:
-        if trees:
-            print_tree(trees, ui=ui_context(strict=False))
-
-    return draw
+    return lambda _rows: trees
 
 
 class Usage(ResourceCommand):

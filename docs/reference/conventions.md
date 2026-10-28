@@ -113,7 +113,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
 | Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
-| Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: `ui.styled(text)` (see its `tail=` and `truncate=`); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
+| Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: return the `Text` from an `Output` renderer (core prints it, in colour on a terminal); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
 
 `ctx.diag` writes every stderr line; never `echo()` an `error:`, `warning:`
 or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before
@@ -174,10 +174,9 @@ free, but a command that writes declares it with `@writes`, or
   assume_yes=yes)`. It previews, then confirms. On a decline it sets
   `outcome.cancelled`, and `finish(outcome)` prints the decline line and
   exits 1.
-- Single confirmations use `ui.confirm_or_cancel(message, assume_yes=yes,
-  refusal="<verb> requires --yes when not interactive", preview=...)`, which
-  raises `OperationCancelledError` on a decline (`ui.confirm_action` returns
-  the answer instead).
+- Single confirmations declare `confirm: Confirm` and ask
+  `self.confirm(question, preview=...)`: `--yes` answers it, `--dry-run`
+  previews only, and a run with no terminal exits 2 naming `--yes`.
 - When stdin carries piped data, prompts read from the controlling terminal
   (`/dev/tty`). If there is no terminal, the command exits 2 and names
   `--yes`. In tests, `untaped.sdk.testing.invoke_cli(..., terminal=True,
@@ -185,7 +184,7 @@ free, but a command that writes declares it with `@writes`, or
   is none.
 - Read stdin only through a `Stdin[R]` field ([Piping](#piping)), never
   `sys.stdin` directly; that section also covers empty pipes.
-- Before prompting, check `ui.can_prompt` on the `UiContext` that will prompt;
+- Before prompting, check `self.ctx.terminal.can_prompt`;
   without a terminal, fail with a hint naming the flag that supplies the value.
 
 ## Output records

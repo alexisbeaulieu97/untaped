@@ -41,7 +41,7 @@ from untaped.runtime.theme import (
 from untaped.runtime.theme import TreeOutputFormat, resolve_theme_or_default
 from untaped.sdk._run import Rendering, fixed_rendering, run_or_none
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._ui import Ui, build_terminal, collection, detail
 from untaped.sdk.diagnostic import Failure, dumped_names
 from untaped.sdk.errors import (
     ExitCode,
@@ -427,10 +427,10 @@ def render_rows(
 ) -> str:
     """Render a row collection: themed table for humans, plain output for pipes.
 
-    Only ``table`` goes through the settings-resolved :func:`ui_context` —
+    Only ``table`` goes through the settings-resolved :func:`build_terminal` —
     structured formats (json, raw, pipe, ...) must stay byte-stable regardless of
-    the active theme, so they render through a bare :class:`UiContext`. ``empty``
-    is a human hint printed to stderr only when ``table`` output has no rows.
+    the active theme, so they render through a bare :class:`~untaped.sdk._ui.Ui`.
+    ``empty`` is a human hint printed to stderr only when ``table`` output has no rows.
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
     every other format).
 
@@ -469,7 +469,7 @@ def _render(
     schema: Sequence[str] | None,
     strict: bool,
     glyphs: Sequence[Mapping[str, TableGlyph]] | None,
-    ui: UiContext | None,
+    ui: Ui | None,
 ) -> str:
     """Render ``rows`` as a collection, or its one row as a detail view (``single``).
 
@@ -487,7 +487,7 @@ def _render(
         columns, rows, fmt=fmt, schema=schema, strict=strict, table_columns=table_columns
     )
     if fmt == "table":
-        ui = ui or ui_context()
+        ui = ui or build_terminal()
         shown = _table_columns(rows, selection, named, hide_empty=ui.theme.hide_empty_columns)
         if selection is None and ui.theme.collection_view == "list" and shown is not None:
             # A record list shows each row's own keys, not the union of them all.
@@ -498,10 +498,10 @@ def _render(
         if glyphs:
             rows = [_glyphed(row, glyph) for row, glyph in zip(rows, glyphs, strict=True)]
     else:
-        ui = UiContext()
+        ui = Ui()
     if single:
-        return ui.detail(rows[0], fmt=fmt, columns=selection, kind=kind)
-    return ui.collection(rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
+        return detail(ui, rows[0], fmt=fmt, columns=selection, kind=kind)
+    return collection(ui, rows, fmt=fmt, columns=selection, empty=empty, kind=kind)
 
 
 def _selected_columns(
@@ -759,7 +759,7 @@ def emit(
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
-    ui: UiContext | None,
+    ui: Ui | None,
     fmt: OutputFormat,
     columns: list[str] | None = None,
     empty: str | bool | None = None,
@@ -772,7 +772,7 @@ def emit_with(
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
-    ui: UiContext | None,
+    ui: Ui | None,
     fmt: TreeOutputFormat,
     columns: list[str] | None = None,
     empty: str | bool | None = None,
@@ -784,7 +784,7 @@ def emit_with(
 def emit_with(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
-    ui: UiContext | None,
+    ui: Ui | None,
     fmt: TreeOutputFormat,
     columns: list[str] | None = None,
     empty: str | bool | None = None,
@@ -815,7 +815,7 @@ def emit_with(
 def _emit(
     records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
     *,
-    ui: UiContext | None,
+    ui: Ui | None,
     fmt: TreeOutputFormat,
     columns: list[str] | None,
     empty: str | bool | None,

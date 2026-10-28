@@ -14,7 +14,7 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._app_context import AppContext, app_context
-from untaped.sdk._ui import ui_context
+from untaped.sdk._ui import build_terminal
 from untaped.sdk.errors import ConfigError
 
 
@@ -69,13 +69,13 @@ def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path)
     get_settings.cache_clear()
 
     # A fresh, re-reading context observes the change...
-    assert ui_context().theme != snapshot_theme
+    assert build_terminal().theme != snapshot_theme
     # ...but the snapshot-bound context stays pinned to its resolved theme.
     assert ctx.ui().theme == snapshot_theme
 
 
 def test_ui_degrades_unknown_theme_per_strict_flag(_isolated_config: Path) -> None:
-    """``ctx.ui()`` shares one degrade policy with ``ui_context``: an unknown
+    """``ctx.ui()`` shares one degrade policy with ``build_terminal``: an unknown
     theme name falls back to the default preset when ``strict=False`` and raises
     when ``strict=True``."""
     _isolated_config.write_text("format_version: 2\nuntaped:\n  ui:\n    theme: nonexistent\n")

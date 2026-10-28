@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from awx_test_support import run
-from untaped.sdk import UiContext, tree_text
+from untaped.sdk import tree_text
 from untaped_awx.domain import WorkflowUsage
 from untaped_awx.domain.workflow_usage import UsageTarget, usage_tree
 
@@ -182,7 +182,7 @@ def test_the_tree_draws_exactly_the_json_rows(ancestry: Any, recursive: list[str
         [WorkflowUsage.model_validate(row) for row in rows],
         top_level=True,
     )
-    assert tree_text(tree, ui=UiContext()) + "\n" == drawn
+    assert tree_text(tree) + "\n" == drawn
 
 
 def test_the_tree_alone_walks_direct_containers_and_hints_at_recursive(ancestry: Any) -> None:

@@ -246,23 +246,6 @@ def test_apply_quiet_keeps_preview_summary_and_mutes_post_run_info(tmp_path: Pat
     assert "Recipe dry run:" not in result.stderr
 
 
-def test_apply_table_preview_uses_configured_collection_view(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("COLUMNS", "240")
-    monkeypatch.setenv("UNTAPED_UNTAPED__UI__COLLECTION_VIEW", "list")
-    recipe, target = _out_recipe(tmp_path)
-
-    result = run(
-        ["apply", str(recipe), str(target), "--dry-run"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "path:" in result.stderr
-    assert "action: create" in result.stderr
-    assert str(target / "out.txt") in result.stderr
-
-
 def test_apply_table_preview_uses_configured_preview_max_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

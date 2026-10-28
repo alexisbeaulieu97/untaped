@@ -57,9 +57,17 @@ from untaped.sdk._cli import (
 )
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
-from untaped.sdk._run import Context, Diag, PluginHandle, http_of, now, plugin_of, settings_of
+from untaped.sdk._run import (
+    Context,
+    Diag,
+    PluginHandle,
+    http_of,
+    now,
+    plugin_of,
+    settings_of,
+)
 from untaped.sdk._stdin import read_stdin, read_stdin_text
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._terminal import Terminal
 from untaped.sdk.diagnostic import (
     NOT_COUNTED,
     Debug,
@@ -118,6 +126,7 @@ from untaped.sdk.fields import (
     Status,
     Stdin,
     TextOrStdin,
+    Verbatim,
     Written,
     key,
     table_row,
@@ -230,7 +239,7 @@ from untaped.sdk.storage.state import (
     StateRows,
 )
 from untaped.sdk.storage.store import Store, setting_guard
-from untaped.sdk.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, print_tree, tree_text
+from untaped.sdk.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, tree_text
 from untaped.sdk.words import (
     ago_text,
     command_line,
@@ -363,6 +372,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Short",
     "AllowHyphen",
     "Output",
+    "Verbatim",
     "Stdin",
     "Lines",
     "Confirm",
@@ -448,7 +458,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "emit_document",
     "finish",
     "kind_of",
-    "print_tree",
     "record_model",
     "render_rows",
     "summary",
@@ -580,9 +589,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Picked",
     "ProgressHandle",
     "PromptChoice",
-    "UiContext",
+    "Terminal",
     "run_editor",
-    "ui_context",
     # doctor checks
     "executable_check",
     "online_check",

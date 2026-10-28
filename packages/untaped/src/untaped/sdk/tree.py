@@ -1,13 +1,15 @@
 """Tree output: a graph drawn as an indented tree, for any plugin.
 
 A plugin builds a :class:`TreeGraph` (a root, nodes and edges by key) and
-prints it with :func:`print_tree`, or gets its plain text with
-:func:`tree_text`. The renderer walks the graph itself, so shared branches
-and cycles are found by key: a branch drawn again is numbered ``[n]`` where
-it is drawn in full, and its later occurrences hold one ``… see [n]`` line
-instead of their branches; a node already on the path from the root is
-marked ``↻ cycle``. Glyphs follow the theme's border (ASCII for ``ascii``)
-and each part is styled from the theme's color roles.
+returns it from an ``Output`` renderer, which core prints with
+:func:`print_tree`, or gets its plain text with :func:`tree_text`. The
+renderer walks the graph itself, so shared branches and cycles are found by
+key: a branch drawn again is numbered ``[n]`` where it is drawn in full, and
+its later occurrences hold one ``… see [n]`` line instead of their branches;
+a node already on the path from the root is marked ``↻ cycle``. On a
+terminal, glyphs follow the theme's border (ASCII for ``ascii``) and each part
+is styled from the theme's color roles; a file's text is the same whatever
+the theme.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple, Self
 from pydantic import BaseModel, ConfigDict, model_validator
 from rich.cells import cell_len
 
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._ui import Ui, build_terminal, print_styled
 from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
@@ -102,8 +104,7 @@ class TreeGraph(BaseModel):
         )
 
 
-@experimental
-def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None = None) -> None:
+def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: Ui | None = None) -> None:
     """Print ``graphs`` to stdout in one write, separated by a blank line (none: nothing).
 
     Color only where stdout supports it; a line too wide for the terminal
@@ -112,7 +113,7 @@ def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None 
     """
     from rich.text import Text  # noqa: PLC0415 — Rich styling only when printing
 
-    ui = ui or ui_context()
+    ui = ui or build_terminal()
     lines = _lines(graphs, _glyphs(ui))
     if not lines:
         return
@@ -123,15 +124,18 @@ def print_tree(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None 
     text: Text = Text("\n").join(
         Text.assemble(*((segment.text, styles[segment.role]) for segment in line)) for line in lines
     )
-    ui.styled(text, truncate=True)
+    print_styled(ui, text, truncate=True)
 
 
 @experimental
-def tree_text(graphs: TreeGraph | Sequence[TreeGraph], *, ui: UiContext | None = None) -> str:
-    """The lines :func:`print_tree` prints, as plain text (for a file)."""
+def tree_text(graphs: TreeGraph | Sequence[TreeGraph], *, ascii_guides: bool = False) -> str:
+    """The lines :func:`print_tree` prints, as plain text for a file: the same whatever the theme.
+
+    ``ascii_guides`` draws ASCII guides, as the ``ascii`` border does on a terminal.
+    """
     return "\n".join(
         "".join(segment.text for segment in line)
-        for line in _lines(graphs, _glyphs(ui or ui_context()))
+        for line in _lines(graphs, _ASCII if ascii_guides else _UNICODE)
     )
 
 
@@ -176,7 +180,7 @@ _NOTE_COLUMN_MAX = 56
 """Notes line up after the widest row up to this column, then follow two spaces."""
 
 
-def _glyphs(ui: UiContext) -> _Glyphs:
+def _glyphs(ui: Ui) -> _Glyphs:
     return _ASCII if ui.theme.border == "ascii" else _UNICODE
 
 

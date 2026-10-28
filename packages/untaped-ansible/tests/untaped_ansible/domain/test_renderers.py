@@ -8,8 +8,7 @@ from typing import Any
 
 import pytest
 
-from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.sdk import TreeGraphEdge, TreeGraphNode, UiContext, tree_text
+from untaped.sdk import TreeGraphEdge, TreeGraphNode, tree_text
 from untaped_ansible.domain.graph import (
     DependencyGraph,
     GraphCycle,
@@ -17,8 +16,6 @@ from untaped_ansible.domain.graph import (
     GraphNode,
 )
 from untaped_ansible.domain.renderers import graph_tree, render_graph
-
-_ASCII = UiContext(theme=BUILTIN_THEMES["plain"])
 
 
 def _edge_id(relation: str, source_id: str, target_id: str) -> str:
@@ -131,7 +128,7 @@ def test_tree_renderer_prints_used_by_above_depends_on_with_edge_notes() -> None
         warnings=("source data is stale",),
     )
 
-    lines = tree_text(graph_tree(graph, header_note="source prod · depth 3"), ui=UiContext())
+    lines = tree_text(graph_tree(graph, header_note="source prod · depth 3"))
 
     assert lines.splitlines() == [
         "acme/base@v1.0.0  source prod · depth 3",
@@ -223,7 +220,7 @@ def test_tree_notes_align_by_terminal_cells() -> None:
 
 
 def test_tree_renderer_uses_ascii_glyphs_when_asked() -> None:
-    lines = tree_text(graph_tree(_cycle("cycle")), ui=_ASCII)
+    lines = tree_text(graph_tree(_cycle("cycle")), ascii_guides=True)
 
     assert lines.splitlines()[-4:] == [
         "`-- acme/users@main",
@@ -409,7 +406,7 @@ def _stopped_graph() -> DependencyGraph:
 
 
 def test_tree_renderer_marks_where_the_graph_stopped_reading() -> None:
-    lines = tree_text(graph_tree(_stopped_graph()), ui=UiContext())
+    lines = tree_text(graph_tree(_stopped_graph()))
 
     assert lines.splitlines() == [
         "acme/base@v1",
@@ -436,7 +433,7 @@ def test_graph_tree_gives_each_stop_reason() -> None:
 
 
 def test_tree_stop_marker_is_ascii_with_ascii_glyphs() -> None:
-    lines = tree_text(graph_tree(_stopped_graph()), ui=_ASCII).splitlines()
+    lines = tree_text(graph_tree(_stopped_graph()), ascii_guides=True).splitlines()
 
     assert lines[3] == "`-- acme/site@main ...   not read: depth limit"
 
@@ -455,6 +452,4 @@ def test_json_renderer_carries_each_nodes_stop_reason() -> None:
 def test_tree_header_marks_a_stopped_target() -> None:
     graph = _graph([_node("target", "acme/base", "v9", stopped="not_cached")], [])
 
-    assert tree_text(graph_tree(graph), ui=UiContext()).splitlines() == [
-        "acme/base@v9 …  not read: ref not cached"
-    ]
+    assert tree_text(graph_tree(graph)).splitlines() == ["acme/base@v9 …  not read: ref not cached"]

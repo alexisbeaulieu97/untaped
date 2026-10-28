@@ -27,7 +27,7 @@ from typing import get_args
 
 import pytest
 
-from untaped.sdk import ErrorCategory, OutputFormat
+from untaped.sdk import ErrorCategory, OutputFormat, Terminal
 from untaped_awx.application.suites.loader import LoadTestSuite
 from untaped_awx.application.suites.resolver import (
     KNOWN_LAUNCH_FIELDS,
@@ -82,7 +82,7 @@ def _load(path: Path) -> Suite:
         LocalFilesystem(),
         parser=DefaultParser(),
         vars_resolver=resolve_variables,
-        prompt=UiPrompt(force_non_interactive=True),
+        prompt=UiPrompt(_no_terminal, force_non_interactive=True),
     )
     return loader(path)
 
@@ -235,3 +235,7 @@ def test_the_suites_reference_prose_names_only_known_fields() -> None:
 
     assert named
     assert named - known == set()
+
+
+def _no_terminal() -> Terminal:
+    raise AssertionError("a non-interactive load never reaches the terminal")

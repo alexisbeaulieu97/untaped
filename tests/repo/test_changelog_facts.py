@@ -91,7 +91,7 @@ def test_is_release_pr(version: str, text: str, fragments: list[str], expected: 
     [
         ("sdk untaped.sdk.report_error(exc)", "report_error"),
         ("sdk untaped.sdk.report_error(item=) default=None", "report_error"),
-        ("sdk untaped.sdk.UiContext.message(kind, text)", "UiContext.message"),
+        ("sdk untaped.sdk.Terminal.message(kind, text)", "Terminal.message"),
         ("sdk untaped.sdk.testing.git.make_repo(path)", "make_repo"),
         ("sdk untaped_acme.api.old()", "old"),
         ("cli untaped awx put", "awx put"),

@@ -13,14 +13,14 @@ from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import PromptChoice, UiContext
+from untaped.sdk._ui import PromptChoice, Ui
 from untaped.sdk.errors import (
     ConfigError,
     OperationCancelledError,
     PromptInterruptedError,
     UsageError,
 )
-from untaped.sdk.prompt.prompts import TerminalPromptBackend, handle_prompt_exception
+from untaped.sdk.prompt.prompts import TerminalPromptBackend
 
 T = TypeVar("T")
 
@@ -40,7 +40,6 @@ class FakePromptBackend:
         text: str = "text-value",
         secret: str = "secret-value",
         select: object = "selected-value",
-        multiselect: list[object] | None = None,
         pick: PickResult | None = None,
         exc: BaseException | None = None,
     ) -> None:
@@ -49,7 +48,6 @@ class FakePromptBackend:
         self.text_value = text
         self.secret_value = secret
         self.select_value = select
-        self.multiselect_value = multiselect or []
         self.exc = exc
         self.calls: list[str] = []
 
@@ -90,22 +88,10 @@ class FakePromptBackend:
             raise self.exc
         return self.select_value  # type: ignore[return-value]
 
-    def multiselect(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[T]],
-        *,
-        defaults: Sequence[T],
-    ) -> list[T]:
-        self.calls.append(f"multiselect:{message}:{list(defaults)}")
-        if self.exc is not None:
-            raise self.exc
-        return self.multiselect_value  # type: ignore[return-value]
-
 
 def test_prompt_primitives_return_typed_backend_values() -> None:
-    backend = FakePromptBackend(select=2, multiselect=[1, 3])
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    backend = FakePromptBackend(select=2)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
     choices = [
         PromptChoice(value=1, label="one"),
         PromptChoice(value=2, label="two"),
@@ -116,21 +102,19 @@ def test_prompt_primitives_return_typed_backend_values() -> None:
     assert ui.text("name", default="default") == "text-value"
     assert ui.secret("token", confirmation=True) == "secret-value"
     assert ui.select("pick", choices, default=1, search=True) == 2
-    assert ui.multiselect("pick many", choices, defaults=[1], min_count=1) == [1, 3]
 
     assert backend.calls == [
         "confirm:continue?:True",
         "text:name:default",
         "secret:token:True",
         "select:pick:1:True",
-        "multiselect:pick many:[1]",
     ]
 
 
 @pytest.mark.parametrize("method_name", ["text", "secret"])
 def test_required_text_prompts_reject_empty_values(method_name: str) -> None:
     backend = FakePromptBackend(text="", secret=" ")
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
     method = getattr(ui, method_name)
 
     with pytest.raises(ConfigError, match="prompt"):
@@ -139,13 +123,13 @@ def test_required_text_prompts_reject_empty_values(method_name: str) -> None:
 
 def test_optional_text_prompts_allow_empty_values() -> None:
     backend = FakePromptBackend(text="", secret="")
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
 
     assert ui.text("value", required=False) == ""
     assert ui.secret("value", required=False) == ""
 
 
-@pytest.mark.parametrize("method_name", ["confirm", "text", "secret", "select", "multiselect"])
+@pytest.mark.parametrize("method_name", ["confirm", "text", "secret", "select"])
 @pytest.mark.parametrize(
     ("exc", "expected"),
     [(EOFError(), ConfigError), (KeyboardInterrupt(), PromptInterruptedError)],
@@ -155,7 +139,7 @@ def test_prompt_cancellation_maps_to_its_error(
     exc: BaseException,
     expected: type[Exception],
 ) -> None:
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(exc=exc))
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(exc=exc))
     choices = [PromptChoice(value="one", label="One")]
 
     with pytest.raises(expected, match="prompt cancelled"):
@@ -168,13 +152,11 @@ def test_prompt_cancellation_maps_to_its_error(
                 ui.secret("value")
             case "select":
                 ui.select("value", choices)
-            case "multiselect":
-                ui.multiselect("value", choices)
 
 
 def test_non_interactive_stdin_fails_before_invoking_backend() -> None:
     backend = FakePromptBackend()
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=backend)
+    ui = Ui(stdin=io.StringIO(), prompt_backend=backend)
 
     with pytest.raises(UsageError, match="interactive"):
         ui.confirm("continue?")
@@ -187,7 +169,7 @@ class _DrawingBackend(FakePromptBackend):
 
     needs_terminal = True
 
-    def __init__(self, holder: list[UiContext]) -> None:
+    def __init__(self, holder: list[Ui]) -> None:
         super().__init__()
         self.holder = holder
         self.streams: list[tuple[object, object]] = []
@@ -199,7 +181,7 @@ class _DrawingBackend(FakePromptBackend):
 
 def _drawing_ui(
     monkeypatch: pytest.MonkeyPatch, *, stderr: io.StringIO
-) -> tuple[UiContext, _DrawingBackend, list[TtyStringIO]]:
+) -> tuple[Ui, _DrawingBackend, list[TtyStringIO]]:
     opened: list[TtyStringIO] = []
 
     def opener(*, write: bool = False) -> TtyStringIO:
@@ -207,9 +189,9 @@ def _drawing_ui(
         return opened[-1]
 
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opener)
-    holder: list[UiContext] = []
+    holder: list[Ui] = []
     backend = _DrawingBackend(holder)
-    ui = UiContext(stdin=TtyStringIO(), stderr=stderr, prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=stderr, prompt_backend=backend)
     holder.append(ui)
     return ui, backend, opened
 
@@ -247,7 +229,7 @@ def test_a_prompt_with_stderr_redirected_and_no_terminal_is_refused(
 
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", no_terminal)
     backend = _DrawingBackend([])
-    ui = UiContext(stdin=TtyStringIO(), stderr=io.StringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=io.StringIO(), prompt_backend=backend)
 
     with pytest.raises(UsageError, match="requires a terminal"):
         ui.confirm("go?")
@@ -273,20 +255,12 @@ def test_select_requires_choices_and_preserves_original_value_type() -> None:
         PromptChoice(value=("repo", 2), label="second"),
     ]
     backend = FakePromptBackend(select=("repo", 2))
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=backend)
 
     assert ui.select("repo", choices) == ("repo", 2)
 
     with pytest.raises(ConfigError, match="at least one choice"):
         ui.select("empty", [])
-
-
-def test_multiselect_enforces_min_count() -> None:
-    choices = [PromptChoice(value="alpha", label="Alpha")]
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(multiselect=[]))
-
-    with pytest.raises(ConfigError, match="at least 1"):
-        ui.multiselect("repos", choices, min_count=1)
 
 
 @contextmanager
@@ -334,24 +308,6 @@ def test_terminal_backend_search_select_filters_then_returns_the_match(
     choices = [PromptChoice(value=1, label="alpha"), PromptChoice(value=2, label="beta")]
     with _real_terminal(monkeypatch, "bet" + _ENTER) as backend:
         assert backend.select("Pick", choices, default=None, search=True) == 2
-
-
-def test_terminal_backend_multiselect_returns_the_checked_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    choices = [PromptChoice(value=n, label=f"n{n}") for n in (1, 2, 3)]
-    with _real_terminal(monkeypatch, f" {_DOWN}{_DOWN} {_ENTER}") as backend:
-        assert backend.multiselect("Pick", choices, defaults=[2]) == [1, 2, 3]
-
-
-def test_terminal_backend_multiselect_handles_a_cancelled_prompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with _real_terminal(monkeypatch, _CTRL_D) as backend, pytest.raises(EOFError) as raised:
-        backend.multiselect("Pick repos", [PromptChoice(value="one", label="One")], defaults=[])
-    mapped = handle_prompt_exception(raised.value)
-    assert isinstance(mapped, ConfigError)
-    assert str(mapped) == "prompt cancelled"
 
 
 @pytest.mark.parametrize(
@@ -403,7 +359,7 @@ def test_terminal_backend_secret_confirmation_mismatch_is_an_invalid_config_erro
     assert raised.value.category == "invalid"
 
 
-@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select", "multiselect"])
+@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select"])
 def test_terminal_backend_ctrl_c_interrupts_and_ctrl_d_ends_the_prompt(
     monkeypatch: pytest.MonkeyPatch, method: str
 ) -> None:
@@ -417,10 +373,8 @@ def test_terminal_backend_ctrl_c_interrupts_and_ctrl_d_ends_the_prompt(
                 return backend.text("Name", default=None)
             case "secret":
                 return backend.secret("Token", confirmation=False)
-            case "select":
-                return backend.select("Pick", choices, default=None, search=False)
             case _:
-                return backend.multiselect("Pick", choices, defaults=[])
+                return backend.select("Pick", choices, default=None, search=False)
 
     with _real_terminal(monkeypatch, _CTRL_C) as backend, pytest.raises(KeyboardInterrupt):
         ask(backend)
@@ -459,12 +413,6 @@ def test_an_answered_prompt_leaves_one_plain_record_line(monkeypatch: pytest.Mon
     with _real_terminal(monkeypatch, "gam" + _ENTER) as backend:
         backend.select("Pick", choices, default=None, search=True)
         assert _record(backend) == "Pick: gamma\n"
-    with _real_terminal(monkeypatch, f" {_DOWN}{_DOWN} {_ENTER}") as backend:
-        backend.multiselect("Pick", choices, defaults=[])
-        assert _record(backend) == "Pick: alpha, gamma\n"
-    with _real_terminal(monkeypatch, _ENTER) as backend:
-        backend.multiselect("Pick", choices, defaults=[])
-        assert _record(backend) == "Pick: \n"
 
 
 def test_a_secrets_record_line_is_the_mask_never_the_value(
@@ -493,7 +441,7 @@ def test_a_record_line_drops_control_characters() -> None:
     assert _record(backend) == "Name: a[31mb\n"
 
 
-@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select", "multiselect"])
+@pytest.mark.parametrize("method", ["confirm", "text", "secret", "select"])
 @pytest.mark.parametrize("keys", [_CTRL_C, _CTRL_D])
 def test_a_cancelled_or_interrupted_prompt_leaves_no_record(
     monkeypatch: pytest.MonkeyPatch, method: str, keys: str
@@ -510,14 +458,12 @@ def test_a_cancelled_or_interrupted_prompt_leaves_no_record(
                 backend.text("Name", default=None)
             case "secret":
                 backend.secret("Token", confirmation=False)
-            case "select":
-                backend.select("Pick", choices, default=None, search=False)
             case _:
-                backend.multiselect("Pick", choices, defaults=[])
+                backend.select("Pick", choices, default=None, search=False)
     assert _record(backend) == ""
 
 
-def test_a_prompt_through_ui_context_ends_like_every_prompt(
+def test_a_prompt_through_the_terminal_ends_like_every_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for keys, error, exit_code in (
@@ -525,7 +471,7 @@ def test_a_prompt_through_ui_context_ends_like_every_prompt(
         (_CTRL_D, ConfigError, 1),
     ):
         with _real_terminal(monkeypatch, keys) as backend:
-            ui = UiContext(stdin=backend.stdin, stderr=backend.stderr, prompt_backend=backend)
+            ui = Ui(stdin=backend.stdin, stderr=backend.stderr, prompt_backend=backend)
             with pytest.raises(error, match="prompt cancelled") as raised:
                 ui.text("Name")
             assert raised.value.exit_code == exit_code
@@ -566,15 +512,13 @@ _REQUEST = PickRequest(heading="Pick", catalog=PickCatalog((PickItem(id="a", lab
 def test_pick_many_returns_the_backend_result() -> None:
     picked = PickResult(title="", defaults={}, picks=(Picked(item=PickItem(id="a", label="a")),))
     backend = FakePromptBackend(pick=picked)
-    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
     assert ui.pick_many(_REQUEST) is picked
     assert backend.calls == ["pick_many:Pick"]
 
 
 def test_pick_many_cancelled_raises_operation_cancelled() -> None:
-    ui = UiContext(
-        stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend(pick=None)
-    )
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend(pick=None))
     with pytest.raises(OperationCancelledError):
         ui.pick_many(_REQUEST)
 
@@ -584,13 +528,13 @@ def test_pick_many_rejects_duplicate_item_ids() -> None:
         heading="Pick",
         catalog=PickCatalog((PickItem(id="a", label="a"), PickItem(id="a", label="b"))),
     )
-    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend())
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=FakePromptBackend())
     with pytest.raises(ConfigError, match="unique ids"):
         ui.pick_many(duplicate)
 
 
 def test_pick_many_ctrl_c_interrupt_maps_to_exit_130() -> None:
-    ui = UiContext(
+    ui = Ui(
         stdin=TtyStringIO(),
         stderr=TtyStringIO(),
         prompt_backend=FakePromptBackend(exc=KeyboardInterrupt()),
@@ -657,10 +601,10 @@ def test_scripted_backend_answers_pick_many() -> None:
 
 
 def test_interrupt_escapes_a_config_error_handler() -> None:
-    from untaped.sdk._ui import UiContext
+    from untaped.sdk._ui import Ui
     from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
 
-    ui = UiContext(stdin=TtyStringIO(), prompt_backend=ScriptedPromptBackend(interrupt=True))
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=ScriptedPromptBackend(interrupt=True))
     with pytest.raises(PromptInterruptedError):
         try:
             ui.confirm("Continue?")

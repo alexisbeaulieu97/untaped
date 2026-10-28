@@ -58,7 +58,7 @@ def experimental_objects(module: ModuleType) -> set[str]:
     """The names in ``module.__all__`` that carry ``@experimental``, and ``Class.attr`` ones.
 
     A public attribute of an exported class counts when it is marked itself
-    (``UiContext.run``); an unmarked class with marked members is not listed.
+    (``Terminal.run``); an unmarked class with marked members is not listed.
     """
     found: set[str] = set()
     for name in module.__all__:
@@ -150,7 +150,7 @@ def test_every_experimental_sdk_object_is_on_the_versioning_page() -> None:
     text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
     marked = experimental_objects(sdk)
 
-    assert marked >= {"Screen", "Cmd", "Quit", "Footer", "UiContext.run"}
+    assert marked >= {"Screen", "Cmd", "Quit", "Footer", "Terminal.run"}
     assert unlisted_objects(text, marked) == []
 
 
@@ -163,9 +163,9 @@ def test_every_experimental_testing_object_is_on_the_versioning_page() -> None:
 
 
 def test_a_marked_object_the_page_does_not_name_fails() -> None:
-    page = _bullets("awx test").replace("things.", "the `Screen` and `UiContext.run` API.")
+    page = _bullets("awx test").replace("things.", "the `Screen` and `Terminal.run` API.")
 
-    assert unlisted_objects(page, {"Screen", "UiContext.run", "Cmd"}) == ["Cmd"]
+    assert unlisted_objects(page, {"Screen", "Terminal.run", "Cmd"}) == ["Cmd"]
     assert unlisted_objects(page, {"drive_screen"}, prefix="untaped.sdk.testing.") == [
         "drive_screen"
     ]

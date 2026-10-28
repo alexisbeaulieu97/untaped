@@ -32,7 +32,7 @@ from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import load_settings_section
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_stdin_text
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, Output, Positional
 from untaped.sdk.network._credential_store import (
@@ -139,7 +139,7 @@ def _choose(
             return found
         if len(choices) == 1:
             return choices[0]
-    ui = ui_context(strict=False)
+    ui = build_terminal(strict=False)
     if not ui.can_prompt:
         listed = ", ".join(_spelled(each) for each in choices)
         what = "a plugin" if plugin is None else "a credential name"
@@ -219,7 +219,7 @@ def _login(
         where = credential.store(key, command=argv)
     else:
         chosen = ready_store(credential, store)
-        ui = ui_context(strict=False)
+        ui = build_terminal(strict=False)
         token = _prompt_token(ui, credential.label) if ui.can_prompt else _read_stdin_token()
         where = store_token(credential, key, token, store=chosen)
     ident = credential.id(key)
@@ -264,7 +264,7 @@ def _forget(
     fields: dict[str, str],
     confirm: Confirm,
 ) -> CredentialOutcome:
-    ui = ui_context(strict=False)
+    ui = build_terminal(strict=False)
     if ident is not None:
         if plugin is not None or fields:
             raise UsageError("--id names the row on its own; leave out the plugin and --key")
@@ -527,7 +527,7 @@ def _read_stdin_token() -> str:
     return token
 
 
-def _prompt_token(ui: UiContext, label: str) -> str:
+def _prompt_token(ui: Ui, label: str) -> str:
     with ui.terminal(refusal="no terminal to prompt for the token; pipe it on stdin"):
         return ui.secret(label).strip()
 

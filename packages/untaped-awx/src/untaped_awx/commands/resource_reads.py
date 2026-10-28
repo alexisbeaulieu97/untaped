@@ -25,7 +25,7 @@ from untaped_awx.commands._options import (
 from untaped_awx.commands._selection import require_source, select, select_resources
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.names import name_fks
-from untaped_awx.commands.save_runner import print_yaml, save_selection
+from untaped_awx.commands.save_runner import save_selection, yaml_text
 from untaped_awx.document import Document
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.records import JobTemplate
@@ -165,7 +165,7 @@ class Export(ResourceCommand):
     comment: str | None = Field(
         None, description="Add TEXT as a '#' comment at the top of each document."
     )
-    output: Output[Document] = Output(format="yaml", render={"yaml": print_yaml})
+    output: Output[Document] = Output(format="yaml", render={"yaml": yaml_text})
 
     def run(self) -> Iterator[Document]:
         require_source(self.names, self.selection, self.stdin)

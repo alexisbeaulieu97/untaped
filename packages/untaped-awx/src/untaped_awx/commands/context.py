@@ -28,7 +28,7 @@ from untaped_awx.infrastructure.resources.unified_template_repo import (
 from untaped_awx.infrastructure.resources.workflow_node_repo import HttpWorkflowNodeRepository
 
 if TYPE_CHECKING:
-    from untaped.sdk import UiContext
+    from untaped.sdk import Terminal
     from untaped_awx.commands._awx import AwxCommand
 
 
@@ -72,8 +72,8 @@ class AwxContext:
             return self.monitor
         return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
 
-    def ui(self) -> UiContext:
-        """The terminal, for prompts and styled lines."""
+    def terminal(self) -> Terminal:
+        """The terminal, for prompts and screens."""
         return self._ctx.terminal
 
     def close(self) -> None:

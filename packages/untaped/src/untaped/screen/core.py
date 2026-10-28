@@ -176,7 +176,7 @@ class CmdError:
 @experimental
 @dataclass(frozen=True)
 class Quit[R]:
-    """Ends the screen with ``result``, the value ``UiContext.run`` returns.
+    """Ends the screen with ``result``, the value ``Terminal.run`` returns.
 
     The runtime consumes it; it never reaches ``update``. A screen sends it by
     returning ``Cmd.send(Quit(result))``.

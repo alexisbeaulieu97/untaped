@@ -472,7 +472,7 @@ def invoke_cli(
 
     ``interactive=True`` swaps stdin for a :class:`TtyStringIO` so TTY gates
     open; ``prompt_backend`` installs a scripted backend for the invocation
-    (reaching even ``UiContext``s the command builds itself). The
+    (reaching even ``Terminal``s the command builds itself). The
     controlling terminal (``/dev/tty``, used for prompts while stdin is
     piped) is simulated: absent by default, present with ``terminal=True``
     (prompts then go to ``prompt_backend``). A command that runs a screen
@@ -798,7 +798,7 @@ class TtyStringIO(io.StringIO):
     """A ``StringIO`` that claims to be a terminal.
 
     Used as the harness stdin for interactive-path tests: TTY checks
-    (``UiContext``, ``batch_apply``) pass, while prompts are answered by a
+    (``Terminal``, ``batch_apply``) pass, while prompts are answered by a
     :class:`ScriptedPromptBackend` rather than a real terminal read.
     """
 
@@ -814,9 +814,9 @@ class ScriptedPromptBackend(ScriptedTerminal):
     ``(method, message)`` in ``calls``; an exhausted queue raises
     :class:`ConfigError` so a test fails cleanly instead of hanging. With
     ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
-    simulating Ctrl-C. ``screens`` answers :meth:`UiContext.run` as
+    simulating Ctrl-C. ``screens`` answers :meth:`Terminal.run` as
     :meth:`ScriptedTerminal.screens` takes them. The backend never touches a
-    terminal, so ``UiContext.run`` and ``UiContext.pick_many`` do not require
+    terminal, so ``Terminal.run`` and ``Terminal.pick_many`` do not require
     one: a command test needs no ``terminal=True`` and no TTY stdin.
     """
 
@@ -827,7 +827,6 @@ class ScriptedPromptBackend(ScriptedTerminal):
         texts: Sequence[str] = (),
         secrets: Sequence[str] = (),
         selections: Sequence[Any] = (),
-        multiselects: Sequence[list[Any]] = (),
         picks: Sequence[PickResult | None] = (),
         screens: Sequence[object] = (),
         interrupt: bool = False,
@@ -840,7 +839,6 @@ class ScriptedPromptBackend(ScriptedTerminal):
         self._texts.extend(texts)
         self._secrets.extend(secrets)
         self._selections.extend(selections)
-        self._multiselects.extend(multiselects)
         self._picks.extend(picks)
         self._screens.extend(screens)
 

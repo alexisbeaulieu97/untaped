@@ -24,7 +24,7 @@ from rich.text import Text
 from untaped.runtime.render import output_width, status_role_style
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._cli import emit_with
-from untaped.sdk._ui import UiContext, ui_context
+from untaped.sdk._ui import Ui, build_terminal, print_styled
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -75,7 +75,7 @@ def emit_isolated(
     Settings are broken is often what the caller reports, so a ``table``
     falls back to the default theme instead of failing the listing.
     """
-    emit_with(rows, ui=ui_context(strict=False), fmt=fmt, columns=columns)
+    emit_with(rows, ui=build_terminal(strict=False), fmt=fmt, columns=columns)
 
 
 def emit_check_list(
@@ -90,7 +90,7 @@ def emit_check_list(
     Written to stdout in one call, themed with the default theme when
     settings are broken.
     """
-    ui = ui_context(strict=False)
+    ui = build_terminal(strict=False)
     glyphs = _glyphs(ui)
     groups: dict[str, list[dict[str, object]]] = {}
     for row in rows:
@@ -123,7 +123,7 @@ def emit_check_list(
                 lines += [Text(more) for more in _wrap(command, width, title_column)]
     # Every detail and fix line fits already; only a row's own check and title
     # can overflow a very narrow terminal, and they end in an ellipsis there.
-    ui.styled(Text("\n").join(lines), truncate=True)
+    print_styled(ui, Text("\n").join(lines), truncate=True)
 
 
 #: Below this many columns for the detail, it goes on its own lines under the title.
@@ -139,7 +139,7 @@ def _wrap(text: str, width: int | None, column: int) -> list[str]:
     return [indent + line for line in wrapped]
 
 
-def _glyph_style(ui: UiContext, status: str) -> str:
+def _glyph_style(ui: Ui, status: str) -> str:
     """A status glyph's style: the theme's role colour, green/yellow/red by default."""
     role = _GLYPH_ROLES.get(status)
     return (status_role_style(ui.theme, role) if role else None) or ""
@@ -152,7 +152,7 @@ def fix_plan(
 
     Its confirmation prints it on stderr before the question.
     """
-    arrow = _glyphs(ui_context(strict=False))["fix"]
+    arrow = _glyphs(build_terminal(strict=False))["fix"]
     width = max((len(command) for command, _checks in (*runnable, *manual)), default=0)
     lines: list[str] = []
     for heading, fixes in (("Fixes to run", runnable), ("Needs you", manual)):
@@ -167,7 +167,7 @@ def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]],
 
     A long detail wraps within its column, as in :func:`emit_check_list`.
     """
-    ui = ui_context(strict=False)
+    ui = build_terminal(strict=False)
     glyphs = _glyphs(ui)
     commands = [run_line(row.fix) for row in rows]
     command_width = max((len(command) for command in commands), default=0)
@@ -185,15 +185,15 @@ def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]],
             lines += [line, *(Text(more) for more in rest)]
         else:
             lines += [line, *(Text(more) for more in _wrap(detail, width, 4))]
-    ui.styled(Text("\n").join(lines), truncate=True)
+    print_styled(ui, Text("\n").join(lines), truncate=True)
 
 
-def _glyphs(ui: UiContext) -> dict[str, str]:
+def _glyphs(ui: Ui) -> dict[str, str]:
     """ASCII glyphs under an ASCII border (the ``ansible graph tree`` rule)."""
     return _ASCII_GLYPHS if ui.theme.border == "ascii" else _UNICODE_GLYPHS
 
 
-def _glyph_line(ui: UiContext, glyphs: dict[str, str], status: str) -> Text:
+def _glyph_line(ui: Ui, glyphs: dict[str, str], status: str) -> Text:
     line = Text("  ")
     line.append(glyphs.get(status, "?"), style=_glyph_style(ui, status))
     line.append(" ")

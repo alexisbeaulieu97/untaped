@@ -27,7 +27,7 @@ from untaped.runtime.sink import (
 from untaped.screen.core import Cmd, Quit, Screen
 from untaped.sdk._run import Run, recording, run_or_none
 from untaped.sdk._theme import ThemeSpec
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Ui
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
@@ -453,7 +453,7 @@ def test_lines_emitted_while_a_screen_runs_print_after_it(
     stream = TtyStringIO()
     backend = _EmittingBackend()
     backend.stream = stream
-    ui = UiContext(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
+    ui = Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
     with redirect_stderr(stream), _opened():
         assert ui.run(_screen()) == "done"
 

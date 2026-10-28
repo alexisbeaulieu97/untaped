@@ -14,7 +14,6 @@ from untaped.screen.prompts import (
     PROMPT_ALTERNATIVE,
     PROMPT_COMMAND,
     confirm_screen,
-    multiselect_screen,
     secret_screen,
     select_screen,
     text_screen,
@@ -40,7 +39,6 @@ def _all_screens() -> list[Callable[[], Screen[Any, Any]]]:
         lambda: secret_screen("Token", confirmation=True),
         lambda: select_screen("Pick", CHOICES, 1),
         lambda: select_screen("Pick", CHOICES, None, search=True),
-        lambda: multiselect_screen("Pick many", CHOICES, [0]),
         lambda: confirm_screen("Continue?", True),
     ]
 
@@ -327,39 +325,6 @@ def test_search_select_ctrl_d_waits_while_a_query_is_typed() -> None:
     assert _drive(select_screen("Pick", CHOICES, None, search=True), "ctrl-d").outcome == Cancel()
 
 
-# --- multiselect ----------------------------------------------------------------
-
-
-def test_multiselect_preselects_the_defaults() -> None:
-    run = _drive(multiselect_screen("Pick many", CHOICES, [2]), "enter")
-
-    assert re.search(r"\[ \] Alpha +the first", run.frames[0])
-    assert "[✓] Gamma" in run.frames[0]
-    assert run.result == [2]
-
-
-def test_multiselect_toggles_with_space_and_returns_the_checked_positions_in_order() -> None:
-    run = _drive(
-        multiselect_screen("Pick many", CHOICES, []),
-        "down", "down", " ", "up", "up", " ", "enter",
-    )  # fmt: skip
-
-    assert run.result == [0, 2]
-
-
-def test_multiselect_can_end_with_nothing_checked() -> None:
-    run = _drive(multiselect_screen("Pick many", CHOICES, [0]), " ", "enter")
-
-    assert run.result == []
-
-
-def test_multiselect_names_space_in_the_footer_and_cancels_on_ctrl_d() -> None:
-    run = _drive(multiselect_screen("Pick many", CHOICES, []), "ctrl-d")
-
-    assert "space toggle" in run.frames[0]
-    assert run.outcome == Cancel()
-
-
 # --- confirm --------------------------------------------------------------------
 
 
@@ -424,8 +389,6 @@ MANY = [PromptChoice(index, f"Choice {index:02}") for index in range(20)]
         (lambda: select_screen("Pick", MANY, None), 5),
         (lambda: select_screen("Pick", MANY, None, search=True), 7),
         (lambda: select_screen("Pick", MANY, None, search=True), 8),
-        (lambda: multiselect_screen("Pick many", MANY, []), 4),
-        (lambda: multiselect_screen("Pick many", MANY, []), 5),
     ],
 )
 def test_a_list_prompt_never_draws_more_lines_than_the_terminal_has(

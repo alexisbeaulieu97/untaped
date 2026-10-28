@@ -13,7 +13,7 @@ import pytest
 from cyclopts import App
 
 from untaped.sdk._cli import LimitOption, ParallelOption, report_errors
-from untaped.sdk._ui import UiContext
+from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
     ConfigError,
     ExitCode,
@@ -82,7 +82,7 @@ def test_ctrl_c_at_a_prompt_exits_130() -> None:
     @app.default
     def run() -> None:
         with report_errors():
-            UiContext(stdin=TtyStringIO(), prompt_backend=_Interrupting()).confirm("Go?")
+            Ui(stdin=TtyStringIO(), prompt_backend=_Interrupting()).confirm("Go?")
 
     result = invoke_cli(app, [])
 
@@ -104,9 +104,11 @@ def test_shared_numeric_options_reject_values_below_one_as_usage(args: list[str]
     assert result.stderr.startswith("error:")
 
 
-def test_confirm_action_needs_a_terminal_or_yes() -> None:
-    ui = UiContext(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(confirms=[True]))
+def test_the_terminal_guard_needs_a_terminal() -> None:
+    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(confirms=[True]))
 
-    assert ui.confirm_action("Delete?", assume_yes=True) is True
-    with pytest.raises(UsageError, match="prune requires --yes when not interactive"):
-        ui.confirm_action("Delete?", refusal="prune requires --yes when not interactive")
+    with (
+        pytest.raises(UsageError, match="prune requires --yes when not interactive"),
+        ui.terminal(refusal="prune requires --yes when not interactive"),
+    ):
+        pass

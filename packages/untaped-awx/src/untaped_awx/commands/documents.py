@@ -35,7 +35,7 @@ from untaped_awx.commands._options import (
     Writes,
     reject_duplicate_org_scope,
 )
-from untaped_awx.commands.save_runner import print_paths, print_yaml, save_batch
+from untaped_awx.commands.save_runner import path_lines, save_batch, yaml_text
 from untaped_awx.document import Document as AwxDocument
 from untaped_awx.records import ApplyOutcomeRow
 
@@ -137,7 +137,7 @@ class Export(AwxCommand):
         None, description="Add TEXT as a '#' comment at the top of each document."
     )
     output: Output[AwxDocument] = Output(
-        format="yaml", render={"yaml": print_yaml, "paths": print_paths}
+        format="yaml", render={"yaml": yaml_text, "paths": path_lines}
     )
 
     def run(self) -> Iterator[AwxDocument]:

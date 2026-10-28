@@ -58,7 +58,6 @@ class ScriptedTerminal:
         self._texts: deque[str] = deque()
         self._secrets: deque[str] = deque()
         self._selections: deque[Any] = deque()
-        self._multiselects: deque[list[Any]] = deque()
         self._picks: deque[PickResult | None] = deque()
         self._screens: deque[object] = deque()
 
@@ -131,15 +130,6 @@ class ScriptedTerminal:
         search: bool,
     ) -> Any:
         return self._next(self._selections, "select", message)
-
-    def multiselect(
-        self,
-        message: str,
-        choices: Sequence[PromptChoice[Any]],
-        *,
-        defaults: Sequence[Any],
-    ) -> list[Any]:
-        return list(self._next(self._multiselects, "multiselect", message))
 
     def pick_many(self, request: PickRequest) -> PickResult | None:
         return cast("PickResult | None", self._next(self._picks, "pick_many", request.heading))

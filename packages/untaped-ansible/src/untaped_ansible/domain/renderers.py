@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from functools import cmp_to_key
 from typing import Literal
 
-from untaped.sdk import TreeGraph, TreeGraphEdge, TreeGraphNode, UiContext, plural, tree_text
+from untaped.sdk import TreeGraph, TreeGraphEdge, TreeGraphNode, plural, tree_text
 from untaped_ansible.domain.graph import (
     DependencyGraph,
     EdgeRelation,
@@ -41,7 +41,7 @@ _STOP_REASONS = {"depth": "depth limit", "not_cached": "ref not cached"}
 
 def render_graph(graph: DependencyGraph, fmt: GraphFormat) -> str:
     if fmt == "tree":
-        return tree_text(graph_tree(graph), ui=UiContext())
+        return tree_text(graph_tree(graph))
     if fmt == "mermaid":
         return _render_mermaid(graph)
     if fmt == "json":

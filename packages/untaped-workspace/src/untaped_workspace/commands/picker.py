@@ -18,7 +18,7 @@ from untaped.sdk import (
     PickRequest,
     PickResult,
     PickSetting,
-    UiContext,
+    Terminal,
     UntapedError,
     UsageError,
     command_line,
@@ -141,7 +141,7 @@ def name_validator(store: WorkspaceStore, root: Path) -> Callable[[str], str | N
 
 
 def choose_repos(
-    ui: UiContext,
+    ui: Terminal,
     flagged: list[RepoArg],
     *,
     name: str | None,
@@ -181,7 +181,7 @@ class Picker(NamedTuple):
 
 
 def _pick(
-    ui: UiContext,
+    ui: Terminal,
     picker: Picker,
     *,
     name: str | None,

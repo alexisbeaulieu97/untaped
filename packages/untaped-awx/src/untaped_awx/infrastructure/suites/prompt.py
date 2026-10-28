@@ -1,13 +1,20 @@
-"""Concrete :class:`Prompt` implementation backed by core UI prompts."""
+"""Concrete :class:`Prompt` implementation: the command's terminal asks."""
 
 from __future__ import annotations
 
-from untaped.sdk import PromptChoice, ui_context
+from collections.abc import Callable
+
+from untaped.sdk import PromptChoice, Terminal
 from untaped_awx.domain.suites.suite import VariableSpec
 
 
 class UiPrompt:
-    def __init__(self, *, force_non_interactive: bool = False) -> None:
+    """Ask for a suite variable on the terminal the command hands down (built on first use)."""
+
+    def __init__(
+        self, terminal: Callable[[], Terminal], *, force_non_interactive: bool = False
+    ) -> None:
+        self._terminal = terminal
         self._force_non_interactive = force_non_interactive
 
     def is_interactive(self) -> bool:
@@ -15,16 +22,16 @@ class UiPrompt:
             return False
         # Only ``stdin`` matters: stderr being redirected (``2>/dev/null``)
         # is normal log practice and must not silently disable prompts.
-        return ui_context(strict=False).can_prompt
+        return self._terminal().can_prompt
 
     def ask(self, spec: VariableSpec) -> str:
         prompt_text = spec.description or spec.name
-        ui = ui_context(strict=False)
+        terminal = self._terminal()
         if spec.secret:
-            return ui.secret(prompt_text)
+            return terminal.secret(prompt_text)
         if spec.type == "choice":
-            return ui.select(
+            return terminal.select(
                 prompt_text,
                 [PromptChoice(value=str(choice), label=str(choice)) for choice in spec.choices],
             )
-        return ui.text(prompt_text)
+        return terminal.text(prompt_text)
