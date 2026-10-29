@@ -87,7 +87,7 @@ lists the categories. A plugin's error classes declare them as class defaults
 - A failed row carries the structured failure next to its `detail`:
   `error=Failure.from_exception(exc, message=detail)` on `OutcomeRecord` and
   `TargetRecord` rows (`.model_dump(mode="json")` for a dict row). Building
-  the `Failure` counts nothing; `emit` counts the row. Keep the exception
+  the `Failure` counts nothing; printing the row counts it. Keep the exception
   until the row is built; never flatten it into a string first.
 
 See [exit codes](./exit-codes.md) for the category table.
@@ -111,12 +111,12 @@ the helpers do this for you, so never print a JSON line yourself.
 | Success | Muted by `-q` | `ctx.diag.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
 | Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
-| Empty list | `No <plural> found.`, in table format only | `emit(rows, …, empty="No repos found.")` |
+| Empty list | `No <plural> found.`, in table format only | `self.output.empty("No repos found.")` |
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: return the `Text` from an `Output` renderer (core prints it, in colour on a terminal); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
 | Preview table | Records a user reads on stderr before a question (planned changes) | `ctx.diag.info(rows, unmuted=True)`, or rows in a `preview=`: core lays them out as a stdout table, `Column` fields in the run's theme; never lay out a table or read the theme yourself |
 
-`ctx.diag` writes every stderr line; never `echo()` an `error:`, `warning:`
+`ctx.diag` writes every stderr line; never print an `error:`, `warning:`
 or `failed:` line. `-q` mutes `info`, `success` and progress; `unmuted=True` is for a preview before
 a prompt, a stream the user asked to watch or output a flag asks for. Never `print()`, `warnings.warn()`
 (take a `warn` callback; a deprecated Python API warns through its [mark](deprecation.md)) or your own `Console`.
@@ -128,18 +128,17 @@ output (a hook's stderr, a job log) with `diag.relay(text)`: it never counts.
 
 ## Options
 
-Use the shared option aliases instead of declaring your own copy:
+Declare a shared field block instead of a flag of your own:
 
-| Alias | Flag |
+| Field | Flags |
 |---|---|
-| `FormatOption` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`) |
-| `TreeFormatOption` | `FormatOption` plus `tree`; pass the records as graphs, `emit(tree=)` |
-| `ColumnsOption` | `-c/--columns` |
-| `YesOption` | `-y/--yes`: skips only the prompt. `--dry-run` still wins. |
-| `DryRunOption` | `--dry-run`: preview, then exit 0 |
-| `StdinOption` | `--stdin` |
-| `ParallelOption` | `-j/--parallel N`: N >= 1. Cap it with `clamp_parallel`. |
-| `LimitOption` | `--limit N`: N >= 1 |
+| `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`) and `-c/--columns` |
+| `confirm: Confirm` | `-y/--yes`, which skips only the prompt, and `--dry-run`, which still wins |
+| `dry_run: DryRun` | `--dry-run`: preview, then exit 0 |
+| `stdin: Stdin[R]` | `--stdin` |
+| `refresh: Refresh` | `--refresh` and `--cached` |
+| `parallel: Parallel` | `-j/--parallel N`: N >= 1, clamped to its `cap` |
+| `limit: Limit` | `--limit N`: N >= 1 |
 
 These short flags are reserved and have one meaning each: `-f --format`,
 `-c --columns`, `-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`,
@@ -199,15 +198,14 @@ that prints records declares `Output[R]`, which gives it `--format`.
   changes them with `self.output.columns.add`, `.drop` and `.show`. A column
   is a field reference; a string names a key no field declares (a `Spread`
   key, or one an `extra="allow"` row carries).
-- Never pass defaults as `columns=` (`columns or DEFAULTS`):
-  `--columns +name/-name` edits the defaults, and a named column is always
-  shown, even when empty. An unknown name only warns on `OutcomeRecord` rows;
-  a command whose other rows follow a side effect calls `check_columns` first.
+- `--columns +name/-name` edits the default columns, and a named column is
+  always shown, even when empty. Core refuses a name `R` has no field for
+  before `run` starts.
 - A record's kind is the plugin whose package defines it and its class in snake case
   (`acme-tools.widget` for `Widget`), given at composition: name a noun, `<Verb>Outcome` for a
-  mutation. One model per kind; `emit` reads it from the rows. Elsewhere name the model
+  mutation. One model per kind; core reads it from the rows. Elsewhere name the model
   (`kind_of(Widget)`), never the string, so a rename misses no line. Fields must survive a JSON round trip (`Record`'s docstring says which
-  fail). A document is no row: `emit_document`. Records refuse undeclared fields; `extra="ignore"`
+  fail). Records refuse undeclared fields; `extra="ignore"`
   keeps a service answer's typed part, `"allow"` all of it (extras `JsonValue`, base fields first).
 - A record no command's output names (a diagnostic, a row a stream prints) goes in your plugin
   class's `records`, which gives it the kind `<plugin>.<snake_case of the class>`.
@@ -234,8 +232,8 @@ that prints records declares `Output[R]`, which gives it `--format`.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data; for a table, annotate the field with `TableGlyph`
   (`Annotated[bool, TableGlyph(true="✓")]`), which every other format ignores.
-- `emit` gives each format the shape [Scripting](../scripting.md#output-and-pipes)
-  describes: pass a sequence for a collection, even of one item, and a single
+- `Output` gives each format the shape [Scripting](../scripting.md#output-and-pipes)
+  describes: `run` yields a collection, even of one item, and returns a single
   record for a detail view.
 
 ## Enforcement
@@ -283,20 +281,26 @@ The sections above name the helper for each rule. Beyond those:
   `self.ctx.plugin`, an 11.x `SPEC`). Read blobs through
   `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
-A row-producing command uses `FormatOption`, `ColumnsOption` and `emit`; its
-records take their kinds from their classes:
+A row-producing command declares `Output[R]` and yields its records, which
+take their kinds from their classes:
 
 ```python
-from untaped.sdk import ColumnsOption, FormatOption, Record, emit
+from collections.abc import Iterator
+
+from untaped.sdk import Command, Output, Record
 
 
 class Item(Record):
     id: str
 
 
-@app.command(name="items")
-def items_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    emit([Item(id="one")], fmt=fmt, columns=columns)
+class Items(Command):
+    """List the items."""
+
+    output: Output[Item]
+
+    def run(self) -> Iterator[Item]:
+        yield Item(id="one")
 ```
 
 ## Piping

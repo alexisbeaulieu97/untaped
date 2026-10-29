@@ -49,7 +49,6 @@ from untaped.runtime.declaration import (
 )
 from untaped.runtime.registry import DeclaredBlocks, PluginSpec, SkillAsset, resolve_target
 from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
-from untaped.sdk._cli import _format_default as format_default
 from untaped.sdk._cli import report_errors
 from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
@@ -77,6 +76,12 @@ if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
 
     from untaped.runtime.composition import PluginEntry
+
+
+def format_default(value: object) -> str:
+    """Help text for a ``--format`` default; ``table`` defers to the overrides."""
+    shown = getattr(value, "value", value)
+    return "table, or UNTAPED_FORMAT / untaped.ui.format" if shown == "table" else str(shown)
 
 
 @dataclass(frozen=True)

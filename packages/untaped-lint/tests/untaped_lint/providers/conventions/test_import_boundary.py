@@ -97,7 +97,7 @@ def test_core_s_api_is_allowed(check: Check) -> None:
 
 def test_the_sdk_modules_and_own_modules_are_allowed(check: Check) -> None:
     source = (
-        "from untaped.sdk import create_app\n"
+        "from untaped.sdk import Command\n"
         "from untaped.sdk.testing import check_plugin\n"
         "from untaped.sdk.testing import git\n"
         "from demo.domain import x\n"

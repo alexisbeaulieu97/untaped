@@ -12,7 +12,7 @@ import io
 import pytest
 from cyclopts import App
 
-from untaped.sdk._cli import LimitOption, ParallelOption, report_errors
+from untaped.sdk._cli import report_errors
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
     ConfigError,
@@ -88,20 +88,6 @@ def test_ctrl_c_at_a_prompt_exits_130() -> None:
 
     assert result.exit_code == 130
     assert "error: prompt cancelled" in result.stderr
-
-
-@pytest.mark.parametrize("args", [["--parallel", "0"], ["-j", "-1"], ["--limit", "0"]])
-def test_shared_numeric_options_reject_values_below_one_as_usage(args: list[str]) -> None:
-    app = App(name="demo")
-
-    @app.default
-    def run(*, parallel: ParallelOption = 1, limit: LimitOption = None) -> None:
-        del parallel, limit
-
-    result = invoke_cli(app, args)
-
-    assert result.exit_code == 2
-    assert result.stderr.startswith("error:")
 
 
 def test_the_terminal_guard_needs_a_terminal() -> None:

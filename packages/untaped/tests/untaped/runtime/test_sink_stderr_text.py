@@ -28,7 +28,6 @@ from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import Diagnostics, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import (
-    clamp_parallel,
     raise_usage,
     report_declined,
 )
@@ -83,10 +82,6 @@ def _usage() -> None:
         raise_usage("--foo takes a number")
 
 
-def _clamp() -> None:
-    clamp_parallel(64, cap=8, policy="2 * os.cpu_count()")
-
-
 def _empty_note() -> None:
     collection(_ui(), [], fmt="table", empty="No repos found.")
 
@@ -117,7 +112,6 @@ CASES: dict[str, Callable[[], None]] = {
     "report-error-hint": _report_error_hint,
     "declined": _declined,
     "usage": _usage,
-    "clamp-parallel": _clamp,
     "empty-note": _empty_note,
     "debug-line": _debug_line,
     "progress-lines": _progress_lines,

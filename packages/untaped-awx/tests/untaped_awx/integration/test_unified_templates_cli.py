@@ -148,7 +148,7 @@ def test_list_limit_caps_results(fake_aap: Any) -> None:
 def test_list_limit_below_one_is_a_usage_error(
     fake_aap: Any, command: tuple[str, ...], value: str
 ) -> None:
-    """The SDK ``LimitOption``: no ``--limit 0`` escape hatch, as in github and jira."""
+    """The SDK ``Limit`` field: no ``--limit 0`` escape hatch, as in github and jira."""
     result = run([*command, "--limit", value])
     assert result.exit_code == 2, result.output
     assert "--limit" in result.stderr

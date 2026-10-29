@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import TextIO
 
 import pytest
+from cyclopts import App
 
 from untaped.screen.core import Cancel, Cmd, Key, Quit, Screen
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
-from untaped.sdk._cli import create_app, report_errors
+from untaped.sdk._cli import report_errors
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui, no_terminal_message
 from untaped.sdk.errors import (
@@ -86,7 +87,7 @@ def test_run_maps_terminal_exceptions_like_every_prompt(
 
 
 def test_run_without_a_terminal_names_the_command_and_alternative() -> None:
-    app = create_app(name="demo")
+    app = App(name="demo")
 
     @app.default
     def go() -> None:
@@ -99,7 +100,7 @@ def test_run_without_a_terminal_names_the_command_and_alternative() -> None:
 
 
 def test_a_command_test_runs_a_screen_through_the_scripted_backend_without_a_terminal() -> None:
-    app = create_app(name="demo")
+    app = App(name="demo")
 
     @app.default
     def go() -> None:
@@ -115,7 +116,7 @@ def test_a_command_test_runs_a_screen_through_the_scripted_backend_without_a_ter
 
 
 def test_a_command_test_with_an_interactive_stdin_needs_no_terminal_for_a_screen() -> None:
-    app = create_app(name="demo")
+    app = App(name="demo")
 
     @app.default
     def go() -> None:
@@ -370,7 +371,7 @@ def test_pick_many_needs_no_terminal_for_a_scripted_backend() -> None:
 
 
 def _refused(request: PickRequest) -> str:
-    app = create_app(name="demo")
+    app = App(name="demo")
 
     @app.default
     def go() -> None:

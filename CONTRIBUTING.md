@@ -110,7 +110,7 @@ packages/untaped-<name>/src/untaped_<name>/
 1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
    `SPEC` and `build_app`. Set
    `SPEC.help` to the app's one-line help (see
-   [Settings and the plugin app](docs/plugins.md#settings-and-the-plugin-app)).
+   [Settings and the plugin class](docs/plugins.md#settings-and-the-plugin-class)).
 2. In its `pyproject.toml` (copy a sibling package's), add
    `<name> = "untaped_<name>:SPEC"` under
    `[project.entry-points."untaped.plugins"]`.

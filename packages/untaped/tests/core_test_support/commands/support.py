@@ -29,7 +29,7 @@ from untaped.sdk import (
     StubSkill,
     TlsVerify,
 )
-from untaped.sdk._cli import create_app, run_cyclopts_app
+from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability
 from untaped.sdk.testing import plugin_candidate
@@ -143,7 +143,7 @@ def make_spec(
     """
 
     def _factory() -> App:
-        return create_app(name=name, help=f"{name} plugin.")
+        return App(name=name, help=f"{name} plugin.")
 
     return PluginSpec(
         name=name,

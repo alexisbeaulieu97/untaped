@@ -18,7 +18,6 @@ from untaped.runtime.registry import (
     SkillAsset,
 )
 from untaped.sdk import Plugin
-from untaped.sdk._cli import create_app
 from untaped.sdk._names import kebab
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability
@@ -36,7 +35,7 @@ class OtherProfile(BaseModel):
 
 def nullary_app(name: str = "test-app") -> Callable[[], App]:
     def _factory() -> App:
-        return create_app(name=name, help=f"{name} help")
+        return App(name=name, help=f"{name} help")
 
     return _factory
 
