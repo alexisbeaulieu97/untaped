@@ -167,7 +167,6 @@ paths = [
 min_confidence = 60
 # Framework-registered code looks unused to a static scan.
 ignore_decorators = [
-    "@*.command",  # cyclopts registers the command on its app
     "@*.default",
     "@model_validator",  # pydantic calls validators and serializers
     "@field_validator",
