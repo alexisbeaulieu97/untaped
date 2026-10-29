@@ -242,11 +242,11 @@ def _api_url(data: Mapping[str, Any]) -> str | None:
 
 
 def _browser_url(data: Mapping[str, Any]) -> str:
+    """A payload's browser URL, on the Jira its ``self`` link names."""
     self_url = data.get("self")
     key = data.get("key")
     if isinstance(self_url, str) and "/rest/api/" in self_url and isinstance(key, str):
-        base = self_url.split("/rest/api/", 1)[0]
-        return f"{base}/browse/{key}"
+        return browse_url(self_url.split("/rest/api/", 1)[0], key) or ""
     return self_url if isinstance(self_url, str) else ""
 
 
