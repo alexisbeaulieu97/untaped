@@ -12,6 +12,7 @@ from pydantic import Field
 from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.guides import MAP_LINE_LIMIT, guide_violations
 from untaped.runtime import bootstrap
+from untaped.runtime.command_lines import console_lines
 from untaped.runtime.registry import PluginSpec
 from untaped.sdk import Command, Plugin, Record, create_app
 from untaped.sdk.contracts import Contract, Provider
@@ -53,9 +54,14 @@ def _guide(body: str, description: str = "Read before showing anything.") -> str
     return f"---\ndescription: {description}\n---\n\n{body}\n"
 
 
-def _quoting(body: str) -> list[tuple[str, str, str]]:
-    """The violations of a plugin class's guide saying ``body``: enum ``Finish`` of ``svc show``."""
-    finish = enum.Enum("Finish", {"MATTE": "matte"}, module=__name__)  # type: ignore[misc]
+def _quoting(
+    body: str, *others: type[Plugin], module: str = __name__, checked: str = "svc"
+) -> list[tuple[str, ...]]:
+    """The violations of a plugin class's guide saying ``body``: enum ``Finish`` of ``svc show``.
+
+    ``module`` defines the enum: another plugin's (one of ``others``), which ``checked`` names.
+    """
+    finish = enum.Enum("Finish", {"MATTE": "matte"}, module=module)  # type: ignore[misc]
     finish.__doc__ = f"How it is finished.\n\n{body}"
 
     def run(self: Command) -> None:
@@ -72,8 +78,9 @@ def _quoting(body: str) -> list[tuple[str, str, str]]:
             "run": run,
         },
     )
-    found = _map_violations(make_plugin("svc", commands=(show,), records=(Widget,)))
-    return [tuple(line.split("::", 2)) for line in found]  # type: ignore[misc]
+    svc = make_plugin("svc", commands=(show,), records=(Widget,))
+    found = _map_violations(svc, *others, name=checked)
+    return [tuple(line.split("::", 2)) for line in found]
 
 
 def test_a_clean_guide_has_no_violation() -> None:
@@ -181,6 +188,21 @@ def test_a_console_line_ending_in_a_backslash_goes_on() -> None:
     found = _quoting(body)
     assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
         ("guide-command", "untaped svc show --nope"),
+    ]
+
+
+def test_a_continuation_prompt_is_cut_and_a_last_backslash_goes_nowhere() -> None:
+    examples = "```console\n$ untaped svc show \\\n> --nope\n$ untaped svc show \\\n```"
+    assert console_lines(examples) == ["untaped svc show --nope", "untaped svc show"]
+
+
+def test_a_guide_is_checked_under_the_plugin_whose_package_defines_it() -> None:
+    """``atlas`` defines the enum and only ``svc`` uses it: atlas's check reads it."""
+    atlas = make_plugin("atlas")
+    body = "Run `untaped svc missing`."
+    found = _quoting(body, atlas, module=atlas.__module__, checked="atlas")
+    assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
+        ("guide-command", "untaped svc missing"),
     ]
 
 

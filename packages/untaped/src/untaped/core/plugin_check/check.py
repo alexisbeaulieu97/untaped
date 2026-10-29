@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ValidationError
 
 from untaped.core.commands.records import PluginCheck
+from untaped.runtime.declaration import target_of
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.sdk.errors import UsageError, first_validation_error
@@ -163,9 +164,11 @@ def fill_owners(
     offering = {target: plugin.name for plugin in declaration.plugins for target in plugin.offers}
     quarantined = {record.name for record in result.quarantine}
     entry_points = {
-        _package(candidate.target): candidate
+        _package(target if isinstance(target := candidate.target, str) else target_of(target)): (
+            candidate
+        )
         for candidate in candidates
-        if candidate.name in quarantined and isinstance(candidate.target, str)
+        if candidate.name in quarantined
     }
     found: list[tuple[str, PluginCandidate | None]] = []
     for fill in declaration.plugin(name).fills:
@@ -189,11 +192,15 @@ def _unowned(
     """
     quarantined = {record.name: record for record in result.quarantine}
     rows: list[PluginCheck] = []
+    seen: set[str] = set()
     for contract, owner in fill_owners(name, result, candidates):
+        if owner is not None and owner.name in seen:
+            continue  # one row per quarantined owner, however many fills it has
         if owner is None:
             why = f"fills {contract}, which no installed plugin offers"
             rows.append(row("registration", contract.rpartition(":")[2], "fail", why))
         elif owner.name in quarantined:
+            seen.add(owner.name)
             record = quarantined[owner.name]
             why = f"{owner.name} is quarantined ({record.reason}): {record.detail}"
             rows.append(row("registration", owner.name, "fail", why))

@@ -82,11 +82,17 @@ def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> 
 
 
 def _guide_decls(result: CompositionResult, name: str) -> tuple[GuideDecl, ...]:
-    """The guides plugin class ``name`` defines: its bundles' and enums' docstrings."""
-    declaration = result.mount.declaration
-    if not any(plugin.name == name for plugin in declaration.plugins):
-        return ()
-    return tuple(guide for guide in declaration.plugin(name).guides if guide.plugin == name)
+    """The guides plugin class ``name`` defines: its bundles' and enums' docstrings.
+
+    A guide is recorded under each plugin whose commands use it, so one
+    defined in ``name``'s package and used only by another plugin is found there.
+    """
+    found: dict[str, GuideDecl] = {}
+    for plugin in result.mount.declaration.plugins:
+        for guide in plugin.guides:
+            if guide.plugin == name:
+                found.setdefault(guide.target, guide)
+    return tuple(found.values())
 
 
 def _guide(

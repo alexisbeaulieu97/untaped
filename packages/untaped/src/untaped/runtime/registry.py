@@ -578,6 +578,21 @@ def requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
     return requirement.specifier.contains(sdk_version, prereleases=True)
 
 
+def plain_requirements(requires_dist: Sequence[str], distribution: str) -> list[Requirement]:
+    """The requirements on ``distribution`` a default install pulls in: no ``extra`` marker.
+
+    Another marker (``python_version``, ``sys_platform``) keeps a requirement plain.
+    """
+    wanted = canonicalize_name(distribution)
+    return [
+        parsed
+        for parsed in (parse_requirement(line) for line in requires_dist)
+        if parsed is not None
+        and canonicalize_name(parsed.name) == wanted
+        and (parsed.marker is None or not mentions_extra(str(parsed.marker)))
+    ]
+
+
 def owner_requirement(
     requires_dist: Sequence[str], owner: str, distribution: str | None = None
 ) -> Requirement | None:
@@ -587,17 +602,18 @@ def owner_requirement(
     dependencies, since a fill subclasses the owner's contract; an 11.x one
     declares it under an extra named after the owner (``untaped-acme[workspace]``).
     ``distribution`` is ``untaped-<owner>`` by default. A plain requirement
-    wins. The import lint, the ``provides-requirement`` convention and the
-    ``owner-out-of-range`` quarantine all read this one requirement.
+    (:func:`plain_requirements`) wins. The ``provides-requirement`` convention
+    and the ``owner-out-of-range`` quarantine read this one requirement.
     """
     wanted = canonicalize_name(distribution or f"untaped-{owner}")
+    plain = plain_requirements(requires_dist, wanted)
+    if plain:
+        return plain[0]
     found: Requirement | None = None
     for line in requires_dist:
         parsed = parse_requirement(line)
-        if parsed is None or canonicalize_name(parsed.name) != wanted:
+        if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
             continue
-        if parsed.marker is None:
-            return parsed
         # The environment fills every other variable, so ``extra`` decides; a marker
         # naming one it can't (``extras``) adds no owner requirement.
         try:

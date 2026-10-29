@@ -130,6 +130,11 @@ def test_ranges_for_untaped_and_each_owner_pass(install: Install) -> None:
     assert _rule(install, _RANGES) == []
 
 
+def test_an_owner_behind_a_marker_naming_no_extra_is_plain(install: Install) -> None:
+    requires = (*_RANGES[:2], "untaped-kiosk>=3,<4; python_version >= '3.10'")
+    assert _rule(install, requires) == []
+
+
 @pytest.mark.parametrize(
     "kiosk",
     [

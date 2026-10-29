@@ -38,6 +38,7 @@ from untaped.runtime.registry import (
     mentions_extra,
     owner_requirement,
     parse_requirement,
+    plain_requirements,
 )
 
 
@@ -192,7 +193,12 @@ def _provides_violations(
                 f"{rule}provides for {owner} but has no {owner!r} extra requiring {distribution}"
             )
         elif not (requirement.specifier or requirement.url):
-            found.append(f"{rule}its {owner!r} extra requires {distribution} with no version range")
+            what = (
+                "requires"
+                if plain_requirements(requires, distribution)
+                else (f"its {owner!r} extra requires")
+            )
+            found.append(f"{rule}{what} {distribution} with no version range")
     return found
 
 
@@ -206,13 +212,7 @@ def _fill_requirements(
             continue  # no installed owner: the registration row says so
         seen.add(owner.name)
         distribution = str(canonicalize_name(owner.distribution))
-        plain = [
-            parsed
-            for parsed in (parse_requirement(line) for line in requires)
-            if parsed is not None
-            and parsed.marker is None
-            and canonicalize_name(parsed.name) == distribution
-        ]
+        plain = plain_requirements(requires, distribution)
         if not plain:
             yield (
                 f"{rule}fills a contract of {owner.name}, which it does not require "
