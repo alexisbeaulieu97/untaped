@@ -150,11 +150,10 @@ API, WEB = "github.com/acme/api", "github.com/acme/web"
 
 @pytest.fixture(autouse=True)
 def _owner(home_run: Run) -> Iterator[None]:
-    global OWNER
+    global OWNER, REPOS
     OWNER = Owner()
     with bootstrap.kept_composition(), holding_runs():
         hold_run(bootstrap.compose_root(candidates=[plugin_candidate(ACME)]))
-        global REPOS
         REPOS = ACME.repos.items()  # type: ignore[attr-defined]
         yield
 
@@ -207,7 +206,7 @@ def test_holding_is_idempotent_and_normalised_by_the_item_type(tmp_path: Path) -
 
 def test_holding_an_item_store_no_composed_plugin_lists_is_refused(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
-    stray = Dir(items=str, release=_release, moved=None)._spelled_as("acme", "other").items()
+    stray = Dir(items=str, release=_release, moved=None)._bound_to("acme", "other").items()
     with pytest.raises(ConfigError, match=r"acme\.other is not an item store a composed plugin"):
         project.hold(stray, "x")
     assert _targets(project) == ()

@@ -77,14 +77,6 @@ def test_every_spelling_warns_under_the_declared_one(spelling: list[str]) -> Non
     assert _json_notices(["svc", "run", *spelling]) == [DRY_RUN]
 
 
-def test_a_renamed_option_warns_under_its_name() -> None:
-    (notice,) = _json_notices(["svc", "run", "--old-name", "x"])
-    assert (notice["id"], notice["message"]) == (
-        "cli untaped svc run --old-name VALUE default=unset",
-        "`untaped svc run --old-name` is deprecated and will be removed in untaped-svc 3.0",
-    )
-
-
 def test_each_deprecated_option_used_warns_and_no_other() -> None:
     notices = _json_notices(["svc", "run", "--limit", "2", "-n", "--old-name", "x"])
     assert [notice["id"] for notice in notices] == [

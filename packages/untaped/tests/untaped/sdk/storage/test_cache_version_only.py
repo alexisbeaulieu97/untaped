@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel
 
-from core_test_support.commands.support import make_plugin
+from core_test_support.commands.support import ExtProfile, make_plugin
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import compose, named_plugin_dir
 from untaped.runtime.run import invocation
@@ -209,7 +209,7 @@ def test_it_creates_no_setting() -> None:
     section = _section(composed=_composed(), timed=timed)
     assert section is not None
     assert set(section.model_fields["caches"].annotation.model_fields) == {"timed"}  # type: ignore[union-attr]
-    assert "caches" not in (_section(composed=_composed()) or BaseModel).model_fields
+    assert _section(composed=_composed()) is ExtProfile
     with pytest.raises(ConfigError, match="version-only"):
         COMPOSED.max_age()
     with pytest.raises(ConfigError, match="version-only"):

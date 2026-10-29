@@ -223,7 +223,7 @@ def test_a_deprecated_command_warns_once_naming_its_replacement() -> None:
 
 
 class Assign(Command):
-    """Assign it: renamed from ``set``."""
+    """Assign it."""
 
     def run(self) -> None:
         return None
@@ -238,7 +238,7 @@ class Stow(Command):
         return None
 
 
-def test_the_warning_follows_a_renamed_replacement() -> None:
+def test_the_warning_names_the_replacement_class_path() -> None:
     result = CliInvoker().invoke(_root(Assign, Stow).meta, ["svc", "stow"])
 
     assert f"`untaped svc stow` {_UNDATED}; use `untaped svc assign`" in result.stderr
