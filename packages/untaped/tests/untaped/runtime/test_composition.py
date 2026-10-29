@@ -647,6 +647,25 @@ def test_field_problems_name_the_field() -> None:
     ]
 
 
+def test_text_or_stdin_marks_one_value_not_list_items() -> None:
+    class Many(Command):
+        """Many."""
+
+        texts: Positional[list[TextOrStdin]] = Field(description="Texts.")
+
+        def run(self) -> None:
+            pass
+
+    problems = _problems(_plugin_with(Many))
+    assert [(p.rule, p.where.rpartition(".")[2], p.detail) for p in problems] == [
+        (
+            "field-type",
+            "texts",
+            "TextOrStdin marks one value, not list items: use list[PathOrStdin]",
+        )
+    ]
+
+
 def test_an_argument_cannot_be_deprecated() -> None:
     class Old(Command):
         """Old."""

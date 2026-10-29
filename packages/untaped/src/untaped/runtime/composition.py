@@ -1526,6 +1526,12 @@ class _CommandWalk:
                     f"{spelled} is a root option, which every command takes "
                     f"(`untaped {spelled}`); {fix}",
                 )
+        if OR_STDIN in marks and repeated and value is str:
+            self.problem(
+                "field-type",
+                where,
+                "TextOrStdin marks one value, not list items: use list[PathOrStdin]",
+            )
         stability = next((s for s in map(_stability, marks) if s is not None), None)
         if positional and _deprecated(stability):
             self.problem(

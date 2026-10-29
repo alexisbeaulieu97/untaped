@@ -1007,7 +1007,7 @@ def _run_check(
             check_item.title,
             f"check returned id {outcome.id!r}, expected {check_item.id!r}",
         )
-    ok: object = outcome.ok  # unvalidated too: a positional id lands here
+    ok: object = outcome.ok  # unvalidated too: an id passed first, positionally, lands here
     if not isinstance(ok, bool):
         return _row(
             check_item.id,

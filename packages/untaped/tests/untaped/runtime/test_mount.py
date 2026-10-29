@@ -309,6 +309,37 @@ def test_a_dash_with_nothing_piped_is_refused_not_read_as_empty() -> None:
     assert "error: TEXT: - reads stdin; pipe it" in result.stderr
 
 
+def test_a_dash_on_an_empty_pipe_is_refused_not_read_as_empty() -> None:
+    result = _run("hello", "echo", "-", input="")
+    assert result.exit_code == 2
+    assert "error: TEXT: - reads stdin, but nothing was piped" in result.stderr
+
+
+class Pair(Command):
+    """Join two texts, either read from stdin with ``-``."""
+
+    left: Positional[TextOrStdin] = Field(description="The left text, or - for stdin.")
+    right: TextOrStdin = Field("", description="The right text, or - for stdin.")
+
+    def run(self) -> str:
+        return self.left + self.right
+
+
+class Pairs(Plugin):
+    """Join texts."""
+
+    settings = HelloSettings
+    commands = (Pair,)
+
+
+def test_only_one_dash_reads_stdin() -> None:
+    result = _run(
+        "pairs", "pair", "-", "--right", "-", input="text\n", plugins=[_candidate("pairs", Pairs)]
+    )
+    assert result.exit_code == 2
+    assert "error: LEFT and --right each give -, but only one can read stdin" in result.stderr
+
+
 def test_one_record_is_the_detail_view_and_none_prints_nothing() -> None:
     shown = _run("hello", "show", "ada", "--format", "json")
     assert json.loads(shown.stdout)["name"] == "ada"

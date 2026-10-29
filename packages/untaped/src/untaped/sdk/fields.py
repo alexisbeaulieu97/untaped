@@ -337,7 +337,12 @@ ExistingFile = Annotated[Path, AfterValidator(_existing_file)]
 """A path that must name an existing file (exit 2 otherwise, naming the path)."""
 
 TextOrStdin = Annotated[str, OR_STDIN]
-"""A value, or ``-`` to read it from stdin."""
+"""A value, or ``-`` to read it from stdin.
+
+A pipe that is empty once its last newline is trimmed is a usage error, and so
+is a second ``-`` reading stdin in the same command line. It marks one value,
+not list items (``list[PathOrStdin]`` does).
+"""
 
 PathOrStdin = Annotated[Path, OR_STDIN]
 """A path, or ``-`` to read the content from stdin.
@@ -1230,7 +1235,8 @@ class Stdin[R: BaseModel](FieldBlock):
         For a command that tells ``-`` from a value itself, where
         :data:`TextOrStdin` would hand it the text in the value's place. One
         terminal newline is trimmed. ``-`` with ``--stdin``, or a terminal
-        stdin, is a usage error naming ``what``; an empty pipe is ``""``.
+        stdin, is a usage error naming ``what``. Unlike :data:`TextOrStdin`, an
+        empty pipe is ``""``, left to the command.
         """
         from untaped.sdk import _stdin  # noqa: PLC0415 - only a reader pays
 
