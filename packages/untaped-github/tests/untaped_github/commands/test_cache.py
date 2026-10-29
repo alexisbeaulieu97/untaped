@@ -391,7 +391,7 @@ def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo)
 @pytest.mark.parametrize(
     ("repo", "message"),
     [
-        ("acme/missing", "repository is not in the local corpus"),
+        ("acme/missing", "cached repo not found: 'acme/missing'"),
         ("acme", "repository must be owner/name: 'acme'"),
     ],
 )
@@ -419,10 +419,10 @@ def test_cache_delete_reports_the_size_it_frees(source_repo: SourceRepo, dry_run
     [row] = json.loads(result.stdout)
     assert size > 0
     if dry_run:
-        assert (row["status"], row["disk_bytes"]) == ("cached", size)
+        assert (row["action"], row["disk_bytes"]) == ("planned", size)
     else:
         # Measured after github's refs and file go, just before the directory does.
-        assert row["status"] == "removed"
+        assert row["action"] == "deleted"
         assert 0 < row["disk_bytes"] <= size
         assert not Path(row["path"]).exists()
 
@@ -454,7 +454,7 @@ def test_cache_delete_leaves_a_repo_other_plugins_still_use(
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
-    assert (row["status"], row["kept"], row["disk_bytes"]) == (
+    assert (row["action"], row["kept"], row["disk_bytes"]) == (
         "released",
         "ansible, workspace (2 worktrees)",
         0,
@@ -496,7 +496,7 @@ def test_cache_delete_table_shows_what_it_freed(source_repo: SourceRepo) -> None
     table = run(["cache", "delete", "acme/api", "--yes"])
 
     assert table.exit_code == 0, table.output
-    assert re.search(r"acme/api\W+removed\W+[0-9.]+ KiB freed", table.stdout), table.stdout
+    assert re.search(r"acme/api\W+main\W+deleted\W+[0-9.]+ KiB", table.stdout), table.stdout
 
 
 def test_cache_size_counts_links_not_what_they_point_at(
@@ -549,3 +549,20 @@ def test_cache_delete_dry_run_table_shows_what_each_repo_would_free(
 
     assert result.exit_code == 0, result.output
     assert "disk_bytes" in result.stdout.splitlines()[1]
+
+
+def test_cache_delete_says_which_release_failed_in_its_row(
+    source_repo: SourceRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _populate(source_repo, "acme/api")
+
+    def busy(self: RepoStore) -> object:
+        raise GitCorpusError("could not lock the repo store", category="unavailable")
+
+    monkeypatch.setattr(RepoStore, "release", busy)
+    result = run(["cache", "delete", "acme/api", "--yes", "--format", "json"])
+
+    assert result.exit_code == 5, result.output
+    [row] = json.loads(result.stdout)
+    assert (row["action"], row["error"]["category"]) == ("failed", "unavailable")
+    assert _cached() == ["acme/api"]  # a failed release keeps the copy

@@ -79,7 +79,7 @@ def test_get_a_retired_key_is_an_unknown_setting(_isolated_config: Path) -> None
     result = _config("get", "renamed.ancient_path")
 
     assert result.exit_code != 0
-    assert "unknown setting: 'renamed.ancient_path' (retired; now renamed.cache_dir)" in (
+    assert "setting not found: 'renamed.ancient_path' (retired; now renamed.cache_dir)" in (
         result.stderr
     )
     assert "hint: run `untaped config migrate`" in result.stderr
@@ -91,7 +91,8 @@ def test_a_deleted_key_is_an_unknown_setting_with_its_note(command: str) -> None
 
     assert result.exit_code != 0
     assert (
-        "unknown setting: 'renamed.store_dir' (deleted in 11.0; set git.store_dir)" in result.stderr
+        "setting not found: 'renamed.store_dir' (deleted in 11.0; set git.store_dir)"
+        in result.stderr
     )
     assert "hint: run `untaped config migrate`" in result.stderr
 

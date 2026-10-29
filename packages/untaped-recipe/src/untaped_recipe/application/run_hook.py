@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.sdk import UsageError
+from untaped.sdk import UsageError, not_found
 from untaped_recipe.application.files import read_existing_text_file
 from untaped_recipe.application.ports import HookExecutorPort
 from untaped_recipe.domain.hook_project import HookKind
@@ -217,13 +217,13 @@ def _transform_content(
                 file,
             )
         except OSError as exc:
-            raise PathNotFoundError(f"--content-file file not found: {content_file}") from exc
+            raise PathNotFoundError(not_found("--content-file file", content_file)) from exc
     if content is not None:
         return content, resolved_file, file
     return (
         read_existing_text_file(
             resolved_file,
-            missing=f"transform file not found: {file}",
+            missing=not_found("transform file", file),
             not_file=f"transform path is not a file: {file}",
         ),
         resolved_file,

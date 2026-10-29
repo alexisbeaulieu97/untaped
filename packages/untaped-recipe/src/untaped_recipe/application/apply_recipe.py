@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 
+from untaped.sdk import not_found
 from untaped_recipe.application.files import read_existing_text_file
 from untaped_recipe.application.ports import HookExecutorPort
 from untaped_recipe.domain.paths import confined_path, safe_relative_path
@@ -139,7 +140,7 @@ class ApplyRecipe:
         dest = _render_path(step.dest, specs=recipe.inputs, values=inputs, field="dest")
         source = confined_path(recipe_dir, template, field="template")
         if not source.is_file():
-            raise PathNotFoundError(f"template not found: {template}")
+            raise PathNotFoundError(not_found("template", template))
         if step.if_absent and _destination_exists(dest, target, buffer):
             return
         buffer[dest] = render_template(
@@ -163,7 +164,7 @@ class ApplyRecipe:
         dest = _render_path(step.dest, specs=recipe.inputs, values=inputs, field="dest")
         source = confined_path(recipe_dir, source_relative, field="source")
         if not source.is_file():
-            raise PathNotFoundError(f"copy source not found: {source_relative}")
+            raise PathNotFoundError(not_found("copy source", source_relative))
         if step.if_absent and _destination_exists(dest, target, buffer):
             return
         buffer[dest] = source.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
@@ -223,7 +224,7 @@ class ApplyRecipe:
                 return
             current = read_existing_text_file(
                 path,
-                missing=f"transform file not found: {relative}",
+                missing=not_found("transform file", relative),
                 not_file=f"transform path is not a file: {relative}",
                 decode_error=_binary_error(relative),
             )

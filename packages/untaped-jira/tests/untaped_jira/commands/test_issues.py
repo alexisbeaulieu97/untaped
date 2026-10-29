@@ -318,7 +318,7 @@ def test_a_blank_comment_body_is_refused_before_sending(
         result = jira(["issues", "comment", "ABC-1", "--body", body], input=piped)
 
     assert result.exit_code == 1, result.output
-    assert "no body provided" in result.stderr
+    assert "the comment's body is empty" in result.stderr
     assert len(route.calls) == 0
 
 

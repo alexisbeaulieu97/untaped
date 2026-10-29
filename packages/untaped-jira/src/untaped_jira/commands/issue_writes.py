@@ -13,7 +13,6 @@ from typing import Any
 from pydantic import Field
 
 from untaped.sdk import (
-    ConfigError,
     Confirm,
     ExistingFile,
     File,
@@ -247,9 +246,7 @@ class Comment(SendsDirectly):
         else:
             raise UsageError("a comment needs --body (- reads stdin) or --body-file")
         if not body.strip():
-            raise ConfigError(
-                "no body provided (use --body, --body-file, or --body -)", category="invalid"
-            )
+            raise JiraError("the comment's body is empty", category="invalid", system="local")
 
         def send(client: JiraClient) -> IssueOutcome:
             result = client.add_comment(key, body)

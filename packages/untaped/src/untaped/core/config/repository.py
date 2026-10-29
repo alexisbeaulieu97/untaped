@@ -53,6 +53,7 @@ from untaped.sdk.health.deprecated_keys import (
     profile_sections,
 )
 from untaped.sdk.marks import Stability, setting_mark
+from untaped.sdk.words import not_found
 
 SpellingRemoved = Callable[[str], None]
 """Called with each old spelling ``config set``/``unset`` removes (``section.key``)."""
@@ -81,8 +82,12 @@ class SettingsFileRepository:
         descriptors = self.descriptors()
         descriptor = find_descriptor(descriptors, key)
         if descriptor is None:
-            valid = ", ".join(d.key for d in descriptors)
-            raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}", category="invalid")
+            # The section's keys when the section exists, else the sections.
+            section = key.partition(".")[0]
+            known = [d.key for d in descriptors if d.key.partition(".")[0] == section] or sorted(
+                {d.key.partition(".")[0] for d in descriptors}
+            )
+            raise ConfigError(not_found("setting", key, known=known), category="not_found")
         return descriptor
 
     def setting_value(self, descriptor: FieldDescriptor) -> Any:
@@ -298,8 +303,7 @@ class SettingsFileRepository:
                     self._validate_section(data, descriptor, profile=resolved)
                 except ValidationError as exc:
                     raise ConfigError(
-                        f"invalid value for {key!r}: {first_validation_error(exc)}",
-                        category="invalid",
+                        f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
                     ) from exc
 
         _run(_apply, dry_run=dry_run)
@@ -526,7 +530,7 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
             value = adapter.validate_strings(raw_value)
     except ValidationError as exc:
         raise ConfigError(
-            f"invalid value for {key!r}: {first_validation_error(exc)}", category="invalid"
+            f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
         ) from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
@@ -549,3 +553,13 @@ def _shown(value: Any) -> str:
     if isinstance(value, list):
         return "<list>"
     return yaml.safe_dump(value, default_flow_style=True).removesuffix("\n...\n").strip()
+
+
+def _issue(key: str, exc: ValidationError) -> str:
+    """The first issue of ``exc``, without its location when that is ``key`` itself."""
+    issue = first_validation_error(exc)
+    _, dot, leaf = key.rpartition(".")
+    for loc in (key, leaf if dot else None):
+        if loc is not None and issue.startswith(f"{loc}: "):
+            return issue.removeprefix(f"{loc}: ")
+    return issue

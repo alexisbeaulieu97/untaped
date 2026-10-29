@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from untaped.core.config import (
     RankProviders,
@@ -18,7 +18,7 @@ from untaped.sdk.errors import ConfigError, UsageError
 
 
 class DemoSettings(BaseModel):
-    page_size: int = 50
+    page_size: int = Field(50, gt=0)
 
 
 class PairServer(BaseModel):
@@ -53,6 +53,14 @@ def test_set_writes_the_profile_and_returns_its_line(_config: Path) -> None:
     )
     assert [kind for kind, _ in change.notes] == ["success"]
     assert change.notes[0][1].startswith("set demo.page_size in profile work (config: ")
+
+
+def test_a_refused_value_names_its_key_once(_config: Path) -> None:
+    with pytest.raises(ConfigError) as refused:
+        SetSetting(SettingsFileRepository())("demo.page_size", "-5")
+    assert str(refused.value) == (
+        "invalid value for 'demo.page_size': Input should be greater than 0"
+    )
 
 
 def test_set_refuses_an_invalid_value_and_writes_nothing(_config: Path) -> None:

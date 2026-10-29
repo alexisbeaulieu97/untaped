@@ -297,12 +297,12 @@ def test_source_patch_bare_team_removal_uses_original_source_org(
 @pytest.mark.parametrize(
     ("args", "message", "exit_code"),
     [
-        (["set", "prod", "--path", REQS], "requires --org, --team, or --repo", 2),
+        (["set", "prod", "--path", REQS], "selects at least one org, team or repo", 2),
         (["set", "prod", "--repo", "not-a-repo"], "repo must be owner/name", 2),
         (["set", "prod", "--repo", "a/b", "--ref-kind", "pulls"], "ref-kind must be heads or", 2),
         (["patch", "missing", "--add-repo", "acme/api"], "source not found: 'missing'", 1),
         (["patch", "prod", "--remove-team", "acme/x"], "source 'prod' has no team acme/x", 1),
-        (["patch", "prod", "--clear-repo"], "source requires --org, --team, or --repo", 1),
+        (["patch", "prod", "--clear-repo"], "a source selects at least one org, team or repo", 2),
     ],
 )
 def test_source_set_and_patch_reject_invalid_definitions(

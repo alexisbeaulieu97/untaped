@@ -367,7 +367,7 @@ def test_undefined_active_profile_fails_section_rows(
     assert result.exit_code == 1
     rows = {(row["check"], row["plugin"]): row for row in json.loads(result.stdout)}
     assert rows[("profile", "untaped")]["status"] == "fail"
-    assert "not defined" in rows[("profile", "untaped")]["detail"]
+    assert "profile not found" in rows[("profile", "untaped")]["detail"]
     assert rows[("settings", "ext")]["status"] == "fail"
 
 

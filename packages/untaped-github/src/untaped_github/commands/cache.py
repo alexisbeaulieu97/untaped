@@ -10,6 +10,7 @@ from pydantic import Field
 
 from untaped.sdk import (
     Confirm,
+    Failure,
     Group,
     Output,
     Parallel,
@@ -39,7 +40,7 @@ from untaped_github.commands._github import GithubCommand, Scoped, team_scopes
 from untaped_github.commands.sweep import RefProfileOption
 from untaped_github.domain import RefSelector
 from untaped_github.errors import GithubError
-from untaped_github.records import CorpusRepo, Repo, SyncOutcome
+from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Repo, SyncOutcome
 from untaped_github.records import Worktree as WorktreeRow
 from untaped_github.settings import SWEEP, GithubSettings
 
@@ -48,16 +49,6 @@ STORED_COLUMNS = (
     key(CorpusRepo).full_name,
     key(CorpusRepo).ref,
     key(CorpusRepo).profile,
-    key(CorpusRepo).archived,
-    key(CorpusRepo).disk_bytes,
-    key(CorpusRepo).fetched_at,
-    key(CorpusRepo).path,
-)
-#: What a ``cache delete`` or ``prune`` table shows: each repo's outcome in ``status``.
-DELETED_COLUMNS = (
-    key(CorpusRepo).full_name,
-    key(CorpusRepo).ref,
-    key(CorpusRepo).status,
     key(CorpusRepo).archived,
     key(CorpusRepo).disk_bytes,
     key(CorpusRepo).fetched_at,
@@ -148,13 +139,14 @@ class _Delete(GithubCommand):
     """Release stored copies: each goes from disk unless something else holds its repo."""
 
     confirm: Confirm
-    output: Output[CorpusRepo] = Output(columns=DELETED_COLUMNS)
+    output: Output[CacheDeleteOutcome]
 
-    def delete(self, selected: Sequence[CorpusRepo]) -> Iterator[CorpusRepo]:
+    def delete(self, selected: Sequence[CorpusRepo]) -> Iterator[CacheDeleteOutcome]:
         """Ask, then release ``selected``; a preview's rows say what each would free.
 
-        A repo nobody else uses is ``removed`` (``disk_bytes`` freed); one another
-        plugin or a hand-added worktree still uses is ``released`` (``kept`` says who).
+        A repo nobody else uses is ``deleted`` (``disk_bytes`` freed); one another
+        plugin or a hand-added worktree still uses is ``released`` (``kept`` says who);
+        one whose release failed is ``failed`` with its ``error``.
         """
         self.output.empty("No matching repositories were cached.")
         if not selected:
@@ -162,23 +154,18 @@ class _Delete(GithubCommand):
         noun = plural(len(selected), "cached GitHub repo")
         preview = lambda: [f"{row.full_name} ({row.ref}): {row.path}" for row in selected]  # noqa: E731
         if not self.confirm(f"Delete {noun}?", preview=preview):
-            # a preview's table shows what each frees
-            self.output.columns.add(key(CorpusRepo).disk_bytes)
-            yield from (with_disk_bytes(row) for row in selected)
+            for row in selected:
+                yield _outcome(with_disk_bytes(row), "planned", disk_bytes=True)
             return
-        self.output.columns.show(
-            key(CorpusRepo).full_name, key(CorpusRepo).status, key(CorpusRepo).detail
-        )
         cleaner = CleanCorpus(self.corpus())
         for row in selected:
             try:
-                released = cleaner(repo=row)
+                yield cleaner(repo=row)
             except UntapedError as exc:
                 self.ctx.diag.failure(exc, item=row.full_name)
-                continue
-            freed = f"{size_text(released.disk_bytes)} freed"
-            detail = freed if released.status == "removed" else f"kept: {released.kept}"
-            yield released.model_copy(update={"detail": detail})
+                yield _outcome(row, "failed").model_copy(
+                    update={"error": Failure.from_exception(exc)}
+                )
 
     def cached(self, orgs: Sequence[str] = ()) -> tuple[CorpusRepo, ...]:
         """The stored copies, of repos owned by one of ``orgs`` (all when none)."""
@@ -216,7 +203,7 @@ class Delete(_Delete):
         default_factory=list, description="Only cached repositories owned by this org. Repeatable."
     )
 
-    def run(self) -> Iterator[CorpusRepo]:
+    def run(self) -> Iterator[CacheDeleteOutcome]:
         if self.repos and self.all:
             raise UsageError("pass REPO arguments or --all, not both")
         if not self.repos and not self.all:
@@ -250,7 +237,7 @@ class Prune(_Delete):
         ),
     )
 
-    def run(self) -> Iterator[CorpusRepo]:
+    def run(self) -> Iterator[CacheDeleteOutcome]:
         orgs = tuple(self.org) or (
             (self.settings.default_org,) if self.settings.default_org else ()
         )
@@ -296,4 +283,15 @@ def _departed_or_archived(
         row
         for row in cached
         if row.full_name not in live_by_name or live_by_name[row.full_name].archived
+    )
+
+
+def _outcome(row: CorpusRepo, action: str, *, disk_bytes: bool = False) -> CacheDeleteOutcome:
+    """``row``'s outcome before or without its release: ``planned`` or ``failed``."""
+    return CacheDeleteOutcome(
+        action=action,
+        full_name=row.full_name,
+        ref=row.ref,
+        path=row.path,
+        disk_bytes=row.disk_bytes if disk_bytes else 0,
     )

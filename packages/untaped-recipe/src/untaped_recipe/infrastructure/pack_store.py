@@ -299,7 +299,7 @@ class PackLibrary:
                 _check_unchanged(index, installed_name, expect)
             entry = index.get(installed_name)
             if entry is None:
-                raise PackNotFoundError(f"pack not found: {name}")
+                raise PackNotFoundError(not_found("pack", name))
             index[installed_name] = replace(entry, commit=commit)
             self._write_index(index)
         self._packs_cache = None
@@ -330,7 +330,7 @@ class PackLibrary:
             dest = self.packs_dir / installed_name
             index = self._read_index()
             if not dest.is_dir() and installed_name not in index:
-                raise PackNotFoundError(f"pack not found: {name}")
+                raise PackNotFoundError(not_found("pack", name))
             self._packs_cache = None
             self._load_errors = {}
             if dest.is_dir():
@@ -553,7 +553,7 @@ def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
     for recipe_name, recipe_entry in manifest.recipes.items():
         recipe_file = source_dir / recipe_entry.path
         if not recipe_file.is_file():
-            raise PathNotFoundError(f"pack recipe file not found: {recipe_name}")
+            raise PathNotFoundError(not_found("pack recipe file", recipe_name))
         try:
             parse_recipe(recipe_file.read_text(encoding="utf-8"), source=recipe_file)
         except ValueError as exc:

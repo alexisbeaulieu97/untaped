@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import dir_bytes
+from untaped.sdk import dir_bytes, not_found
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepo, Worktree
+from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Worktree
 
 
 class StatusCorpus:
@@ -24,14 +24,14 @@ class StatusCorpus:
 class CleanCorpus:
     """Release repositories from the corpus: each goes from disk unless another plugin uses it.
 
-    The row says ``removed`` with the bytes it freed in ``disk_bytes``, or
+    The outcome is ``deleted`` with the bytes it freed in ``disk_bytes``, or
     ``released`` with who kept the repo in ``kept``.
     """
 
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, *, repo: CorpusRepo) -> CorpusRepo:
+    def __call__(self, *, repo: CorpusRepo) -> CacheDeleteOutcome:
         return self._corpus.clean_repo(repo)
 
 
@@ -45,7 +45,7 @@ class WorktreeCorpus:
         split_full_name(repo)
         item = self._corpus.get_repo(repo)
         if item is None:
-            raise GitCorpusError("repository is not in the local corpus")
+            raise GitCorpusError(not_found("cached repo", repo), category="not_found")
         return self._corpus.materialize_worktree(item, ref=ref)
 
 

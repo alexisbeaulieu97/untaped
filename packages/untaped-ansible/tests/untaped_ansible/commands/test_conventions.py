@@ -209,7 +209,7 @@ def test_source_patch_flag_problems_are_usage_errors(
     ("args", "state", "exit_code"),
     [
         (["set", "prod", "--repo", "not-a-repo"], None, 2),
-        (["patch", "prod", "--add-repo", "not-a-repo"], _SOURCES, 1),
+        (["patch", "prod", "--add-repo", "not-a-repo"], _SOURCES, 2),
     ],
 )
 def test_source_validation_errors_print_one_readable_line(

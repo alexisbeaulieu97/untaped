@@ -257,8 +257,8 @@ class AmbiguousIdentityError(AwxApiError):
         identity_str = ", ".join(f"{k}={v!r}" for k, v in cleaned.items())
         suffix = f" (matched {match_count} records)" if match_count is not None else ""
         super().__init__(
-            f"ambiguous {kind} identity ({identity_str}){suffix}; "
-            "narrow the lookup with the missing scope."
+            f"ambiguous {kind} identity ({identity_str}){suffix}",
+            hint="narrow the lookup with the missing scope",
         )
         self.kind = kind
         self.identity = cleaned

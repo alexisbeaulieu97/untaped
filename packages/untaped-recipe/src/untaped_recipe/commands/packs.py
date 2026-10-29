@@ -18,11 +18,11 @@ from untaped.sdk import (
     Stdin,
     UntapedError,
     UsageError,
-    command_line,
     not_found,
     plural,
     q,
     run_editor,
+    run_hint,
 )
 from untaped_recipe.commands._library import NO_LOCK_NOTE, find_pack
 from untaped_recipe.commands._recipe import RecipeCommand, as_recipe_error, recipe_errors
@@ -35,6 +35,7 @@ from untaped_recipe.errors import (
     PackNotFoundError,
     PartialRemovalError,
     PathNotFoundError,
+    RecipeError,
 )
 from untaped_recipe.infrastructure import pack_scaffold
 from untaped_recipe.infrastructure.pack_files import read_pack_manifest
@@ -389,8 +390,7 @@ def _fetch(
 ) -> _SyncPlan:
     """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
     if not pack.source:
-        again = command_line(Add.spelled())
-        raise ValueError(f"no recorded source; reinstall the pack with `{again}`")
+        raise RecipeError("no recorded source", hint=run_hint(Add.spelled()))
     commit = None
     if is_git_url(pack.source):
         source_dir = fetch_pack_source(
@@ -402,13 +402,12 @@ def _fetch(
         if not source_dir.is_absolute():
             # Resolving a path recorded as typed against today's working
             # directory could install a different pack.
-            raise ValueError(
-                f"recorded source {q(pack.source)} is a relative path; "
-                "reinstall the pack with "
-                f"`{command_line(Add.spelled('--force'))}`"
+            raise RecipeError(
+                f"recorded source {q(pack.source)} is a relative path",
+                hint=run_hint(Add.spelled("--force")),
             )
         if not source_dir.is_dir():
-            raise PathNotFoundError(f"pack source not found: {pack.source}")
+            raise PathNotFoundError(not_found("pack source", pack.source))
     validate_pack(source_dir, read_pack_manifest(source_dir))
     changed = pack_content_hash(source_dir) != pack_content_hash(pack.root)
     if changed and not discard and library.local_edits(pack.name):

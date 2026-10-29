@@ -46,8 +46,10 @@ class ProfileFileRepository:
         return active_settings_layout().profile_names(read_config_dict())
 
     def pick(self) -> tuple[Picked, ...]:
-        """The run's pick: ``UNTAPED_PROFILE``'s profiles, then ``--profile``'s."""
-        return current_pick()
+        """The run's pick: ``UNTAPED_PROFILE``'s profiles, then ``--profile``'s; each defined."""
+        picks = current_pick()
+        check_defined([pick.name for pick in picks], _profiles(read_config_dict()))
+        return picks
 
     def read(self, name: str) -> dict[str, Any] | None:
         return active_settings_layout().profile_data(read_config_dict(), name)

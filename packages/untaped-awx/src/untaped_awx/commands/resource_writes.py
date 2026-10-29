@@ -41,7 +41,7 @@ from untaped_awx.commands._options import (
     offers_usage,
     scope_values,
 )
-from untaped_awx.commands._selection import require_source, select, select_resources
+from untaped_awx.commands._selection import none_found, require_source, select, select_resources
 from untaped_awx.commands.patch_values import build_patch, parse_set_pairs
 from untaped_awx.domain import Resource
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
@@ -203,6 +203,7 @@ class Edit(_ConfigWrite):
 
     def run(self) -> Iterator[ApplyOutcomeRow]:
         require_source(self.names, self.selection, self.stdin)
+        self.output.empty(none_found(self.spec))
         gate = self.gate()
         with self.awx() as awx:
             selected = select(
@@ -223,6 +224,7 @@ class Delete(_Write):
     def run(self) -> Iterator[DeleteOutcome]:
         spec = self.spec
         require_source(self.names, self.selection, self.stdin)
+        self.output.empty(none_found(spec))
         confirm = self.confirm
         with self.awx() as awx:
             selected = select(

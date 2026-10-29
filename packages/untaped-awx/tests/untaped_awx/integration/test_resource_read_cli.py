@@ -202,14 +202,15 @@ def test_list_reports_progress_on_stderr(catalog: Any, monkeypatch: pytest.Monke
     assert "Loading" in result.stderr
 
 
-@pytest.mark.parametrize(("fmt", "stdout"), [("table", ""), ("json", "[]")])
+@pytest.mark.parametrize(("fmt", "stdout", "said"), [("table", "", True), ("json", "[]", False)])
 def test_empty_list_guides_on_stderr_and_keeps_stdout_pipe_clean(
-    fake_aap: Any, fmt: str, stdout: str
+    fake_aap: Any, fmt: str, stdout: str, said: bool
 ) -> None:
+    # Only a table says so: a script reads the empty list.
     result = run(["job-templates", "list", "--format", fmt])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == stdout
-    assert "No matching" in result.stderr
+    assert ("No job templates found." in result.stderr) is said
 
 
 def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
@@ -301,3 +302,9 @@ def test_not_found_names_the_default_organization_scope(catalog: Any, settings: 
         "searched in organization 'Other' (awx.default_organization); "
         "pass --organization to search elsewhere" in result.stderr
     )
+
+
+def test_a_delete_matching_nothing_says_so_in_a_table(fake_aap: Any) -> None:
+    result = run(["job-templates", "delete", "--filter", "name=nope", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "No job templates found." in result.stderr

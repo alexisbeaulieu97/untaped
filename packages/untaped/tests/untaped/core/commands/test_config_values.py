@@ -238,7 +238,7 @@ def test_an_undefined_pick_fails_before_a_write(
     result = _invoke(command)
 
     assert result.exit_code == 2
-    assert "profile 'nope' is not defined" in result.stderr
+    assert "profile not found: 'nope'" in result.stderr
     assert read_config_dict(_isolated_config)["untaped"] == {"http": {"timeout_seconds": 9}}
 
 

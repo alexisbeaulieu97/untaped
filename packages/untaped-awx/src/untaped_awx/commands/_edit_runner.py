@@ -114,5 +114,5 @@ def run_edit(
             if clean:
                 shutil.rmtree(directory)
             else:
-                ctx.diag.warning(f"Edited batch retained at {path}")
+                ctx.diag.warning(f"edited batch kept at {path}")
     return outcomes

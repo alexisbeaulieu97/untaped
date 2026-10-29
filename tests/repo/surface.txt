@@ -5180,6 +5180,14 @@ record git.store_report.size_bytes integer
 record git.store_report.store_dir string
 record git.store_report.unowned RepoCount
 record git.store_report.used_by object
+record github.cache_delete_outcome
+record github.cache_delete_outcome.action string
+record github.cache_delete_outcome.disk_bytes integer
+record github.cache_delete_outcome.error Failure?
+record github.cache_delete_outcome.full_name string
+record github.cache_delete_outcome.kept string?
+record github.cache_delete_outcome.path string
+record github.cache_delete_outcome.ref string
 record github.code
 record github.code.name string
 record github.code.path string
@@ -5196,8 +5204,6 @@ record github.corpus_repo.default_branch default=None
 record github.corpus_repo.default_branch string?
 record github.corpus_repo.description default=None
 record github.corpus_repo.description string?
-record github.corpus_repo.detail default=None
-record github.corpus_repo.detail string?
 record github.corpus_repo.disk_bytes default=0
 record github.corpus_repo.disk_bytes integer
 record github.corpus_repo.fetched_at default=None
@@ -5209,8 +5215,6 @@ record github.corpus_repo.forks_count integer?
 record github.corpus_repo.full_name string
 record github.corpus_repo.html_url default=None
 record github.corpus_repo.html_url string?
-record github.corpus_repo.kept default=None
-record github.corpus_repo.kept string?
 record github.corpus_repo.language default=None
 record github.corpus_repo.language string?
 record github.corpus_repo.name default=None
@@ -5230,8 +5234,6 @@ record github.corpus_repo.ssh_url string?
 record github.corpus_repo.stargazers_count default=None
 record github.corpus_repo.stargazers_count integer?
 record github.corpus_repo.status choice=cached
-record github.corpus_repo.status choice=released
-record github.corpus_repo.status choice=removed
 record github.corpus_repo.status choice=synced
 record github.corpus_repo.status default=cached
 record github.corpus_repo.status string

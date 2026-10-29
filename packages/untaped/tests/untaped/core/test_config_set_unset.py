@@ -164,8 +164,8 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     ("initial", "key", "value", "profile", "match"),
     [
         (None, "untaped.http.timeout_seconds", "not-a-number", None, "timeout_seconds"),
-        (None, "bogus.key", "x", None, "unknown setting"),
-        (None, "plugins.tool.spec", "untaped", None, "unknown setting"),
+        (None, "bogus.key", "x", None, "setting not found"),
+        (None, "plugins.tool.spec", "untaped", None, "setting not found"),
         (None, "untaped.skills.updates", "auto", "prod", "profile not found.*prod"),
         ("format_version: 2\n", "untaped.skills.updates", "auto", "ghost", "ghost"),
         (

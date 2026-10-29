@@ -73,12 +73,12 @@ def test_a_failed_apply_row_carries_a_structured_error(tmp_path: Path) -> None:
     assert result.exit_code == 1, result.output
     [row] = json.loads(result.stdout)
     assert row["action"] == "failed"
-    assert row["detail"] == "template not found: template.txt"
+    assert row["detail"] == "template not found: 'template.txt'"
     assert row["error"] == {
         "category": "not_found",
         "system": "local",
         "retryable": False,
-        "message": "template not found: template.txt",
+        "message": "template not found: 'template.txt'",
         "hint": None,
         "exit_code": 1,
         "details": {},

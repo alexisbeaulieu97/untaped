@@ -620,7 +620,7 @@ def test_list_clean_and_worktree(corpus: Callable[..., _Corpus]) -> None:
     assert listed.full_name == "acme/api"
     assert listed.path == str(env.store.path)
     assert Path(first.path).is_relative_to(Path.home() / ".untaped/plugins/github/worktrees")
-    assert (cleaned.status, cleaned.kept) == ("removed", None)
+    assert (cleaned.action, cleaned.kept) == ("deleted", None)
     assert cleaned.disk_bytes is not None and cleaned.disk_bytes > 0
     assert not Path(first.path).exists()
     assert not env.store.path.exists()
@@ -666,7 +666,7 @@ def test_clean_releases_a_repo_another_plugin_holds(corpus: Callable[..., _Corpu
 
     cleaned = env.cache.clean_repo(listed)
 
-    assert (cleaned.status, cleaned.kept, cleaned.disk_bytes) == ("released", "ansible", 0)
+    assert (cleaned.action, cleaned.kept, cleaned.disk_bytes) == ("released", "ansible", 0)
     assert env.store.path.is_dir()
     assert not env.store.private_file.exists()
     assert not env.has_ref("refs/heads/main")
@@ -683,7 +683,7 @@ def test_clean_repo_of_an_already_removed_repo_succeeds(corpus: Callable[..., _C
     first = env.cache.clean_repo(listed)
     second = env.cache.clean_repo(listed)
 
-    assert first.status == second.status == "removed"
+    assert first.action == second.action == "deleted"
     assert second.disk_bytes == 0
     assert not env.store.path.exists()
 

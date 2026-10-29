@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         LocalRef,
         RefSelector,
     )
-    from untaped_github.records import CorpusRepo, Worktree
+    from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Worktree
 
 
 class GithubMeService(Protocol):
@@ -129,8 +129,8 @@ class GitCorpus(Protocol):
 
     def get_repo(self, repo: str) -> CorpusRepoTarget | None: ...
 
-    def clean_repo(self, repo: CorpusRepo) -> CorpusRepo:
-        """Release ``repo``: ``removed`` with the bytes freed, or ``released`` and who kept it."""
+    def clean_repo(self, repo: CorpusRepo) -> CacheDeleteOutcome:
+        """Release ``repo``: ``deleted`` with the bytes freed, or ``released`` and who kept it."""
         ...
 
     def materialize_worktree(self, repo: CorpusRepoTarget, *, ref: str | None) -> Worktree: ...
