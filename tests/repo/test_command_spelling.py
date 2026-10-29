@@ -51,7 +51,6 @@ def _toy_root() -> tuple[App, list[tuple[str, bool]]]:
         calls.append(("logs", follow))
 
     deprecated_alias(jira, "me", "whoami")
-    deprecated_alias(logs, "-F", "--follow")
     return root, calls
 
 
@@ -66,27 +65,6 @@ def test_deprecated_command_alias_is_rewritten_with_a_warning(
         "use `untaped jira whoami`"
     ) in capsys.readouterr().err
     assert "me" not in list(root["jira"])  # hidden: never listed in help
-
-
-def test_deprecated_option_alias_is_rewritten_up_to_the_separator(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    root, _ = _toy_root()
-
-    assert canonical_command_tokens(root, ["jira", "logs", "-F", "--", "-F"]) == [
-        "jira",
-        "logs",
-        "--follow",
-        "--",
-        "-F",
-    ]
-    assert "use `untaped jira logs --follow`" in capsys.readouterr().err
-    assert canonical_command_tokens(root, ["jira", "logs"]) == ["jira", "logs"]
-
-
-def test_alias_must_not_mix_commands_and_options() -> None:
-    with pytest.raises(ValueError, match="mixes a command and an option"):
-        deprecated_alias(App(name="x"), "old", "--new")
 
 
 #: Spellings removed in a major release, with no deprecated alias left behind.

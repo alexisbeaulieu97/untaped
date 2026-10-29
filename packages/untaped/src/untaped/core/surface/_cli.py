@@ -90,7 +90,7 @@ def _walk(
     """The commands under ``app``, or only those of its words in ``only``."""
     aliases = deprecated_aliases(app)
     for old, alias in sorted(aliases.items()):
-        if not old.startswith("-") and (only is None or old in only):
+        if only is None or old in only:
             yield Line(
                 f"cli {' '.join((*path, old))} -> {' '.join((*path, alias.new))}",
                 DeprecatedMark(alias.removed_in),
@@ -110,9 +110,6 @@ def _walk(
 
 def _command(root: App, app: App, path: tuple[str, ...], mark: LineMark | None) -> Iterator[Line]:
     subject = f"cli {' '.join(path)}"
-    for old, alias in sorted(deprecated_aliases(app).items()):
-        if old.startswith("-"):
-            yield Line(f"{subject} {old} -> {alias.new}", DeprecatedMark(alias.removed_in))
     if app.default_command is None:
         yield Line(subject, mark)
         return
