@@ -10,15 +10,17 @@ model declares.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, ClassVar
 
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
 
-from core_test_support.runtime.plugin_harness import nullary_app
+from core_test_support.commands.support import make_plugin
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import CompositionResult, PluginSpec, compose, section_settings
+from untaped.runtime.registry import CompositionResult, PluginCandidate, compose
+from untaped.runtime.settings import registered_profile_model
 from untaped.sdk import (
     Credential,
     CredentialKey,
@@ -86,22 +88,22 @@ class Fixed(CredentialKey):
     origin: ClassVar[HttpUrl | None] = HttpUrl("http://insecure.example.com")
 
 
-def _spec(
-    settings: type[BaseModel] | None, credentials: tuple[Credential[object], ...] = ()
-) -> PluginSpec:
-    return PluginSpec(
-        name="alpha",
-        app_factory=nullary_app("alpha-app"),
-        settings=settings,
-        credentials=credentials,  # type: ignore[arg-type]
-    )
+class NoSettings(BaseModel):
+    """Nothing to set."""
 
 
-def _compose(spec: PluginSpec) -> CompositionResult:
-    return compose([plugin_candidate(spec)])
+def _alpha(settings: type[BaseModel] | None, **credentials: Credential[object]) -> PluginCandidate:
+    """Plugin ``alpha`` with ``settings`` (none: an empty model) holding ``credentials``."""
+    return plugin_candidate(make_plugin("alpha", settings=settings or NoSettings, **credentials))
 
 
-TOKEN = Credential("alpha", "token", key=Server, env=("ALPHA_TOKEN",))
+def _compose(candidate: PluginCandidate) -> CompositionResult:
+    return compose([candidate])
+
+
+def _token(key: type[CredentialKey] = Server) -> Credential[object]:
+    """A fresh credential: a block belongs to the one plugin class holding it."""
+    return Credential(key=key, env=("ALPHA_TOKEN",))
 
 
 @pytest.mark.parametrize(
@@ -113,56 +115,55 @@ TOKEN = Credential("alpha", "token", key=Server, env=("ALPHA_TOKEN",))
     ],
 )
 def test_a_misplaced_mark_quarantines_its_plugin(model: type[BaseModel], says: str) -> None:
-    (record,) = _compose(_spec(model)).quarantine
+    (record,) = _compose(_alpha(model)).quarantine
     assert record.reason == "bad-settings-keys"
     assert record.detail.startswith("plugin 'alpha': ")
     assert says in record.detail
 
 
 def test_needs_setup_fits_an_optional_model() -> None:
-    assert _compose(_spec(Marked, (TOKEN,))).quarantine == ()
+    assert _compose(_alpha(Marked, token=_token())).quarantine == ()
 
 
 @pytest.mark.parametrize(
-    ("spec", "reason", "says"),
+    ("build", "reason", "says"),
     [
+        (lambda: _alpha(Marked, token=_token(SecretKey)), "bad-credential", "password"),
+        (lambda: _alpha(Marked, token=_token(TwoUrls)), "bad-credential", "TokenUrl"),
+        (lambda: _alpha(Marked, token=_token(Fixed)), "bad-credential", "https"),
         (
-            _spec(Marked, (Credential("beta", "token", key=Server),)),
-            "foreign-credential",
-            "declares the credential 'beta.token' of another plugin",
-        ),
-        (_spec(Marked, (TOKEN, TOKEN)), "duplicate-credential", "'token' twice"),
-        (
-            _spec(Marked, (Credential("alpha", "token", key=SecretKey),)),
+            lambda: _alpha(Clash, token=_token()),
             "bad-credential",
-            "password",
+            "has the name of a setting of its section",
         ),
         (
-            _spec(Marked, (Credential("alpha", "token", key=TwoUrls),)),
+            lambda: _alpha(Kept, token=_token()),
             "bad-credential",
-            "TokenUrl",
+            "has the name of a setting of its section",
         ),
-        (_spec(Marked, (Credential("alpha", "token", key=Fixed),)), "bad-credential", "https"),
-        (_spec(Clash, (TOKEN,)), "bad-credential", "has the name of a setting of its section"),
-        (_spec(Kept, (TOKEN,)), "bad-credential", "has the name of a setting of its section"),
-        (_spec(TwoServers, (TOKEN,)), "bad-credential", "several settings hold a Server"),
+        (
+            lambda: _alpha(TwoServers, token=_token()),
+            "bad-credential",
+            "several settings hold a Server",
+        ),
     ],
 )
 def test_a_credential_that_cannot_work_quarantines_its_plugin(
-    spec: PluginSpec, reason: str, says: str
+    build: Callable[[], PluginCandidate], reason: str, says: str
 ) -> None:
-    (record,) = _compose(spec).quarantine
+    (record,) = _compose(build()).quarantine
     assert record.reason == reason
     assert says in record.detail
 
 
 def test_one_token_url_loads() -> None:
-    tokened = Credential("alpha", "token", key=OneTokenUrl)
-    assert _compose(_spec(None, (tokened,))).quarantine == ()
+    assert _compose(_alpha(None, token=_token(OneTokenUrl))).quarantine == ()
 
 
+@pytest.mark.usefixtures("fresh_composition")
 def test_core_adds_no_old_settings_for_a_credential() -> None:
-    composed = section_settings(_spec(Marked, (TOKEN,)))
+    bootstrap.compose_root(candidates=[_alpha(Marked, token=_token())])
+    composed = registered_profile_model("alpha")
     assert composed is not None
     assert not {"token", "token_command"} & composed.model_fields.keys()
 
@@ -176,11 +177,7 @@ def test_marks_change_neither_the_schema_nor_the_cfg_lines() -> None:
         return {k: v for k, v in model.model_json_schema().items() if k != "title"}
 
     assert schema(Bare) == schema(Marked)
-    result = bootstrap.compose_root(
-        candidates=[
-            plugin_candidate(_spec(Bare)),
-        ]
-    )
+    result = bootstrap.compose_root(candidates=[_alpha(Bare)])
     texts = [line.text for line in settings_lines(result, owner="alpha")]
     assert any(text.startswith("cfg alpha.server.url") for text in texts)
 

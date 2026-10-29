@@ -19,10 +19,10 @@ from core_test_support.contracts.support import (
     Volume,
     compose,
     library_plugin,
+    plugin,
     shelf_plugin,
     write_config,
 )
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk.contracts import Contract, Ok, Record, cached, gather
 from untaped.sdk.contracts._declare import ContractError, contract_of, item_type
 from untaped.sdk.marks import Experimental, deprecated, function_mark
@@ -266,7 +266,7 @@ def test_a_method_filled_under_another_name_is_cached_as_the_contract_method() -
 
         books = _load
 
-    compose(shelf_plugin(), PluginSpec(name="shop", provides={"shelf": lambda: (Aliased(),)}))
+    compose(shelf_plugin(), plugin("shop", fills=(Aliased,)))
     [answer] = gather(BookSource.books)()
     assert isinstance(answer, Ok)
     assert [book.title for book in answer.value] == ["Dune"]

@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, ClassVar
 
 import pytest
 import yaml
-from cyclopts import App
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import (
     get_config_section,
     get_settings,
@@ -21,7 +21,7 @@ from untaped.runtime.settings import (
     register_profile_settings,
     validate_config_file,
 )
-from untaped.sdk._cli import create_app
+from untaped.sdk import Command, Output, Record
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import invoke_cli, plugin_candidate
@@ -268,19 +268,24 @@ def test_profile_show_resolves_old_keys_to_new_names(config: Path) -> None:
     assert ProfileFileRepository().resolved("prod") == {"demo": {"cache_dir": "/old"}}
 
 
+class CacheDir(Record, kind="demo.cache_dir"):
+    """Where demo caches."""
+
+    path: str
+
+
+class Show(Command[DemoSettings]):
+    """Print the cache directory."""
+
+    output: Output[CacheDir]
+
+    def run(self) -> Iterator[CacheDir]:
+        yield CacheDir(path=str(self.settings.cache_dir))
+
+
 def _demo_root() -> object:
-    def _factory() -> App:
-        app = create_app(name="demo", help="demo plugin.")
-
-        @app.command
-        def show(*, format: str = "table") -> None:
-            """Print the cache directory."""
-            print(get_config_section("demo", DemoSettings).cache_dir)
-
-        return app
-
-    spec = PluginSpec(name="demo", app_factory=_factory, settings=DemoSettings)
-    return bootstrap.build_root_app(candidates=(plugin_candidate(spec),)).meta
+    demo = make_plugin("demo", settings=DemoSettings, commands=(Show,))
+    return bootstrap.build_root_app(candidates=(plugin_candidate(demo),)).meta
 
 
 @pytest.mark.parametrize("flags", [[], ["--quiet"]])
@@ -290,7 +295,7 @@ def test_the_warning_survives_quiet(config: Path, flags: list[str]) -> None:
     result = invoke_cli(_demo_root(), [*flags, "demo", "show"])
 
     assert result.exit_code == 0, result.stderr
-    assert result.stdout.strip() == "/old"
+    assert "/old" in result.stdout
     assert RENAMED in result.stderr
 
 

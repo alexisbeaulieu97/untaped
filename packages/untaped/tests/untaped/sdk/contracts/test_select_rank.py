@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import ClassVar
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.contracts.support import (
     LIBRARY_CONFIG,
     Book,
@@ -27,7 +26,7 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.contracts.registry import doctor_rows, ranking
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.settings import (
     get_config_section,
     load_settings_section,
@@ -38,7 +37,7 @@ from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Contract, Ok, Skipped, gather, select_one
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import Record
-from untaped.sdk.testing import CliInvoker, CliResult
+from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 RANKED = """\
 format_version: 2
@@ -50,7 +49,7 @@ shelf:
 """
 
 
-def _run(argv: Sequence[str], *plugins: PluginCandidate | PluginSpec) -> CliResult:
+def _run(argv: Sequence[str], *plugins: PluginCandidate) -> CliResult:
     app = build_root_app(candidates=candidates(*plugins))
     return CliInvoker().invoke(app.meta, list(argv))
 
@@ -192,10 +191,6 @@ class _ReservedAlias(BaseModel):
     ext: dict[str, str] = Field(default_factory=dict, alias="caches")
 
 
-class _StateRetiringExtensions(BaseModel):
-    retired_keys: ClassVar[Mapping[str, str]] = {"extensions": "gone"}
-
-
 @experimental
 class _Owned(Contract):
     """A contract acme owns."""
@@ -204,33 +199,21 @@ class _Owned(Contract):
         raise NotImplementedError
 
 
-class _ReservedState(BaseModel):
-    caches: dict[str, str] = {}
-
-
 @pytest.mark.parametrize(
     "spec",
     [
         plugin("acme", settings=_Reserved),
-        PluginSpec(name="acme", state=_ReservedState),
         plugin("acme", settings=_ReservedOldKey, offers=(_Owned,)),
         plugin("acme", settings=_RenamedIntoReserved, offers=(_Owned,)),
         plugin("acme", settings=_ReservedAlias),
     ],
-    ids=["settings-extensions", "state-caches", "owner-old-key", "renamed-into", "alias"],
+    ids=["settings-extensions", "owner-old-key", "renamed-into", "alias"],
 )
-def test_a_plugin_declaring_an_injected_key_is_quarantined(
-    spec: PluginCandidate | PluginSpec,
-) -> None:
+def test_a_plugin_declaring_an_injected_key_is_quarantined(spec: PluginCandidate) -> None:
     result = compose(spec)
     [record] = result.quarantine
     assert record.reason == "bad-settings-keys"
     assert "extensions" in record.detail or "caches" in record.detail
-
-
-def test_an_owner_state_model_may_retire_an_extensions_key() -> None:
-    owner = PluginSpec(name="acme", state=_StateRetiringExtensions, contracts=lambda: ())
-    assert compose(owner).quarantine == ()
 
 
 def test_a_plugin_that_owns_no_contract_can_rename_its_extensions_setting_away() -> None:
@@ -400,57 +383,17 @@ def test_plugin_schema_prints_a_kinds_json_schema() -> None:
     assert set(schema["properties"]) == {"source", "title", "pages"}
 
 
-def test_plugin_schema_finds_a_kind_only_a_plugin_app_declares() -> None:
-    def factory() -> App:
-        class _Gizmo(Record, kind="gizmo.thing"):
-            size: int
+class _Gizmo(Record, kind="gizmo.thing"):
+    """A thing only gizmo's records name."""
 
-        return App()
+    size: int
 
-    gizmo = PluginSpec(name="gizmo", app_factory=factory)
-    result = _run(["plugin", "schema", "gizmo.thing"], gizmo)
+
+def test_plugin_schema_finds_a_kind_a_plugin_class_declares() -> None:
+    gizmo = make_plugin("gizmo", records=(_Gizmo,))
+    result = _run(["plugin", "schema", "gizmo.thing"], plugin_candidate(gizmo))
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["required"] == ["size"]
-
-
-def test_plugin_schema_loads_contract_offers_to_find_a_kind(tmp_path: Path) -> None:
-    (tmp_path / "untaped_gadgets.py").write_text(
-        "from untaped.sdk.contracts import Record\n\n\n"
-        'class Gadget(Record, kind="gadgets.gadget"):\n'
-        "    name: str\n"
-    )
-
-    def offers() -> tuple[Contract, ...]:
-        import untaped_gadgets  # noqa: F401 - the lazy import under test
-
-        return ()
-
-    gadgets = PluginSpec(name="gadgets", provides={"shelf": offers})
-    with pytest.MonkeyPatch.context() as patch:
-        patch.syspath_prepend(str(tmp_path))
-        result = _run(["plugin", "schema", "gadgets.gadget"], shelf_plugin(), gadgets)
-    assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["required"] == ["name"]
-
-
-def test_plugin_contracts_names_an_owner_whose_contracts_break() -> None:
-    def broken() -> tuple[type[Contract], ...]:
-        raise ImportError("acme api broke")
-
-    result = _run(["plugin", "contracts"], *_all(), PluginSpec(name="acme", contracts=broken))
-    assert "acme's contracts couldn't be read" in result.stderr
-
-
-def test_ranking_for_an_owner_whose_contracts_break_is_its_failure() -> None:
-    def broken() -> tuple[type[Contract], ...]:
-        raise ImportError("acme api broke")
-
-    acme = PluginSpec(name="acme", contracts=broken)
-    result = _run(["plugin", "rank", "acme.source", "items", "shop", "-f", "json"], *_all(), acme)
-    assert result.exit_code == 4, result.stderr
-    [line] = [json.loads(line) for line in result.stderr.splitlines() if "acme" in line]
-    assert line["message"] == "acme's contracts couldn't be read"
-    assert (line["system"], line["hint"]) == ("acme", "run `untaped doctor`")
 
 
 def test_plugin_schema_prints_a_diagnostic_kinds_schema() -> None:

@@ -185,14 +185,18 @@ def make_plugin(
 ) -> type[Plugin]:
     """A plugin class double named ``name``: ``blocks`` are its attributes (``auth=check()``).
 
-    It lives in a module of its own, ``untaped_double_<name>``, so its blocks
-    know their plugin as an installed plugin's do.
+    It lives in a package of its own, in ``untaped_double_<name>.plugin``, so
+    its blocks know their plugin as an installed plugin's do.
     A service double (:class:`WizProfile`, :class:`EnvProfile`) also holds its
     ``token`` credential.
     """
     held: dict[str, object] = {**_credentials(settings), **blocks}
-    # its own top-level package, as an installed plugin has: core finds a block's plugin by it
-    module = ModuleType(f"untaped_double_{name.replace('-', '_')}")
+    # its own top-level package, as an installed plugin has: core finds a block's plugin by it;
+    # the class in its leaf ``plugin`` module, and no ``api`` or ``testing`` beside it
+    package = ModuleType(f"untaped_double_{name.replace('-', '_')}")
+    package.__path__ = []
+    module = ModuleType(f"{package.__name__}.plugin")
+    package.plugin = module  # type: ignore[attr-defined]
     cls = type(
         name.title().replace("-", ""),
         (Plugin,),
@@ -206,6 +210,7 @@ def make_plugin(
         },
     )
     setattr(module, cls.__name__, cls)
+    sys.modules[package.__name__] = package
     sys.modules[module.__name__] = module
     return cast("type[Plugin]", cls)
 

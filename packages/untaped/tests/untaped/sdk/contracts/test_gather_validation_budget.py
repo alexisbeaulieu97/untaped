@@ -13,10 +13,9 @@ from typing import ClassVar, Self
 
 from pydantic import model_validator
 
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk.contracts import Contract, Issued, Ok, Record, cached, gather
-from untaped.sdk.storage.cache import Cache
-from untaped.sdk.testing import compose_with
+from core_test_support.commands.support import make_plugin
+from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, cached, gather
+from untaped.sdk.testing import install
 
 
 class Tally(Issued, kind="tally.item"):
@@ -32,16 +31,13 @@ class Tally(Issued, kind="tally.item"):
         return self
 
 
-ITEMS = Cache("tally", "tally_source_items", label="items", max_age=timedelta(hours=1))
-
-
 class TallySource[T: Record = Tally](Contract):
-    @cached(ITEMS)
+    @cached(max_age=timedelta(hours=1), label="items")
     @abstractmethod
     def items(self) -> list[Tally]: ...
 
 
-class Counter(TallySource):
+class Counter(TallySource, Provider):
     calls: ClassVar[int] = 0
 
     def items(self) -> list[Tally]:
@@ -57,8 +53,8 @@ def _ask(refresh: bool) -> list[Tally]:
 
 
 def test_a_live_answer_validates_each_item_once_and_a_cached_one_at_most_twice() -> None:
-    owner = PluginSpec(name="tally", contracts=lambda: (TallySource,), caches=(ITEMS,))
-    with compose_with(owner, provides={"fake": [Counter()]}):
+    tally = make_plugin("tally", offers=(TallySource,))
+    with install(tally, providers={"fake": (Counter,)}).running():
         Counter.calls = Tally.validations = 0
         live = _ask(refresh=True)
         assert [item.name for item in live] == ["a", "b", "c"]

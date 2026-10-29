@@ -7,20 +7,18 @@ import subprocess
 import sys
 import warnings
 from collections.abc import Iterator, Mapping
-from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
 import pytest
 from cyclopts import App
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap, sink
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.settings import get_settings
-from untaped.sdk._cli import create_app
+from untaped.sdk import Command, Deprecated
 from untaped.sdk.diagnostic import Deprecation
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import Renamed, Retired, mapping_errors
@@ -28,7 +26,6 @@ from untaped.sdk.marks import (
     UntapedDeprecationWarning,
     check_removed_in,
     deprecated,
-    deprecated_alias,
     forget_notices,
     removal_text,
 )
@@ -64,8 +61,8 @@ def test_renamed_takes_removed_in_by_keyword() -> None:
 def test_a_cache_dates_only_a_rename() -> None:
     day = timedelta(days=1)
     with pytest.raises(ConfigError, match="removed_in dates renamed_from, which is empty"):
-        Cache("acme", "index", label="index", max_age=day, removed_in=12)
-    dated = Cache("acme", "index", label="index", max_age=day, renamed_from=("old",), removed_in=12)
+        Cache(label="index", max_age=day, removed_in=12)
+    dated = Cache(label="index", max_age=day, renamed_from=("old",), removed_in=12)
     assert dated.removed_in == 12
 
 
@@ -157,31 +154,41 @@ def test_removal_text_names_whose_major(
 # --- what a plugin's user sees -------------------------------------------------------------
 
 
-def _svc() -> App:
-    app = create_app(name="svc", help="Service.")
+class Set(Command):
+    """Set it."""
 
-    @app.command(name="set")
-    def set_command(*, follow: bool = False) -> None:
-        """Set it."""
+    aliases = (Deprecated(replacement="assign", removed_in=4),)
 
-    @app.command(name="put")
-    @deprecated(removed_in=3, replacement=set_command)
-    def put_command() -> None:
-        """Put it."""
+    follow: bool = Field(False, description="Follow it.")
 
-    deprecated_alias(app, "assign", "set", removed_in=4)
-    deprecated_alias(set_command_app(app), "-F", "--follow", removed_in=4)
-    return app
+    def run(self) -> None:
+        return None
 
 
-def set_command_app(app: App) -> App:
-    return app["set"]
+class Put(Command):
+    """Put it."""
+
+    stability = deprecated(removed_in=3, replacement=Set)
+
+    def run(self) -> None:
+        return None
+
+
+#: What ``svc warn`` warns.
+WARNING: list[Warning] = []
+
+
+class Warn(Command):
+    """Warn :data:`WARNING`."""
+
+    def run(self) -> None:
+        for warning in WARNING:
+            warnings.warn(warning, stacklevel=1)
 
 
 def _root() -> App:
-    app = _svc()
-    spec = replace(make_spec(name="svc", factory=lambda: app))
-    return bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
+    svc = make_plugin("svc", commands=(Set, Put, Warn))
+    return bootstrap.build_root_app(candidates=[plugin_candidate(svc)])
 
 
 def _json_notices(argv: list[str]) -> list[dict[str, object]]:
@@ -221,39 +228,17 @@ def _before_footer(text: str) -> str:
     return (head if footer else text).rstrip()
 
 
-@pytest.mark.parametrize(
-    ("argv", "identity", "message"),
-    [
-        (
-            ["svc", "assign"],
-            "cli untaped svc assign -> untaped svc set",
-            "`untaped svc assign` is deprecated and will be removed in untaped-svc 4.0; "
-            "use `untaped svc set`",
-        ),
-        (
-            ["svc", "set", "-F"],
-            "cli untaped svc set -F -> --follow",
-            "`untaped svc set -F` is deprecated and will be removed in untaped-svc 4.0; "
-            "use `untaped svc set --follow`",
-        ),
-    ],
-)
-def test_an_alias_names_both_full_paths(argv: list[str], identity: str, message: str) -> None:
-    (notice,) = _json_notices(argv)
-    assert (notice["id"], notice["removed_in"], notice["message"]) == (identity, 4, message)
+def test_an_alias_names_both_full_paths() -> None:
+    (notice,) = _json_notices(["svc", "assign"])
+    assert (notice["id"], notice["removed_in"], notice["message"]) == (
+        "cli untaped svc assign -> untaped svc set",
+        4,
+        "`untaped svc assign` is deprecated and will be removed in untaped-svc 4.0; "
+        "use `untaped svc set`",
+    )
 
 
 # --- the warnings hook ---------------------------------------------------------------------
-
-
-def _warn_from_a_command(warning: Warning) -> App:
-    app = App(name="w")
-
-    @app.default
-    def run() -> None:
-        warnings.warn(warning, stacklevel=1)
-
-    return app
 
 
 @pytest.fixture
@@ -275,7 +260,8 @@ def test_an_untaped_deprecation_warning_arrives_as_its_record() -> None:
         distribution="untaped-acme",
         replacement="new()",
     )
-    result = invoke_cli(_warn_from_a_command(warning), [])
+    WARNING[:] = [warning]
+    result = invoke_cli(_root().meta, ["svc", "warn"])
 
     (line,) = [json.loads(line) for line in result.stderr.splitlines()]
     assert line == {
@@ -294,7 +280,8 @@ def test_an_untaped_deprecation_warning_arrives_as_its_record() -> None:
 @pytest.mark.usefixtures("shown")
 def test_another_python_warning_is_a_warning_line_and_the_hook_ends_with_its_scope() -> None:
     before = warnings.showwarning
-    result = invoke_cli(_warn_from_a_command(DeprecationWarning("plain")), [])
+    WARNING[:] = [DeprecationWarning("plain")]
+    result = invoke_cli(_root().meta, ["svc", "warn"])
 
     (line,) = [json.loads(line) for line in result.stderr.splitlines()]
     assert line["kind"] == "untaped.message"
@@ -346,7 +333,7 @@ def acme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[App]:
     get_settings.cache_clear()
     forget_notices()
     yield bootstrap.build_root_app(
-        candidates=[plugin_candidate(make_spec(name="acme", settings=_Acme))]
+        candidates=[plugin_candidate(make_plugin("acme", settings=_Acme))]
     )
     get_settings.cache_clear()
     forget_notices()
@@ -399,8 +386,6 @@ def test_a_cache_rename_s_record_is_its_surface_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     index = Cache(
-        "hello",
-        "index",
         label="index",
         max_age=timedelta(hours=1),
         renamed_from=("motd_seconds",),
@@ -413,7 +398,7 @@ def test_a_cache_rename_s_record_is_its_surface_line(
     get_settings.cache_clear()
     forget_notices()
     root = bootstrap.build_root_app(
-        candidates=[plugin_candidate(PluginSpec(name="hello", caches=(index,)))]
+        candidates=[plugin_candidate(make_plugin("hello", index=index))]
     )
 
     _, notices = _invoke(root, "config", "get", "hello.caches.index.max_age_seconds")
