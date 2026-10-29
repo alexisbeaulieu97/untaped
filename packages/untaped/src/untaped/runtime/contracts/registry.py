@@ -34,6 +34,7 @@ from untaped.runtime.settings import (
     load_settings_section,
     registered_profile_model,
 )
+from untaped.sdk._keys import SettingKey
 from untaped.sdk.contracts._declare import (
     Binding,
     Contract,
@@ -49,7 +50,6 @@ from untaped.sdk.contracts._declare import (
 )
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import SettingKey
 from untaped.sdk.records import kind_of
 
 if TYPE_CHECKING:

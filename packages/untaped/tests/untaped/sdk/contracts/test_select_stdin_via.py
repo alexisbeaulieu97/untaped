@@ -642,14 +642,12 @@ def test_a_name_held_by_a_plugin_refused_for_its_kinds_is_free(
     assert [problem.rule for problem in refused.problems] == ["duplicate-kind"]
 
 
-def test_the_command_page_says_it_also_reads_each_provider_s_own_records(
-    install: Installer,
-) -> None:
+def test_the_command_page_names_each_provider_s_own_records(install: Installer) -> None:
     ran = _counter(install).cli("docs counter commands show")
     assert ran.exit == 0, ran.stderr
     assert (
-        "Also accepts on stdin each installed `cards` provider's own records, which that "
-        "provider turns into these (`untaped docs counter extensions cards`)."
+        "Also accepts on stdin the records the installed `cards` providers turn into these "
+        "(`untaped docs counter extensions cards`): `lend.loan`."
     ) in ran.stdout
 
 
@@ -658,4 +656,4 @@ def test_the_command_page_names_no_provider_s_records_when_none_is_installed(
 ) -> None:
     ran = install(Counter).cli("docs counter commands show")
     assert ran.exit == 0, ran.stderr
-    assert "provider's own records" not in ran.stdout
+    assert "Also accepts on stdin" not in ran.stdout

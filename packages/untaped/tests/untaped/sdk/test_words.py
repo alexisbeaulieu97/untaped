@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import Command
+from untaped.sdk import Command, InvalidValue
 from untaped.sdk._run import NoRunError
 from untaped.sdk.words import (
     command_line,
@@ -116,3 +116,13 @@ def test_a_command_is_a_string_or_spelled_never_a_bare_list() -> None:
 def test_a_class_is_spelled_only_inside_the_run_that_mounts_it() -> None:
     with pytest.raises(NoRunError):
         hint(_Named.spelled("x"))
+
+
+def test_a_refusal_outside_a_run_names_a_command_by_its_class_name() -> None:
+    assert str(InvalidValue("use `{}`", _Named.spelled("x"))) == "use `_Named`"
+
+
+def test_a_refusal_fills_only_bare_slots_and_names_one_command_per_slot() -> None:
+    assert str(InvalidValue("{x} `{}`", _Named.spelled())) == "{x} `_Named`"
+    with pytest.raises(TypeError, match=r"has 0 \{\} for 1 commands"):
+        InvalidValue("no slot", _Named.spelled())

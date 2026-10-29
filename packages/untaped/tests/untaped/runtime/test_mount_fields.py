@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
@@ -20,6 +20,7 @@ from untaped.sdk import (
     Confirm,
     DryRun,
     File,
+    InvalidValue,
     Limit,
     Parallel,
     Plugin,
@@ -107,6 +108,22 @@ class Advise(Command):
         return " ".join(command_argv(Add.spelled("x"), profile="p"))
 
 
+class Label(Command):
+    """Take a label; a blank one is refused, naming the add command by its class."""
+
+    text: Positional[str] = Field(description="The label.")
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise InvalidValue("a label is not blank; `{}` adds one", Add.spelled("THING"))
+        return value
+
+    def run(self) -> str:
+        return self.text
+
+
 class Fetch(Command):
     """Print what the refresh flags said."""
 
@@ -168,7 +185,7 @@ class Tool(Plugin):
     """Do things (a 12.0 plugin)."""
 
     settings = ToolSettings
-    commands = (Delete, Tidy, Sweep, Purge, Add, Advise, Fetch, Work, Spread, Page, Check)
+    commands = (Delete, Tidy, Sweep, Purge, Add, Advise, Label, Fetch, Work, Spread, Page, Check)
     motd = MOTD
 
 
@@ -241,6 +258,12 @@ def test_a_command_named_by_its_class_is_spelled_as_the_run_mounts_it() -> None:
     failed = _run("tool", "advise", "--fail")
     assert failed.exit_code == 4
     assert "hint: run `untaped tool add THING`" in failed.stderr
+
+
+def test_a_validator_names_a_command_by_its_class() -> None:
+    refused = _run("tool", "label", " ")
+    assert refused.exit_code == 2
+    assert "a label is not blank; `untaped tool add THING` adds one" in refused.stderr
 
 
 def test_a_question_not_needed_goes_ahead_without_a_terminal() -> None:

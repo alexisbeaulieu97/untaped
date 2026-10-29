@@ -36,6 +36,7 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, JsonValue, Vali
 from pydantic_core import core_schema
 
 from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, Invocation, Mark
+from untaped.sdk._keys import SettingKey, model_in
 from untaped.sdk.errors import (
     ConfigError,
     ErrorCategory,
@@ -45,11 +46,11 @@ from untaped.sdk.errors import (
     UsageError,
     first_validation_error,
 )
+from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
-    from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
+    from pydantic import GetCoreSchemaHandler
     from pydantic.fields import FieldInfo
-    from pydantic.json_schema import JsonSchemaValue
     from rich.text import Text
 
     from untaped.sdk._cli import OutputFormat
@@ -385,97 +386,6 @@ KeyJson = Annotated[tuple[str, JsonValue], BeforeValidator(_key_json)]
 """``KEY=<json>``, key stripped: the rest is JSON (``count=3``, ``tags=["a"]``)."""
 
 
-# --- typed references to settings ------------------------------------------------
-
-
-class SettingKey:
-    """A typed reference to one field of a settings model: ``key(HelloSettings).greeting``.
-
-    Created by :func:`key`; each attribute step is checked against the
-    model's fields, so a typo fails where it is written, and a nested model
-    is followed (``key(AcmeSettings).server.url``). The key knows its model
-    and its path; core spells the full dotted key (with the plugin's section)
-    from the composition. ``str()`` is the path inside the section.
-    """
-
-    __slots__ = ("_model", "_parts")
-
-    def __init__(self, model: type[BaseModel], parts: tuple[str, ...] = ()) -> None:
-        self._model = model
-        self._parts = parts
-
-    def __getattr__(self, name: str) -> SettingKey:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        current = self._field_model()
-        if name not in current.model_fields:
-            raise AttributeError(
-                f"{current.__name__} has no field {name!r} "
-                f"(fields: {', '.join(current.model_fields) or 'none'})"
-            )
-        return SettingKey(self._model, (*self._parts, name))
-
-    def _field_model(self) -> type[BaseModel]:
-        """The model the next attribute step reads: the settings model, or the nested one."""
-        current: type[BaseModel] = self._model
-        for part in self._parts:
-            annotation = current.model_fields[part].annotation
-            nested = _model_in(annotation)
-            if nested is None:
-                raise AttributeError(
-                    f"{'.'.join(self._parts)} of {self._model.__name__} is a value, not a model"
-                )
-            current = nested
-        return current
-
-    @staticmethod
-    def model_of(setting: SettingKey) -> type[BaseModel]:
-        """The settings model ``setting`` starts from (what composition maps to a section).
-
-        A static method, read on the class, so no settings field can shadow it.
-        """
-        return setting._model
-
-    @staticmethod
-    def path_of(setting: SettingKey) -> tuple[str, ...]:
-        """The field names from the settings model down to ``setting``."""
-        return setting._parts
-
-    def __str__(self) -> str:
-        return ".".join(self._parts)
-
-    def __repr__(self) -> str:
-        return (
-            f"key({self._model.__name__}).{self!s}"
-            if self._parts
-            else f"key({self._model.__name__})"
-        )
-
-    def __eq__(self, other: object) -> bool:
-        return (
-            isinstance(other, SettingKey)
-            and self._model is other._model
-            and self._parts == other._parts
-        )
-
-    def __hash__(self) -> int:
-        return hash((self._model, self._parts))
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source: Any, handler: GetCoreSchemaHandler
-    ) -> core_schema.CoreSchema:
-        return core_schema.is_instance_schema(cls, serialization=core_schema.to_string_ser_schema())
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        """A key serialises as its dotted path."""
-        del schema, handler
-        return {"type": "string"}
-
-
 def _column_name(column: SettingKey) -> str:
     """The table column ``column`` names: its fields' dumped names, dotted for a nested one."""
     from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
@@ -486,29 +396,8 @@ def _column_name(column: SettingKey) -> str:
     names: list[str] = []
     for attr in SettingKey.path_of(column):  # ``key()`` only steps into a nested model
         names.append(dumped_names(model)[attr])
-        model = _model_in(model.model_fields[attr].annotation) or model
+        model = model_in(model.model_fields[attr].annotation) or model
     return ".".join(names)
-
-
-def _model_in(annotation: object) -> type[BaseModel] | None:
-    """The one pydantic model ``annotation`` is (``Model`` or ``Model | None``), if any."""
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return annotation
-    models = [
-        arg for arg in get_args(annotation) if isinstance(arg, type) and issubclass(arg, BaseModel)
-    ]
-    return models[0] if len(models) == 1 else None
-
-
-def key(model: type[BaseModel]) -> SettingKey:
-    """A typed reference to a model's field: ``key(HelloSettings).greeting``.
-
-    A settings field names a setting; a record's field names a table column,
-    ``Output(columns=(key(Repo).full_name,))``.
-    """
-    if not (isinstance(model, type) and issubclass(model, BaseModel)):
-        raise TypeError(f"key() takes a model class, not {model!r}")
-    return SettingKey(model)
 
 
 # --- the fields core fills ---------------------------------------------------------
@@ -521,6 +410,30 @@ def _copy[B: FieldBlock](block: B) -> B:
 
 OUTPUT_FORMATS: tuple[str, ...] = ("table", "json", "yaml", "pipe", "raw")
 """The formats every ``Output`` offers, before a plugin's own renderers."""
+
+
+def _offered_formats(
+    formats: Sequence[str] | None, render: Mapping[str, object]
+) -> tuple[str, ...]:
+    """The formats an ``Output`` offers: ``formats=``, else core's and the renderers'.
+
+    Each one named is core's or has a renderer, and each renderer's format is
+    named: a ``ValueError`` otherwise, raised when the plugin loads.
+    """
+    if formats is not None and not formats:
+        raise ValueError("Output(formats=) names no format")
+    if formats is None:
+        return tuple(dict.fromkeys((*OUTPUT_FORMATS, *render)))
+    offered = tuple(dict.fromkeys(formats))
+    unknown = [name for name in offered if name not in OUTPUT_FORMATS and name not in render]
+    if unknown:
+        raise ValueError(
+            f"Output(formats=) names {', '.join(unknown)}, which neither core nor render= prints"
+        )
+    unlisted = [name for name in render if name not in offered]
+    if unlisted:
+        raise ValueError(f"Output(render=) has {', '.join(unlisted)}, which formats= leaves out")
+    return offered
 
 
 class Output[R: BaseModel](FieldBlock):
@@ -536,9 +449,11 @@ class Output[R: BaseModel](FieldBlock):
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it, though ``--columns`` still
     prints core's table): the renderer returns what to print and core prints
-    it (:func:`print_rendered`), and ``Output(format="raw")`` makes another
-    format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
-    ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
+    it (:func:`print_rendered`), ``Output(format="raw")`` makes another
+    format the default, and ``Output(formats=("tree", "json"))`` offers only
+    those formats, each core's or a renderer's, the first the default (only
+    a ``table`` default offering every core format follows ``UNTAPED_FORMAT``
+    and ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
     yields as it comes (a log being followed): json one object per line, yaml
     one document per row, pipe and raw one line per row, a table one row per
     line under its header, and a plugin renderer once per row; a stream with
@@ -559,7 +474,8 @@ class Output[R: BaseModel](FieldBlock):
         *,
         columns: Sequence[SettingKey | str] = (),
         render: Mapping[str, Callable[..., Rendered]] | None = None,
-        format: str = "table",
+        format: str | None = None,
+        formats: Sequence[str] | None = None,
         stream: bool = False,
     ) -> None:
         self._given = tuple(columns)
@@ -567,6 +483,8 @@ class Output[R: BaseModel](FieldBlock):
         #: Each row prints as ``run`` yields it, not once the run ends.
         self.stream = stream
         self.render: Mapping[str, Callable[..., Rendered]] = dict(render or {})
+        self._offered = _offered_formats(formats, self.render)
+        format = format or self._offered[0]
         if format not in self.formats:
             raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
         #: The format a run without ``--format`` prints.
@@ -584,7 +502,7 @@ class Output[R: BaseModel](FieldBlock):
     @property
     def formats(self) -> tuple[str, ...]:
         """Every value ``--format`` takes for this command."""
-        return tuple(dict.fromkeys((*OUTPUT_FORMATS, *self.render)))
+        return self._offered
 
     @property
     def requested(self) -> list[str] | None:
@@ -1238,6 +1156,7 @@ class Stdin[R: BaseModel](FieldBlock):
             for value in self._read(given, allow_empty=allow_empty)
         ]
 
+    @experimental
     def text(self, *, what: str) -> str:
         """Stdin's whole text, for an argument whose ``-`` names stdin (``run W -``).
 
@@ -1245,7 +1164,7 @@ class Stdin[R: BaseModel](FieldBlock):
         :data:`TextOrStdin` would hand it the text in the value's place. One
         terminal newline is trimmed. ``-`` with ``--stdin``, or a terminal
         stdin, is a usage error naming ``what``. Unlike :data:`TextOrStdin`, an
-        empty pipe is ``""``, left to the command.
+        empty pipe is ``""``, left to the command. First consumer: ``workspace run``.
         """
         from untaped.sdk import _stdin  # noqa: PLC0415 - only a reader pays
 

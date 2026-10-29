@@ -90,6 +90,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
+- `Stdin.text` in `untaped.sdk`: stdin's whole text for an argument whose
+  `-` the command tells from a value itself.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
   a plugin's typed private file in a store repo.
 - The fixtures in `untaped.sdk.testing.git`, for testing a plugin against the

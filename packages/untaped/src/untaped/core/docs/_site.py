@@ -144,6 +144,16 @@ class Site:
             if fill.contract == target
         )
 
+    def provided(self, target: str) -> list[KindDecl]:
+        """The own records of contract ``target``'s composed providers, which its bridge reads."""
+        items = [
+            fill.item
+            for plugin in self.declaration.plugins
+            for fill in plugin.fills
+            if fill.contract == target and fill.item is not None
+        ]
+        return [kind for item in items if (kind := self.kind_of_target(item)) is not None]
+
     def line(self, command: CommandDecl) -> str:
         """The command line ``command`` is typed as: ``untaped hello say``."""
         return " ".join(("untaped", *self.declaration.words(command)))

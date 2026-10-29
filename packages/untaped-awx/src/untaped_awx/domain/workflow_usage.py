@@ -34,6 +34,18 @@ class ContainedTemplate(BaseModel):
     node_count: int = Field(description="How many of the workflow's nodes run it.")
 
 
+class UsageTarget(BaseModel):
+    """The template whose usage was asked: the tree's root."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    id: int = Field(description="The template's AWX id.")
+    name: str | None = Field(None, description="Its name, when AWX sent one.")
+    type: Literal["job_template", "workflow_job_template"] = Field(
+        description="`job_template` or `workflow_job_template`."
+    )
+
+
 class WorkflowUsage(Record):
     """One workflow that runs a queried template, directly or through other workflows (``usage``).
 
@@ -41,9 +53,10 @@ class WorkflowUsage(Record):
     runs it directly) and ``node_count`` the number of its nodes running the
     template at that distance: both describe ``contains[0]``. ``contains``
     lists what it runs among the queried template and the other rows (only
-    the links the walk saw), ``target`` is the queried template's id, and
-    ``stopped`` is ``depth`` when the depth limit stopped the walk before
-    this workflow's own containers were looked up.
+    the links the walk saw), ``target`` is the queried template, ``stopped``
+    is ``depth`` when the depth limit stopped the walk before this
+    workflow's own containers were looked up, and ``top_level`` says no
+    workflow runs it (never under a filter, which can hide its containers).
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -53,18 +66,9 @@ class WorkflowUsage(Record):
     depth: Annotated[int, Column] = 0
     node_count: Annotated[int, Column]
     contains: list[ContainedTemplate] = Field(default_factory=list)
-    target: int
+    target: UsageTarget
     stopped: Literal["depth"] | None = None
-
-
-class UsageTarget(BaseModel):
-    """The template whose usage was asked: the tree's root."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    name: str | None = None
-    type: Literal["job_template", "workflow_job_template"]
+    top_level: bool = False
 
 
 class UsageAnswer(BaseModel):
@@ -79,16 +83,14 @@ class UsageAnswer(BaseModel):
 _KIND_WORDS = {"job_template": "job template", "workflow_job_template": "workflow template"}
 
 
-def usage_tree(target: UsageTarget, rows: Sequence[WorkflowUsage], *, top_level: bool) -> TreeGraph:
+def usage_tree(target: UsageTarget, rows: Sequence[WorkflowUsage]) -> TreeGraph:
     """``target``'s rows drawn as a tree: each workflow under every template it runs.
 
     Everything below the first line comes from the rows. A workflow is
     labelled by its name, with its id only when another workflow of the tree
-    shares that name. A top-level workflow (not stopped, run by no other
-    row) is drawn in the strong tone and listed in the summary, unless
-    ``top_level`` is off (a filtered lookup can hide a workflow's
-    containers). The target's own row (a cycle through it) adds edges into
-    the root rather than a node.
+    shares that name. A ``top_level`` workflow is drawn in the strong tone
+    and listed in the summary. The target's own row (a cycle through it)
+    adds edges into the root rather than a node.
     """
     others = [row for row in rows if row.id != target.id]
     names = _names(target, others)
@@ -97,12 +99,7 @@ def usage_tree(target: UsageTarget, rows: Sequence[WorkflowUsage], *, top_level:
     def order(id_: int) -> tuple[str, int]:
         return names[id_].casefold(), id_
 
-    contained = {link.id for row in rows for link in row.contains}
-    tops = (
-        {row.id for row in others if row.stopped is None and row.id not in contained}
-        if top_level
-        else set()
-    )
+    tops = {row.id for row in others if row.top_level}
     nodes = tuple(
         TreeGraphNode(
             key=str(row.id),

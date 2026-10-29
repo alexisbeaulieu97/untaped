@@ -270,6 +270,8 @@ class FillDecl(_Frozen):
     contract: str
     #: The provider's docstring's first line: what it fills the point with.
     summary: str = ""
+    #: The provider's own record (its ``T``), which a ``Stdin(via=)`` bridge reads; ``None``: none.
+    item: str | None = None
 
 
 class PluginDecl(_Frozen):
@@ -430,7 +432,7 @@ class Declaration(_Frozen):
         return self._line(block.removed_by, (*flag, shlex.quote(key)))
 
     def _line(self, target: str, args: tuple[object, ...]) -> str:
-        from untaped.sdk.fields import SettingKey  # noqa: PLC0415 - only a spelled hint needs it
+        from untaped.sdk._keys import SettingKey  # noqa: PLC0415 - only a spelled hint needs it
 
         command = next((c for c in self.commands() if c.target == target), None)
         if command is None:

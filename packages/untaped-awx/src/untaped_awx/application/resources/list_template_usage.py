@@ -92,7 +92,7 @@ class ListTemplateUsage:
                     "depth": depth,
                     "node_count": count,
                     "contains": [link],
-                    "target": target.id,
+                    "target": target,
                 }
                 rows[wf_id] = row
                 if wf_id == target.id:
@@ -101,6 +101,15 @@ class ListTemplateUsage:
                     row["stopped"] = "depth"
                     continue
                 queue.append((wf_id, depth + 1))
+        contained = {link.id for row in rows.values() for link in row["contains"]}
+        for row in rows.values():
+            # a filter can hide a workflow's containers, so nothing is top-level under one
+            row["top_level"] = (
+                not filters
+                and row["id"] != target.id
+                and "stopped" not in row
+                and row["id"] not in contained
+            )
         return UsageAnswer(target=target, rows=tuple(WorkflowUsage(**row) for row in rows.values()))
 
     def _target(

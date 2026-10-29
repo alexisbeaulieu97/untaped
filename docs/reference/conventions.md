@@ -75,7 +75,8 @@ lists the categories. A plugin's error classes declare them as class defaults
 - Put a follow-up command in `hint=` rather than in the message, named by its
   class: `hint=Login.spelled("awx")` reads ``run `untaped auth login awx` ``
   (core's commands come from `untaped.core.api`), printed as a `hint:` line.
-  Only a run spells a class, so a validator names its command as a string.
+  Only a run spells a class, so a validator refuses with
+  ``InvalidValue("use `{}`", Login.spelled())``, spelled when it is reported.
 - When a new error replaces a caught one, pass `**attribution(exc)` so the
   category, system, hint and details survive.
 - A run exits with the most severe failure it printed or emitted as a row
@@ -133,7 +134,7 @@ Declare a shared field block instead of a flag of your own:
 
 | Field | Flags |
 |---|---|
-| `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`) and `-c/--columns` |
+| `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`; the formats its `Output(formats=)` names, the first the default) and `-c/--columns` |
 | `confirm: Confirm` | `-y/--yes`, which skips only the prompt, and `--dry-run`, which still wins |
 | `dry_run: DryRun` | `--dry-run`: preview, then exit 0 |
 | `stdin: Stdin[R]` | `--stdin` |

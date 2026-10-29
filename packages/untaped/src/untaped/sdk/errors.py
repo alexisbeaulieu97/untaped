@@ -318,6 +318,37 @@ class UsageError(UntapedError):
     category = ErrorCategory.USAGE
 
 
+class InvalidValue(ValueError):
+    """A validator's refusal naming commands by their class, reported as any ``ValueError``.
+
+    ``InvalidValue("a Git URL must not carry credentials; use `{}`", Login.spelled())``
+    fills each ``{}`` with a command line (:func:`~untaped.sdk.words.command_line`)
+    whenever its text is read, so the run that reports it spells the command
+    as it mounts it; other braces are text. A validator can run outside any
+    run, where nothing can be spelled: there a command reads as its class name.
+    """
+
+    def __init__(self, text: str, *commands: SpelledCommand) -> None:
+        super().__init__(text, *commands)
+        self.parts = text.split("{}")
+        if len(self.parts) != len(commands) + 1:
+            raise TypeError(
+                f"InvalidValue's text has {len(self.parts) - 1} {{}} for {len(commands)} commands"
+            )
+        self.commands = commands
+
+    def __str__(self) -> str:
+        from untaped.sdk.words import command_line  # noqa: PLC0415 - only spelling pays
+
+        lines = []
+        for command in self.commands:
+            try:
+                lines.append(command_line(command))
+            except RuntimeError, LookupError:
+                lines.append(command.command.__name__)
+        return "".join(part + line for part, line in zip(self.parts, [*lines, ""], strict=True))
+
+
 class NeedsYesError(UsageError):
     """A command that asks first ran without a terminal and without ``--yes``; exits ``2``.
 

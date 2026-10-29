@@ -33,8 +33,8 @@ from pydantic import RootModel as PydanticRootModel
 
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._home import CORE, PLUGINS_FOLDER
+from untaped.sdk._keys import SettingKey
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
-from untaped.sdk.fields import SettingKey
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage.lock import operation_lock
 

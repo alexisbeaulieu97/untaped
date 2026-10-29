@@ -269,7 +269,7 @@ def test_graph_out_writes_the_rendered_graph(
     assert json.loads(out.read_text())["target_id"]
 
 
-def test_graph_out_refuses_a_format_it_cannot_write_before_reading(
+def test_graph_refuses_a_format_it_cannot_print_before_reading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     out = tmp_path / "graph.yaml"
@@ -277,7 +277,7 @@ def test_graph_out_refuses_a_format_it_cannot_write_before_reading(
     result = run("graph", "acme/role", "--source", "missing", "-f", "yaml", "--out", str(out))
 
     assert result.exit_code == 2
-    assert "--out writes the tree, mermaid or json format" in result.stderr
+    assert 'Choose from: "tree", "mermaid", "json".' in json.loads(result.stderr)["message"]
     assert not out.exists()
 
 

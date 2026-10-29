@@ -425,7 +425,6 @@ class Find(GraphCommand):
 Direction = Literal["up", "down", "both"]
 
 _DIRECTIONS: dict[Direction, GraphDirection] = {"up": "impact", "down": "deps", "both": "both"}
-_WRITTEN = ("tree", "mermaid", "json")  # the formats --out writes
 
 
 class GraphDocument(DependencyGraph):
@@ -512,13 +511,12 @@ class Graph(GraphCommand):
         None, description="Write the graph to this file instead of stdout (tree, mermaid or json)."
     )
     output: Output[GraphDocument] = Output(
-        render={"tree": _tree, "mermaid": _mermaid, "json": _json}, format="tree"
+        formats=("tree", "mermaid", "json"),
+        render={"tree": _tree, "mermaid": _mermaid, "json": _json},
     )
 
     def run(self) -> GraphDocument | None:
         check_all_refs(self.ref, all_refs=self.all_refs)
-        if self.out is not None and self.output.format not in _WRITTEN:
-            raise UsageError("--out writes the tree, mermaid or json format")
         direction = _DIRECTIONS[self.direction]
         with ExitStack() as stack:
             env = self.env(stack, command="graph", live=self.live, all_refs=self.all_refs)

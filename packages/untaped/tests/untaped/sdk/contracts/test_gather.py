@@ -158,9 +158,9 @@ def test_a_class_never_widens_to_its_plugins_other_providers(
 
 
 def test_a_field_named_like_its_section_is_still_a_field() -> None:
+    from untaped.sdk._keys import SettingKey
     from untaped.sdk.contracts import Provider
     from untaped.sdk.contracts._declare import _key_at
-    from untaped.sdk.fields import SettingKey
 
     class Inner(BaseModel):
         port: int = 0
