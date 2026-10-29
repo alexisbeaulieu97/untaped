@@ -140,6 +140,8 @@ class _Scaffold:
         self.camel = "".join(part.capitalize() for part in name.split("-"))
         self.owner = owner
         self.owner_module = owner.name.replace("-", "_")
+        self.provider_path = f"{self.package}.providers.{self.owner_module}"
+        self.short = self.package.removeprefix("untaped_")
         self.info = info
         self.provider = f"{self.camel}{info.cls.__name__}"
         self.api = _api(owner, candidates, info)
@@ -206,7 +208,8 @@ class _Scaffold:
             # untaped-{self.name}
 
             An [untaped](https://github.com/alexisbeaulieu97/untaped) plugin filling
-            `{self.owner.name}`'s `{self.info.cls.__name__}` contract. Install it, with its owner:
+            `{self.owner.name}`'s `{self.info.cls.__name__}` contract. Install it (its owner
+            comes with it as a dependency):
 
             ```sh
             uv pip install -e .
@@ -220,10 +223,9 @@ class _Scaffold:
 
     def _init(self) -> str:
         cls = f"{self.package}.plugin.{self.camel}"
-        return f'"""The ``{self.name}`` plugin; the class is :class:`{cls}`."""\n'
+        return f'"""The ``untaped.plugins`` entry point names :class:`{cls}`."""\n'
 
     def _plugin(self) -> str:
-        module = f"{self.package}.providers.{self.owner_module}"
         return dedent(
             f'''\
             """The ``{self.name}`` plugin class: it fills {self._contract()}.
@@ -237,7 +239,7 @@ class _Scaffold:
 
             from untaped.sdk import Plugin
 
-            from {module} import {self.provider}
+            from {self.provider_path} import {self.provider}
             from {self.package}.settings import {self.camel}Settings
 
 
@@ -327,23 +329,20 @@ class _Scaffold:
         )
 
     def _plugin_test(self) -> str:
-        short = self.package.removeprefix("untaped_")
         return (
             f'"""``{self.name}`` as a whole: it passes ``untaped lint`` and keeps its surface."""\n'
             "\nfrom __future__ import annotations\n\n"
             "from untaped.sdk.testing import assert_surface\n"
             "from untaped_lint.testing import assert_clean\n\n"
             f"from {self.package}.plugin import {self.camel}\n\n\n"
-            f"def test_{short}_passes_lint() -> None:\n"
+            f"def test_{self.short}_passes_lint() -> None:\n"
             "    # lint.live calls each method: drop the ignore once they return.\n"
             f'    assert_clean("{self.name}", ignore=["lint.live"])\n\n\n'
-            f"def test_{short}_keeps_its_surface() -> None:\n"
+            f"def test_{self.short}_keeps_its_surface() -> None:\n"
             f"    assert_surface({self.camel})  # snapshots/surface.txt beside this file\n"
         )
 
     def _provider_test(self) -> str:
-        module = f"{self.package}.providers.{self.owner_module}"
-        short = self.package.removeprefix("untaped_")
         samples, call = "", f"assert_fills({self.provider})"
         if self.info.item is not None:
             samples = (
@@ -356,9 +355,9 @@ class _Scaffold:
             f'"""``{self.name}``\'s provider fills {self._contract()}."""\n'
             "\nfrom __future__ import annotations\n\n"
             "from untaped.sdk.testing import assert_fills\n\n"
-            f"from {module} import {self.provider}\n\n"
+            f"from {self.provider_path} import {self.provider}\n\n"
             f"{samples}"
-            f"def test_{short}_fills_{self.info.name}() -> None:\n"
+            f"def test_{self.short}_fills_{self.info.name}() -> None:\n"
             f"    {call}\n"
         )
 

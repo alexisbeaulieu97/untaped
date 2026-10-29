@@ -68,10 +68,9 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject["project"]
     # the owner is a plain dependency: the fill subclasses its contract
-    assert (project["dependencies"][0], project["dependencies"][2]) == (
-        CORE_RANGE,
-        "untaped-rack>=1,<2",
-    )
+    core, pydantic, owner = project["dependencies"]
+    assert (core, owner) == (CORE_RANGE, "untaped-rack>=1,<2")
+    assert pydantic.startswith("pydantic")
     assert "optional-dependencies" not in project
     assert project["entry-points"]["untaped.plugins"] == {"gitlab": "untaped_gitlab.plugin:Gitlab"}
 

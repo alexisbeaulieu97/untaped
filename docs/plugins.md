@@ -261,7 +261,7 @@ gitlab = "untaped_gitlab.plugin:Gitlab"
 ```
 
 `untaped lint` fails a plugin with no `untaped` range, or one that fills a
-contract of a plugin it doesn't require. An installed owner outside the
+contract of a plugin it doesn't require with a range. An installed owner outside the
 range quarantines its fills of that owner alone (`owner-out-of-range`). The
 provider imports only `untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing`
 and the owner's `api` module.
