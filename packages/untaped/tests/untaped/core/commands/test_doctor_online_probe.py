@@ -32,7 +32,7 @@ from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.testing import current_memory_store
+from untaped.sdk.testing import MemoryCredentials
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 
@@ -177,7 +177,10 @@ def test_invalid_candidate_values_fail_the_validate_row(_isolated_config: Path) 
 
 
 def test_the_files_are_untouched(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     stores: FakeStores = install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(_isolated_config, _OLD)
@@ -190,7 +193,7 @@ def test_the_files_are_untouched(
     assert _isolated_config.read_bytes() == before
     assert not _isolated_config.with_name("state.yml").exists()
     assert stores.entries() == {} and stores.calls() == []
-    assert current_memory_store().entries == {}
+    assert credentials.entries == {}
 
 
 def test_a_failed_probe_row_carries_detail_and_fix(_isolated_config: Path) -> None:

@@ -33,11 +33,10 @@ core's ``refs`` folder, so a test can say what holds a store's layouts.
 unit-test its item store's ``release`` and ``moved`` without core's holder
 kinds.
 
-A :class:`MemoryStore` stands in for this machine's password store:
-``untaped.sdk.testing.plugin`` installs a fresh one for every test, so
-``untaped auth login`` and ``Credential.store`` file secrets in memory and
-``Credential.get`` reads them back; :func:`memory_store` returns it, and
-installs one around a block of a suite that doesn't load the plugin.
+A :class:`MemoryCredentials` stands in for this machine's password store:
+``untaped.sdk.testing.plugin`` installs a fresh one for every test (its
+``credentials`` fixture), so ``untaped auth login`` and ``Credential.store``
+file secrets in memory and ``Credential.get`` reads them back.
 """
 
 from __future__ import annotations
@@ -112,7 +111,6 @@ __all__ = [
     "Install",
     "ManualClock",
     "MemoryCredentials",
-    "MemoryStore",
     "PluginCandidate",
     "PluginCheck",
     "ProgressClock",
@@ -132,7 +130,6 @@ __all__ = [
     "check",
     "check_plugin",
     "compose_with",
-    "current_memory_store",
     "damage",
     "drive_screen",
     "install",
@@ -141,7 +138,6 @@ __all__ = [
     "keep_value",
     "make_project",
     "manual_clock",
-    "memory_store",
     "move_ask",
     "piped_through",
     "plan_release",
@@ -152,40 +148,6 @@ __all__ = [
     "write_reference",
     "write_rows",
 ]
-
-
-class MemoryStore(MemoryCredentials):
-    """A password store in memory, for tests: what ``auth login`` saves, by entry.
-
-    The 11.x name of :class:`MemoryCredentials`, kept until each plugin's
-    tests move onto the ``credentials`` fixture.
-    """
-
-
-@contextmanager
-def memory_store(store: MemoryStore | None = None) -> Iterator[MemoryStore]:
-    """Use ``store`` (a fresh one by default) as the password store for the block."""
-    from untaped.sdk.network._credential_store import (  # noqa: PLC0415
-        reset_test_store,
-        set_test_store,
-    )
-
-    chosen = MemoryStore() if store is None else store
-    token = set_test_store(chosen)
-    try:
-        yield chosen
-    finally:
-        reset_test_store(token)
-
-
-def current_memory_store() -> MemoryStore:
-    """The memory store this test runs with (``untaped.sdk.testing.plugin`` installs one)."""
-    from untaped.sdk.network._credential_store import _TEST_STORE  # noqa: PLC0415
-
-    store = _TEST_STORE.get()
-    if not isinstance(store, MemoryStore):
-        raise RuntimeError("no memory store is installed; use untaped.sdk.testing.memory_store()")
-    return store
 
 
 class ManualClock(Clock):

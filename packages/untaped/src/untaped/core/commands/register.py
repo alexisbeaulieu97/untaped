@@ -44,7 +44,7 @@ class Register(Command[CoreSettings]):
     output: Output[RegisterOutcome]
 
     def run(self) -> Iterator[RegisterOutcome]:
-        # a list of one row, as 11.x printed it
+        # a list of one row
         diag = self.ctx.diag
         yield _remove(diag) if self.remove else _register(diag)
 

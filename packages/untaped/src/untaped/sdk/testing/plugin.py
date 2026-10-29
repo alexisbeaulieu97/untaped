@@ -40,15 +40,11 @@ from untaped.sdk.testing import (
     ManualClock,
     MemoryCredentials,
     ScriptedTerminal,
-    current_memory_store,
     manual_clock,
-    memory_store,
     no_terminal,
 )
-from untaped.sdk.testing import (
-    install as _install,
-)
-from untaped.sdk.testing.fixtures import scripted_terminal
+from untaped.sdk.testing import install as _install
+from untaped.sdk.testing.fixtures import current_credentials, memory_credentials, scripted_terminal
 
 _TERMINAL_ENV = {"TERM": "dumb", "NO_COLOR": "1", "COLUMNS": "200"}
 # Ambient token fallbacks (``GH_TOKEN``) would otherwise leak a real token in.
@@ -92,7 +88,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         # terminal is absent unless a test installs one (``invoke_cli(terminal=True)``).
         terminal_token = set_terminal_override(no_terminal)
         try:
-            with memory_store():  # a MemoryCredentials, under its 11.x name
+            with memory_credentials():
                 yield
         finally:
             reset_terminal_override(terminal_token)
@@ -147,6 +143,4 @@ def terminal() -> Iterator[ScriptedTerminal]:
 @pytest.fixture
 def credentials() -> MemoryCredentials:
     """The password store this test runs with: ``credentials.set(Shop.token, key, "s3cret")``."""
-    store = current_memory_store()
-    assert isinstance(store, MemoryCredentials)
-    return store
+    return current_credentials()

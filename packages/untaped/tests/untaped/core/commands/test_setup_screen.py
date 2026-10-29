@@ -60,7 +60,7 @@ from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.storage import _refs as refs
-from untaped.sdk.testing import ScreenKeys, current_memory_store, drive_screen
+from untaped.sdk.testing import MemoryCredentials, ScreenKeys, drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun, rendered_text
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
@@ -162,14 +162,17 @@ def _result(run: ScreenRun[SetupModel, SetupResult]) -> SetupResult:
 
 
 def test_check_passes_then_writes_a_stored_token(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
 
     run = drive_screen(_build(), [*_keys("https://wiz", token=" tok "), "esc", "esc"])
 
     assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
-    assert list(current_memory_store().entries.values()) == ["tok"]
+    assert list(credentials.entries.values()) == ["tok"]
     assert _login("https://wiz") == "tok"
     assert PROBES == ["probed"]
     assert run.commands_run == ("probe", "save")
@@ -242,7 +245,10 @@ def test_check_fails_then_nothing_is_written(
 
 
 def test_save_anyway_writes(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
@@ -253,7 +259,7 @@ def test_save_anyway_writes(
     )
 
     assert run.commands_run == ("probe", "save")
-    assert list(current_memory_store().entries.values()) == ["bad"]
+    assert list(credentials.entries.values()) == ["bad"]
     assert _login("https://wiz") == "bad"
     assert _wiz_section(_isolated_config) == {"server": {"url": "https://wiz/"}}
     assert "saved, check failed" in _flat(run.frames[-2])
@@ -361,7 +367,10 @@ def test_an_empty_url_and_an_empty_token_are_refused_in_place(
 
 
 def test_the_overlay_never_writes_and_never_changes_get_settings(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://old}\n")
@@ -396,7 +405,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
 
     # The write went through the repository (the cache was dropped by it, not filled).
     assert _wiz_section(_isolated_config) == {"server": {"url": "https://new/"}}
-    assert list(current_memory_store().entries.values()) == ["candidate"]
+    assert list(credentials.entries.values()) == ["candidate"]
     assert config != _isolated_config.read_bytes()
 
 
@@ -405,7 +414,10 @@ def _message(key: ScreenKey) -> object:
 
 
 def test_a_failed_check_leaves_the_files_and_the_cache_alone(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     write_config(_isolated_config, "format_version: 2\nwiz:\n  server: {url: https://old}\n")
@@ -418,7 +430,7 @@ def test_a_failed_check_leaves_the_files_and_the_cache_alone(
 
     assert _isolated_config.read_bytes() == config
     assert stores.entries() == {} and stores.calls() == calls
-    assert current_memory_store().entries == {}
+    assert credentials.entries == {}
     after = get_settings().wiz  # type: ignore[attr-defined]
     assert (str(after.server.url), WIZ_TOKEN.find(after.server)) == ("https://old/", None)
 

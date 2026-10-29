@@ -8566,16 +8566,6 @@ sdk untaped.sdk.testing.MemoryCredentials.read(entry)
 sdk untaped.sdk.testing.MemoryCredentials.save(entry, token)
 sdk untaped.sdk.testing.MemoryCredentials.save(label=) default=None
 sdk untaped.sdk.testing.MemoryCredentials.set(credential, key, secret)
-sdk untaped.sdk.testing.MemoryStore()
-sdk untaped.sdk.testing.MemoryStore.delete(entry)
-sdk untaped.sdk.testing.MemoryStore.describe(entry)
-sdk untaped.sdk.testing.MemoryStore.gone(entry)
-sdk untaped.sdk.testing.MemoryStore.name class
-sdk untaped.sdk.testing.MemoryStore.preflight()
-sdk untaped.sdk.testing.MemoryStore.read(entry)
-sdk untaped.sdk.testing.MemoryStore.save(entry, token)
-sdk untaped.sdk.testing.MemoryStore.save(label=) default=None
-sdk untaped.sdk.testing.MemoryStore.set(credential, key, secret)
 sdk untaped.sdk.testing.PluginCandidate(distribution, name, target)
 sdk untaped.sdk.testing.PluginCandidate(distribution_version@4=) default=""
 sdk untaped.sdk.testing.PluginCandidate(entry_point_group@5=) default=untaped.plugins
@@ -8687,7 +8677,6 @@ sdk untaped.sdk.testing.check_plugin(candidates=) default=None
 sdk untaped.sdk.testing.check_plugin(name)
 sdk untaped.sdk.testing.compose_with()
 sdk untaped.sdk.testing.compose_with(*plugins)
-sdk untaped.sdk.testing.current_memory_store()
 sdk untaped.sdk.testing.damage(cache, key)  [experimental]
 sdk untaped.sdk.testing.damage(partition=) default=None  [experimental]
 sdk untaped.sdk.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
@@ -8751,8 +8740,6 @@ sdk untaped.sdk.testing.make_project(holds=) default=None  [experimental]
 sdk untaped.sdk.testing.make_project(path)  [experimental]
 sdk untaped.sdk.testing.manual_clock()
 sdk untaped.sdk.testing.manual_clock(start@1=) default=None
-sdk untaped.sdk.testing.memory_store()
-sdk untaped.sdk.testing.memory_store(store@1=) default=None
 sdk untaped.sdk.testing.move_ask(store, item, *, moved_from)  [experimental]
 sdk untaped.sdk.testing.piped_through(bridge, row) callback(bridge, *)
 sdk untaped.sdk.testing.plan_release(project, store)  [experimental]
