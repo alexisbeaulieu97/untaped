@@ -12,27 +12,23 @@ from __future__ import annotations
 import json
 import socket
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel
 
 from core_test_support.commands.stores import install_fake_stores
 from core_test_support.commands.support import (
     ExtProfile,
     GithubProfile,
-    GithubState,
     JiraProfile,
     StrictProfile,
     check,
     compose,
     ghost_candidates,
     make_plugin,
-    make_spec,
     root_group,
     write_config,
 )
@@ -40,7 +36,6 @@ from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import (
     PluginCandidate,
-    PluginSpec,
     named_plugin_dir,
 )
 from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
@@ -56,10 +51,10 @@ pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
 _PASS = "pass"
 
 
-def _doctor_app(*specs: PluginSpec | type[Plugin], ghost: bool = False) -> object:
-    """``untaped doctor`` composed with ``specs``; ``ghost`` adds a plugin quarantined by name."""
+def _doctor_app(*plugins: type[Plugin], ghost: bool = False) -> object:
+    """``untaped doctor`` composed with ``plugins``; ``ghost`` adds a plugin quarantined by name."""
     ghosts = ghost_candidates("example-dist", "other-dist") if ghost else ()
-    return root_group("doctor", *specs, also=ghosts)
+    return root_group("doctor", *plugins, also=ghosts)
 
 
 # ── happy path ───────────────────────────────────────────────────────────────
@@ -335,43 +330,6 @@ def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
     assert "duplicate plugin name: 'ghost'" in raw.stdout
 
 
-def _raises_cli_import_failed() -> App:
-    raise RuntimeError("cli import failed")
-
-
-def _returns_a_string() -> object:
-    return "not-an-app"
-
-
-def _deferred(name: str, factory: Callable[[], object]) -> PluginSpec:
-    return replace(make_spec(name), help=f"{name} plugin.", app_factory=factory)  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize(
-    ("factory", "detail"),
-    [
-        (_raises_cli_import_failed, "cli import failed"),
-        (_returns_a_string, "returned str, expected cyclopts App"),
-    ],
-    ids=["raises", "non-app"],
-)
-def test_doctor_reports_a_failing_lazy_factory_as_a_quarantine_row(
-    factory: Callable[[], object], detail: str
-) -> None:
-    result = bootstrap.compose_root(
-        candidates=[
-            plugin_candidate(_deferred("bad", factory), distribution="bad-dist"),
-            plugin_candidate(_deferred("good", lambda: App(name="good"))),
-        ]
-    )
-    rows = collect_doctor_rows(result)
-    quarantine = [row for row in rows if row["check"] == "quarantine"]
-    assert [(row["plugin"], row["title"]) for row in quarantine] == [("bad", "bad-app-factory")]
-    assert quarantine[0]["status"] == "fail"
-    assert detail in str(quarantine[0]["detail"])
-    assert str(quarantine[0]["detail"]).endswith(" [distribution bad-dist, entry point bad]")
-
-
 def test_doctor_names_each_quarantined_plugin(
     broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
 ) -> None:
@@ -385,14 +343,6 @@ def test_doctor_names_each_quarantined_plugin(
     assert str(quarantine[0]["detail"]).endswith(" [distribution untaped]")
 
 
-def test_doctor_limits_factory_rows_to_the_requested_plugins() -> None:
-    result = bootstrap.compose_root(
-        candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]
-    )
-    rows = collect_doctor_rows(result, plugins=frozenset({"other"}))
-    assert [row for row in rows if row["check"] == "quarantine"] == []
-
-
 def test_core_s_scope_is_read_as_a_plugin_s() -> None:
     """Core's checks run like a plugin's, only when core is selected; its parts get the rows."""
     result = bootstrap.compose_root(candidates=[])
@@ -402,18 +352,6 @@ def test_core_s_scope_is_read_as_a_plugin_s() -> None:
     assert "validate settings" not in [row["title"] for row in core_rows]
     picked = collect_doctor_rows(result, plugins=frozenset({"other"}))
     assert not [row for row in picked if str(row["check"]).startswith("untaped.")]
-
-
-def test_doctor_cli_exits_1_on_a_failing_lazy_factory() -> None:
-    root = bootstrap.build_root_app(
-        candidates=[plugin_candidate(_deferred("bad", _returns_a_string))]
-    )
-    result = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
-    assert result.exit_code == 1
-    assert any(
-        row["check"] == "quarantine" and row["title"] == "bad-app-factory"
-        for row in json.loads(result.stdout)
-    )
 
 
 def test_undefined_active_profile_fails_section_rows(
@@ -541,8 +479,11 @@ def test_a_newer_format_fails_the_config_rows(_isolated_config: Path) -> None:
 
 def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path) -> None:
     write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n")
-    (_isolated_config.parent / "state.yml").write_text(f"format_version: {STATE_FORMAT_VERSION}\n")
-    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
+    acme = _acme(items=StateRows[_Row]())
+    state_file = _isolated_config.parent / "plugins" / "acme" / "state.yml"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text(f"format_version: {STATE_FORMAT_VERSION}\n")
+    code, rows = _rows(_doctor_app(acme))
     assert code == 0, _failed(rows)
     (unknown,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert unknown["status"] == _PASS
@@ -557,14 +498,6 @@ def test_active_profile_missing_without_profiles_fails_profile_row(
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert "'prod'" in _failed(rows)["resolve picked profiles"]
-
-
-def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:
-    state_file = _isolated_config.parent / "state.yml"
-    state_file.write_text("github:\n  cursor: [not, a, string]\n")
-    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
-    assert code == 1
-    assert str(state_file) in _failed(rows)["validate state"]
 
 
 class _Row(BaseModel):
@@ -628,52 +561,24 @@ def test_the_current_projects_rows_are_checked(
     assert "acme.here row b" in _failed(rows)["validate state"]
 
 
-class _Row11(BaseModel):
-    name: str
-    created_at: str
-
-
-# 11.x: rows a spec lists on ``stores`` live in the shared state.yml; go with PluginSpec
-_ROWS = StateRows(
-    "acme", "items", model=_Row11, key_field="name", remove_hint="untaped acme rm {key}"
-)
-_HERE = StateRows.per_project("acme", "here", model=_Row11, key_field="name")
-
-
-def test_an_11x_damaged_row_fails_with_its_fix(_isolated_config: Path) -> None:
-    write_rows(_ROWS, [{"name": "a"}])
-
-    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_ROWS,))))
-
+def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:
+    acme = _acme(items=StateRows[_Row]())
+    state_file = _isolated_config.parent / "plugins" / "acme" / "state.yml"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text("items: [not, rows]\n")
+    code, rows = _rows(_doctor_app(acme))
     assert code == 1
-    assert _failed(rows)["validate state"] == (
-        f"acme.items row a in {_isolated_config.parent / 'state.yml'} is damaged: "
-        "created_at: Field required; correct that row by hand, or remove it with "
-        "`untaped acme rm a`"
-    )
+    assert str(state_file) in _failed(rows)["validate state"]
 
 
-def test_an_11x_projects_rows_are_checked(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    project = make_project(tmp_path / "PROJ-1")
-    write_rows(_HERE.of(project), [{"name": "a", "created_at": "x"}, {"name": "b"}])
-    monkeypatch.chdir(project.root)
-
-    code, rows = _rows(_doctor_app(make_spec("acme", stores=(_HERE,))))
-
+def test_an_unreadable_state_file_fails_its_row_naming_it(_isolated_config: Path) -> None:
+    acme = _acme(items=StateRows[_Row]())
+    state_file = _isolated_config.parent / "plugins" / "acme" / "state.yml"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text("items: [unclosed\n")
+    code, rows = _rows(_doctor_app(acme))
     assert code == 1
-    assert "acme.here row b" in _failed(rows)["validate state"]
-
-
-def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
-    state_file = _isolated_config.parent / "state.yml"
-    state_file.write_text("github: [unclosed\n")
-    code, rows = _rows(_doctor_app(make_spec("github", settings=GithubProfile, state=GithubState)))
-    assert code == 1
-    failed = _failed(rows)
-    assert str(state_file) in failed["load state file"]
-    assert failed["validate state"] == "state file could not be read"
+    assert _failed(rows)["validate state"].startswith(f"could not parse {state_file}: ")
 
 
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:

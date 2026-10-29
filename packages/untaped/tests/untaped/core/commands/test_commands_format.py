@@ -8,15 +8,17 @@ wins over the setting.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 import yaml
 from cyclopts import App
+from pydantic import BaseModel
 
 from core_test_support.commands.support import GithubProfile, make_plugin, write_config
 from untaped.runtime import bootstrap
-from untaped.sdk import Diagnostics, FormatOption, PluginSpec, create_app, emit
+from untaped.sdk import Command, Diagnostics, Output
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -109,29 +111,39 @@ def test_an_invalid_untaped_format_does_not_block_diagnosis(
     assert result.exit_code != 2 or "terminal" in result.stderr
 
 
-def _lazy_spec() -> PluginSpec:
-    def factory() -> App:
-        app = create_app(name="lazy", help="Lazy plugin.")
+class Row(BaseModel):
+    """One row."""
 
-        @app.command(name="list")
-        def list_command(*, fmt: FormatOption = "table") -> None:
-            """List one row."""
-            emit([{"name": "row"}], fmt=fmt)
-
-        return app
-
-    return PluginSpec(
-        name="lazy",
-        app_factory=factory,
-        settings=GithubProfile,
-        help="Lazy plugin.",
-    )
+    name: str
 
 
-def test_ui_format_reaches_a_lazily_mounted_plugin(_isolated_config: Path) -> None:
+class List(Command):
+    """List one row."""
+
+    output: Output[Row]
+
+    def run(self) -> Iterator[Row]:
+        yield Row(name="row")
+
+
+class Warned(Command):
+    """Warn, then list one row."""
+
+    output: Output[Row]
+
+    def run(self) -> Iterator[Row]:
+        Diagnostics().warning("careful")
+        yield Row(name="row")
+
+
+def _rows_root() -> App:
+    rows = make_plugin("rows", settings=GithubProfile, commands=(List, Warned))
+    return bootstrap.build_root_app(candidates=(plugin_candidate(rows),))
+
+
+def test_ui_format_reaches_a_plugin_command(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    format: json\n")
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(_lazy_spec()),))
-    result = CliInvoker().invoke(root.meta, ["lazy", "list"])
+    result = CliInvoker().invoke(_rows_root().meta, ["rows", "list"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [{"name": "row"}]
 
@@ -156,26 +168,9 @@ def test_format_help_names_the_overrides_only_for_the_table_default() -> None:
     assert "UNTAPED_FORMAT" not in raw_help
 
 
-def _warning_spec() -> PluginSpec:
-    def factory() -> App:
-        app = create_app(name="warns", help="Warning plugin.")
-
-        @app.command(name="list")
-        def list_command(*, fmt: FormatOption = "table") -> None:
-            """Warn, then list one row."""
-            Diagnostics().warning("careful")
-            emit([{"name": "row"}], fmt=fmt)
-
-        return app
-
-    return PluginSpec(name="warns", app_factory=factory, settings=GithubProfile, help="Warns.")
-
-
 def test_ui_format_setting_makes_stderr_json_once_settings_load(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui:\n    format: json\n")
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(_warning_spec()),))
-
-    result = CliInvoker().invoke(root.meta, ["warns", "list"])
+    result = CliInvoker().invoke(_rows_root().meta, ["rows", "warned"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stderr) == {

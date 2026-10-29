@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import replace
 from importlib import metadata
 from pathlib import Path
 
@@ -20,7 +19,6 @@ from core_test_support.commands.support import (
     GithubProfile,
     JiraProfile,
     make_plugin,
-    make_spec,
     write_config,
 )
 from core_test_support.runtime.plugin_harness import make_candidate
@@ -28,6 +26,7 @@ from untaped.core.commands.plugins import INSTALL_HINT, List, Schema
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.settings import get_settings
+from untaped.sdk.contracts import Contract, Provider
 from untaped.sdk.testing import CliInvoker, Install
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -86,10 +85,26 @@ def test_a_ready_plugin_says_what_it_may_import_from() -> None:
     assert (row["requires"], row["fills"]) == (["jinja2", "untaped-git"], [])
 
 
+class Items(Contract):
+    """Where items come from."""
+
+    def items(self) -> list[str]:
+        raise NotImplementedError
+
+
+class AcmeItems(Items, Provider):
+    """Items from acme."""
+
+    def items(self) -> list[str]:
+        return []
+
+
 def test_an_extra_named_after_an_owner_it_fills_adds_to_requires() -> None:
-    spec = replace(make_spec("acme"), provides={"rack": lambda: ()})
+    rack = make_candidate(make_plugin("rack", offers=(Items,)), "untaped-rack")
+    acme = make_plugin("acme", fills=(AcmeItems,))
     requires = ("untaped-rack>=1; extra == 'rack'", "rich; extra == 'pretty'")
-    [row] = _listing([make_candidate(spec, "acme-dist", requires_dist=requires)])
+    rows = _listing([rack, make_candidate(acme, "acme-dist", requires_dist=requires)])
+    [row] = [row for row in rows if row["name"] == "acme"]
     assert (row["requires"], row["fills"]) == (["untaped-rack"], ["rack"])
 
 
@@ -213,8 +228,9 @@ def test_core_s_commands_run_with_nothing_else_installed(install: Callable[..., 
     [
         pytest.param([], True, id="bare"),
         pytest.param([make_candidate(make_plugin("demo"))], False, id="plugin"),
-        # 11.x: a spec named apart from its candidate is quarantined; goes with PluginSpec
-        pytest.param([make_candidate(make_spec("demo"), name="other")], False, id="quarantined"),
+        pytest.param(
+            [make_candidate(make_plugin("demo"), error=RuntimeError("x"))], False, id="quarantined"
+        ),
     ],
 )
 def test_plugins_listing_install_hint_on_stderr(

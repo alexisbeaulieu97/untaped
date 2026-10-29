@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from cyclopts import App
 
-from core_test_support.commands.support import age_stub, make_plugin, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_plugin, write_config
 from untaped.core import skill_stubs
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skill_stubs import STUB_MARKER
@@ -27,7 +27,7 @@ from untaped.core.skills import (
     update_installed_skill,
 )
 from untaped.runtime import bootstrap
-from untaped.sdk import Plugin, SkillAsset
+from untaped.sdk import Plugin
 from untaped.sdk.storage import data_file
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
@@ -391,18 +391,6 @@ def test_doctor_passes_a_stub_a_newer_untaped_wrote(run_as: Callable[[str], None
 
 
 # registry
-
-
-def test_a_plugin_with_two_stubs_is_quarantined() -> None:
-    spec = make_spec(
-        "demo",
-        skills=(
-            SkillAsset(name="untaped-demo", description="One."),
-            SkillAsset(name="untaped-demo-two", description="Two."),
-        ),
-    )
-    result = bootstrap.compose_root(candidates=(plugin_candidate(spec),))
-    assert [(item.name, item.reason) for item in result.quarantine] == [("demo", "bad-skill-asset")]
 
 
 def test_install_targets_and_scopes_vocabulary_is_unchanged() -> None:

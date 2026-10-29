@@ -23,7 +23,7 @@ import tomllib
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import gen_config_reference as generator
 import pytest
@@ -31,6 +31,7 @@ import release
 from cyclopts import App
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped.runtime import registry
@@ -147,21 +148,23 @@ class _Motd(BaseModel):
     greeting: str = Field(default="hi", description="What hello says.")
 
 
-_MOTD_CACHE = Cache(
-    "hello",
-    "motd",
-    label="the message of the day",
-    max_age=timedelta(hours=1),
-    renamed_from=("motd_seconds",),
-)
+class _Empty(BaseModel):
+    """Nothing to configure but the cache."""
 
 
-@pytest.mark.parametrize("settings", [_Motd, None])
+def _motd() -> Cache[Any]:
+    """A fresh cache for each double: a block belongs to one plugin class."""
+    return Cache(
+        label="the message of the day", max_age=timedelta(hours=1), renamed_from=("motd_seconds",)
+    )
+
+
+@pytest.mark.parametrize("settings", [_Motd, _Empty])
 def test_config_reference_lists_each_cache_setting_and_its_rename(
-    monkeypatch: pytest.MonkeyPatch, settings: type[BaseModel] | None
+    monkeypatch: pytest.MonkeyPatch, settings: type[BaseModel]
 ) -> None:
-    spec = PluginSpec(name="hello", settings=settings, caches=(_MOTD_CACHE,), contracts=lambda: ())
-    candidate = PluginCandidate(distribution="untaped", name="hello", target=spec)
+    hello = make_plugin("hello", settings=settings, motd=_motd())
+    candidate = PluginCandidate(distribution="untaped", name="hello", target=hello)
     monkeypatch.setattr(registry, "discover_candidates", lambda: (candidate,))
     page = generator.render()
     assert (
@@ -186,8 +189,8 @@ class _Dated(BaseModel):
 def test_config_reference_names_a_deprecated_setting_s_removal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    spec = PluginSpec(name="hello", settings=_Dated, contracts=lambda: ())
-    candidate = PluginCandidate(distribution="untaped-hello", name="hello", target=spec)
+    hello = make_plugin("hello", settings=_Dated)
+    candidate = PluginCandidate(distribution="untaped-hello", name="hello", target=hello)
     monkeypatch.setattr(generator, "packages", lambda root: {"untaped-hello": {}})
     monkeypatch.setattr(registry, "discover_candidates", lambda: (candidate,))
     page = generator.render()

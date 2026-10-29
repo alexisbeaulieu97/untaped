@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.commands.support import age_stub, asset, make_plugin, make_spec, root_group
+from core_test_support.commands.support import age_stub, make_plugin, root_group
 from untaped.core.commands import skills as skills_cli
 from untaped.core.skill_stubs import STUB_MARKER
 from untaped.sdk.errors import ConfigError
@@ -58,21 +58,6 @@ def test_install_short_selector_keeps_full_installed_id(tmp_path: Path) -> None:
     assert installed.joinpath("SKILL.md").is_file()
     marker = json.loads(installed.joinpath(STUB_MARKER).read_text())
     assert marker["name"] == "untaped-demo"
-
-
-def test_exact_name_wins_over_short_expansion(tmp_path: Path) -> None:
-    first = asset("untaped-demo")
-    second = asset("demo")
-    app = root_group(
-        "skills",
-        make_spec("plugin-a", skills=(first,)),
-        make_spec("plugin-b", skills=(second,)),
-    )
-    target = tmp_path / "skills"
-    result = CliInvoker().invoke(app, ["install", "demo", "--target-dir", str(target)])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    assert (target / "demo" / "SKILL.md").is_file()
-    assert not (target / "untaped-demo").exists()
 
 
 def test_install_short_via_stdin_keeps_full_id(tmp_path: Path) -> None:

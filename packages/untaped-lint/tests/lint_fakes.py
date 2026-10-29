@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from typing import Any, ClassVar
 
 from untaped.sdk import InstalledPlugin, Record, kind_of
+from untaped.sdk.contracts import Provider
 from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule, rule_row
 
 
@@ -69,13 +71,23 @@ class Placing(Rules):
 
 
 class Counting(Rules):
-    """A ``Rules`` host that counts the records it is asked about, by kind."""
+    """A ``Rules`` host that counts the records it is asked about, by kind, per class.
 
-    def __init__(self) -> None:
-        self.asked: list[str] = []
+    Core makes the provider, so the count is the class's: :meth:`forget` starts it over.
+    """
+
+    asked: ClassVar[list[str]] = []
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.asked = []
+
+    @classmethod
+    def forget(cls) -> None:
+        cls.asked.clear()
 
     def findings(self, record: Record) -> list[Finding]:
-        self.asked.append(kind_of(type(record)) or "")
+        type(self).asked.append(kind_of(type(record)) or "")
         return super().findings(record)
 
 
@@ -105,7 +117,7 @@ class NotAProvider(Linter):
         return []
 
 
-class Malformed(Linter):
+class Malformed(Linter, Provider):
     """Declares ``wide`` and answers one valid finding and one with a bad severity."""
 
     def rules(self) -> list[Rule]:
@@ -116,7 +128,7 @@ class Malformed(Linter):
         return [finding(wide, "a", "too wide"), bad]
 
 
-class MalformedRule(Linter):
+class MalformedRule(Linter, Provider):
     """Declares ``wide`` and a rule whose id is dotted, which the engine never prefixes."""
 
     def rules(self) -> list[Rule]:

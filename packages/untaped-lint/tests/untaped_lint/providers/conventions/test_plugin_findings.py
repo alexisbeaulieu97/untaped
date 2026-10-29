@@ -18,21 +18,18 @@ from untaped_lint.testing import run
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 # A print (a file rule), a Protocol outside the ports (core), a domain -> cli
-# import (a file rule) and a write without --yes (core).
+# import (a file rule) and a distribution not named untaped-<name> (core).
 _PLUGIN = {
-    "demo_plugin/__init__.py": '''
-        """Demo plugin."""
+    "demo_plugin/__init__.py": '"""Demo plugin."""\n',
+    "demo_plugin/plugin.py": '''
+        """The demo plugin class."""
 
         from __future__ import annotations
 
-        from typing import TYPE_CHECKING
-
         from pydantic import BaseModel, ConfigDict
 
-        from untaped.sdk import PluginSpec
-
-        if TYPE_CHECKING:
-            from cyclopts import App
+        from untaped.sdk import Plugin
+        from demo_plugin.cli import Nuke
 
 
         class DemoSettings(BaseModel):
@@ -41,13 +38,11 @@ _PLUGIN = {
             model_config = ConfigDict(frozen=True)
 
 
-        def build_app() -> App:
-            from demo_plugin.cli import build
+        class Demo(Plugin):
+            """Demo commands."""
 
-            return build()
-
-
-        SPEC = PluginSpec(name="demo", app_factory=build_app, settings=DemoSettings)
+            settings = DemoSettings
+            commands = (Nuke,)
         ''',
     "demo_plugin/errors.py": '"""Demo errors."""\n',
     "demo_plugin/cli.py": '''
@@ -55,20 +50,14 @@ _PLUGIN = {
 
         from __future__ import annotations
 
-        from cyclopts import App
-
-        from untaped.sdk import YesOption, create_app
+        from untaped.sdk import Command
 
 
-        def nuke(*, yes: YesOption = False) -> None:
+        class Nuke(Command):
             """Nuke everything."""
-            print("nuked")
 
-
-        def build() -> App:
-            app = create_app(name="demo", help="Demo commands.")
-            app.command(nuke, name="nuke")
-            return app
+            def run(self) -> None:
+                print("nuked")
         ''',
     "demo_plugin/domain/__init__.py": '"""Demo domain."""\n',
     "demo_plugin/domain/model.py": '''
@@ -76,14 +65,14 @@ _PLUGIN = {
 
         from typing import Protocol
 
-        from demo_plugin.cli import build
+        from demo_plugin.cli import Nuke
 
 
         class Store(Protocol):
             """A store."""
         ''',
 }
-_DEMO = [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:SPEC")]
+_DEMO = [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin.plugin:Demo")]
 
 
 def _plugin(site: Path) -> InstalledPlugin:
@@ -104,9 +93,7 @@ def test_core_rows_and_file_lines_become_findings(
     monkeypatch.chdir(site)
     found = Conventions().findings(_plugin(site), candidates=_DEMO)
     by_rule = {finding.rule: finding for finding in found}
-    assert {"plugin-name", "protocol-location", "undeclared-write", "print", "layer"} <= set(
-        by_rule
-    )
+    assert {"plugin-name", "protocol-location", "print", "layer"} <= set(by_rule)
     assert {finding.severity for finding in found} == {"error"}
     assert {finding.target for finding in found} == {"demo"}
     # A file rule's line becomes a location relative to the cwd, its detail the message.
@@ -156,7 +143,9 @@ def test_a_plugin_composition_refuses_is_the_quarantined_finding(
 ) -> None:
     """Read from what the check found now, whatever the (maybe stale) record says."""
     site(_PLUGIN)
-    broken = PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:NOPE")
+    broken = PluginCandidate(
+        distribution="demo-plugin", name="demo", target="demo_plugin.plugin:Nope"
+    )
     record = InstalledPlugin(
         name="demo", status=status, distribution="demo-plugin", version="0.1.0"
     )
@@ -171,7 +160,7 @@ def test_a_stale_quarantined_record_of_a_plugin_that_composes_keeps_its_rules(
     record = _plugin(site).model_copy(update={"status": "quarantined"})
     rules = {finding.rule for finding in Conventions().findings(record, candidates=_DEMO)}
     assert "quarantined" not in rules
-    assert {"plugin-name", "undeclared-write"} <= rules
+    assert {"plugin-name", "protocol-location"} <= rules
 
 
 def _row(check: str, title: str, status: str, detail: str) -> PluginCheck:

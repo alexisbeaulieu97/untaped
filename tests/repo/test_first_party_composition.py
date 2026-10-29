@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.root_options import _root_options
 from untaped.runtime.run import entered, start_run
-from untaped.sdk._cli import create_app
+from untaped.sdk import Command
 from untaped.sdk.marks import deprecated, mark_of, panel_for
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped.sdk.words import EXPERIMENTAL_LINE
@@ -224,14 +224,16 @@ def test_a_deprecated_command_is_hidden_from_help_and_completion_but_stays_visib
         assert '"sunset"' in root.generate_completion(shell="bash")
 
 
+class Fade(Command):
+    """Fade out."""
+
+    def run(self) -> None:
+        return None
+
+
 def _sunset() -> PluginCandidate:
     """A deprecated plugin beside the first-party ones (none of which is deprecated)."""
-    spec = make_spec(
-        name="sunset",
-        factory=lambda: create_app(name="sunset", help="Sunset."),
-        stability=deprecated(),
-    )
-    return plugin_candidate(spec)
+    return plugin_candidate(make_plugin("sunset", stability=deprecated(), commands=(Fade,)))
 
 
 def test_awx_lint_and_test_sit_in_awxs_experimental_panel(

@@ -22,13 +22,12 @@ from untaped.sdk.testing import CliResult, invoke_cli
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 
-_WIZ_MODULE = """
+_WIZ_PLUGIN = """
 from typing import ClassVar
 
 from pydantic import BaseModel
 
-from untaped.sdk._cli import create_app
-from untaped.sdk import PluginSpec
+from untaped.sdk import Plugin
 
 
 class WizProfile(BaseModel):
@@ -37,11 +36,10 @@ class WizProfile(BaseModel):
     renamed_keys: ClassVar[dict[str, str]] = {"timeout": "timeout_seconds"}
 
 
-SPEC = PluginSpec(
-    name="wiz",
-    app_factory=lambda: create_app(name="wiz", help="wiz plugin."),
-    settings=WizProfile,
-)
+class Wiz(Plugin):
+    \"\"\"wiz plugin.\"\"\"
+
+    settings = WizProfile
 """
 
 
@@ -50,12 +48,14 @@ def _install_wiz(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     site = tmp_path / "site"
     dist_info = site / "untaped_wiz-1.0.dist-info"
     dist_info.mkdir(parents=True)
-    (site / "untaped_wiz.py").write_text(_WIZ_MODULE, encoding="utf-8")
+    (site / "untaped_wiz").mkdir()
+    (site / "untaped_wiz" / "__init__.py").write_text('"""wiz."""\n', encoding="utf-8")
+    (site / "untaped_wiz" / "plugin.py").write_text(_WIZ_PLUGIN, encoding="utf-8")
     (dist_info / "METADATA").write_text(
         "Metadata-Version: 2.1\nName: untaped-wiz\nVersion: 1.0\n", encoding="utf-8"
     )
     (dist_info / "entry_points.txt").write_text(
-        "[untaped.plugins]\nwiz = untaped_wiz:SPEC\n", encoding="utf-8"
+        "[untaped.plugins]\nwiz = untaped_wiz.plugin:Wiz\n", encoding="utf-8"
     )
     monkeypatch.syspath_prepend(str(site))
     monkeypatch.setenv("PYTHONPATH", str(site))
