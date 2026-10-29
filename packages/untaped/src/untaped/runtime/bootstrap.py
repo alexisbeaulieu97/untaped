@@ -33,7 +33,6 @@ from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
     QuarantineRecord,
-    RegisteredPlugin,
     compose,
     discover_candidates,
     kept_declaration,
@@ -111,28 +110,20 @@ def _register_sections(result: CompositionResult) -> None:
     """
     bind_owners(
         {
-            plugin.spec.name: plugin.plugin_ref.distribution
+            plugin.name: plugin.plugin_ref.distribution
             for plugin in result.plugins
             if not plugin.root
         }
     )
     # read when first asked, so a start imports no plugin class
     bind_behaviours(
-        {
-            plugin.spec.name: _deprecations(plugin.spec)
-            for plugin in result.plugins
-            if not plugin.root
-        }
+        {plugin.name: _deprecations(plugin) for plugin in result.plugins if not plugin.root}
     )
     bind_credentials(
-        {
-            plugin.spec.name: _credentials(plugin.spec)
-            for plugin in result.plugins
-            if plugin.spec.credential_names
-        }
+        {plugin.name: _credentials(plugin) for plugin in result.plugins if plugin.credential_names}
     )
-    for spec in (plugin.spec for plugin in result.plugins):
-        register_profile_settings(spec.name, section_settings(spec), spec.stability)
+    for plugin in result.plugins:
+        register_profile_settings(plugin.name, section_settings(plugin), plugin.stability)
 
 
 def _deprecations(plugin: ComposedPlugin) -> Callable[[], Sequence[DeprecatedBehaviour]]:
@@ -313,7 +304,7 @@ def build_root_app(
         root.help = f"{root.help}\n\n{INSTALL_HINT}"
     for plugin in result.plugins:
         if plugin.root:
-            _mount_root(root, result.mount, plugin.spec.name)
+            _mount_root(root, result.mount, plugin.name)
         else:
             _mount_plugin(root, plugin)
     docs_footer(root, "untaped docs")
@@ -373,13 +364,12 @@ class _LazyPluginCommand(CommandSpec):
     ``packages/untaped/tests/untaped/runtime/test_bootstrap.py``.
     """
 
-    def __init__(self, plugin: RegisteredPlugin, mount_parent: App) -> None:
-        spec = plugin.spec
+    def __init__(self, plugin: ComposedPlugin, mount_parent: App) -> None:
         super().__init__(
-            import_path=f"<plugin {spec.name}>",
-            name=spec.name,
-            help=spec.decl.summary,
-            group=_root_panel(spec),  # placed without importing the plugin
+            import_path=f"<plugin {plugin.name}>",
+            name=plugin.name,
+            help=plugin.decl.summary,
+            group=_root_panel(plugin),  # placed without importing the plugin
         )
         self._plugin = plugin
         self._mount_parent = mount_parent
@@ -397,9 +387,9 @@ class _LazyPluginCommand(CommandSpec):
         if app._name_transform is None:
             app.name_transform = self._mount_parent.name_transform
         # Once resolved, cyclopts lists the app by its own group, not the command's.
-        _place(app, self._plugin.spec)
-        apply_marks(app, path=(self._plugin.spec.name,))
-        _docs_footers(app, self._plugin.spec.name)
+        _place(app, self._plugin)
+        apply_marks(app, path=(self._plugin.name,))
+        _docs_footers(app, self._plugin.name)
         self._resolved = app
         return app
 
@@ -462,26 +452,25 @@ def fail_if_unbuildable(app: App) -> None:
         command()
 
 
-def _root_panel(spec: ComposedPlugin) -> Group:
-    """The root help panel of ``spec``'s command: Plugins, or its stability panel."""
-    return PLUGINS_GROUP if spec.stability is None else panel_for(spec.stability)
+def _root_panel(plugin: ComposedPlugin) -> Group:
+    """The root help panel of ``plugin``'s command: Plugins, or its stability panel."""
+    return PLUGINS_GROUP if plugin.stability is None else panel_for(plugin.stability)
 
 
-def _place(app: App, spec: ComposedPlugin) -> None:
+def _place(app: App, plugin: ComposedPlugin) -> None:
     """Put a plugin's app in its root panel, however it was mounted (its own group is ignored)."""
-    app.group = (_root_panel(spec),)
-    if spec.stability is not None:
-        mark_app(app, spec.stability, source="spec")  # its mark: help line and side table
+    app.group = (_root_panel(plugin),)
+    if plugin.stability is not None:
+        mark_app(app, plugin.stability, source="plugin")  # its mark: help line and side table
 
 
-def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
+def _mount_plugin(root: App, plugin: ComposedPlugin) -> None:
     """Mount one composed plugin's commands, built the first time one is dispatched."""
-    spec = plugin.spec
-    if not spec.has_commands:
+    if not plugin.has_commands:
         return
-    if spec.name in root:
-        del root[spec.name]
-    root._commands[spec.name] = _LazyPluginCommand(plugin, root)
+    if plugin.name in root:
+        del root[plugin.name]
+    root._commands[plugin.name] = _LazyPluginCommand(plugin, root)
 
 
 def _check_skills_after(

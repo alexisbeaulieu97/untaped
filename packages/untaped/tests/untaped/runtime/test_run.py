@@ -72,7 +72,7 @@ def test_a_built_run_reads_settings_from_the_config(
 
 @pytest.mark.usefixtures("fresh_composition")
 def test_the_installs_rows_are_read_once(tmp_path: Path) -> None:
-    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
+    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:Plugin")
     bootstrap.compose_root(candidates=[ghost])
     declaration, settings = _composed()
     with run_scope(build_run(declaration, settings, home=tmp_path)):
@@ -86,7 +86,7 @@ def test_each_run_reads_the_installs_rows_afresh(tmp_path: Path) -> None:
     declaration, settings = _composed()
     for name in ("ghost", "spook"):
         candidate = PluginCandidate(
-            distribution=f"untaped-{name}", name=name, target=f"{name}:SPEC"
+            distribution=f"untaped-{name}", name=name, target=f"{name}:Plugin"
         )
         bootstrap.compose_root(candidates=[candidate])
         with run_scope(build_run(declaration, settings, home=tmp_path)):

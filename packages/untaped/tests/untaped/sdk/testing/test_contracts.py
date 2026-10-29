@@ -52,7 +52,7 @@ def test_compose_with_composes_a_fake_provider_and_restores_the_composition() ->
     before = compose(shelf_plugin())
     Kiosk.rows = [Book(title="Dune")]
     with compose_with(shelf_plugin(), plugin("fake", fills=(Kiosk,))) as result:
-        assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "fake", "shelf"]
+        assert [plugin.name for plugin in result.plugins] == ["untaped", "fake", "shelf"]
         [answer] = gather(BookSource.books, refresh=True)()
         assert isinstance(answer, Ok)
         assert answer.plugin == "fake"
@@ -73,7 +73,7 @@ class Acme(Plugin):
 
 def test_compose_with_and_plugin_candidate_take_a_plugin_class() -> None:
     with compose_with(Acme, shelf_plugin()) as result:
-        assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "acme", "shelf"]
+        assert [plugin.name for plugin in result.plugins] == ["untaped", "acme", "shelf"]
     assert plugin_candidate(Acme).target is Acme
 
 

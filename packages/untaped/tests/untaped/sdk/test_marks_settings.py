@@ -125,7 +125,7 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
         candidates=[plugin_candidate(make_plugin("svc", settings=PythonDeprecated))]
     )
 
-    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped", "svc"]
+    assert [plugin.name for plugin in composition.plugins] == ["untaped", "svc"]
 
 
 def test_a_misplaced_mark_quarantines_its_provider() -> None:
@@ -133,7 +133,7 @@ def test_a_misplaced_mark_quarantines_its_provider() -> None:
 
     composition = bootstrap.compose_root(candidates=[plugin_candidate(svc)])
 
-    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped"]
+    assert [plugin.name for plugin in composition.plugins] == ["untaped"]
     [record] = composition.quarantine
     assert record.reason == "bad-settings-keys"
     assert "sits inside its type" in record.detail
@@ -155,4 +155,4 @@ def test_a_clean_marked_section_composes() -> None:
         candidates=[plugin_candidate(make_plugin("svc", settings=Section))]
     )
 
-    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped", "svc"]
+    assert [plugin.name for plugin in composition.plugins] == ["untaped", "svc"]

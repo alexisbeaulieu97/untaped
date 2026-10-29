@@ -141,13 +141,9 @@ class Mount:
     def held(self, name: str, kind: str) -> tuple[tuple[BlockDecl, Any], ...]:
         """Each block of ``kind`` plugin ``name``'s class holds, beside its declaration.
 
-        The class is imported only when its declaration lists one; an 11.x
-        spec, which has no declaration, holds none.
+        The class is imported only when its declaration lists one.
         """
-        try:
-            declared = [b for b in self.declaration.plugin(name).blocks if b.block == kind]
-        except LookupError:
-            return ()
+        declared = [b for b in self.declaration.plugin(name).blocks if b.block == kind]
         if not declared:
             return ()
         held = held_by(self.plugins[name])

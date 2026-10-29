@@ -42,27 +42,27 @@ def make_check(
 _TARGETS = itertools.count()
 
 
-def plugin_name(spec: type[Plugin]) -> str:
+def plugin_name(cls: type[Plugin]) -> str:
     """A plugin class's name: its class name in kebab case."""
-    return kebab(spec.__name__)
+    return kebab(cls.__name__)
 
 
-def spec_target(
-    spec: type[Plugin],
+def class_target(
+    cls: type[Plugin],
     *,
     error: Exception | None = None,
     result: Any = None,
     calls: list[str] | None = None,
 ) -> object:
-    """A candidate target resolving to ``spec``, to ``result``, or raising ``error``.
+    """A candidate target resolving to ``cls``, to ``result``, or raising ``error``.
 
-    A plain class is its own target; otherwise it is a ``package.plugin:SPEC``
+    A plain class is its own target; otherwise it is a ``package.plugin:Plugin``
     string naming a synthetic leaf module, as an installed plugin's entry point
-    does, whose ``SPEC`` attribute raises or returns, and appends the class's
+    does, whose attribute it names raises or returns, and appends the class's
     name to ``calls`` each time it is resolved.
     """
     if error is None and result is None and calls is None:
-        return spec
+        return cls
     package = ModuleType(f"untaped_test_target_{next(_TARGETS)}")
     package.__path__ = []
     sys.modules[package.__name__] = package
@@ -73,18 +73,18 @@ def spec_target(
         if key.startswith("__"):  # a module's own (``__path__``): it has none
             raise AttributeError(key)
         if calls is not None:
-            calls.append(plugin_name(spec))
+            calls.append(plugin_name(cls))
         if error is not None:
             raise error
-        return spec if result is None else result
+        return cls if result is None else result
 
     module.__getattr__ = attribute  # type: ignore[method-assign]  # resolved per access
     sys.modules[name] = module
-    return f"{name}:SPEC"
+    return f"{name}:Plugin"
 
 
 def make_candidate(
-    spec: type[Plugin],
+    cls: type[Plugin],
     distribution: str = "example-dist",
     name: str | None = None,
     *,
@@ -95,8 +95,8 @@ def make_candidate(
 ) -> PluginCandidate:
     return PluginCandidate(
         distribution=distribution,
-        name=name or plugin_name(spec),
-        target=spec_target(spec, **kwargs),
+        name=name or plugin_name(cls),
+        target=class_target(cls, **kwargs),
         distribution_version=distribution_version,
         entry_point_group=entry_point_group,
         requires_dist=tuple(requires_dist),

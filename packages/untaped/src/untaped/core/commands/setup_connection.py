@@ -55,26 +55,27 @@ _TYPED = "typed"
 _TAB_LABELS = {"keep": "Keep", "command": "Command", "env": "Env"}
 
 
-def connection_form(spec: ComposedPlugin, state: ServiceState, store: TokenStore | None) -> Form:
-    """The setup form of ``spec``: its marked settings, its secrets, ``Save``.
+def connection_form(plugin: ComposedPlugin, state: ServiceState, store: TokenStore | None) -> Form:
+    """The setup form of ``plugin``: its marked settings, its secrets, ``Save``.
 
     Each marked setting opens in its shape's field (as its row would); each
     secret gets source tabs.
     """
-    descriptors = _descriptors(spec)
+    descriptors = _descriptors(plugin)
     fields: list[tuple[str, Any]] = [
-        (field.key, _setting(descriptors[field.path], field, state)) for field in form_fields(spec)
+        (field.key, _setting(descriptors[field.path], field, state))
+        for field in form_fields(plugin)
     ]
-    for secret in service_marks(spec).secrets:
-        choices = token_choices(spec, state, store, secret=secret)
-        tabs = tuple(_tab(spec, store, choice, secret) for choice in choices)
+    for secret in service_marks(plugin).secrets:
+        choices = token_choices(plugin, state, store, secret=secret)
+        tabs = tuple(_tab(plugin, store, choice, secret) for choice in choices)
         title = f"{_label(secret.key, title=True)} source"
         fields.append((_source(secret), Tabs(title, tabs, active=choices[0].value)))
     return Form((*fields, ("buttons", _save_buttons())))
 
 
-def _descriptors(spec: ComposedPlugin) -> dict[tuple[str, ...], FieldDescriptor]:
-    model = settings_model(spec)
+def _descriptors(plugin: ComposedPlugin) -> dict[tuple[str, ...], FieldDescriptor]:
+    model = settings_model(plugin)
     return {d.path: d for d in walk_settings(model, include_collections=True)}
 
 
@@ -98,7 +99,7 @@ def _noun(secret: MarkedField) -> str:
 
 
 def _tab(
-    spec: ComposedPlugin, store: TokenStore | None, choice: PromptChoice[str], secret: MarkedField
+    plugin: ComposedPlugin, store: TokenStore | None, choice: PromptChoice[str], secret: MarkedField
 ) -> Tab:
     how = choice.value
     label = store.name if how == "store" and store is not None else _TAB_LABELS[how]
@@ -108,7 +109,7 @@ def _tab(
         typed = SecretInput(noun[:1].upper() + noun[1:], validator=_secret_error(noun))
         fields = ((_TYPED, typed),)
     elif how == "command":
-        validator = _command_validator(spec.name)
+        validator = _command_validator(plugin.name)
         fields = (("command", TextInput("Command", validator=validator)),)
     return Tab(how, label, fields, choice.label)
 
@@ -183,7 +184,7 @@ def _token_command(name: str, text: str) -> list[str]:
     return argv
 
 
-def candidate(spec: ComposedPlugin, profile: str, form: Form, state: ServiceState) -> Candidate:
+def candidate(plugin: ComposedPlugin, profile: str, form: Form, state: ServiceState) -> Candidate:
     """The form's validated values as what the user asked for.
 
     ``state`` is the one the form was built from: only the settings the user
@@ -194,11 +195,11 @@ def candidate(spec: ComposedPlugin, profile: str, form: Form, state: ServiceStat
     setting the plugin needs left empty, its ``details["field"]`` naming
     the form's field.
     """
-    descriptors = _descriptors(spec)
+    descriptors = _descriptors(plugin)
     held = dict(form.fields)
     repo = SettingsFileRepository()
     values: list[tuple[str, str | None]] = []
-    for field in form_fields(spec):
+    for field in form_fields(plugin):
         descriptor = descriptors[field.path]
         text = _written(descriptor, held[field.key])
         opened = _written(descriptor, editor(descriptor, state.values.get(field.key), label=""))
@@ -213,16 +214,16 @@ def candidate(spec: ComposedPlugin, profile: str, form: Form, state: ServiceStat
         if text is not None:
             text = text.strip() if descriptor.annotation is not SecretStr else text
             try:
-                repo.coerced(f"{spec.name}.{field.key}", text)  # refuses what config set would
+                repo.coerced(f"{plugin.name}.{field.key}", text)  # refuses what config set would
             except ConfigError as exc:
                 raise ConfigError(str(exc), category="invalid", details=refused) from exc
         values.append((field.key, text))
     secrets = tuple(
-        _choice(spec.name, secret, held[_source(secret)].value)
-        for secret in service_marks(spec).secrets
+        _choice(plugin.name, secret, held[_source(secret)].value)
+        for secret in service_marks(plugin).secrets
     )
     expected = tuple((key, state.own.get(key)) for key, _ in values)
-    return Candidate(spec.name, spec.name, profile, tuple(values), secrets, expected)
+    return Candidate(plugin.name, plugin.name, profile, tuple(values), secrets, expected)
 
 
 def _written(descriptor: FieldDescriptor, component: Any) -> str | None:
@@ -245,7 +246,7 @@ def _choice(name: str, secret: MarkedField, tab: object) -> SecretChoice:
 
 
 def token_choices(
-    spec: ComposedPlugin,
+    plugin: ComposedPlugin,
     current: ServiceState,
     store: TokenStore | None,
     *,
@@ -255,7 +256,7 @@ def token_choices(
 
     ``secret`` defaults to the one a bare section names.
     """
-    marks = service_marks(spec)
+    marks = service_marks(plugin)
     secret = secret or marks.default_secret or marks.secrets[0]
     noun = _noun(secret)
     choices: list[PromptChoice[str]] = []

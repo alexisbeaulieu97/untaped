@@ -175,8 +175,8 @@ def _map_violations(*plugins: type[Plugin], name: str = "svc") -> list[str]:
     root = bootstrap.build_root_app(candidates=[plugin_candidate(each) for each in plugins])
     result = bootstrap.composition()
     assert not result.quarantine
-    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == name]
-    return guide_violations(root, result, spec)
+    [composed] = [plugin for plugin in result.plugins if plugin.name == name]
+    return guide_violations(root, result, composed)
 
 
 _OVER = (

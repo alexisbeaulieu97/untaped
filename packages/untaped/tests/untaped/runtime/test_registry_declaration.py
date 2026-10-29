@@ -137,19 +137,21 @@ def test_cores_declaration_is_bound_where_it_is_declared() -> None:
 def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     first = compose_root(candidates=[toy])
-    assert [plugin.spec.name for plugin in first.plugins] == ["untaped", "toy"]
+    assert [plugin.name for plugin in first.plugins] == ["untaped", "toy"]
     assert len(_declarations()) == 1
 
     _unload("toyplug")
     again = compose_root(candidates=[toy])
-    assert [plugin.spec.name for plugin in again.plugins] == ["untaped", "toy"]
+    assert [plugin.name for plugin in again.plugins] == ["untaped", "toy"]
     assert "toyplug.plugin" not in sys.modules
-    spec = again.plugins[1].spec
-    assert spec.decl.summary == "A toy plugin, composed from its target."
+    toy_plugin = again.plugins[1]
+    assert toy_plugin.decl.summary == "A toy plugin, composed from its target."
     # the settings model is read from its own module, the cache's setting from the declaration
     assert "toyplug.settings" in sys.modules
     assert "toyplug.plugin" not in sys.modules
-    assert [cache.name for cache in spec.caches] == ["motd"]  # reading a block imports the class
+    assert [cache.name for cache in toy_plugin.caches] == [
+        "motd"
+    ]  # reading a block imports the class
     assert "toyplug.plugin" in sys.modules
 
 
@@ -193,7 +195,7 @@ def test_a_second_start_reads_a_plugins_credentials_when_first_asked(toys: Path)
 
     with composed_with([toy]) as again:
         assert "toyplug.plugin" not in sys.modules
-        section = section_settings(again.plugins[1].spec)
+        section = section_settings(again.plugins[1])
         assert section is not None
         assert _CREDENTIAL_NAMES[section] == {"token"}
         assert "toyplug.plugin" not in sys.modules
@@ -214,7 +216,7 @@ def test_a_replayed_plugin_has_its_setting_ids_and_runs(toys: Path) -> None:
     assert keys["toy.caches.motd.max_age_seconds"]["value"] == 7200
     assert "toyplug.plugin" not in sys.modules
     result = compose_root(candidates=[toy])
-    assert result.plugins[1].spec.block_ids("caches") == ("toy.motd",)
+    assert result.plugins[1].block_ids("caches") == ("toy.motd",)
 
     greeted = invoke.invoke(root.meta, ["toy", "greet"])
     assert (greeted.exit_code, greeted.stdout) == (0, "hello from toy\n")
@@ -266,11 +268,11 @@ def test_a_class_refused_before_the_mount_leaves_the_one_holding_its_name(toys: 
     _package(toys, "toyplug2")
     blank = PluginCandidate(distribution=" ", name="toy", target="toyplug2.plugin:Toy")
     first = compose_root(candidates=[good, blank])
-    assert [plugin.spec.name for plugin in first.plugins] == ["untaped", "toy"]
+    assert [plugin.name for plugin in first.plugins] == ["untaped", "toy"]
     _unload("toyplug")
     again = compose_root(candidates=[good, blank])
     assert "toyplug.plugin" not in sys.modules  # the kept declaration still has it
-    assert [plugin.spec.name for plugin in again.plugins] == ["untaped", "toy"]
+    assert [plugin.name for plugin in again.plugins] == ["untaped", "toy"]
 
 
 def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
@@ -279,7 +281,7 @@ def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
     first = compose_root(candidates=[toy, other])
     _unload("toyplug")
     again = compose_root(candidates=[toy, other])
-    names = [[plugin.spec.name for plugin in each.plugins] for each in (first, again)]
+    names = [[plugin.name for plugin in each.plugins] for each in (first, again)]
     assert names == [["untaped"], ["untaped"]]
     assert [record.reason for record in again.quarantine] == ["duplicate-name"] * 2
     assert "toyplug.plugin" not in sys.modules
@@ -291,7 +293,7 @@ def test_another_set_of_candidates_composes_and_keeps_its_own_declaration(toys: 
     other = _package(toys, "toyplugtwo")
     renamed = PluginCandidate(distribution=other.distribution, name="two", target=other.target)
     result = compose_root(candidates=[toy, renamed])
-    assert sorted(plugin.spec.name for plugin in result.plugins) == ["toy", "two", "untaped"]
+    assert sorted(plugin.name for plugin in result.plugins) == ["toy", "two", "untaped"]
     assert len(_declarations()) == 2
 
 
@@ -299,9 +301,9 @@ def test_a_home_it_cannot_write_composes_every_time(toys: Path) -> None:
     toy = _package(toys, "toyplug")
     named_plugin_dir("untaped").parent.mkdir(parents=True, exist_ok=True)
     named_plugin_dir("untaped").write_text("not a folder", encoding="utf-8")
-    assert [p.spec.name for p in compose_root(candidates=[toy]).plugins] == ["untaped", "toy"]
+    assert [p.name for p in compose_root(candidates=[toy]).plugins] == ["untaped", "toy"]
     _unload("toyplug")
-    assert [p.spec.name for p in compose_root(candidates=[toy]).plugins] == ["untaped", "toy"]
+    assert [p.name for p in compose_root(candidates=[toy]).plugins] == ["untaped", "toy"]
     assert "toyplug.plugin" in sys.modules
 
 
@@ -344,7 +346,7 @@ def test_a_kept_plugin_whose_settings_no_longer_import_is_quarantined_as_afresh(
         "raise ImportError('a dependency is gone')\n", encoding="utf-8"
     )
     again = compose_root(candidates=[toy])
-    assert [plugin.spec.name for plugin in again.plugins] == ["untaped"]
+    assert [plugin.name for plugin in again.plugins] == ["untaped"]
     [record] = again.quarantine
     assert record.reason == "malformed-entry-point" and "a dependency is gone" in record.detail
 
@@ -360,7 +362,7 @@ def test_a_candidate_whose_metadata_changed_is_checked_again(toys: Path) -> None
         requires_dist=("untaped<1",),
     )
     again = compose_root(candidates=[pinned])
-    assert [plugin.spec.name for plugin in again.plugins] == ["untaped"]
+    assert [plugin.name for plugin in again.plugins] == ["untaped"]
     assert [record.reason for record in again.quarantine] == ["bad-metadata"]
     assert len(_declarations()) == 1  # the same key, composed again
 
@@ -438,7 +440,7 @@ def test_a_second_start_routes_a_fill_to_its_owner_and_imports_the_owner_class_n
     _unload("toyplugowner")
     _unload("toyplugfiller")
     replayed = registry._compose(ordered, fresh.mount.declaration)
-    specs = {each.spec.name: each.spec for each in replayed.plugins}
+    specs = {each.name: each for each in replayed.plugins}
     assert specs["filler"].fill_owners == ("owner",)
     [titles] = specs["owner"].offers
     assert titles.__module__ == "toyplugowner.api"

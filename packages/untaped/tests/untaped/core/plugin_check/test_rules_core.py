@@ -18,7 +18,7 @@ def _core_violations() -> list[str]:
     root = build_root_app(candidates=[])
     result = composition()
     commands = sorted(name for name in root if not name.startswith("-"))
-    core = next(plugin.spec for plugin in result.plugins if plugin.root)
+    core = next(plugin for plugin in result.plugins if plugin.root)
     sections = {**model_sections(Settings), core.name: settings_model(core)}
     src = Path(untaped.__file__).parent.parent
     return sorted(

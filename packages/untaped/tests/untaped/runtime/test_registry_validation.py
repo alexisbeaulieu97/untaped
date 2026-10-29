@@ -52,7 +52,7 @@ FREE = [
 @pytest.mark.parametrize(("name", "by"), TAKEN.items(), ids=list(TAKEN))
 def test_a_taken_name_is_quarantined(name: str, by: str) -> None:
     result = compose([make_candidate(make_plugin(name), "ext-dist")])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert (record.distribution, record.reason) == ("ext-dist", "duplicate-name")
     assert f"{name!r} is taken by {by}" in record.detail
@@ -62,7 +62,7 @@ def test_a_taken_name_is_quarantined(name: str, by: str) -> None:
 def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
     result = compose([make_candidate(make_plugin(name))])
     assert result.quarantine == ()
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", name]
+    assert [plugin.name for plugin in result.plugins] == ["untaped", name]
 
 
 # ---- entry-point targets ------------------------------------------------------
@@ -160,7 +160,7 @@ def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
 
     result = compose([make_candidate(bad), make_candidate(good)])
 
-    assert [c.spec.name for c in result.plugins] == ["untaped", "good"]
+    assert [c.name for c in result.plugins] == ["untaped", "good"]
     (record,) = result.quarantine
     assert "renamed key 'old' points at 'nowhere', which is not a setting" in record.detail
 
@@ -180,7 +180,7 @@ def test_a_raising_default_factory_is_not_called_while_composing() -> None:
 
     result = compose([make_candidate(lazy), make_candidate(good)])
 
-    assert ([c.spec.name for c in result.plugins], result.quarantine) == (
+    assert ([c.name for c in result.plugins], result.quarantine) == (
         ["untaped", "good", "lazy"],
         (),
     )

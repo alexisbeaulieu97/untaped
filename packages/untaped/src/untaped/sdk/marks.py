@@ -305,7 +305,7 @@ class AppMark:
     """A mark on an app. ``source`` tells the author's own mark from one core applied."""
 
     stability: Stability
-    source: Literal["own", "spec"]
+    source: Literal["own", "plugin"]
 
 
 # Keyed by ``id(app)``: cyclopts apps are unhashable. A finalizer drops the
@@ -333,15 +333,15 @@ def mark_app(
     app: App,
     stability: Stability,
     *,
-    source: Literal["own", "spec"],
+    source: Literal["own", "plugin"],
     tree: App | None = None,
     prefix: tuple[str, ...] = (_ROOT_NAME,),
 ) -> None:
     """Register ``stability`` on ``app``: side table, panel and help line.
 
     Idempotent. The panel replaces the app's groups, so a marked command shows
-    only in its stability panel. A ``"spec"`` mark never replaces an ``"own"``
-    one. An object replacement
+    only in its stability panel. A ``"plugin"`` mark (its plugin's, which core
+    applies) never replaces an ``"own"`` one. An object replacement
     can only be named against a ``tree`` (``prefix`` is where ``app``'s tree
     hangs from the root); without one the help line waits for
     :func:`apply_marks`.
@@ -570,10 +570,10 @@ class Mark:
 
 
 def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> list[Mark]:
-    """Every mark in the composition: plugin specs, groups, commands, options, settings and
+    """Every mark in the composition: plugins, groups, commands, options, settings and
     behaviours.
 
-    Takes the composition, not only the app, because a spec mark is not on a
+    Takes the composition, not only the app, because a plugin's mark is not on a
     lazy app. A setting is recorded only for a mark of its own field; one
     inherited from its plugin is that plugin's record (ask
     :func:`setting_mark` for a setting's effective mark). ``resolve=True``
@@ -582,10 +582,9 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
     """
     found: list[Mark] = []
     for plugin in result.plugins:
-        spec = plugin.spec
-        if spec.stability is not None:
-            found.append(_record(spec.name, "plugin", spec.stability, root))
-    plugins = frozenset(plugin.spec.name for plugin in result.plugins)
+        if plugin.stability is not None:
+            found.append(_record(plugin.name, "plugin", plugin.stability, root))
+    plugins = frozenset(plugin.name for plugin in result.plugins)
     _collect(root, root, (), plugins, found, resolve=resolve)
     found.extend(_setting_marks(root))
     found.extend(
@@ -602,7 +601,7 @@ def listed_behaviours(result: CompositionResult) -> list[tuple[str, DeprecatedBe
     and generators only, never the CLI path).
     """
     listings = [(_CORE_OWNER, _core_behaviours())]
-    listings.extend((plugin.spec.name, plugin.spec.deprecations) for plugin in result.plugins)
+    listings.extend((plugin.name, plugin.deprecations) for plugin in result.plugins)
     found: list[tuple[str, DeprecatedBehaviour]] = []
     owners: dict[int, str] = {}
     for name, listing in listings:
@@ -648,7 +647,7 @@ def _collect(
         here = (*path, name)
         mark = mark_of(sub)
         entry = app_mark(sub)
-        if mark is not None and not (entry is not None and entry.source == "spec"):
+        if mark is not None and not (entry is not None and entry.source == "plugin"):
             target: MarkTarget = (
                 "plugin"
                 if not path and name in plugins
@@ -1337,7 +1336,7 @@ def bind_behaviours(listings: Mapping[str, Callable[[], Sequence[DeprecatedBehav
 
 
 def behaviour_owner(behaviour: DeprecatedBehaviour) -> str | None:
-    """The plugin whose spec lists ``behaviour``, or ``None`` for core's.
+    """The plugin whose class holds ``behaviour``, or ``None`` for core's.
 
     Bound by the composition's listings: core's own come first (so no plugin
     can claim one), then each plugin's. One nobody lists, or used outside a

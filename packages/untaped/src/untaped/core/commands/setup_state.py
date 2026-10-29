@@ -69,23 +69,21 @@ def setup_services(
     Raises :class:`UsageError` for an ``only`` name that is not a section.
     """
     services = {
-        registered.spec.name: registered.spec
-        for registered in result.plugins
-        if plugin_marks(registered.spec) is not None
+        plugin.name: plugin for plugin in result.plugins if plugin_marks(plugin) is not None
     }
     if only:
         services = {name: services[name] for name in setup_sections(only) if name in services}
     return services
 
 
-def service_marks(spec: ComposedPlugin) -> SetupMarks:
-    """What service ``spec`` marks, and the credentials it declares."""
-    marks = plugin_marks(spec)
-    assert marks is not None, f"{spec.name} is not a service"
+def service_marks(plugin: ComposedPlugin) -> SetupMarks:
+    """What service ``plugin`` marks, and the credentials it declares."""
+    marks = plugin_marks(plugin)
+    assert marks is not None, f"{plugin.name} is not a service"
     return marks
 
 
-def form_fields(spec: ComposedPlugin) -> tuple[MarkedField, ...]:
+def form_fields(plugin: ComposedPlugin) -> tuple[MarkedField, ...]:
     """The settings the setup form edits: every marked setting, each in its shape's field.
 
     A marked model (a :class:`~untaped.sdk.network.credentials.CredentialKey` such as
@@ -93,9 +91,9 @@ def form_fields(spec: ComposedPlugin) -> tuple[MarkedField, ...]:
     (``server.url``), written together; the others keep rows of their own.
     A credential is no setting: the form's source tabs file it.
     """
-    descriptors = walk_settings(settings_model(spec), include_collections=True)
+    descriptors = walk_settings(settings_model(plugin), include_collections=True)
     fields: list[MarkedField] = []
-    for marked in service_marks(spec).required:
+    for marked in service_marks(plugin).required:
         if marked.is_secret:
             continue
         size = len(marked.path)
@@ -107,9 +105,9 @@ def form_fields(spec: ComposedPlugin) -> tuple[MarkedField, ...]:
     return tuple(fields)
 
 
-def connection_keys(spec: ComposedPlugin) -> frozenset[str]:
-    """The keys of ``spec``'s connection, which setup edits together as one row."""
-    return frozenset(f"{spec.name}.{field.key}" for field in form_fields(spec))
+def connection_keys(plugin: ComposedPlugin) -> frozenset[str]:
+    """The keys of ``plugin``'s connection, which setup edits together as one row."""
+    return frozenset(f"{plugin.name}.{field.key}" for field in form_fields(plugin))
 
 
 def profile_view(raw: dict[str, Any], profile: str) -> dict[str, Any]:
@@ -162,17 +160,17 @@ class ServiceState:
         return self.invalid is None and not self.missing
 
 
-def service_state(spec: ComposedPlugin, node: object, profile: str) -> ServiceState:
+def service_state(plugin: ComposedPlugin, node: object, profile: str) -> ServiceState:
     """Resolve one service in ``profile``; ``node`` is its effective section."""
     data = node if isinstance(node, dict) else {}
-    section = spec.name
-    marks = service_marks(spec)
-    form = form_fields(spec)
+    section = plugin.name
+    marks = service_marks(plugin)
+    form = form_fields(plugin)
     required = len(marks.required)
     current = SetSetting(SettingsFileRepository()).current
     owned = {each.key: current(f"{section}.{each.key}", profile=profile) for each in form}
     try:
-        settings: BaseModel = check_settings_field(section, data, model=settings_model(spec))
+        settings: BaseModel = check_settings_field(section, data, model=settings_model(plugin))
     except ConfigError as exc:
         values = {each.key: _at(data, each.path) for each in form}
         missing = tuple(each.key for each in marks.required)
@@ -221,7 +219,8 @@ def service_states(
     """Every service's state in ``profile``, from the parsed config ``raw``."""
     values = profile_view(raw, profile)
     return {
-        name: service_state(spec, values.get(spec.name), profile) for name, spec in services.items()
+        name: service_state(plugin, values.get(plugin.name), profile)
+        for name, plugin in services.items()
     }
 
 
@@ -241,7 +240,7 @@ def service_store(services: dict[str, ComposedPlugin]) -> TokenStore | None:
     A service stores one when its plugin declares a credential. One probe
     per run: a dead Secret Service costs its timeout once.
     """
-    if any(spec.credentials for spec in services.values()):
+    if any(plugin.credentials for plugin in services.values()):
         return pick_store()
     return None
 

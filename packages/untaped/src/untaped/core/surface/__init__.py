@@ -53,10 +53,10 @@ from untaped.core.surface._sdk import SurfaceError
 if TYPE_CHECKING:
     from cyclopts import App
 
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.registry import (
         CompositionResult,
         PluginCandidate,
-        RegisteredPlugin,
     )
 
 __all__ = [
@@ -136,8 +136,8 @@ def plugin_lines(candidate: PluginCandidate) -> list[Line]:
         root = build_root_app(candidates=[candidate])
         result = composition()
         check_quarantine(result)
-        registered = next(each for each in result.plugins if each.spec.name == candidate.name)
-        lines = _Composed(result, root).lines(registered)
+        plugin = next(each for each in result.plugins if each.name == candidate.name)
+        lines = _Composed(result, root).lines(plugin)
     return sorted(set(lines))
 
 
@@ -160,9 +160,9 @@ class _Composed:
         self.result = result
         self.root = root
         self.marks: dict[str, LineMark | None] = {
-            plugin.spec.name: line_mark(plugin.spec.stability, root) for plugin in result.plugins
+            plugin.name: line_mark(plugin.stability, root) for plugin in result.plugins
         }
-        self.modules = {plugin.spec.name: self._modules_of(plugin) for plugin in result.plugins}
+        self.modules = {plugin.name: self._modules_of(plugin) for plugin in result.plugins}
         everything: dict[str, LineMark | None] = {}
         for modules in self.modules.values():
             everything.update(modules)
@@ -192,7 +192,7 @@ class _Composed:
         if loose:
             raise SurfaceError(f"no composed plugin owns: {', '.join(loose)}")
 
-    def lines(self, plugin: RegisteredPlugin) -> list[Line]:
+    def lines(self, plugin: ComposedPlugin) -> list[Line]:
         """Every line ``plugin`` owns.
 
         Its commands, settings and state, Python API, contracts, behaviours
@@ -207,7 +207,7 @@ class _Composed:
         from untaped.core.surface._sdk import module_lines  # noqa: PLC0415
         from untaped.core.surface._settings import extension_lines, settings_lines  # noqa: PLC0415
 
-        spec, name = plugin.spec, plugin.spec.name
+        name = plugin.name
         mark = self.marks[name]
         if plugin.root:
             lines = root_plugin_lines(self.root, self._words(plugin), mark)
@@ -217,7 +217,7 @@ class _Composed:
         lines.extend(settings_lines(self.result, owner=name, tree=self.root))
         for path, module_mark in sorted(self.modules[name].items()):
             lines.extend(module_lines(path, module_mark, self.exports, plugin=not plugin.root))
-        infos = owned_contracts(spec)
+        infos = owned_contracts(plugin)
         ranked = {i.name: {m: method_mark(i, m, mark) for m in i.methods} for i in infos}
         lines.extend(extension_lines(name, ranked))
         lines.extend(contract_lines(name, infos, mark, self.exports.stable_classes))
@@ -225,22 +225,22 @@ class _Composed:
         lines.extend(self.records.get(name, ()))
         return lines
 
-    def _words(self, plugin: RegisteredPlugin) -> set[str]:
+    def _words(self, plugin: ComposedPlugin) -> set[str]:
         """The root words ``plugin``'s commands take: its name, or the root plugin's own words."""
         if plugin.root:
-            return self.result.mount.declaration.plugin(plugin.spec.name).command_words()
-        return {plugin.spec.name}
+            return self.result.mount.declaration.plugin(plugin.name).command_words()
+        return {plugin.name}
 
-    def _modules_of(self, plugin: RegisteredPlugin) -> dict[str, LineMark | None]:
+    def _modules_of(self, plugin: ComposedPlugin) -> dict[str, LineMark | None]:
         """The plugin's Python API, with its mark.
 
         The SDK for the root, else the ``api`` and ``testing`` of the package
         its declaration names.
         """
-        mark = self.marks[plugin.spec.name]
+        mark = self.marks[plugin.name]
         if plugin.root:
             return dict.fromkeys(SDK_MODULES, mark)
-        return dict.fromkeys(plugin_sdk_modules(plugin.spec.decl.package), mark)
+        return dict.fromkeys(plugin_sdk_modules(plugin.decl.package), mark)
 
 
 def plugin_sdk_modules(package: str) -> list[str]:

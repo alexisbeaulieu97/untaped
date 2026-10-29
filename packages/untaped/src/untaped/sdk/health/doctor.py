@@ -212,7 +212,7 @@ def _marked_probe(
     if unset_fields(settings, marks):
         # Core's `setup` row says what is missing.
         return DoctorResult(id=check_id, ok=True, detail="skipped: not set up")
-    from untaped.sdk.network.upstream import quick_probe  # noqa: PLC0415 - keep SPEC imports light
+    from untaped.sdk.network.upstream import quick_probe  # noqa: PLC0415 - only to probe
 
     try:
         with quick_probe():

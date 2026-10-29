@@ -93,7 +93,7 @@ def check_plugin_name(name: str) -> None:
 
 def contract_owners(result: CompositionResult) -> tuple[str, ...]:
     """The composed plugins that own contracts, which a ranking may name."""
-    return tuple(each.spec.name for each in result.plugins if each.spec.owns_contracts)
+    return tuple(each.name for each in result.plugins if each.owns_contracts)
 
 
 def section_settings(plugin: ComposedPlugin, *, extensions: bool = True) -> type[BaseModel]:
@@ -141,17 +141,6 @@ class PluginRef:
     entry_point: str
     distribution_version: str = field(default="", compare=False)
     requires_dist: tuple[str, ...] = field(default=(), compare=False)
-
-
-@dataclass(frozen=True)
-class RegisteredPlugin:
-    """A fully validated, committed plugin."""
-
-    spec: ComposedPlugin
-    plugin_ref: PluginRef
-    #: Its commands mount at the root, read from its declaration
-    #: (:attr:`~untaped.runtime.declaration.PluginDecl.root`): core's.
-    root: bool = False
 
 
 #: Every valid quarantine/diagnostic reason code lives here.
@@ -218,13 +207,13 @@ class CompositionResult:
     """Committed plugins plus quarantine records for one composition.
 
     ``plugins`` holds every plugin composed, core first: core is the one
-    marked :attr:`RegisteredPlugin.root`, read from its declaration, and a
+    marked :attr:`~untaped.runtime.composed.ComposedPlugin.root`, read from its declaration, and a
     reader that treats it apart reads that mark. ``candidates`` are the ones
     it was composed from, so a reader of the composition (``untaped plugin
     list``'s records) reads the same ones.
     """
 
-    plugins: tuple[RegisteredPlugin, ...] = ()
+    plugins: tuple[ComposedPlugin, ...] = ()
     quarantine: tuple[QuarantineRecord, ...] = ()
     candidates: tuple[PluginCandidate, ...] = field(default=(), compare=False)
     #: The names no plugin may have, each with what holds it (``a config key``...).
@@ -613,21 +602,21 @@ def _check_declaration(plugin: ComposedPlugin) -> None:
     _check_composed_mappings(plugin)
 
 
-def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
+def run_deferred_factory(plugin: ComposedPlugin) -> App | QuarantineRecord:
     """The plugin's app, built from its declaration; a failure as a quarantine record.
 
     The one place it is built, for first dispatch and ``untaped doctor``
     alike. A plugin without commands has no app to build: asking for one is a
     caller bug and raises :class:`ConfigError`.
     """
-    if not plugin.spec.has_commands:
-        raise ConfigError(f"plugin {plugin.spec.name!r} has no commands to build")
+    if not plugin.has_commands:
+        raise ConfigError(f"plugin {plugin.name!r} has no commands to build")
     try:
-        return plugin.spec.build_app()
+        return plugin.build_app()
     except Exception as exc:
         ref = plugin.plugin_ref
         return QuarantineRecord(
-            plugin.spec.name,
+            plugin.name,
             ref.distribution,
             ref.entry_point,
             "bad-app-factory",
@@ -806,17 +795,8 @@ def _compose(
     if declared is None:
         claims, mount = _mounted(ordered, provided, state, quarantined)
     else:
-        claims, mount = _replayed(replayed, declared)
-    plugins: list[RegisteredPlugin] = []
-    for index, composed in claims.items():
-        candidate = ordered[index]
-        ref = PluginRef(
-            distribution=candidate.distribution,
-            entry_point=candidate_entry_point(candidate),
-            distribution_version=candidate.distribution_version,
-            requires_dist=candidate.requires_dist,
-        )
-        plugins.append(RegisteredPlugin(spec=composed, plugin_ref=ref))
+        claims, mount = _replayed(ordered, replayed, declared)
+    plugins = list(claims.values())
     if declared is None:
         # Only a class the mount composed leaves it; one refused before it never got there.
         dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}
@@ -883,15 +863,29 @@ def _refused(
     return tuple(refused)
 
 
-def _root_plugin(mount: Mount, core: PluginDecl) -> RegisteredPlugin:
+def _root_plugin(mount: Mount, core: PluginDecl) -> ComposedPlugin:
     """Core as one of the composed plugins: the plugin its declaration marks ``root``.
 
     No entry point names it, so its reference is its distribution and its
     class's target; its version is read only where it is shown, so composing
     reads no metadata for it.
     """
-    ref = PluginRef(distribution=_CORE_DISTRIBUTION, entry_point=core.target)
-    return RegisteredPlugin(spec=_composed(mount, core.name), plugin_ref=ref, root=core.root)
+    return _composed(mount, core.name, _core_ref(core.target))
+
+
+def _core_ref(target: str) -> PluginRef:
+    """How core arrived: its distribution and its class's target, no entry point."""
+    return PluginRef(distribution=_CORE_DISTRIBUTION, entry_point=target)
+
+
+def _ref(candidate: PluginCandidate) -> PluginRef:
+    """How ``candidate`` arrived: its distribution, entry point and metadata."""
+    return PluginRef(
+        distribution=candidate.distribution,
+        entry_point=candidate_entry_point(candidate),
+        distribution_version=candidate.distribution_version,
+        requires_dist=candidate.requires_dist,
+    )
 
 
 def _core_entry() -> PluginEntry:
@@ -931,10 +925,11 @@ def _core_alone() -> PluginDecl:
     for refused in composed.quarantined:
         raise RuntimeError(f"core's own class does not compose: {refused.detail}")
     try:
-        _check_declaration(_composed(Mount.of(composed), NAME))
+        core = composed.plugin(NAME)
+        _check_declaration(_composed(Mount.of(composed), NAME, _core_ref(core.target)))
     except _Quarantine as failed:
         raise RuntimeError(f"core's own class does not compose: {failed.detail}") from None
-    return composed.plugin(NAME)
+    return core
 
 
 def _mounted(
@@ -972,7 +967,7 @@ def _mounted(
             try:
                 if candidate.name in refused:
                     raise _Quarantine("bad-plugin-class", refused[candidate.name].detail)
-                composed = _composed(mount, candidate.name)
+                composed = _composed(mount, candidate.name, _ref(candidate))
                 _check_declaration(composed)
             except _Quarantine as failed:
                 quarantined[index] = failed.to_record(candidate)
@@ -987,13 +982,16 @@ def _mounted(
 
 
 def _replayed(
-    replayed: Mapping[int, PluginDecl], declared: Declaration
+    ordered: Sequence[PluginCandidate], replayed: Mapping[int, PluginDecl], declared: Declaration
 ) -> tuple[dict[int, ComposedPlugin], Mount]:
     """Every claim composed, read from ``declared``, no plugin class imported."""
     from untaped.runtime.mount import Mount  # noqa: PLC0415 - mount imports this module
 
     mount = Mount.of(declared)
-    claims = {index: _composed(mount, plugin.name) for index, plugin in replayed.items()}
+    claims = {
+        index: _composed(mount, plugin.name, _ref(ordered[index]))
+        for index, plugin in replayed.items()
+    }
     return dict(sorted(claims.items())), mount
 
 
@@ -1007,11 +1005,11 @@ def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
     return module is not None and isinstance(obj, type) and issubclass(obj, module.Plugin)
 
 
-def _composed(mount: Mount, name: str) -> ComposedPlugin:
+def _composed(mount: Mount, name: str, plugin_ref: PluginRef) -> ComposedPlugin:
     """The composed plugin ``name`` of ``mount``, as core's readers read it."""
     from untaped.runtime.composed import ComposedPlugin  # noqa: PLC0415 - imports the SDK blocks
 
-    return ComposedPlugin.of(mount, name)
+    return ComposedPlugin.of(mount, name, plugin_ref)
 
 
 def _entry_target(candidate: PluginCandidate, cls: type[Plugin]) -> str:
@@ -1090,7 +1088,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
     _check_entry_point_name(candidate)
     _check_requires_dist(candidate, state)
     try:
-        spec = resolve_target(candidate.target)
+        found = resolve_target(candidate.target)
     except Exception as exc:
         raise _Quarantine(
             "malformed-entry-point",
@@ -1098,18 +1096,18 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
             f"distribution {candidate.distribution!r}: {exc}",
             entry_point="",
         ) from None
-    if _is_plugin_class(spec):
+    if _is_plugin_class(found):
         try:
             _check_distribution(candidate)
             _check_free_name(candidate.name, state)
         except _Quarantine as failed:
             failed.plugin_class = True
             raise
-        return spec
+        return found
     raise _Quarantine(
         "not-a-plugin-class",
         f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
-        f"names {_describe(spec)}, not a plugin class; untaped 12.0 composes plugin classes: "
+        f"names {_describe(found)}, not a plugin class; untaped 12.0 composes plugin classes: "
         f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
     )
 

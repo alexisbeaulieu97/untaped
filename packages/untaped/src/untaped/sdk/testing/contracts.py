@@ -186,11 +186,11 @@ def _installed_for(cls: type) -> list[str]:
         if package is None or package.partition(".")[0] != top:
             continue
         try:
-            spec = resolve_target(candidate.target)
+            found = resolve_target(candidate.target)
         except ImportError, AttributeError:
             continue  # a target that does not resolve offers nothing
-        if isinstance(spec, type) and issubclass(spec, Plugin):
-            return [candidate.name, *_offering(installed.values(), spec.fills)]
+        if isinstance(found, type) and issubclass(found, Plugin):
+            return [candidate.name, *_offering(installed.values(), found.fills)]
     raise LookupError(
         f"no installed plugin offers {cls.__qualname__}; compose it with compose_with(...)"
     )

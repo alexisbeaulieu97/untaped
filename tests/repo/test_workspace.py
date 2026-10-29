@@ -107,10 +107,10 @@ def test_plugin_packages_declare_their_entry_point_and_pin_core() -> None:
         assert project["version"] == version
         [target] = project["entry-points"]["untaped.plugins"].values()
         assert project["entry-points"]["untaped.plugins"] == {name: target}
-        # an 11.x spec, or the plugin class of the one plugin shape, named after the
-        # plugin (``WorkspacePlugin`` where a record holds the name: ``Workspace``)
+        # the plugin class, named after the plugin
+        # (``WorkspacePlugin`` where a record holds the name: ``Workspace``)
         shaped = {f"untaped_{name}.plugin:{name.title()}{end}" for end in ("", "Plugin")}
-        assert target in {f"untaped_{name}:SPEC", *shaped}
+        assert target in shaped
         assert f"untaped=={version}" in project["dependencies"]
         assert core["optional-dependencies"][name] == [f"untaped-{name}=={version}"]
     assert sorted(core["optional-dependencies"]["all"]) == sorted(

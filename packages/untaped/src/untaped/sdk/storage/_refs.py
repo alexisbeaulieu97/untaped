@@ -397,7 +397,7 @@ def composed_plugins() -> tuple[str, ...] | None:
         result = composition()
     except RuntimeError:
         return None
-    names = {registered.spec.name for registered in result.plugins}
+    names = {plugin.name for plugin in result.plugins}
     return tuple(sorted(names | {record.name for record in result.quarantine}))
 
 

@@ -149,7 +149,7 @@ def test_every_option_the_shared_section_names_exists(
 
 def test_core_examples_parse(first_party_candidates: tuple[PluginCandidate, ...]) -> None:
     root = build_root_app(candidates=first_party_candidates)
-    plugins = {each.spec.name for each in composition().plugins if not each.root}
+    plugins = {each.name for each in composition().plugins if not each.root}
     core = [(name, root[name]) for name in root.resolved_commands() if name not in plugins]
     found = [
         f"{name}: {detail}" for name, app in core for _, detail in example_violations(root, app)

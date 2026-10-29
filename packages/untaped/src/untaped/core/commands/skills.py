@@ -55,13 +55,13 @@ def composed_skills(result: CompositionResult) -> dict[str, PackagedSkill]:
     ``untaped-<plugin>``.
     """
     skills_map: dict[str, PackagedSkill] = {}
-    for registered in result.plugins:
-        ref = registered.plugin_ref
-        asset = registered.spec.skill
+    for plugin in result.plugins:
+        ref = plugin.plugin_ref
+        asset = plugin.skill
         if asset is not None:
             skills_map[asset.name] = PackagedSkill(
                 asset,
-                plugin=registered.spec.name,
+                plugin=plugin.name,
                 distribution=ref.distribution,
                 version=ref.distribution_version,
             )

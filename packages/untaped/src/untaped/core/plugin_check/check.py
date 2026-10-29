@@ -71,11 +71,11 @@ def _check(
     if quarantined is not None:
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
     rows = _conventions(name, candidates, row)
-    spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
-    if spec.owns_contracts:
+    composed = next(plugin for plugin in result.plugins if plugin.name == name)
+    if composed.owns_contracts:
         rows += _contracts(name, candidates, row)
-    if spec.fill_owners:
-        rows += _offers(spec, candidates, row)
+    if composed.fill_owners:
+        rows += _offers(composed, candidates, row)
     return rows + _unowned(name, result, candidates, row)
 
 
@@ -118,20 +118,20 @@ def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> l
 
 
 def _offers(
-    spec: ComposedPlugin, candidates: Sequence[PluginCandidate], row: _Row
+    plugin: ComposedPlugin, candidates: Sequence[PluginCandidate], row: _Row
 ) -> list[PluginCheck]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
     from untaped.runtime.contracts.registry import BoundProvider, every_offer  # noqa: PLC0415
 
     installed = {candidate.name for candidate in candidates}
-    owners = [owner for owner in spec.fill_owners if owner in installed]
+    owners = [owner for owner in plugin.fill_owners if owner in installed]
     rows: list[PluginCheck] = []
-    with composed_with(_hermetic([spec.name, *owners], candidates)) as composed:
+    with composed_with(_hermetic([plugin.name, *owners], candidates)) as composed:
         unusable = _unusable_owners(owners, composed)
         rows += [row("registration", owner, "fail", why) for owner, why in unusable.items()]
         for entry in every_offer():
             owner = entry.binding.owner if isinstance(entry, BoundProvider) else entry.owner
-            if entry.plugin != spec.name or owner in unusable:
+            if entry.plugin != plugin.name or owner in unusable:
                 continue
             if not isinstance(entry, BoundProvider):
                 title = (
@@ -270,11 +270,11 @@ def _owner_conformance(
     owner: str, composed: CompositionResult, candidates: Sequence[PluginCandidate]
 ) -> Callable[[object], object] | None:
     """``conformance`` from the owner package's ``testing`` module, when it has one."""
-    spec = next((plugin.spec for plugin in composed.plugins if plugin.spec.name == owner), None)
-    if spec is None:
+    owning = next((plugin for plugin in composed.plugins if plugin.name == owner), None)
+    if owning is None:
         return None
     try:
-        package = package_of(spec)[0]
+        package = package_of(owning)[0]
         module_name = f"{package}.testing"
         if find_spec(module_name) is None:
             return None

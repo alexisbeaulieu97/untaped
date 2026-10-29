@@ -112,7 +112,7 @@ def _owner_contract(
     owner_name, dot, contract_name = fills.partition(".")
     if not dot or not owner_name or not contract_name:
         raise UsageError(f"--fills takes OWNER.CONTRACT, such as shelf.book_source; got {fills!r}")
-    owners = sorted(p.spec.name for p in result.plugins if p.spec.owns_contracts)
+    owners = sorted(p.name for p in result.plugins if p.owns_contracts)
     candidate = next((c for c in candidates if c.name == owner_name), None)
     if owner_name not in owners or candidate is None:
         raise UsageError(not_found("contract owner", owner_name, known=owners))

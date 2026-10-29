@@ -101,22 +101,24 @@ def sections(
     from untaped.runtime.registry import section_settings  # noqa: PLC0415
 
     found: list[Section] = []
-    ordered = sorted(result.plugins, key=lambda each: (not each.root, each.spec.name))
-    for spec in (each.spec for each in ordered if owner in (None, each.spec.name)):
-        settings = section_settings(spec, extensions=extensions)
-        found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
+    ordered = sorted(result.plugins, key=lambda each: (not each.root, each.name))
+    for plugin in (each for each in ordered if owner in (None, each.name)):
+        settings = section_settings(plugin, extensions=extensions)
+        found.append(Section(f"`{plugin.name}`", plugin.name, settings, False, plugin.stability))
         if settings_only:
             continue
-        rows = _held_rows(result, spec.name)
+        rows = _held_rows(result, plugin.name)
         if not rows:
             continue
-        state, file = _rows_model(spec.name, rows), None
+        state, file = _rows_model(plugin.name, rows), None
         if state is not None:  # rows in the home, in the plugin's own state file
-            file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
+            file = f"~/.untaped/{PLUGINS_FOLDER}/{plugin.name}/state.yml"
         else:  # only a project's rows: no section in the home
-            state = create_model(spec.name.title().replace("-", "") + "State")
+            state = create_model(plugin.name.title().replace("-", "") + "State")
         found.append(
-            Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows, file)
+            Section(
+                f"`{plugin.name}` state", plugin.name, state, True, plugin.stability, rows, file
+            )
         )
     return found
 

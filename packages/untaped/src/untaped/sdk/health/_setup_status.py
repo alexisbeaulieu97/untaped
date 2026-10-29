@@ -35,9 +35,9 @@ if TYPE_CHECKING:
 SETUP_CHECK = "setup"
 
 
-def plugin_marks(spec: ComposedPlugin) -> SetupMarks | None:
-    """What ``spec`` needs set up (its marks and credentials); else ``None``."""
-    return setup_marks(spec.settings, spec.credentials)
+def plugin_marks(plugin: ComposedPlugin) -> SetupMarks | None:
+    """What ``plugin`` needs set up (its marks and credentials); else ``None``."""
+    return setup_marks(plugin.settings, plugin.credentials)
 
 
 def field_value(settings: BaseModel, field: MarkedField) -> object:

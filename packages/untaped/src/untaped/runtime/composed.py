@@ -1,14 +1,15 @@
 """A composed plugin as core's readers see it: its declaration, its settings and its blocks.
 
-The registry holds one :class:`ComposedPlugin` per plugin composition kept
-(core's included), so ``config``, ``doctor``, ``setup``, ``plugin list`` and
-the contracts registry read every plugin the same way. It is an accessor over
-the plugin's :class:`~untaped.runtime.declaration.PluginDecl`, never a second
-declaration: what the declaration says is read from ``decl``; the view adds
-only what needs the plugin's code, loaded the first time a reader asks (its
-settings model, the blocks its class holds, the contracts it offers and the
-providers it fills), so a start imports no plugin class. Composition already
-refused a class that breaks a rule, so the view checks nothing.
+Composition's result holds one :class:`ComposedPlugin` per plugin it kept
+(core's included, first), so ``config``, ``doctor``, ``setup``, ``plugin
+list`` and the contracts registry read every plugin the same way. It is an
+accessor over the plugin's :class:`~untaped.runtime.declaration.PluginDecl`,
+never a second declaration: what the declaration says is read from
+``decl``, how the plugin arrived from ``plugin_ref``. The view adds what
+needs the plugin's code, loaded the first time a reader asks (its settings
+model, the blocks its class holds, the contracts it offers and the providers
+it fills), so a start imports no plugin class. Composition already refused a
+class that breaks a rule, so the view checks nothing.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from datetime import timedelta
 from functools import cache, cached_property
 from typing import TYPE_CHECKING, Any, cast
 
-from untaped.runtime.registry import resolve_target
+from untaped.runtime.registry import PluginRef, resolve_target
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk.plugin import held_by
 from untaped.sdk.storage.cache import Cache
@@ -66,22 +67,29 @@ _MEMBERS: dict[str, str | None] = {
 
 @dataclass(frozen=True, eq=False)
 class ComposedPlugin:
-    """One composed plugin: ``decl`` and what its code adds, read on first ask."""
+    """One composed plugin: ``decl``, how it arrived, and what its code adds, read on first ask."""
 
     mount: Mount
     decl: PluginDecl
     #: Its settings model, from its own (leaf) module: every start registers it.
     settings: type[BaseModel]
+    #: How it arrived: its distribution, entry point and their metadata.
+    plugin_ref: PluginRef
 
     @classmethod
-    def of(cls, mount: Mount, name: str) -> ComposedPlugin:
+    def of(cls, mount: Mount, name: str, plugin_ref: PluginRef) -> ComposedPlugin:
         """Plugin ``name`` of ``mount``; its settings model is read now (a start needs it)."""
-        return cls(mount, mount.declaration.plugin(name), mount.settings[name])
+        return cls(mount, mount.declaration.plugin(name), mount.settings[name], plugin_ref)
 
     @property
     def name(self) -> str:
         """The plugin's name: its config section and its command group."""
         return self.decl.name
+
+    @property
+    def root(self) -> bool:
+        """Whether its commands mount at the root: core's (its declaration says so)."""
+        return self.decl.root
 
     @cached_property
     def stability(self) -> Stability | None:

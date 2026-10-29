@@ -247,7 +247,7 @@ def test_the_import_boundary_knows_a_quarantined_candidate_as_a_plugin(site: Sit
         "    from ghost.domain import x\n",
         encoding="utf-8",
     )
-    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:SPEC")
+    ghost = PluginCandidate(distribution="untaped-ghost", name="ghost", target="ghost:Plugin")
     with compose_with("lint"):
         report = run([_plugin(site)], select=["lint.import-boundary"], candidates=[*_DEMO, ghost])
     assert [each.message for each in report.findings] == ["imports ghost.domain; use ghost.api"]

@@ -162,7 +162,7 @@ def read_listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listin
     a deprecated setting is listed only while it is set.
     """
     exists = profile_exists(profile)
-    hidden = frozenset().union(*(connection_keys(spec) for spec in services.values()))
+    hidden = frozenset().union(*(connection_keys(plugin) for plugin in services.values()))
     with child_run(profiles=profile if exists else DEFAULT_PROFILE):
         repo = SettingsFileRepository()
         listing = ListSettings(repo)

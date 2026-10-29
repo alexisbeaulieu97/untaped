@@ -157,7 +157,7 @@ def landed(candidate: Candidate, state: ServiceState) -> tuple[str, ...]:
 
 
 def write_candidate(
-    spec: ComposedPlugin,
+    plugin: ComposedPlugin,
     candidate: Candidate,
     preflight: Callable[[], None],
 ) -> list[Note]:
@@ -172,7 +172,7 @@ def write_candidate(
     stays.
     """
     notes: list[Note] = []
-    section, profile = spec.name, candidate.profile
+    section, profile = plugin.name, candidate.profile
     if any(secret.how == "store" for secret in candidate.secrets):
         preflight()
     notes.extend(ensure_profile(profile))
@@ -184,7 +184,7 @@ def write_candidate(
             profile=profile,
             expected={f"{section}.{key}": own for key, own in candidate.expected},
         )
-    marks = service_marks(spec)
+    marks = service_marks(plugin)
     for secret in candidate.secrets:
         marked = next(each for each in marks.secrets if each.key == secret.name)
         assert marked.credential is not None, "every secret is a declared credential"

@@ -277,5 +277,5 @@ def test_a_fill_no_composed_plugin_owns_waits_silently() -> None:
     reset()
     lends = PluginCandidate(distribution="untaped-lends", name="lends", target=_Lends)
     result = bootstrap.compose_root(candidates=[lends])
-    [spec] = [each.spec for each in result.plugins if each.spec.name == "lends"]
+    [spec] = [each for each in result.plugins if each.name == "lends"]
     assert spec.fill_owners == ()

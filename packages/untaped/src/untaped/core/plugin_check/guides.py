@@ -53,11 +53,11 @@ MAP_LINE_LIMIT = 120
 _KIND_FENCE = re.compile(r"^```yaml[ \t]+(\S+)[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
 
-def guide_violations(root: App, result: CompositionResult, spec: ComposedPlugin) -> list[str]:
-    """Every guide and map-line violation of the composed plugin ``spec``."""
-    found = list(_map_lines(root, result, spec))
-    for decl in _guide_decls(result, spec.name):
-        quoted = [*_quoted(root, result, spec, decl.doc), *_yaml_blocks(result, decl.doc)]
+def guide_violations(root: App, result: CompositionResult, plugin: ComposedPlugin) -> list[str]:
+    """Every guide and map-line violation of the composed plugin ``plugin``."""
+    found = list(_map_lines(root, result, plugin))
+    for decl in _guide_decls(result, plugin.name):
+        quoted = [*_quoted(root, result, plugin, decl.doc), *_yaml_blocks(result, decl.doc)]
         found += [f"{decl.target}::{rule}::{detail}" for rule, detail in quoted]
     return found
 
@@ -77,12 +77,12 @@ def _guide_decls(result: CompositionResult, name: str) -> tuple[GuideDecl, ...]:
 
 
 def _quoted(
-    root: App, result: CompositionResult, spec: ComposedPlugin, body: str
+    root: App, result: CompositionResult, plugin: ComposedPlugin, body: str
 ) -> Iterator[tuple[str, str]]:
     quoted = [*((line, False) for line in console_lines(body)), *commands(body)]
     from untaped.core.docs import page  # noqa: PLC0415
 
-    composed = {each.spec.name for each in result.plugins}
+    composed = {each.name for each in result.plugins}
     for command, inline in quoted:
         argv, _ = argv_of(command)
         if argv[:1] != ["docs"]:
@@ -93,7 +93,7 @@ def _quoted(
         # The page reads a quoted path as its words: read it unquoted, placeholders and all.
         argv, placeholders = argv_of(" ".join(shlex.split(command)))
         words = argv[1:]
-        if placeholders & set(words) or (words and words[0] not in composed | {spec.name}):
+        if placeholders & set(words) or (words and words[0] not in composed | {plugin.name}):
             continue
         try:
             page(root, result, words)
@@ -120,13 +120,13 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
             yield "guide-yaml", f"{kind}: {first_validation_error(exc)}"
 
 
-def _map_lines(root: App, result: CompositionResult, spec: ComposedPlugin) -> Iterator[str]:
+def _map_lines(root: App, result: CompositionResult, checked: ComposedPlugin) -> Iterator[str]:
     """The plugin's lines on the overview over the limit, as the overview reads them."""
     from untaped.core.docs._site import Site  # noqa: PLC0415
 
     site = Site(result, root)
-    lines = [("its summary line", site.summary(spec.name))]
-    plugin = site.plugin(spec.name)
+    lines = [("its summary line", site.summary(checked.name))]
+    plugin = site.plugin(checked.name)
     if plugin is not None:
         lines += [("an extension point's line", point.summary) for point in plugin.points]
         lines += [
@@ -137,6 +137,6 @@ def _map_lines(root: App, result: CompositionResult, spec: ComposedPlugin) -> It
     for what, line in lines:
         if len(line) > MAP_LINE_LIMIT:
             yield (
-                f"{spec.name}::map-line::{what} is {len(line)} characters, over "
+                f"{checked.name}::map-line::{what} is {len(line)} characters, over "
                 f"{MAP_LINE_LIMIT}: every agent session reads the overview"
             )

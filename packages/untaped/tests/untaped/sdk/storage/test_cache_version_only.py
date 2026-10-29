@@ -219,7 +219,7 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
 
     toy = make_plugin("toy", settings=Own, composed=_composed())
     result = compose([plugin_candidate(toy)])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "toy"], result.quarantine
+    assert [plugin.name for plugin in result.plugins] == ["untaped", "toy"], result.quarantine
 
 
 @pytest.mark.parametrize(

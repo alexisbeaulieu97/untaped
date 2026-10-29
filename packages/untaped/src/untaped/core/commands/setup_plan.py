@@ -61,14 +61,14 @@ def plan_rows(
     rows = [_install_row(profile), _profile_row(profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     ready: list[str] = []
-    for name, spec in services.items():
-        steps = _service_rows(spec, states[name], profile)
+    for name, plugin in services.items():
+        steps = _service_rows(plugin, states[name], profile)
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
     checks = selected_check_rows(result, profile, frozenset(ready)) if ready else []
-    for spec in services.values():
-        rows.extend(_online_rows(spec, checks, online=online, ready=spec.name in ready))
+    for plugin in services.values():
+        rows.extend(_online_rows(plugin, checks, online=online, ready=plugin.name in ready))
     return rows
 
 
@@ -138,18 +138,18 @@ def _profile_row(profile: str, *, exists: bool) -> Row:
     return _row("profile", NAME, "todo", detail, ["profile", "create", profile])
 
 
-def _service_rows(spec: ComposedPlugin, state: ServiceState, profile: str) -> list[Row]:
+def _service_rows(plugin: ComposedPlugin, state: ServiceState, profile: str) -> list[Row]:
     """A row per marked field, in declaration order: done, or the command that sets it."""
-    name, section = spec.name, spec.name
+    name, section = plugin.name, plugin.name
     if state.invalid is not None:
         detail = f"{section} settings are invalid: {state.invalid}"
         return [_row(f"{name}.settings", name, "failed", detail)]
     rows = []
-    marks = service_marks(spec)
+    marks = service_marks(plugin)
     for field in marks.required:
         step = f"{name}.{field.key}"
         if field.credential is not None and field.key in state.missing:
-            rows.append(_login_row(spec, field, profile))
+            rows.append(_login_row(plugin, field, profile))
         elif field.credential is not None:
             source = state.sources.get(field.key, "")
             rows.append(_row(step, name, "done", f"{field.key} from {source}"))
@@ -172,12 +172,12 @@ def _done(field: MarkedField, state: ServiceState) -> str:
     return f"set by {source}" if source else "set"
 
 
-def _login_row(spec: ComposedPlugin, field: MarkedField, profile: str) -> Row:
+def _login_row(plugin: ComposedPlugin, field: MarkedField, profile: str) -> Row:
     """A credential's step: ``auth login``, the person's, with its ``suggest`` when on PATH."""
     credential = field.credential
     assert credential is not None
-    name = spec.name
-    login = set_command(field, service_marks(spec), section=name)
+    name = plugin.name
+    login = set_command(field, service_marks(plugin), section=name)
     run = command_argv(login, profile=profile)
     detail = f"no {credential.label} for this run's {name} settings"
     suggest = credential.suggest
@@ -193,13 +193,13 @@ def _login_row(spec: ComposedPlugin, field: MarkedField, profile: str) -> Row:
 
 
 def _online_rows(
-    spec: ComposedPlugin, checks: list[Row], *, online: bool, ready: bool
+    plugin: ComposedPlugin, checks: list[Row], *, online: bool, ready: bool
 ) -> list[Row]:
     """One row per declared online check, ``<service>.online.<check>`` in every state."""
-    name = spec.name
+    name = plugin.name
     found = {str(row["check"]): row for row in checks if row["plugin"] == name}
     rows = []
-    for check in spec.doctor_checks:
+    for check in plugin.doctor_checks:
         if not check.online:
             continue
         step = f"{name}.online.{check.id.removeprefix(f'{name}.')}"
@@ -211,12 +211,12 @@ def _online_rows(
         elif row["status"] != "fail":
             rows.append(_row(step, name, "done", str(row["detail"])))
         else:
-            rows.append(_failed_check(spec, step, row))
+            rows.append(_failed_check(plugin, step, row))
     return rows
 
 
-def _failed_check(spec: ComposedPlugin, step: str, row: Row) -> Row:
-    name = spec.name
+def _failed_check(plugin: ComposedPlugin, step: str, row: Row) -> Row:
+    name = plugin.name
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None

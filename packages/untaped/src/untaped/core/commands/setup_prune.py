@@ -56,7 +56,7 @@ def leftover_folders(result: CompositionResult, references: Sequence[Reference])
     data is still its own). A name no plugin could have is never listed.
     """
     installed = {
-        *(registered.spec.name for registered in result.plugins),
+        *(plugin.name for plugin in result.plugins),
         *(record.name for record in result.quarantine),
     }
     try:

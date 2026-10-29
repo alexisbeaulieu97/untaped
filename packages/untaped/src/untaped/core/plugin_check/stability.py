@@ -100,19 +100,19 @@ def stability_violations(
     result: CompositionResult,
     names: Iterable[str],
     *,
-    spec: ComposedPlugin | None = None,
+    plugin: ComposedPlugin | None = None,
     sections: Iterable[str] = (),
 ) -> list[str]:
     """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``.
 
-    ``spec`` is the checked plugin's: its settings section is checked too, as
+    ``plugin`` is the checked one: its settings section is checked too, as
     are the ``sections`` named (core's).
     The marks come from :func:`untaped.sdk.marks.marks` over the whole
     composition: the checked plugin's subtree is resolved by ``root[name]``;
-    a lazy sibling is never imported (its spec mark is still seen).
+    a lazy sibling is never imported (its plugin's mark is still seen).
     """
     wanted = frozenset(names)
-    settings = frozenset(sections) | ({spec.name} if spec is not None else frozenset())
+    settings = frozenset(sections) | ({plugin.name} if plugin is not None else frozenset())
     found: list[str] = []
     for top in sorted(wanted):
         subtree = root[top]
@@ -121,9 +121,9 @@ def stability_violations(
             found.extend(f"{where}::hand-typed-mark::{detail}" for detail in _hand_typed(app))
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
-    found.extend(_behaviour_violations(root, result, spec, every))
+    found.extend(_behaviour_violations(root, result, plugin, every))
     # composition spells a plugin class's own replacements and refuses text naming them
-    own = None if spec is None or _is_class(result, spec.name) else spec.name
+    own = None if plugin is None or _is_class(result, plugin.name) else plugin.name
     for mark in (mark for mark in every if mark.target not in ("setting", "behaviour")):
         if mark.where.split()[0] in wanted:
             found.extend(f"{mark.where}::nested-mark::{d}" for d in _nested(mark, every))
@@ -154,12 +154,12 @@ def _setting_violations(
                 f"{section}.{path}::wrong-deprecated::"
                 "uses pydantic's deprecated=; use untaped's deprecated(...)"
             )
-    plugin = {plugin.spec.name: plugin.spec.stability for plugin in result.plugins}
+    stabilities = {each.name: each.stability for each in result.plugins}
     for mark in every:
         section = mark.where.partition(".")[0]
         if mark.target != "setting" or section not in sections:
             continue
-        above = plugin.get(section)
+        above = stabilities.get(section)
         if isinstance(above, Deprecated):
             yield f"{mark.where}::nested-mark::{_kind(mark.stability)} under deprecated {section}"
         elif isinstance(above, Experimental) and isinstance(mark.stability, Experimental):
@@ -172,15 +172,15 @@ def _setting_violations(
 
 
 def _behaviour_violations(
-    root: App, result: CompositionResult, spec: ComposedPlugin | None, every: list[Mark]
+    root: App, result: CompositionResult, plugin: ComposedPlugin | None, every: list[Mark]
 ) -> Iterator[str]:
-    """The rules for the checked plugin's deprecated behaviours (core's when ``spec`` is None)."""
-    owner = "untaped" if spec is None else spec.name
-    plugin = {plugin.spec.name: plugin.spec.stability for plugin in result.plugins}
+    """The rules for the checked plugin's deprecated behaviours (core's when ``plugin`` is None)."""
+    owner = "untaped" if plugin is None else plugin.name
+    stabilities = {each.name: each.stability for each in result.plugins}
     for mark in every:
         if mark.target != "behaviour" or mark.where.partition(".")[0] != owner:
             continue
-        if isinstance(plugin.get(owner), Deprecated):
+        if isinstance(stabilities.get(owner), Deprecated):
             yield f"{mark.where}::nested-mark::deprecated under deprecated {owner}"
         if isinstance(mark.stability, Deprecated) and isinstance(mark.stability.replacement, str):
             # A behaviour names its replacement as text only, so its own commands are fine.
@@ -265,8 +265,8 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
 _UNDATED = "every deprecation is a promise with a date: add removed_in=<major> to its mark"
 
 
-def undated_violations(spec: ComposedPlugin, candidate: PluginCandidate) -> list[str]:
-    """``undated-deprecation`` for each mark of ``spec``'s plugin that names no removal.
+def undated_violations(plugin: ComposedPlugin, candidate: PluginCandidate) -> list[str]:
+    """``undated-deprecation`` for each mark of ``plugin`` that names no removal.
 
     Read from the surface lines of ``candidate``, its entry point
     (:func:`untaped.core.surface.plugin_lines`), so every kind the release
@@ -280,7 +280,7 @@ def undated_violations(spec: ComposedPlugin, candidate: PluginCandidate) -> list
         lines = plugin_lines(candidate)
     except SurfaceError as exc:
         return [
-            f"{spec.name}::undated-deprecation::its marks can't be read from its surface "
+            f"{plugin.name}::undated-deprecation::its marks can't be read from its surface "
             f"({exc}); untaped.sdk.testing.assert_surface shows the same"
         ]
     except Exception:
