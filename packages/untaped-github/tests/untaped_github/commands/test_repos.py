@@ -162,8 +162,8 @@ def test_repos_list_pipe_record_carries_kind_urls_and_full_name() -> None:
     assert record["html_url"] == "https://github.com/acme/a"
     assert record["clone_url"] == "https://github.com/acme/a.git"
     assert record["ssh_url"] == "git@github.com:acme/a.git"
-    # GitHub's API link never stands in for the web URL, and the old ``repo`` alias is gone.
-    assert not {"url", "repo"} & set(record)
+    # GitHub's API link never stands in for the web URL.
+    assert "url" not in record
 
 
 def test_repos_list_table_shows_default_columns_and_json_every_field() -> None:

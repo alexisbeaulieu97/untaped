@@ -327,7 +327,7 @@ def test_a_run_reads_a_parametrized_record_s_kind_and_skips_a_class_in_a_functio
         assert kind_of(Box[int]) == "hello.box_int"
         assert kind_of(Local) == "hello.local"
         assert record_model("hello.local") is None
-        assert type(table_row(Job(status="failed"))["status"]) is str  # no 11.x colouring
+        assert type(table_row(Job(status="failed"))["status"]) is str  # a plain value
     assert record_model("untaped.failure") is Failure
 
 
@@ -618,21 +618,23 @@ def test_a_declared_column_naming_a_field_by_string_is_refused_when_the_plugin_l
 
 
 def test_field_problems_name_the_field() -> None:
-    class Messy(Command):
-        """Messy."""
+    with pytest.warns(UserWarning, match='Field name "ctx"'):
 
-        ctx: int = Field(1, description="Reserved.")
-        nodoc: str = "x"
-        force: Annotated[bool, Short("-f")] = Field(False, description="Clashes with --format.")
-        blob: bytes = Field(b"", description="No option of bytes.")
-        nested: list[Confirm] = Field(default_factory=list, description="A block inside.")
-        repo: Annotated[str, Short("-r")] = Field("", description="The repository.")
-        remote: Annotated[str, Short("-r")] = Field("", description="The remote.")
-        output: Output[Salutation]
-        again: Output[Salutation]
+        class Messy(Command):
+            """Messy."""
 
-        def run(self) -> Iterator[Salutation]:
-            yield from ()
+            ctx: int = Field(1, description="Reserved.")
+            nodoc: str = "x"
+            force: Annotated[bool, Short("-f")] = Field(False, description="Clashes with --format.")
+            blob: bytes = Field(b"", description="No option of bytes.")
+            nested: list[Confirm] = Field(default_factory=list, description="A block inside.")
+            repo: Annotated[str, Short("-r")] = Field("", description="The repository.")
+            remote: Annotated[str, Short("-r")] = Field("", description="The remote.")
+            output: Output[Salutation]
+            again: Output[Salutation]
+
+            def run(self) -> Iterator[Salutation]:
+                yield from ()
 
     problems = _problems(_plugin_with(Messy))
     assert sorted((p.rule, p.where.rpartition(".")[2]) for p in problems) == [

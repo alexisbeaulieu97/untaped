@@ -76,7 +76,7 @@ def _healthy(_ctx: PluginContext) -> DoctorResult:
 
 
 class Keeper(Plugin):
-    """Keep notes (a 12.0 plugin)."""
+    """Keep notes."""
 
     settings = KeeperSettings
     commands = (Read, Show)

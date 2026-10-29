@@ -98,7 +98,7 @@ class Own(Command):
 
 
 class Owning(Plugin):
-    """A 12.0 plugin whose command declares `--deprecated`."""
+    """A plugin whose command declares `--deprecated`."""
 
     settings = OwningSettings
     commands = (Own,)

@@ -35,7 +35,7 @@ from untaped_awx.application.suites.resolver import (
     ResolveCasePayload,
 )
 from untaped_awx.commands import suite_options as guides
-from untaped_awx.commands.test import TestGroup
+from untaped_awx.commands.test import TestGroup as SuiteGroup
 from untaped_awx.document import Document
 from untaped_awx.domain.suites.suite import (
     Approvals,
@@ -215,7 +215,7 @@ def _awx_commands() -> set[str]:
             or re.sub(r"(?<!^)(?=[A-Z])", "-", cls.__name__.removesuffix("Group")).lower()
         )
 
-    return {word(cls) for cls in (*Awx.commands, *TestGroup.commands)}
+    return {word(cls) for cls in (*Awx.commands, *SuiteGroup.commands)}
 
 
 def test_the_suites_reference_prose_names_only_known_fields() -> None:

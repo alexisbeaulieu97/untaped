@@ -83,7 +83,7 @@ class ChimeSettings(BaseModel):
 
 
 class Chime(Plugin):
-    """Chords (a 12.0 plugin)."""
+    """Chords."""
 
     settings = ChimeSettings
     commands = (Strum, Chords, Old, Tune)

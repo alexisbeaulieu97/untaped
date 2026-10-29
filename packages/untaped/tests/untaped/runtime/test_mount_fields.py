@@ -182,7 +182,7 @@ class Check(Command):
 
 
 class Tool(Plugin):
-    """Do things (a 12.0 plugin)."""
+    """Do things."""
 
     settings = ToolSettings
     commands = (Delete, Tidy, Sweep, Purge, Add, Advise, Label, Fetch, Work, Spread, Page, Check)

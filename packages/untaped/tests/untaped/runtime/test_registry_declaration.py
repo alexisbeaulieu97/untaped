@@ -1,4 +1,4 @@
-"""Core's declaration cache: a second start reads the 12.0 plugin classes' declaration, unimported.
+"""Core's declaration cache: a second start reads the plugin classes' declaration, unimported.
 
 Each test writes a small plugin package under ``tmp_path`` and names it by an
 entry point's target, as an installed plugin is, so the test can tell from

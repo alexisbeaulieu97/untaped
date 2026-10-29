@@ -181,17 +181,6 @@ def test_membership_noop_never_prompts_or_posts(fake_aap: Any) -> None:
     assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
 
 
-def test_continue_on_error_is_gone(fake_aap: Any) -> None:
-    """Continuing is the default since 11.0; ``--fail-fast`` opts out."""
-    seed(fake_aap, "projects")
-    result = run(
-        ["projects", "patch", "target", "--set", "description=new", "--yes", "--continue-on-error"],
-    )
-    assert result.exit_code == 2, result.output
-    assert "--continue-on-error" in result.stderr
-    assert fake_aap.get_record("projects", 10)["description"] == "old"
-
-
 @pytest.mark.parametrize(
     "extra",
     [

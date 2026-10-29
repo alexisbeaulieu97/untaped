@@ -1,6 +1,6 @@
 """Tests for the root ``untaped docs`` command: every page an address names, and search.
 
-A fake 12.0 plugin (``acme``) carries what the pages read: a group, a
+A fake plugin (``acme``) carries what the pages read: a group, a
 command reading a file and one writing a starter, rows it prints, an options
 bundle and an enum with docstrings (its guides), settings, an experimental
 command and an extension point a provider (``store``) fills. Each page is

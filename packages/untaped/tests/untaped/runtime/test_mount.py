@@ -1,4 +1,4 @@
-"""The mount: a 12.0 plugin class composed, parsed from its declaration, run and printed."""
+"""The mount: a plugin class composed, parsed from its declaration, run and printed."""
 
 from __future__ import annotations
 
@@ -171,7 +171,7 @@ class Status(Command):
 
 
 class Hello(Plugin):
-    """Say hello (a 12.0 plugin)."""
+    """Say hello."""
 
     settings = HelloSettings
     commands = (Greet, Say, Rows, Echo, Show, Lengths, Peek, FriendsGroup)
@@ -208,7 +208,7 @@ def _run(
 def test_root_help_lists_the_plugin_from_its_summary() -> None:
     result = _run("--help")
     assert result.exit_code == 0, result.stderr
-    assert "hello  Say hello (a 12.0 plugin)." in result.stdout
+    assert "hello  Say hello." in result.stdout
 
 
 def test_a_command_s_help_comes_from_the_declaration_in_its_panels() -> None:
