@@ -119,8 +119,8 @@ def _spelled(command: str | SpelledCommand | Sequence[str]) -> str:
 
     Spelling a class needs the run that mounts it: outside any run this raises
     a :class:`RuntimeError`, and for a class the run does not mount a
-    :class:`LookupError`. Code that may run outside a run (a validator) names
-    its command as a string.
+    :class:`LookupError`. A validator, which may run outside a run, refuses
+    with :class:`~untaped.sdk.InvalidValue`, spelled when its text is read.
     """
     if isinstance(command, str):
         return command

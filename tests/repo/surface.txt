@@ -6866,6 +6866,8 @@ sdk untaped.sdk.InstalledPlugin.status
 sdk untaped.sdk.InstalledPlugin.tests_dir
 sdk untaped.sdk.InstalledPlugin.version
 sdk untaped.sdk.Interrupt()  [experimental]
+sdk untaped.sdk.InvalidValue(*commands)
+sdk untaped.sdk.InvalidValue(text)
 sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
 sdk untaped.sdk.Issued.source

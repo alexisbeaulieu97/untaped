@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from pydantic import AfterValidator
 
-from untaped.sdk import safe_path_segment
+from untaped.sdk import InvalidValue, safe_path_segment
 
 _UNKNOWN = "_unknown"
 _SCP = re.compile(r"^[A-Za-z0-9._-]+@(?P<host>[A-Za-z0-9.-]+):(?P<path>[^/].*)$")
@@ -39,8 +39,9 @@ def validate_git_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme == "https":
         if parsed.username is not None or parsed.password is not None:
-            # A validator also runs outside any run, where no class can be spelled.
-            raise ValueError("a Git URL must not carry credentials; use `untaped auth login`")
+            from untaped.core.api import Login  # noqa: PLC0415 - core's commands load only here
+
+            raise InvalidValue("a Git URL must not carry credentials; use `{}`", Login.spelled())
     elif parsed.scheme != "ssh":
         raise ValueError(f"{parsed.scheme}:// is not an accepted Git URL scheme")
     if not parsed.hostname or parsed.path.strip("/") == "":

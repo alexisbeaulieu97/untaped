@@ -105,6 +105,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "ErrorCategory",
         "Failed",
         "Failure",
+        "InvalidValue",
         "Matched",
         "NeedsYesError",
         "OperationCancelledError",
