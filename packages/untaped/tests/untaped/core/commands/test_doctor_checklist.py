@@ -19,9 +19,10 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
-from untaped.core.commands._render import _ASCII_GLYPHS, _UNICODE_GLYPHS
 from untaped.core.commands.doctor import report_check_rows
+from untaped.runtime.theme import PLAIN_CHECK_SYMBOLS
 from untaped.sdk import Plugin
+from untaped.sdk._theme import CHECK_SYMBOLS
 from untaped.sdk.fields import Output
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
@@ -130,6 +131,27 @@ def test_an_ascii_theme_swaps_every_glyph(_isolated_config: Path) -> None:
     assert glyphs == {"+", "!", "x", "->"}
 
 
+def test_the_theme_symbols_restyle_the_checklist(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nuntaped:\n  ui: {symbols: {check.warn: W, check.fix: '=>'}}\n",
+    )
+    stdout = _doctor().stdout
+    glyphs = {line.split()[0] for line in stdout.splitlines() if line.startswith("  ")}
+    assert {"W", "=>"} <= glyphs
+    assert "▲" not in glyphs
+
+
+def test_a_wide_symbol_keeps_the_columns_lined_up(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config, "format_version: 2\nuntaped:\n  ui: {symbols: {check.pass: OK}}\n"
+    )
+    rows = [line for line in _doctor().stdout.splitlines() if line.startswith("  ")]
+    marked = [line for line in rows if not line.lstrip().startswith("->") and line[2] != " "]
+    # Every check name starts in the same column, whatever mark leads it.
+    assert len({len(line) - len(line[2:].split(" ", 1)[1].lstrip()) for line in marked}) == 1
+
+
 def test_a_broken_ui_section_still_renders(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui: {theme: nope}\n")
     result = _doctor()
@@ -202,11 +224,11 @@ def test_glyphs_take_the_status_colours(monkeypatch: pytest.MonkeyPatch) -> None
 def test_status_glyphs_are_one_cell_and_have_no_emoji_form() -> None:
     # U+26A0 ``⚠`` and ``✔`` measure one cell but have an emoji form that terminals
     # draw two cells wide and misalign rows; the variation selector exposes it.
-    for status, glyph in _UNICODE_GLYPHS.items():
-        assert cell_len(glyph) == 1, status
-        assert cell_len(glyph + "\ufe0f") == 1, f"{status}: {glyph!r} has an emoji form"
+    for name, glyph in CHECK_SYMBOLS.items():
+        assert cell_len(glyph) == 1, name
+        assert cell_len(glyph + "\ufe0f") == 1, f"{name}: {glyph!r} has an emoji form"
 
 
 def test_ascii_glyphs_cover_every_status() -> None:
-    assert _ASCII_GLYPHS.keys() == _UNICODE_GLYPHS.keys()
-    assert all(glyph.isascii() for glyph in _ASCII_GLYPHS.values())
+    assert PLAIN_CHECK_SYMBOLS.keys() == CHECK_SYMBOLS.keys()
+    assert all(glyph.isascii() for glyph in PLAIN_CHECK_SYMBOLS.values())

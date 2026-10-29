@@ -19,11 +19,13 @@ import textwrap
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
+from rich.cells import cell_len
 from rich.text import Text
 
 from untaped.runtime.render import output_width, status_role_style
 from untaped.runtime.theme import OutputFormat
 from untaped.sdk._cli import emit_with
+from untaped.sdk._theme import DEFAULT_SYMBOLS
 from untaped.sdk._ui import Ui, build_terminal, print_styled
 
 if TYPE_CHECKING:
@@ -31,27 +33,16 @@ if TYPE_CHECKING:
 
     from untaped.core.commands.records import FixOutcome
 
-_UNICODE_GLYPHS = {
-    "pass": "✓",
-    "fixed": "✓",
-    "warn": "▲",
-    "partial": "◐",
-    "fail": "✗",
-    "failed": "✗",
-    "skipped": "○",
-    "planned": "○",
-    "fix": "→",
-}
-_ASCII_GLYPHS = {
-    "pass": "+",
-    "fixed": "+",
-    "warn": "!",
-    "partial": "~",
-    "fail": "x",
-    "failed": "x",
-    "skipped": "-",
-    "planned": "-",
-    "fix": "->",
+#: Per status: the theme symbol that marks it.
+_STATUS_SYMBOLS = {
+    "pass": "check.pass",
+    "fixed": "check.pass",
+    "warn": "check.warn",
+    "partial": "check.partial",
+    "fail": "check.fail",
+    "failed": "check.fail",
+    "skipped": "check.skip",
+    "planned": "check.skip",
 }
 #: Per status: the theme color role that styles its glyph.
 _GLYPH_ROLES = {
@@ -91,13 +82,13 @@ def emit_check_list(
     settings are broken.
     """
     ui = build_terminal(strict=False)
-    glyphs = _glyphs(ui)
     groups: dict[str, list[dict[str, object]]] = {}
     for row in rows:
         groups.setdefault(str(row["plugin"]), []).append(row)
     check_width = max((len(str(row["check"])) for row in rows), default=0)
     title_width = max((len(str(row["title"])) for row in rows), default=0)
-    title_column = 4 + check_width + 2
+    glyph_width = _glyph_width(ui, [str(row["status"]) for row in rows])
+    title_column = 3 + glyph_width + check_width + 2
     detail_column = title_column + title_width + 2
     width = output_width()
     lines: list[Text] = []
@@ -105,7 +96,7 @@ def emit_check_list(
         lines.append(Text(plugin, style=ui.theme.color_roles.get("header") or "bold"))
         for row in members:
             status = str(row["status"])
-            line = _glyph_line(ui, glyphs, status)
+            line = _glyph_line(ui, status, glyph_width)
             line.append(f"{str(row['check']).ljust(check_width)}  ")
             line.append(str(row["title"]).ljust(title_width))
             detail = str(row["detail"])
@@ -119,7 +110,7 @@ def emit_check_list(
             fix = row.get("fix")
             if status != "pass" and isinstance(fix, list) and fix:
                 tag = "  (automatic)" if row.get("automatic") else ""
-                command = f"{glyphs['fix']} {run_line(fix)}{tag}"
+                command = f"{_symbol(ui, 'check.fix')} {run_line(fix)}{tag}"
                 lines += [Text(more) for more in _wrap(command, width, title_column)]
     # Every detail and fix line fits already; only a row's own check and title
     # can overflow a very narrow terminal, and they end in an ellipsis there.
@@ -152,7 +143,7 @@ def fix_plan(
 
     Its confirmation prints it on stderr before the question.
     """
-    arrow = _glyphs(build_terminal(strict=False))["fix"]
+    arrow = _symbol(build_terminal(strict=False), "check.fix")
     width = max((len(command) for command, _checks in (*runnable, *manual)), default=0)
     lines: list[str] = []
     for heading, fixes in (("Fixes to run", runnable), ("Needs you", manual)):
@@ -168,15 +159,15 @@ def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]],
     A long detail wraps within its column, as in :func:`emit_check_list`.
     """
     ui = build_terminal(strict=False)
-    glyphs = _glyphs(ui)
     commands = [run_line(row.fix) for row in rows]
     command_width = max((len(command) for command in commands), default=0)
     action_width = max((len(row.action) for row in rows), default=0)
-    detail_column = 4 + command_width + 2 + action_width + 2
+    glyph_width = _glyph_width(ui, [row.action for row in rows])
+    detail_column = 3 + glyph_width + command_width + 2 + action_width + 2
     width = output_width()
     lines: list[Text] = []
     for row, command in zip(rows, commands, strict=True):
-        line = _glyph_line(ui, glyphs, row.action)
+        line = _glyph_line(ui, row.action, glyph_width)
         line.append(f"{command.ljust(command_width)}  {row.action.ljust(action_width)}")
         detail = row.detail
         if width is None or width - detail_column >= _MIN_DETAIL_WIDTH:
@@ -188,15 +179,25 @@ def emit_fix_list(rows: Sequence[FixOutcome], *, run_line: Callable[[list[str]],
     print_styled(ui, Text("\n").join(lines), truncate=True)
 
 
-def _glyphs(ui: Ui) -> dict[str, str]:
-    """ASCII glyphs under an ASCII border (the ``ansible graph tree`` rule)."""
-    return _ASCII_GLYPHS if ui.theme.border == "ascii" else _UNICODE_GLYPHS
+def _symbol(ui: Ui, name: str) -> str:
+    return ui.theme.symbols.get(name, DEFAULT_SYMBOLS[name])
 
 
-def _glyph_line(ui: Ui, glyphs: dict[str, str], status: str) -> Text:
+def _glyph(ui: Ui, status: str) -> str:
+    name = _STATUS_SYMBOLS.get(status)
+    return _symbol(ui, name) if name else "?"
+
+
+def _glyph_width(ui: Ui, statuses: Sequence[str]) -> int:
+    """The widest mark among ``statuses``: ``untaped.ui.symbols`` may set a wide one."""
+    return max((cell_len(_glyph(ui, status)) for status in statuses), default=1)
+
+
+def _glyph_line(ui: Ui, status: str, width: int) -> Text:
+    glyph = _glyph(ui, status)
     line = Text("  ")
-    line.append(glyphs.get(status, "?"), style=_glyph_style(ui, status))
-    line.append(" ")
+    line.append(glyph, style=_glyph_style(ui, status))
+    line.append(" " * (width - cell_len(glyph) + 1))
     return line
 
 
