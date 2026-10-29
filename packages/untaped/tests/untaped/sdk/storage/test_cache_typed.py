@@ -43,13 +43,11 @@ class Snapshot(BaseModel):
 
 CODE = {"version": "1"}
 SNAPSHOTS = Cache(
-    "toy",
-    "snapshots",
     label="controller resources",
     max_age=timedelta(hours=1),
     version=lambda: CODE["version"],
     model=Snapshot,
-)
+)._spelled_as("toy", "snapshots")
 
 
 @dataclass
@@ -418,10 +416,12 @@ def test_a_partition_keeps_its_own_files_and_never_shows_its_value(
 def test_split_none_keeps_one_folder_for_every_profile(
     clock: CacheClock, up: Controller, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    shared = Cache("toy", "shared", label="x", max_age=timedelta(hours=1), model=Snapshot)
-    shared_none = Cache(
-        "toy", "shared", label="x", max_age=timedelta(hours=1), model=Snapshot, split="none"
+    shared = Cache(label="x", max_age=timedelta(hours=1), model=Snapshot)._spelled_as(
+        "toy", "shared"
     )
+    shared_none = Cache(
+        label="x", max_age=timedelta(hours=1), model=Snapshot, split="none"
+    )._spelled_as("toy", "shared")
     assert shared._folder() == named_plugin_dir("toy") / "cached" / "shared" / settings_digest(
         "toy"
     )
@@ -442,7 +442,7 @@ def test_the_model_resolves_on_first_use_only(clock: CacheClock, up: Controller)
         calls.append(1)
         return Snapshot
 
-    lazy = Cache("toy", "lazy", label="x", max_age=timedelta(hours=1), model=model)
+    lazy = Cache(label="x", max_age=timedelta(hours=1), model=model)._spelled_as("toy", "lazy")
     assert calls == []
     _serve(up, cache=lazy)
     _serve(up, cache=lazy)
@@ -454,11 +454,13 @@ def test_what_a_typed_cache_refuses(clock: CacheClock, up: Controller) -> None:
         SNAPSHOTS.serve({KEY: "x"}, refresh=None, fill=up.fill, read=lambda: None)  # type: ignore[call-overload]
     with pytest.raises(ConfigError, match="a cache with model= holds its own"):
         SNAPSHOTS.seed(KEY, refreshed_at=START)
-    plain = Cache("toy", "plain", label="x", max_age=timedelta(hours=1))
+    plain = Cache(label="x", max_age=timedelta(hours=1))._spelled_as("toy", "plain")
     with pytest.raises(ConfigError, match="needs read="):
         plain.serve({KEY: "x"}, refresh=None, fill=up.fill)  # type: ignore[call-overload]
     with pytest.raises(ConfigError, match="not a pydantic model"):
-        Cache("toy", "bad", label="x", max_age=timedelta(hours=1), model=lambda: dict)._typing()  # type: ignore[arg-type,return-value]
+        Cache(label="x", max_age=timedelta(hours=1), model=lambda: dict)._spelled_as(
+            "toy", "bad"
+        )._typing()  # type: ignore[arg-type,return-value]
     with pytest.raises(TypeError, match="declare it without model="):
         cached(SNAPSHOTS)  # type: ignore[arg-type]
 
@@ -474,7 +476,7 @@ def test_a_fill_must_return_the_value_its_cache_keeps(clock: CacheClock) -> None
         SNAPSHOTS.serve({KEY: "x"}, refresh=True, fill=no_value)
     with pytest.raises(TypeError, match="returned a dict, not the Snapshot"):
         SNAPSHOTS.serve({KEY: "x"}, refresh=True, fill=wrong)
-    plain = Cache("toy", "plain", label="x", max_age=timedelta(hours=1))
+    plain = Cache(label="x", max_age=timedelta(hours=1))._spelled_as("toy", "plain")
     with pytest.raises(TypeError, match="never keeps"):
         plain.serve(
             {KEY: "x"},
@@ -503,7 +505,7 @@ def test_cached_peeks_at_the_kept_value_and_forget_drops_every_version(
 def test_forget_leaves_a_key_whose_name_reads_like_a_version_of_another(
     clock: CacheClock,
 ) -> None:
-    plain = Cache("toy", "plain", label="plain", max_age=timedelta(hours=1))
+    plain = Cache(label="plain", max_age=timedelta(hours=1))._spelled_as("toy", "plain")
     assert plain.seed("x.vdeadbeef", refreshed_at=START)
     plain.forget("x")
     assert plain.freshness("x.vdeadbeef").refreshed_at == START

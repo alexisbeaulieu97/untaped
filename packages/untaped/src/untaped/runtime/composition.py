@@ -941,7 +941,7 @@ class _PluginWalk:
         """
         for method in info.methods.values():
             cache = method.cache
-            name = cache._declared_as if cache is not None and not cache.spelled else None
+            name = cache._declared_as if cache is not None else None
             if name is None or (taken := getattr(cls, name, cache)) is cache:
                 continue
             self.problem(
@@ -1734,12 +1734,12 @@ class _CommandWalk:
     def _setting_of(self, cache: Cache[Any], method: object) -> str | None:
         """The max-age setting of a contract method's cache; ``None`` when no plugin owns it.
 
-        A cache spelled or bound where declared knows its plugin; one
+        A cache bound where declared knows its plugin; one
         ``@cached`` made belongs to the plugin offering the method's contract;
         one a plugin class holds belongs to the plugin composed for that
         class's package, read here because no run exists yet.
         """
-        if cache.spelled or cache._held_as is not None:
+        if cache._held_as is not None:
             return cache.setting
         if cache._declared_as is not None and not cache.bindings:
             from untaped.sdk.contracts._declare import method_contract  # noqa: PLC0415

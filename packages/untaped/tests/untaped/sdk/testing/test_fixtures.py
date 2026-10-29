@@ -212,7 +212,7 @@ def test_a_credential_is_set_under_the_install_holding_it(
 
 
 def test_a_spelled_credential_is_set_outside_a_run(credentials: MemoryCredentials) -> None:
-    spelled = Credential("vault", "token", key=VaultServer)
+    spelled = Credential(key=VaultServer)._spelled_as("vault", "token")
     credentials.set(spelled, VaultServer(), "s3cret")
     assert list(credentials.entries.values()) == ["s3cret"]
 

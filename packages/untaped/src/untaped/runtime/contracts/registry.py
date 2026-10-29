@@ -149,10 +149,7 @@ def _listed(spec: PluginSpec, cache: Cache[Any]) -> bool:
     if cache._held_as is not None:
         return True
     caches = spec.caches
-    if isinstance(caches, DeclaredBlocks):
-        ids = list(caches.ids)
-    else:
-        ids = [each.qualified for each in caches if each.spelled]
+    ids = caches.ids if isinstance(caches, DeclaredBlocks) else ()
     return f"{spec.name}.{cache._declared_as}" in ids
 
 
@@ -164,18 +161,11 @@ def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
             raise TypeError(f"it lists {each!r}, which is not a Contract declaration")
         for method in info.methods.values():
             cache = method.cache
-            # a listed cache is the plugin's own (composition quarantines a foreign one); one
-            # @cached made is listed under its name (a 12.0 plugin's declaration lists it)
-            if cache is not None and not cache.spelled and not _listed(spec, cache):
+            # one @cached made is listed under its name (the plugin's declaration lists it)
+            if cache is not None and not _listed(spec, cache):
                 raise TypeError(
-                    f"{info.cls.__qualname__}.{method.name} is cached in a cache with no "
-                    f"plugin and name: spell it Cache({spec.name!r}, "
-                    f"'{info.name}_{method.name}', ...) and list it on PluginSpec.caches"
-                )
-            if cache is not None and cache.spelled and cache not in spec.caches:
-                raise TypeError(
-                    f"{info.cls.__qualname__}.{method.name} is cached in {cache.qualified}, "
-                    f"which is not one of {spec.name}'s caches (list it on PluginSpec.caches)"
+                    f"{info.cls.__qualname__}.{method.name} is cached in a cache "
+                    f"{spec.name}'s plugin class does not hold"
                 )
     return declared
 

@@ -414,7 +414,7 @@ class Hub(CredentialKey):
 
 
 def test_a_defaulted_url_is_still_named() -> None:
-    hub = Credential("hub", "token", key=Hub)
+    hub = Credential(key=Hub)._spelled_as("hub", "token")
     hub.store(Hub(), token="t")
 
     assert describe_key(Hub()) == "url=https://api.hub.example.com"

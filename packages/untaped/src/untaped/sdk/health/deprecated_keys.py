@@ -554,30 +554,6 @@ def profile_sections(
                 yield name, section, model, section_data
 
 
-def retired_values(section: str, key: str) -> tuple[object, ...]:
-    """The values config.yml still sets for ``<section>.<key>``, distinct, ``default``'s first.
-
-    Every profile's value, not only the active one's, and a deleted key's
-    too (a :class:`Retired` entry no settings model reads), as a store's
-    ``keep`` needs them (:func:`~untaped.sdk.storage.store.setting_guard`).
-    ``key`` may be dotted. Read from the file as written, every profile,
-    never validated; empty once ``config migrate`` has deleted the key.
-    """
-    from untaped.runtime.config_file import (  # noqa: PLC0415 - config_file imports settings
-        read_config_dict,
-    )
-
-    found: list[object] = []
-    for _, data, _ in profile_entries(read_config_dict()):
-        section_data = data.get(section)
-        if not isinstance(section_data, Mapping):
-            continue
-        value = _lookup(section_data, key)
-        if value is not _MISSING and value not in found:
-            found.append(value)
-    return tuple(found)
-
-
 def scan_keys(
     raw: Mapping[str, Any],
     sections: Mapping[str, type[BaseModel]],

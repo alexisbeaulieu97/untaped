@@ -210,7 +210,7 @@ def held_by(cls: type[Plugin]) -> dict[str, object]:
                 continue  # composition says what offers may hold
             for method in info.methods.values():
                 cache = method.cache
-                if cache is not None and not cache.spelled and cache._declared_as is not None:
+                if cache is not None and cache._declared_as is not None:
                     found.setdefault(cache._declared_as, cache)
     return found
 

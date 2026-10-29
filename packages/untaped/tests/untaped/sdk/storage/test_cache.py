@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped.runtime.run import invocation
 from untaped.runtime.sink import (
@@ -45,7 +45,6 @@ from untaped.sdk.storage.cache import (
     NeverRefreshed,
     call_state,
     code_version,
-    refresh_option,
     refresh_scope,
 )
 from untaped.sdk.storage.data_file import written_by
@@ -57,7 +56,7 @@ from untaped.sdk.testing import (
     progress_clock,
 )
 
-TOY = Cache("toy", "items", label="toy items", max_age=timedelta(hours=1))
+TOY = Cache(label="toy items", max_age=timedelta(hours=1))._spelled_as("toy", "items")
 START = datetime(2026, 10, 12, 9, 0, tzinfo=UTC)
 
 
@@ -90,11 +89,14 @@ class Upstream:
 
 UP = Upstream()
 
+#: The flags a command reading a cache takes; a ``Refresh`` field block gives them in a plugin.
+REFRESH = Parameter(name="--refresh", negative="--cached")
+
 app = App(name="toy", help="A toy cache.")
 
 
 @app.command(name="show")
-def show(keys: list[str], *, refresh: Annotated[bool | None, refresh_option(TOY)] = None) -> None:
+def show(keys: list[str], *, refresh: Annotated[bool | None, REFRESH] = None) -> None:
     """Print the items of KEYS, served through the toy cache."""
     with report_errors():
         served = TOY.serve(
@@ -191,37 +193,15 @@ def test_the_declaration_names_its_setting_and_default() -> None:
     assert TOY.setting == "toy.caches.items.max_age_seconds"
     assert TOY.default_max_age_text == "1 h"
     assert TOY.max_age() == _HOUR
-    assert Cache("toy", "items", label="toy items", max_age=_HOUR) == TOY
-    assert len({TOY, Cache("toy", "items", label="toy items", max_age=_HOUR)}) == 1
 
 
-@pytest.mark.parametrize(
-    ("plugin", "name", "max_age"),
-    [
-        ("toy", "Items", _HOUR),
-        ("toy", "a.b", _HOUR),
-        ("Toy", "items", _HOUR),
-        ("toy", "items", -_HOUR),
-    ],
-)
-def test_a_bad_declaration_fails_at_once(plugin: str, name: str, max_age: timedelta) -> None:
+def test_a_negative_max_age_fails_at_once() -> None:
     with pytest.raises(ConfigError):
-        Cache(plugin, name, label="x", max_age=max_age)
+        Cache(label="x", max_age=-_HOUR)
 
 
-def test_the_option_names_the_setting_and_refuses_both_flags(clock: CacheClock) -> None:
-    help_text = invoke_cli(app, ["show", "--help"]).stdout
-    assert "toy.caches.items.max_age_seconds" in " ".join(help_text.split())
-    assert "--cached" in help_text
+def test_the_flags_refuse_both_at_once(clock: CacheClock) -> None:
     assert _show("a", "--refresh", "--cached").exit_code == 2
-
-
-def test_the_option_help_is_the_one_wording_for_one_cache() -> None:
-    assert refresh_option(TOY).help == (
-        "--refresh checks upstream for toy items now; --cached reads what is cached and never "
-        "checks. Default: check when the cached data is older than "
-        "toy.caches.items.max_age_seconds (1 h)."
-    )
 
 
 # ---- serve: fresh, stale, first use ------------------------------------------
@@ -534,7 +514,7 @@ def test_a_nested_forced_or_first_fill_leaves_the_outer_budget(
     """Under an outer automatic refresh, an inner --refresh or first fill keeps full retries."""
     from untaped.sdk.network.upstream import capped
 
-    inner = Cache("toy", "inner", label="toy inner", max_age=_HOUR)
+    inner = Cache(label="toy inner", max_age=_HOUR)._spelled_as("toy", "inner")
     seen: list[bool] = []
 
     def inner_fill(_key: str, _task: ProgressHandle) -> Filled:
@@ -894,15 +874,13 @@ def test_forget_makes_the_next_read_refresh(clock: CacheClock) -> None:
 
 #: The version of the code that fills ``VERSIONED``; a test sets it.
 CODE = {"version": "1"}
-VERSIONED = Cache(
-    "toy", "versioned", label="toy items", max_age=_HOUR, version=lambda: CODE["version"]
+VERSIONED = Cache(label="toy items", max_age=_HOUR, version=lambda: CODE["version"])._spelled_as(
+    "toy", "versioned"
 )
 
 
 @app.command(name="versioned")
-def versioned(
-    keys: list[str], *, refresh: Annotated[bool | None, refresh_option(VERSIONED)] = None
-) -> None:
+def versioned(keys: list[str], *, refresh: Annotated[bool | None, REFRESH] = None) -> None:
     """Print the items of KEYS, served through the versioned toy cache."""
     with report_errors():
         served = VERSIONED.serve(
@@ -1072,12 +1050,10 @@ def test_the_version_is_read_once_per_serve(clock: CacheClock) -> None:
         calls.append(1)
         return "1"
 
-    cache = Cache("toy", "counted", label="toy items", max_age=_HOUR, version=version)
+    cache = Cache(label="toy items", max_age=_HOUR, version=version)._spelled_as("toy", "counted")
     cache.serve({"a": "toy a", "b": "toy b"}, refresh=None, fill=UP.fill, read=lambda: None)
 
     assert (len(calls), UP.fills) == (1, ["a", "b"])
-    assert cache == Cache("toy", "counted", label="toy items", max_age=_HOUR, version=version)
-    assert cache != Cache("toy", "counted", label="toy items", max_age=_HOUR)
 
 
 def test_an_outdated_key_s_status_row_is_stale() -> None:

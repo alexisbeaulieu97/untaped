@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,12 +11,17 @@ from pydantic import BaseModel, RootModel
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.composition import PluginEntry, compose
+from untaped.runtime.run import invocation
 from untaped.sdk import Cache, ConfigError
+from untaped.sdk.contracts import cached
+from untaped.sdk.diagnostic import Failure
+from untaped.sdk.errors import UntapedError
 from untaped.sdk.plugin import Plugin
 from untaped.sdk.projects import holder_of
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage import holds
 from untaped.sdk.storage._refs import RefTarget
+from untaped.sdk.storage.cache import Filled
 from untaped.sdk.storage.dir import Dir
 from untaped.sdk.storage.holds import LetGo, Refused, ReleaseAsk
 from untaped.sdk.testing import Install, install, make_project, plan_release
@@ -169,6 +174,56 @@ def test_a_complete_fill_prunes_the_layouts_and_the_cache_folders_that_follow(
         assert not old_tiles.exists()
 
 
+def _serve_with_an_old_layout(
+    atlas: Install, *, fill_result: Filled | None = None, error: bool = False
+) -> Path:
+    """Serve ``tiles`` once with ``maps.v2`` on disk; the old layout's path, after."""
+
+    def fill(_key: str, _task: object) -> Filled:
+        if error:
+            raise UntapedError("upstream down")
+        return fill_result or Filled()
+
+    with atlas.running():
+        old = Atlas.maps.place / "maps.v2"
+        old.mkdir(parents=True)
+        refs.register(refs.composed_targets() or ())
+        Atlas.maps.open()
+        with invocation():
+            Atlas.tiles.serve({"k": "key"}, refresh=True, fill=fill, read=lambda: None)
+        return old
+
+
+def test_a_complete_fill_of_a_following_cache_prunes(atlas: Install) -> None:
+    assert not _serve_with_an_old_layout(atlas).exists()
+
+
+def test_a_partial_fill_prunes_nothing(atlas: Install) -> None:
+    partial = Filled(partial=Failure.plain("3 tiles left out"))
+    assert _serve_with_an_old_layout(atlas, fill_result=partial).exists()
+
+
+def test_a_failed_fill_prunes_nothing(atlas: Install) -> None:
+    with pytest.raises(UntapedError, match="upstream down"):
+        _serve_with_an_old_layout(atlas, error=True)
+    with atlas.running():
+        assert (Atlas.maps.place / "maps.v2").exists()
+
+
+def test_a_cached_read_prunes_nothing(atlas: Install) -> None:
+    with atlas.running():
+        old = Atlas.maps.place / "maps.v2"
+        old.mkdir(parents=True)
+        refs.register(refs.composed_targets() or ())
+        Atlas.maps.open()
+        Atlas.tiles.seed("k", refreshed_at=datetime.now(UTC))
+        with invocation():
+            Atlas.tiles.serve(
+                {"k": "key"}, refresh=False, fill=lambda *_: Filled(), read=lambda: None
+            )
+        assert old.exists()
+
+
 @pytest.mark.parametrize(
     ("follows", "message"),
     [
@@ -181,9 +236,12 @@ def test_a_cache_follows_only_a_numbered_dir(follows: object, message: str) -> N
         Cache(label="x", max_age=timedelta(0), follows=follows)  # type: ignore[arg-type]
 
 
-def test_an_11x_cache_follows_a_store_not_a_dir() -> None:
-    with pytest.raises(ConfigError, match=r"the 11\.x spelling follows a store"):
-        Cache("atlas", "tiles", label="x", max_age=timedelta(0), follows=Dir(layout=2))
+def test_an_answer_cache_follows_no_place() -> None:
+    answers = Cache(label="x", max_age=timedelta(0), follows=Dir(layout=2))._spelled_as(
+        "atlas", "tiles_answers"
+    )
+    with pytest.raises(TypeError, match="an answer cache follows no place"):
+        cached(answers)
 
 
 def test_a_version_only_cache_follows_no_place() -> None:

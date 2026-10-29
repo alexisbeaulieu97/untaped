@@ -1,4 +1,4 @@
-"""``Store``: one name per layout, the in-use lock, the caches that follow it, ``setting_guard``."""
+"""``Store``, the engine of a numbered ``Dir``: one name per layout, the in-use lock."""
 
 from __future__ import annotations
 
@@ -6,24 +6,18 @@ import subprocess
 import sys
 import textwrap
 from collections.abc import Iterator
-from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from core_test_support.commands.support import write_config
-from untaped.sdk.contracts import cached
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage import store as store_module
-from untaped.sdk.storage._digest import settings_digest
-from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.store import (
     Store,
     _FileInUse,
     _forget_opened,
     _in_use,
     _SqliteInUse,
-    setting_guard,
 )
 
 pytestmark = pytest.mark.usefixtures("home_run")
@@ -234,61 +228,3 @@ def test_a_file_at_the_base_is_no_layout_and_stays(tmp_path: Path, lock_kind: st
     assert store.open() == tmp_path / "index.v4.sqlite3"
     assert store.other_paths() == []
     assert base.read_bytes() == b"someone's file"
-
-
-# --- caches that follow a store ----------------------------------------------
-
-
-def _cached() -> Path:
-    return Path.home() / ".untaped" / "plugins" / "acme" / "cached"
-
-
-def test_a_cache_following_a_store_keeps_its_files_per_layout(tmp_path: Path) -> None:
-    data = Store("acme", "data", base=lambda: tmp_path / "data.db", layout=3)
-    cache = Cache("acme", "data", label="data", max_age=timedelta(hours=1), store=data)
-
-    assert cache._paths("k").file().parent == _cached() / "data.v3" / settings_digest("acme")
-    assert data._layout_folders(3) == [_cached() / "data.v3"]
-    assert cache != Cache("acme", "data", label="data", max_age=timedelta(hours=1))
-
-
-def test_a_cache_follows_only_its_own_plugins_store(tmp_path: Path) -> None:
-    other = Store("other", "data", base=lambda: tmp_path / "x.db")
-    with pytest.raises(ConfigError, match="belongs to another plugin"):
-        Cache("acme", "data", label="data", max_age=timedelta(0), store=other)
-    with pytest.raises(ConfigError, match="store takes a Store"):
-        Cache("acme", "data", label="data", max_age=timedelta(0), store="x")  # type: ignore[arg-type]
-
-
-def test_an_answer_cache_follows_no_store(tmp_path: Path) -> None:
-    data = Store("acme", "data", base=lambda: tmp_path / "x.db")
-    cache = Cache("acme", "data_answers", label="data", max_age=timedelta(0), store=data)
-    with pytest.raises(TypeError, match="follows no store"):
-        cached(cache)
-
-
-# --- setting_guard ------------------------------------------------------------
-
-
-def test_setting_guard_keeps_a_place_any_profile_still_names(_isolated_config: Path) -> None:
-    old = Path.home() / "acme-old"
-    old.mkdir(parents=True)
-    write_config(
-        _isolated_config,
-        f"format_version: 2\nprofiles:\n  work:\n    acme:\n      data_dir: {old / 'sub'}\n",
-    )
-    guard = setting_guard("acme", "other_dir", "data_dir")
-
-    assert guard(old) == "config.yml or the environment still sets acme.data_dir there"
-    assert guard(Path.home() / "elsewhere") is None
-
-
-def test_setting_guard_reads_the_environment_and_skips_relative_paths(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    guard = setting_guard("acme", "inventory.path")
-    used = Path.home() / "from-env"
-    monkeypatch.setenv("UNTAPED_ACME__INVENTORY__PATH", "~/from-env")
-    assert guard(used) == "config.yml or the environment still sets acme.inventory.path there"
-    monkeypatch.setenv("UNTAPED_ACME__INVENTORY__PATH", "from-env")
-    assert guard(used) is None

@@ -54,7 +54,8 @@ def make_check(
             record_calls.append(id)
         return DoctorResult(id=id, ok=True, detail="fine")
 
-    return DoctorCheck(id=id, title=title, run=_run)
+    plugin, _, name = id.partition(".")
+    return DoctorCheck(title=title, run=_run)._spelled_as(plugin, name)
 
 
 def make_spec(

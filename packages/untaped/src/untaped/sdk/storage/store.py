@@ -1,8 +1,7 @@
 """Stores: data a plugin keeps on disk in a layout an older release may not open.
 
-A plugin declares one :class:`Store` per such file or directory
-(``Store("ansible", "index", base=…, layout=4)``), lists it on
-``PluginSpec.stores`` and opens it through :meth:`Store.open`. Every layout
+A numbered :class:`~untaped.sdk.storage.dir.Dir` keeps one :class:`Store`
+per such file or directory, opened through :meth:`Store.open`. Every layout
 lives under its own name beside the declared base: ``index.sqlite3`` is the
 base, ``index.v4.sqlite3`` layout 4 and ``index.v5.sqlite3`` layout 5, so two
 installs of untaped at different layouts never open each other's file. A
@@ -33,10 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from untaped.runtime.settings import env_var_name
 from untaped.sdk._run import NoRunError
 from untaped.sdk.errors import ConfigError, UntapedError
-from untaped.sdk.health.deprecated_keys import retired_values
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage._fs import dir_bytes
 
@@ -66,14 +63,11 @@ class Store:
     ``name`` is one settings segment (``[a-z][a-z0-9_]*``). ``base`` returns
     the path the layouts are named beside (``~`` is expanded); it is read
     each time it is needed, never at import. ``layout`` is the oldest layout
-    this code's reader still opens (an integer from 1). ``keep`` says why
-    another layout's path must stay whatever holds it (a setting that points
-    there, such as :func:`setting_guard`), or ``None``; the cleanup and
-    ``doctor`` both ask it. Two declarations with the same values (the same
-    callables) are equal.
+    this code's reader still opens (an integer from 1). Two declarations with
+    the same values (the same callables) are equal.
     """
 
-    __slots__ = ("_caches", "base", "keep", "layout", "name", "plugin")
+    __slots__ = ("_caches", "base", "layout", "name", "plugin")
 
     def __init__(
         self,
@@ -82,7 +76,6 @@ class Store:
         *,
         base: Callable[[], Path],
         layout: int = 1,
-        keep: Callable[[Path], str | None] | None = None,
     ) -> None:
         from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415 - no cycle
 
@@ -95,17 +88,14 @@ class Store:
             raise ConfigError(f"store {plugin}.{name}: base must be a function returning a path")
         if not _positive(layout):
             raise ConfigError(f"store {plugin}.{name}: layout must be an integer from 1")
-        if keep is not None and not callable(keep):
-            raise ConfigError(f"store {plugin}.{name}: keep must be a function of a path")
         self.plugin = plugin
         self.name = name
         self.base = base
         self.layout = layout
-        self.keep = keep
         self._caches: set[Cache[Any]] = set()
 
     def _follow(self, cache: Cache[Any]) -> None:
-        """Record that ``cache`` (of this plugin) follows the store (``Cache(store=)``)."""
+        """Record that ``cache`` follows the store, as a numbered ``Dir`` hands its caches over."""
         self._caches.add(cache)
 
     def _layout_folders(self, layout: int) -> list[Path]:
@@ -117,24 +107,7 @@ class Store:
         return [cache._root(layout) for cache in caches]
 
     def _identity(self) -> tuple[object, ...]:
-        return (self.plugin, self.name, self.base, self.layout, self.keep)
-
-    def kept(self, path: Path) -> str | None:
-        """Why the layout at ``path`` stays whatever holds it (``keep``), or ``None``.
-
-        A ``keep`` that raises keeps the path: a check that cannot answer
-        never lets the cleanup remove anything.
-        """
-        return self._keep_check(path)[0]
-
-    def _keep_check(self, path: Path) -> tuple[str | None, bool]:
-        """:meth:`kept`'s answer, and whether it is the check's failure rather than its answer."""
-        if self.keep is None:
-            return None, False
-        try:
-            return self.keep(path), False
-        except Exception as exc:  # a plugin's check that fails keeps, never removes
-            return f"its keep check failed ({type(exc).__name__}: {exc})", True
+        return (self.plugin, self.name, self.base, self.layout)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Store):
@@ -239,12 +212,8 @@ class Store:
             aside.finish()
 
     def _candidates(self, held: set[int]) -> list[tuple[int, Path]]:
-        """The other layouts on disk no live holder names and ``keep`` does not, oldest first."""
-        return [
-            (layout, path)
-            for layout, path in self.other_paths()
-            if layout not in held and self.kept(path) is None
-        ]
+        """The other layouts on disk no live holder names, oldest first."""
+        return [(layout, path) for layout, path in self.other_paths() if layout not in held]
 
     def _set_aside(self, layout: int, path: Path) -> _Aside | None:
         """Rename the layout at ``path`` and what travels with it aside; ``None`` when it stays.
@@ -274,11 +243,9 @@ class Store:
 
 LockState = Literal["free", "busy", "refused", "damaged"]
 #: Why the cleanup keeps a layout nobody holds, in the order it asks: a ``refs/``
-#: folder or a reference it cannot read, the store's ``keep`` (or its failure), a
-#: damaged in-use lock, no registered install, a refused or busy lock.
-KeptCode = Literal[
-    "unknown", "opaque", "kept", "keep-failed", "damaged", "unregistered", "refused", "busy"
-]
+#: folder or a reference it cannot read, a damaged in-use lock, no registered
+#: install, a refused or busy lock.
+KeptCode = Literal["unknown", "opaque", "damaged", "unregistered", "refused", "busy"]
 
 
 @dataclass(frozen=True)
@@ -301,17 +268,12 @@ class Kept:
     """Why the cleanup has not removed a layout and will not on its own.
 
     ``code`` is for code to branch on; ``text`` is the sentence a row shows.
-    ``warns``: whether it is a problem, not a choice (the store's ``keep``).
     ``unheld``: whether nothing holds it for sure; while a reference cannot be
     read, who holds it is unknown.
     """
 
     code: KeptCode
     text: str
-
-    @property
-    def warns(self) -> bool:
-        return self.code != "kept"
 
     @property
     def unheld(self) -> bool:
@@ -368,9 +330,6 @@ def kept_reason(store: Store, layout: Layout, references: Sequence[Reference]) -
         )
     if any(ref.opaque is not None for ref in references):
         return Kept("opaque", "a reference this untaped cannot read pauses cleanup")
-    kept, failed = store._keep_check(layout.path)
-    if kept is not None:  # before the damaged lock: what keep names is never removed
-        return Kept("keep-failed" if failed else "kept", kept)
     if damaged is not None:
         return damaged
     if not any(
@@ -509,45 +468,6 @@ def _stem(base: Path) -> str:
 
 def _there(path: Path) -> bool:
     return path.exists() or path.is_symlink()
-
-
-def setting_guard(section: str, *keys: str) -> Callable[[Path], str | None]:
-    """A store's ``keep`` for a path any profile still sets one of ``<section>.<keys>`` into.
-
-    A profile that names a layout's path (or a directory inside it, or one
-    holding it) keeps using it, so it stays, whatever the active profile
-    says. Each key is read from every profile in config.yml, as written, and
-    from its ``UNTAPED_*`` variable (a dotted key nests:
-    ``inventory.path`` is ``…__INVENTORY__PATH``); a relative path is
-    skipped (it would name a different directory wherever the command runs).
-    """
-
-    def guard(path: Path) -> str | None:
-        for key in keys:
-            if any(_overlapping(path, used) for used in _configured_paths(section, key)):
-                return f"config.yml or the environment still sets {section}.{key} there"
-        return None
-
-    return guard
-
-
-def _configured_paths(section: str, key: str) -> list[Path]:
-    """Every absolute path ``<section>.<key>`` is set to: config.yml's profiles, then the env."""
-    env = os.environ.get(env_var_name([section, *key.split(".")]))
-    found: list[Path] = []
-    for value in (*retired_values(section, key), env):
-        if not isinstance(value, str) or not value.strip():
-            continue
-        path = Path(value).expanduser()
-        if path.is_absolute() and path not in found:
-            found.append(path)
-    return found
-
-
-def _overlapping(left: Path, right: Path) -> bool:
-    """Whether one of the two paths is the other or lies inside it (symlinks resolved)."""
-    a, b = _real(left), _real(right)
-    return a == b or a.is_relative_to(b) or b.is_relative_to(a)
 
 
 def _real(path: Path) -> Path:
@@ -789,4 +709,4 @@ def _forget_opened() -> None:
         _OPENED.clear()
 
 
-__all__ = ["Store", "setting_guard"]
+__all__ = ["Store"]

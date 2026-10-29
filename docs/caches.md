@@ -30,8 +30,7 @@ that gives it the setting `acme.caches.motd.max_age_seconds` (a version-only
 cache, below, has none), defaulting to the declared `max_age` (in whole
 seconds; `0` checks every time), listed with your other settings in `config
 list`, and read by `serve()` on every call. A cache no class holds has no name, so
-it can't serve. Composition quarantines a plugin that lists another
-plugin's cache (`foreign-cache`) or the same name twice (`duplicate-cache`).
+it can't serve.
 
 `serve(keys, refresh=, fill=, read=)` takes the keys the command reads,
 each with a label for a human (`{"prod": "source prod"}`). Per key, it
@@ -42,7 +41,7 @@ progress through `handle`; `read()` then computes the command's answer once,
 over every key. `serve()` opens the refresh's progress task, holds the key's
 lock while it fills (another process filling the same key is waited for,
 then served), and keeps what it knows about each key in a file under
-`plugin_dir(SPEC)/cached/`, in a folder named by a digest of your plugin's
+`plugins/<plugin>/cached/` under the home, in a folder named by a digest of your plugin's
 own settings: the values some layer set (never a default, never the cache max
 ages or extension ranks untaped adds to your section, never core's `http`)
 and where each secret comes from (a variable's name, the config file or a
@@ -101,13 +100,14 @@ no store of your own:
 class Snapshot(BaseModel):
     items: list[str]
 
-SNAPSHOTS = Cache("acme", "snapshots", label="controller data", max_age=timedelta(hours=1),
-                  model=Snapshot)                         # a Cache[Snapshot]
+class Acme(Plugin):
+    snapshots = Cache(label="controller data", max_age=timedelta(hours=1),
+                      model=Snapshot)                     # a Cache[Snapshot]
 
 def fill(key: str, handle: ProgressHandle) -> Filled[Snapshot]:
     return Filled(value=Snapshot(items=fetch(key)), summary="12 items")
 
-served = SNAPSHOTS.serve({url: host}, refresh=refresh, fill=fill, partition=token)
+served = Acme.snapshots.serve({url: host}, refresh=refresh, fill=fill, partition=token)
 snapshot = served.value[url]                               # a Snapshot
 ```
 
@@ -148,15 +148,14 @@ version of the code that fills the cache with `version=`, a function
 called each time the cache is read (never at import):
 
 ```python
-from untaped.sdk import Cache, code_version
+from untaped.sdk import Cache, Plugin, code_version
 
-INDEX = Cache(
-    "acme",
-    "index",
-    label="source data",
-    max_age=timedelta(days=1),
-    version=lambda: code_version("acme.domain.parser", distributions=("PyYAML",)),
-)
+class Acme(Plugin):
+    index = Cache(
+        label="source data",
+        max_age=timedelta(days=1),
+        version=lambda: code_version("acme.domain.parser", distributions=("PyYAML",)),
+    )
 ```
 
 `code_version(module, distributions=, extra=)` hashes the bytes of the
@@ -213,47 +212,43 @@ current.
 
 Two installs of untaped can share one `~/.untaped`: a tool and a development
 checkout, or one-off runs of other versions. A file your plugin keeps under
-`plugin_dir(SPEC)` is shared by all of them, so it must be readable by every
-release of the current major, or be a *store*: a file or folder kept apart per
+its folder is shared by all of them, so it must be readable by every release
+of the current major, or be a *store*: a `Dir` with `layout=N`, kept apart per
 layout. A layout is the oldest layout of the data your reader still opens.
 Bump it for a change an older reader cannot open (a column that changes
 meaning, a dropped table); new tables or columns an older reader ignores do
 not bump it, and a change of content is `version=`, not a layout.
 
 ```python
-from untaped.sdk import Store, plugin_dir
-
-CATALOGUE = Store("acme", "catalogue", base=lambda: plugin_dir(SPEC) / "catalogue.sqlite3", layout=2)
-SPEC = PluginSpec(name="acme", ..., stores=(CATALOGUE,))
+class Acme(Plugin):
+    catalogue = Dir(file="catalogue.sqlite3", layout=2)
 
 def connect() -> sqlite3.Connection:
-    return sqlite3.connect(CATALOGUE.open())     # catalogue.v2.sqlite3
+    return sqlite3.connect(Acme.catalogue.open())  # catalogue/catalogue.v2.sqlite3
 ```
 
-`base` returns the path every layout is named beside: layout `N` is
-`<stem>.vN<suffix>` (`catalogue.v2.sqlite3`; a folder `catalogue` is
-`catalogue.v2`), the first layout included, so two releases at different
-layouts never open each other's file. `path()` names this layout and touches
-nothing (status rows, `--dry-run` and previews use it); `other_paths()` lists
-every other layout on disk with its number. `open()` creates the base's folder
-and holds the layout's in-use lock, `<layout path>.inuse`, until the process
-exits: every reader shares it, and only whoever moves a layout takes it
-alone. Open the store through `open()` every time, before the file exists.
+Layout `N` is named `<stem>.vN<suffix>` inside the place (`catalogue.v2.sqlite3`;
+a folder is `catalogue.v2/`), the first layout included, so two releases at
+different layouts never open each other's file. `path` names this layout and
+touches nothing (status rows, `--dry-run` and previews use it). `open()`
+creates the folder and holds the layout's in-use lock, `<layout path>.inuse`,
+until the process exits: every reader shares it, and only whoever moves a
+layout takes it alone. Open the store through `open()` every time, before the
+file exists.
 
 A store holds only data you can recompute: never settings, state, or anything
 a user typed. Keying it by settings, when a setting changes what it holds, is
 yours to do inside it. `untaped lint` reports `lint.store-format` where a
-plugin passes a `plugin_dir(...)` or `~/.untaped` path straight to
+plugin passes a path under its folder or `~/.untaped` straight to
 `sqlite3.connect`, `shelve.open` or `dbm.open`; a file whose layout every
 release of the major reads waives it with `# untaped: allow store-format`.
-Composition quarantines a plugin that lists another plugin's store
-(`foreign-store`) or the same name twice (`duplicate-store`), and
 `untaped doctor`'s `stores` row shows each store's layout and file, and
 every other layout on disk with what holds it (below).
 
-A cache that describes a store follows it, `Cache(..., store=CATALOGUE)`: its
-files live in `cached/<name>.v<layout>/`, so a key is never fresh over
-another layout's file. An answer cache (`@cached`) follows no store.
+A cache of the same plugin class that describes a store follows it,
+`Cache(..., follows=catalogue)`: its files live in `cached/<name>.v<layout>/`,
+so a key is never fresh over another layout's file. An answer cache
+(`@cached`) follows no store.
 
 A SQLite store whose schema grows inside one layout pins its history with
 `untaped.sdk.testing.assert_schema_pinned(ddl, version=, additive_since=,
@@ -297,21 +292,15 @@ written by a later untaped, is always live and keeps the targets it can read;
 in this file format it never pauses cleanup and is never removed.
 
 Cleanup is automatic. After a fill completes (a cache that follows the store
-refreshed with no error, nothing partial), a registered install removes every
-other layout of that store that no live reference holds and no running
-untaped has open: it takes the layout's in-use lock alone, without waiting,
-moves the layout aside with its SQLite sidecars, its caches' folders and its
-lock, then deletes it. Each removal is an info line of kind `untaped.pruned`
-(`plugin`, `store`, `layout`, `path`, `bytes`) that `--quiet` does not hide. An
-unregistered install, or one run from a source tree, never removes anything,
-and neither does any install while `refs/` cannot be read.
-
-A layout a setting may point at, such as an index path a profile sets to an
-older layout's file, is that profile's data. `Store(..., keep=…)` says so: a
-function of a layout's path returning why it stays, or `None`;
-`setting_guard("acme", "catalogue_path")` keeps every path any profile or the
-environment sets that key to. The cleanup never removes what `keep` names, and
-a `keep` that raises keeps the path too.
+refreshed with no error, nothing partial, or the plugin calls the store's
+`prune()`), a registered install removes every other layout of that store that
+no live reference holds and no running untaped has open: it takes the layout's
+in-use lock alone, without waiting, moves the layout aside with its SQLite
+sidecars, its caches' folders and its lock, then deletes it. Each removal is
+an info line of kind `untaped.pruned` (`plugin`, `store`, `layout`, `path`,
+`bytes`) that `--quiet` does not hide. An unregistered install, or one run
+from a source tree, never removes anything, and neither does any install while
+`refs/` cannot be read.
 
 What the cleanup will not remove on its own (no registered install keeps the
 store, a running untaped has it open, a damaged in-use lock, a reference it

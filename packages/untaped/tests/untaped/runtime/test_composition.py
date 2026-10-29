@@ -360,27 +360,11 @@ def test_a_block_name_its_kind_refuses_is_a_problem() -> None:
     assert "must be one settings segment" in problem.detail
 
 
-def test_a_plugin_class_names_its_blocks_itself() -> None:
-    class Spelled(Plugin):
-        """Spelled."""
-
-        settings = HelloSettings
-        other = Cache("hello", "motd", label="message of the day", max_age=timedelta(hours=1))
-
-    [problem] = _problems(Spelled)
-    assert (problem.rule, problem.where.rpartition("<locals>.")[2]) == (
-        "block-name",
-        "Spelled.other",
-    )
-    assert "is named hello.motd by hand" in problem.detail
-
-
 def test_every_owned_block_is_named_by_the_plugin_class() -> None:
     class Spelled(Plugin):
         """Spelled."""
 
         settings = HelloSettings
-        token = Credential("hello", "token", key=HelloKey)
         old = deprecated_behaviour("old-way", removed_in=13)
         Tok = Credential(key=HelloKey)
         Gone = DeprecatedBehaviour(removed_in=13)
@@ -389,7 +373,6 @@ def test_every_owned_block_is_named_by_the_plugin_class() -> None:
         ("block-name", "Spelled.Gone"),
         ("block-name", "Spelled.Tok"),
         ("block-name", "Spelled.old"),
-        ("block-name", "Spelled.token"),
     ]
 
 

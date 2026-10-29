@@ -6264,12 +6264,9 @@ sdk untaped.sdk.Bytes
 sdk untaped.sdk.Cache(*, label, max_age)
 sdk untaped.sdk.Cache(follows=) default=None
 sdk untaped.sdk.Cache(model=) default=None callback(0)
-sdk untaped.sdk.Cache(name@2=) default=None
-sdk untaped.sdk.Cache(plugin@1=) default=None
 sdk untaped.sdk.Cache(removed_in=) default=None
 sdk untaped.sdk.Cache(renamed_from=) default=[]
 sdk untaped.sdk.Cache(split=) default=settings
-sdk untaped.sdk.Cache(store=) default=None
 sdk untaped.sdk.Cache(version=) default=None callback(0)
 sdk untaped.sdk.Cache.binding
 sdk untaped.sdk.Cache.bindings
@@ -6306,7 +6303,6 @@ sdk untaped.sdk.Cache.serve(read=) default=None callback(0)
 sdk untaped.sdk.Cache.setting
 sdk untaped.sdk.Cache.spelled
 sdk untaped.sdk.Cache.split
-sdk untaped.sdk.Cache.store
 sdk untaped.sdk.Cache.version
 sdk untaped.sdk.Cache.version_only
 sdk untaped.sdk.Cache.where
@@ -6383,8 +6379,6 @@ sdk untaped.sdk.Context.project
 sdk untaped.sdk.Context.terminal
 sdk untaped.sdk.Credential(*, key)
 sdk untaped.sdk.Credential(env=) default=[]
-sdk untaped.sdk.Credential(name@2=) default=None
-sdk untaped.sdk.Credential(plugin@1=) default=None
 sdk untaped.sdk.Credential(suggest=) default=None
 sdk untaped.sdk.Credential.answer(key)
 sdk untaped.sdk.Credential.binding
@@ -6550,7 +6544,6 @@ sdk untaped.sdk.Dir.try_locked()  [experimental]
 sdk untaped.sdk.Dir.try_locked(name@1=) default=None  [experimental]
 sdk untaped.sdk.Dir.where  [experimental]
 sdk untaped.sdk.DoctorCheck(*, title, run) callback(run, 1)
-sdk untaped.sdk.DoctorCheck(id@1=) default=None
 sdk untaped.sdk.DoctorCheck(online=) default=false
 sdk untaped.sdk.DoctorCheck.binding
 sdk untaped.sdk.DoctorCheck.bindings
@@ -7636,21 +7629,6 @@ sdk untaped.sdk.Stdin.text(*, what)
 sdk untaped.sdk.Stdin.values()
 sdk untaped.sdk.Stdin.values(allow_empty=) default=false
 sdk untaped.sdk.Stdin.values(given@1=) default=[]
-sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
-sdk untaped.sdk.Store(layout=) default=1  [experimental]
-sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
-sdk untaped.sdk.Store.base  [experimental]
-sdk untaped.sdk.Store.keep  [experimental]
-sdk untaped.sdk.Store.kept(path)  [experimental]
-sdk untaped.sdk.Store.layout  [experimental]
-sdk untaped.sdk.Store.name  [experimental]
-sdk untaped.sdk.Store.open()  [experimental]
-sdk untaped.sdk.Store.other_paths()  [experimental]
-sdk untaped.sdk.Store.path()  [experimental]
-sdk untaped.sdk.Store.plugin  [experimental]
-sdk untaped.sdk.Store.prune()  [experimental]
-sdk untaped.sdk.Store.qualified  [experimental]
-sdk untaped.sdk.Store.target  [experimental]
 sdk untaped.sdk.StubSkill(description)
 sdk untaped.sdk.StubSkill.binding
 sdk untaped.sdk.StubSkill.bindings
@@ -8057,7 +8035,6 @@ sdk untaped.sdk.derive(base, name)
 sdk untaped.sdk.derive(doc=) default=None
 sdk untaped.sdk.derive(omit=) default=[]
 sdk untaped.sdk.dir_bytes(path)
-sdk untaped.sdk.executable_check(check_id, program, *, purpose)
 sdk untaped.sdk.experimental
 sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
 sdk untaped.sdk.find_program(name)
@@ -8107,7 +8084,6 @@ sdk untaped.sdk.git_toplevel(git=) default=git
 sdk untaped.sdk.git_toplevel(path)
 sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.health.DoctorCheck(*, title, run) callback(run, 1)
-sdk untaped.sdk.health.DoctorCheck(id@1=) default=None
 sdk untaped.sdk.health.DoctorCheck(online=) default=false
 sdk untaped.sdk.health.DoctorCheck.binding
 sdk untaped.sdk.health.DoctorCheck.bindings
@@ -8204,8 +8180,6 @@ sdk untaped.sdk.most_severe(errors)
 sdk untaped.sdk.nearest_pyproject(start)
 sdk untaped.sdk.network.Credential(*, key)
 sdk untaped.sdk.network.Credential(env=) default=[]
-sdk untaped.sdk.network.Credential(name@2=) default=None
-sdk untaped.sdk.network.Credential(plugin@1=) default=None
 sdk untaped.sdk.network.Credential(suggest=) default=None
 sdk untaped.sdk.network.Credential.answer(key)
 sdk untaped.sdk.network.Credential.binding
@@ -8325,8 +8299,6 @@ sdk untaped.sdk.network.rejected_token_error(section, message)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.now()
-sdk untaped.sdk.online_check(check_id, *, section, probe) callback(probe, 0)
-sdk untaped.sdk.online_check(title=) default=None
 sdk untaped.sdk.paginate_link(http, path)
 sdk untaped.sdk.paginate_link(item_key=) default=None
 sdk untaped.sdk.paginate_link(limit=) default=None
@@ -8390,13 +8362,11 @@ sdk untaped.sdk.read_stdin_text()
 sdk untaped.sdk.read_structured_file(flag=) default=None
 sdk untaped.sdk.read_structured_file(path)
 sdk untaped.sdk.record_model(kind)
-sdk untaped.sdk.refresh_option(cache)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(field=) default=token
 sdk untaped.sdk.rejected_token_error(section, message)
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_verify(http)
-sdk untaped.sdk.retired_values(section, key)
 sdk untaped.sdk.run_editor(argv=) default=None
 sdk untaped.sdk.run_editor(path)
 sdk untaped.sdk.run_editor(stderr=) default=None
@@ -8421,8 +8391,6 @@ sdk untaped.sdk.run_git(stdin=) default=None
 sdk untaped.sdk.run_hint(command)
 sdk untaped.sdk.safe_path_segment(value)
 sdk untaped.sdk.same_origin(url, base)
-sdk untaped.sdk.setting_guard(*keys)
-sdk untaped.sdk.setting_guard(section)
 sdk untaped.sdk.settings_of(model)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
@@ -8430,12 +8398,9 @@ sdk untaped.sdk.storage.Absent()  [experimental]
 sdk untaped.sdk.storage.Cache(*, label, max_age)
 sdk untaped.sdk.storage.Cache(follows=) default=None
 sdk untaped.sdk.storage.Cache(model=) default=None callback(0)
-sdk untaped.sdk.storage.Cache(name@2=) default=None
-sdk untaped.sdk.storage.Cache(plugin@1=) default=None
 sdk untaped.sdk.storage.Cache(removed_in=) default=None
 sdk untaped.sdk.storage.Cache(renamed_from=) default=[]
 sdk untaped.sdk.storage.Cache(split=) default=settings
-sdk untaped.sdk.storage.Cache(store=) default=None
 sdk untaped.sdk.storage.Cache(version=) default=None callback(0)
 sdk untaped.sdk.storage.Cache.binding
 sdk untaped.sdk.storage.Cache.bindings
@@ -8472,7 +8437,6 @@ sdk untaped.sdk.storage.Cache.serve(read=) default=None callback(0)
 sdk untaped.sdk.storage.Cache.setting
 sdk untaped.sdk.storage.Cache.spelled
 sdk untaped.sdk.storage.Cache.split
-sdk untaped.sdk.storage.Cache.store
 sdk untaped.sdk.storage.Cache.version
 sdk untaped.sdk.storage.Cache.version_only
 sdk untaped.sdk.storage.Cache.where

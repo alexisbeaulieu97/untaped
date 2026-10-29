@@ -226,7 +226,7 @@ def test_a_typed_cache_declared_at_startup_does_not_load_its_model(tmp_path: Pat
         "def model():\n"
         "    import untaped_awx.domain.lint.resources\n"
         "    raise AssertionError('resolved at declaration')\n"
-        "Cache('acme', 'snapshots', label='x', max_age=timedelta(hours=1), model=model)\n"
+        "Cache(label='x', max_age=timedelta(hours=1), model=model)\n"
         + _DISPATCH_PROBE.format(argv=["--help"])
         + "assert 'untaped_awx.domain.lint.resources' not in sys.modules\n"
     )

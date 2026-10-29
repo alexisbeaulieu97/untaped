@@ -37,6 +37,7 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.runtime.declaration import (
     BlockDecl,
+    CacheDecl,
     CommandDecl,
     Declaration,
     GroupDecl,
@@ -372,17 +373,22 @@ def _instances(mount: Mount, name: str, indexes: Sequence[int]) -> tuple[Any, ..
 def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:
     """Each declared cache with a max age, as its setting reads it: label, max age, old keys."""
     return tuple(
-        Cache(
-            plugin,
-            block.name,
-            label=block.cache.label,
-            max_age=timedelta(seconds=block.cache.max_age_seconds),
-            renamed_from=block.cache.renamed_from,
-            removed_in=block.cache.removed_in,
-        )
+        _timed_cache(plugin, block.name, block.cache)
         for block in declared
         if block.cache is not None and block.cache.max_age_seconds is not None
     )
+
+
+@functools.cache
+def _timed_cache(plugin: str, name: str, declared: CacheDecl) -> Cache[Any]:
+    """One declared cache, the same object at every composition, which keys the settings model."""
+    assert declared.max_age_seconds is not None  # _timed_caches(): a cache with a max age only
+    return Cache(
+        label=declared.label,
+        max_age=timedelta(seconds=declared.max_age_seconds),
+        renamed_from=declared.renamed_from,
+        removed_in=declared.removed_in,
+    )._spelled_as(plugin, name)
 
 
 #: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind

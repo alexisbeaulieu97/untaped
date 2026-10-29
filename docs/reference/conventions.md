@@ -341,8 +341,8 @@ as typed rows in a `StateRows` its plugin class holds
 ([Plugin state](../state.md)), in its own `state.yml`. The rows keep the
 file's stamp and lock, so never read or write the state file directly.
 
-A file under `plugin_dir(SPEC)` an older release could not open is a [store](../caches.md#stores),
-opened through `Store.open()`; files people commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped),
+A file in the plugin's folder an older release could not open is a [store](../caches.md#stores),
+a `Dir(layout=N)` opened through its `open()`; files people commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped),
 and items projects hold go in an [item store](../projects.md#holding-a-plugins-items).
 
 ## Settings

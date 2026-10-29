@@ -228,7 +228,7 @@ def test_a_provider_exception_reaches_the_caller_with_its_own_cause() -> None:
 def test_a_provider_that_raises_drops_the_stale_lines_of_its_own_caches(
     clock: CacheClock, failure: Exception
 ) -> None:
-    extra = Cache("library", "extra", label="extra", max_age=timedelta(hours=1))
+    extra = Cache(label="extra", max_age=timedelta(hours=1))._spelled_as("library", "extra")
     filled: list[bool] = []
 
     def fill(_key: str, _task: object) -> Filled:

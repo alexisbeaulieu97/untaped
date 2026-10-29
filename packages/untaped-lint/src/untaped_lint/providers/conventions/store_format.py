@@ -1,16 +1,16 @@
-"""Store-format lint: a database under a plugin's directory is opened through a ``Store``.
+"""Store-format lint: a database under a plugin's directory is a numbered ``Dir``.
 
 Two installs of untaped can share one ``~/.untaped``; a database file under
-``plugin_dir(SPEC)`` is read by both, so either its layout is version-neutral
-within the major or it is a ``Store`` opened through ``Store.open()``, which
-keeps each layout under its own name.
+the plugin's folder is read by both, so either its layout is version-neutral
+within the major or it is a ``Dir(layout=N)`` opened through its ``open()``,
+which keeps each layout under its own name.
 
 Only the decidable case is flagged: a call to ``sqlite3.connect``,
 ``shelve.open`` or ``dbm.open`` (a submodule's too, such as ``dbm.gnu.open``,
 and a name ``from <module> import connect`` or ``open`` binds in the call's
 scope) one of whose arguments itself contains a ``plugin_dir(...)``,
 ``named_plugin_dir(...)`` or ``plugin_path(...)`` call or a ``~/.untaped`` string. A path built
-elsewhere, kept on ``self`` or returned by ``Store.open()`` is not read.
+elsewhere, kept on ``self`` or returned by a ``Dir``'s ``open()`` is not read.
 Lines are
 ``<file>:<line>::store-format::sqlite3.connect() on a path under plugin_dir() ...``.
 
@@ -156,8 +156,8 @@ def _under(call: ast.Call) -> str | None:
 
 def _message(opener: str, under: str, plugin: str) -> str:
     return (
-        f"{opener}() on a path under {under} that no Store governs; two versions of {plugin} "
-        "sharing a home would rebuild or refuse each other's file; declare a Store and open "
-        f"Store.open() (waive with `# untaped: allow {RULE}` when the file's layout is "
-        "version-neutral)"
+        f"{opener}() on a path under {under} that no numbered Dir governs; two versions of "
+        f"{plugin} sharing a home would rebuild or refuse each other's file; declare a "
+        f"Dir(layout=N) and open it with its open() (waive with `# untaped: allow {RULE}` "
+        "when the file's layout is version-neutral)"
     )

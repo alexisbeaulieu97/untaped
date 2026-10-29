@@ -188,10 +188,8 @@ def test_marks_change_neither_the_schema_nor_the_cfg_lines() -> None:
         lambda: Suggest(()),
         lambda: Suggest(["gh", "auth", "token"]),  # type: ignore[arg-type]
         lambda: Suggest((" ",)),
-        lambda: Credential("alpha", "token", key=Server, env=("",)),
-        lambda: Credential("alpha", "token", key=Server, suggest=("gh",)),  # type: ignore[arg-type]
-        lambda: Credential("Alpha", "token", key=Server),
-        lambda: Credential("alpha", "a token", key=Server),
+        lambda: Credential(key=Server, env=("",)),
+        lambda: Credential(key=Server, suggest=("gh",)),  # type: ignore[arg-type]
     ],
 )
 def test_a_malformed_declaration_fails_where_it_is_written(build: object) -> None:

@@ -390,12 +390,6 @@ VALID_REASONS = frozenset(
         "bad-settings-keys",
         "duplicate-kind",
         "foreign-kind",
-        "foreign-cache",
-        "duplicate-cache",
-        "foreign-store",
-        "duplicate-store",
-        "foreign-credential",
-        "duplicate-credential",
         "bad-credential",
         "bad-plugin-class",
     }
@@ -813,41 +807,13 @@ def _check_key_mappings(spec: PluginSpec) -> None:
         raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
 
 
-def _check_caches(spec: PluginSpec) -> None:
-    seen: set[str] = set()
-    for cache in spec.caches:
-        if cache.plugin != spec.name:
-            raise _Quarantine(
-                "foreign-cache",
-                f"plugin {spec.name!r} declares the cache {cache.qualified!r} of another plugin",
-            )
-        if cache.name in seen:
-            raise _Quarantine(
-                "duplicate-cache", f"plugin {spec.name!r} declares the cache {cache.name!r} twice"
-            )
-        seen.add(cache.name)
-
-
 def _check_credentials(spec: PluginSpec) -> None:
-    seen: set[str] = set()
     fields = {} if spec.settings is None else spec.settings.model_fields
     holders: dict[type[CredentialKey], list[str]] = {}
     if spec.settings is not None:
         for path, model in key_fields(spec.settings):
             holders.setdefault(model, []).append(".".join(path))
     for credential in spec.credentials:
-        if credential.plugin != spec.name:
-            raise _Quarantine(
-                "foreign-credential",
-                f"plugin {spec.name!r} declares the credential {credential.qualified!r} of "
-                "another plugin",
-            )
-        if credential.name in seen:
-            raise _Quarantine(
-                "duplicate-credential",
-                f"plugin {spec.name!r} declares the credential {credential.name!r} twice",
-            )
-        seen.add(credential.name)
         errors = key_errors(credential.key)
         if errors:
             raise _Quarantine(
@@ -867,22 +833,6 @@ def _check_credentials(spec: PluginSpec) -> None:
                 f"plugin {spec.name!r} credential {credential.name!r}: several settings hold a "
                 f"{credential.key.__name__} ({', '.join(held)}); keep one",
             )
-
-
-def _check_stores(spec: PluginSpec) -> None:
-    seen: set[str] = set()
-    for store in spec.stores:
-        if store.plugin != spec.name:
-            raise _Quarantine(
-                "foreign-store",
-                f"plugin {spec.name!r} declares the store '{store.plugin}.{store.name}' of "
-                "another plugin",
-            )
-        if store.name in seen:
-            raise _Quarantine(
-                "duplicate-store", f"plugin {spec.name!r} declares the store {store.name!r} twice"
-            )
-        seen.add(store.name)
 
 
 def _check_composed_mappings(spec: PluginSpec) -> None:
@@ -907,9 +857,7 @@ def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
 
 def _check_own_declaration(spec: PluginSpec) -> None:
     """The checks of ``spec``'s own declaration, no other plugin's needed: core's too."""
-    _check_caches(spec)
     _check_credentials(spec)
-    _check_stores(spec)
     _check_setup_marks(spec)
     _check_section_keys(spec)
     _check_key_mappings(spec)

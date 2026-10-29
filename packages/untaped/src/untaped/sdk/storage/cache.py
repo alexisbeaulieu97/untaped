@@ -1,7 +1,7 @@
 """Caches: data a plugin keeps from an upstream it can ask again, checked past its max age.
 
-A plugin declares one :class:`Cache` per thing it keeps
-(``Cache("ansible", "index", label="source data", max_age=timedelta(days=1))``)
+A plugin class holds one :class:`Cache` per thing it keeps
+(``index = Cache(label="source data", max_age=timedelta(days=1))``)
 and reads it through :meth:`Cache.serve`, which decides per key whether to
 refresh (the *directive*), runs the plugin's ``fill`` when it must, reads the
 command's answer once over every key, and says on stderr when that answer
@@ -12,12 +12,12 @@ waits for whoever uses the provider's answer (docs/contracts.md).
 The directive is ``refresh``: ``None`` (*auto*) refreshes a key past its max
 age, failing fast when upstream is unreachable (:func:`untaped.sdk.network.upstream.fail_fast`);
 ``True`` checks upstream now with full retries; ``False`` reads what is cached
-and never checks. :func:`refresh_option` is the ``--refresh``/``--cached``
+and never checks. A command's ``Refresh`` field is the ``--refresh``/``--cached``
 option that sets it; ``gather`` opens one for every provider call it makes
 (:func:`call_state`), which ``serve()`` reads when its own is ``None``.
 
 Layout: each key is one file under ``<plugin dir>/cached/<name>/<settings digest>/``
-(``cached/<name>.v<layout>/`` when the cache follows a numbered ``Dir`` or a store; no digest
+(``cached/<name>.v<layout>/`` when the cache follows a numbered ``Dir``; no digest
 folder under ``split="none"``; :mod:`untaped.sdk.storage._digest` names it) on
 core's data file (:mod:`untaped.sdk.storage.data_file`):
 its first line says what the cache knows about the key (:class:`Freshness`),
@@ -61,7 +61,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, overload
 
-from cyclopts import Parameter
 from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
 
 from untaped.runtime.settings import load_settings_section, registered_profile_model
@@ -75,7 +74,6 @@ from untaped.sdk.network.upstream import fail_fast, full_retries
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Record, UtcTimestamp
 from untaped.sdk.storage._fs import file_lock
-from untaped.sdk.storage.store import Store
 from untaped.sdk.words import duration_text
 
 if TYPE_CHECKING:
@@ -364,29 +362,24 @@ _PLAIN = re.compile(r"(?P<stem>.+)\.json")
 class Cache[M = None](OwnedBlock):
     """Data a plugin keeps from an upstream, refreshed past ``max_age``.
 
-    A plugin class holding it names it (``motd = Cache(label=..., max_age=...)``
-    is the plugin's cache ``motd``); the 11.x spelling passes ``plugin`` and
-    ``name`` first. The name is one settings segment (``[a-z][a-z0-9_]*``); ``label`` names
-    the data for a human (``source data``). ``max_age`` is the declared
-    default, in whole seconds (``0``: check every time); list the cache on
-    ``PluginSpec.caches`` and its setting ``<plugin>.caches.<name>.max_age_seconds``
-    overrides it. ``max_age=None`` declares a version-only cache instead: a
-    value that depends only on the code computing it, with ``model=``,
-    ``version=`` and ``split="none"``, filled once per version, with no
-    setting (see the module docstring). ``renamed_from`` names old keys of the plugin's section
-    (dotted, relative to it) that are still read as that setting, with a
-    warning, until the plugin's major ``removed_in`` (undated without it).
-    ``version`` returns the version of the code that fills the
-    cache (usually :func:`code_version`); it is called each time the cache
-    is read (once per :meth:`serve`), never at import, and a key filled at
-    another version is refreshed like an expired one. ``follows`` ties the
-    cache's files to a numbered :class:`~untaped.sdk.storage.dir.Dir` of the
-    same plugin class (``Cache(follows=index)``): they live under
-    ``cached/<name>.v<layout>/``, so a key is never fresh over another
-    layout's file, they move with the place's layouts, and a complete fill
-    (no error, not partial) ends with :meth:`Dir.prune()
-    <untaped.sdk.storage.dir.Dir.prune>`. The 11.x spelling's ``store`` does
-    the same with a :class:`~untaped.sdk.storage.store.Store`.
+    A plugin class holding it names it (``motd = Cache(label=..., max_age=...)`` is the
+    plugin's cache ``motd``). The name is one settings segment (``[a-z][a-z0-9_]*``);
+    ``label`` names the data for a human (``source data``). ``max_age`` is the declared
+    default, in whole seconds (``0``: check every time); its setting
+    ``<plugin>.caches.<name>.max_age_seconds`` overrides it. ``max_age=None`` declares a
+    version-only cache instead: a value that depends only on the code computing it, with
+    ``model=``, ``version=`` and ``split="none"``, filled once per version, with no setting
+    (see the module docstring). ``renamed_from`` names old keys of the plugin's section
+    (dotted, relative to it) that are still read as that setting, with a warning, until the
+    plugin's major ``removed_in`` (undated without it). ``version`` returns the version of
+    the code that fills the cache (usually :func:`code_version`); it is called each time the
+    cache is read (once per :meth:`serve`), never at import, and a key filled at another
+    version is refreshed like an expired one. ``follows`` ties the cache's files to a
+    numbered :class:`~untaped.sdk.storage.dir.Dir` of the same plugin class
+    (``Cache(follows=index)``): they live under ``cached/<name>.v<layout>/``, so a key is
+    never fresh over another layout's file, they move with the place's layouts, and a
+    complete fill (no error, not partial) ends with :meth:`Dir.prune()
+    <untaped.sdk.storage.dir.Dir.prune>`.
 
     ``model`` makes the cache keep the value itself (a ``Cache[M]``): a
     pydantic model class, or a function of no arguments returning it when
@@ -399,7 +392,6 @@ class Cache[M = None](OwnedBlock):
     folder per :mod:`settings digest <untaped.sdk.storage._digest>`, shared by
     every profile whose section reads the same) or once for all of them
     (``"none"``, when the key and partition already say whose data it is).
-    Two declarations with the same values (the same callables) are equal.
     """
 
     block_kind = "cache"
@@ -410,7 +402,6 @@ class Cache[M = None](OwnedBlock):
     renamed_from: tuple[str, ...]
     removed_in: int | None
     version: Callable[[], str] | None
-    store: Store | None
     follows: Dir | None
     model: type[M] | Callable[[], type[M]] | None
     split: Literal["settings", "none"]
@@ -418,15 +409,12 @@ class Cache[M = None](OwnedBlock):
     @overload
     def __init__(
         self: Cache[None],
-        plugin: str | None = None,
-        name: str | None = None,
         *,
         label: str,
         max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
-        store: Store | None = None,
         follows: Dir | None = None,
         split: Literal["settings", "none"] = "settings",
     ) -> None: ...
@@ -434,15 +422,12 @@ class Cache[M = None](OwnedBlock):
     @overload
     def __init__(
         self,
-        plugin: str | None = None,
-        name: str | None = None,
         *,
         label: str,
         max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
-        store: Store | None = None,
         follows: Dir | None = None,
         model: type[M] | Callable[[], type[M]],
         split: Literal["settings", "none"] = "settings",
@@ -450,27 +435,19 @@ class Cache[M = None](OwnedBlock):
 
     def __init__(
         self,
-        plugin: str | None = None,
-        name: str | None = None,
         *,
         label: str,
         max_age: timedelta | None,
         renamed_from: Sequence[str] = (),
         removed_in: int | None = None,
         version: Callable[[], str] | None = None,
-        store: Store | None = None,
         follows: Dir | None = None,
         model: type[M] | Callable[[], type[M]] | None = None,
         split: Literal["settings", "none"] = "settings",
     ) -> None:
-        from untaped.runtime.registry import check_plugin_name  # noqa: PLC0415 - no cycle
         from untaped.sdk.marks import check_removed_in  # noqa: PLC0415 - no cycle
 
-        super().__init__(plugin, name)
-        if plugin is not None and name is not None:
-            check_plugin_name(plugin)
-            if (problem := self.name_problem(name)) is not None:
-                raise ConfigError(problem)
+        super().__init__()
         where = self.where
         if max_age is None:
             _check_version_only(
@@ -478,7 +455,7 @@ class Cache[M = None](OwnedBlock):
                 model=model,
                 version=version,
                 renamed_from=renamed_from,
-                store=store or follows,
+                follows=follows,
                 split=split,
             )
         elif max_age < timedelta(0) or max_age % timedelta(seconds=1):
@@ -490,7 +467,7 @@ class Cache[M = None](OwnedBlock):
             raise ConfigError(f"cache {where}: removed_in dates renamed_from, which is empty")
         self.removed_in = removed_in
         self.version = version
-        _check_layouts(where, store, follows, plugin=plugin)
+        _check_follows(where, follows)
         if model is not None and not callable(model):
             raise ConfigError(
                 f"cache {where}: model takes a model class or a function returning one"
@@ -501,9 +478,6 @@ class Cache[M = None](OwnedBlock):
         self.split = split
         self._resolved: ValueTyping | None = None
         self.follows = follows
-        self.store = store
-        if store is not None:
-            store._follow(self)  # its folder moves with the store's layouts
         if follows is not None:
             follows._follow(self)  # its folder moves with the place's layouts
 
@@ -523,31 +497,6 @@ class Cache[M = None](OwnedBlock):
         if _NAME.fullmatch(name):
             return None
         return f"cache name {name!r} must be one settings segment (pattern {_NAME.pattern})"
-
-    def _identity(self) -> tuple[object, ...]:
-        if not self.spelled:
-            return (id(self),)  # a bound cache is itself, as every block is
-        return (
-            self._plugin,
-            self._name,
-            self.label,
-            self.default_max_age,
-            self.renamed_from,
-            self.removed_in,
-            self.version,
-            self.store,
-            self.follows,
-            self.model,
-            self.split,
-        )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Cache):
-            return NotImplemented
-        return self._identity() == other._identity()
-
-    def __hash__(self) -> int:
-        return hash(self._identity())
 
     def __repr__(self) -> str:
         if not self.spelled:
@@ -830,7 +779,7 @@ class Cache[M = None](OwnedBlock):
                 saved, kept_it = self._filled(
                     paths, own, key, label, result, version, typing, max_age
                 )
-            if saved.error is None and kept_it and (layouts := self.store or self.follows):
+            if saved.error is None and kept_it and (layouts := self.follows):
                 # a complete fill: this layout has data, so the ones nothing holds may go
                 layouts.prune()
             return _Kept(saved, value=None if typing is None else result.value)
@@ -1165,13 +1114,11 @@ class Cache[M = None](OwnedBlock):
 
     @property
     def _layout(self) -> int | None:
-        """The layout the cache's files follow: its place's or its store's, else none."""
-        if self.follows is not None:
-            return self.follows.layout
-        return None if self.store is None else self.store.layout
+        """The layout the cache's files follow: its place's, else none."""
+        return None if self.follows is None else self.follows.layout
 
     def _root(self, layout: int | None = None) -> Path:
-        """``plugins/<plugin>/cached/<name>``, or ``<name>.v<layout>`` for a store's layout."""
+        """``plugins/<plugin>/cached/<name>``, or ``<name>.v<layout>`` for its place's layout."""
         from untaped.runtime.registry import named_plugin_dir  # noqa: PLC0415 - no cycle
 
         folder = self.name if layout is None else f"{self.name}.v{layout}"
@@ -1692,28 +1639,12 @@ def value_typing(hint: Any, *, model: type[BaseModel] | None = None) -> ValueTyp
     return ValueTyping(adapter, type_hash(adapter.json_schema()), model)
 
 
-def _check_layouts(where: str, store: object, follows: object, *, plugin: str | None) -> None:
-    """Refuse a ``store=`` or ``follows=`` the cache cannot follow the layouts of."""
+def _check_follows(where: str, follows: object) -> None:
+    """Refuse a ``follows=`` the cache cannot follow the layouts of."""
     from untaped.sdk.storage.dir import Dir  # noqa: PLC0415 - dir imports nothing of caches
 
-    if store is not None and not isinstance(store, Store):
-        raise ConfigError(f"cache {where}: store takes a Store, not {store!r}")
-    if store is not None and plugin is None:
-        raise ConfigError(
-            f"cache {where}: store goes with the plugin and name; a plugin class's cache "
-            "follows a Dir instead"
-        )
-    if store is not None and store.plugin != plugin:
-        raise ConfigError(f"cache {where}: store {store.qualified} belongs to another plugin")
-    if follows is None:
-        return
-    if not isinstance(follows, Dir) or follows.layout is None:
+    if follows is not None and (not isinstance(follows, Dir) or follows.layout is None):
         raise ConfigError(f"cache {where}: follows takes a numbered Dir (layout=), not {follows!r}")
-    if plugin is not None:
-        raise ConfigError(
-            f"cache {where}: follows goes with a plugin class's cache; the 11.x spelling "
-            "follows a store"
-        )
 
 
 def _check_version_only(
@@ -1722,7 +1653,7 @@ def _check_version_only(
     model: object,
     version: Callable[[], str] | None,
     renamed_from: Sequence[str],
-    store: object,
+    follows: object,
     split: str,
 ) -> None:
     """Refuse a version-only declaration without its model and version, or with a setting."""
@@ -1733,8 +1664,8 @@ def _check_version_only(
         )
     if renamed_from:
         raise ConfigError(f"cache {where}: a version-only cache has no setting to rename")
-    if store is not None:
-        raise ConfigError(f"cache {where}: a version-only cache follows no place or store")
+    if follows is not None:
+        raise ConfigError(f"cache {where}: a version-only cache follows no place")
     if split != "none":
         raise ConfigError(
             f'cache {where}: a version-only cache depends on no setting, so it is split="none"'
@@ -1924,20 +1855,6 @@ def _code_version(module: str, distributions: tuple[str, ...], extra: tuple[str,
 # --------------------------------------------------------------------------- #
 
 
-def refresh_option(cache: Cache[Any]) -> Parameter:
-    """The ``--refresh``/``--cached`` option for ``cache``'s directive; its help names the setting.
-
-    Declare it as ``refresh: Annotated[bool | None, refresh_option(CACHE)] = None``
-    and pass the value to :meth:`Cache.serve`.
-    """
-    if cache.version_only:
-        raise ConfigError(
-            f"cache {cache.where} is version-only: --refresh and --cached are about a max age"
-        )
-    text = _refresh_help([(cache, cache.setting)])
-    return Parameter(name="--refresh", negative="--cached", help=text)
-
-
 def _max_age_setting(plugin: str, name: str) -> str:
     """The setting that tunes a cache's max age: ``<plugin>.caches.<name>.max_age_seconds``."""
     return f"{plugin}.caches.{name}.max_age_seconds"
@@ -1947,8 +1864,7 @@ def _refresh_help(caches: Sequence[tuple[Cache[Any], str]]) -> str:
     """The ``--refresh``/``--cached`` help about ``caches``, each with its max-age setting.
 
     Composition writes it into a ``Refresh`` field's declaration, which help
-    reads without importing the command; :func:`refresh_option` writes it
-    into the 11.x option. None of ``caches`` is version-only.
+    reads without importing the command. None of ``caches`` is version-only.
     """
     named = list({setting: cache for cache, setting in caches}.items())
     labels = _and(list(dict.fromkeys(cache.label for _, cache in named)))  # each once, in order
@@ -2022,6 +1938,5 @@ __all__ = [
     "call_state",
     "code_version",
     "current_call",
-    "refresh_option",
     "refresh_scope",
 ]

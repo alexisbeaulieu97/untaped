@@ -2,11 +2,10 @@
 
 A plugin class holds a :class:`DoctorCheck`, :class:`OnlineCheck` or
 :class:`ExecutableCheck`; each body gets a :class:`PluginContext` and
-returns a :class:`DoctorResult`, one row of ``untaped doctor``. The 11.x
-factories return a check a plugin lists in its ``SPEC.doctor_checks``
-until its move: :func:`executable_check` reads the local machine only, and
-:func:`online_check` is the one online check: ``doctor --online`` runs it
-to contact the configured service.
+returns a :class:`DoctorResult`, one row of ``untaped doctor``. An
+:class:`ExecutableCheck` reads the local machine only, and an
+:class:`OnlineCheck` is the one online check: ``doctor --online`` runs it to
+contact the configured service.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from untaped.runtime.settings import plugins_root
-from untaped.sdk._block import OwnedBlock, spelled_id
+from untaped.sdk._block import OwnedBlock
 from untaped.sdk._run import PluginHandle
 from untaped.sdk.errors import HttpError, UntapedError
 from untaped.sdk.health._setup_status import set_command, shown_value, unset_fields
@@ -34,9 +33,9 @@ class DoctorCheck(OwnedBlock):
     """A health check contributed by core or a plugin.
 
     A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
-    is the check ``<plugin>.store``; the 11.x spelling passes its ``id``. An
-    ``online`` check contacts a remote service, so only ``untaped doctor
-    --online`` runs it; every other check stays offline.
+    is the check ``<plugin>.store``. An ``online`` check contacts a remote
+    service, so only ``untaped doctor --online`` runs it; every other check
+    stays offline.
     """
 
     block_kind = "doctor-check"
@@ -48,22 +47,20 @@ class DoctorCheck(OwnedBlock):
 
     def __init__(
         self,
-        id: str | None = None,
         *,
         title: str,
         run: Callable[[PluginContext], DoctorResult],
         online: bool = False,
     ) -> None:
-        super().__init__(*spelled_id(id))
-        self._id = id
+        super().__init__()
         self.title = title
         self.run = run
         self.online = online
 
     @property
     def id(self) -> str:
-        """``<plugin>.<name>``, or the id it was given."""
-        return self._id if self._id is not None else f"{self.plugin}.{self.name}"
+        """``<plugin>.<name>``."""
+        return f"{self.plugin}.{self.name}"
 
     def __repr__(self) -> str:
         return f"DoctorCheck({self.where!r}, title={self.title!r})"
@@ -126,15 +123,6 @@ class PluginContext:
         return Diagnostics()
 
 
-def executable_check(check_id: str, program: str, *, purpose: str) -> DoctorCheck:
-    """Warn when ``program`` is not on ``PATH``; ``purpose`` says what needs it."""
-    return DoctorCheck(
-        id=check_id,
-        title=f"{program} on PATH",
-        run=lambda _ctx: _on_path(check_id, program, purpose=purpose),
-    )
-
-
 def _on_path(check_id: str, program: str, *, purpose: str) -> DoctorResult:
     found = find_program(program)
     if found is None:
@@ -166,34 +154,10 @@ class ExecutableCheck(DoctorCheck):
         return _on_path(self.id, self.program, purpose=self.purpose)
 
 
-def online_check(
-    check_id: str,
-    *,
-    section: str,
-    probe: Callable[[], str],
-    title: str | None = None,
-) -> DoctorCheck:
-    """Contact ``section``'s service through ``probe`` (``doctor --online`` only).
-
-    ``probe`` is the plugin's own authenticated call (``whoami``-style),
-    run against the active profile inside :func:`untaped.sdk.network.upstream.quick_probe`
-    (no retries, a short timeout); it returns the pass detail and raises on
-    failure. A plugin that marks what it needs
-    (:mod:`untaped.sdk.health.marks`) is probed only once every marked field is
-    set (:func:`_marked_probe`).
-    """
-    return DoctorCheck(
-        id=check_id,
-        title=title or f"{section} API reachable",
-        run=lambda ctx: _probed(check_id, ctx.settings, section=section, probe=probe),
-        online=True,
-    )
-
-
 def _probed(
     check_id: str, settings: BaseModel | None, *, section: str, probe: Callable[[], str]
 ) -> DoctorResult:
-    """:func:`online_check`'s row: ``probe`` run against the settings, when they are set up."""
+    """:class:`OnlineCheck`'s row: ``probe`` run against the settings, when they are set up."""
     if settings is None:
         return DoctorResult(id=check_id, ok=True, detail="skipped: settings are invalid")
     marks = section_marks(section, type(settings)) or SetupMarks(())
@@ -204,8 +168,10 @@ class OnlineCheck(DoctorCheck):
     """The plugin's service reached through ``probe``, under ``doctor --online`` only.
 
     ``probe = OnlineCheck(probe=whoami)`` on a plugin class is the check
-    ``<plugin>.probe`` over the plugin's own settings section, run as
-    :func:`online_check` runs it; ``title`` defaults to ``<plugin> API reachable``.
+    ``<plugin>.probe`` over the plugin's own settings section, run
+    against the active profile inside :func:`untaped.sdk.network.upstream.quick_probe`
+    (no retries, a short timeout), once every field the plugin marks as needed is
+    set; ``title`` defaults to ``<plugin> API reachable``.
     """
 
     probe: Callable[[], str]
@@ -321,6 +287,3 @@ def _causes(exc: BaseException) -> Iterator[BaseException]:
         seen.add(id(current))
         yield current
         current = current.__cause__ or current.__context__
-
-
-__all__ = ["executable_check", "online_check"]
