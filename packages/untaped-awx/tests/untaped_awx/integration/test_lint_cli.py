@@ -167,6 +167,24 @@ def test_online_a_reference_the_batch_lacks_is_looked_up_on_the_controller(
     ]
 
 
+@pytest.mark.usefixtures("composed")
+def test_online_an_integer_reference_the_controller_lacks_is_a_finding(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    # The controller answers 404 for the id: a finding, not a stopped run.
+    fake_aap.seed("organizations", id=1, name="Platform")
+    fake_aap.seed("projects", id=5, name="web", organization=1)
+    template = (
+        "kind: JobTemplate\nmetadata: {name: deploy, organization: Platform}\n"
+        "spec: {project: web, inventory: 999, playbook: site.yml}\n"
+    )
+    result = _lint(str(_files(tmp_path, template=template)))
+    assert result.exit_code == 3, result.output
+    assert [row["message"] for row in _rows(result)] == [
+        "inventory '999' is not in the batch or on the controller"
+    ]
+
+
 # --- the controller -----------------------------------------------------------------
 
 
