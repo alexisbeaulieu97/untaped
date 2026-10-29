@@ -791,7 +791,7 @@ def test_apply_var_values_parse_by_declared_type(
 @pytest.mark.parametrize(
     ("vars_file", "extra", "code", "message"),
     [
-        (None, [], 2, "--vars-file: Path does not point to a file"),
+        (None, [], 2, "--vars-file: path does not exist: {path}"),
         ("[unclosed\n", [], 1, "--vars-file file {path} is invalid YAML"),
         ("- a\n", [], 1, "--vars-file file {path} must contain a mapping"),
         (

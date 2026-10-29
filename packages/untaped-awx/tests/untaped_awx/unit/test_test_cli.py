@@ -1445,7 +1445,7 @@ def test_compare_needs_an_existing_file_and_excludes_baseline(
     missing = tmp_path / "none.json"
     result = _run(str(_smoke(tmp_path)), "--compare", str(missing))
     assert result.exit_code == 2
-    assert "--compare: Path does not point to a file" in result.stderr
+    assert f"--compare: path does not exist: {missing}" in result.stderr
 
     saved = _write(tmp_path / "base.json", "[]")
     result = _run(str(_smoke(tmp_path)), "--compare", str(saved), "--baseline", "main")

@@ -32,8 +32,7 @@ from pathlib import Path
 from types import UnionType
 from typing import TYPE_CHECKING, Annotated, Any, Self, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, BeforeValidator, JsonValue, ValidationError
-from pydantic.types import PathType
+from pydantic import AfterValidator, BaseModel, BeforeValidator, JsonValue, ValidationError
 from pydantic_core import core_schema
 
 from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock, FieldOption, Invocation, Mark
@@ -325,8 +324,17 @@ class File[M: BaseModel]:
         )
 
 
-ExistingFile = Annotated[Path, PathType("file")]
-"""A path that must name an existing file (exit 2 otherwise)."""
+def _existing_file(path: Path) -> Path:
+    """``path``, refused with its name when it is no file."""
+    if not path.is_file():
+        raise ValueError(
+            f"path is not a file: {path}" if path.exists() else f"path does not exist: {path}"
+        )
+    return path
+
+
+ExistingFile = Annotated[Path, AfterValidator(_existing_file)]
+"""A path that must name an existing file (exit 2 otherwise, naming the path)."""
 
 TextOrStdin = Annotated[str, OR_STDIN]
 """A value, or ``-`` to read it from stdin."""
