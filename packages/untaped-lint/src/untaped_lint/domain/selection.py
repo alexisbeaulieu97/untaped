@@ -103,6 +103,9 @@ class Selection:
         unchecked: Iterable[str] = (),
     ) -> Selection:
         chosen = [resolver.resolve(each) for each in select]
+        if chosen and not any(chosen):
+            # Reporting nothing would pass a CI step that pins a misspelled rule.
+            raise UsageError(f"--select {'; '.join(resolver.warnings)}")
         return cls(
             select=frozenset().union(*chosen) if chosen else None,
             ignore=tuple((frozenset(resolver.resolve(each.rule)), each.target) for each in ignore),

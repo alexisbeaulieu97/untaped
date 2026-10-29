@@ -8,7 +8,7 @@ import pytest
 
 from lint_fake_records import Gadget, Linttest, Sprocket, Widget
 from lint_fakes import Acme, Gizmo, Malformed, MalformedRule, Raising, tall, wide
-from untaped.sdk import InstalledPlugin
+from untaped.sdk import InstalledPlugin, UsageError
 from untaped.sdk.testing import install
 from untaped_lint.api import Finding, Rules, finding, rule
 from untaped_lint.plugin import LintPlugin
@@ -93,6 +93,15 @@ def test_suppressions_and_selections_add_up() -> None:
         )
     assert [(each.rule, each.target) for each in report.findings] == [("acme.wide", "b")]
     assert report.warnings == ["`nope`: no installed rule; is its plugin installed?"]
+
+
+def test_a_select_naming_no_installed_rule_is_a_usage_error() -> None:
+    # A CI step pinning a misspelled or renamed rule would pass reporting nothing.
+    with (
+        install(LintPlugin, Linttest, providers={"acme": [Acme]}).running(),
+        pytest.raises(UsageError, match=r"--select `acme\.wid`: no installed rule"),
+    ):
+        run([Widget(name="b")], select=["acme.wid"])
 
 
 class _Twice(Acme):
