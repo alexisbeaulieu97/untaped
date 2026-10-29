@@ -104,15 +104,6 @@ def render_detail(
     raise ValueError(f"unknown format: {fmt!r}")
 
 
-def render_document(data: Mapping[str, Any], *, fmt: Literal["json", "yaml"]) -> str:
-    """Render one document (not a row): no envelope, no column selection, no table."""
-    if fmt == "json":
-        return json.dumps(data, default=_json_default)
-    if fmt == "yaml":
-        return _dump_yaml(data)
-    raise ValueError(f"unknown document format: {fmt!r}")
-
-
 def render_message(
     kind: MessageKind,
     text: str,

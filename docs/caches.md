@@ -8,30 +8,30 @@ freshness check, `--refresh` flag or stale warning:
 
 ```python
 from datetime import timedelta
-from typing import Annotated
 
-from untaped.sdk import Cache, echo, refresh_option, report_errors
+from untaped.sdk import Cache, Command, Refresh
 
-MOTD = Cache("acme", "motd", label="message of the day", max_age=timedelta(hours=1))
+MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
 
 
-@app.command(name="motd")
-def motd(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> None:
+class Motd(Command):
     """Print the message of the day."""
-    with report_errors():
-        served = MOTD.serve({"motd": "the message of the day"}, refresh=refresh,
-                            fill=fetch_motd, read=read_motd)
-    echo(served.value)
+
+    refresh: Refresh = Refresh(MOTD)
+
+    def run(self) -> str:
+        served = MOTD.serve({"motd": "the message of the day"},
+                            refresh=self.refresh.directive, fill=fetch_motd, read=read_motd)
+        return served.value
 ```
 
-List each cache on your spec, `PluginSpec(..., caches=(MOTD,))`: that
-gives it the setting `acme.caches.motd.max_age_seconds` (a version-only
-cache, below, has none), defaulting to the
-declared `max_age` (in whole seconds; `0` checks every time), listed with your
-other settings in `config list`, and read by `serve()` on every call. A cache
-left off the spec always uses its declared default. Composition quarantines a
-plugin that lists another plugin's cache (`foreign-cache`) or the same name
-twice (`duplicate-cache`).
+Hold each cache on your plugin class (`motd = MOTD` in `class Acme(Plugin)`):
+that gives it the setting `acme.caches.motd.max_age_seconds` (a version-only
+cache, below, has none), defaulting to the declared `max_age` (in whole
+seconds; `0` checks every time), listed with your other settings in `config
+list`, and read by `serve()` on every call. A cache no class holds has no name, so
+it can't serve. Composition quarantines a plugin that lists another
+plugin's cache (`foreign-cache`) or the same name twice (`duplicate-cache`).
 
 `serve(keys, refresh=, fill=, read=)` takes the keys the command reads,
 each with a label for a human (`{"prod": "source prod"}`). Per key, it
@@ -83,9 +83,8 @@ quarantines an old key the model still has as a setting, or that two caches
 or your own declarations also name (`bad-settings-keys`).
 
 Two more rules keep every cache alike. Declare the directive as
-`Annotated[bool | None, refresh_option(CACHE)] = None`, never a hand-made
-`--refresh` or `--cached`: its help names the cache's setting and default
-(`tests/repo/test_refresh_option.py` checks first-party code). And never
+`refresh: Refresh = Refresh(CACHE)`, never a hand-made `--refresh` or
+`--cached`: its help names the cache's setting and default. And never
 print a stale warning yourself: `serve()` says it once per key. Inside a
 provider method that `gather` asked, the warning waits until the answer is
 used, and is never said if it isn't

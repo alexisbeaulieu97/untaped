@@ -9,23 +9,20 @@ saw (``130 > 2 > 4 > 5 > 1 > 3 > 0``).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
 from cyclopts import App
+from pydantic import BaseModel
 
+from core_test_support.commands.support import make_plugin
+from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk import Command, Output
 from untaped.sdk import _cli as cli
 from untaped.sdk._batch import finish
-from untaped.sdk._cli import (
-    FormatOption,
-    apply_default_format,
-    emit,
-    render_rows,
-    report_declined,
-    report_errors,
-    resolve_each,
-)
+from untaped.sdk._cli import emit, render_rows, report_declined, resolve_each
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
@@ -36,19 +33,27 @@ from untaped.sdk.errors import (
     UntapedError,
 )
 from untaped.sdk.records import Failure, OutcomeRecord
-from untaped.sdk.testing import invoke_cli
+from untaped.sdk.testing import CliInvoker, CliResult, invoke_cli, plugin_candidate
 
 
-def _app(body: Any) -> App:
-    app = App(name="demo", config=(apply_default_format,))
+class Row(BaseModel):
+    id: int
 
-    @app.default
-    def run(*, fmt: FormatOption = "table") -> None:
-        with report_errors():
+
+def _run(body: Callable[[], object], args: list[str], *, fmt: str = "table") -> CliResult:
+    """``untaped demo run *args``: a command that calls ``body``, then prints one row."""
+
+    class Run(Command):
+        """Run it."""
+
+        output: Output[Row] = Output(format=fmt)  # type: ignore[arg-type]
+
+        def run(self) -> Iterator[Row]:
             body()
-            emit([{"id": 1}], fmt=fmt)
+            yield Row(id=1)
 
-    return app
+    root = build_root_app(candidates=[plugin_candidate(make_plugin("demo", commands=(Run,)))])
+    return CliInvoker().invoke(root.meta, ["demo", "run", *args])
 
 
 def _rejected_token() -> None:
@@ -67,7 +72,7 @@ def _lines(stderr: str) -> list[dict[str, Any]]:
 
 @pytest.mark.parametrize("fmt", ["json", "yaml", "pipe"])
 def test_structured_formats_write_json_error_lines(fmt: str) -> None:
-    result = invoke_cli(_app(_rejected_token), ["--format", fmt])
+    result = _run(_rejected_token, ["--format", fmt])
 
     assert result.exit_code == 4
     assert result.stdout == ""
@@ -88,7 +93,7 @@ def test_structured_formats_write_json_error_lines(fmt: str) -> None:
 
 def test_table_format_keeps_text(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_FORMAT", raising=False)
-    result = invoke_cli(_app(_rejected_token), ["--format", "table"])
+    result = _run(_rejected_token, ["--format", "table"])
 
     assert result.exit_code == 4
     assert result.stderr == (
@@ -99,30 +104,25 @@ def test_table_format_keeps_text(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_a_command_s_own_structured_default_keeps_text(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_FORMAT", raising=False)
-    app = App(name="demo", config=(apply_default_format,))
 
-    @app.default
-    def export(*, fmt: FormatOption = "yaml") -> None:
-        with report_errors():
-            _rejected_token()
-
-    assert invoke_cli(app, []).stderr.startswith("error: AWX rejected the token")
-    assert _lines(invoke_cli(app, ["--format", "yaml"]).stderr)[0]["category"] == "auth"
+    assert _run(_rejected_token, [], fmt="yaml").stderr.startswith("error: AWX rejected the token")
+    yaml = _run(_rejected_token, ["--format", "yaml"], fmt="yaml")
+    assert _lines(yaml.stderr)[0]["category"] == "auth"
 
 
 def test_the_user_s_default_format_selects_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_FORMAT", "json")
 
-    result = invoke_cli(_app(_rejected_token), [])
+    result = _run(_rejected_token, [])
 
     assert _lines(result.stderr)[0]["system"] == "awx"
 
 
 def test_the_environment_variable_forces_either_format(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "text")
-    text = invoke_cli(_app(_rejected_token), ["--format", "json"])
+    text = _run(_rejected_token, ["--format", "json"])
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    structured = invoke_cli(_app(_rejected_token), ["--format", "table"])
+    structured = _run(_rejected_token, ["--format", "table"])
 
     assert text.stderr.startswith("error: AWX rejected the token")
     assert _lines(structured.stderr)[0]["category"] == "auth"
@@ -136,8 +136,8 @@ def test_warnings_hints_and_notes_are_json_lines_and_stdout_is_unchanged() -> No
         diag.hint("run `untaped skills install`")
         diag.info("sync: 2 cloned", unmuted=True)
 
-    plain = invoke_cli(_app(lambda: None), ["--format", "json"])
-    result = invoke_cli(_app(body), ["--format", "json"])
+    plain = _run(lambda: None, ["--format", "json"])
+    result = _run(body, ["--format", "json"])
 
     assert result.exit_code == 0
     assert result.stdout == plain.stdout == '[{"id": 1}]\n'
@@ -157,7 +157,7 @@ def test_per_item_errors_name_their_item() -> None:
         _, failed = resolve_each(["ABC-1"], fail)
         finish(failed)
 
-    result = invoke_cli(_app(body), ["--format", "json"])
+    result = _run(body, ["--format", "json"])
 
     (line,) = _lines(result.stderr)
     assert (line["item"], line["category"], line["system"]) == ("ABC-1", "not_found", "jira")
@@ -173,7 +173,7 @@ def test_the_most_severe_failure_in_the_run_selects_the_exit_code() -> None:
         _, failed = resolve_each(["a", "b", "c"], fail)
         finish(failed)
 
-    assert invoke_cli(_app(body), []).exit_code == 5
+    assert _run(body, []).exit_code == 5
 
 
 def test_an_environment_failure_outranks_a_later_error() -> None:
@@ -181,7 +181,7 @@ def test_an_environment_failure_outranks_a_later_error() -> None:
         resolve_each(["x"], lambda _: _rejected_token())
         raise UntapedError("x not found", category="not_found")
 
-    assert invoke_cli(_app(body), []).exit_code == 4
+    assert _run(body, []).exit_code == 4
 
 
 def test_usage_errors_are_json_lines_under_the_environment_variable(
@@ -189,7 +189,7 @@ def test_usage_errors_are_json_lines_under_the_environment_variable(
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
 
-    result = invoke_cli(_app(lambda: None), ["--unknown"])
+    result = _run(lambda: None, ["--unknown"])
 
     (line,) = _lines(result.stderr)
     assert (line["category"], line["exit_code"], result.exit_code) == ("usage", 2, 2)
@@ -199,7 +199,7 @@ def test_usage_errors_are_json_lines_under_the_environment_variable(
     "args", [["--format", "json", "--bogus"], ["--format=pipe", "--bogus"], ["-f", "yaml", "-x"]]
 )
 def test_a_parse_error_follows_the_requested_format(args: list[str]) -> None:
-    result = invoke_cli(_app(lambda: None), args)
+    result = _run(lambda: None, args)
 
     (line,) = _lines(result.stderr)
     assert (line["category"], result.exit_code) == ("usage", 2)
@@ -208,7 +208,7 @@ def test_a_parse_error_follows_the_requested_format(args: list[str]) -> None:
 def test_a_parse_error_follows_the_user_s_default_format(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_FORMAT", "json")
 
-    result = invoke_cli(_app(lambda: None), ["--bogus"])
+    result = _run(lambda: None, ["--bogus"])
 
     assert _lines(result.stderr)[0]["category"] == "usage"
 
@@ -222,8 +222,8 @@ def test_url_passwords_never_leave_the_process() -> None:
             system="awx",
         )
 
-    structured = invoke_cli(_app(body), ["--format", "json"])
-    text = invoke_cli(_app(body), ["--format", "table"])
+    structured = _run(body, ["--format", "json"])
+    text = _run(body, ["--format", "table"])
 
     assert "s3cret" not in structured.stderr + text.stderr
     assert (
@@ -241,21 +241,21 @@ def test_an_emitted_failure_alone_sets_the_exit_code_of_a_failed_run() -> None:
         Diagnostics().failure(ConfigError("token rejected", category="auth"))
         finish(True)
 
-    assert invoke_cli(_app(body), []).exit_code == 4
+    assert _run(body, []).exit_code == 4
 
 
 def test_a_command_that_emits_a_failure_and_returns_still_fails() -> None:
     def body() -> None:
         Diagnostics().failure(HttpTransportError("down", system="awx"))
 
-    result = invoke_cli(_app(body), [])
+    result = _run(body, [])
 
     assert result.exit_code == 5
     assert result.stdout  # the rows still print
 
 
 def test_a_warning_alone_keeps_exit_0() -> None:
-    assert invoke_cli(_app(lambda: Diagnostics().warning("careful")), []).exit_code == 0
+    assert _run(lambda: Diagnostics().warning("careful"), []).exit_code == 0
 
 
 class _Outcome(OutcomeRecord, kind="acme-tools.thing_outcome"):
@@ -295,7 +295,7 @@ def test_a_predicate_hit_keeps_exit_3() -> None:
     def body() -> None:
         raise SystemExit(3)
 
-    assert invoke_cli(_app(body), []).exit_code == 3
+    assert _run(body, []).exit_code == 3
 
 
 def test_a_declined_run_exits_1_with_its_bare_line() -> None:
@@ -303,15 +303,15 @@ def test_a_declined_run_exits_1_with_its_bare_line() -> None:
         report_declined(OperationCancelledError("cancelled; no changes made"))
         raise SystemExit(1)
 
-    result = invoke_cli(_app(body), [])
+    result = _run(body, [])
 
     assert (result.exit_code, result.stderr) == (1, "cancelled; no changes made\n")
 
 
 @pytest.mark.parametrize("structured", [False, True])
 def test_a_plain_error_message_is_a_counted_failure(structured: bool) -> None:
-    result = invoke_cli(
-        _app(lambda: Diagnostics().failure(Failure.plain("it broke"))),
+    result = _run(
+        lambda: Diagnostics().failure(Failure.plain("it broke")),
         ["--format", "json"] if structured else [],
     )
 

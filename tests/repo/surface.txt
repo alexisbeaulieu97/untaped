@@ -6342,7 +6342,6 @@ sdk untaped.sdk.Cmd.write  [experimental]
 sdk untaped.sdk.CmdError(error)  [experimental]
 sdk untaped.sdk.CmdError.error  [experimental]
 sdk untaped.sdk.Column
-sdk untaped.sdk.ColumnsOption
 sdk untaped.sdk.Command implement=
 sdk untaped.sdk.Command.aliases class
 sdk untaped.sdk.Command.ctx
@@ -6588,7 +6587,6 @@ sdk untaped.sdk.DryRun.go_ahead()
 sdk untaped.sdk.DryRun.go_ahead(preview@1=) default=None callback(0)
 sdk untaped.sdk.DryRun.options class
 sdk untaped.sdk.DryRun.panel class
-sdk untaped.sdk.DryRunOption
 sdk untaped.sdk.Duration
 sdk untaped.sdk.ErrorCategory.AUTH = auth
 sdk untaped.sdk.ErrorCategory.CONFIG = config
@@ -6711,11 +6709,6 @@ sdk untaped.sdk.Form.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Form.view(frame)  [experimental]
 sdk untaped.sdk.Form.view(width=) default=None  [experimental]
 sdk untaped.sdk.Form.with_error(text)  [experimental]
-sdk untaped.sdk.FormatOption choice=json
-sdk untaped.sdk.FormatOption choice=pipe
-sdk untaped.sdk.FormatOption choice=raw
-sdk untaped.sdk.FormatOption choice=table
-sdk untaped.sdk.FormatOption choice=yaml
 sdk untaped.sdk.Found(by@3=) default=None  [experimental]
 sdk untaped.sdk.Found(refreshed_at@2=) default=None  [experimental]
 sdk untaped.sdk.Found(value)  [experimental]
@@ -6931,7 +6924,6 @@ sdk untaped.sdk.Limit.field_kind class
 sdk untaped.sdk.Limit.options class
 sdk untaped.sdk.Limit.panel class
 sdk untaped.sdk.Limit.value
-sdk untaped.sdk.LimitOption
 sdk untaped.sdk.Lines()
 sdk untaped.sdk.Lines.field_kind class
 sdk untaped.sdk.Lines.options class
@@ -7159,7 +7151,6 @@ sdk untaped.sdk.Parallel.map(while_running=) default=None callback(0)
 sdk untaped.sdk.Parallel.options class
 sdk untaped.sdk.Parallel.panel class
 sdk untaped.sdk.Parallel.value
-sdk untaped.sdk.ParallelOption
 sdk untaped.sdk.Paste(text)  [experimental]
 sdk untaped.sdk.Paste.text  [experimental]
 sdk untaped.sdk.PathInput(choice@11=) default=0  [experimental]
@@ -7645,7 +7636,6 @@ sdk untaped.sdk.Stdin.text(*, what)
 sdk untaped.sdk.Stdin.values()
 sdk untaped.sdk.Stdin.values(allow_empty=) default=false
 sdk untaped.sdk.Stdin.values(given@1=) default=[]
-sdk untaped.sdk.StdinOption
 sdk untaped.sdk.Store(keep=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Store(layout=) default=1  [experimental]
 sdk untaped.sdk.Store(plugin, name, *, base) callback(base, 0)  [experimental]
@@ -7814,12 +7804,6 @@ sdk untaped.sdk.Tree.view(frame)  [experimental]
 sdk untaped.sdk.Tree.view(width=) default=None  [experimental]
 sdk untaped.sdk.Tree.window_rows  [experimental]
 sdk untaped.sdk.Tree.with_error(text)  [experimental]
-sdk untaped.sdk.TreeFormatOption choice=json
-sdk untaped.sdk.TreeFormatOption choice=pipe
-sdk untaped.sdk.TreeFormatOption choice=raw
-sdk untaped.sdk.TreeFormatOption choice=table
-sdk untaped.sdk.TreeFormatOption choice=tree
-sdk untaped.sdk.TreeFormatOption choice=yaml
 sdk untaped.sdk.TreeGraph(*, root)  [experimental]
 sdk untaped.sdk.TreeGraph(edges=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraph(nodes=) default=[]  [experimental]
@@ -7911,7 +7895,6 @@ sdk untaped.sdk.Viewport.shown(rows)  [experimental]
 sdk untaped.sdk.Viewport.start(rows)  [experimental]
 sdk untaped.sdk.Viewport.update(message, rows)  [experimental]
 sdk untaped.sdk.Written
-sdk untaped.sdk.YesOption
 sdk untaped.sdk.ago_text(at, now)
 sdk untaped.sdk.app_context()
 sdk untaped.sdk.atomic_write(encoding=) default=utf-8
@@ -7928,9 +7911,7 @@ sdk untaped.sdk.batch_apply(render_generic_preview=) default=true
 sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) callback(on_each, 2)
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
-sdk untaped.sdk.check_columns(model, *, columns, fmt)
 sdk untaped.sdk.checkout_root(start)
-sdk untaped.sdk.clamp_parallel(requested, *, cap, policy)
 sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]
 sdk untaped.sdk.code_version(module)
@@ -8062,9 +8043,6 @@ sdk untaped.sdk.contracts.gather(refresh=) default=None
 sdk untaped.sdk.contracts.providing(candidates=) default=None
 sdk untaped.sdk.contracts.providing(offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
-sdk untaped.sdk.create_app(*, name)
-sdk untaped.sdk.create_app(help=) default=""
-sdk untaped.sdk.create_app(stability=) default=None
 sdk untaped.sdk.current_project()  [experimental]
 sdk untaped.sdk.deprecated()
 sdk untaped.sdk.deprecated(removed_in=) default=None
@@ -8079,18 +8057,7 @@ sdk untaped.sdk.derive(base, name)
 sdk untaped.sdk.derive(doc=) default=None
 sdk untaped.sdk.derive(omit=) default=[]
 sdk untaped.sdk.dir_bytes(path)
-sdk untaped.sdk.echo()
-sdk untaped.sdk.echo(message@1=) default=""
-sdk untaped.sdk.echo(nl=) default=true
-sdk untaped.sdk.emit(columns=) default=None
-sdk untaped.sdk.emit(empty=) default=None
-sdk untaped.sdk.emit(kind=) default=None
-sdk untaped.sdk.emit(records, *, fmt)
-sdk untaped.sdk.emit(table_columns=) default=None
-sdk untaped.sdk.emit(tree=) default=None
-sdk untaped.sdk.emit_document(data, *, fmt)
 sdk untaped.sdk.executable_check(check_id, program, *, purpose)
-sdk untaped.sdk.existing_file(type_, value)
 sdk untaped.sdk.experimental
 sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
 sdk untaped.sdk.find_program(name)
@@ -8379,8 +8346,6 @@ sdk untaped.sdk.paginate_offset(size_param=) default=limit
 sdk untaped.sdk.paginate_offset(start_param=) default=offset
 sdk untaped.sdk.paginate_pages(fetch, *, limit) callback(fetch, 1)
 sdk untaped.sdk.paginate_pages(max_pages=) default=100
-sdk untaped.sdk.parse_json_pairs(values, *, flag)
-sdk untaped.sdk.parse_kv_pairs(values, *, flag)
 sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plugin_of(model)
 sdk untaped.sdk.plugin_path(*parts)
@@ -8429,11 +8394,6 @@ sdk untaped.sdk.refresh_option(cache)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(field=) default=token
 sdk untaped.sdk.rejected_token_error(section, message)
-sdk untaped.sdk.render_rows(columns=) default=None
-sdk untaped.sdk.render_rows(empty=) default=None
-sdk untaped.sdk.render_rows(kind=) default=None
-sdk untaped.sdk.render_rows(rows, *, fmt)
-sdk untaped.sdk.render_rows(table_columns=) default=None
 sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.retired_values(section, key)

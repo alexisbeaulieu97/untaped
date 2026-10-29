@@ -28,7 +28,8 @@ and no `[project.scripts]` section:
 untaped-acme/
 ├── pyproject.toml
 └── src/untaped_acme/
-    └── __init__.py
+    ├── __init__.py
+    └── plugin.py
 ```
 
 The package requires the current product and declares the entry-point group:
@@ -39,10 +40,10 @@ name = "untaped-acme"
 version = "0.1.0"
 description = "Acme plugin for untaped."
 requires-python = ">=3.14.1"
-dependencies = ["pydantic>=2.13.3,<3", "untaped>=11,<12"]
+dependencies = ["pydantic>=2.13.3,<3", "untaped>=12,<13"]
 
 [project.entry-points."untaped.plugins"]
-acme = "untaped_acme:SPEC"
+acme = "untaped_acme.plugin:Acme"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -67,20 +68,20 @@ The entry point names the plugin class in a leaf module
 (`not-a-plugin-class`) and never called.
 
 The plugin's `untaped` requirement (`Requires-Dist`) is the only
-compatibility check: declare it (`untaped>=11,<12`, raising the floor to the
-minor that added an API you use, for example `untaped>=11.1,<12`); without
+compatibility check: declare it (`untaped>=12,<13`, raising the floor to the
+minor that added an API you use, for example `untaped>=12.1,<13`); without
 one, nothing is checked. That range excludes pre-releases such as
-`11.0.0a0`; to run on a pre-release core, declare `untaped>=11.0.0a0,<12`. A
+`12.0.0a0`; to run on a pre-release core, declare `untaped>=12.0.0a0,<13`. A
 running `untaped` outside that range quarantines the plugin. Installers
 normally enforce the range, so this shows up mainly after upgrading `untaped`
 past it. The [changelog](../CHANGELOG.md) says what each version added or broke.
 
-## Settings and the plugin app
+## Settings and the plugin class
 
 A plugin's config section is its name. Its `settings` model holds what users
-tune per profile; a plugin that writes managed data also declares a `state`
-model. The two field sets must be disjoint, and either may be left out.
-`plugin_dir(SPEC)` (`~/.untaped/plugins/<name>/`) is where it keeps other
+tune per profile, and rows it keeps for users are a `StateRows` the class
+holds ([Keeping what users create](#keeping-what-users-create)). A command's
+`self.ctx.plugin.dir` (`~/.untaped/plugins/<name>/`) is where it keeps other
 data. To rename a setting, see [Settings](./reference/conventions.md#settings).
 
 A plugin that connects to a service marks what it can't run without, and
@@ -92,28 +93,16 @@ takes, and a marked model as its fields that have no default.
 How a plugin keeps a server's secret (stored with the server it is sent to,
 never in configuration) is in [Credentials](./credentials.md).
 
-A complete plugin module, with a nullary app factory (leave it out for a
-plugin with no commands), its stub skill and the `SPEC` the entry point
-above names:
+A complete plugin, with its stub skill and the class the entry point above
+names:
 
 ```python
-# src/untaped_acme/__init__.py
+# src/untaped_acme/plugin.py
 from __future__ import annotations
 
-from typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field
 
-from cyclopts import App, Parameter
-from pydantic import BaseModel, ConfigDict
-
-from untaped.sdk import (
-    PluginSpec,
-    SkillAsset,
-    StdinOption,
-    create_app,
-    echo,
-    get_config_section,
-    read_identifiers,
-)
+from untaped.sdk import Command, Plugin, Positional, StubSkill
 
 
 class AcmeSettings(BaseModel):
@@ -124,57 +113,31 @@ class AcmeSettings(BaseModel):
     greeting: str = "hello from acme"
 
 
-def build_app() -> App:
-    """Return the plugin command subtree without building it at import time."""
-    app = create_app(name="acme", help="Acme plugin commands.")
+class Hello(Command[AcmeSettings]):
+    """Print the configured Acme greeting."""
 
-    @app.command(name="hello")
-    def hello_command() -> None:
-        """Print the configured Acme greeting."""
-        settings = get_config_section("acme", AcmeSettings)
-        echo(settings.greeting)
+    name: Positional[str | None] = Field(None, description="Whom to greet.")
 
-    @app.command(name="import")
-    def import_command(
-        names: Annotated[list[str] | None, Parameter(help="Repository full names.")] = None,
-        /,
-        *,
-        stdin: StdinOption = False,
-    ) -> None:
-        """Echo repository names given as arguments or piped as github.repo records."""
-        for name in read_identifiers(
-            list(names or []), stdin=stdin, id_field="full_name", accept_kinds={"github.repo"}
-        ):
-            echo(name)
-
-    return app
+    def run(self) -> str:
+        return f"{self.settings.greeting}, {self.name}" if self.name else self.settings.greeting
 
 
-SPEC = PluginSpec(
-    name="acme",
-    app_factory=build_app,
-    settings=AcmeSettings,
-    skills=(
-        SkillAsset(
-            name="untaped-acme",
-            description=(
-                "Acme through untaped: its greeting and importing repository names. "
-                "Use when the user wants the Acme greeting or to import identifiers, "
-                "or mentions Acme."
-            ),
-        ),
-    ),
-)
+class Acme(Plugin):
+    """Acme's greeting."""
+
+    settings = AcmeSettings
+    commands = (Hello,)
+    skill = StubSkill(
+        "Acme through untaped: its greeting. Use when the user wants the Acme "
+        "greeting, or mentions Acme."
+    )
 ```
 
-The `help` field (one non-empty line) is its summary in the Plugins
-panel of `untaped --help`. The plugin is mounted lazily: `build_app()`
-runs only when dispatched, so `untaped --help` never imports its CLI. A
-factory that raises or returns something other than a cyclopts `App`
-fails that command, `--help` included, with exit 4, naming the plugin; other
-commands and shell completion keep working. `untaped doctor` runs every
-factory and reports a failing one as a quarantine row (`bad-app-factory`, or
-`duplicate-kind`/`foreign-kind` for a kind reused or not under its name).
+The class docstring is the plugin's summary in the Plugins panel of `untaped
+--help`, and each command's docstring is its help. Core mounts the commands
+from the class's declaration, so `untaped --help` reads them without running
+any. Commands are classes: their fields are the flags and arguments, and core
+prints what `run` returns or yields ([Conventions](./reference/conventions.md#options)).
 
 Importing the module must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
@@ -195,14 +158,14 @@ writes only its own section; `untaped.http.*` and `untaped.ui.*` are untaped's o
 `untaped config set` rejects state fields.
 
 The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
-errors inside `report_errors()` so the root prints its standard diagnostics and
+an `UntapedError` from `run` and the root prints its standard diagnostics and
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and `system` (your section name) as class defaults; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
 and record shapes; interactive screens are in [Screens](./screens.md).
 
-A doctor check (`DoctorCheck` on `PluginSpec.doctor_checks`) returns a
+A doctor check (a `DoctorCheck` the plugin class holds) returns a
 `DoctorResult`; the row is named after its check, so the result needs
 no id. Its `fix` is the `untaped` command that repairs a failed or
 warned row, without the program name: a string (`"config set acme.server.url
@@ -273,20 +236,33 @@ Mark what is not stable once, where it lives; `untaped` supplies the help
 panel, the last `--help` line, the warning and the checks:
 
 ```python
-from untaped.sdk import PluginSpec, create_app, deprecated, experimental
+from untaped.sdk import Command, Group, Plugin, deprecated, experimental
 
-SPEC = PluginSpec(name="acme", ..., stability=experimental)  # whole plugin
-lab = create_app(name="lab", help="Try things.", stability=experimental)  # a group
 
-@app.command(name="put")
-@deprecated(removed_in=3, replacement=set_command)  # the path follows a rename
-def put_command() -> None: ...
+class Put(Command):
+    """Put a value."""
+
+    stability = deprecated(removed_in=3, replacement=Set)  # the path follows a rename
+
+    def run(self) -> None: ...
+
+
+class Lab(Group):
+    """Try things."""
+
+    stability = experimental  # a group and every command in it
+    commands = (Put,)
+
+
+class Acme(Plugin):
+    """Acme's commands."""
+
+    stability = experimental  # the whole plugin
 ```
 
-- Mark a plugin on its spec, not its app: a lazy mount reads only the spec.
-- Name the replacement as the function or app, or as text (a command like
+- Name the replacement as its class, or as text (a command like
   `"untaped acme set"`, a setting key or prose) when it is in another
-  plugin or on a spec. Text must resolve.
+  plugin. Text must resolve.
 - `removed_in` is your distribution's major, which the warning names
   ([every kind](./reference/deprecation.md)). A deprecated command shows with
   `untaped --deprecated --help` and warns once per run. `untaped lint`

@@ -12,7 +12,7 @@ from pydantic import Field
 from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.help_tree import command_violations, help_tree_violations
 from untaped.runtime import bootstrap
-from untaped.sdk import Command, Group, create_app, experimental
+from untaped.sdk import Command, Group, experimental
 from untaped.sdk.marks import Experimental
 from untaped.sdk.testing import plugin_candidate
 
@@ -39,16 +39,16 @@ def _fields(*, value: Annotated[str, Parameter(name=["--fields", "-f"], help="F.
 
 def _violations(command: Callable[..., None], name: str = "nuke") -> set[tuple[str, str]]:
     """The help-tree violations of ``command`` registered as ``demo <name>``."""
-    app = create_app(name="demo")
+    app = App(name="demo")
     app.command(command, name=name)
     return set(command_violations(("demo", name), app[name]))
 
 
 def _root(**subtrees: dict[str, Callable[..., None]]) -> App:
     """A root app with one subtree per keyword, mapping command names to functions."""
-    root = create_app(name="untaped")
+    root = App(name="untaped")
     for top, commands in subtrees.items():
-        sub = create_app(name=top)
+        sub = App(name=top)
         for name, command in commands.items():
             sub.command(command, name=name)
         root.command(sub, name=top)

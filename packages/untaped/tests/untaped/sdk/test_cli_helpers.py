@@ -6,11 +6,11 @@ import sys
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pytest
 import yaml
-from cyclopts import App
+from cyclopts import App, Parameter
 from pydantic import BaseModel, ConfigDict, JsonValue
 from pydantic import Field as PydanticField
 
@@ -18,30 +18,27 @@ from core_test_support.runtime.run import quiet
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings
 from untaped.sdk import (
-    ColumnsOption,
-    FormatOption,
     HttpError,
     HttpTransportError,
     OutcomeRecord,
     Record,
     UntapedError,
     UtcTimestamp,
-    check_columns,
-    clamp_parallel,
-    create_app,
-    emit,
-    emit_document,
-    parse_json_pairs,
-    parse_kv_pairs,
-    render_rows,
     resolve_each,
 )
-from untaped.sdk._cli import echo, report_errors, run_cyclopts_app
+from untaped.sdk._cli import (
+    check_columns,
+    echo,
+    emit,
+    render_rows,
+    report_errors,
+    run_cyclopts_app,
+)
 from untaped.sdk.testing import CliInvoker
 
 
 def test_clean_message_for_untaped_error() -> None:
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def boom() -> None:
@@ -55,7 +52,7 @@ def test_clean_message_for_untaped_error() -> None:
 
 def test_passes_through_non_untaped_exception() -> None:
     """Non-UntapedError exceptions should not be swallowed — they're bugs."""
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def boom() -> None:
@@ -75,7 +72,7 @@ def test_broken_pipe_from_command_exits_cleanly() -> None:
     """A consumer closing the pipe mid-write surfaces as ``BrokenPipeError``;
     it must convert to a quiet ``SystemExit(0)`` (``| head`` is not a
     failure), not leak as a traceback."""
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def boom() -> None:
@@ -94,7 +91,7 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
     the failure surfaces here (not at uncatchable interpreter shutdown) and
     exits cleanly. ``fileno()`` raising stands in for a stream with no real fd
     (StringIO, etc.) and exercises the devnull-redirect guard."""
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def ok() -> None:
@@ -119,7 +116,7 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
 def test_failure_while_handling_another_broken_pipe_keeps_its_exit_code() -> None:
     """Only a closed stdout exits 0: an exit raised while handling a broken
     pipe to some other process (a hook worker) is a real failure."""
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def worker_died() -> None:
@@ -159,51 +156,6 @@ def test_data_command_into_closed_pipe_exits_zero_quietly() -> None:
     proc = _run_with_closed_stdout(["config", "list", "-f", "json"])
     assert proc.returncode == 0
     assert proc.stderr == ""
-
-
-# ---- parse_kv_pairs / parse_json_pairs -------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("values", "expected"),
-    [
-        (None, {}),
-        ([], {}),
-        (["a=1", "b=2"], {"a": "1", "b": "2"}),
-        # Splits on the first ``=`` so values with literal ``=`` survive intact.
-        (["filter=foo=bar=baz"], {"filter": "foo=bar=baz"}),
-        (["k="], {"k": ""}),
-        (["  key  =val"], {"key": "val"}),
-        (["k=first", "k=second"], {"k": "second"}),
-    ],
-)
-def test_parse_kv_pairs(values: list[str] | None, expected: dict[str, str]) -> None:
-    assert parse_kv_pairs(values, flag="--filter") == expected
-
-
-@pytest.mark.parametrize(
-    ("parse", "entry"),
-    [
-        (parse_kv_pairs, "bogus"),
-        (parse_kv_pairs, "=value"),
-        (parse_kv_pairs, "   =value"),
-        (parse_json_pairs, "notapair"),
-        (parse_json_pairs, "k={broken"),
-    ],
-)
-def test_malformed_pairs_are_usage_errors_naming_the_flag(
-    parse: Any, entry: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as exc:
-        parse([entry], flag="--custom")
-    assert exc.value.code == 2
-    assert "--custom" in capsys.readouterr().err
-
-
-def test_parse_json_pairs_decodes_values() -> None:
-    assert parse_json_pairs(None, flag="--json-field") == {}
-    out = parse_json_pairs(['labels=["a","b"]', "count=3", 'name="x"'], flag="--json-field")
-    assert out == {"labels": ["a", "b"], "count": 3, "name": "x"}
 
 
 # ---- resolve_each --------------------------------------------------------
@@ -260,26 +212,6 @@ def test_resolve_each_propagates_non_untaped_exceptions() -> None:
 
     with pytest.raises(ValueError, match="bug"):
         resolve_each(["x"], fn)
-
-
-# ---- clamp_parallel ------------------------------------------------------
-
-
-@pytest.mark.parametrize("requested", [4, 8, 0, -3])
-def test_clamp_parallel_passes_through_up_to_cap(
-    requested: int, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """``requested == cap`` is inclusive; ``< 1`` is caller policy, left untouched."""
-    assert clamp_parallel(requested, cap=8, policy="2 * os.cpu_count()") == requested
-    assert capsys.readouterr().err == ""
-
-
-def test_clamp_parallel_caps_above_with_warning_naming_the_policy(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert clamp_parallel(100, cap=8, policy="httpx.Limits.max_connections=8") == 8
-    err = capsys.readouterr().err
-    assert "warning: --parallel 100 clamped to 8 (httpx.Limits.max_connections=8)" in err
 
 
 # ---- render_rows -----------------------------------------------------------
@@ -417,23 +349,6 @@ def test_emit_yaml_mapping_with_unknown_values_falls_back_to_str(
     }
 
 
-_DOCUMENT = {
-    "name": "stage",
-    "data": {"when": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC), "path": Path("/tmp/x")},
-    "empty": {},
-}
-
-
-@pytest.mark.parametrize("fmt", ["json", "yaml"])
-def test_a_document_prints_as_emit_printed_a_single_mapping(
-    fmt: Literal["json", "yaml"], capsys: pytest.CaptureFixture[str]
-) -> None:
-    emit(_DOCUMENT, fmt=fmt)
-    before = capsys.readouterr().out
-    emit_document(_DOCUMENT, fmt=fmt)
-    assert capsys.readouterr().out == before
-
-
 def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str]) -> None:
     emit(_Widget(name="alpha", value=1), fmt="pipe", kind="demo.widget")
     lines = capsys.readouterr().out.splitlines()
@@ -521,7 +436,7 @@ def test_emit_empty_sequence_table_emits_no_spurious_stdout(
 
 
 def _http_error_app(body: str) -> App:
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def boom() -> None:
@@ -577,7 +492,7 @@ def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPat
     "message", ["connection failed", "connection failed for https://api.example.test/x"]
 )
 def test_format_error_names_the_transport_url_once(message: str) -> None:
-    app = create_app(name="test")
+    app = App(name="test")
 
     @app.default
     def boom() -> None:
@@ -622,11 +537,15 @@ def test_unknown_column_on_rows_reporting_a_change_warns_and_still_writes_them(
     Exit 2 means "found before any side effect", and refusing would also drop
     the rows saying what was done.
     """
-    app = create_app(name="test")
+    app = App(name="test")
     done: list[str] = []
 
     @app.default
-    def create(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
+    def create(
+        *,
+        fmt: Annotated[str, Parameter(name=["--format", "-f"])] = "table",
+        columns: Annotated[list[str] | None, Parameter(name=["--columns", "-c"])] = None,
+    ) -> None:
         done.append("a")
         row = _Created(id="a", action="created")
         emit(row if single else [row], fmt=fmt, columns=columns)

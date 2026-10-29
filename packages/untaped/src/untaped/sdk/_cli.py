@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
@@ -10,16 +9,14 @@ from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import replace
 from functools import cache
-from pathlib import Path
-from typing import Annotated, Any, Literal, NoReturn, get_args, overload
+from typing import NoReturn, get_args, overload
 
-from cyclopts import App, Argument, ArgumentCollection, Parameter, ResultAction, Token
+from cyclopts import App, Argument, ArgumentCollection, ResultAction, Token
 from cyclopts.exceptions import CycloptsError
-from cyclopts.validators import Number
 from pydantic import BaseModel
 from rich.console import Console
 
-from untaped.runtime.render import column_value, render_collection, render_document
+from untaped.runtime.render import column_value, render_collection
 from untaped.runtime.sink import (
     Diagnostics,
     current_sink,
@@ -51,11 +48,6 @@ from untaped.sdk.errors import (
     UntapedError,
     UsageError,
 )
-from untaped.sdk.marks import (
-    Stability,
-    check_stability,
-    mark_app,
-)
 from untaped.sdk.records import (
     OutcomeRecord,
     TableGlyph,
@@ -64,25 +56,6 @@ from untaped.sdk.records import (
 )
 from untaped.sdk.tree import TreeGraph, print_tree
 
-
-def _format_default(value: object) -> str:
-    """Help text for a ``--format`` default; ``table`` defers to the overrides."""
-    shown = getattr(value, "value", value)
-    return "table, or UNTAPED_FORMAT / untaped.ui.format" if shown == "table" else str(shown)
-
-
-FormatOption = Annotated[
-    OutputFormat,
-    Parameter(name=["--format", "-f"], help="Output format.", show_default=_format_default),
-]
-"""Shared ``--format / -f`` option for any command that prints rows."""
-
-TreeFormatOption = Annotated[
-    TreeOutputFormat,
-    Parameter(name=["--format", "-f"], help="Output format.", show_default=_format_default),
-]
-"""``--format`` plus ``tree``, for a command that draws its rows as a tree (``emit(tree=)``)."""
-
 #: Environment variable naming the default ``--format`` (wins over ``untaped.ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
 
@@ -90,65 +63,31 @@ FORMAT_ENV = "UNTAPED_FORMAT"
 def apply_default_format(
     app: App, commands: tuple[str, ...], arguments: ArgumentCollection
 ) -> None:
-    """Cyclopts config source: default an omitted shared ``--format``.
+    """Cyclopts config source: default an omitted ``--format`` to the run's rendering.
 
-    Installed on the root app. Only a ``FormatOption`` (or another
-    ``--format`` offering every shared format, such as ``TreeFormatOption``)
-    whose command default is ``table`` follows the user's choice (a command
-    defaulting to ``raw`` or ``yaml`` keeps it): ``UNTAPED_FORMAT`` first,
-    then the ``untaped.ui.format`` setting (:func:`user_default_format`). An
-    explicit ``--format`` has tokens already and always wins. A declared
-    command under a run whose rendering the root fixed takes the default that
-    rendering chose, read once, before anything was emitted. Otherwise (a
-    command mounted through the 11.x seam) a ``--format`` the user chose (the
-    flag, ``UNTAPED_FORMAT`` or ``untaped.ui.format``; not a command's own
-    default) is recorded for the stderr diagnostics (:func:`_note_format`,
-    phase 2), and, when they are text, the ``untaped.ui.theme`` messages
-    render with (:func:`_note_theme`; a broken ``ui`` section degrades to the
-    default theme).
+    Installed on the root app. A declared command whose ``Output`` defaults
+    to ``table`` takes the default the run's rendering chose (the root fixed
+    it before the parse, from ``UNTAPED_FORMAT`` or ``untaped.ui.format``);
+    an explicit ``--format`` has tokens already and always wins, and a
+    command defaulting to another format keeps it.
     """
-    argument = _table_default_format(arguments)
+    del commands
     rendering = fixed_rendering()
     if rendering is not None and _declared(app):
-        _default_to(argument, _rendered_default(rendering))
-        return
-    _default_to(argument, None if argument is None else user_default_format(repairs=_repairs(app)))
-    given = [
-        str(argument.tokens[-1].value)
-        for argument in arguments
-        if "--format" in argument.names and argument.tokens
-    ]
-    _note_format(given[-1] if given else None)
-    # Called for the root (no command) and again for the command parsed.
-    run = run_or_none()
-    text = run is not None and run.policy.diagnostics == "text"
-    _note_theme(user_theme() if commands and text else None)
+        _default_to(_table_default_format(arguments), _rendered_default(rendering))
 
 
 def _note_format(fmt: str | None) -> None:
-    """Record the ``--format`` an 11.x seam command's invocation chose on its run's policy.
+    """Record the ``--format`` a line asks for on its run's policy, before rendering is fixed.
 
-    Phase 1 records what argv asks for before parsing
-    (:func:`note_requested_format`); phase 2 what the parsed command chose
-    (:func:`apply_default_format`). Outside a run there is no invocation to
-    record it for, and under a run whose rendering is fixed there is
-    nothing left to choose: nothing happens. Owed: goes with the seam.
+    An error found before the root fixes the rendering (a bad root option)
+    then reports in the format asked for (:func:`note_requested_format`).
+    Outside a run there is no invocation to record it for, and under a
+    fixed rendering there is nothing left to choose: nothing happens.
     """
     run = run_or_none()
     if run is not None and run.rendering is None:
         run.set_policy(replace(run.policy, format=fmt))
-
-
-def _note_theme(theme: ThemeSpec | None) -> None:
-    """Record the theme an 11.x seam command's text messages render with on its run's policy.
-
-    Set once settings load (phase 2, beside :func:`_note_format`; ``None``
-    under JSON diagnostics, which render no theme). Outside a run, or under
-    a run whose rendering is fixed, nothing happens. Owed: goes with the seam.
-    """
-    run = run_or_none()
-    if run is not None and run.rendering is None:
-        run.set_policy(replace(run.policy, theme=theme))
 
 
 def _rendered_default(rendering: Rendering) -> tuple[str, str] | None:
@@ -182,20 +121,12 @@ def _declared(app: App) -> bool:
     return is_declared(app.default_command)
 
 
-def _repairs(app: App) -> bool:
-    """Whether the command parsed (``app``) is marked ``repairs``: it repairs the setup."""
-    # Lazy: the mount imports this module.
-    from untaped.runtime.mount import repairs_at  # noqa: PLC0415
-
-    return repairs_at(app) is True
-
-
 def _table_default_format(arguments: ArgumentCollection) -> Argument | None:
     """The omitted table-default ``--format`` among ``arguments``, if any.
 
-    That is a ``--format`` whose choices include every shared format
-    (``FormatOption``, ``TreeFormatOption``); the user's default is still
-    one of the shared formats.
+    That is a ``--format`` whose choices include every shared format (an
+    ``Output``'s, with or without formats of the plugin's own); the user's
+    default is still one of the shared formats.
     """
     return next(
         (
@@ -244,79 +175,6 @@ def user_default_format(*, repairs: bool) -> tuple[str, str] | None:
     except UntapedError:
         return None
     return None if setting is None else (setting, "untaped.ui.format")
-
-
-ColumnsOption = Annotated[
-    list[str] | None,
-    Parameter(
-        name=["--columns", "-c"],
-        negative="",
-        help=(
-            "Columns to include (repeatable or comma-separated); +name adds to and "
-            "-name removes from the table's default columns (? lists them)."
-        ),
-        consume_multiple=False,
-    ),
-]
-"""Shared ``--columns / -c`` option for any command that prints rows."""
-
-YesOption = Annotated[
-    bool,
-    Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
-]
-"""Shared ``--yes / -y``: skip only the prompt (``--dry-run`` still wins)."""
-
-DryRunOption = Annotated[
-    bool,
-    Parameter(name="--dry-run", negative="", help="Preview the changes without applying them."),
-]
-"""Shared ``--dry-run``: preview and exit ``0`` without side effects."""
-
-StdinOption = Annotated[
-    bool,
-    Parameter(
-        name="--stdin",
-        negative="",
-        help="Read identifiers, or --format pipe records, from stdin.",
-    ),
-]
-"""The 11.x ``--stdin`` flag; a 12.0 command declares a ``Stdin[R]`` field instead."""
-
-ParallelOption = Annotated[
-    int,
-    Parameter(
-        name=["--parallel", "-j"],
-        help="Maximum number of operations to run at once.",
-        validator=Number(gte=1),
-    ),
-]
-"""Shared ``--parallel / -j`` (``>= 1``; cap it with :func:`clamp_parallel`)."""
-
-LimitOption = Annotated[
-    int | None,
-    Parameter(
-        name="--limit",
-        help="Return at most this many results.",
-        validator=Number(gte=1),
-    ),
-]
-"""Shared ``--limit N`` (``>= 1``; ``None`` means no limit)."""
-
-
-def create_app(*, name: str, help: str = "", stability: Stability | None = None) -> App:
-    """Create a Cyclopts app with the suite's default command-group settings.
-
-    ``stability`` marks the group experimental (``stability=experimental``) or
-    deprecated (``stability=deprecated(replacement=...)``): core lists it in
-    its stability panel and ends its ``--help`` with the matching line. Mark a
-    whole plugin on its ``PluginSpec`` instead, never on the app its
-    factory returns.
-    """
-    mark = check_stability(stability, where=f"create_app({name!r})")
-    app = App(name=name, help=help)
-    if mark is not None:
-        mark_app(app, mark, source="own")
-    return app
 
 
 def echo(message: object = "", *, nl: bool = True) -> None:
@@ -725,8 +583,7 @@ def emit(
     :class:`~untaped.sdk.records.TableGlyph` instead of its value.
 
     ``tree`` is the same records as graphs (:class:`~untaped.sdk.tree.TreeGraph`),
-    drawn by ``fmt="tree"`` (a command offering it takes
-    ``TreeFormatOption``) and ignored by every other format, so a command
+    drawn by ``fmt="tree"`` and ignored by every other format, so a command
     always passes it; ``fmt="tree"`` without it is a ``ValueError``. Failed
     rows set the exit code in a tree too, and ``--columns`` does not apply
     to one (a usage error, exit 2).
@@ -865,15 +722,6 @@ def _emit(
 def _refuse_tree_columns(columns: list[str] | None) -> None:
     if columns is not None:
         raise_usage("--columns does not apply to --format tree")
-
-
-def emit_document(data: Mapping[str, object], *, fmt: Literal["json", "yaml"]) -> None:
-    """Print one document to stdout: a JSON Schema, a profile's settings, a config file.
-
-    A document is not a row: it has no kind, no ``pipe`` envelope and no
-    columns, so it goes through here, never :func:`emit`.
-    """
-    echo(render_document(data, fmt=fmt))
 
 
 def _rows_kind(items: Sequence[BaseModel | Mapping[str, object]], kind: str | None) -> str | None:
@@ -1089,49 +937,6 @@ def _exit_broken_pipe() -> NoReturn:
     raise SystemExit(0) from None
 
 
-def existing_file(type_: object, value: Path | None) -> None:
-    """Cyclopts validator for an existing file path."""
-    if value is None:
-        return
-    if not value.exists():
-        raise ValueError(f"path does not exist: {value}")
-    if not value.is_file():
-        raise ValueError(f"path is not a file: {value}")
-
-
-def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]:
-    """Parse repeated ``KEY=VALUE`` flag entries into a dict.
-
-    Splits on the first ``=`` so values containing ``=`` survive intact.
-    Malformed entries are rejected up front rather than passed through.
-    """
-    return dict(_split_pair(entry, flag=flag, shape="KEY=VALUE") for entry in values or ())
-
-
-def _split_pair(entry: str, *, flag: str, shape: str) -> tuple[str, str]:
-    key, sep, value = entry.partition("=")
-    if not sep or not key.strip():
-        raise_usage(f"{flag} expects {shape} (got {entry!r})")
-    return key.strip(), value
-
-
-def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, Any]:
-    """Parse repeated ``KEY=<json>`` flag entries into a dict.
-
-    Sibling of :func:`parse_kv_pairs` for typed values: the part after the
-    first ``=`` must be valid JSON (``labels=["a"]``, ``count=3``,
-    ``name="x"``). Malformed entries are usage errors.
-    """
-    out: dict[str, Any] = {}
-    for entry in values or ():
-        key, raw = _split_pair(entry, flag=flag, shape="KEY=JSON")
-        try:
-            out[key] = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise_usage(f"{flag} {key} contains invalid JSON: {exc}")
-    return out
-
-
 def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
     """Resolve each identifier via ``fn``; aggregate per-id failures.
 
@@ -1154,19 +959,6 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
             Diagnostics().failure(exc, item=id_)
             any_failed = True
     return results, any_failed
-
-
-def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
-    """Cap ``--parallel`` at ``cap`` with a uniform stderr warning.
-
-    A friendly clamp rather than a usage error, so ``-j $(nproc)`` keeps
-    working; ``policy`` is the short rationale shown in parentheses
-    (``"2 * os.cpu_count()"``). ``ParallelOption`` already enforces ``>= 1``.
-    """
-    if requested <= cap:
-        return requested
-    Diagnostics().warning(f"--parallel {requested} clamped to {cap} ({policy})")
-    return cap
 
 
 @contextmanager

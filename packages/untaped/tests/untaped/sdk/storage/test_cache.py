@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
+from cyclopts import App
 
 from untaped.runtime.run import invocation
 from untaped.runtime.sink import (
@@ -26,7 +27,7 @@ from untaped.runtime.sink import (
     exit_on_counted_failure,
     open_tasks,
 )
-from untaped.sdk._cli import create_app, echo, report_errors
+from untaped.sdk._cli import echo, report_errors
 from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure, Progress, Stale
 from untaped.sdk.errors import ConfigError, ErrorCategory, HttpTransportError, UntapedError
@@ -89,7 +90,7 @@ class Upstream:
 
 UP = Upstream()
 
-app = create_app(name="toy", help="A toy cache.")
+app = App(name="toy", help="A toy cache.")
 
 
 @app.command(name="show")

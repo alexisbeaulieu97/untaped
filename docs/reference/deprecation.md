@@ -12,7 +12,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 
 | Thing | Declaration |
 |---|---|
-| A command, group or plugin | `@deprecated(removed_in=3, replacement=set_command)` on the command, `create_app(..., stability=deprecated(removed_in=3))` on a group, `PluginSpec(..., stability=deprecated(removed_in=3))` on a plugin |
+| A command, group or plugin | `stability = deprecated(removed_in=3, replacement=Set)` on its class |
 | A renamed command or flag | `deprecated_alias(parent_app, "me", "whoami", removed_in=3)`; a flag: `deprecated_alias(command_app, "--old", "--new", removed_in=3)` |
 | A flag with no new spelling | `dry_run: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3, replacement="--limit 1 --yes")] = False` on the command |
 | A setting | `old: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False` |

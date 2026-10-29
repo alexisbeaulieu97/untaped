@@ -1,11 +1,10 @@
 """Stability marks: which commands are experimental or deprecated, and what core does about it.
 
-Every stability fact about a command lives here. The author marks the object
-once (``@experimental`` or ``@deprecated(replacement=...)`` on a command
-function, ``create_app(stability=...)`` on a group, ``stability=`` on a
-:class:`~untaped.runtime.registry.PluginSpec` for a whole
-plugin), and core supplies the panel in the parent's ``--help``, the last
-help line, the run-time warning and the conventions checks:
+Every stability fact about a command lives here. The author marks the class
+once (``stability = experimental`` or ``stability = deprecated(replacement=...)``
+on a command, group or plugin class), and core supplies the panel in the
+parent's ``--help``, the last help line, the run-time warning and the
+conventions checks:
 
 - the markers and their validation (:func:`check_stability`);
 - the Experimental and Deprecated panels, and the ``--deprecated`` flag that
@@ -321,7 +320,7 @@ def _forget_with(app: App, table: dict[int, Any]) -> None:
 
 
 def app_mark(app: App) -> AppMark | None:
-    """The mark core or ``create_app`` registered on ``app``."""
+    """The mark the mount registered on ``app``."""
     return _APP_MARKS.get(id(app))
 
 

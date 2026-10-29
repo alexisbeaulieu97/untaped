@@ -12,7 +12,8 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel
 
-from untaped.sdk import Column, OutcomeRecord, TableGlyph, emit
+from untaped.sdk import Column, OutcomeRecord, TableGlyph
+from untaped.sdk._cli import emit
 
 
 class _Repo(OutcomeRecord):
