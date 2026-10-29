@@ -11,10 +11,16 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import KeyValue, Output, Positional, Stdin, UntapedError, key
+from untaped.sdk import Output, Positional, Stdin, UntapedError, key
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.commands._awx import AwxCommand
-from untaped_awx.commands._options import OrganizationScope, resolve_max_depth, scope_values
+from untaped_awx.commands._options import (
+    ById,
+    Filters,
+    OrganizationScope,
+    resolve_max_depth,
+    scope_values,
+)
 from untaped_awx.commands._template_targets import template_targets
 from untaped_awx.commands.context import scope_for_command
 from untaped_awx.domain import WorkflowNode, WorkflowNodeType
@@ -45,9 +51,7 @@ class Nodes(AwxCommand):
         ),
     )
     stdin: Stdin[WorkflowJobTemplate]
-    by_id: bool = Field(
-        False, description="Look up identifiers as AWX numeric ids instead of names."
-    )
+    by_id: ById
     scope: OrganizationScope
     recursive: bool = Field(
         False,
@@ -72,10 +76,7 @@ class Nodes(AwxCommand):
             "templates."
         ),
     )
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
-    )
+    filter_: Filters
     output: Output[WorkflowNode] = Output(columns=_DEFAULT_COLUMNS)
 
     def run(self) -> Iterator[WorkflowNode]:

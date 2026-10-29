@@ -17,6 +17,25 @@ from untaped_awx.domain import ResourceSpec
 #: How a list of names reads in help.
 NAMES = "Names of the resources to select, or AWX ids with --by-id."
 
+#: ``--filter KEY=VALUE`` (repeatable): an AWX server-side lookup, passed verbatim.
+#: A command says more by giving the field its own ``Field(description=...)``.
+Filters = Annotated[
+    list[KeyValue],
+    Field(
+        default_factory=list,
+        description=(
+            "Server-side filter KEY=VALUE (repeatable), passed verbatim to AWX, so any "
+            "Django-style lookup works: name__icontains=deploy."
+        ),
+    ),
+]
+
+#: ``--by-id``: the names given are AWX numeric ids.
+ById = Annotated[
+    bool,
+    Field(default=False, description="Look up identifiers as AWX numeric ids instead of names."),
+]
+
 
 class Selection(BaseModel):
     """Read before selecting AWX resources for a read or a write: selection modes,
@@ -78,17 +97,9 @@ class Selection(BaseModel):
     `--format json`, stderr carries the same fields as JSON Lines.
     """
 
-    by_id: bool = Field(
-        False, description="Look up identifiers as AWX numeric ids instead of names."
-    )
+    by_id: ById
     search: str | None = Field(None, description="Server-side search.")
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description=(
-            "Server-side filter KEY=VALUE (repeatable), passed verbatim to AWX, so any "
-            "Django-style lookup works: name__icontains=deploy."
-        ),
-    )
+    filter_: Filters
     all_: bool = Field(False, description="Explicitly select every resource in scope.")
 
     @property

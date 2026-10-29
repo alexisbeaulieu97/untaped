@@ -34,59 +34,23 @@ _BODY_SNIPPET = 500
 
 def to_awx_error(err: HttpError) -> UntapedError:
     status = err.status_code
-    snippet = (err.body or "")[:_BODY_SNIPPET]
-    body_msg = _first_field_error(err.body) or snippet or "<empty body>"
-
-    source = attribution(err)
     if status == 401:
         return rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=err)
+    body_msg = _first_field_error(err.body) or (err.body or "")[:_BODY_SNIPPET] or "<empty body>"
+    error_type: type[AwxApiError]
     if status == 403:
-        return PermissionDeniedError(
-            f"permission denied: {body_msg}",
-            status=status,
-            body=err.body,
-            url=err.url,
-            **source,
-        )
-    if status == 404:
-        return AwxApiError(
-            f"not found: {err.url}",
-            status=status,
-            body=err.body,
-            url=err.url,
-            **source,
-        )
-    if status == 409:
-        return ConflictError(
-            f"conflict: {body_msg}",
-            status=status,
-            body=err.body,
-            url=err.url,
-            **source,
-        )
-    if status is not None and 400 <= status < 500:
-        return BadRequestError(
-            f"HTTP {status}: {body_msg}",
-            status=status,
-            body=err.body,
-            url=err.url,
-            **source,
-        )
-    if status is not None and status >= 500:
-        return AwxApiError(
-            f"AWX server error (HTTP {status}): {body_msg}",
-            status=status,
-            body=err.body,
-            url=err.url,
-            **source,
-        )
-    return AwxApiError(
-        str(err) or "AWX request failed",
-        status=status,
-        body=err.body,
-        url=err.url,
-        **source,
-    )
+        error_type, message = PermissionDeniedError, f"permission denied: {body_msg}"
+    elif status == 404:
+        error_type, message = AwxApiError, f"not found: {err.url}"
+    elif status == 409:
+        error_type, message = ConflictError, f"conflict: {body_msg}"
+    elif status is not None and 400 <= status < 500:
+        error_type, message = BadRequestError, f"HTTP {status}: {body_msg}"
+    elif status is not None and status >= 500:
+        error_type, message = AwxApiError, f"AWX server error (HTTP {status}): {body_msg}"
+    else:
+        error_type, message = AwxApiError, str(err) or "AWX request failed"
+    return error_type(message, status=status, body=err.body, url=err.url, **attribution(err))
 
 
 @contextmanager

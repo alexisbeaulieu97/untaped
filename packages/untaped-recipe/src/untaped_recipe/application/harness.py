@@ -28,7 +28,7 @@ CaseStatus = Literal["pass", "fail", "error", "updated"]
 _VERDICT_RANK = {"pass": 0, "skip": 1, "fail": 2}
 
 
-class FixtureDecodeError(RecipeError, ValueError):
+class FixtureDecodeError(RecipeError):
     """A fixture file is not valid UTF-8 text (the harness compares text trees)."""
 
 

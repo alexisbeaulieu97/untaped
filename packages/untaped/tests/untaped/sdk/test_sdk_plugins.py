@@ -94,6 +94,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "TreeOutputFormat",
         "UtcTimestamp",
         "now",
+        "parse_utc",
         "kind_of",
         "record_model",
         "summary",

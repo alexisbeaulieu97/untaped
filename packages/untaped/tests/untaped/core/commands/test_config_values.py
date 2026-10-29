@@ -53,6 +53,12 @@ def test_stdin_secret_keeps_hash_and_everything_after_it(_isolated_config: Path)
     assert _default_profile(_isolated_config)["github"] == {"token": "p4ss #word"}
 
 
+def test_stdin_refuses_more_than_one_line(_isolated_config: Path) -> None:
+    result = _invoke(["set", "github.token", "--stdin"], input="one\ntwo\n")
+    assert result.exit_code == 1, result.output
+    assert "stdin should hold the value on one line" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("key", "raw", "stored"),
     [

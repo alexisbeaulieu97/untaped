@@ -24,7 +24,7 @@ class CompiledInputSource:
     templates: tuple[Template, ...]
 
 
-class InputSourceError(RecipeError, ValueError):
+class InputSourceError(RecipeError):
     """Raised when an input source cannot be compiled or rendered safely."""
 
 

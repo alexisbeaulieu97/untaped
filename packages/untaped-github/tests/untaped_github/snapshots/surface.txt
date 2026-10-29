@@ -541,8 +541,10 @@ record github.worktree.ref string
 record github.worktree.repo string
 record github.worktree.target_path string(format=path)
 sdk untaped_github.api.BatchRepoRefsFailure(*, full_name, reason, kind)
+sdk untaped_github.api.BatchRepoRefsFailure(category=) default=ErrorCategory.UNAVAILABLE
 sdk untaped_github.api.BatchRepoRefsFailure(status_code=) default=None
 sdk untaped_github.api.BatchRepoRefsFailure(url=) default=None
+sdk untaped_github.api.BatchRepoRefsFailure.category
 sdk untaped_github.api.BatchRepoRefsFailure.full_name
 sdk untaped_github.api.BatchRepoRefsFailure.kind
 sdk untaped_github.api.BatchRepoRefsFailure.reason
@@ -562,10 +564,14 @@ sdk untaped_github.api.BatchRepoRefsResult.rate_limit_remaining
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_reset_at
 sdk untaped_github.api.BatchRepoRefsResult.repos
 sdk untaped_github.api.GithubClient(config, *, http)
-sdk untaped_github.api.GithubClient.batch_default_branch_refs(chunk_size=) default=200
+sdk untaped_github.api.GithubClient.batch_default_branch_refs(chunk_size=) default=100
+sdk untaped_github.api.GithubClient.batch_default_branch_refs(concurrency=) default=1
+sdk untaped_github.api.GithubClient.batch_default_branch_refs(on_progress=) default=None callback(2)
 sdk untaped_github.api.GithubClient.batch_default_branch_refs(repos)
 sdk untaped_github.api.GithubClient.batch_repo_refs(chunk_size=) default=50
+sdk untaped_github.api.GithubClient.batch_repo_refs(concurrency=) default=1
 sdk untaped_github.api.GithubClient.batch_repo_refs(kinds=) default=["heads","tags"]
+sdk untaped_github.api.GithubClient.batch_repo_refs(on_progress=) default=None callback(2)
 sdk untaped_github.api.GithubClient.batch_repo_refs(repos)
 sdk untaped_github.api.GithubClient.close()
 sdk untaped_github.api.GithubClient.get_raw_content(owner, repo, path, *, ref)
@@ -640,3 +646,4 @@ sdk untaped_github.api.github_web_host(base_url)
 sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
+sdk untaped_github.api.split_repo_id(value)

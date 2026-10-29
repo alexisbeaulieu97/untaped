@@ -2,8 +2,7 @@
 
 This module isolates GraphQL mechanics — query building, alias
 bookkeeping, response parsing, missing-repo classification, per-repo ref
-pagination, and transient 5xx/transport retry splitting — the same way
-``pagination.py`` isolates REST ``Link``-header mechanics. ``GithubClient``
+pagination, and transient 5xx/transport retry splitting. ``GithubClient``
 only wires an ``HttpClient`` and the derived GraphQL endpoint into
 :func:`fetch_repo_refs`.
 
@@ -24,8 +23,7 @@ tags connection from the query entirely.
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime
 from itertools import batched
 from typing import Any, NamedTuple, cast
@@ -35,7 +33,10 @@ from untaped.sdk import (
     HttpClient,
     HttpError,
     HttpTransportError,
+    RetryPolicy,
     UntapedError,
+    bounded_map,
+    parse_utc,
 )
 from untaped_github.domain.models import (
     BatchRepoRefsFailure,
@@ -44,6 +45,7 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
+from untaped_github.domain.repo_id import split_repo_id
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
@@ -53,7 +55,14 @@ _GRAPHQL_ACCESS_STATUSES = frozenset({401, 403, 429})
 _RATE_LIMIT_FIELD = "rateLimit { cost remaining resetAt }"
 # These short delays only catch immediate blips. Sustained transient
 # failures are handled by adaptive splitting and by callers rerunning.
-_TRANSIENT_RETRY_DELAYS = (0.01, 0.02)
+# A probe query only reads, so a resent POST is safe: retry 5xx and transport
+# failures twice before the chunk is split.
+_TRANSIENT_RETRY = RetryPolicy(
+    backoff_base=0.01,
+    retry_statuses=tuple(range(500, 600)),
+    honor_retry_after=False,
+    idempotent_methods=frozenset({"POST"}),
+)
 _NO_PROGRESS_SPLIT_LOOKAHEAD = 1
 # Annotated tags point at a Tag object instead of a commit; peel via
 # nested ``target { oid }`` two levels deep (covers tags-of-tags).
@@ -70,6 +79,12 @@ class _RateLimit(NamedTuple):
     cost: int | None = None
     remaining: int | None = None
     reset_at: datetime | None = None
+
+
+type ProgressFn = Callable[[int, int], None]
+type _Resolve = Callable[
+    [_RepoTarget, dict[str, Any]], tuple[RepoRefs | BatchRepoRefsFailure, _RateLimit]
+]
 
 
 class _ChunkExecution(NamedTuple):
@@ -99,6 +114,8 @@ def fetch_repo_refs(
     *,
     kinds: Sequence[str] = ("heads", "tags"),
     chunk_size: int = 50,
+    concurrency: int = 1,
+    on_progress: ProgressFn | None = None,
 ) -> BatchRepoRefsResult:
     """Probe refs for ``repos`` in batches of ``chunk_size`` per POST."""
     ref_kinds = _validate_kinds(kinds)
@@ -107,6 +124,8 @@ def fetch_repo_refs(
         endpoint,
         repos,
         chunk_size=chunk_size,
+        concurrency=concurrency,
+        on_progress=on_progress,
         query=lambda chunk: _build_batch_query(chunk, ref_kinds),
         resolve=lambda target, node: _resolve_repo(http, endpoint, target, node, ref_kinds),
     )
@@ -117,7 +136,9 @@ def fetch_default_branch_refs(
     endpoint: str,
     repos: Sequence[str],
     *,
-    chunk_size: int = 200,
+    chunk_size: int = 100,
+    concurrency: int = 1,
+    on_progress: ProgressFn | None = None,
 ) -> BatchRepoRefsResult:
     """Probe only default-branch heads for ``repos`` without ref connections."""
     return _probe(
@@ -125,6 +146,8 @@ def fetch_default_branch_refs(
         endpoint,
         repos,
         chunk_size=chunk_size,
+        concurrency=concurrency,
+        on_progress=on_progress,
         query=_build_default_branch_query,
         resolve=lambda target, node: (_resolve_default_branch_repo(target, node), _RateLimit()),
     )
@@ -136,44 +159,73 @@ def _probe(
     repos: Sequence[str],
     *,
     chunk_size: int,
+    concurrency: int,
+    on_progress: ProgressFn | None,
     query: Callable[[tuple[_RepoTarget, ...]], str],
-    resolve: Callable[
-        [_RepoTarget, dict[str, Any]], tuple[RepoRefs | BatchRepoRefsFailure, _RateLimit]
-    ],
+    resolve: _Resolve,
 ) -> BatchRepoRefsResult:
-    """POST ``repos`` in chunks and resolve each returned alias node with ``resolve``."""
+    """POST ``repos`` in chunks, ``concurrency`` at a time, and merge what they read.
+
+    A chunk whose request fails for any reason but a GraphQL error
+    gives each of its repos a ``request`` failure; the other chunks go on.
+    """
     if chunk_size < 1:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     targets = [_parse_repo_target(repo) for repo in repos]
+    chunks = list(batched(targets, chunk_size, strict=False))
+    results: dict[int, BatchRepoRefsResult] = {}
+
+    def read(index: int) -> BatchRepoRefsResult:
+        try:
+            return _probe_chunk(http, endpoint, chunks[index], query, resolve)
+        except GithubGraphqlError:
+            raise
+        except UntapedError as exc:
+            return BatchRepoRefsResult(failures=_request_failures(chunks[index], exc))
+
+    def record(index: int, result: BatchRepoRefsResult) -> None:
+        results[index] = result
+        if on_progress is not None:
+            on_progress(sum(len(chunks[done]) for done in results), len(targets))
+
+    bounded_map(read, range(len(chunks)), concurrency=concurrency, on_each=record)
+    return _merged(results[index] for index in range(len(chunks)))
+
+
+def _probe_chunk(
+    http: HttpClient,
+    endpoint: str,
+    chunk: tuple[_RepoTarget, ...],
+    query: Callable[[tuple[_RepoTarget, ...]], str],
+    resolve: _Resolve,
+) -> BatchRepoRefsResult:
     collected: list[RepoRefs] = []
     missing: list[str] = []
-    failures: list[BatchRepoRefsFailure] = []
     rate_limit = _RateLimit()
-    for chunk in batched(targets, chunk_size, strict=False):
-        execution = _execute_chunk(http, endpoint, chunk, query)
-        failures.extend(execution.failures)
-        for subchunk, payload in execution.payloads:
-            missing_aliases = _classify_errors(payload)
-            data = payload.get("data") or {}
-            rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
-            for index, target in enumerate(subchunk):
-                alias = f"r{index}"
-                node = data.get(alias)
-                if node is None:
-                    if alias not in missing_aliases:
-                        raise UntapedError(
-                            f"github graphql returned null for {target.full_name} "
-                            "without an explanatory error",
-                            system="github",
-                        )
-                    missing.append(target.full_name)
-                    continue
-                result, page_rate_limit = resolve(target, node)
-                rate_limit = _merge_rate_limit(rate_limit, page_rate_limit)
-                if isinstance(result, BatchRepoRefsFailure):
-                    failures.append(result)
-                else:
-                    collected.append(result)
+    execution = _execute_chunk(http, endpoint, chunk, query)
+    failures = list(execution.failures)
+    for subchunk, payload in execution.payloads:
+        missing_aliases = _classify_errors(payload)
+        data = payload.get("data") or {}
+        rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
+        for index, target in enumerate(subchunk):
+            alias = f"r{index}"
+            node = data.get(alias)
+            if node is None:
+                if alias not in missing_aliases:
+                    raise UntapedError(
+                        f"github graphql returned null for {target.full_name} "
+                        "without an explanatory error",
+                        system="github",
+                    )
+                missing.append(target.full_name)
+                continue
+            result, page_rate_limit = resolve(target, node)
+            rate_limit = _merge_rate_limit(rate_limit, page_rate_limit)
+            if isinstance(result, BatchRepoRefsFailure):
+                failures.append(result)
+            else:
+                collected.append(result)
     return BatchRepoRefsResult(
         repos=tuple(collected),
         missing=tuple(missing),
@@ -181,6 +233,48 @@ def _probe(
         rate_limit_cost=rate_limit.cost,
         rate_limit_remaining=rate_limit.remaining,
         rate_limit_reset_at=rate_limit.reset_at,
+    )
+
+
+def _merged(results: Iterable[BatchRepoRefsResult]) -> BatchRepoRefsResult:
+    """One result from the chunks' results, in chunk order."""
+    repos: list[RepoRefs] = []
+    missing: list[str] = []
+    failures: list[BatchRepoRefsFailure] = []
+    rate_limit = _RateLimit()
+    for result in results:
+        repos.extend(result.repos)
+        missing.extend(result.missing)
+        failures.extend(result.failures)
+        rate_limit = _merge_rate_limit(
+            rate_limit,
+            _RateLimit(
+                result.rate_limit_cost, result.rate_limit_remaining, result.rate_limit_reset_at
+            ),
+        )
+    return BatchRepoRefsResult(
+        repos=tuple(repos),
+        missing=tuple(missing),
+        failures=tuple(failures),
+        rate_limit_cost=rate_limit.cost,
+        rate_limit_remaining=rate_limit.remaining,
+        rate_limit_reset_at=rate_limit.reset_at,
+    )
+
+
+def _request_failures(
+    chunk: tuple[_RepoTarget, ...], exc: UntapedError
+) -> tuple[BatchRepoRefsFailure, ...]:
+    return tuple(
+        BatchRepoRefsFailure(
+            full_name=target.full_name,
+            reason=str(exc) or type(exc).__name__,
+            kind="request",
+            category=exc.category,
+            status_code=exc.status_code if isinstance(exc, HttpError) else None,
+            url=exc.url if isinstance(exc, HttpError) else None,
+        )
+        for target in chunk
     )
 
 
@@ -200,12 +294,12 @@ def _parse_repo_target(value: str) -> _RepoTarget:
     # UntapedError, not ValueError: repo strings can originate from user
     # source config (typos), and core's error boundary renders
     # UntapedError as a message instead of a traceback.
-    owner, sep, name = value.partition("/")
-    if not sep or not owner or not name or "/" in name:
+    parts = split_repo_id(value)
+    if parts is None:
         raise UntapedError(
             f"invalid repository {value!r}: expected 'owner/name'", category="invalid"
         )
-    return _RepoTarget(value, owner, name)
+    return _RepoTarget(value, *parts)
 
 
 def _execute_chunk(
@@ -216,7 +310,7 @@ def _execute_chunk(
 ) -> _ChunkExecution:
     """POST one chunk; adaptively isolate retryable transient failures."""
     try:
-        payload = _post_with_transient_retries(http, endpoint, query(chunk))
+        payload = _post(http, endpoint, query(chunk))
         return _ChunkExecution([(chunk, payload)], [])
     except HttpError as exc:
         if not _is_transient_probe_error(exc):
@@ -240,21 +334,6 @@ def _is_transient_probe_error(exc: HttpError) -> bool:
     return _is_server_error(exc) or isinstance(exc, HttpTransportError)
 
 
-def _post_with_transient_retries(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
-    last_exc: HttpError | None = None
-    for delay in (0.0, *_TRANSIENT_RETRY_DELAYS):
-        if delay:
-            time.sleep(delay)
-        try:
-            return _post(http, endpoint, query)
-        except HttpError as exc:
-            if not _is_transient_probe_error(exc):
-                raise
-            last_exc = exc
-    assert last_exc is not None
-    raise last_exc
-
-
 def _split_failed_chunk(
     http: HttpClient,
     endpoint: str,
@@ -268,7 +347,7 @@ def _split_failed_chunk(
     any_success = False
     for half in (chunk[:mid], chunk[mid:]):
         try:
-            attempts.append((half, _post_with_transient_retries(http, endpoint, query(half))))
+            attempts.append((half, _post(http, endpoint, query(half))))
             any_success = True
         except HttpError as exc:
             if not _is_transient_probe_error(exc):
@@ -325,7 +404,7 @@ def _transient_failure(target: _RepoTarget, exc: HttpError) -> BatchRepoRefsFail
 
 def _post(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
     try:
-        payload = http.post_json(endpoint, json={"query": query}, retry=None)
+        payload = http.post_json(endpoint, json={"query": query}, retry=_TRANSIENT_RETRY)
     except HttpError as exc:
         if exc.status_code in _GRAPHQL_ACCESS_STATUSES:
             raise _graphql_http_error(exc) from exc
@@ -544,11 +623,7 @@ def _resolve_repo(
             if not page["hasNextPage"]:
                 break
             try:
-                payload = _post_with_transient_retries(
-                    http,
-                    endpoint,
-                    _build_page_query(target, kind, page["endCursor"]),
-                )
+                payload = _post(http, endpoint, _build_page_query(target, kind, page["endCursor"]))
             except HttpError as exc:
                 if not _is_transient_probe_error(exc):
                     raise
@@ -615,7 +690,7 @@ def _rate_limit(payload: dict[str, Any]) -> _RateLimit:
         return _RateLimit()
     cost = rate_limit.get("cost")
     remaining = rate_limit.get("remaining")
-    reset_at = _parse_reset_at(rate_limit.get("resetAt"))
+    reset_at = parse_utc(rate_limit.get("resetAt"))
     return _RateLimit(
         cost=cost if isinstance(cost, int) else None,
         remaining=remaining if isinstance(remaining, int) else None,
@@ -623,21 +698,21 @@ def _rate_limit(payload: dict[str, Any]) -> _RateLimit:
     )
 
 
-def _parse_reset_at(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def _merge_rate_limit(current: _RateLimit, latest: _RateLimit) -> _RateLimit:
+    # Chunks run side by side, so the lowest budget and the latest reset win.
     return _RateLimit(
         cost=_sum_optional_ints(current.cost, latest.cost),
-        remaining=latest.remaining if latest.remaining is not None else current.remaining,
-        reset_at=latest.reset_at if latest.reset_at is not None else current.reset_at,
+        remaining=_min_optional(current.remaining, latest.remaining),
+        reset_at=_max_optional(current.reset_at, latest.reset_at),
     )
+
+
+def _min_optional(left: int | None, right: int | None) -> int | None:
+    return right if left is None else left if right is None else min(left, right)
+
+
+def _max_optional(left: datetime | None, right: datetime | None) -> datetime | None:
+    return right if left is None else left if right is None else max(left, right)
 
 
 def _sum_optional_ints(left: int | None, right: int | None) -> int | None:

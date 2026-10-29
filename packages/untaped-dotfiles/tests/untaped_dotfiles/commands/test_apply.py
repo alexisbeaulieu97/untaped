@@ -92,20 +92,25 @@ def test_apply_without_a_terminal_needs_yes_and_a_decline_changes_nothing(
     assert refused.exit_code == 2 and "--yes" in refused.stderr
     declined = answered(terminal, False, ["apply"])
     assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
-    header = declined.stderr.splitlines()[0]
-    assert header.split() == ["item", "source", "action", "state", "target"]  # the plan
-    assert "~/.config/starship.toml" in declined.stderr  # the target, as the person reads it
+    # The plan is the planned rows, as a table core lays out.
+    header = declined.stderr.splitlines()[1]
+    assert [cell.strip() for cell in header.strip("│").split("│")] == [
+        "item",
+        "source",
+        "action",
+        "state",
+        "target_path",
+    ]
+    assert str(user_home / ".config/starship.toml") in declined.stderr
     assert not (user_home / ".config" / "starship.toml").exists()
     as_json = answered(terminal, False, ["apply", "--format", "json"])
-    # Under JSON the preview's lines are info messages, never rows on stdout.
-    plan = [json.loads(line)["message"] for line in as_json.stderr.splitlines()][:2]
-    assert plan[0].split() == ["item", "source", "action", "state", "target"]
-    assert plan[1].split() == [
-        "starship",
-        "starship.toml",
-        "planned",
-        "pending",
-        "~/.config/starship.toml",
+    # Under JSON the preview is an info message, never rows on stdout.
+    plan = json.loads(as_json.stderr.splitlines()[0])["message"]
+    assert plan.splitlines()[:4] == [
+        "item: starship",
+        "source: starship.toml",
+        "action: planned",
+        "state: pending",
     ]
     assert as_json.stdout == ""
     accepted = answered(terminal, True, ["apply"])
@@ -485,8 +490,15 @@ def test_remove_deletes_placed_paths_unmerges_and_disables(
     assert {r["action"] for r in plan} == {"planned"}
     declined = answered(terminal, False, ["remove", "--all"])
     assert declined.exit_code == 1 and "cancelled; no changes made" in declined.stderr
-    header = declined.stderr.splitlines()[0]
-    assert header.split() == ["item", "source", "action", "state", "target", "detail"]
+    header = declined.stderr.splitlines()[1]
+    assert [cell.strip() for cell in header.strip("│").split("│")] == [
+        "item",
+        "source",
+        "action",
+        "state",
+        "detail",
+        "target_path",
+    ]
     rows = as_json(["remove", "--all", "--yes"])
     assert {r["action"] for r in rows} == {"deleted"}
     assert sorted(p.name for p in (user_home / ".config/fish/conf.d").iterdir()) == ["fisher.fish"]

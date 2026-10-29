@@ -71,7 +71,7 @@ class Apply(Selected):
                     self.ctx.diag.failure(error, item=repo_row.name)
             if not self.confirm(
                 f"Apply {plural(len(todo), 'path')}?",
-                preview=lambda: plan_lines(svc, planned),
+                preview=lambda: [planned],
                 needed=bool(todo or moved),
             ):
                 return iter(_as(ApplyOutcome, planned))
@@ -168,7 +168,7 @@ class Remove(Chosen):
                 f"Remove {plural(len(recorded), 'path')} and disable "
                 f"{plural(len(choices), 'item')}?"
             )
-            if not self.confirm(question, preview=lambda: plan_lines(svc, planned)):
+            if not self.confirm(question, preview=lambda: [planned]):
                 return iter(_as(RemoveOutcome, planned))
             rows = svc.applier.remove_all(steps)
             for choice in choices:
@@ -177,28 +177,6 @@ class Remove(Chosen):
         self.output.empty("Nothing to remove.")
         self.report_rows(rows)
         return iter(_as(RemoveOutcome, rows))
-
-
-def plan_lines(svc: Services, planned: Sequence[PlaceOutcome]) -> list[str]:
-    """The plan a question shows on stderr: aligned columns, a column empty on every row left out.
-
-    Text for the person answering, whatever ``--format`` is; the rows go to
-    stdout once the command runs.
-    """
-    columns: dict[str, list[str]] = {
-        "item": [row.item for row in planned],
-        "source": [row.source for row in planned],
-        "action": [row.action for row in planned],
-        "state": [row.state or "" for row in planned],
-        "target": [svc.shown(row.target_path) for row in planned],
-        "detail": [row.detail for row in planned],
-    }
-    shown = [[name, *values] for name, values in columns.items() if any(values)]
-    widths = [max(map(len, column)) for column in shown]
-    return [
-        "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=True)).rstrip()
-        for line in zip(*shown, strict=True)
-    ]
 
 
 def _refresh_status(svc: Services) -> None:

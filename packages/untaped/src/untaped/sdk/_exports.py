@@ -52,6 +52,7 @@ from untaped.sdk.diagnostic import (
     Message,
     Progress,
     Stale,
+    parse_utc,
 )
 from untaped.sdk.diff import unified_diff_text
 from untaped.sdk.errors import (
@@ -408,6 +409,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "TreeOutputFormat",
     "UtcTimestamp",
     "now",
+    "parse_utc",
     "kind_of",
     "record_model",
     "summary",

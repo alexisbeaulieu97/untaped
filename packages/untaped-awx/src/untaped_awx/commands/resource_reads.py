@@ -22,7 +22,7 @@ from untaped_awx.commands._options import (
     offers_with_scm,
     scope_values,
 )
-from untaped_awx.commands._selection import none_found, require_source, select, select_resources
+from untaped_awx.commands._selection import none_found, require_source, select
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.names import name_fks
 from untaped_awx.commands.save_runner import save_selection, yaml_text
@@ -91,17 +91,14 @@ class List(_Read):
         with self.awx() as awx:
             loading = not self.stdin.requested and not self.names
             with awx.diag.progress(f"Loading {self.spec.kind}") if loading else nullcontext():
-                selected = select_resources(
+                selected = select(
                     awx,
                     self.spec,
                     self.names,
-                    stdin=self.stdin,
-                    by_id=self.selection.by_id,
-                    filters=self.selection.filters,
-                    search=self.selection.search,
-                    all_=self.selection.all_,
+                    self.selection,
+                    self.stdin,
+                    scope_values(self.scope),
                     default_all=True,
-                    scope=scope_values(self.scope),
                     limit=limit,
                 )
             records = [item.record for item in selected]

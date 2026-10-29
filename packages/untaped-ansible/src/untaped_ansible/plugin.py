@@ -7,7 +7,7 @@ guide.
 
 from __future__ import annotations
 
-from untaped.sdk import ExecutableCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
 from untaped_ansible.commands.graph import Deps, Find, Graph, ImpactGroup
 from untaped_ansible.commands.source import SourceGroup
 from untaped_ansible.commands.source_alias import SourceAliasGroup
@@ -75,7 +75,6 @@ class Ansible(Plugin):
     aliases = ALIASES
     index = INDEX_DIR
     source_data = SOURCE_DATA
-    git = ExecutableCheck("git", purpose="git-backed source refresh")
     skill = StubSkill(
         "Ansible role and project dependencies across GitHub repositories: what a role "
         "depends on, what depends on it and which of its variables they use, which "

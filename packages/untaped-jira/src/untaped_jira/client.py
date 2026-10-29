@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from untaped.sdk import HttpFactory, RetryPolicy, paginate_offset
@@ -79,16 +79,12 @@ class JiraClient:
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
         with map_jira_errors():
-            yield from paginate_offset(
-                self._http,
+            yield from self._pages(
                 "POST",
                 self._api("search"),
-                item_key="issues",
-                body={"jql": jql, "fields": list(ISSUE_ROW_FIELDS)},
-                page_size=self._page_size,
+                "issues",
                 limit=limit,
-                start_param="startAt",
-                size_param="maxResults",
+                body={"jql": jql, "fields": list(ISSUE_ROW_FIELDS)},
                 retry=_SEARCH_RETRY,
             )
 
@@ -96,15 +92,8 @@ class JiraClient:
         self, issue_key: str, *, limit: int | None = None
     ) -> Iterator[dict[str, Any]]:
         with map_jira_errors(noun="issue", name=issue_key):
-            yield from paginate_offset(
-                self._http,
-                "GET",
-                self._api(f"issue/{_segment(issue_key)}/comment"),
-                item_key="comments",
-                page_size=self._page_size,
-                limit=limit,
-                start_param="startAt",
-                size_param="maxResults",
+            yield from self._pages(
+                "GET", self._api(f"issue/{_segment(issue_key)}/comment"), "comments", limit=limit
             )
 
     def create_issue(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -177,16 +166,12 @@ class JiraClient:
         if board_type:
             params["type"] = board_type
         with map_jira_errors():
-            yield from paginate_offset(
-                self._http,
+            yield from self._pages(
                 "GET",
                 self._agile("board"),
-                item_key="values",
-                params=params,
-                page_size=self._page_size,
+                "values",
                 limit=limit,
-                start_param="startAt",
-                size_param="maxResults",
+                params=params,
                 last_flag="isLast",
             )
 
@@ -199,18 +184,36 @@ class JiraClient:
     ) -> Iterator[dict[str, Any]]:
         params = {"state": state} if state else None
         with map_jira_errors(noun="board", name=str(board_id)):
-            yield from paginate_offset(
-                self._http,
+            yield from self._pages(
                 "GET",
                 self._agile(f"board/{board_id}/sprint"),
-                item_key="values",
-                params=params,
-                page_size=self._page_size,
+                "values",
                 limit=limit,
-                start_param="startAt",
-                size_param="maxResults",
+                params=params,
                 last_flag="isLast",
             )
+
+    def _pages(
+        self,
+        method: Literal["GET", "POST"],
+        path: str,
+        item_key: str,
+        *,
+        limit: int | None,
+        **options: Any,
+    ) -> Iterator[dict[str, Any]]:
+        """Rows under ``item_key`` across Jira's ``startAt``/``maxResults`` pages."""
+        return paginate_offset(
+            self._http,
+            method,
+            path,
+            item_key=item_key,
+            page_size=self._page_size,
+            limit=limit,
+            start_param="startAt",
+            size_param="maxResults",
+            **options,
+        )
 
     def close(self) -> None:
         self._http.close()

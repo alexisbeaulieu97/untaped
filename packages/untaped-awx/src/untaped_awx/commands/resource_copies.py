@@ -9,7 +9,7 @@ from untaped_awx.application.resources.copy_resource import CopyResource
 from untaped_awx.application.resources.rename_resource import RenameResource
 from untaped_awx.commands._awx import ResourceCommand
 from untaped_awx.commands._format import format_scope
-from untaped_awx.commands._options import OrganizationScope, scope_values
+from untaped_awx.commands._options import ById, OrganizationScope, scope_values
 from untaped_awx.commands._selection import select_resources
 from untaped_awx.domain import CopyOutcome, RenameOutcome
 from untaped_awx.errors import BadRequestError
@@ -38,7 +38,7 @@ class Copy(ResourceCommand):
     )
     name: str = Field(description="Name of the new copy.")
     scope: OrganizationScope
-    by_id: bool = Field(False, description="Look up the source by its AWX id instead of its name.")
+    by_id: ById = Field(description="Look up the source by its AWX id instead of its name.")
     confirm: Confirm
     output: Output[CopyOutcome]
 
@@ -88,7 +88,7 @@ class Rename(ResourceCommand):
     )
     new: Positional[str] = Field(description="New name for the resource.")
     scope: OrganizationScope
-    by_id: bool = Field(False, description="Look up the source by its AWX id instead of its name.")
+    by_id: ById = Field(description="Look up the source by its AWX id instead of its name.")
     confirm: Confirm
     output: Output[RenameOutcome]
 

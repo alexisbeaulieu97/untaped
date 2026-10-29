@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from untaped_recipe.application.run_hook import RunHook, TransformHookRun, select_verb
+from untaped_recipe.application.run_hook import (
+    AmbiguousHookVerbError,
+    RunHook,
+    TransformHookRun,
+    select_verb,
+)
 from untaped_recipe.domain.plan import HookDebugResult, Verdict
 
 
@@ -136,5 +141,5 @@ def test_select_verb_uses_single_export_then_kind_then_file(
 
 
 def test_select_verb_requires_kind_or_file_for_dual_export() -> None:
-    with pytest.raises(ValueError, match="ambiguous hook verb"):
+    with pytest.raises(AmbiguousHookVerbError, match="ambiguous hook verb"):
         select_verb(frozenset({"transform", "validate"}), file_given=False, kind=None)

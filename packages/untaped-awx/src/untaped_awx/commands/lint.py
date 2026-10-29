@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 
 from untaped.sdk import (
     Document,
-    KeyValue,
     Matched,
     Output,
     Positional,
@@ -26,7 +25,7 @@ from untaped.sdk import (
     experimental,
 )
 from untaped_awx.commands._awx import AwxCommand
-from untaped_awx.commands._options import reject_duplicate_org_scope
+from untaped_awx.commands._options import Filters, reject_duplicate_org_scope
 from untaped_awx.document import Document as AwxDocument
 from untaped_awx.settings import RESOURCES
 from untaped_lint.api import Finding, Findings
@@ -207,10 +206,7 @@ class Linting(BaseModel):
         description="Report only this kind: a CLI name (job-templates) or a kind (JobTemplate).",
     )
     organization: str | None = Field(None, description="Scope to organization.")
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side filter KEY=VALUE (repeatable).",
-    )
+    filter_: Filters
     search: str | None = Field(None, description="Server-side search.")
 
 

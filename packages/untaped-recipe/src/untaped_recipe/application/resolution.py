@@ -9,7 +9,7 @@ from untaped.sdk import not_found, plural, q
 from untaped_recipe.application.ports import PackLibraryPort
 from untaped_recipe.domain.pack import InstalledPack, RecipeEntry, parse_ref
 from untaped_recipe.domain.paths import is_path_ref
-from untaped_recipe.errors import RecipeFileNotFoundError, RecipeNotFoundError
+from untaped_recipe.errors import RecipeError, RecipeFileNotFoundError, RecipeNotFoundError
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def _library_ref_hint(library: PackLibraryPort, ref_text: str) -> str:
     try:
         if library.find_pack(name) is None:
             library.find_recipe(parse_ref(name))
-    except ValueError:
+    except RecipeError, ValueError:
         return ""
     return f" (did you mean the library ref '{name}'?)"
 

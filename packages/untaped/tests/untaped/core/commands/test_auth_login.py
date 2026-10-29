@@ -143,7 +143,7 @@ def test_login_prompts_on_a_terminal(_isolated_config: Path) -> None:
 def test_login_refuses_empty_or_multiline_stdin(payload: str, message: str) -> None:
     result = _auth("login", "wiz", input=payload)
 
-    assert result.exit_code == 2, result.output
+    assert result.exit_code == 1, result.output
     assert message in result.stderr
     assert stored_rows() == []
 

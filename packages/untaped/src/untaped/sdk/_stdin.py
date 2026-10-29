@@ -51,6 +51,20 @@ def read_stdin_text() -> str:
     return _trim_terminal_newline(sys.stdin.read())
 
 
+def read_stdin_line(noun: str) -> str:
+    """Read one value piped on a single line, such as a token or a setting.
+
+    The line ending is trimmed and the rest kept as typed. Nothing piped, a
+    blank line or more than one line is an invalid value naming ``noun``.
+    """
+    text = read_stdin_text().rstrip("\r\n")
+    if "\n" in text or "\r" in text:
+        raise ConfigError(f"stdin should hold the {noun} on one line", category="invalid")
+    if not text.strip():
+        raise ConfigError(f"no {noun} received on stdin", category="invalid")
+    return text
+
+
 def _read_raw_lines() -> list[tuple[int, str]] | None:
     """Read stdin as ``(1-based line number, stripped line)`` pairs.
 

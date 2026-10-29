@@ -11,7 +11,6 @@ from pydantic import Field
 from untaped.sdk import (
     Failed,
     Group,
-    KeyValue,
     Limit,
     Output,
     Short,
@@ -22,6 +21,7 @@ from untaped.sdk import (
 from untaped_awx.application import TailJobLogs, WatchJob
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.commands._job_targets import JOB_KIND_HELP, JobKind, JobsCommand, as_job_id
+from untaped_awx.commands._options import Filters
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.event_render import render_event_text
 from untaped_awx.commands.job_actions import Cancel, Relaunch
@@ -71,10 +71,7 @@ class List(AwxCommand):
     status: str | None = Field(
         None, description="Filter by AWX status (e.g. running, successful, failed)."
     )
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim.",
-    )
+    filter_: Filters
     limit: Limit = Limit(default=20)
     kind: JobKind = Field("job", description=JOB_KIND_HELP)
     template: str | None = Field(
@@ -152,9 +149,8 @@ class Events(JobsCommand):
 
     follow: bool = Field(False, description="Tail events live until terminal.")
     from_counter: int = Field(0, description="Skip events with counter <= this value.")
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side AWX filter, KEY=VALUE (repeatable). E.g. event=runner_on_failed.",
+    filter_: Filters = Field(
+        description="Server-side AWX filter, KEY=VALUE (repeatable). E.g. event=runner_on_failed."
     )
     output: Output[JobEventRow] = Output(stream=True, render={"table": _event_lines})
 

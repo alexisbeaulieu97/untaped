@@ -26,6 +26,7 @@ import untaped_recipe.infrastructure.hook_worker_client as worker_client
 from untaped_recipe.domain.hook_project import UvHookRef, ensure_hook_supports
 from untaped_recipe.domain.pack import PackManifest
 from untaped_recipe.domain.plan import HookWorkerCallResult, Verdict
+from untaped_recipe.errors import HookFailedError, PathNotFoundError, UvMissingError
 from untaped_recipe.infrastructure.hook_executor import HookExecutor
 from untaped_recipe.infrastructure.hook_resolver import (
     BuiltinHookRef,
@@ -196,28 +197,30 @@ def test_hook_resolver_rejects_runtime_cli_dependency(tmp_path: Path, dependency
 
 
 @pytest.mark.parametrize(
-    ("options", "remove_module", "match"),
+    ("options", "remove_module", "error", "match"),
     [
-        ({"lock": False}, False, r"missing uv\.lock"),
+        ({"lock": False}, False, ValueError, r"missing uv\.lock"),
         (
             {"requires_hook_api": ">=99"},
             False,
+            ValueError,
             r"requires hook API >=99, but the untaped recipe plugin provides 0\.10\.0",
         ),
-        ({}, True, "hook module file not found"),
+        ({}, True, PathNotFoundError, "hook module file not found"),
     ],
 )
 def test_hook_resolver_rejects_broken_hook_projects(
     tmp_path: Path,
     options: dict[str, object],
     remove_module: bool,
+    error: type[Exception],
     match: str,
 ) -> None:
     _write_hook_project(tmp_path, hooks={"check": "project_hooks.hooks.check"}, **options)
     if remove_module:
         (tmp_path / "src" / "project_hooks" / "hooks" / "check.py").unlink()
 
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(error, match=match):
         HookResolver().resolve("check", tmp_path)
 
 
@@ -292,7 +295,7 @@ def test_uv_hook_worker_reports_missing_uv(
 
     monkeypatch.setattr(subprocess, "Popen", fail_popen)
 
-    with pytest.raises(ValueError, match="uv executable not found"):
+    with pytest.raises(UvMissingError, match="uv executable not found"):
         UvHookWorker(tmp_path)
 
 
@@ -533,7 +536,7 @@ def test_uv_hook_worker_discards_success_diagnostics_before_failure(
     assert worker.request({"kind": "transform", "module": "hooks.sample"}).result == "after"
     worker._stderr.put("failure diagnostic\n")
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(HookFailedError) as excinfo:
         worker.request({"kind": "transform", "module": "hooks.sample"})
 
     message = str(excinfo.value)
@@ -979,13 +982,13 @@ _OK_LINE = '{"id": "1", "ok": true, "result": "after"}\n'
 @pytest.mark.parametrize(
     ("stdout", "ready", "stderr", "broken_stdin", "error", "match"),
     [
-        ("not-json\n", True, "", False, ValueError, "malformed hook worker response"),
+        ("not-json\n", True, "", False, FatalError, "malformed hook worker response"),
         (
             '{"id": "wrong", "ok": true, "result": "after"}\n',
             True,
             "",
             False,
-            ValueError,
+            FatalError,
             "response id mismatch",
         ),
         ("hello\n", False, "", False, FatalError, "malformed hook worker handshake"),
@@ -1178,7 +1181,7 @@ def test_uv_hook_worker_pool_retires_workers_only_after_fatal_errors(
     ref = _sample_ref(tmp_path)
 
     with UvHookWorkerPool(max_workers_per_project=1) as pool:
-        with pytest.raises(ValueError, match=str(failure)):
+        with pytest.raises(type(failure), match=str(failure)):
             pool.request(ref, {"kind": "validate"})
         assert pool.request(ref, {"kind": "validate"}).result == (2 if replaced else 1)
 

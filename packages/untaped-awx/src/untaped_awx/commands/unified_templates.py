@@ -30,7 +30,6 @@ from untaped.sdk import (
     ErrorCategory,
     Failure,
     Group,
-    KeyValue,
     Limit,
     Output,
     Positional,
@@ -42,6 +41,7 @@ from untaped.sdk import (
 )
 from untaped_awx.application import GetUnifiedTemplate
 from untaped_awx.commands._awx import AwxCommand
+from untaped_awx.commands._options import Filters
 from untaped_awx.commands._template_targets import template_targets
 from untaped_awx.errors import AwxError
 from untaped_awx.records import UnifiedTemplate
@@ -69,10 +69,7 @@ class List(AwxCommand):
             "workflow_job_template, project, inventory_source."
         ),
     )
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim to AWX.",
-    )
+    filter_: Filters
     limit: Limit
     output: Output[UnifiedTemplate] = Output(columns=_DEFAULT_LIST_COLUMNS)
 

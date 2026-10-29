@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from untaped.sdk._schema import Choices, field_choices
 from untaped.sdk._theme import (
+    CHECK_SYMBOLS,
     DEFAULT_SYMBOLS,
     SCREEN_SYMBOLS,
     STATUS_SYMBOLS,
@@ -61,8 +62,18 @@ PLAIN_SCREEN_SYMBOLS: dict[str, str] = {
     "dash": "-",
 }
 
+#: ASCII fallbacks the ``plain`` theme layers over :data:`CHECK_SYMBOLS`.
+PLAIN_CHECK_SYMBOLS: dict[str, str] = {
+    "check.pass": "+",
+    "check.warn": "!",
+    "check.partial": "~",
+    "check.fail": "x",
+    "check.skip": "-",
+    "check.fix": "->",
+}
+
 #: The declared names ``untaped.ui.symbols`` and ``untaped.ui.color_roles`` accept on write.
-SYMBOL_NAMES: tuple[str, ...] = (*STATUS_SYMBOLS, *SCREEN_SYMBOLS)
+SYMBOL_NAMES: tuple[str, ...] = (*STATUS_SYMBOLS, *SCREEN_SYMBOLS, *CHECK_SYMBOLS)
 TABLE_ROLE_NAMES: tuple[str, ...] = (
     "header",
     "border",
@@ -230,7 +241,7 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
     "default": ThemeSpec(color_roles=dict(ZINC_SCREEN_ROLES)),
     "plain": ThemeSpec(
         border="ascii",
-        symbols={**DEFAULT_SYMBOLS, **PLAIN_SCREEN_SYMBOLS},
+        symbols={**DEFAULT_SYMBOLS, **PLAIN_SCREEN_SYMBOLS, **PLAIN_CHECK_SYMBOLS},
         color_roles={**NAMED_SCREEN_ROLES, "screen.highlight": "reverse"},
     ),
     "compact": ThemeSpec(density="compact", color_roles=dict(ZINC_SCREEN_ROLES)),

@@ -16,7 +16,6 @@ from pydantic import Field
 from untaped.sdk import (
     Confirm,
     Document,
-    KeyValue,
     Output,
     Parallel,
     PathOrStdin,
@@ -30,6 +29,7 @@ from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.commands._mutation_runner import WriteGate
 from untaped_awx.commands._options import (
     AllowUnverified,
+    Filters,
     OrganizationScope,
     SourceRef,
     Writes,
@@ -125,8 +125,7 @@ class Export(AwxCommand):
         ),
     )
     scope: OrganizationScope
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
+    filter_: Filters = Field(
         description=(
             "Expert server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX for "
             "each exported kind. For organization backups, prefer --organization so each "

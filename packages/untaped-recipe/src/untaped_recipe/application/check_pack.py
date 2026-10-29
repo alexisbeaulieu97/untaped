@@ -41,7 +41,8 @@ def check_ref(
         if path.is_dir() and (path / "pyproject.toml").is_file():
             try:
                 local = library.local_pack(path)
-            except (ValueError, OSError) as exc:
+            except (UntapedError, ValueError, OSError) as exc:
+                raise_environment(exc)
                 return _failed_pack(path.name, path, str(exc))
             return _check_pack(local, inspector)
         resolved = resolve_explicit_recipe(library, path, recipe_id=None)

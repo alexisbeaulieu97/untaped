@@ -75,3 +75,22 @@ def test_get_raw_content_reads_file_at_ref(composed: Running) -> None:
     assert route.calls[0].request.url.params["ref"] == "release/1"
     assert route.calls[0].request.headers["accept"] == "application/vnd.github.raw"
     assert content == "- src: https://github.com/acme/base\n"
+
+
+def test_a_search_with_no_room_asks_nothing(composed: Running) -> None:
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        route = mock.get("/search/repositories").mock(
+            return_value=httpx.Response(200, json={"items": [{"id": 1}]})
+        )
+        with _client(composed) as client:
+            assert list(client.search_repositories("x", limit=0)) == []
+    assert route.call_count == 0
+
+
+def test_a_search_reads_the_rows_under_items(composed: Running) -> None:
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/search/code").mock(
+            return_value=httpx.Response(200, json={"total_count": 1, "items": [{"id": 1}]})
+        )
+        with _client(composed) as client:
+            assert list(client.search_code("x")) == [{"id": 1}]

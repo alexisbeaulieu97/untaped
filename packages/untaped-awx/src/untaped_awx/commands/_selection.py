@@ -37,8 +37,15 @@ def select(
     selection: Selection,
     stdin: Stdin[Any],
     scope: Mapping[str, str | None],
+    *,
+    default_all: bool = False,
+    limit: int | None = None,
 ) -> tuple[SelectedResource, ...]:
-    """Resolve a write's (or ``get``'s) options to an explicit fixed selection."""
+    """Resolve a command's selection options to a fixed selection.
+
+    A write (or ``get``) needs an explicit selection; with ``default_all`` (a
+    ``list``) no selection means every resource in scope, at most ``limit``.
+    """
     return select_resources(
         ctx,
         spec,
@@ -48,8 +55,10 @@ def select(
         filters=selection.filters,
         search=selection.search,
         all_=selection.all_,
-        require_explicit=True,
+        require_explicit=not default_all,
+        default_all=default_all,
         scope=scope,
+        limit=limit,
     )
 
 

@@ -18,6 +18,7 @@ from untaped_recipe.application.targets import Target
 from untaped_recipe.builtins.hooks import yaml_edit
 from untaped_recipe.domain.plan import FileChange, TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
+from untaped_recipe.errors import UvMissingError
 from untaped_recipe.hook_worker import HookHelpers, dump_yaml, load_yaml
 from untaped_recipe.infrastructure import uv_project
 from untaped_recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
@@ -784,7 +785,8 @@ def test_check_lock_reports_stale_or_unverifiable_lockfiles(
     if message is None:
         uv_project.check_lock(tmp_path)
         return
-    with pytest.raises(ValueError) as exc_info:
+    # A missing uv is the machine's problem, not the lock's.
+    with pytest.raises(UvMissingError if returncode is None else ValueError) as exc_info:
         uv_project.check_lock(tmp_path)
     assert str(exc_info.value) == message.format(root=tmp_path)
 

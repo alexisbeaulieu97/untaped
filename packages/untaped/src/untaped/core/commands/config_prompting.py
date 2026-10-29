@@ -9,7 +9,7 @@ from untaped.core.config.ports import SettingsReader
 from untaped.core.config.use_cases import GetSetting
 from untaped.sdk._cli import raise_usage
 from untaped.sdk._schema import FieldDescriptor
-from untaped.sdk._stdin import read_stdin_text
+from untaped.sdk._stdin import read_stdin_line
 from untaped.sdk._ui import build_terminal
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.prompt.prompts import PromptChoice
@@ -30,19 +30,10 @@ def resolve_set_value(
     if len(sources) > 1:
         raise_usage("provide only one of VALUE, --stdin, or --prompt")
     if stdin:
-        return _read_stdin_value()
+        return read_stdin_line("value")
     if prompt:
         return _prompt_value(full_key, repo)
     assert value is not None
-    return value
-
-
-def _read_stdin_value() -> str:
-    value = read_stdin_text().rstrip("\r\n")
-    if "\n" in value or "\r" in value:
-        raise ConfigError("--stdin expects exactly one value", category="invalid")
-    if not value.strip():
-        raise ConfigError("no value received on stdin", category="invalid")
     return value
 
 

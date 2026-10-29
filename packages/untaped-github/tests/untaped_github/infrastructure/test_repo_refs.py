@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -283,7 +284,7 @@ def test_batch_repo_refs_raises_global_graphql_errors(
     assert (error.category, error.system) == (_KIND_CATEGORIES[kind], "github")
 
 
-def test_batch_repo_refs_raises_on_unexplained_null_or_repo_lost_mid_pagination(
+def test_a_chunk_that_reads_wrong_fails_its_repos_and_the_rest_go_on(
     composed: Running,
 ) -> None:
     lost = httpx.Response(
@@ -295,14 +296,74 @@ def test_batch_repo_refs_raises_on_unexplained_null_or_repo_lost_mid_pagination(
     )
     paged = _connection([_ref("main", "c1")], has_next=True, end_cursor="CUR")
 
-    unexplained = _raises(composed.http, _ok(None), ["acme/site"])
+    unexplained, _ = _probe(
+        composed.http,
+        [_ok(None), _ok(_repo_node("acme/ok"))],
+        ["acme/site", "acme/ok"],
+        chunk_size=1,
+    )
     # The repo resolved in the batch query, then vanished before the next page.
-    vanished = _raises(
+    vanished, _ = _probe(
         composed.http, [_ok(_repo_node("acme/site", heads=paged)), lost], ["acme/site"]
     )
 
-    assert "github graphql returned null for acme/site" in str(unexplained)
-    assert "lost access to acme/site during ref pagination" in str(vanished)
+    assert _names(unexplained) == (["acme/ok"], ["acme/site"])
+    [null] = unexplained.failures
+    assert null.kind == "request"
+    assert null.category == "failed"
+    assert "github graphql returned null for acme/site" in null.reason
+    [gone] = vanished.failures
+    assert "lost access to acme/site during ref pagination" in gone.reason
+
+
+def test_chunks_run_side_by_side_and_report_progress_in_repos(composed: Running) -> None:
+    progress: list[tuple[int, int]] = []
+
+    result, queries = _probe(
+        composed.http,
+        _echo_repos,
+        ["acme/a", "acme/b", "acme/c"],
+        chunk_size=2,
+        concurrency=2,
+        on_progress=lambda done, total: progress.append((done, total)),
+    )
+
+    assert len(queries) == 2
+    # Chunks finish in any order; the count only grows, in repos, to the total.
+    assert len(progress) == 2
+    assert progress[0] in {(1, 3), (2, 3)}
+    assert progress[-1] == (3, 3)
+    assert [repo.full_name for repo in result.repos] == ["acme/a", "acme/b", "acme/c"]
+
+
+def test_the_lowest_budget_any_chunk_saw_is_the_one_left(composed: Running) -> None:
+    result, _ = _probe(
+        composed.http,
+        [
+            _ok(_repo_node("acme/a"), remaining=4500),
+            _ok(_repo_node("acme/b"), remaining=4800, reset_at="2026-06-09T00:00:00Z"),
+        ],
+        ["acme/a", "acme/b"],
+        chunk_size=1,
+    )
+
+    assert result.rate_limit_remaining == 4500
+    assert str(result.rate_limit_reset_at) == "2026-06-10 00:00:00+00:00"
+
+
+def test_default_branch_probe_asks_for_a_hundred_repos_a_request(composed: Running) -> None:
+    repos = [f"acme/r{index}" for index in range(101)]
+
+    _, queries = _probe(composed.http, _echo_repos, repos, method="batch_default_branch_refs")
+
+    assert [query.count(": repository(") for query in queries] == [100, 1]
+
+
+def _echo_repos(request: httpx.Request) -> httpx.Response:
+    """Answer each repo the query asks for, by its alias."""
+    query = json.loads(request.content)["query"]
+    names = re.findall(r'repository\(owner: "([^"]+)", name: "([^"]+)"\)', query)
+    return _ok(*(_repo_node(f"{owner}/{name}") for owner, name in names))
 
 
 def test_batch_repo_refs_derives_ghe_graphql_endpoint(composed: Running) -> None:

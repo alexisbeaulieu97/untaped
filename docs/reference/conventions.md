@@ -225,7 +225,8 @@ that prints records declares `Output[R]`, which gives it `--format`.
 - Base check results on `CheckRecord`, with `status` set to `pass`, `warn`,
   `fail` or `error`.
 - Type timestamps as `UtcTimestamp` and name them `<event>_at`. They render
-  as `2026-01-02T03:04:05Z`, with microseconds outside tables.
+  as `2026-01-02T03:04:05Z`, with microseconds outside tables. Read a time
+  from a server's payload with `parse_utc`: `None` for anything not ISO 8601.
 - Use native booleans, `null` and lists in records. Do not use glyphs such as
   `✓` or `—` as data; for a table, annotate the field with `TableGlyph`
   (`Annotated[bool, TableGlyph(true="✓")]`), which every other format ignores.

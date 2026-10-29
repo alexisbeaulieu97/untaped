@@ -49,7 +49,17 @@ SCREEN_SYMBOLS: dict[str, str] = {
     "dash": "\u2014",
 }
 
-DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS}
+#: Glyphs a checklist (``untaped doctor``) marks its rows and fixes with; one cell wide.
+CHECK_SYMBOLS: dict[str, str] = {
+    "check.pass": "\u2713",
+    "check.warn": "\u25b2",
+    "check.partial": "\u25d0",
+    "check.fail": "\u2717",
+    "check.skip": "\u25cb",
+    "check.fix": "\u2192",
+}
+
+DEFAULT_SYMBOLS: dict[str, str] = {**STATUS_SYMBOLS, **SCREEN_SYMBOLS, **CHECK_SYMBOLS}
 
 
 class ThemeSpec(BaseModel):
