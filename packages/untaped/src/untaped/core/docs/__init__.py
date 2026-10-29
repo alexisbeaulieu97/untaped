@@ -112,11 +112,9 @@ def _lines(site: Site, address: Address) -> list[str]:
     if not address:
         return _overview.page(site)
     name, rest = address[0], address[1:]
-    if site.registered(name) is None:
-        raise UsageError(_not_installed(site, name))
     plugin = site.plugin(name)
     if plugin is None:
-        return _seam(site, name, rest)
+        raise UsageError(_not_installed(site, name))
     if not rest:
         return _plugin.page(site, plugin)
     section, words = rest[0], rest[1:]
@@ -157,22 +155,6 @@ def _section(site: Site, plugin: PluginDecl, section: str, words: Address) -> li
             return _guides.list_page(site, name)
         return _guides.page(site, name, words[0]) if len(words) == 1 else None
     return None
-
-
-def _seam(site: Site, name: str, rest: Address) -> list[str]:
-    """A plugin not yet in the 12.0 shape: its page and guides; its commands are in --help."""
-    if not rest:
-        return _plugin.seam_page(site, name)
-    if rest == ("guides",):
-        return _guides.list_page(site, name)
-    if len(rest) == 2 and rest[0] == "guides":
-        found = _guides.page(site, name, rest[1])
-        if found is not None:
-            return found
-    raise UsageError(
-        f'no page "{" ".join((name, *rest))}"; `untaped docs {name}` lists its pages and '
-        f"`untaped {name} --help` its commands"
-    )
 
 
 def _not_installed(site: Site, name: str) -> str:

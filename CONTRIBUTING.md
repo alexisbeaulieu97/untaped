@@ -104,8 +104,7 @@ packages/untaped-<name>/src/untaped_<name>/
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
 ├── infrastructure/    # external adapters (httpx clients, fs, …)
-├── errors.py          # <Name>Error(UntapedError) and its subclasses
-└── guides/            # optional: agent guides shipped via SPEC.guides
+└── errors.py          # <Name>Error(UntapedError) and its subclasses
 ```
 
 1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
@@ -567,7 +566,6 @@ agent to `untaped docs`.
 
 **Guide**: prose a plugin wants read before some of its commands, for what
 belongs to no single command: the docstring of an options bundle or of an
-enum (a Markdown file for a plugin still in the 11.x shape); each says when
-to read it.
+enum; each says when to read it.
 
 **Screen**: an interactive terminal UI built on the SDK's runtime.

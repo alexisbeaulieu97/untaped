@@ -119,33 +119,11 @@ choices. Every command taking it carries "Read first:" with its address, and
 the plugin's page lists it under `## Read first`. A guide's first paragraph
 says when to read it.
 
-A plugin still in the 11.x shape (`PluginSpec`) lists its commands under
-`untaped PLUGIN --help` and serves the Markdown files of `PluginSpec.guides`
-as its guides, named by their stem (`test-suites.md` is
-`untaped docs acme guides test-suites`), until it moves to plugin classes.
-Each file opens with front matter whose one-line `description` says when to
-read it; the page writes the heading, so the text starts its own headings at
-`##`:
-
-````markdown
----
-description: "Read before writing a test suite: its files, cases and checks."
----
-
-A suite is one YAML file per job template. ...
-
-```yaml acme.test_suite
-name: deploy
-```
-````
-
-A YAML block tagged with a record kind (`yaml acme.test_suite`) is an example
-of that kind. `untaped lint` checks every guide file: its name is kebab-case
-(`guide-name`), it has the description (`guide-description`) and no
-level-one heading (`guide-heading`), each `untaped docs ...` it quotes names
-a page (`guide-link`), each other `untaped ...` command parses
-(`guide-command`), and each kind-tagged YAML block validates against the
-kind's model (`guide-yaml`). `map-line` holds a plugin's lines on the
+A YAML block in a guide tagged with a record kind (`yaml acme.test_suite`)
+is an example of that kind. `untaped lint` checks every guide: each
+`untaped docs ...` it quotes names a page (`guide-link`), each other
+`untaped ...` command parses (`guide-command`), and each kind-tagged YAML
+block validates against the kind's model (`guide-yaml`). `map-line` holds a plugin's lines on the
 overview (its summary, its line under an extension point it fills) and its
 extension points' lines to 120 characters, since every agent reads the
 overview.

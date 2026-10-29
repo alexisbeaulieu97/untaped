@@ -54,8 +54,7 @@ module-root = "src"
 ```
 
 The module settings bind the `src/untaped_acme` layout to the project.
-Package data below that module root, such as a folder of
-[guides](./reference/docs.md#guides), ships in the wheel.
+Package data below that module root ships in the wheel.
 
 A plugin has one name, lowercase words joined by single hyphens (`@` is kept
 for later): `untaped-<name>` on PyPI, `untaped_<name>` to import, and `<name>`

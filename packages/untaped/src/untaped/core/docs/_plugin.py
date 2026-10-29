@@ -2,9 +2,7 @@
 
 Sections with nothing in them are left out; the guides are listed under
 "Read first" rather than as a section (``untaped docs PLUGIN guides`` lists
-them again). A plugin not yet in the 12.0
-shape (a seam plugin) has its help line, its guides, and a line sending the
-reader to its ``--help``, until its move.
+them again).
 """
 
 from __future__ import annotations
@@ -78,13 +76,3 @@ def extends(site: Site, plugin: PluginDecl, *, heading: bool) -> list[str]:
             text += f" ({markdown(fill.summary)})"
         lines.append(f"- {text}" if heading else f"Extends {text}")
     return ["", "## Extends", *lines] if heading and lines else lines
-
-
-def seam_page(site: Site, name: str) -> list[str]:
-    """The page of a plugin not yet in the 12.0 shape: its line, guides and ``--help``."""
-    spec = site.result_plugin(name).spec
-    lines = [*site.header(f"{name}{' [experimental]' if spec.stability else ''}", name), ORGANIZED]
-    summary = site.summary(name)
-    lines += ["", summary] if summary else []
-    lines += _guides.read_first(site, name)
-    return [*lines, "", "## Sections", f"- commands: `untaped {name} --help`"]

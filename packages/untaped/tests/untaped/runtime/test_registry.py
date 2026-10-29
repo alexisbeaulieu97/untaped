@@ -416,8 +416,3 @@ def test_a_plugin_declaring_a_kind_under_another_name_is_quarantined(
     assert f"untaped_toy.Bad declares kind {kind!r}" in detail
     assert "belongs to plugin 'toy'; " in detail
     assert record_model(kind) is None
-
-
-def test_plugin_guides_must_be_a_folder() -> None:
-    with pytest.raises(ConfigError, match="guides is 'guides', not a folder"):
-        PluginSpec(name="alpha", guides="guides")  # type: ignore[arg-type]

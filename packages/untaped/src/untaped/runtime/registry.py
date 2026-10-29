@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
-from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, TypeGuard, cast, overload
@@ -197,10 +196,6 @@ class PluginSpec:
     ``credentials`` are the :class:`~untaped.sdk.network.credentials.Credential` objects
     whose secrets the plugin needs: core keeps them outside configuration,
     owns ``untaped auth login`` for them.
-
-    ``guides`` is a folder of Markdown files (``files("untaped_acme") /
-    "guides"``), each a page ``untaped docs <name> guides <guide>`` prints: prose
-    that belongs to no single command. Composition never reads it.
     """
 
     name: str
@@ -219,7 +214,6 @@ class PluginSpec:
     stores: tuple[Store | ItemStore[Any] | StateDeclaration, ...] = ()
     credentials: tuple[Credential[Any], ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
-    guides: Traversable | None = field(default=None, hash=False)
     _home: str = field(default="", init=False, repr=False, compare=False, hash=False)
     """The module that made the spec (``pkg.`` for a package): its own declarations live there."""
 
@@ -262,11 +256,6 @@ class PluginSpec:
                     f"plugin {self.name!r} stores holds {store!r}, not a Store, an ItemStore "
                     "or a state declaration"
                 )
-        if self.guides is not None and not isinstance(self.guides, Traversable):
-            raise ConfigError(
-                f"plugin {self.name!r} guides is {self.guides!r}, not a folder "
-                "(a Traversable, such as files(package) / 'guides')"
-            )
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
 

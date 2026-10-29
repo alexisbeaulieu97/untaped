@@ -18,7 +18,6 @@ from cyclopts import App
 
 from repo import quoted_commands
 from untaped.core.docs import addresses, page
-from untaped.core.docs._guide_files import guides
 from untaped.core.docs._site import Site
 from untaped.core.plugin_check.help_tree import example_violations
 from untaped.runtime.bootstrap import build_root_app, composition
@@ -123,18 +122,6 @@ def test_every_command_page_lists_the_options_its_help_shows_in_order(
         assert [name.removesuffix("...") for name in listed] == _help_rows(helped), " ".join(words)
         checked += 1
     assert checked > 50
-
-
-def test_every_first_party_guide_file_renders(
-    first_party_candidates: tuple[PluginCandidate, ...],
-) -> None:
-    root = build_root_app(candidates=first_party_candidates)
-    result = composition()
-    for plugin in result.plugins:
-        for guide in guides(plugin.spec):
-            text = page(root, result, [plugin.spec.name, "guides", guide.name])
-            assert text.startswith(f"# {plugin.spec.name} guides {guide.name}\n"), guide.name
-            assert guide.problem is None, f"{plugin.spec.name} {guide.name}: {guide.problem}"
 
 
 def test_every_option_the_shared_section_names_exists(
