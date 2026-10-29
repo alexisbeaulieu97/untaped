@@ -235,12 +235,11 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
         ("Untaped_Other>=1", {"untaped-other"}),
         ("other>=1; python_version >= '3' and sys_platform != 'nowhere'", {"other"}),
         ("other; extra == 'x'", set()),
-        ("other>=1,<2; extra == 'shelf'", {"other"}),
         ("other=>", set()),
     ],
-    ids=["default", "platform-marker", "other-extra", "owner-extra", "malformed"],
+    ids=["default", "platform-marker", "extra", "malformed"],
 )
-def test_declared_distributions_add_only_the_extras_of_owners_filled(
+def test_declared_distributions_are_what_a_default_install_pulls_in(
     requirement: str, declared: set[str]
 ) -> None:
-    assert registry.declared_distributions([requirement], frozenset({"shelf"})) == declared
+    assert registry.declared_distributions([requirement]) == declared

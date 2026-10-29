@@ -108,7 +108,7 @@ class Located(Plugin):
 
 
 def test_a_ready_plugin_says_what_it_may_import_from() -> None:
-    """``requires``: its default requirements, canonical; an extra no owner names adds none."""
+    """``requires``: its default requirements, canonical; an extra adds none."""
     requires = ("Untaped_Git>=1", "jinja2; python_version >= '3'", "rich; extra == 'pretty'")
     [row] = _listing([make_candidate(make_plugin("acme"), "acme-dist", requires_dist=requires)])
     assert (row["requires"], row["fills"]) == (["jinja2", "untaped-git"], [])
@@ -128,10 +128,10 @@ class AcmeItems(Items, Provider):
         return []
 
 
-def test_an_extra_named_after_an_owner_it_fills_adds_to_requires() -> None:
+def test_a_plugin_lists_the_owner_it_fills_among_its_requires() -> None:
     rack = make_candidate(make_plugin("rack", offers=(Items,)), "untaped-rack")
     acme = make_plugin("acme", fills=(AcmeItems,))
-    requires = ("untaped-rack>=1; extra == 'rack'", "rich; extra == 'pretty'")
+    requires = ("untaped-rack>=1", "untaped-rack>=1; extra == 'rack'", "rich; extra == 'pretty'")
     rows = _listing([rack, make_candidate(acme, "acme-dist", requires_dist=requires)])
     [row] = [row for row in rows if row["name"] == "acme"]
     assert (row["requires"], row["fills"]) == (["untaped-rack"], ["rack"])

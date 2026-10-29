@@ -5,9 +5,8 @@ included). The conventions read the plugin's package; the contract checks compos
 plugin and the owners it provides for, so nothing else installed changes the
 verdict:
 
-- ``registration``: an offer the registry quarantined fails (an 11.x one
-  waiting for an owner that isn't installed passes, skipped), and so does a
-  plugin class's fill whose owner is quarantined or not installed;
+- ``registration``: an offer the registry quarantined fails, and so does a
+  fill whose owner is quarantined or not installed;
 - ``conformance``: the owner's own checks, a ``conformance(provider)``
   function in its ``testing`` module, on each ready provider;
 - ``live``: one live call of each filled method taking no required

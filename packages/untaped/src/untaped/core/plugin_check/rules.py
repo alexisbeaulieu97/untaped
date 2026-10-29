@@ -35,9 +35,6 @@ from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (
     PluginCandidate,
     discover_candidates,
-    mentions_extra,
-    owner_requirement,
-    parse_requirement,
     plain_requirements,
 )
 
@@ -163,48 +160,25 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
 def _provides_violations(
     plugin: ComposedPlugin, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
 ) -> list[str]:
-    """Where a provider doesn't declare the ranges its offers rely on.
+    """Where a provider doesn't declare the ranges its fills rely on.
 
-    A plugin with ``provides`` or ``fills`` requires ``untaped`` with a version
-    range. A plugin class requires each owner whose contract a fill subclasses
-    in its plain dependencies, with a range (``untaped-<owner>>=M,<M+1``),
-    since it imports the owner; an 11.x spec requires each owner under an
-    extra named after it. The registry checks the installed owner against
-    that range (``owner-out-of-range``).
+    A plugin with ``fills`` requires ``untaped`` with a version range, and
+    each owner whose contract a fill subclasses in its plain dependencies,
+    with a range (``untaped-<owner>>=M,<M+1``), since it imports the owner.
+    The registry checks the installed owner against that range
+    (``owner-out-of-range``).
     """
     owners = fill_owners(plugin.name, composition(), candidates)
-    if not plugin.fill_owners and not owners:
+    if not owners:
         return []
     requires = () if candidate is None else candidate.requires_dist
     rule = f"{plugin.name}::provides-requirement::"
     found: list[str] = []
-    core = [
-        parsed
-        for parsed in (parse_requirement(line) for line in requires)
-        if parsed is not None
-        and canonicalize_name(parsed.name) == "untaped"
-        and not mentions_extra(str(parsed.marker or ""))
-    ]
-    if not any(parsed.specifier or parsed.url for parsed in core):
+    if not any(
+        parsed.specifier or parsed.url for parsed in plain_requirements(requires, "untaped")
+    ):
         found.append(f"{rule}requires no untaped version range (untaped>=M,<M+1)")
-    if owners:
-        return found + list(_fill_requirements(rule, requires, owners))
-    distributions = {c.name: c.distribution for c in candidates}
-    for owner in sorted(plugin.fill_owners):
-        distribution = str(canonicalize_name(distributions.get(owner, f"untaped-{owner}")))
-        requirement = owner_requirement(requires, owner, distribution)
-        if requirement is None:
-            found.append(
-                f"{rule}provides for {owner} but has no {owner!r} extra requiring {distribution}"
-            )
-        elif not (requirement.specifier or requirement.url):
-            what = (
-                "requires"
-                if plain_requirements(requires, distribution)
-                else (f"its {owner!r} extra requires")
-            )
-            found.append(f"{rule}{what} {distribution} with no version range")
-    return found
+    return found + list(_fill_requirements(rule, requires, owners))
 
 
 def _fill_requirements(

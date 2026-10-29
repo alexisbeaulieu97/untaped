@@ -322,8 +322,8 @@ class Quarantined(_Frozen):
     """A plugin composition refused, with every problem it found.
 
     ``reason`` is the quarantine reason core reports: every problem of the
-    walk is ``bad-plugin-class``; a check of 11.x composition (a doctor
-    check's id another plugin has) gives its own, with its one problem.
+    walk is ``bad-plugin-class``; a check after the walk (its settings' key
+    declarations, say) gives its own, with its one problem.
     """
 
     name: str

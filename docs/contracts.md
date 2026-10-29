@@ -247,8 +247,8 @@ def test_shelf_keeps_its_surface() -> None:
 
 - `install(Shelf, providers={"fake": (FakeBooks,)})` composes the owner
   plus a plugin named `fake` filling the contracts its classes subclass;
-  `install(Library)` composes the owners a provider declares under their
-  extras too. Outside tests, `untaped.sdk.contracts.providing({"house":
+  `install(Library)` composes the owners an installed provider requires
+  too. Outside tests, `untaped.sdk.contracts.providing({"house":
   (HouseRules,)})` does the same for an owner that loads providers from
   elsewhere (a repository's rule modules): the installed plugins plus a
   plugin `house` whose `fills` are those classes, each filling the contract

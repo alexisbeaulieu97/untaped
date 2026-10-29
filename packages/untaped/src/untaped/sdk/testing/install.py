@@ -234,8 +234,8 @@ def install(
     """Compose ``plugins`` into the hermetic home, with ``settings`` written as their sections.
 
     A plugin installed in the environment keeps its entry point's name and
-    brings the plugins its distribution declares (an owner a provider names
-    under the owner's extra); a class defined in a test is named after
+    brings the plugins its distribution requires (the owner a provider
+    fills contracts of); a class defined in a test is named after
     itself (``Shop`` is ``shop``) unless ``names`` says otherwise.
     ``providers={"forge": (Forge,)}`` composes the provider classes a test
     defines as one plugin per key, filling the contracts they subclass, so
@@ -273,7 +273,7 @@ def install(
 
 
 def _settings_model(candidate: PluginCandidate) -> type[BaseModel] | None:
-    """The settings model of the plugin ``candidate`` installs, a 12.0 class's or an 11.x spec's."""
+    """The settings model of the plugin class ``candidate`` installs, if it loads."""
     from untaped.runtime.registry import resolve_target  # noqa: PLC0415
 
     try:
@@ -289,15 +289,13 @@ def _dependencies(
 ) -> tuple[PluginCandidate, ...]:
     """The installed plugins ``candidates`` declare, and theirs, not already among them.
 
-    A requirement under an extra counts when the extra is an installed
-    plugin's name: the owner a provider declares (``untaped-shelf`` under
-    library's ``shelf`` extra).
+    A provider requires the owner it fills contracts of in its plain
+    dependencies, so the owner comes along.
     """
     from packaging.utils import canonicalize_name  # noqa: PLC0415
 
     from untaped.runtime.registry import declared_distributions  # noqa: PLC0415
 
-    owners = frozenset(each.name for each in discovered)
     by_distribution: dict[str, PluginCandidate] = {
         canonicalize_name(each.distribution): each for each in discovered
     }
@@ -305,7 +303,7 @@ def _dependencies(
     added: list[PluginCandidate] = []
     waiting = list(candidates)
     while waiting:
-        for name in sorted(declared_distributions(waiting.pop().requires_dist, owners)):
+        for name in sorted(declared_distributions(waiting.pop().requires_dist)):
             found = by_distribution.get(name)
             if found is not None and found.name not in held:
                 held.add(found.name)
