@@ -2,8 +2,7 @@
 
 This module isolates GraphQL mechanics — query building, alias
 bookkeeping, response parsing, missing-repo classification, per-repo ref
-pagination, and transient 5xx/transport retry splitting — the same way
-``pagination.py`` isolates REST ``Link``-header mechanics. ``GithubClient``
+pagination, and transient 5xx/transport retry splitting. ``GithubClient``
 only wires an ``HttpClient`` and the derived GraphQL endpoint into
 :func:`fetch_repo_refs`.
 

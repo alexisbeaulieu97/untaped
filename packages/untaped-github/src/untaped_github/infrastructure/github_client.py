@@ -6,13 +6,13 @@ from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
+from untaped.sdk import paginate_link
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
     fetch_repo_refs,
     graphql_endpoint,
 )
-from untaped_github.infrastructure.pagination import paginate_list, paginate_search
 from untaped_github.settings import TOKEN, GithubSettings
 
 if TYPE_CHECKING:
@@ -49,10 +49,10 @@ class GithubClient:
         return self._http.get_json_dict(f"/repos/{owner}/{repo}")
 
     def list_org_repos(self, org: str) -> Iterator[dict[str, Any]]:
-        return paginate_list(self._http, f"/orgs/{org}/repos")
+        return paginate_link(self._http, f"/orgs/{org}/repos")
 
     def list_matching_refs(self, owner: str, repo: str, namespace: str) -> Iterator[dict[str, Any]]:
-        return paginate_list(self._http, f"/repos/{owner}/{repo}/git/matching-refs/{namespace}")
+        return paginate_link(self._http, f"/repos/{owner}/{repo}/git/matching-refs/{namespace}")
 
     def get_tree(
         self,
@@ -79,23 +79,29 @@ class GithubClient:
     def search_repositories(
         self, q: str, *, sort: str | None = None, limit: int | None = None
     ) -> Iterator[dict[str, Any]]:
-        return paginate_search(self._http, "/search/repositories", params=_q(q, sort), limit=limit)
+        return self._search("/search/repositories", _q(q, sort), limit)
 
     def search_code(self, q: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
-        return paginate_search(self._http, "/search/code", params=_q(q), limit=limit)
+        return self._search("/search/code", _q(q), limit)
 
     def search_issues(
         self, q: str, *, sort: str | None = None, limit: int | None = None
     ) -> Iterator[dict[str, Any]]:
-        return paginate_search(self._http, "/search/issues", params=_q(q, sort), limit=limit)
+        return self._search("/search/issues", _q(q, sort), limit)
 
     def search_users(
         self, q: str, *, sort: str | None = None, limit: int | None = None
     ) -> Iterator[dict[str, Any]]:
-        return paginate_search(self._http, "/search/users", params=_q(q, sort), limit=limit)
+        return self._search("/search/users", _q(q, sort), limit)
 
     def list_team_repos(self, org: str, team_slug: str) -> Iterator[dict[str, Any]]:
-        return paginate_list(self._http, f"/orgs/{org}/teams/{team_slug}/repos")
+        return paginate_link(self._http, f"/orgs/{org}/teams/{team_slug}/repos")
+
+    def _search(
+        self, path: str, params: dict[str, str], limit: int | None
+    ) -> Iterator[dict[str, Any]]:
+        # Search pages nest their rows under ``items``; the counts beside them are unused.
+        return paginate_link(self._http, path, params=params, limit=limit, item_key="items")
 
     def batch_repo_refs(
         self,
