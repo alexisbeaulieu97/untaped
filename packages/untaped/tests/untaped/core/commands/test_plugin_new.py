@@ -45,16 +45,6 @@ def _new(
     return scaffold(result, [_RACK], name, fills, path=tmp_path, dry_run=dry_run)
 
 
-def _requires(pyproject: dict[str, object]) -> tuple[str, ...]:
-    """``Requires-Dist`` as the built wheel would list it."""
-    project = pyproject["project"]
-    assert isinstance(project, dict)
-    found = list(project["dependencies"])
-    for extra, requirements in project["optional-dependencies"].items():
-        found += [f"{requirement}; extra == '{extra}'" for requirement in requirements]
-    return tuple(found)
-
-
 def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -66,27 +56,32 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
         "pyproject.toml",
         "src/untaped_gitlab/__init__.py",
         "src/untaped_gitlab/errors.py",
+        "src/untaped_gitlab/plugin.py",
         "src/untaped_gitlab/providers/__init__.py",
         "src/untaped_gitlab/providers/rack.py",
         "src/untaped_gitlab/py.typed",
         "src/untaped_gitlab/settings.py",
         "tests/conftest.py",
-        "tests/test_gitlab.py",
+        "tests/untaped_gitlab/providers/test_rack.py",
+        "tests/untaped_gitlab/test_plugin.py",
     ]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject["project"]
-    assert project["dependencies"][0] == CORE_RANGE
-    assert project["optional-dependencies"] == {"rack": ["untaped-rack>=1,<2"]}
-    assert project["entry-points"]["untaped.plugins"] == {"gitlab": "untaped_gitlab:SPEC"}
+    # the owner is a plain dependency: the fill subclasses its contract
+    core, pydantic, owner = project["dependencies"]
+    assert (core, owner) == (CORE_RANGE, "untaped-rack>=1,<2")
+    assert pydantic.startswith("pydantic")
+    assert "optional-dependencies" not in project
+    assert project["entry-points"]["untaped.plugins"] == {"gitlab": "untaped_gitlab.plugin:Gitlab"}
 
     monkeypatch.syspath_prepend(str(root / "src"))
     importlib.invalidate_caches()
     gitlab = PluginCandidate(
         distribution="untaped-gitlab",
         name="gitlab",
-        target="untaped_gitlab:SPEC",
+        target="untaped_gitlab.plugin:Gitlab",
         distribution_version="0.1.0",
-        requires_dist=_requires(pyproject),
+        requires_dist=tuple(project["dependencies"]),
     )
     lint_range = _range(metadata.version("untaped"), minor=True)  # lint came in a minor
     assert pyproject["dependency-groups"] == {"dev": ["pytest>=9", f"untaped[lint]{lint_range}"]}
@@ -95,16 +90,18 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     lint = pytest.importorskip("untaped_lint.testing")
     # Its lint test, with the candidates it can't discover; then its other tests.
     lint.assert_clean("gitlab", ignore=["lint.live"], candidates=[_RACK, gitlab])
+    tests_dir = root / "tests" / "untaped_gitlab"
     assert 'assert_clean("gitlab", ignore=["lint.live"])' in (
-        root / "tests" / "test_gitlab.py"
+        tests_dir / "test_plugin.py"
     ).read_text(encoding="utf-8")
-    tests = _load(root / "tests" / "test_gitlab.py")
+    fills = _load(tests_dir / "providers" / "test_rack.py")
     with compose_with(_RACK, gitlab):
-        tests.test_gitlab_fills_item_source()
+        fills.test_gitlab_fills_item_source()
     assert not (root / "src" / "untaped_gitlab" / "fills.json").exists()
+    tests = _load(tests_dir / "test_plugin.py")
     tests.test_gitlab_keeps_its_surface()
     # No commands, settings or modules yet: the first run writes an empty surface.
-    surface = (root / "tests" / "surface.txt").read_text(encoding="utf-8")
+    surface = (tests_dir / "snapshots" / "surface.txt").read_text(encoding="utf-8")
     assert surface == "# untaped surface 1\n"
     tests.test_gitlab_keeps_its_surface()
 
@@ -145,7 +142,7 @@ def test_the_provider_carries_each_method_and_docstring(tmp_path: Path) -> None:
 def test_dry_run_plans_every_file_and_writes_none(tmp_path: Path) -> None:
     outcomes = _new(tmp_path, dry_run=True)
     assert {outcome.action for outcome in outcomes} == {"planned"}
-    assert len(outcomes) == 10
+    assert len(outcomes) == 12
     assert not (tmp_path / "untaped-gitlab").exists()
 
 

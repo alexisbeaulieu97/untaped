@@ -2,16 +2,17 @@
 
 The package it writes composes and passes ``untaped lint`` as written:
 
-- ``pyproject.toml``: ``untaped`` in this major's range, the owner as an
-  extra named like it (in the installed owner's compatible range), and the entry point
-  naming ``SPEC``;
-- ``src/untaped_<name>/``: ``SPEC`` offering the provider to the owner (a
-  local import, so runs that ask no contract never load it), ``errors.py``,
-  an empty ``settings.py`` and ``providers/<owner>.py``. The provider there has every
-  method of the contract with its docstring: required ones as stubs, the
-  others written commented out, since a stub would count as filling them;
-- ``tests/``: lint's ``assert_clean`` and ``assert_fills`` with a list of
-  samples to fill in (``untaped[lint]`` in the ``dev`` group).
+- ``pyproject.toml``: ``untaped`` in this major's range, the owner in the
+  installed owner's compatible range (a fill subclasses the owner's contract,
+  so it can't load without it), and the entry point naming the plugin class;
+- ``src/untaped_<name>/``: the plugin class in its leaf ``plugin`` module,
+  filling the owner's contract, ``errors.py``, an empty ``settings.py`` and
+  ``providers/<owner>.py``. The provider there has every method of the
+  contract with its docstring: required ones as stubs, the others written
+  commented out, since a stub would count as filling them;
+- ``tests/untaped_<name>/``, mirroring the package: lint's ``assert_clean``
+  and ``assert_surface`` beside the plugin, ``assert_fills`` with a list of
+  samples to fill in beside the provider (``untaped[lint]`` in the ``dev`` group).
 
 The provider's own record type ``T`` starts as the owner's model, so no
 bridge is needed until the plugin issues records of its own.
@@ -139,24 +140,28 @@ class _Scaffold:
         self.camel = "".join(part.capitalize() for part in name.split("-"))
         self.owner = owner
         self.owner_module = owner.name.replace("-", "_")
+        self.provider_path = f"{self.package}.providers.{self.owner_module}"
+        self.short = self.package.removeprefix("untaped_")
         self.info = info
         self.provider = f"{self.camel}{info.cls.__name__}"
         self.api = _api(owner, candidates, info)
 
     def files(self) -> dict[str, str]:
-        src = f"src/{self.package}"
+        src, tests = f"src/{self.package}", f"tests/{self.package}"
         provider = self._provider_module()
         return {
             "pyproject.toml": self._pyproject(),
             "README.md": self._readme(),
             f"{src}/__init__.py": self._init(),
+            f"{src}/plugin.py": self._plugin(),
             f"{src}/errors.py": self._errors(),
             f"{src}/settings.py": self._settings(),
             f"{src}/py.typed": "",
             f"{src}/providers/__init__.py": "",
             f"{src}/providers/{self.owner_module}.py": provider,
             "tests/conftest.py": _CONFTEST,
-            f"tests/test_{self.package.removeprefix('untaped_')}.py": self._test(),
+            f"{tests}/test_plugin.py": self._plugin_test(),
+            f"{tests}/providers/test_{self.owner_module}.py": self._provider_test(),
         }
 
     def _pyproject(self) -> str:
@@ -172,13 +177,14 @@ class _Scaffold:
                 description = "{self._about()}"
                 readme = "README.md"
                 requires-python = "{core.python}"
-                dependencies = ["untaped{core.untaped}", "{core.pydantic}"]
-
-                [project.optional-dependencies]
-                {_toml_key(self.owner.name)} = ["{owner_dist}{owner_range}"]
+                dependencies = [
+                    "untaped{core.untaped}",
+                    "{core.pydantic}",
+                    "{owner_dist}{owner_range}",
+                ]
 
                 [project.entry-points."untaped.plugins"]
-                {_toml_key(self.name)} = "{self.package}:SPEC"
+                {_toml_key(self.name)} = "{self.package}.plugin:{self.camel}"
 
                 [dependency-groups]
                 dev = ["pytest>=9", "untaped[lint]{core.lint}"]
@@ -202,57 +208,49 @@ class _Scaffold:
             # untaped-{self.name}
 
             An [untaped](https://github.com/alexisbeaulieu97/untaped) plugin filling
-            `{self.owner.name}`'s `{self.info.cls.__name__}` contract. Install it with its owner:
+            `{self.owner.name}`'s `{self.info.cls.__name__}` contract. Install it (its owner
+            comes with it as a dependency):
 
             ```sh
-            uv pip install -e '.[{self.owner.name}]'
+            uv pip install -e .
             ```
 
             Fill the methods in `src/{self.package}/providers/{self.owner_module}.py`, add
-            samples to `tests/test_{self.package.removeprefix("untaped_")}.py`, then run
+            samples to `tests/{self.package}/providers/test_{self.owner_module}.py`, then run
             `pytest` and `untaped lint`.
             """
         )
 
     def _init(self) -> str:
-        function = f"_{self.owner_module}"
-        module = f"{self.package}.providers.{self.owner_module}"
-        local = f"from {module} import {self.provider}  # noqa: PLC0415"
+        cls = f"{self.package}.plugin.{self.camel}"
+        return f'"""The ``untaped.plugins`` entry point names :class:`{cls}`."""\n'
+
+    def _plugin(self) -> str:
         return dedent(
             f'''\
-            """The ``{self.name}`` plugin: it fills {self._contract()}.
+            """The ``{self.name}`` plugin class: it fills {self._contract()}.
 
-            ``provides`` maps the owner's name to a function returning this plugin's
-            providers; its local import keeps ``untaped.sdk.contracts`` out of every run
-            that asks no contract.
+            The ``untaped.plugins`` entry point names :class:`{self.camel}`, in this leaf
+            module: the class imports its provider, so the rest of the package imports
+            without it.
             """
 
             from __future__ import annotations
 
-            from collections.abc import Sequence
-            from typing import TYPE_CHECKING
+            from untaped.sdk import Plugin
 
-            from untaped.sdk import PluginSpec
-
+            from {self.provider_path} import {self.provider}
             from {self.package}.settings import {self.camel}Settings
 
-            if TYPE_CHECKING:
-                from untaped.sdk.contracts import Contract
 
-            __all__ = ["SPEC"]
+            class {self.camel}(Plugin):
+                """Fill {self.owner.name}'s {self.info.cls.__name__} contract."""
 
-
-            def {function}() -> Sequence[Contract]:
-                {local}
-
-                return ({self.provider}(),)
+                settings = {self.camel}Settings
+                fills = ({self.provider},)
 
 
-            SPEC = PluginSpec(
-                name="{self.name}",
-                settings={self.camel}Settings,
-                provides={{"{self.owner.name}": {function}}},
-            )
+            __all__ = ["{self.camel}"]
             '''
         )
 
@@ -330,9 +328,21 @@ class _Scaffold:
             + indent(body, "    ")
         )
 
-    def _test(self) -> str:
-        module = f"{self.package}.providers.{self.owner_module}"
-        short = self.package.removeprefix("untaped_")
+    def _plugin_test(self) -> str:
+        return (
+            f'"""``{self.name}`` as a whole: it passes ``untaped lint`` and keeps its surface."""\n'
+            "\nfrom __future__ import annotations\n\n"
+            "from untaped.sdk.testing import assert_surface\n"
+            "from untaped_lint.testing import assert_clean\n\n"
+            f"from {self.package}.plugin import {self.camel}\n\n\n"
+            f"def test_{self.short}_passes_lint() -> None:\n"
+            "    # lint.live calls each method: drop the ignore once they return.\n"
+            f'    assert_clean("{self.name}", ignore=["lint.live"])\n\n\n'
+            f"def test_{self.short}_keeps_its_surface() -> None:\n"
+            f"    assert_surface({self.camel})  # snapshots/surface.txt beside this file\n"
+        )
+
+    def _provider_test(self) -> str:
         samples, call = "", f"assert_fills({self.provider})"
         if self.info.item is not None:
             samples = (
@@ -342,21 +352,13 @@ class _Scaffold:
             )
             call = f"assert_fills({self.provider}, samples=SAMPLES)"
         return (
-            f'"""``{self.name}`` passes ``untaped lint`` and fills {self._contract()}."""\n'
+            f'"""``{self.name}``\'s provider fills {self._contract()}."""\n'
             "\nfrom __future__ import annotations\n\n"
-            "from pathlib import Path\n\n"
-            "from untaped.sdk.testing import assert_fills, assert_surface\n"
-            "from untaped_lint.testing import assert_clean\n\n"
-            f"from {self.package} import SPEC\n"
-            f"from {module} import {self.provider}\n\n"
+            "from untaped.sdk.testing import assert_fills\n\n"
+            f"from {self.provider_path} import {self.provider}\n\n"
             f"{samples}"
-            f"def test_{short}_passes_lint() -> None:\n"
-            "    # lint.live calls each method: drop the ignore once they return.\n"
-            f'    assert_clean("{self.name}", ignore=["lint.live"])\n\n\n'
-            f"def test_{short}_fills_{self.info.name}() -> None:\n"
-            f"    {call}\n\n\n"
-            f"def test_{short}_keeps_its_surface() -> None:\n"
-            f'    assert_surface(SPEC, Path(__file__).parent / "surface.txt")\n'
+            f"def test_{self.short}_fills_{self.info.name}() -> None:\n"
+            f"    {call}\n"
         )
 
 

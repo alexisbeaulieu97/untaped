@@ -238,29 +238,31 @@ untaped plugin new gitlab --fills workspace.repo_source
 ```
 
 `plugin new` writes `untaped-gitlab/` in the current directory (`--path`
-elsewhere, `--dry-run` to list the files first): the package with its `SPEC`
-offering the provider to the owner, the provider (`providers/workspace.py`)
-with every method of the contract and its docstring (the required ones as
-stubs, the optional ones and the bridge commented out, since a stub would
-count as filling them), a test running lint's `assert_clean`, `assert_fills`
-with a list of samples to fill in and `assert_surface`, and a `pyproject.toml`
-with the ranges and extra below (`untaped[lint]` in its `dev` group). It
-never writes into an existing directory.
+elsewhere, `--dry-run` to list the files first): the package with its plugin
+class (`plugin.py`) filling the owner's contract, the provider
+(`providers/workspace.py`) with every method of the contract and its docstring
+(the required ones as stubs, the optional ones and the bridge commented out,
+since a stub would count as filling them), tests mirroring the package (lint's
+`assert_clean` and `assert_surface` beside the plugin, `assert_fills` with a
+list of samples to fill in beside the provider) and a `pyproject.toml` with
+the ranges below (`untaped[lint]` in its `dev` group). It never writes into an
+existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` range, the owner
-under an extra named like the owner, with a range of the owner's versions:
+in its dependencies with a range of the owner's versions, since the provider
+subclasses the owner's contract and can't load without it:
 
 ```toml
 [project]
-dependencies = ["untaped>=11,<12", "pydantic>=2.13.3,<3"]
+dependencies = ["untaped>=12,<13", "pydantic>=2.13.3,<3", "untaped-workspace>=12,<13"]
 
-[project.optional-dependencies]
-workspace = ["untaped-workspace>=11,<12"]
+[project.entry-points."untaped.plugins"]
+gitlab = "untaped_gitlab.plugin:Gitlab"
 ```
 
-`untaped lint` fails a plugin with no `untaped` range, or with a
-`provides` key no such extra matches. An installed owner outside the
-extra's range quarantines that offer alone (`owner-out-of-range`). The
+`untaped lint` fails a plugin with no `untaped` range, or one that fills a
+contract of a plugin it doesn't require with a range. An installed owner outside the
+range quarantines its fills of that owner alone (`owner-out-of-range`). The
 provider imports only `untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing`
 and the owner's `api` module.
 
