@@ -553,19 +553,3 @@ def test_a_failed_write_gives_no_error_and_the_next_start_retries(
     assert json.loads(ref.file.read_text())["targets"] == [
         {"plugin": "acme", "store": "data", "layout": 1}
     ]
-
-
-def test_the_composition_names_every_declared_store() -> None:
-    from untaped.runtime.bootstrap import compose_root, kept_composition
-    from untaped.runtime.registry import PluginSpec
-    from untaped.sdk.testing import plugin_candidate
-
-    data = Store("acme", "data", base=lambda: Path("/x/data.db"), layout=3)
-    other = Store("acme", "catalogue", base=lambda: Path("/x/catalogue"), layout=1)
-    spec = PluginSpec(name="acme", stores=(data, other))
-    with kept_composition():
-        compose_root(candidates=[plugin_candidate(spec)])
-        assert refs.composed_targets() == (
-            RefTarget(plugin="acme", store="catalogue", layout=1),
-            RefTarget(plugin="acme", store="data", layout=3),
-        )

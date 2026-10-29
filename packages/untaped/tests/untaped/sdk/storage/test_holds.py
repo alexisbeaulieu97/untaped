@@ -15,14 +15,17 @@ import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
-from pydantic import RootModel, ValidationError, field_validator
+from pydantic import BaseModel, RootModel, ValidationError, field_validator
 
+from core_test_support.commands.support import make_plugin
+from core_test_support.runtime.run import hold_run, holding_runs
 from untaped.core.project_lifecycle import Removal, apply_removal, plan_removal
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Dir, Plugin
+from untaped.sdk._run import Run
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.projects import Project, holder_of, known_projects
 from untaped.sdk.storage import _refs as refs
@@ -132,23 +135,45 @@ def _moved(ask: MoveAsk[RepoKey]) -> str | None:
     return f"repaired worktree {ask.item.root.rsplit('/', 1)[-1]}"
 
 
-REPOS = ItemStore("acme", "repos", item=RepoKey, release=_release, moved=_moved)
-SPEC = PluginSpec(name="acme", stores=(REPOS,))
+class _Settings(BaseModel):
+    """Nothing to set."""
+
+
+#: The owner: ``repos`` is the place its holders hold repos in.
+ACME = make_plugin(
+    "acme", settings=_Settings, repos=Dir(items=RepoKey, release=_release, moved=_moved)
+)
+#: ``acme.repos`` as an item store, set by :func:`_owner` once acme is composed.
+REPOS: ItemStore[RepoKey]
 API, WEB = "github.com/acme/api", "github.com/acme/web"
 
 
 @pytest.fixture(autouse=True)
-def _owner() -> Iterator[None]:
-    global OWNER
+def _owner(home_run: Run) -> Iterator[None]:
+    global OWNER, REPOS
     OWNER = Owner()
-    with bootstrap.kept_composition():
-        bootstrap.compose_root(candidates=[plugin_candidate(SPEC)])
+    with bootstrap.kept_composition(), holding_runs():
+        hold_run(bootstrap.compose_root(candidates=[plugin_candidate(ACME)]))
+        REPOS = ACME.repos.items()  # type: ignore[attr-defined]
         yield
 
 
-def _cli(*args: str, specs: tuple[PluginSpec, ...] = (SPEC,)) -> CliResult:
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+def _cli(*args: str, plugins: tuple[type[Plugin], ...] = (ACME,)) -> CliResult:
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(each) for each in plugins])
     return invoke_cli(root.meta, list(args))
+
+
+class _BrokenSettings(BaseModel):
+    """Settings whose renamed key names no field, so acme is quarantined."""
+
+    renamed_keys: ClassVar[dict[str, str]] = {"old": "missing"}
+
+
+def _broken() -> type[Plugin]:
+    """An acme that is quarantined, holding the same ``repos``."""
+    return make_plugin(
+        "acme", settings=_BrokenSettings, repos=Dir(items=RepoKey, release=_release, moved=None)
+    )
 
 
 def _rows(result: CliResult) -> list[dict[str, Any]]:
@@ -170,20 +195,6 @@ def _two(tmp_path: Path) -> tuple[Project, Project]:
 # --- declaring and holding --------------------------------------------------------------
 
 
-def test_an_item_store_says_how_items_are_released() -> None:
-    with pytest.raises(TypeError):
-        ItemStore("acme", "repos", release=_release)  # type: ignore[call-arg]  # moved= is required
-    with pytest.raises(ConfigError, match="one settings segment"):
-        ItemStore("acme", "Repos", release=_release, moved=None)
-    with pytest.raises(ConfigError, match="item must be str or a RootModel"):
-        ItemStore("acme", "repos", item=int, release=_release, moved=None)  # type: ignore[type-var]
-    same = ItemStore("acme", "repos", item=RepoKey, release=_release, moved=_moved)
-    assert same == REPOS and hash(same) == hash(REPOS)
-    assert REPOS.target("GitHub.com/acme/API.git") == RefTarget(
-        plugin="acme", store="repos", item=API
-    )
-
-
 def test_holding_is_idempotent_and_normalised_by_the_item_type(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
     project.hold(REPOS, RepoKey("github.com/acme/api.git"))
@@ -195,21 +206,10 @@ def test_holding_is_idempotent_and_normalised_by_the_item_type(tmp_path: Path) -
 
 def test_holding_an_item_store_no_composed_plugin_lists_is_refused(tmp_path: Path) -> None:
     project = make_project(tmp_path / "PROJ")
-    stray = ItemStore("acme", "other", release=_release, moved=None)
+    stray = Dir(items=str, release=_release, moved=None)._bound_to("acme", "other").items()
     with pytest.raises(ConfigError, match=r"acme\.other is not an item store a composed plugin"):
         project.hold(stray, "x")
     assert _targets(project) == ()
-
-
-def test_item_stores_share_the_stores_listing_and_its_checks() -> None:
-    twice = PluginSpec(name="acme", stores=(REPOS, REPOS))
-    foreign = PluginSpec(name="other", stores=(REPOS,))
-    with bootstrap.kept_composition():
-        result = bootstrap.compose_root(
-            candidates=[plugin_candidate(twice), plugin_candidate(foreign)]
-        )
-    assert {record.reason for record in result.quarantine} == {"duplicate-store", "foreign-store"}
-    assert refs.composed_targets() == ()  # an item store keeps no layout an install holds
 
 
 def test_holders_lists_every_holder_and_every_reference_it_cannot_read(tmp_path: Path) -> None:
@@ -478,7 +478,7 @@ def test_rewriting_an_install_reference_keeps_the_plugins_it_lists(tmp_path: Pat
 
 def test_an_uninstalled_owners_hold_is_forgotten_only_by_name(tmp_path: Path) -> None:
     first = make_project(tmp_path / "PROJ-500", holds={REPOS: ["pack:terraform"]})
-    gone = _cli("project", "remove", str(first.root), "--dry-run", "-f", "json", specs=())
+    gone = _cli("project", "remove", str(first.root), "--dry-run", "-f", "json", plugins=())
     [row, _] = _rows(gone)
     assert (row["action"], row["detail"]) == ("refused", "acme is not installed: the hold stays")
     assert row["hint"] == "install acme, or --force pack:terraform forgets it"
@@ -491,19 +491,25 @@ def test_an_uninstalled_owners_hold_is_forgotten_only_by_name(tmp_path: Path) ->
         "--yes",
         "-f",
         "json",
-        specs=(),
+        plugins=(),
     )
     assert forced.exit_code == 0, forced.output
     assert [r["action"] for r in _rows(forced)] == ["forgotten", "removed"]
 
 
 def test_a_quarantined_owners_hold_is_never_forgotten(tmp_path: Path) -> None:
-    broken = PluginSpec(
-        name="acme", stores=(REPOS, ItemStore("acme", "repos", release=_release, moved=None))
-    )
+    broken = _broken()
     first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
     result = _cli(
-        "project", "remove", str(first.root), "--force", API, "--yes", "-f", "json", specs=(broken,)
+        "project",
+        "remove",
+        str(first.root),
+        "--force",
+        API,
+        "--yes",
+        "-f",
+        "json",
+        plugins=(broken,),
     )
     assert result.exit_code == 1
     row = _rows(result)[0]
@@ -525,7 +531,7 @@ def test_remove_needs_yes_without_a_terminal(tmp_path: Path) -> None:
 
 def test_remove_at_a_terminal_previews_the_holds_as_the_rows_print_them(tmp_path: Path) -> None:
     first, _ = _two(tmp_path)
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(SPEC)])
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(ACME)])
     result = invoke_cli(
         root.meta,
         ["project", "remove", str(first.root)],
@@ -895,16 +901,14 @@ def test_the_same_move_again_retries_a_failed_repair(tmp_path: Path) -> None:
 
 
 def test_a_broken_owner_keeps_a_moves_repair_pending(tmp_path: Path) -> None:
-    broken = PluginSpec(
-        name="acme", stores=(REPOS, ItemStore("acme", "repos", release=_release, moved=None))
-    )
+    broken = _broken()
     first = make_project(tmp_path / "PROJ", holds={REPOS: [API]})
     new = tmp_path / "moved"
-    result = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=(broken,))
+    result = _cli("project", "move", str(first.root), str(new), "-f", "json", plugins=(broken,))
     assert result.exit_code == 0, result.output
     assert _rows(result)[1]["action"] == "skipped"
     assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == (first.root,)
-    gone = _cli("project", "move", str(first.root), str(new), "-f", "json", specs=())
+    gone = _cli("project", "move", str(first.root), str(new), "-f", "json", plugins=())
     assert gone.exit_code == 0  # an owner that isn't installed has nothing to run
     assert refs.read_reference(refs.reference_file(holder_of(first))).moved_from == ()
 
@@ -1111,7 +1115,7 @@ def test_forgetting_a_hold_takes_its_item_stores_lock(
 
     monkeypatch.setattr(holds, "_target_lock", spy)
     forced = _cli(
-        "project", "remove", str(first.root), "--force", "pack:terraform", "--yes", specs=()
+        "project", "remove", str(first.root), "--force", "pack:terraform", "--yes", plugins=()
     )
     assert forced.exit_code == 0, forced.output
     assert ("acme", "repos") in taken
@@ -1304,14 +1308,25 @@ def test_one_item_held_in_two_stores_gets_a_row_from_each(tmp_path: Path) -> Non
     def mirrored(ask: MoveAsk[RepoKey]) -> str:
         raise RuntimeError("mirror repair failed")
 
-    mirrors = ItemStore("acme", "mirrors", item=RepoKey, release=_release, moved=mirrored)
-    spec = PluginSpec(name="acme", stores=(REPOS, mirrors))
+    mirrored_acme = make_plugin(
+        "acme",
+        settings=_Settings,
+        repos=Dir(items=RepoKey, release=_release, moved=_moved),
+        mirrors=Dir(items=RepoKey, release=_release, moved=mirrored),
+    )
     with bootstrap.kept_composition():
-        bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+        bootstrap.compose_root(candidates=[plugin_candidate(mirrored_acme)])
+        mirrors = mirrored_acme.mirrors.items()  # type: ignore[attr-defined]
         first = make_project(tmp_path / "A", holds={REPOS: [API], mirrors: [API]})
     OWNER.raise_moved = 1
     result = _cli(
-        "project", "move", str(first.root), str(tmp_path / "B"), "-f", "json", specs=(spec,)
+        "project",
+        "move",
+        str(first.root),
+        str(tmp_path / "B"),
+        "-f",
+        "json",
+        plugins=(mirrored_acme,),
     )
     assert result.exit_code == 1
     details = sorted(r["detail"] for r in _rows(result)[1:])

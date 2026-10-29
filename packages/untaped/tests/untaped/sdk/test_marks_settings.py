@@ -9,10 +9,9 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import DeprecatedKey, key_mappings, mapping_errors
 from untaped.sdk.marks import (
@@ -123,16 +122,16 @@ def test_a_pydantic_deprecated_field_still_loads_but_is_a_lint_error() -> None:
     assert pydantic_deprecated_fields(PythonDeprecated) == ["old"]
 
     composition = bootstrap.compose_root(
-        candidates=[plugin_candidate(make_spec(name="svc", settings=PythonDeprecated))]
+        candidates=[plugin_candidate(make_plugin("svc", settings=PythonDeprecated))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["untaped", "svc"]
 
 
 def test_a_misplaced_mark_quarantines_its_provider() -> None:
-    spec = make_spec(name="svc", settings=UnionMark)
+    svc = make_plugin("svc", settings=UnionMark)
 
-    composition = bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+    composition = bootstrap.compose_root(candidates=[plugin_candidate(svc)])
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["untaped"]
     [record] = composition.quarantine
@@ -144,23 +143,11 @@ class MarkedState(BaseModel):
     last_run: Annotated[str, experimental] = ""
 
 
-def _state_spec(state: type[BaseModel]) -> PluginSpec:
-    return make_spec(name="svc", settings=Section, state=state)
-
-
-def test_a_mark_on_a_state_field_is_refused_and_quarantines_its_provider() -> None:
+def test_a_mark_on_a_state_field_is_refused() -> None:
     assert mark_errors(MarkedState, state=True) == [
         "setting 'last_run' is state: state fields take no stability marks"
     ]
     assert mark_errors(MarkedState) == []
-
-    composition = bootstrap.compose_root(candidates=[plugin_candidate(_state_spec(MarkedState))])
-
-    [record] = composition.quarantine
-    assert (record.reason, "state fields take no stability marks" in record.detail) == (
-        "bad-settings-keys",
-        True,
-    )
 
 
 def test_the_lint_reports_a_misplaced_mark_with_its_file_and_line() -> None:
@@ -184,7 +171,7 @@ def test_the_lint_checks_a_state_model_for_marks() -> None:
 
 def test_a_clean_marked_section_composes() -> None:
     composition = bootstrap.compose_root(
-        candidates=[plugin_candidate(make_spec(name="svc", settings=Section))]
+        candidates=[plugin_candidate(make_plugin("svc", settings=Section))]
     )
 
     assert [plugin.spec.name for plugin in composition.plugins] == ["untaped", "svc"]

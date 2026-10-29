@@ -11,8 +11,11 @@ from typing import Any, ClassVar
 import pytest
 from pydantic import BaseModel
 
-from untaped.runtime.registry import PluginSpec, compose, named_plugin_dir, section_settings
+from core_test_support.commands.support import ExtProfile, make_plugin
+from untaped.runtime import bootstrap
+from untaped.runtime.registry import compose, named_plugin_dir
 from untaped.runtime.run import invocation
+from untaped.runtime.settings import registered_profile_model
 from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
@@ -183,12 +186,30 @@ def test_cached_peeks_at_this_version_only(clock: CacheClock, up: Composer) -> N
     assert COMPOSED.cached(KEY) is None
 
 
+def _composed() -> Cache[Composed]:
+    """A version-only cache like ``COMPOSED``, for one plugin class to hold."""
+    return Cache(
+        label="composed toys",
+        max_age=None,
+        model=Composed,
+        version=lambda: CODE["version"],
+        split="none",
+    )
+
+
+def _section(**caches: Cache[Any]) -> type[BaseModel] | None:
+    """Plugin ``toy``'s composed config section when it holds ``caches``."""
+    with bootstrap.kept_composition():
+        bootstrap.compose_root(candidates=[plugin_candidate(make_plugin("toy", **caches))])
+        return registered_profile_model("toy")
+
+
 def test_it_creates_no_setting() -> None:
-    timed = Cache("toy", "timed", label="timed", max_age=timedelta(hours=1))
-    section = section_settings(PluginSpec(name="toy", caches=(COMPOSED, timed)))
+    timed = Cache(label="timed", max_age=timedelta(hours=1))
+    section = _section(composed=_composed(), timed=timed)
     assert section is not None
     assert set(section.model_fields["caches"].annotation.model_fields) == {"timed"}  # type: ignore[union-attr]
-    assert section_settings(PluginSpec(name="toy", caches=(COMPOSED,))) is None
+    assert _section(composed=_composed()) is ExtProfile
     with pytest.raises(ConfigError, match="version-only"):
         COMPOSED.max_age()
     with pytest.raises(ConfigError, match="version-only"):
@@ -199,8 +220,8 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
     class Own(BaseModel):
         retired_keys: ClassVar[Mapping[str, str | Retired]] = {"caches.old": Retired(note="gone")}
 
-    spec = PluginSpec(name="toy", settings=Own, caches=(COMPOSED,))
-    result = compose([plugin_candidate(spec)])
+    toy = make_plugin("toy", settings=Own, composed=_composed())
+    result = compose([plugin_candidate(toy)])
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "toy"], result.quarantine
 
 

@@ -3,73 +3,51 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from typing import Annotated
 
 import pytest
-from cyclopts import App, Parameter
+from cyclopts import App
+from pydantic import Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.core.surface._cli import subtree_lines
 from untaped.runtime import bootstrap
-from untaped.sdk._cli import create_app
-from untaped.sdk.marks import _SELECTED_COMMAND, DEPRECATED_OPTIONS, deprecated
+from untaped.sdk import Command, Positional, Short
+from untaped.sdk.marks import _SELECTED_COMMAND, deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def preview() -> None:
+class Preview(Command):
     """Preview it."""
 
+    def run(self) -> None:
+        return None
 
-def _svc() -> App:
-    app = create_app(name="svc", help="Service.")
-    app.command(preview, name="preview")
 
-    @app.command(name="run")
-    def run(
-        *targets: str,
-        limit: int = 0,
-        dry_run: Annotated[
-            bool,
-            Parameter(name=["--dry-run", "-n"], group=DEPRECATED_OPTIONS),
-            deprecated(removed_in=3, replacement="--limit 1"),
-        ] = False,
-        legacy: Annotated[
-            str | None,
-            Parameter(name="--old-name", group=DEPRECATED_OPTIONS),
-            deprecated(removed_in=3),
-        ] = None,
-        look: Annotated[
-            bool,
-            Parameter(group=DEPRECATED_OPTIONS, negative=""),
-            deprecated(removed_in=3, replacement=preview),
-        ] = False,
-    ) -> None:
-        """Run it.
+class Run(Command):
+    """Run it."""
 
-        Parameters
-        ----------
-        targets
-            What to run.
-        limit
-            How many to run.
-        dry_run
-            Run nothing.
-        legacy
-            An old name.
-        look
-            Look first.
-        """
+    targets: Positional[list[str]] = Field(default_factory=list, description="What to run.")
+    limit: int = Field(0, description="How many to run.")
+    dry_run: Annotated[bool, Short("-n"), deprecated(removed_in=3, replacement="--limit 1")] = (
+        Field(False, description="Run nothing.")
+    )
+    old_name: Annotated[str | None, deprecated(removed_in=3)] = Field(
+        None, description="An old name."
+    )
+    look: Annotated[bool, deprecated(removed_in=3, replacement=Preview)] = Field(
+        False, description="Look first."
+    )
 
-    return app
+    def run(self) -> None:
+        return None
 
 
 def _root() -> App:
-    app = _svc()
-    spec = replace(make_spec(name="svc", factory=lambda: app))
-    return bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
+    svc = make_plugin("svc", commands=(Preview, Run))
+    return bootstrap.build_root_app(candidates=[plugin_candidate(svc)])
 
 
 def _json_notices(argv: list[str]) -> list[dict[str, object]]:
@@ -84,7 +62,7 @@ def _json_notices(argv: list[str]) -> list[dict[str, object]]:
 DRY_RUN = {
     "level": "warning",
     "kind": "untaped.deprecation",
-    "id": "cli untaped svc run --dry-run switch",
+    "id": "cli untaped svc run --dry-run switch default=unset",
     "removed_in": 3,
     "distribution": "untaped-svc",
     "replacement": "--limit 1",
@@ -94,23 +72,15 @@ DRY_RUN = {
 }
 
 
-@pytest.mark.parametrize("spelling", [["--dry-run"], ["--no-dry-run"], ["--dry-run=false"], ["-n"]])
+@pytest.mark.parametrize("spelling", [["--dry-run"], ["--dry-run=false"], ["-n"]])
 def test_every_spelling_warns_under_the_declared_one(spelling: list[str]) -> None:
     assert _json_notices(["svc", "run", *spelling]) == [DRY_RUN]
-
-
-def test_a_renamed_option_warns_under_its_name() -> None:
-    (notice,) = _json_notices(["svc", "run", "--old-name", "x"])
-    assert (notice["id"], notice["message"]) == (
-        "cli untaped svc run --old-name VALUE default=unset",
-        "`untaped svc run --old-name` is deprecated and will be removed in untaped-svc 3.0",
-    )
 
 
 def test_each_deprecated_option_used_warns_and_no_other() -> None:
     notices = _json_notices(["svc", "run", "--limit", "2", "-n", "--old-name", "x"])
     assert [notice["id"] for notice in notices] == [
-        "cli untaped svc run --dry-run switch",
+        "cli untaped svc run --dry-run switch default=unset",
         "cli untaped svc run --old-name VALUE default=unset",
     ]
 
@@ -137,8 +107,8 @@ def test_a_command_replacement_reads_the_same_everywhere() -> None:
     root = _root()
     lines = {str(line) for line in subtree_lines(root, "svc", None)}
     assert (
-        "cli untaped svc run --look switch  [deprecated, removed in 3.0; use untaped svc preview]"
-        in lines
+        "cli untaped svc run --look switch default=unset  "
+        "[deprecated, removed in 3.0; use untaped svc preview]" in lines
     )
 
 

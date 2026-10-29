@@ -1,4 +1,4 @@
-"""A cache's setting ``<plugin>.caches.<cache>.max_age_seconds``, generated from the spec.
+"""A cache's setting ``<plugin>.caches.<cache>.max_age_seconds``, generated from the class.
 
 A ``hello`` fixture plugin keeps the ``motd`` cache over a fake upstream; its
 ``show`` command serves it, so the setting is read the way a command reads it.
@@ -8,29 +8,36 @@ from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Any, ClassVar
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.settings_names import name_problem, settings_name_violations
+from untaped.runtime import bootstrap
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import PluginSpec, settings_model
-from untaped.runtime.settings import get_settings
-from untaped.sdk._cli import create_app, echo, report_errors
+from untaped.runtime.settings import get_settings, registered_profile_model
+from untaped.sdk import Command, Plugin, Refresh
 from untaped.sdk._home import config_path
 from untaped.sdk.diagnostic import Deprecation, Message
 from untaped.sdk.health.deprecated_keys import Retired, key_mappings, mapping_errors
 from untaped.sdk.progress import ProgressHandle
-from untaped.sdk.storage.cache import Cache, Filled, refresh_option
+from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.testing import CliInvoker, CliResult, cache_clock, plugin_candidate
 
-MOTD = Cache("hello", "motd", label="message of the day", max_age=timedelta(hours=1))
+
+def _motd(renamed_from: tuple[str, ...] = ()) -> Cache[Any]:
+    """A ``hello.motd`` cache, for one plugin class: a block belongs to the one holding it."""
+    motd = Cache(label="message of the day", max_age=timedelta(hours=1), renamed_from=renamed_from)
+    return motd._bound_to("hello", "motd")
+
+
+MOTD = _motd()
 SETTING = "hello.caches.motd.max_age_seconds"
 FILLS: list[str] = []
 
@@ -44,20 +51,25 @@ def _fill(key: str, _task: ProgressHandle) -> Filled:
     return Filled()
 
 
-def _app() -> App:
-    app = create_app(name="hello", help="Say hello.")
+class Show(Command):
+    """Print the message of the day."""
 
-    @app.command(name="show")
-    def show(*, refresh: Annotated[bool | None, refresh_option(MOTD)] = None) -> None:
-        """Print the message of the day."""
-        with report_errors():
-            served = MOTD.serve({"motd": "the message"}, refresh=refresh, fill=_fill, read=str)
-        echo(json.dumps(served.value))
+    refresh: Refresh = Refresh(MOTD)
 
-    return app
+    def run(self) -> str:
+        served = MOTD.serve(
+            {"motd": "the message"}, refresh=self.refresh.directive, fill=_fill, read=str
+        )
+        return json.dumps(served.value)
 
 
-SPEC = PluginSpec(name="hello", app_factory=_app, settings=HelloSettings, caches=(MOTD,))
+def _hello(settings: type[BaseModel] = HelloSettings, **caches: Cache[Any]) -> type[Plugin]:
+    """Plugin ``hello`` with ``settings``, holding ``caches``."""
+    return make_plugin("hello", settings=settings, **caches)
+
+
+#: ``hello`` holding ``motd``, which its ``show`` serves.
+HELLO = make_plugin("hello", settings=HelloSettings, commands=(Show,), motd=MOTD)
 
 
 @pytest.fixture(autouse=True)
@@ -65,8 +77,8 @@ def _no_fills() -> None:
     FILLS.clear()
 
 
-def _run(*argv: str, spec: PluginSpec = SPEC) -> CliResult:
-    app = build_root_app(candidates=[plugin_candidate(spec)])
+def _run(*argv: str, plugin: type[Plugin] = HELLO) -> CliResult:
+    app = build_root_app(candidates=[plugin_candidate(plugin)])
     return CliInvoker().invoke(app.meta, list(argv))
 
 
@@ -78,7 +90,7 @@ def _write(text: str) -> Path:
     return path
 
 
-def _hello(body: str, profile: str = "default") -> str:
+def _config(body: str, profile: str = "default") -> str:
     """A config with ``body`` as ``profile``'s ``hello`` section (``default`` is the base)."""
     at = "" if profile == "default" else "    "
     lines = "".join(f"{at}  {line}\n" for line in body.splitlines())
@@ -115,7 +127,7 @@ def test_config_set_tunes_the_max_age_read_at_call_time() -> None:
 
 
 def test_the_setting_is_per_profile() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age_seconds: 5", profile="fast"))
+    _write(_config("caches:\n  motd:\n    max_age_seconds: 5", profile="fast"))
     assert _run("--profile", "fast", "config", "get", SETTING).stdout.strip() == "5"
     assert _run("config", "get", SETTING).stdout.strip() == "3600"
 
@@ -127,19 +139,19 @@ def test_the_setting_has_its_environment_variable(monkeypatch: pytest.MonkeyPatc
 
 
 def test_an_uncomposed_cache_reads_its_declared_default() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age_seconds: 5"))
+    _write(_config("caches:\n  motd:\n    max_age_seconds: 5"))
     assert MOTD.max_age() == timedelta(hours=1)
 
 
-def test_a_cache_left_off_the_spec_reads_its_declared_default() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age_seconds: 5"))
+def test_a_cache_left_off_the_class_reads_its_declared_default() -> None:
+    _write(_config("caches:\n  motd:\n    max_age_seconds: 5"))
     news = Cache("hello", "news", label="news", max_age=timedelta(minutes=2))
     _run("config", "list")
     assert news.max_age() == timedelta(minutes=2)
 
 
 def test_zero_checks_upstream_on_every_read() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age_seconds: 0"))
+    _write(_config("caches:\n  motd:\n    max_age_seconds: 0"))
     with cache_clock() as clock:
         assert _run("hello", "show").exit_code == 0
         clock.advance(timedelta(seconds=1))
@@ -156,7 +168,7 @@ def test_within_the_max_age_a_read_is_served_from_the_cache() -> None:
 
 
 def test_a_negative_max_age_is_a_settings_error() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age_seconds: -1"))
+    _write(_config("caches:\n  motd:\n    max_age_seconds: -1"))
     result = _run("hello", "show")
     assert result.exit_code == 4
     assert SETTING in result.stderr
@@ -167,7 +179,7 @@ def test_a_negative_max_age_is_a_settings_error() -> None:
 
 
 def test_a_typo_under_a_cache_loads_and_doctor_names_it() -> None:
-    _write(_hello("caches:\n  motd:\n    max_age: 5"))
+    _write(_config("caches:\n  motd:\n    max_age: 5"))
     with cache_clock():
         assert _run("hello", "show").exit_code == 0
     assert MOTD.max_age() == timedelta(hours=1)
@@ -184,7 +196,7 @@ def test_the_refresh_option_names_a_setting_config_get_accepts() -> None:
 
 
 def test_an_unknown_cache_loads_and_doctor_names_it() -> None:
-    _write(_hello("caches:\n  typo:\n    max_age_seconds: 5"))
+    _write(_config("caches:\n  typo:\n    max_age_seconds: 5"))
     assert _run("config", "get", SETTING).stdout.strip() == "3600"
     rows = json.loads(_run("doctor", "--format", "json").stdout)
     (row,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
@@ -193,7 +205,7 @@ def test_an_unknown_cache_loads_and_doctor_names_it() -> None:
 
 
 def test_the_generated_setting_follows_the_naming_conventions() -> None:
-    caches = settings_model(SPEC).model_fields["caches"].annotation
+    caches = _section(HELLO).model_fields["caches"].annotation
     assert isinstance(caches, type) and issubclass(caches, BaseModel)
     (motd,) = caches.model_fields.values()
     assert isinstance(motd.annotation, type) and issubclass(motd.annotation, BaseModel)
@@ -204,19 +216,13 @@ def test_the_generated_setting_follows_the_naming_conventions() -> None:
 # --- renamed_from -----------------------------------------------------------
 
 
-MOTD_RENAMED = Cache(
-    "hello",
-    "motd",
-    label="message of the day",
-    max_age=timedelta(hours=1),
-    renamed_from=("motd_seconds",),
-)
-RENAMED = PluginSpec(name="hello", app_factory=_app, settings=HelloSettings, caches=(MOTD_RENAMED,))
+MOTD_RENAMED = _motd(renamed_from=("motd_seconds",))
+RENAMED = _hello(motd=MOTD_RENAMED)
 
 
 def test_an_old_key_is_read_as_the_setting_with_a_warning() -> None:
-    _write(_hello("motd_seconds: 9"))
-    result = _run("config", "get", SETTING, spec=RENAMED)
+    _write(_config("motd_seconds: 9"))
+    result = _run("config", "get", SETTING, plugin=RENAMED)
     assert result.stdout.strip() == "9"
     (warning,) = _warnings(result)
     assert warning.startswith(
@@ -228,14 +234,14 @@ def test_an_old_key_is_read_as_the_setting_with_a_warning() -> None:
 
 def test_the_old_environment_variable_is_read_too(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_HELLO__MOTD_SECONDS", "11")
-    result = _run("config", "get", SETTING, spec=RENAMED)
+    result = _run("config", "get", SETTING, plugin=RENAMED)
     assert result.stdout.strip() == "11"
     assert any("UNTAPED_HELLO__MOTD_SECONDS" in line for line in _warnings(result))
 
 
 def test_config_migrate_moves_the_old_key_into_caches() -> None:
-    path = _write(_hello("greeting: hey\nmotd_seconds: 9"))
-    result = _run("config", "migrate", "--format", "json", spec=RENAMED)
+    path = _write(_config("greeting: hey\nmotd_seconds: 9"))
+    result = _run("config", "migrate", "--format", "json", plugin=RENAMED)
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["to"] == SETTING
     assert read_config_dict(path)["hello"] == {
@@ -250,8 +256,7 @@ def test_the_composed_model_carries_the_rename_and_the_owner_s_own() -> None:
 
         greeting: str = "hi"
 
-    spec = PluginSpec(name="hello", settings=Owner, caches=(MOTD_RENAMED,))
-    composed = settings_model(spec)
+    composed = _section(_hello(Owner, motd=_motd(renamed_from=("motd_seconds",))))
     assert mapping_errors(composed) == []
     assert dict(key_mappings(composed).readable) == {
         "salutation": "greeting",
@@ -273,17 +278,15 @@ class GithubLike(BaseModel):
 
 def test_a_dotted_old_key_moves_beside_a_surviving_sibling() -> None:
     swept = Cache(
-        "hello",
-        "sweep",
         label="sweep results",
         max_age=timedelta(minutes=10),
         renamed_from=("sweep.max_age_seconds",),
     )
-    spec = PluginSpec(name="hello", settings=GithubLike, caches=(swept,))
-    path = _write(_hello("sweep:\n  parallel: 2\n  max_age_seconds: 30"))
-    got = _run("config", "get", "hello.caches.sweep.max_age_seconds", spec=spec)
+    plugin = _hello(GithubLike, sweep=swept)
+    path = _write(_config("sweep:\n  parallel: 2\n  max_age_seconds: 30"))
+    got = _run("config", "get", "hello.caches.sweep.max_age_seconds", plugin=plugin)
     assert got.stdout.strip() == "30"
-    assert _run("config", "migrate", spec=spec).exit_code == 0
+    assert _run("config", "migrate", plugin=plugin).exit_code == 0
     assert read_config_dict(path)["hello"] == {
         "sweep": {"parallel": 2},
         "caches": {"sweep": {"max_age_seconds": 30}},
@@ -300,21 +303,19 @@ class AnsibleAfterC(BaseModel):
     greeting: str = "hi"
 
 
-INDEX = Cache(
-    "hello",
-    "index",
-    label="source data",
-    max_age=timedelta(days=1),
-    renamed_from=("stale_after_seconds",),
+AFTER_C = _hello(
+    AnsibleAfterC,
+    index=Cache(
+        label="source data", max_age=timedelta(days=1), renamed_from=("stale_after_seconds",)
+    ),
 )
-AFTER_C = PluginSpec(name="hello", settings=AnsibleAfterC, caches=(INDEX,))
 
 
 def test_an_owner_retires_its_key_while_the_cache_renames_the_next_one() -> None:
     assert mapping_errors(AnsibleAfterC) == []
     assert settings_name_violations("hello", AnsibleAfterC, Path.cwd()) == []
-    path = _write(_hello("stale_after: 60\nstale_after_seconds: 120"))
-    result = _run("config", "migrate", "--format", "json", spec=AFTER_C)
+    path = _write(_config("stale_after: 60\nstale_after_seconds: 120"))
+    result = _run("config", "migrate", "--format", "json", plugin=AFTER_C)
     assert result.exit_code == 0, result.output
     rows = {row["from"]: row for row in json.loads(result.stdout)}
     assert rows["hello.stale_after_seconds"]["to"] == "hello.caches.index.max_age_seconds"
@@ -323,22 +324,29 @@ def test_an_owner_retires_its_key_while_the_cache_renames_the_next_one() -> None
     assert read_config_dict(path)["hello"] == {"caches": {"index": {"max_age_seconds": 120}}}
 
 
-def _section(spec: PluginSpec) -> Sequence[str]:
-    return list(settings_model(spec).model_fields)
+def _section(plugin: type[Plugin]) -> type[BaseModel]:
+    """``plugin``'s composed config section: its settings and the keys the SDK adds."""
+    with bootstrap.kept_composition():
+        bootstrap.compose_root(candidates=[plugin_candidate(plugin)])
+        model = registered_profile_model("hello")
+    assert model is not None
+    return model
 
 
-def test_the_renamed_spec_composes_like_any_other() -> None:
-    assert _section(RENAMED) == ["greeting", "caches"]
-    assert _section(AFTER_C) == ["greeting", "caches"]
+def test_the_renamed_class_composes_like_any_other() -> None:
+    assert list(_section(RENAMED).model_fields) == ["greeting", "caches"]
+    assert list(_section(AFTER_C).model_fields) == ["greeting", "caches"]
 
 
 class Badly(BaseModel):
     timeout: int = 5
 
 
-@pytest.mark.parametrize("cache", [MOTD, MOTD_RENAMED], ids=["plain", "renamed_from"])
-def test_the_owner_s_fields_are_still_checked_once_caches_are_composed(cache: Cache) -> None:
-    composed = settings_model(PluginSpec(name="hello", settings=Badly, caches=(cache,)))
+@pytest.mark.parametrize("renamed_from", [(), ("motd_seconds",)], ids=["plain", "renamed_from"])
+def test_the_owner_s_fields_are_still_checked_once_caches_are_composed(
+    renamed_from: tuple[str, ...],
+) -> None:
+    composed = _section(_hello(Badly, motd=_motd(renamed_from)))
     assert composed is not Badly
     line = inspect.getsourcelines(Badly)[1] + 1
     assert settings_name_violations("hello", composed, Path(__file__).parent) == [

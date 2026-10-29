@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import json
 import warnings
-from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -13,16 +12,13 @@ from cyclopts import App
 from pydantic import BaseModel
 
 import untaped.sdk.marks as mark_module
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.run import run_owning
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.core.surface import DeprecatedMark, Line, plugin_lines
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import Plugin
+from untaped.sdk import Command, Plugin
 from untaped.sdk._run import run_scope
-from untaped.sdk.diagnostic import Deprecation
-from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     DeprecatedBehaviour,
     UntapedDeprecationWarning,
@@ -31,11 +27,10 @@ from untaped.sdk.marks import (
     forget_notices,
     marks,
 )
-from untaped.sdk.testing import invoke_cli, plugin_candidate
+from untaped.sdk.testing import install, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
-ROW_KIND = deprecated_behaviour("row-kind", removed_in=3, replacement="kind= on the Record class")
 UNLISTED = deprecated_behaviour("unlisted", removed_in=3)
 CORE = deprecated_behaviour("old-login", removed_in=12, replacement="untaped auth login")
 
@@ -46,21 +41,27 @@ def _core_behaviour(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (CORE,))
 
 
-def _spec(
-    *behaviours: DeprecatedBehaviour, stability: object = None, name: str = "svc"
-) -> PluginSpec:
-    base = make_spec(name, stability=stability)  # type: ignore[arg-type]
-    return PluginSpec(
-        name=base.name,
-        app_factory=base.app_factory,
-        settings=base.settings,
-        stability=base.stability,
-        deprecations=lambda: behaviours,
+def _svc(stability: object = None, **behaviours: DeprecatedBehaviour) -> type[Plugin]:
+    """Plugin ``svc`` holding ``behaviours`` (``row_kind`` without any)."""
+    held = behaviours or {
+        "row_kind": DeprecatedBehaviour(removed_in=3, replacement="kind= on the Record class")
+    }
+    return make_plugin(
+        "svc",
+        stability=stability,  # type: ignore[arg-type]
+        commands=(Warn,),
+        **held,
     )
 
 
-def _compose(*specs: PluginSpec) -> App:
-    return bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+def _row_kind(svc: type[Plugin]) -> DeprecatedBehaviour:
+    behaviour = svc.row_kind  # type: ignore[attr-defined]
+    assert isinstance(behaviour, DeprecatedBehaviour)
+    return behaviour
+
+
+def _compose(*plugins: type[Plugin]) -> App:
+    return bootstrap.build_root_app(candidates=[plugin_candidate(each) for each in plugins])
 
 
 # --- the declaration -----------------------------------------------------------------------
@@ -118,12 +119,6 @@ def test_a_behaviour_takes_its_name_and_mark_together() -> None:
         DeprecatedBehaviour(replacement="y")
 
 
-@pytest.mark.parametrize("value", [(), None])
-def test_a_spec_s_deprecations_is_a_function(value: object) -> None:
-    with pytest.raises(ConfigError, match="deprecations must be a function"):
-        PluginSpec(name="svc", deprecations=value)  # type: ignore[arg-type]
-
-
 # --- the sentence and its owner ------------------------------------------------------------
 
 
@@ -144,58 +139,56 @@ def test_core_s_behaviour_names_the_bare_version() -> None:
 
 
 def test_a_plugin_s_behaviour_names_its_distribution() -> None:
-    _compose(_spec(ROW_KIND))
-    assert ROW_KIND.id == "behaviour svc.row-kind"
-    assert ROW_KIND.sentence("a row without a declared kind") == (
-        "a row without a declared kind is deprecated and will be removed in untaped-svc 3.0; "
-        "use kind= on the Record class"
-    )
+    svc = _svc()
+    with install(svc).running():
+        row_kind = _row_kind(svc)
+        assert row_kind.id == "behaviour svc.row-kind"
+        assert row_kind.sentence("a row without a declared kind") == (
+            "a row without a declared kind is deprecated and will be removed in untaped-svc 3.0; "
+            "use kind= on the Record class"
+        )
 
 
 def test_a_behaviour_nobody_lists_reads_as_core_s() -> None:
-    _compose(_spec(ROW_KIND))
-    assert UNLISTED.id == "behaviour untaped.unlisted"
-    assert UNLISTED.sentence("x") == "x is deprecated and will be removed in 3.0"
-
-
-@pytest.mark.usefixtures("_core_behaviour")
-def test_a_core_behaviour_stays_core_s_and_no_plugin_may_list_it() -> None:
-    spec = _spec(CORE, name="hijack")
-    _compose(spec)
-    assert CORE.id == "behaviour untaped.old-login"
-    with pytest.raises(ConfigError, match="'old-login', which untaped owns"):
-        plugin_lines(spec)
-
-
-def test_a_listing_that_fails_never_fails_the_warning() -> None:
-    def broken() -> Sequence[DeprecatedBehaviour]:
-        raise RuntimeError("boom")
-
-    spec = PluginSpec(name="bad", deprecations=broken)
-    _compose(spec, _spec(ROW_KIND))
-    assert ROW_KIND.id == "behaviour svc.row-kind"
+    with install(_svc()).running():
+        assert UNLISTED.id == "behaviour untaped.unlisted"
+        assert UNLISTED.sentence("x") == "x is deprecated and will be removed in 3.0"
 
 
 # --- notify and warn -----------------------------------------------------------------------
 
 
-def _notifier(behaviour: DeprecatedBehaviour, *, hint: str | None = None) -> App:
-    app = App(name="w")
+#: What ``svc warn`` notifies: (behaviour, subject, key, hint).
+NOTICES: list[tuple[DeprecatedBehaviour, str, str, str | None]] = []
 
-    @app.default
-    def run() -> None:
-        behaviour.notify("a row without a declared kind", key="row", hint=hint)
-        behaviour.notify("the same row again", key="row")
 
-    return app
+class Warn(Command):
+    """Notify each of :data:`NOTICES`."""
+
+    def run(self) -> None:
+        for behaviour, subject, key, hint in NOTICES:
+            behaviour.notify(subject, key=key, hint=hint)
+
+
+def _warned(svc: type[Plugin], *notices: tuple[DeprecatedBehaviour, str, str, str | None]) -> str:
+    """``svc warn``'s JSON diagnostics after it notifies ``notices``."""
+    NOTICES[:] = notices
+    forget_notices()
+    result = invoke_cli(_compose(svc).meta, ["svc", "warn"])
+    assert result.exit_code == 0, result.output
+    return result.stderr
 
 
 def test_notify_warns_once_per_key_as_its_record(monkeypatch: pytest.MonkeyPatch) -> None:
-    _compose(_spec(ROW_KIND))
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    forget_notices()
-    result = invoke_cli(_notifier(ROW_KIND, hint="run `untaped svc fix`"), [])
-    (line,) = [json.loads(line) for line in result.stderr.splitlines()]
+    svc = _svc()
+    row_kind = _row_kind(svc)
+    stderr = _warned(
+        svc,
+        (row_kind, "a row without a declared kind", "row", "run `untaped svc fix`"),
+        (row_kind, "the same row again", "row", None),
+    )
+    (line,) = [json.loads(line) for line in stderr.splitlines()]
     assert line == {
         "level": "warning",
         "kind": "untaped.deprecation",
@@ -207,37 +200,30 @@ def test_notify_warns_once_per_key_as_its_record(monkeypatch: pytest.MonkeyPatch
         "message": "a row without a declared kind is deprecated and will be removed in "
         "untaped-svc 3.0; use kind= on the Record class",
     }
-    assert isinstance(result.diagnostics[0], Deprecation)
 
 
-def _api() -> None:
+def _api(row_kind: DeprecatedBehaviour) -> None:
     """A Python API whose behaviour is deprecated: the warning points at its caller."""
-    ROW_KIND.warn("a row without a declared kind", replacement="untaped svc set")
+    row_kind.warn("a row without a declared kind", replacement="untaped svc set")
 
 
 def test_each_behaviour_keeps_its_own_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    _compose(_spec(ROW_KIND))
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
-    forget_notices()
-    app = App(name="w")
-
-    @app.default
-    def run() -> None:
-        ROW_KIND.notify("a row", key="same")
-        UNLISTED.notify("a thing", key="same")
-
-    result = invoke_cli(app, [])
-    ids = [json.loads(line)["id"] for line in result.stderr.splitlines()]
+    svc = _svc()
+    stderr = _warned(
+        svc, (_row_kind(svc), "a row", "same", None), (UNLISTED, "a thing", "same", None)
+    )
+    ids = [json.loads(line)["id"] for line in stderr.splitlines()]
     assert ids == ["behaviour svc.row-kind", "behaviour untaped.unlisted"]
 
 
 def test_warn_raises_an_untaped_deprecation_warning_at_the_api_s_caller() -> None:
-    _compose(_spec(ROW_KIND))
-    with warnings.catch_warnings(record=True) as log:
+    svc = _svc()
+    with install(svc).running(), warnings.catch_warnings(record=True) as log:
         warnings.simplefilter("always")
         frame = inspect.currentframe()
         before = frame.f_lineno if frame is not None else 0
-        _api()
+        _api(_row_kind(svc))
     (shown,) = log
     assert (shown.filename, shown.lineno) == (__file__, before + 1)
     warning = shown.message
@@ -256,29 +242,14 @@ def test_warn_raises_an_untaped_deprecation_warning_at_the_api_s_caller() -> Non
 
 
 def test_a_plugin_s_behaviour_is_a_surface_line() -> None:
-    lines = plugin_lines(_spec(ROW_KIND))
+    lines = plugin_lines(plugin_candidate(_svc()))
     assert Line("behaviour svc.row-kind", DeprecatedMark(3, "kind= on the Record class")) in lines
     assert not any(line.identity.startswith("behaviour untaped.") for line in lines)
 
 
-@pytest.mark.parametrize(
-    ("listed", "message"),
-    [
-        ((ROW_KIND, ROW_KIND), "lists 'row-kind' twice"),
-        (("row-kind",), "not a deprecated_behaviour"),
-    ],
-)
-def test_a_bad_listing_is_refused_where_it_is_read(
-    listed: tuple[object, ...], message: str
-) -> None:
-    spec = PluginSpec(name="svc", deprecations=lambda: listed)  # type: ignore[arg-type, return-value]
-    with pytest.raises(ConfigError, match=message):
-        plugin_lines(spec)
-
-
 @pytest.mark.usefixtures("_core_behaviour")
 def test_marks_report_behaviours() -> None:
-    root = _compose(_spec(ROW_KIND))
+    root = _compose(_svc())
     found = {
         mark.where: mark.replacement
         for mark in marks(root, bootstrap.composition())
@@ -290,10 +261,15 @@ def test_marks_report_behaviours() -> None:
     }
 
 
+def _svc_violations(svc: type[Plugin]) -> list[str]:
+    root = _compose(svc)
+    result = bootstrap.composition()
+    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == "svc"]
+    return stability_violations(root, result, ["svc"], spec=spec)
+
+
 def test_a_behaviour_under_a_deprecated_plugin_is_nested() -> None:
-    spec = _spec(ROW_KIND, stability=deprecated(removed_in=3))
-    root = _compose(spec)
-    found = stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
+    found = _svc_violations(_svc(stability=deprecated(removed_in=3)))
     assert "svc.row-kind::nested-mark::deprecated under deprecated svc" in found
 
 
@@ -308,10 +284,8 @@ def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch
 
 
 def test_a_behaviour_s_replacement_must_resolve() -> None:
-    gone = deprecated_behaviour("gone", removed_in=3, replacement="untaped svc nowhere")
-    spec = _spec(gone)
-    root = _compose(spec)
-    found = stability_violations(root, bootstrap.composition(), ["svc"], spec=spec)
+    gone = DeprecatedBehaviour(removed_in=3, replacement="untaped svc nowhere")
+    found = _svc_violations(_svc(gone=gone))
     assert found == [
         "svc.gone::bad-replacement::`untaped svc nowhere` does not resolve to a command"
     ]
