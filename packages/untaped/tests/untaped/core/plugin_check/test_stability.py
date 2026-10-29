@@ -11,10 +11,12 @@ import pytest
 from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.plugin_harness import make_spec
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
+from untaped.sdk import Command
 from untaped.sdk._cli import create_app
 from untaped.sdk.marks import (
     DEPRECATED_OPTIONS,
@@ -450,6 +452,33 @@ def test_command_text_may_name_another_plugin() -> None:
         return app
 
     assert _violations(factory, others=(other,)) == []
+
+
+class _Set(Command):
+    """Set it."""
+
+    def run(self) -> None:
+        return None
+
+
+class _Put(Command):
+    """Put it."""
+
+    stability = deprecated(removed_in=13, replacement=_Set)
+
+    def run(self) -> None:
+        return None
+
+
+def test_a_plugin_class_s_replacement_class_is_spelled_and_passes() -> None:
+    svc = make_plugin("svc", commands=(_Set, _Put))
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(svc)])
+    result = bootstrap.composition()
+    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == "svc"]
+    assert stability_violations(root, result, ["svc"], spec=spec) == []
+    assert [
+        mark.stability.replacement for mark in marks(root, result) if mark.where.startswith("svc")
+    ] == ["untaped svc set"]
 
 
 def test_bad_replacement_a_stale_setting_key() -> None:
