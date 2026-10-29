@@ -142,6 +142,41 @@ prints what `run` returns or yields ([Conventions](./reference/conventions.md#op
 Importing the module must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
 
+## What core reads from a command
+
+A command is a pydantic model, and its fields' types are its whole
+interface: core reads each one and builds the flags, the help, the
+`untaped docs` pages and the pipe kinds from them. Beyond pydantic, this is
+everything an author needs to know.
+
+| A field's type, or the class's | What core does with it |
+|---|---|
+| `str`, `int`, `float`, `bool`, `Path`, `Literal[...]`, an enum, `X \| None`, `list[X]` | An option named after the field. Its `description` is the help, and `Field` constraints validate it. A `bool` defaulting to true, or a `bool \| None`, also gets `--no-`. A list option repeats, one value per flag. |
+| `Positional[X]`, or `Annotated[Positional[X], AllowHyphen]` | An argument, filled in field order. `AllowHyphen` lets a value start with `-`. |
+| `Annotated[X, Short("-x")]` | The option's short flag. |
+| `File[M]`, `ExistingFile`, `TextOrStdin`, `PathOrStdin`, `KeyValue`, `KeyJson` | Core's value types: a file parsed as `M` (with an input page and schema), a path that must exist, a value or `-` for stdin, and a `KEY=VALUE` or `KEY=<json>` pair. `Annotated[File[M], Written]` is a file the command writes. |
+| `Annotated[Ref, Document(M)]` | The value names a document of `M` that the plugin finds and parses itself. The docs show `M`'s input page; core checks no file. |
+| A pydantic model of the plugin's own | A bundle: its fields are flattened into the command, in a help panel named after the class. Its docstring is a guide, linked "Read first" from each command taking it. |
+| An enum of the plugin's own with a docstring | The choices. Its docstring is a guide, as for a bundle. |
+| `Output[R]` | `--format` and `--columns`. `R` is what `run` prints, its outputs page and its pipe kind. The default configures it: `Output(columns=...)`, `Output(format="raw")`, `Output(formats=("tree", "json"), render={"tree": ...})` and `Output(stream=True)`. |
+| `Stdin[R]`, `Lines` | `--stdin`, reading identifiers or rows of those kinds; `Stdin(via=Contract.method)` also reads each provider's own records through the contract's bridge. `Lines` is raw lines, with no flag. |
+| `Confirm`, `DryRun` | `--yes` and `--dry-run`, with the preview, prompt and refusal (`self.confirm(...)`); `DryRun` alone is `--dry-run` for a command that writes without asking. |
+| `Refresh = Refresh(CACHE)` | `--refresh` and `--cached`, with help naming the cache. |
+| `Parallel = Parallel(cap=, default=)`, `Limit` | `-j/--parallel` and `--limit`, with their caps and defaults. |
+| A `@field_validator` or `@model_validator` | Runs after parsing. A failure exits 2 with its message; ``InvalidValue("use `{}`", Set.spelled(...))`` names a command by its class. |
+| The class docstring | The summary, the behaviour and an `Examples` section, whose command lines are checked against the composed root. |
+| `stability = experimental` or `deprecated(...)`, `aliases = (...)` | The help panel, the footer, the warning, and an old spelling kept as a hidden alias. |
+| `run`'s return annotation | `Iterator[R]` prints rows as they come, `R` one record, `R \| Iterator[R]` either (the command's choice), `R \| None` a record or nothing, `str` or `str \| None` a line or nothing, and `None` nothing. |
+| `Command[S]` | `self.settings`: the plugin's section, as the run's profile composes it, validated. The docs list the settings the command reads. |
+| `self.ctx` | `diag`, `terminal`, `project`, `plugin` and `http`: handles core gives every command, never declared. |
+
+Exit codes follow from what `run` raises: an `UntapedError` exits with its
+category's code, a usage error (validators included) exits 2, and rows that
+failed set exit 1. `raise Failed()` after the rows exits 1, and a check that
+matched (`--check`, `--fail-on-match`) raises `Matched()`, exit 3. How a
+command does its work (its client, its application code, its screens) stays
+outside the declaration.
+
 ## Commands and configuration
 
 The root mounts the plugin app beneath its name; management stays at the root:

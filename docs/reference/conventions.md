@@ -134,7 +134,7 @@ Declare a shared field block instead of a flag of your own:
 
 | Field | Flags |
 |---|---|
-| `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`) and `-c/--columns` |
+| `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`; the formats its `Output(formats=)` names, the first the default) and `-c/--columns` |
 | `confirm: Confirm` | `-y/--yes`, which skips only the prompt, and `--dry-run`, which still wins |
 | `dry_run: DryRun` | `--dry-run`: preview, then exit 0 |
 | `stdin: Stdin[R]` | `--stdin` |
