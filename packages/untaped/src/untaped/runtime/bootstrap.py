@@ -402,10 +402,11 @@ class _LazyPluginCommand(CommandSpec):
 def _docs_footers(app: App, name: str) -> None:
     """Give every help screen of plugin ``name``'s app a docs footer it lacks.
 
-    A 12.0 plugin's commands carry their own pages' addresses already; an
-    11.x plugin's app (the seam) has one page, ``untaped docs NAME``. A
-    command without an epilogue of its own shows its parent's, so it keeps
-    the stability line it inherits and gets the footer through it.
+    A command keeps the address of its own page it was built with; the
+    plugin's app and a group without one get the plugin's page,
+    ``untaped docs NAME``. A command without an epilogue of its own shows its
+    parent's, so it keeps the stability line it inherits and gets the footer
+    through it.
     """
     seen: set[int] = set()
     todo = [app]

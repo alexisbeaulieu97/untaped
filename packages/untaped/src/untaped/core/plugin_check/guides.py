@@ -2,18 +2,10 @@
 
 See ``docs/reference/docs.md#guides``.
 
-Checks the guide files of one composed plugin (``PluginSpec.guides``, the
-11.x shape, whose pages ``untaped docs PLUGIN guides NAME`` serves until the
-plugin moves), a plugin class's guides (the docstrings of the bundles and
-enums it defines, where ``guide-link``, ``guide-command`` and ``guide-yaml``
-apply, named by the class's target) and the lines it puts on the overview
+Checks a plugin class's guides (the docstrings of the bundles and enums it
+defines, named by the class's target) and the lines it puts on the overview
 (``untaped docs``):
 
-- ``guide-name`` — a guide's name (its file stem) is not kebab-case;
-- ``guide-description`` — a guide has no readable front matter with a
-  one-line ``description`` saying when to read it;
-- ``guide-heading`` — a guide's text has a level-one heading of its own (the
-  page writes it);
 - ``guide-link`` — an ``untaped docs …`` the guide quotes names no page
   (another plugin's page is checked only when that plugin is composed);
 - ``guide-command`` — another ``untaped …`` command the guide quotes does
@@ -26,7 +18,7 @@ apply, named by the class's target) and the lines it puts on the overview
   line under an extension point it fills) or an extension point it owns
   is over :data:`MAP_LINE_LIMIT` characters.
 
-Lines are ``<where>::<rule>::<detail>``, where is ``guides/<file>`` or the
+Lines are ``<where>::<rule>::<detail>``, where is the guide's target or the
 plugin's name; they carry no source line, so no inline marker can suppress
 them.
 """
@@ -43,7 +35,6 @@ from cyclopts import App
 from pydantic import ValidationError
 
 from untaped.runtime.command_lines import (
-    FENCE,
     argv_of,
     commands,
     console_lines,
@@ -53,28 +44,17 @@ from untaped.runtime.registry import CompositionResult, PluginSpec
 from untaped.sdk.errors import UsageError, first_validation_error
 
 if TYPE_CHECKING:
-    from untaped.core.docs._guide_files import Guide
     from untaped.runtime.declaration import GuideDecl
 
 MAP_LINE_LIMIT = 120
 """The longest line the overview shows: each plugin adds a bounded cost to every session."""
 
-_KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _KIND_FENCE = re.compile(r"^```yaml[ \t]+(\S+)[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
-_HEADING = re.compile(r"^# ", re.MULTILINE)
 
 
 def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> list[str]:
     """Every guide and map-line violation of the composed plugin ``spec``."""
-    # The pages read this package (the Examples section); import them on use.
-    from untaped.core.docs._guide_files import SUFFIX, guides  # noqa: PLC0415
-
     found = list(_map_lines(root, result, spec))
-    for guide in guides(spec):
-        where = f"guides/{guide.name}{SUFFIX}"
-        found += [
-            f"{where}::{rule}::{detail}" for rule, detail in _guide(root, result, spec, guide)
-        ]
     for decl in _guide_decls(result, spec.name):
         quoted = [*_quoted(root, result, spec, decl.doc), *_yaml_blocks(result, decl.doc)]
         found += [f"{decl.target}::{rule}::{detail}" for rule, detail in quoted]
@@ -93,19 +73,6 @@ def _guide_decls(result: CompositionResult, name: str) -> tuple[GuideDecl, ...]:
             if guide.plugin == name:
                 found.setdefault(guide.target, guide)
     return tuple(found.values())
-
-
-def _guide(
-    root: App, result: CompositionResult, spec: PluginSpec, guide: Guide
-) -> Iterator[tuple[str, str]]:
-    if not _KEBAB.match(guide.name):
-        yield "guide-name", f"{guide.name!r} is not kebab-case"
-    if guide.problem is not None:
-        yield "guide-description", guide.problem
-    if _HEADING.search(FENCE.sub("", guide.body)):
-        yield "guide-heading", "the page writes the heading; start the guide's own at ##"
-    yield from _quoted(root, result, spec, guide.body)
-    yield from _yaml_blocks(result, guide.body)
 
 
 def _quoted(

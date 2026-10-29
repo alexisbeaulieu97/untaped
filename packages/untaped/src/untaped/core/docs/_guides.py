@@ -2,14 +2,11 @@
 
 A guide is the docstring of a bundle (its options listed after the prose)
 or of an enum (its choices listed); every command taking one links it
-"Read first", and the plugin's page lists them all. A plugin not yet in the
-12.0 shape keeps its guide files (``PluginSpec.guides``), served at the same
-addresses until its move.
+"Read first", and the plugin's page lists them all.
 """
 
 from __future__ import annotations
 
-from untaped.core.docs import _guide_files
 from untaped.core.docs._commands import option_line
 from untaped.core.docs._docstring import describe, markdown
 from untaped.core.docs._site import ORGANIZED, Site
@@ -18,9 +15,6 @@ from untaped.runtime.declaration import GuideDecl
 
 def lines_of(site: Site, name: str) -> list[tuple[str, str]]:
     """Each guide under plugin ``name``: its address word and its line."""
-    seam = site.seam(name)
-    if seam is not None:
-        return [(guide.name, guide.description) for guide in _guide_files.guides(seam.spec)]
     return [(guide.name, markdown(guide.summary)) for guide in site.guides(name)]
 
 
@@ -46,14 +40,6 @@ def list_page(site: Site, name: str) -> list[str]:
 
 def page(site: Site, name: str, word: str) -> list[str] | None:
     """One guide's page; ``None`` when plugin ``name`` has no guide ``word``."""
-    seam = site.seam(name)
-    if seam is not None:
-        found = next((g for g in _guide_files.guides(seam.spec) if g.name == word), None)
-        if found is None:
-            return None
-        lines = [*site.header(f"{name} guides {word}", name), ORGANIZED]
-        lines += [part for text in (found.description, found.body) if text for part in ("", text)]
-        return lines
     guide = next((g for g in site.guides(name) if g.name == word), None)
     return None if guide is None else _page(site, guide)
 

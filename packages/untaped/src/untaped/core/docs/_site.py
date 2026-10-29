@@ -2,10 +2,7 @@
 
 Every page reads :class:`Site`, never a plugin class: the declaration
 carries the prose of commands, kinds, guides and extension points
-(:mod:`untaped.runtime.declaration`). A plugin still in the 11.x shape
-(no plugin class yet) is a *seam* plugin: the site knows its help line and
-its guide files only, until its move (the old-mechanisms sweep removes the
-seam with the 11.x reader).
+(:mod:`untaped.runtime.declaration`).
 """
 
 from __future__ import annotations
@@ -62,27 +59,16 @@ class Site:
         return [each.spec.name for each in ordered]
 
     def plugin(self, name: str) -> PluginDecl | None:
-        """The composed 12.0 plugin ``name``; ``None`` for a seam plugin or none."""
+        """The composed plugin ``name``; ``None`` for none."""
         return next((each for each in self.declaration.plugins if each.name == name), None)
 
     def registered(self, name: str) -> RegisteredPlugin | None:
         return next((each for each in self.result.plugins if each.spec.name == name), None)
 
-    def seam(self, name: str) -> RegisteredPlugin | None:
-        """The composed 11.x plugin ``name``, which has no declaration yet."""
-        found = self.registered(name)
-        return found if found is not None and self.plugin(name) is None else None
-
     def summary(self, name: str) -> str:
         """A plugin's help line."""
         decl = self.plugin(name)
-        if decl is not None:
-            return first_line(decl.summary)
-        spec = self.result_plugin(name).spec
-        if spec.help is not None:
-            return first_line(spec.help)
-        app = self.result_plugin(name).app
-        return "" if app is None else first_line(app.help)
+        return "" if decl is None else first_line(decl.summary)
 
     def result_plugin(self, name: str) -> RegisteredPlugin:
         found = self.registered(name)

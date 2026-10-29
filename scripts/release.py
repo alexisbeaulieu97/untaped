@@ -31,8 +31,7 @@ subcommand is one step of the workflow:
   are exactly the expected ones ready (default: every first-party entry point)
   and the quarantined ones quarantined, every ``--help``, and with
   ``--docs`` each expected plugin's skill and every ``untaped docs`` page:
-  the overview, each plugin's page and each guide a page lists (a guide
-  missing from the wheel fails here).
+  the overview, each plugin's page and each guide a page lists.
 - ``tag TAG --repo OWNER/REPO`` creates the annotated tag TAG on the
   checkout's commit once PyPI has the verified files, or confirms it is
   already there; a ``v*`` tag on another commit is an error, since tags never
@@ -61,7 +60,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections import Counter
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -700,24 +699,11 @@ def page_guides(page: str) -> list[str]:
     return guides
 
 
-def plugin_guides(root: Path) -> dict[str, list[str]]:
-    """``{plugin: guide names}``: the ``guides/*.md`` each package under ``root`` ships."""
-    found: dict[str, list[str]] = {}
-    for directory, project in _package_dirs(root).values():
-        for name, target in project.get("entry-points", {}).get("untaped.plugins", {}).items():
-            folder = directory / "src" / target.partition(":")[0].partition(".")[0] / "guides"
-            found[name] = sorted(path.stem for path in folder.glob("*.md"))
-    return found
-
-
-def docs_errors(
-    exe: str, expected: Collection[str], guides: Mapping[str, Collection[str]]
-) -> list[str]:
-    """Every ``untaped docs`` page that fails or prints nothing, and every guide left out.
+def docs_errors(exe: str, expected: Collection[str]) -> list[str]:
+    """Every ``untaped docs`` page that fails or prints nothing.
 
     The overview, then each expected plugin's page (core's too) and each
-    guide it lists; a page that lists none of a guide ``guides`` names for
-    its plugin means the guide is missing from the install.
+    guide it lists.
     """
     errors: list[str] = []
 
@@ -732,12 +718,7 @@ def docs_errors(
 
     page()
     for plugin in ["untaped", *sorted(expected)]:
-        listed = page_guides(page(plugin))
-        errors += [
-            f"untaped docs {plugin} does not list the guide {guide}"
-            for guide in sorted(set(guides.get(plugin, ())) - set(listed))
-        ]
-        for guide in listed:
+        for guide in page_guides(page(plugin)):
             page(plugin, "guides", guide)
     return errors
 
@@ -762,7 +743,6 @@ def run_smoke(
     expect: Collection[str],
     quarantined: Collection[str] = (),
     docs: bool = False,
-    guides: Mapping[str, Collection[str]] | None = None,
 ) -> tuple[list[str], int]:
     """Run the installed ``untaped``: (every smoke failure, expected plugin count)."""
     rows = _run(exe, "plugin", "list", "--format", "json")
@@ -779,7 +759,7 @@ def run_smoke(
         errors += skill_errors(listing.stdout, expect)
         if listing.returncode:
             errors.append(f"untaped skills list --format json exited {listing.returncode}")
-        errors += docs_errors(exe, expect, guides or {})
+        errors += docs_errors(exe, expect)
     return errors, len(expect)
 
 
@@ -1034,7 +1014,6 @@ def _smoke(root: Path, args: argparse.Namespace) -> list[str]:
         expect=expect,
         quarantined=args.quarantined,
         docs=args.docs,
-        guides=plugin_guides(root),
     )
     if not errors:
         print(f"smoke ok: untaped {args.version}, {count} plugins")
