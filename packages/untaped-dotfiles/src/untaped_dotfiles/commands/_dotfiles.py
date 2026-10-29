@@ -28,7 +28,7 @@ from untaped_dotfiles.inventory import Inventory
 from untaped_dotfiles.models import Machine, OsName
 from untaped_dotfiles.placer import FilesystemPlacer
 from untaped_dotfiles.records import PlaceOutcome
-from untaped_dotfiles.settings import DotfilesSettings
+from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings
 from untaped_dotfiles.status import Evaluator, StatusReader
 from untaped_dotfiles.store import StateDotfilesStore
 
@@ -81,16 +81,14 @@ class Services:
 
 def services(settings: DotfilesSettings) -> Services:
     home = Path.home().resolve()
-    store = StateDotfilesStore(state_dir=settings.state_dir.expanduser().resolve())
+    store = StateDotfilesStore(state_dir=PROMPT.path.resolve())
     git = LocalGitRepos()
-    placer = FilesystemPlacer(
-        home=home, kept_dir=settings.kept_dir.expanduser().resolve(), now=utc_now
-    )
+    placer = FilesystemPlacer(home=home, kept_dir=KEPT.path.resolve(), now=utc_now)
     machine = Machine(os=detect_os(settings), tags=frozenset(settings.tags))
     inventory = Inventory(store, git, home=home, machine=machine)
     evaluator = Evaluator(store, git, placer, inventory)
     return Services(
-        repos_dir=settings.repos_dir.expanduser().resolve(),
+        repos_dir=CLONES.path.resolve(),
         home=home,
         store=store,
         git=git,

@@ -22,17 +22,17 @@ cfg awx.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg awx.server.verify_tls boolean|string(format=path) default=true
 cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
-cfg dotfiles.kept_dir string(format=path) default=~/.untaped/plugins/dotfiles/kept  [experimental]
+cfg dotfiles.kept_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
 cfg dotfiles.os choice=windows  [experimental]
 cfg dotfiles.os string? default=unset  [experimental]
-cfg dotfiles.repos_dir string(format=path) default=~/.untaped/plugins/dotfiles/repos  [experimental]
-cfg dotfiles.state_dir string(format=path) default=~/.untaped/plugins/dotfiles  [experimental]
+cfg dotfiles.repos_dir string(format=path)? default=unset  [experimental]
+cfg dotfiles.state_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
-cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
+cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
@@ -98,7 +98,7 @@ cfg workspace.caches.repo_source_repos.max_age_seconds integer(minimum=0) defaul
 cfg workspace.extensions.repo_source.rank.repos string[] default=[]  [experimental]
 cfg workspace.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg workspace.parallel integer(minimum=1)? default=unset  [experimental]
-cfg workspace.workspaces_dir string(format=path) default=~/.untaped/workspaces  [experimental]
+cfg workspace.workspaces_dir string(format=path)? default=unset  [experimental]
 cli untaped --deprecated switch
 cli untaped --help alias=-h
 cli untaped --help switch

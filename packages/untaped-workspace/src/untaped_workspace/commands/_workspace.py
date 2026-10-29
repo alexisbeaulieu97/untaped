@@ -14,6 +14,7 @@ from untaped.sdk import Command, Parallel, key
 from untaped_workspace.application.locate import locate_workspace, workspace_root
 from untaped_workspace.application.status import WorkspaceStatus
 from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.infrastructure.state_store import CHECKOUTS
 from untaped_workspace.settings import MAX_WORKERS, WorkspaceSettings
 
 if TYPE_CHECKING:
@@ -33,11 +34,12 @@ class WorkspaceCommand(Command[WorkspaceSettings]):
 
     @property
     def workspaces_dir(self) -> Path:
-        return self.settings.workspaces_dir.expanduser().resolve()
+        """``workspace.workspaces_dir``, else ``plugins/workspace/checkouts/`` under the home."""
+        return CHECKOUTS.path.resolve()
 
     def workspace_dir(self, name: str) -> Path:
         """Absolute directory of workspace ``name``."""
-        return workspace_root(self.settings.workspaces_dir, name)
+        return workspace_root(self.workspaces_dir, name)
 
     def locate(self, name: str | None) -> WorkspaceRecord:
         """The workspace ``name``, or the one containing the current directory."""

@@ -12,7 +12,7 @@ setup: it reports what the other plugins supply.
 ## Set up
 
 The repo store needs Git 2.29 or newer; `untaped doctor` checks the version.
-The store lives under `~/.untaped/plugins/git/store` unless you set
+The store lives under `plugins/git/store/` in the untaped home unless you set
 `git.store_dir` (see the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#git)).
 

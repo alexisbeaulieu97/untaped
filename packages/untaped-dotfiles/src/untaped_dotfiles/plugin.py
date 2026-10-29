@@ -12,7 +12,7 @@ from untaped_dotfiles.commands.apply import Apply, Remove, Sync
 from untaped_dotfiles.commands.items import Disable, Enable, Items
 from untaped_dotfiles.commands.repos import Repos, Subscribe, Unsubscribe
 from untaped_dotfiles.commands.status import Diff, Status, Summary
-from untaped_dotfiles.settings import DotfilesSettings
+from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings
 from untaped_dotfiles.store import APPLIED, ITEMS, REPOS, SYNC
 
 
@@ -39,6 +39,9 @@ class Dotfiles(Plugin):
     items = ITEMS
     applied = APPLIED
     sync = SYNC
+    clones = CLONES
+    kept = KEPT
+    prompt = PROMPT
     git = ExecutableCheck("git", purpose="dotfiles commands")
     skill = StubSkill(
         "Dotfiles placed on a machine from subscribed git repos: their `dotfiles.yml` "

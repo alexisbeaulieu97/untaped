@@ -18,8 +18,8 @@ their tokens live outside the file ([Tokens](#tokens)).
 untaped keeps everything in one folder, the home: `~/.untaped`, or the
 absolute path in `UNTAPED_HOME` (`~` is expanded; with a relative one, a command
 reading the home exits 4, `--help` still prints). Moving the home moves config,
-state, logins and core's files, so a second home shares none of them. A folder
-setting defaulting under `~/.untaped` (`git.store_dir`, …) doesn't follow it yet.
+state, logins, core's files and the folders plugins keep under it, so a second
+home shares none of them. A folder setting you set (`git.store_dir`) stays put.
 
 ### Renamed settings
 
@@ -80,7 +80,7 @@ jira:
   default_project: OPS
   default_board_id: 42
 workspace:
-  workspaces_dir: ~/.untaped/workspaces
+  workspaces_dir: ~/work/workspaces
   branch_template: "{name}"
 
 profiles:
