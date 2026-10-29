@@ -9,6 +9,7 @@ from untaped.sdk._stdin import (
     StdinInput,
     read_stdin,
     read_stdin_input,
+    read_stdin_line,
     read_stdin_text,
 )
 from untaped.sdk.errors import ConfigError, UsageError
@@ -123,3 +124,27 @@ def test_read_stdin_text(
 ) -> None:
     monkeypatch.setattr("sys.stdin", stdin)
     assert read_stdin_text() == expected
+
+
+def test_read_stdin_line_keeps_the_line_as_typed() -> None:
+    with _feed(" p4ss #word \r\n"):
+        assert read_stdin_line("token") == " p4ss #word "
+
+
+@pytest.mark.parametrize(
+    ("stdin", "message"),
+    [
+        (TtyStringIO("never read"), "no token received on stdin"),
+        (io.StringIO(" \n"), "no token received on stdin"),
+        (io.StringIO("a\nb\n"), "stdin should hold the token on one line"),
+        (io.StringIO("a\rb"), "stdin should hold the token on one line"),
+    ],
+    ids=["tty", "blank", "two-lines", "carriage-return"],
+)
+def test_read_stdin_line_refuses_nothing_or_more_than_one_line(
+    stdin: io.StringIO, message: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", stdin)
+    with pytest.raises(ConfigError, match=message) as caught:
+        read_stdin_line("token")
+    assert caught.value.category == "invalid"

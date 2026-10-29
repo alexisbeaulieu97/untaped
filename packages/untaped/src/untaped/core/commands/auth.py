@@ -31,7 +31,7 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import load_settings_section
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._stdin import read_stdin_text
+from untaped.sdk._stdin import read_stdin_line
 from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, Output, Positional
@@ -214,7 +214,11 @@ def _login(
     else:
         chosen = ready_store(credential, store)
         ui = build_terminal(strict=False)
-        token = _prompt_token(ui, credential.label) if ui.can_prompt else _read_stdin_token()
+        token = (
+            _prompt_token(ui, credential.label)
+            if ui.can_prompt
+            else read_stdin_line("token").strip()
+        )
         where = store_token(credential, key, token, store=chosen)
     ident = credential.id(key)
     _diag.success(f"stored the {credential.label} for {describe_key(key)}: {where}")
@@ -535,15 +539,6 @@ class Auth(Group):
     """Log in to the servers plugins talk to; keep tokens safe."""
 
     commands = (Login, List, Forget, Status)
-
-
-def _read_stdin_token() -> str:
-    token = read_stdin_text().strip()
-    if not token:
-        raise UsageError("no token received on stdin")
-    if "\n" in token or "\r" in token:
-        raise UsageError("stdin should hold the token on one line")
-    return token
 
 
 def _prompt_token(ui: Ui, label: str) -> str:
