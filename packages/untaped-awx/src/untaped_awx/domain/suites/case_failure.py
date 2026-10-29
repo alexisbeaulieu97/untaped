@@ -54,16 +54,17 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from untaped.sdk import ErrorCategory, Failure, UntapedError, q
 from untaped_awx.domain.jobs.job import HostSummary, Job, JobEvent
+from untaped_awx.domain.suites.systems import (
+    CONTROLLER,
+    CREDENTIALS,
+    EXPECTATION,
+    HOSTS,
+    INVENTORIES,
+    PLAYBOOK,
+    SCM,
+    SUITE,
+)
 from untaped_awx.domain.suites.workflow_run import APPROVAL, RunNode
-
-SUITE = "awx.suite"
-CREDENTIALS = "awx.credentials"
-CONTROLLER = "awx.controller"
-SCM = "awx.scm"
-INVENTORIES = "awx.inventories"
-HOSTS = "awx.hosts"
-PLAYBOOK = "awx.playbook"
-EXPECTATION = "awx.expectation"
 
 FAILED_TASK_EVENTS = ("runner_on_failed", "runner_on_unreachable")
 """Job events that end a task on a host in failure.

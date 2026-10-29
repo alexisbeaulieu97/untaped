@@ -87,11 +87,7 @@ from untaped_awx.domain.jobs.job import (
     host_summaries,
 )
 from untaped_awx.domain.suites.case_failure import (
-    CONTROLLER,
-    EXPECTATION,
     FAILED_TASK_EVENTS,
-    PLAYBOOK,
-    SUITE,
     UPDATE_KINDS,
     CaseFailure,
     ChangedTask,
@@ -132,6 +128,7 @@ from untaped_awx.domain.suites.suite import (
     select_cases,
 )
 from untaped_awx.domain.suites.suite_baseline import saved_baselines
+from untaped_awx.domain.suites.systems import CONTROLLER, EXPECTATION, PLAYBOOK, SUITE
 from untaped_awx.domain.suites.workflow_run import (
     APPROVAL,
     MAX_NESTING,

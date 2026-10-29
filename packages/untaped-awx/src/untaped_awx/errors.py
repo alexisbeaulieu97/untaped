@@ -21,6 +21,7 @@ from untaped.sdk import (
     not_found,
     q,
 )
+from untaped_awx.domain.suites.systems import SUITE
 
 
 class AwxError(UntapedError):
@@ -120,7 +121,7 @@ class PendingApprovalError(AwxError):
     """
 
     category = ErrorCategory.INVALID
-    system = "awx.suite"
+    system = SUITE
 
     def __init__(self, message: str, *, node: str, approval_id: int, hint: str) -> None:
         super().__init__(message, hint=hint)
