@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import dir_bytes
+from untaped.sdk import dir_bytes, not_found
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.errors import GitCorpusError
@@ -45,7 +45,7 @@ class WorktreeCorpus:
         split_full_name(repo)
         item = self._corpus.get_repo(repo)
         if item is None:
-            raise GitCorpusError("repository is not in the local corpus")
+            raise GitCorpusError(not_found("cached repo", repo), category="not_found")
         return self._corpus.materialize_worktree(item, ref=ref)
 
 

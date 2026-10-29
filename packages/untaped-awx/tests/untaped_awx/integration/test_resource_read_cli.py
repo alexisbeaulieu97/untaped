@@ -202,9 +202,7 @@ def test_list_reports_progress_on_stderr(catalog: Any, monkeypatch: pytest.Monke
     assert "Loading" in result.stderr
 
 
-@pytest.mark.parametrize(
-    ("fmt", "stdout", "said"), [("table", "", True), ("json", "[]", False)]
-)
+@pytest.mark.parametrize(("fmt", "stdout", "said"), [("table", "", True), ("json", "[]", False)])
 def test_empty_list_guides_on_stderr_and_keeps_stdout_pipe_clean(
     fake_aap: Any, fmt: str, stdout: str, said: bool
 ) -> None:

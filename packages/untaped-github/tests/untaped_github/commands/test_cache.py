@@ -391,7 +391,7 @@ def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo)
 @pytest.mark.parametrize(
     ("repo", "message"),
     [
-        ("acme/missing", "repository is not in the local corpus"),
+        ("acme/missing", "cached repo not found: 'acme/missing'"),
         ("acme", "repository must be owner/name: 'acme'"),
     ],
 )

@@ -42,6 +42,7 @@ from untaped.sdk import (
     ProgressHandle,
     UntapedError,
     attribution,
+    not_found,
     run_git,
     safe_path_segment,
 )
@@ -425,7 +426,7 @@ class GitCorpusCache:
         """The store repo of ``repo``; ``not_found`` when it has never been synced."""
         store = self._store(self._remote_url(repo))
         if not store.exists():
-            raise GitCorpusError("repository is not in the local corpus", category="not_found")
+            raise GitCorpusError(not_found("cached repo", repo.full_name), category="not_found")
         return store
 
     def _remote_url(self, repo: CorpusRepoTarget) -> str:
