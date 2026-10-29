@@ -144,4 +144,4 @@ def test_a_failed_place_row_adds_its_error_last() -> None:
     error = Failure.from_exception(UntapedError("could not read"))
     row = ApplyOutcome(**{**_PLACE, "action": "failed"}, error=error)
 
-    assert list(json.loads(row.model_dump_json())) == [*_PLACE_KEYS[:-1], "error", "target_path"]
+    assert list(json.loads(row.model_dump_json())) == [*_PLACE_KEYS, "error"]

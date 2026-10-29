@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from untaped.sdk import Column, OutcomeRecord, Record, TargetRecord, UtcTimestamp
+from untaped.sdk import AbsolutePath, Column, OutcomeRecord, Record, TargetRecord, UtcTimestamp
 from untaped_dotfiles.models import Mode
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
@@ -110,6 +110,7 @@ class PlaceOutcome(OutcomeRecord, TargetRecord):
         "explains each state and what apply, sync and remove do in it.",
     )
     detail: Annotated[str, Column] = ""
+    target_path: Annotated[AbsolutePath, Column]
 
 
 class ApplyOutcome(PlaceOutcome):
