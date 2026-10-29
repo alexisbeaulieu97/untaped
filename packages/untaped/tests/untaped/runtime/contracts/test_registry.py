@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import timedelta
+import contextlib
+import io
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel
 
 from core_test_support.contracts.support import (
@@ -15,7 +14,6 @@ from core_test_support.contracts.support import (
     BookSource,
     Library,
     LibrarySettings,
-    Shop,
     Volume,
     compose,
     library_plugin,
@@ -27,11 +25,10 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gather
+from untaped.sdk.contracts import Errored, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import DuplicateKindError, ForeignKindError, Record
 
 
 def _rows() -> list[tuple[str, str, str, str]]:
@@ -65,64 +62,18 @@ def test_a_contract_nobody_declares_is_a_config_error() -> None:
         gather(BookSource.books)()
 
 
-def test_a_broken_provides_function_quarantines_that_offer_only() -> None:
-    def broken() -> tuple[Contract, ...]:
-        raise RuntimeError("boom")
-
-    def duplicate() -> tuple[Contract, ...]:
-        raise DuplicateKindError("kind 'shelf.book' is declared twice")
-
-    def build() -> App:
-        return App(name="library")
-
-    library = PluginSpec(
-        name="library",
-        app_factory=build,
-        settings=LibrarySettings,
-        provides={"shelf": broken},
-    )
-    dup = PluginSpec(name="dup", provides={"shelf": duplicate})
-    composed = compose(shelf_plugin(), library, dup, shop_plugin())
-    assert {plugin.spec.name for plugin in composed.plugins} == {
-        "untaped",
-        "shelf",
-        "library",
-        "dup",
-        "shop",
-    }
-    assert composed.quarantine == ()
-    answers = gather(BookSource.books)()
-    assert [(a.plugin, type(a).__name__) for a in answers] == [
-        ("dup", "Skipped"),
-        ("library", "Skipped"),
-        ("shop", "Ok"),
-    ]
-    assert _reasons() == {"dup": "duplicate-kind", "library": "bad-provider"}
-
-
-def test_a_quarantined_ranked_provider_fails(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    error = RuntimeError("boom")
-
-    def broken() -> tuple[Contract, ...]:
-        raise error
-
-    compose(shelf_plugin(), PluginSpec(name="library", provides={"shelf": broken}), shop_plugin())
-    monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("library",))
-    caplog.set_level(logging.DEBUG, logger="untaped")
-    library = gather(BookSource.books)()[0]
-    assert isinstance(library, Errored)
-    assert library.reason == "bad-provider"
-    assert library.error.exit_code == ExitCode.ENVIRONMENT
-    assert "of library raised RuntimeError: boom" in str(library.error)
-    logged = [r for r in caplog.records if r.name == "untaped.contracts"]
-    assert [r.exc_info[1] for r in logged if r.exc_info] == [error]
-
-
 class _NoBridge(BookSource[Volume], Provider[LibrarySettings]):
     def books(self) -> list[Book]:
         return []
+
+
+def test_a_quarantined_ranked_provider_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    compose(shelf_plugin(), library_plugin(_NoBridge), shop_plugin())
+    monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("library",))
+    library = gather(BookSource.books)()[0]
+    assert isinstance(library, Errored)
+    assert library.reason == "missing-bridge"
+    assert library.error.exit_code == ExitCode.ENVIRONMENT
 
 
 def test_a_provider_breaking_a_rule_is_quarantined_alone() -> None:
@@ -136,64 +87,6 @@ def test_a_provider_breaking_a_rule_is_quarantined_alone() -> None:
     assert isinstance(answers["shop"], Ok)
 
 
-class _Kindless(Record):
-    name: str
-
-
-class _NoKind(BookSource[_Kindless]):
-    def to_book(self, item: _Kindless) -> Book:
-        return Book(title=item.name)
-
-    def books(self) -> list[Book]:
-        return []
-
-
-class _Elsewhere(Contract):
-    def names(self) -> list[str]:
-        raise NotImplementedError
-
-
-class _ElsewhereProvider(_Elsewhere):
-    def names(self) -> list[str]:
-        return []
-
-
-class _OtherSettings(BaseModel):
-    catalog: str = ""
-
-
-class _WrongSettings(BookSource, Provider[_OtherSettings]):
-    def books(self) -> list[Book]:
-        return []
-
-
-@pytest.mark.parametrize(
-    ("value", "reason", "detail"),
-    [
-        (_NoBridge(), "missing-bridge", "must fill to_book"),
-        (_NoKind(), "unresolved-item-type", "_Kindless has no kind"),
-        ("not a provider", "bad-provider", "which is not a provider"),
-        (_ElsewhereProvider(), "bad-provider", "which shelf does not declare"),
-        (_WrongSettings(), "bad-provider", "Provider[_OtherSettings]"),
-    ],
-)
-def test_an_11x_offer_breaking_a_rule_is_quarantined_alone(
-    value: object, reason: str, detail: str
-) -> None:
-    """The 11.x offer's rules; a plugin class can break only the bridge one at the offer."""
-    offered = (value, Library())
-    library = PluginSpec(
-        name="library", settings=LibrarySettings, provides={"shelf": lambda: offered}
-    )
-    compose(shelf_plugin(), library, shop_plugin())
-    write_config(LIBRARY_CONFIG)
-    [quarantined] = [entry for entry in every_offer() if isinstance(entry, Quarantined)]
-    assert quarantined.reason == reason
-    assert detail in quarantined.detail
-    answers = {a.plugin: a for a in gather(BookSource.books)()}
-    assert isinstance(answers["shop"], Ok)
-
-
 class _Again(Library):
     """A second provider of the contract ``Library`` fills."""
 
@@ -202,16 +95,6 @@ def test_one_plugin_providing_a_contract_twice_is_quarantined() -> None:
     compose(shelf_plugin(), library_plugin(Library, _Again))
     write_config(LIBRARY_CONFIG)
     assert [entry.reason for entry in offers(_info())] == ["bad-provider", "bad-provider"]  # type: ignore[union-attr]
-
-
-def _waiting_shop() -> PluginSpec:
-    """An 11.x offer to ``shelf``: a plugin class's fill with no composed owner waits silently."""
-    return PluginSpec(name="shop", provides={"shelf": lambda: (Shop(),)})
-
-
-def test_an_offer_to_an_owner_not_installed_is_reported() -> None:
-    compose(_waiting_shop())
-    assert _reasons() == {"shop": "owner-not-installed"}
 
 
 def test_the_providers_group_loads_once_per_composition() -> None:
@@ -230,6 +113,21 @@ def test_the_providers_group_loads_once_per_composition() -> None:
     compose(shelf_plugin(), spec)
     gather(BookSource.books)()
     assert len(made) == 2
+
+
+def test_help_and_plugin_list_never_build_a_provider() -> None:
+    made: list[int] = []
+
+    class Counted(Library):
+        def __init__(self) -> None:
+            made.append(1)
+
+    found = [shelf_plugin(), library_plugin(Counted)]
+    for argv in (["--help"], ["plugin", "list"]):
+        app = bootstrap.build_root_app(candidates=found)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):
+            app.meta(argv)
+    assert made == []
 
 
 class _Outdated(BookSource, Provider):
@@ -304,67 +202,6 @@ def test_a_skipped_answer_names_why() -> None:
     library = gather(BookSource.books)()[0]
     assert isinstance(library, Skipped)
     assert "catalog" in library.detail
-
-
-def test_an_owner_whose_contracts_break_takes_only_its_own_contracts_down(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    error = ImportError("acme api broke")
-
-    def broken() -> tuple[type[Contract], ...]:
-        raise error
-
-    acme = PluginSpec(name="acme", contracts=broken)
-    odd = PluginSpec(name="odd", contracts=lambda: (Book,))  # type: ignore[arg-type, return-value]
-    compose(shelf_plugin(), acme, odd, shop_plugin())
-    caplog.set_level(logging.DEBUG, logger="untaped")
-    [shop] = gather(BookSource.books)()
-    assert isinstance(shop, Ok)
-    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
-    assert rows[("acme", "bad-contracts")] == (
-        "contracts couldn't be read: ImportError: acme api broke"
-    )
-    logged = [r for r in caplog.records if r.name == "untaped.contracts" and r.exc_info]
-    assert error in [r.exc_info[1] for r in logged if r.exc_info]
-    assert ("odd", "bad-contracts") in rows
-
-    class Gadgets(Contract):
-        def gadgets(self) -> list[Book]:
-            raise NotImplementedError
-
-    with pytest.raises(ConfigError, match="acme's contracts couldn't be read"):
-        gather(Gadgets.gadgets)()
-
-
-def test_an_owner_that_does_not_list_a_cached_methods_cache_is_unreadable() -> None:
-    from untaped.runtime.contracts.registry import unreadable_owners
-    from untaped.sdk.contracts import cached
-    from untaped.sdk.storage.cache import Cache
-
-    class Listed(Contract):
-        @cached(Cache("shelf", "listed_rows", label="rows", max_age=timedelta(hours=1)))
-        def rows(self) -> list[Book]:
-            raise NotImplementedError
-
-    compose(PluginSpec(name="shelf", contracts=lambda: (Listed,)))
-    assert unreadable_owners() == ["shelf"]
-    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
-    assert rows[("shelf", "bad-contracts")] == (
-        "contracts couldn't be read: TypeError: test_an_owner_that_does_not_list_a_cached_"
-        "methods_cache_is_unreadable.<locals>.Listed.rows is cached in "
-        "shelf.listed_rows, which is not one of shelf's caches (list it on "
-        "PluginSpec.caches)"
-    )
-
-
-def test_an_offer_waiting_for_its_owner_is_a_pass_in_doctor() -> None:
-    compose(_waiting_shop())
-    [row] = doctor_rows()
-    assert (row.plugin, row.status, row.title) == ("shop", "pass", "owner-not-installed")
-    assert row.detail == "waits for shelf (not installed)"
-    elsewhere = PluginSpec(name="kiosk", provides={"git": lambda: ()})
-    compose(shelf_plugin(), library_plugin(), elsewhere)
-    assert ("kiosk", "contract-provider", "pass", "owner-not-installed") in _rows()
 
 
 def _versioned(owner_version: str, *requires: str) -> None:
@@ -453,30 +290,3 @@ def test_a_fill_no_composed_plugin_owns_waits_silently() -> None:
     result = bootstrap.compose_root(candidates=[lends])
     [spec] = [each.spec for each in result.plugins if each.spec.name == "lends"]
     assert dict(spec.provides) == {}
-
-
-def test_an_11x_owner_s_cache_with_no_plugin_and_name_is_unreadable() -> None:
-    from untaped.runtime.contracts.registry import unreadable_owners
-    from untaped.sdk.contracts import cached
-    from untaped.sdk.storage.cache import Cache
-
-    class Unnamed(Contract):
-        @cached(Cache(label="rows", max_age=timedelta(hours=1)))
-        def rows(self) -> list[Book]:
-            raise NotImplementedError
-
-    compose(PluginSpec(name="rows", contracts=lambda: (Unnamed,)))
-    assert unreadable_owners() == ["rows"]
-    rows = {(row.plugin, row.title): row.detail for row in doctor_rows()}
-    assert rows[("rows", "bad-contracts")].endswith(
-        "Unnamed.rows is cached in a cache with no plugin and name: spell it "
-        "Cache('rows', 'unnamed_rows', ...) and list it on PluginSpec.caches"
-    )
-
-
-def test_an_11x_provider_whose_kind_is_foreign_is_a_bad_provider() -> None:
-    def foreign() -> tuple[Contract, ...]:
-        raise ForeignKindError("kind 'shelf.loan' is declared under library's package")
-
-    compose(shelf_plugin(), PluginSpec(name="library", provides={"shelf": foreign}))
-    assert _reasons() == {"library": "bad-provider"}

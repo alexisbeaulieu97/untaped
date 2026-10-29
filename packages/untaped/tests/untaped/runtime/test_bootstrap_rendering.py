@@ -6,7 +6,7 @@ for a ``table`` default, then ``untaped.ui.format``), so a quarantine warning,
 a dispatch-time notice and the command's own diagnostics share one format.
 A line naming no declared command takes the flag, then ``UNTAPED_FORMAT``,
 then ``untaped.ui.format``; a root option's error, read before any of them,
-only the first two. An 11.x seam command keeps the two phases until it moves.
+only the first two.
 """
 
 from __future__ import annotations
@@ -18,13 +18,11 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel
 
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Command, Output, Plugin, deprecated
-from untaped.sdk._cli import FormatOption, create_app, emit
 from untaped.sdk._run import Rendering, current_run
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import CliInvoker
@@ -91,30 +89,10 @@ class Chime(Plugin):
     commands = (Strum, Chords, Old, Tune)
 
 
-#: The rendering each run of ``bell ring`` saw.
-RANG: list[Rendering | None] = []
-
-
-def _old_app() -> App:
-    app = create_app(name="bell", help="An 11.x plugin.")
-
-    @app.command(name="ring")
-    def ring(*, fmt: FormatOption = "table") -> None:
-        """Warn, then list one row."""
-        from untaped.runtime.sink import Diagnostics
-
-        RANG.append(current_run().rendering)
-        Diagnostics().warning("rang")
-        emit([{"name": "c"}], fmt=fmt)
-
-    return app
-
-
 CHIME = PluginCandidate(distribution="untaped-chime", name="chime", target=Chime)
-BELL = PluginCandidate(
-    distribution="untaped-bell", name="bell", target=PluginSpec(name="bell", app_factory=_old_app)
+BROKEN = PluginCandidate(
+    distribution="broken-dist", name="broken", target="no_such_mod.plugin:Broken"
 )
-BROKEN = PluginCandidate(distribution="broken-dist", name="broken", target="no_such_mod:SPEC")
 
 
 def _config(cfg: Path, ui: str) -> None:
@@ -287,24 +265,6 @@ def test_the_user_s_theme_renders_every_text_line(
     warnings = [line for line in err.splitlines() if not line.startswith("hint: ")]
     assert len(warnings) == 3  # quarantined, deprecated, listed
     assert all(line.startswith("! ") for line in warnings), err
-
-
-@pytest.mark.usefixtures("_isolated_config")
-@both
-def test_an_11x_command_keeps_its_two_phases(
-    kept: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setenv("UNTAPED_FORMAT", "json")
-    RANG.clear()
-
-    code, out, err = _run(
-        ["bell", "ring"], kept=kept, monkeypatch=monkeypatch, capsys=capsys, candidates=(BELL,)
-    )
-
-    assert code == 0, err
-    assert json.loads(out) == [{"name": "c"}]
-    assert json.loads(err)["message"] == "rang"
-    assert RANG == [None]  # its parse decides how stderr renders, as before
 
 
 @pytest.mark.usefixtures("_isolated_config")
@@ -502,7 +462,7 @@ def test_a_fixed_rendering_is_fixed_once_and_notes_change_nothing(
     with bootstrap._started(["chime", "chords"], declaration) as (run, _):
         fixed = run.policy
         note_requested_format(["--format", "table"])
-        _note_theme(BUILTIN_THEMES["default"])  # the seam's phase 2
+        _note_theme(BUILTIN_THEMES["default"])  # a late theme note
         assert run.policy == fixed
         assert (fixed.format, fixed.theme) == ("json", None)
         with pytest.raises(RuntimeError, match="fixed once"):
@@ -512,17 +472,13 @@ def test_a_fixed_rendering_is_fixed_once_and_notes_change_nothing(
 
 
 @pytest.mark.usefixtures("_isolated_config")
-def test_the_root_driven_directly_tells_an_unknown_command_from_an_11x_one(
+def test_the_root_driven_directly_refuses_an_unknown_command_in_the_run_s_format(
     _isolated_config: Path,
 ) -> None:
     _config(_isolated_config, "    format: json\n")
-    root = bootstrap.build_root_app(candidates=[CHIME, BELL]).meta
+    root = bootstrap.build_root_app(candidates=[CHIME]).meta
 
     unknown = CliInvoker().invoke(root, ["nope"])
-    RANG.clear()
-    rang = CliInvoker().invoke(root, ["bell", "ring"])
 
     assert unknown.exit_code == 2
     assert json.loads(unknown.stderr)["category"] == "usage"
-    assert rang.exit_code == 0, rang.stderr
-    assert RANG == [None]  # the root left the 11.x command's rendering to its parse

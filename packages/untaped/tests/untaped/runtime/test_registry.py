@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
-from types import ModuleType
 
 import pytest
-from cyclopts import App
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.plugin_harness import (
     OtherProfile,
     Profile,
-    exploding_check,
-    make_app,
     make_candidate,
     make_check,
     make_skill,
@@ -33,11 +29,10 @@ from untaped.runtime.registry import (
     compose,
     kept_declaration,
     plugin_dir,
-    run_deferred_factory,
-    settings_model,
 )
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.records import DuplicateKindError, Record, record_model
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
+from untaped.sdk.records import DuplicateKindError, record_model
 
 
 @pytest.mark.parametrize(
@@ -102,30 +97,27 @@ def test_spec_normalizes_sequences_to_tuples() -> None:
 
 
 def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    github_spec = make_spec(name="github", settings=Profile, skills=(make_skill("gh-skill"),))
-    package = ModuleType("fake_github_package")
-    package.SPEC = github_spec  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "fake_github_package", package)
-    jira_spec = make_spec(name="jira", settings=OtherProfile, checks=(make_check("jira.auth"),))
+    # resolved by its entry point, as an installed plugin is
+    make_plugin("github", settings=Profile, skill="Teach agents to use github.")
+    jira = make_plugin("jira", settings=OtherProfile, auth=_runs())
     result = compose(
         [
-            make_candidate(jira_spec, "example-jira"),
+            make_candidate(jira, "example-jira"),
             PluginCandidate(
-                distribution="untaped", name="github", target="fake_github_package:SPEC"
+                distribution="untaped", name="github", target="untaped_double_github.plugin:Github"
             ),
         ],
     )
     assert isinstance(result, CompositionResult)
     assert result.quarantine == ()
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "github", "jira"]
-    _, github, jira = result.plugins
-    assert isinstance(github, RegisteredPlugin)
-    assert github.spec is github_spec
-    assert github.skills == github_spec.skills
-    assert github.plugin_ref == PluginRef(
-        distribution="untaped", entry_point="fake_github_package:SPEC"
+    _, composed_github, composed_jira = result.plugins
+    assert isinstance(composed_github, RegisteredPlugin)
+    assert [skill.name for skill in composed_github.skills] == ["untaped-github"]
+    assert composed_github.plugin_ref == PluginRef(
+        distribution="untaped", entry_point="untaped_double_github.plugin:Github"
     )
-    assert jira.plugin_ref == PluginRef(distribution="example-jira", entry_point="jira")
+    assert composed_jira.plugin_ref == PluginRef(distribution="example-jira", entry_point="jira")
 
 
 def test_compose_core_only() -> None:
@@ -139,7 +131,7 @@ def test_core_is_the_first_plugin_and_the_one_marked_root() -> None:
     from untaped.core.plugin import Core
     from untaped.runtime.declaration import target_of
 
-    result = compose([make_candidate(make_spec(name="later"))])
+    result = compose([make_candidate(make_plugin("later"))])
     assert [(each.spec.name, each.root) for each in result.plugins] == [
         ("untaped", True),
         ("later", False),
@@ -203,27 +195,45 @@ def test_broken_key_declarations_in_core_s_settings_fail_loudly(
 def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
     calls: list[str] = []
 
-    def provider() -> PluginSpec:
+    def provider() -> object:
         calls.append("called")
-        return make_spec(name="func")
+        return make_plugin("func")
 
     candidate = PluginCandidate(distribution="fn-dist", name="func", target=provider)
     result = compose([candidate])
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
-    assert record.reason == "not-a-spec"
+    assert record.reason == "not-a-plugin-class"
     assert "names the callable" in record.detail
-    assert "'untaped_func:SPEC'" in record.detail
+    assert "'untaped_func.plugin:Func'" in record.detail
     assert calls == []
+
+
+def test_compose_hints_the_class_an_11x_entry_point_should_name() -> None:
+    candidate = make_candidate(make_spec("old-tool"), "old-dist", calls=[])
+    package = candidate.target.partition(".")[0]  # type: ignore[union-attr]
+    (record,) = compose([candidate]).quarantine
+    assert record.reason == "not-a-plugin-class"
+    assert "names an 11.x PluginSpec" in record.detail
+    assert f"'{package}.plugin:OldTool'" in record.detail
+
+
+def _runs(calls: list[str] | None = None) -> DoctorCheck:
+    """A plugin class's check that records each run in ``calls``, or must never run."""
+
+    def run(_ctx: object) -> DoctorResult:
+        if calls is None:
+            raise AssertionError("doctor body must never run at compose time")
+        calls.append("ran")
+        return DoctorResult(id=None, ok=True, detail="fine")
+
+    return DoctorCheck(title="Runs", run=run)
 
 
 def test_compose_never_runs_doctor_bodies() -> None:
     calls: list[str] = []
-    spec = make_spec(
-        name="watched",
-        checks=(make_check("watched.ok", record_calls=calls), exploding_check()),
-    )
-    result = compose([make_candidate(spec), make_candidate(make_spec(name="ext"))])
+    watched = make_plugin("watched", ok=_runs(calls), boom=_runs())
+    result = compose([make_candidate(watched), make_candidate(make_plugin("ext"))])
     assert calls == []
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "ext", "watched"]
 
@@ -234,7 +244,7 @@ def test_compose_leaves_global_settings_registry_untouched() -> None:
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     before_state = dict(_CONFIG_REGISTRY.state_sections)
     compose(
-        [make_candidate(make_spec(name="alpha")), make_candidate(make_spec(name="beta"))],
+        [make_candidate(make_plugin("alpha")), make_candidate(make_plugin("beta"))],
     )
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
     assert dict(_CONFIG_REGISTRY.state_sections) == before_state
@@ -243,32 +253,29 @@ def test_compose_leaves_global_settings_registry_untouched() -> None:
 def test_failed_provider_registers_nothing() -> None:
     from untaped.runtime.settings import _CONFIG_REGISTRY
 
-    good = make_spec(
-        name="good", skills=(make_skill("good-skill"),), checks=(make_check("good.ok"),)
-    )
-    bad = make_spec(name="untaped")
+    good = make_plugin("good", skill="Teach agents to use good.", ok=_runs([]))
+    bad = make_plugin("untaped")
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
     result = compose(
         [
             make_candidate(bad, "bad-dist"),
             make_candidate(good, "good-dist"),
-            make_candidate(make_spec(name="later"), "later-dist"),
+            make_candidate(make_plugin("later"), "later-dist"),
         ],
     )
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "good", "later"]
     assert [q.reason for q in result.quarantine] == ["duplicate-name"]
-    assert "good" in [cap.spec.name for cap in result.plugins]
     added = [cap for cap in result.plugins if not cap.root]
     registered_skills = [skill.name for cap in added for skill in cap.skills]
-    assert registered_skills == ["good-skill"]
+    assert registered_skills == ["untaped-good"]
     registered_checks = [check.id for cap in added for check in cap.spec.doctor_checks]
     assert registered_checks == ["good.ok"]
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
 
 
 def test_plugins_compose_in_name_order_whatever_the_distribution() -> None:
-    zeta = make_candidate(make_spec(name="zeta"), "aaa-dist")
-    alpha = make_candidate(make_spec(name="alpha"), "zzz-dist")
+    zeta = make_candidate(make_plugin("zeta"), "aaa-dist")
+    alpha = make_candidate(make_plugin("alpha"), "zzz-dist")
     result = compose([zeta, alpha])
     assert [c.spec.name for c in result.plugins] == ["untaped", "alpha", "zeta"]
     assert result.quarantine == ()
@@ -276,9 +283,9 @@ def test_plugins_compose_in_name_order_whatever_the_distribution() -> None:
 
 def _github_rivals() -> list[PluginCandidate]:
     return [
-        make_candidate(make_spec(name="github"), "acme-dist"),
-        make_candidate(make_spec(name="github"), "untaped"),
-        make_candidate(make_spec(name="jira"), "jira-dist"),
+        make_candidate(make_plugin("github"), "acme-dist"),
+        make_candidate(make_plugin("github"), "untaped"),
+        make_candidate(make_plugin("jira"), "jira-dist"),
     ]
 
 
@@ -301,8 +308,7 @@ def test_a_contested_name_does_not_depend_on_candidate_order() -> None:
 
 def test_three_claimants_are_all_quarantined() -> None:
     claimants = [
-        make_candidate(make_spec(name="github"), dist)
-        for index, dist in enumerate(("c-dist", "a-dist", "b-dist"))
+        make_candidate(make_plugin("github"), dist) for dist in ("c-dist", "a-dist", "b-dist")
     ]
     result = compose(claimants)
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
@@ -320,28 +326,24 @@ def test_three_claimants_are_all_quarantined() -> None:
     ("broken", "reason"),
     [
         (
-            make_candidate(make_spec(name="github"), "a-dist", error=ImportError("no")),
+            make_candidate(make_plugin("github"), "a-dist", error=ImportError("no")),
             "malformed-entry-point",
         ),
         (
             make_candidate(
-                make_spec(name="github"),
+                make_plugin("github"),
                 "a-dist",
                 error=DuplicateKindError("duplicate-kind: 'github.repo' is declared twice"),
             ),
             "duplicate-kind",
         ),
-        (
-            make_candidate(make_spec(name="github", skills=("not-a-skill",)), "a-dist"),  # type: ignore[arg-type]
-            "bad-skill-asset",
-        ),
     ],
-    ids=["provider-raises", "kind-declared-twice", "declaration-fails"],
+    ids=["provider-raises", "kind-declared-twice"],
 )
 def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
     broken: PluginCandidate, reason: str
 ) -> None:
-    sound = make_candidate(make_spec(name="github"), "b-dist")
+    sound = make_candidate(make_plugin("github"), "b-dist")
     result = compose([broken, sound])
     assert [c.plugin_ref.distribution for c in result.plugins] == ["untaped", "b-dist"]
     assert [(q.distribution, q.reason) for q in result.quarantine] == [("a-dist", reason)]
@@ -358,45 +360,14 @@ def test_plugin_help_must_be_one_non_empty_line(bad_help: object) -> None:
         )
 
 
-def test_a_provider_with_help_is_deferred_and_one_without_is_staged() -> None:
-    calls: list[str] = []
-
-    def factory() -> App:
-        calls.append("lazy")
-        return make_app("lazy")
-
-    lazy = make_candidate(replace(make_spec(name="lazy", factory=factory), help="Lazy."))
-    eager = make_candidate(make_spec(name="eager"))
-    result = compose([lazy, eager])
-    staged = {c.spec.name: c.app for c in result.plugins}
-    assert staged["lazy"] is None
-    assert calls == []
-    assert isinstance(staged["eager"], App)
-
-
 def test_a_name_with_an_at_says_it_is_reserved() -> None:
     with pytest.raises(ConfigError, match=r"must not contain '@' \(reserved\)"):
         PluginSpec(name="github@ghes")
 
 
-def test_every_part_of_a_spec_but_its_name_is_optional() -> None:
-    result = compose([make_candidate(PluginSpec(name="bare"))])
-
-    [_, bare] = result.plugins
-    assert (bare.spec.name, bare.app, result.quarantine) == ("bare", None, ())
-    assert settings_model(bare.spec).model_fields == {}
-
-
 def test_an_app_factory_must_be_callable() -> None:
     with pytest.raises(ConfigError, match="app_factory must be callable or None"):
         PluginSpec(name="bare", app_factory="not callable")  # type: ignore[arg-type]
-
-
-def test_asking_a_plugin_without_commands_for_its_app_is_a_bug() -> None:
-    [_, bare] = compose([make_candidate(PluginSpec(name="bare"))]).plugins
-
-    with pytest.raises(ConfigError, match="plugin 'bare' has no commands to build"):
-        run_deferred_factory(bare)
 
 
 def test_a_plugin_keeps_its_data_under_its_own_name() -> None:
@@ -445,43 +416,6 @@ def test_a_plugin_declaring_a_kind_under_another_name_is_quarantined(
     assert f"untaped_toy.Bad declares kind {kind!r}" in detail
     assert "belongs to plugin 'toy'; " in detail
     assert record_model(kind) is None
-
-
-def test_a_kind_a_lazy_module_declares_under_another_name_quarantines_at_first_build(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "untaped_toy_lazy.py").write_text(
-        "from untaped.sdk import Record\n\n\n"
-        'class Bad(Record, kind="github.lazy_thing"):\n'
-        "    key: str\n"
-    )
-    monkeypatch.syspath_prepend(tmp_path)
-    monkeypatch.delitem(sys.modules, "untaped_toy_lazy", raising=False)
-
-    def factory() -> App:
-        import untaped_toy_lazy  # noqa: F401 - a record module imported by the factory
-
-        return App()
-
-    spec = PluginSpec(name="toy-lazy", app_factory=factory, help="Toy commands.")
-    [_, toy] = compose([make_candidate(spec)]).plugins
-    failure = run_deferred_factory(toy)
-
-    assert isinstance(failure, QuarantineRecord)
-    assert (failure.name, failure.reason) == ("toy-lazy", "foreign-kind")
-    assert "belongs to plugin 'toy-lazy'; " in failure.detail
-
-
-def test_a_plugin_whose_app_factory_redeclares_a_kind_is_quarantined() -> None:
-    def factory() -> App:
-        class Stolen(Record, kind="untaped.setting"):  # a lazily imported record module
-            key: str
-
-        return App()
-
-    result = compose([make_candidate(make_spec(name="thief", factory=factory))])
-
-    assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
 
 
 def test_plugin_guides_must_be_a_folder() -> None:

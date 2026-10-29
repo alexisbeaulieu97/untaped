@@ -44,7 +44,6 @@ from untaped.runtime.registry import (
 )
 from untaped.runtime.root_options import (
     RootLine,
-    _before_separator,
     _root_callback_signature,
     _root_options,
     _RootOption,
@@ -484,13 +483,6 @@ def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
     root._commands[spec.name] = _LazyPluginCommand(plugin, root)
 
 
-#: Flags that make a command mounted through the 11.x seam a preview
-#: (``recipe apply --check``, every ``--dry-run``): the skills check must not
-#: write after one. A declared command says so itself (:class:`Dispatched`);
-#: this goes when the last 11.x command moves.
-_PREVIEW_FLAGS = frozenset({"--dry-run", "--check"})
-
-
 def _check_skills_after(
     root: App,
     tokens: list[str],
@@ -503,8 +495,8 @@ def _check_skills_after(
 
     Skipped for bare ``untaped``, root flags (``--help``, ``--version``) and
     a command marked ``repairs``, its help and a bad flag included. After a
-    failed or previewing command (``--dry-run``, ``Confirm.as_dry_run()``; for
-    an 11.x command a ``_PREVIEW_FLAGS`` option before any ``--``) it writes
+    failed or previewing command (``--dry-run``, ``Confirm.as_dry_run()``,
+    which the dispatched command says itself: :class:`Dispatched`) it writes
     nothing: ``warn`` still reports, ``auto`` waits for the next successful
     command. Never lets the check break the command.
     """
@@ -513,10 +505,7 @@ def _check_skills_after(
     try:
         if _repairs(root, tokens):
             return
-        if ran:
-            preview = ran[0].preview
-        else:
-            preview = not _PREVIEW_FLAGS.isdisjoint(_before_separator(tokens))
+        preview = bool(ran) and ran[0].preview
         check_installed_skills(skills, allow_updates=not (failed or preview))
     except Exception:
         return
@@ -577,14 +566,13 @@ def _started(
 
 
 def _fix_rendering(run: Run, line: RootLine, root: App | None = None) -> None:
-    """Fix ``run``'s rendering from what ``line`` names, unless an 11.x command decides it.
+    """Fix ``run``'s rendering from what ``line`` names, when it can be told yet.
 
     Before anything else is emitted, and once: the dispatch and the
     command's parse then change neither its format nor its theme
     (:meth:`untaped.sdk._run.Run.render_with` fixes the run's policy too). A first word no
-    declaration holds needs the composed ``root`` to tell an unknown command
-    (fixed here) from an 11.x seam command, whose parse decides as before
-    (:meth:`RootLine.rendering`).
+    declaration holds needs the composed ``root`` to tell it is an unknown
+    command (:meth:`RootLine.rendering`).
     """
     rendering = line.rendering(root)
     if rendering is not None:
@@ -642,7 +630,7 @@ def _install_root_callback(
                 # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
                 _refresh_reference(command_tokens)
-                outcome = dispatch_line(app, line, root_options, result.mount.declaration)
+                outcome = dispatch_line(app, line)
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False
@@ -691,10 +679,10 @@ def run_root(
     reading the line by the kept declaration's token shapes, and starts the
     run, its rendering fixed from what the line names; then the root is
     composed (with no declaration kept, the line is read by its declaration
-    now, and a first word no declaration holds is told from an 11.x
-    command's by the root app, the rendering fixed then, before anything is
-    emitted) and its composition attached to the run, then the tokens are
-    dispatched under it. The run's output spans all of it, so composition
+    now, and a first word no declaration holds is told an unknown command by
+    the root app, the rendering fixed then, before anything is emitted) and
+    its composition attached to the run, then the tokens are dispatched
+    under it. The run's output spans all of it, so composition
     warnings (a quarantined plugin) follow the ``--format`` the tokens ask
     for, like an error found before parsing.
     """

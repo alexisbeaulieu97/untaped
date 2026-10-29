@@ -272,8 +272,7 @@ class Run:
     #: What blocks noted during ``run``, for core to read after it.
     notes: RunNotes = field(default_factory=RunNotes)
     #: How stderr renders: fixed once by the runtime (:meth:`render_with`) for
-    #: a declared command or a line naming none; ``None`` until then, and for
-    #: an 11.x command, whose parse still decides it.
+    #: a declared command or a line naming none; ``None`` until then.
     rendering: Rendering | None = None
     #: The profiles ``--profile`` picks for this run, in order (``()``: none):
     #: the root option's, written by the token pass (:meth:`set_profiles`), or
@@ -326,24 +325,22 @@ class Run:
     def set_policy(self, policy: OutputPolicy) -> None:
         """Replace what the run asks of stderr.
 
-        Owed, the 11.x seam: the policy is writable only because the token
-        pass writes the root flags onto the run once it started, the seam's
-        dispatch writes the ones it takes late onto the same run, and the
-        seam's parse still chooses the format and theme of a command mounted
-        through it. It closes with the seam. A child run sharing
-        its parent's output writes the policy it shares with the parent.
+        The token pass writes the root flags onto the run once it started,
+        and a line read with no declaration kept is read again once the root
+        is composed, writing the ones it takes then onto the same run. A
+        child run sharing its parent's output writes the policy it shares
+        with the parent.
         """
         self.policy_cell.policy = policy
 
     def set_profiles(self, profiles: tuple[str, ...]) -> None:
         """Replace the run's ``--profile`` pick (:attr:`profiles`).
 
-        Owed, the 11.x seam, as :meth:`set_policy`: the token pass writes the
-        root ``--profile`` onto the run once it started, before it is composed,
-        and the seam's dispatch (or a line read with no declaration kept)
-        writes the ones it takes late onto the same run, whose sections are
-        read under the pick it holds when read. Frozen to every other writer;
-        it closes with the seam.
+        As :meth:`set_policy`: the token pass writes the root ``--profile``
+        onto the run once it started, before it is composed, and a line read
+        with no declaration kept writes the ones it takes late onto the same
+        run, whose sections are read under the pick it holds when read.
+        Frozen to every other writer.
         """
         object.__setattr__(self, "profiles", profiles)
 

@@ -36,7 +36,7 @@ from repo import quoted_commands
 from repo.support import FENCE, PACKAGES, REPO_ROOT, markdown_files
 from untaped.runtime import registry
 from untaped.runtime.bootstrap import build_root_app
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options
 from untaped.sdk.marks import deprecated
 from untaped.sdk.storage.cache import Cache
@@ -513,10 +513,10 @@ RETIRED_TERMS = {"root shell": "root", "unified shell": "root"}
 
 
 def test_records_page_has_a_section_per_plugin(
-    first_party_specs: tuple[PluginSpec, ...],
+    first_party_candidates: tuple[PluginCandidate, ...],
 ) -> None:
     records = _anchors(REPO_ROOT / "docs" / "reference" / "records.md")
-    assert {spec.name for spec in first_party_specs} <= records
+    assert {candidate.name for candidate in first_party_candidates} <= records
 
 
 def test_docs_avoid_retired_terms() -> None:

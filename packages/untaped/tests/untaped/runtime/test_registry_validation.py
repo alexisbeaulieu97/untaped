@@ -1,68 +1,23 @@
-"""Row-by-row validation tests: every violation quarantines its provider.
+"""Row-by-row validation tests: every violation quarantines its plugin.
 
 Each rejection row becomes a ``QuarantineRecord`` naming the reason while
-composition continues; first-party and third-party providers are judged alike.
+composition continues; first-party and third-party plugins are judged alike.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import (
-    make_candidate,
-    make_check,
-    make_skill,
-    make_spec,
-)
-from untaped.runtime.registry import (
-    PluginCandidate,
-    PluginSpec,
-    SkillAsset,
-    compose,
-)
-from untaped.sdk.health.doctor import DoctorCheck
+from core_test_support.commands.support import make_plugin
+from core_test_support.runtime.plugin_harness import make_candidate, make_spec
+from untaped.runtime.registry import PluginCandidate, compose
 
 
 class TokenProfile(BaseModel):
     token: str = "t"
-    other: str = "o"
-
-
-class TokenState(BaseModel):
-    token: str = ""
-
-
-class EndpointState(BaseModel):
-    endpoint: str = ""
-
-
-def broken_asset(name: str = "", description: str = "d") -> SkillAsset:
-    asset = object.__new__(SkillAsset)
-    object.__setattr__(asset, "name", name)
-    object.__setattr__(asset, "description", description)
-    return asset
-
-
-def _with(spec: PluginSpec, **fields: Any) -> PluginSpec:
-    """Bypass construction checks the way a hostile provider could."""
-    for key, value in fields.items():
-        object.__setattr__(spec, key, value)
-    return spec
-
-
-def _check_with(**fields: Any) -> DoctorCheck:
-    check = make_check("d.ok")
-    for key, value in fields.items():
-        object.__setattr__(check, key, value)
-    return check
-
-
-def _failing_factory() -> Any:
-    raise RuntimeError("factory-boom")
 
 
 #: Each name a plugin may not have, with what holds it: core's own name, one of
@@ -83,207 +38,28 @@ TAKEN = {
 #: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
 FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui"]
 
-# (spec factory, reason, text the error/detail must name)
-SINGLE_SPEC_ROWS: list[tuple[str, Callable[[], PluginSpec], str, str]] = [
-    *(
-        (f"taken-{v}", lambda v=v: make_spec(name=v), "duplicate-name", f"{v!r} is taken by {by}")
-        for v, by in TAKEN.items()
-    ),
-    (
-        "settings-state-overlap",
-        lambda: make_spec(name="o", settings=TokenProfile, state=TokenState),
-        "settings-state-overlap",
-        "token",
-    ),
-    (
-        "skill-dup-in-spec",
-        lambda: make_spec(name="a", skills=(make_skill("dup"), make_skill("dup"))),
-        "duplicate-skill",
-        "dup",
-    ),
-    (
-        "skill-more-than-one",
-        lambda: make_spec(name="two", skills=(make_skill("a"), make_skill("b"))),
-        "bad-skill-asset",
-        "plugin 'two' ships more than one skill: a, b",
-    ),
-    (
-        "skill-not-asset",
-        lambda: _with(make_spec(name="bad-assets"), skills=("not-an-asset",)),
-        "bad-skill-asset",
-        "not-an-asset",
-    ),
-    (
-        "skill-empty-name",
-        lambda: _with(make_spec(name="bad-assets"), skills=(broken_asset(name="  "),)),
-        "bad-skill-asset",
-        "bad-assets",
-    ),
-    (
-        "skill-empty-description",
-        lambda: _with(
-            make_spec(name="bad-assets"), skills=(broken_asset(name="x", description="  "),)
-        ),
-        "bad-skill-asset",
-        "bad-assets",
-    ),
-    (
-        "doctor-dup-in-spec",
-        lambda: make_spec(name="d", checks=(make_check("d.x"), make_check("d.x"))),
-        "duplicate-doctor-check",
-        "d.x",
-    ),
-    (
-        "doctor-empty-id",
-        lambda: _with(make_spec(name="d"), doctor_checks=(make_check("  "),)),
-        "doctor-check-failed",
-        "d",
-    ),
-    (
-        "doctor-empty-title",
-        lambda: make_spec(name="d", checks=(_check_with(title="  "),)),
-        "doctor-check-failed",
-        "d",
-    ),
-    (
-        "doctor-non-callable",
-        lambda: make_spec(name="d", checks=(_check_with(run=None),)),
-        "doctor-check-failed",
-        "d",
-    ),
-    *(
-        (
-            f"factory-{label}",
-            lambda label=label, factory=factory: make_spec(
-                name=f"factory-{label}", factory=factory
-            ),
-            "bad-app-factory",
-            f"factory-{label}",
-        )
-        for label, factory in (
-            ("takes-args", lambda arg: None),
-            ("returns-str", lambda: "not-an-app"),
-            ("raises", _failing_factory),
-        )
-    ),
-]
 
-
-@pytest.mark.parametrize(
-    ("make", "reason", "named"),
-    [row[1:] for row in SINGLE_SPEC_ROWS],
-    ids=[row[0] for row in SINGLE_SPEC_ROWS],
-)
-def test_invalid_spec_is_quarantined(
-    make: Callable[[], PluginSpec], reason: str, named: str
-) -> None:
-    spec = make()
-    result = compose([make_candidate(spec, "ext-dist")])
+@pytest.mark.parametrize(("name", "by"), TAKEN.items(), ids=list(TAKEN))
+def test_a_taken_name_is_quarantined(name: str, by: str) -> None:
+    result = compose([make_candidate(make_plugin(name), "ext-dist")])
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
-    assert (record.distribution, record.reason) == ("ext-dist", reason)
-    assert named in record.detail
-
-
-# (first spec, colliding spec, reason, text the error/detail must name)
-COLLISION_ROWS: list[tuple[str, Callable[[], tuple[PluginSpec, PluginSpec]], str, str]] = [
-    (
-        "skill",
-        lambda: (
-            make_spec(name="a", skills=(make_skill("shared"),)),
-            make_spec(name="b", skills=(make_skill("shared"),)),
-        ),
-        "duplicate-skill",
-        "'shared'",
-    ),
-    (
-        "doctor-id",
-        lambda: (
-            make_spec(name="a", checks=(make_check("shared.id"),)),
-            make_spec(name="b", checks=(make_check("shared.id"),)),
-        ),
-        "duplicate-doctor-check",
-        "'shared.id'",
-    ),
-]
-
-
-@pytest.mark.parametrize(
-    ("make", "reason", "named"),
-    [row[1:] for row in COLLISION_ROWS],
-    ids=[row[0] for row in COLLISION_ROWS],
-)
-def test_collision_with_an_earlier_plugin_is_quarantined(
-    make: Callable[[], tuple[PluginSpec, PluginSpec]],
-    reason: str,
-    named: str,
-) -> None:
-    first, second = make()
-    result = compose([make_candidate(second, "b-dist"), make_candidate(first, "a-dist")])
-    assert [c.spec.name for c in result.plugins] == ["untaped", first.name]
-    (record,) = result.quarantine
-    assert (record.distribution, record.reason) == ("b-dist", reason)
-    assert named in record.detail
-
-
-@pytest.mark.parametrize(
-    ("spec", "reason", "detail"),
-    [
-        (
-            make_spec(name="doctor"),
-            "duplicate-name",
-            "duplicate plugin name: 'doctor' is taken by a root command",
-        ),
-        (
-            make_spec(name="s", skills=(make_skill("untaped"),)),
-            "duplicate-skill",
-            "duplicate skill name: 'untaped'",
-        ),
-        (
-            make_spec(name="d", checks=(make_check("untaped.token-store"),)),
-            "duplicate-doctor-check",
-            "duplicate doctor id: 'untaped.token-store'",
-        ),
-    ],
-    ids=["command", "skill", "core-class-doctor-id"],
-)
-def test_collision_with_core_quarantines(spec: PluginSpec, reason: str, detail: str) -> None:
-    result = compose([make_candidate(spec)])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
-    (record,) = result.quarantine
-    assert (record.reason, record.detail) == (reason, detail)
+    assert (record.distribution, record.reason) == ("ext-dist", "duplicate-name")
+    assert f"{name!r} is taken by {by}" in record.detail
 
 
 @pytest.mark.parametrize("name", FREE)
 def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
-    result = compose([make_candidate(make_spec(name=name))])
+    result = compose([make_candidate(make_plugin(name))])
     assert result.quarantine == ()
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped", name]
-
-
-def test_duplicate_skill_across_candidates_keeps_the_first() -> None:
-    first = make_candidate(make_spec(name="a", skills=(make_skill("s1"),)), "d1")
-    second = make_candidate(make_spec(name="b", skills=(make_skill("s1"),)), "d2")
-    result = compose([first, second])
-    assert [c.spec.name for c in result.plugins] == ["untaped", "a"]
-    (record,) = result.quarantine
-    assert record.reason == "duplicate-skill"
-
-
-def test_a_spec_target_composes() -> None:
-    """The entry point names the spec itself; nothing else is declared."""
-    spec = make_spec(name="plain")
-    candidate = PluginCandidate(distribution="plain-dist", name="plain", target=spec)
-    result = compose([candidate])
-    assert result.quarantine == ()
-    assert [registered.spec for registered in result.plugins if not registered.root] == [spec]
 
 
 # ---- entry-point targets ------------------------------------------------------
 
 
-def _needs_arg(value: str) -> PluginSpec:
-    return make_spec(name="argful")
+def _needs_arg(value: str) -> object:
+    return make_plugin("argful")
 
 
 @pytest.mark.parametrize(
@@ -291,10 +67,10 @@ def _needs_arg(value: str) -> PluginSpec:
     [
         # An unimportable target has no resolved label; the detail names it.
         (
-            PluginCandidate(distribution="d", name="ghost", target="missing_mod_xyz:SPEC"),
+            PluginCandidate(distribution="d", name="ghost", target="missing_mod_xyz.plugin:Ghost"),
             "malformed-entry-point",
             "",
-            "missing_mod_xyz:SPEC",
+            "missing_mod_xyz.plugin:Ghost",
         ),
         (
             PluginCandidate(distribution="d", name="ghost", target="not-a-module-ref"),
@@ -304,40 +80,48 @@ def _needs_arg(value: str) -> PluginSpec:
         ),
         (
             PluginCandidate(distribution="d", name="mod", target="json:decoder"),
-            "not-a-spec",
+            "not-a-plugin-class",
             "json:decoder",
             "",
         ),
         # A dotted attribute resolves and is then judged on what it is.
         (
             PluginCandidate(distribution="d", name="jsoncap", target="json.decoder:JSONDecoder"),
-            "not-a-spec",
+            "not-a-plugin-class",
             "json.decoder:JSONDecoder",
             "",
         ),
         (
             PluginCandidate(distribution="d", name="thing", target=object()),
-            "not-a-spec",
+            "not-a-plugin-class",
             "thing",
             "",
         ),
         (
             PluginCandidate(distribution="d", name="argful", target=_needs_arg),
-            "not-a-spec",
+            "not-a-plugin-class",
             "argful",
             "the callable '_needs_arg'",
         ),
         (
-            make_candidate(make_spec(name="raiser"), "d", error=RuntimeError("boom-text")),
+            make_candidate(make_plugin("raiser"), "d", error=RuntimeError("boom-text")),
             "malformed-entry-point",
             "",
             "boom-text",
         ),
         (
-            make_candidate(make_spec(name="wrong"), "d", result={"not": "a-spec"}),
-            "not-a-spec",
+            make_candidate(make_plugin("wrong"), "d", result={"not": "a-class"}),
+            "not-a-plugin-class",
             None,
             "dict",
+        ),
+        # An 11.x plugin stops composing at 12.0, told what to name instead.
+        (
+            make_candidate(make_spec(name="old"), "d"),
+            "not-a-plugin-class",
+            "old",
+            "names an 11.x PluginSpec, not a plugin class; untaped 12.0 composes plugin "
+            "classes: name the class ('untaped_old.plugin:Old')",
         ),
     ],
     ids=[
@@ -348,7 +132,8 @@ def _needs_arg(value: str) -> PluginSpec:
         "object",
         "callable",
         "raises",
-        "non-spec",
+        "not-a-class",
+        "11x-spec",
     ],
 )
 def test_bad_entry_point_target_quarantines(
@@ -369,17 +154,14 @@ class BadKeysProfile(BaseModel):
 
 
 def test_broken_key_declarations_quarantine_only_that_plugin() -> None:
-    bad = make_spec(name="bad", settings=BadKeysProfile)
-    good = make_spec(name="good", settings=TokenProfile)
+    bad = make_plugin("bad", settings=BadKeysProfile)
+    good = make_plugin("good", settings=TokenProfile)
 
     result = compose([make_candidate(bad), make_candidate(good)])
 
     assert [c.spec.name for c in result.plugins] == ["untaped", "good"]
     (record,) = result.quarantine
-    assert (record.reason, record.detail) == (
-        "bad-settings-keys",
-        "plugin 'bad': renamed key 'old' points at 'nowhere', which is not a setting",
-    )
+    assert "renamed key 'old' points at 'nowhere', which is not a setting" in record.detail
 
 
 def _unset_variable() -> str:
@@ -392,8 +174,8 @@ class LazyProfile(BaseModel):
 
 
 def test_a_raising_default_factory_is_not_called_while_composing() -> None:
-    lazy = make_spec(name="lazy", settings=LazyProfile)
-    good = make_spec(name="good", settings=TokenProfile)
+    lazy = make_plugin("lazy", settings=LazyProfile)
+    good = make_plugin("good", settings=TokenProfile)
 
     result = compose([make_candidate(lazy), make_candidate(good)])
 

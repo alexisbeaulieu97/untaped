@@ -9,15 +9,17 @@ startup the root composes the plugins in this order:
    candidate, first-party ones included. Its distribution's `untaped`
    requirement is checked against the running version.
 2. **Resolution.** The entry point is loaded, never called, and must name a
-   [`PluginSpec` constant](./plugins.md#plugin-package).
-3. **Validation.** The declaration is checked: reserved names, the
-   entry-point name, duplicate names, skills and doctor checks,
-   overlapping settings and state fields, and the settings model's
+   plugin class in a leaf module (`untaped_acme.plugin:Acme`); anything
+   else, an 11.x `PluginSpec` included, is quarantined (`not-a-plugin-class`).
+3. **Validation.** The declaration is checked: reserved names, duplicate
+   names, skills and doctor checks, and the settings model's
    [renamed keys](./reference/conventions.md#renaming-a-setting).
-4. **Commit.** The survivors are mounted under their names, lazily or not
-   as [the plugin app](./plugins.md#settings-and-the-plugin-app) describes.
+4. **Commit.** The survivors are mounted under their names. A plugin's
+   commands are built from its declaration the first time one is
+   dispatched; one whose commands can't be built fails them, `--help`
+   included, with exit 4, and `untaped doctor` shows why.
 
-An entry point that names a 12.0 plugin class is composed once: core keeps
+A plugin class is composed once: core keeps
 the composed declaration under `~/.untaped/plugins/untaped/cached/declaration/`,
 one file per environment and set of installed plugins, so a later start reads
 it instead of importing the class (which imports every command). A plugin's

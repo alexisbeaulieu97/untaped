@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from untaped.runtime.bootstrap import build_root_app, compose_root
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
     Column,
     Command,
@@ -379,10 +379,3 @@ def test_a_plugin_class_composition_refuses_is_quarantined_naming_the_problem() 
     [record] = result.quarantine
     assert (record.name, record.reason) == ("broken", "bad-plugin-class")
     assert record.detail == "Undocumented: a command's docstring is its help [missing-docstring]"
-
-
-def test_a_name_a_spec_and_a_plugin_class_share_quarantines_both() -> None:
-    other = PluginCandidate(distribution="untaped-other", name="hello", target=PluginSpec("hello"))
-    result = compose_root(candidates=[HELLO, other])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
-    assert [record.reason for record in result.quarantine] == ["duplicate-name"] * 2

@@ -13,14 +13,13 @@ running SDK version.
 
 from __future__ import annotations
 
-import sys
-import types
 from types import SimpleNamespace
 
 import pytest
 
 import untaped.runtime.registry as registry
-from core_test_support.runtime.plugin_harness import make_candidate, make_spec
+from core_test_support.commands.support import make_plugin
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime.registry import (
     PluginCandidate,
     compose,
@@ -34,15 +33,14 @@ from untaped.runtime.registry import (
         ("example-dist", "grouped", {"entry_point_group": "other.group"}, ["other.group"]),
         ("example-dist", "pinned", {"requires_dist": ("untaped>=99",)}, ["untaped>=99"]),
         ("example-dist", "bad-req", {"requires_dist": ("untaped=>",)}, ["untaped=>"]),
-        ("example-dist", "alias", {}, ["'alias'", "'real'"]),
-        ("   ", "real", {}, ["empty distribution name"]),
+        ("   ", "nameless", {}, ["empty distribution name"]),
     ],
-    ids=["wrong-group", "non-admitting", "malformed-requires", "name-mismatch", "no-distribution"],
+    ids=["wrong-group", "non-admitting", "malformed-requires", "no-distribution"],
 )
 def test_bad_candidate_metadata_quarantines(
     distribution: str, name: str, kwargs: dict[str, object], named: list[str]
 ) -> None:
-    candidate = make_candidate(make_spec(name="real"), distribution, name=name, **kwargs)
+    candidate = make_candidate(make_plugin(name), distribution, **kwargs)
     result = compose([candidate])
     assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
@@ -61,6 +59,7 @@ def test_metadata_is_checked_before_import(
     monkeypatch: pytest.MonkeyPatch, candidate_kwargs: dict[str, object]
 ) -> None:
     """Bad metadata must quarantine without importing provider code."""
+    compose()  # core's own class imports its modules once; only the plugin's are tracked
     calls: list[str] = []
     real_import = registry.import_module
 
@@ -72,7 +71,7 @@ def test_metadata_is_checked_before_import(
     candidate = PluginCandidate(
         distribution="example-dist",
         name="pinned",
-        target="definitely.missing.row13_module:SPEC",
+        target="definitely.missing.row13_module.plugin:Pinned",
         **candidate_kwargs,  # type: ignore[arg-type]
     )
     result = compose([candidate])
@@ -90,9 +89,7 @@ def _compose_with_sdk_version(
         return sdk_version if name == "untaped" else real_version(name)
 
     monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
-    candidate = make_candidate(
-        make_spec(name="pep440"), "example-dist", requires_dist=(requirement,)
-    )
+    candidate = make_candidate(make_plugin("pep440"), "example-dist", requires_dist=(requirement,))
     return compose([candidate])
 
 
@@ -135,8 +132,8 @@ def test_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch, requireme
 
 
 def test_multi_entry_point_distribution_passes() -> None:
-    first = make_candidate(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
-    second = make_candidate(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
+    first = make_candidate(make_plugin("alpha"), "multi-dist", distribution_version="1.2.3")
+    second = make_candidate(make_plugin("beta"), "multi-dist", distribution_version="1.2.3")
     result = compose([second, first])
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "alpha", "beta"]
     assert result.quarantine == ()
@@ -147,10 +144,7 @@ def test_discover_without_distributions() -> None:
 
 
 def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
-    spec = make_spec(name="live-cap")
-    module = types.ModuleType("test_live_row13_provider_mod")
-    module.SPEC = spec  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "test_live_row13_provider_mod", module)
+    make_plugin("live-cap")  # untaped_double_live_cap.plugin:LiveCap
 
     fake_dist = SimpleNamespace(
         version="1.0.0",
@@ -160,7 +154,7 @@ def test_live_discovery_composes_end_to_end(monkeypatch: pytest.MonkeyPatch) -> 
 
     fake_entry_point = SimpleNamespace(
         name="live-cap",
-        value="test_live_row13_provider_mod:SPEC",
+        value="untaped_double_live_cap.plugin:LiveCap",
         group="untaped.plugins",
         dist=fake_dist,
     )
@@ -227,7 +221,7 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
     candidates = [
-        make_candidate(make_spec(name=name), "example-dist", requires_dist=("untaped>=6",))
+        make_candidate(make_plugin(name), "example-dist", requires_dist=("untaped>=6",))
         for name in ("alpha", "beta")
     ]
     result = compose(candidates)

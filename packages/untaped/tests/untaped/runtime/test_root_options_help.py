@@ -1,8 +1,4 @@
-"""Root options apply wherever they sit, around ``--help`` too; ``--deprecated`` shows more.
-
-``svc`` is mounted through the 11.x seam: the token pass takes only its
-leading root options, and dispatch takes the rest as before.
-"""
+"""Root options apply wherever they sit, around ``--help`` too; ``--deprecated`` shows more."""
 
 from __future__ import annotations
 
@@ -10,12 +6,11 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Command, Plugin
-from untaped.sdk._cli import create_app
 from untaped.sdk._run import is_verbose
 from untaped.sdk.marks import deprecated, show_deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
@@ -23,21 +18,26 @@ from untaped.sdk.testing import CliInvoker, plugin_candidate
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
+class Old(Command):
+    """Old."""
+
+    stability = deprecated()
+
+    def run(self) -> None:
+        return None
+
+
+class Fade(Command):
+    """Fade out."""
+
+    def run(self) -> None:
+        return None
+
+
 def _root() -> App:
-    app = create_app(name="svc", help="Service.")
-
-    @app.command(name="old")
-    @deprecated()
-    def old_command() -> None:
-        """Old."""
-
-    spec = make_spec(name="svc", factory=lambda: app)
-    sunset = make_spec(
-        name="sunset",
-        factory=lambda: create_app(name="sunset", help="Sunset."),
-        stability=deprecated(),
-    )
-    return bootstrap.build_root_app(candidates=[plugin_candidate(spec), plugin_candidate(sunset)])
+    svc = make_plugin("svc", commands=(Old,))
+    sunset = make_plugin("sunset", stability=deprecated(), commands=(Fade,))
+    return bootstrap.build_root_app(candidates=[plugin_candidate(svc), plugin_candidate(sunset)])
 
 
 def _help(*argv: str) -> str:
@@ -135,7 +135,7 @@ def test_the_flag_is_a_root_parameter_beside_the_others() -> None:
 def test_a_separator_closing_the_leading_root_options_is_dropped() -> None:
     tokens = ["--profile", "x", "--", "svc", "--verbose"]
     with started_line(tokens) as line:
-        assert line.tokens == ["svc", "--verbose"]  # dispatch takes the 11.x command's -v
+        assert line.tokens == ["svc", "--verbose"]
     with started_line(["svc", "--", "--verbose"]) as line:
         assert line.tokens == ["svc", "--", "--verbose"]
         assert not is_verbose()

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
-    from untaped.runtime.registry import PluginCandidate, PluginSpec
+    from untaped.runtime.registry import PluginCandidate
     from untaped.sdk.plugin import Plugin
     from untaped.sdk.testing.install import Install
 
@@ -41,7 +41,7 @@ def check(install: Install) -> None:
 
 @experimental
 def assert_surface(
-    plugin: type[Plugin] | PluginSpec, path: Path | None = None, version: str | None = None
+    plugin: type[Plugin], path: Path | None = None, version: str | None = None
 ) -> None:
     """Fail when ``plugin`` no longer keeps a stable line of its surface snapshot.
 
@@ -68,7 +68,7 @@ def assert_surface(
 
     if path is None:
         path = _calling_test().parent / "snapshots" / "surface.txt"
-    target = plugin if not isinstance(plugin, type) else _candidate(plugin)
+    target = _candidate(plugin)
     name = target.name
     current = plugin_lines(target)
     if version is not None:

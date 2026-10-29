@@ -1,20 +1,17 @@
-"""Guide and map-line rules on a composed plugin with a guides folder."""
+"""Guide and map-line rules on a composed plugin class: its guides are docstrings."""
 
 from __future__ import annotations
 
 import enum
-from pathlib import Path
 
 import pytest
-from cyclopts import App
 from pydantic import Field
 
 from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.guides import MAP_LINE_LIMIT, guide_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.command_lines import console_lines
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import Command, Plugin, Record, create_app
+from untaped.sdk import Command, Plugin, Record
 from untaped.sdk.contracts import Contract, Provider
 from untaped.sdk.records import record_model
 from untaped.sdk.testing import plugin_candidate
@@ -25,33 +22,6 @@ class Widget(Record, kind="svc.widget"):
 
     name: str
     size: int = 1
-
-
-def _factory() -> App:
-    app = create_app(name="svc", help="Service.")
-
-    @app.command(name="show")
-    def show() -> None:
-        """Show it."""
-
-    return app
-
-
-def _violations(
-    tmp_path: Path, help_text: str = "Service.", **files: str
-) -> list[tuple[str, str, str]]:
-    folder = tmp_path / "guides"
-    folder.mkdir(exist_ok=True)
-    for name, text in files.items():
-        (folder / f"{name}.md").write_text(text, encoding="utf-8")
-    spec = PluginSpec(name="svc", app_factory=_factory, help=help_text, guides=folder)
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
-    found = guide_violations(root, bootstrap.composition(), spec)
-    return [tuple(line.split("::", 2)) for line in found]  # type: ignore[misc]
-
-
-def _guide(body: str, description: str = "Read before showing anything.") -> str:
-    return f"---\ndescription: {description}\n---\n\n{body}\n"
 
 
 def _quoting(
@@ -89,45 +59,6 @@ def test_a_clean_guide_has_no_violation() -> None:
         "```console\n$ untaped svc show\n```\n"
     )
     assert _quoting(body) == []
-
-
-def test_guide_names_are_kebab_case(tmp_path: Path) -> None:
-    assert _violations(tmp_path, Life_Cycle=_guide("Text.")) == [
-        ("guides/Life_Cycle.md", "guide-name", "'Life_Cycle' is not kebab-case")
-    ]
-
-
-def test_a_guide_may_share_a_command_s_name(tmp_path: Path) -> None:
-    """A guide's address is under ``guides``, so no command shadows it."""
-    assert _violations(tmp_path, show=_guide("Text.")) == []
-
-
-@pytest.mark.parametrize(
-    ("text", "detail"),
-    [
-        ("Text.\n", "has no front matter (a `---` block with a description)"),
-        ("---\ndescription: x\nText.\n", "front matter has no closing `---`"),
-        ("---\ntitle: x\n---\nText.\n", "front matter has no description"),
-        ("---\ndescription: |\n  one\n  two\n---\nText.\n", "description is more than one line"),
-        ("---\ndescription: [\n---\nText.\n", "front matter is not YAML: "),
-    ],
-)
-def test_a_guide_says_when_to_read_it_in_one_line(tmp_path: Path, text: str, detail: str) -> None:
-    [(where, rule, found)] = _violations(tmp_path, notes=text)
-    assert (where, rule) == ("guides/notes.md", "guide-description")
-    assert found.startswith(detail)
-
-
-def test_the_page_writes_the_guide_s_heading(tmp_path: Path) -> None:
-    fenced = "```bash\n# a comment, not a heading\n```\n"
-    assert _violations(tmp_path, ok=_guide(fenced)) == []
-    assert _violations(tmp_path, bad=_guide("# Notes\n\nText.")) == [
-        (
-            "guides/bad.md",
-            "guide-heading",
-            "the page writes the heading; start the guide's own at ##",
-        )
-    ]
 
 
 def test_a_quoted_docs_page_must_exist() -> None:

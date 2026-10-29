@@ -2,8 +2,9 @@
 
 - No ``Linter`` method, nor one of a class built on ``Linter`` or ``Rules``,
   is ``@cached``: a run must see the rules and files as they are now.
-- ``Conventions`` is the engine's own code, offered in no ``PluginSpec(provides=...)``:
-  it composes, which no contract method may.
+- ``Conventions`` is the engine's own code, no contract's provider (so no
+  plugin class fills a contract with it): it composes, which no contract
+  method may.
 - Within ``untaped_lint`` only ``providers/`` imports ``check_plugin``, and
   only ``domain/glob.py`` uses ``fnmatch`` or ``glob.translate``: one door
   to core's checks, one glob.
@@ -23,6 +24,8 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 from repo.support import PACKAGES, REPO_ROOT
+from untaped.sdk.contracts._declare import contract_of
+from untaped_lint.providers.conventions import Conventions
 
 LINT = PACKAGES / "untaped-lint" / "src" / "untaped_lint"
 
@@ -75,35 +78,8 @@ def test_no_linter_method_is_cached() -> None:
     assert not cached, f"@cached on a Linter method: {cached}"
 
 
-def _functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
-    return {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
-
-
-def _names(node: ast.AST, functions: dict[str, ast.FunctionDef], seen: set[str]) -> Iterator[str]:
-    """Every name under ``node``, following references to the module's own functions."""
-    for each in ast.walk(node):
-        name = _name(each) if isinstance(each, ast.Name | ast.Attribute) else None
-        if name is None:
-            continue
-        yield name
-        if name in functions and name not in seen:
-            seen.add(name)
-            yield from _names(functions[name], functions, seen)
-
-
-def test_conventions_is_offered_by_no_plugin() -> None:
-    offered = []
-    for path, tree in _sources():
-        functions = _functions(tree)
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and _name(node) == "PluginSpec"):
-                continue
-            for keyword in node.keywords:
-                if keyword.arg == "provides" and "Conventions" in _names(
-                    keyword.value, functions, set()
-                ):
-                    offered.append(_where(path, node))
-    assert not offered, f"Conventions in PluginSpec(provides=...): {offered}"
+def test_conventions_is_no_provider() -> None:
+    assert contract_of(Conventions) is None
 
 
 def _imports(tree: ast.Module) -> Iterator[tuple[ast.AST, str]]:

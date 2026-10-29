@@ -7,18 +7,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, Field
 
 from untaped.core.surface import generate
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import Declaration
 from untaped.runtime.profile_resolver import flag_pick
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import RootLine
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Plugin
-from untaped.sdk._cli import create_app, echo
 from untaped.sdk._run import Run, current_run
 from untaped.sdk.testing import CliInvoker
 
@@ -64,24 +62,11 @@ class Nesting(Plugin):
     commands = (Ring, Nest)
 
 
-def _old_app() -> App:
-    app = create_app(name="old", help="An 11.x plugin.")
-
-    @app.command(name="who")
-    def who() -> None:
-        """Note the run."""
-        seen.append(current_run())
-        echo("old")
-
-    return app
-
-
 CHIME = PluginCandidate(distribution="untaped-chime", name="chime", target=Chime)
-OLD = PluginCandidate(
-    distribution="untaped-old", name="old", target=PluginSpec(name="old", app_factory=_old_app)
-)
 NESTED = PluginCandidate(distribution="untaped-chime", name="chime", target=Nesting)
-BROKEN = PluginCandidate(distribution="broken-dist", name="broken", target="no_such_mod:SPEC")
+BROKEN = PluginCandidate(
+    distribution="broken-dist", name="broken", target="no_such_mod.plugin:Broken"
+)
 
 
 @pytest.fixture
@@ -106,16 +91,15 @@ def _run_root(argv: list[str], *candidates: PluginCandidate) -> int | str | None
 
 
 @pytest.mark.usefixtures("_isolated_config")
-@pytest.mark.parametrize("argv", [["chime", "ring"], ["old", "who"]], ids=["declared", "11.x"])
 def test_an_invocation_starts_one_run_and_its_command_runs_under_it(
-    argv: list[str], started: list[Run], capsys: pytest.CaptureFixture[str]
+    started: list[Run], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run_root(argv, CHIME, OLD) in (0, None)
+    assert _run_root(["chime", "ring"], CHIME) in (0, None)
 
     assert len(started) == 1
     assert seen == started
     assert started[0].composition.owner_of_settings(ChimeSettings) == "chime"
-    assert capsys.readouterr().out.strip() in ("hello", "old")
+    assert capsys.readouterr().out.strip() == "hello"
 
 
 def test_a_trailing_profile_is_the_run_s_pick_for_a_declared_command(

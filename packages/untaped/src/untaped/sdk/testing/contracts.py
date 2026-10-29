@@ -9,7 +9,7 @@ schemas with :func:`untaped.sdk.testing.assert_surface`. Nothing here imports
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from untaped.runtime.contracts.registry import BoundProvider
-    from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
+    from untaped.runtime.registry import CompositionResult, PluginCandidate
     from untaped.sdk.contracts import Contract
     from untaped.sdk.plugin import Plugin
 
@@ -28,28 +28,24 @@ _ACTIVE: ContextVar[CompositionResult | None] = ContextVar("untaped_compose_with
 
 @contextmanager
 def compose_with(
-    *plugins: str | PluginSpec | type[Plugin] | PluginCandidate,
-    provides: Mapping[str, Sequence[Contract]] | None = None,
+    *plugins: str | type[Plugin] | PluginCandidate,
 ) -> Iterator[CompositionResult]:
-    """Compose ``plugins`` and fake providers for the block; restore the composition after.
+    """Compose ``plugins`` for the block; restore the composition after.
 
-    ``plugins`` are installed plugin names, ``PluginSpec`` objects, plugin
-    classes or candidates; with none, every installed plugin is composed.
-    ``provides={"fake": [FakeRepos()]}`` adds a plugin named ``fake`` that
-    offers each instance to the plugin declaring its contract, so an owner
-    tests ``gather`` against a provider it controls (a fake reads no
-    ``Configured`` settings). The block runs under a run of that composition,
-    as a command of it would. Yields the composition.
+    ``plugins`` are installed plugin names, plugin classes or candidates;
+    with none, every installed plugin is composed. An owner tests ``gather``
+    against a provider it controls by composing a plugin class whose
+    ``fills`` holds a fake provider (a fake reads no ``Configured``
+    settings). The block runs under a run of that composition, as a command
+    of it would. Yields the composition.
     """
     from untaped.runtime import (  # noqa: PLC0415 - the root is heavy; tests pay only on use
         bootstrap,
     )
     from untaped.runtime.run import build_run, entered  # noqa: PLC0415
 
-    base = _candidates(plugins)
-    fakes = _offering_candidates(provides or {}, base)
     with (
-        bootstrap.composed_with([*base, *fakes]) as result,
+        bootstrap.composed_with(_candidates(plugins)) as result,
         entered(build_run(result.mount.declaration, result.mount.settings)),
     ):
         token = _ACTIVE.set(result)
@@ -59,61 +55,8 @@ def compose_with(
             _ACTIVE.reset(token)
 
 
-def _offering_candidates(
-    offered: Mapping[str, Sequence[Contract]], base: Sequence[PluginCandidate]
-) -> list[PluginCandidate]:
-    """One candidate per key of ``offered``, offering its instances to their contracts' owners.
-
-    Each instance's owner is the composed plugin declaring its contract,
-    among ``base`` (composed once).
-    """
-    from untaped.runtime.registry import (  # noqa: PLC0415
-        PluginCandidate,
-        PluginSpec,
-        compose,
-        owns_contracts,
-    )
-    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
-
-    if not offered:
-        return []
-    owners: dict[type, str] = {}
-    for plugin in compose(base).plugins:
-        if owns_contracts(plugin.spec):
-            owners.update(dict.fromkeys(plugin.spec.contracts(), plugin.spec.name))
-    built: list[PluginCandidate] = []
-    for name, instances in offered.items():
-        grouped: dict[str, list[Contract]] = {}
-        for instance in instances:
-            info = contract_of(type(instance))
-            if info is None or info.cls is type(instance):
-                raise TypeError(
-                    f"{instance!r} is not a provider (an instance of a contract subclass)"
-                )
-            if info.cls not in owners:
-                raise LookupError(f"no composed plugin declares {info.cls.__qualname__}")
-            grouped.setdefault(owners[info.cls], []).append(instance)
-        provides = {each: _offer(tuple(group)) for each, group in grouped.items()}
-        spec = PluginSpec(name=name, provides=provides)
-        built.append(PluginCandidate(distribution=f"untaped-{name}", name=name, target=spec))
-    return built
-
-
-def _offer(instances: tuple[Contract, ...]) -> Callable[[], Sequence[Contract]]:
-    def offer() -> tuple[Contract, ...]:
-        return instances
-
-    return offer
-
-
-def _candidates(
-    plugins: Sequence[str | PluginSpec | type[Plugin] | PluginCandidate],
-) -> list[PluginCandidate]:
-    from untaped.runtime.registry import (  # noqa: PLC0415
-        PluginCandidate,
-        PluginSpec,
-        discover_candidates,
-    )
+def _candidates(plugins: Sequence[str | type[Plugin] | PluginCandidate]) -> list[PluginCandidate]:
+    from untaped.runtime.registry import PluginCandidate, discover_candidates  # noqa: PLC0415
     from untaped.sdk.testing import plugin_candidate  # noqa: PLC0415
 
     if not plugins:
@@ -123,7 +66,7 @@ def _candidates(
     for each in plugins:
         if isinstance(each, PluginCandidate):
             found.append(each)
-        elif isinstance(each, PluginSpec | type):
+        elif isinstance(each, type):
             found.append(plugin_candidate(each))
         else:
             if installed is None:
@@ -233,11 +176,7 @@ def _bound(cls: type) -> BoundProvider:
 def _installed_for(cls: type) -> list[str]:
     """The installed plugin offering ``cls`` and the installed owners it provides for."""
     from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
-    from untaped.runtime.registry import (  # noqa: PLC0415
-        PluginSpec,
-        discover_candidates,
-        resolve_target,
-    )
+    from untaped.runtime.registry import discover_candidates, resolve_target  # noqa: PLC0415
     from untaped.sdk.plugin import Plugin  # noqa: PLC0415
 
     top = cls.__module__.partition(".")[0]
@@ -250,8 +189,6 @@ def _installed_for(cls: type) -> list[str]:
             spec = resolve_target(candidate.target)
         except ImportError, AttributeError:
             continue  # a target that does not resolve offers nothing
-        if isinstance(spec, PluginSpec):
-            return [candidate.name, *(owner for owner in spec.provides if owner in installed)]
         if isinstance(spec, type) and issubclass(spec, Plugin):
             return [candidate.name, *_offering(installed.values(), spec.fills)]
     raise LookupError(

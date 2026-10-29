@@ -78,8 +78,9 @@ def _given(home: Path) -> Callable[[], Path]:
 def _section_reader() -> Callable[[str, type[BaseModel]], BaseModel]:
     """A run's ``picks``: each section validated on first read, once for each pick it is read under.
 
-    Keyed by the pick, so a section read before a late ``--profile`` (one the
-    11.x seam's dispatch takes) is read again under the pick that follows.
+    Keyed by the pick, so a section read before a late ``--profile`` (one a
+    line read with no declaration kept takes once the root is composed) is
+    read again under the pick that follows.
     """
     picked: dict[tuple[str, tuple[str, ...]], BaseModel] = {}
 

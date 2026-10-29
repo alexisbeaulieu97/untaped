@@ -532,7 +532,7 @@ def repairs_at(app: App) -> bool | None:
 
     A group without a command of its own (its help, a bad flag) repairs when
     every command in it does. ``None`` when ``app`` is no declared command or
-    group: one mounted through the 11.x seam.
+    group.
     """
     decl = declared(app.default_command)
     if decl is not None:

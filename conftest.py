@@ -5,14 +5,13 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from pkgutil import resolve_name
 
 import pytest
 import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.utils import canonicalize_name
 
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec, discover_candidates
+from untaped.runtime.registry import PluginCandidate, discover_candidates
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.sink import drop_tasks
 from untaped.sdk._run import Run
@@ -45,19 +44,6 @@ def first_party_candidates() -> tuple[PluginCandidate, ...]:
             key=lambda c: c.name,
         )
     )
-
-
-@pytest.fixture(scope="session")
-def first_party_specs(
-    first_party_candidates: tuple[PluginCandidate, ...],
-) -> tuple[PluginSpec, ...]:
-    """Every first-party 11.x spec, resolved from its entry point, in name order.
-
-    A plugin moved to the 12.0 shape is a ``Plugin`` class instead, left out
-    here: its own ``test_plugin.py`` checks it, surface included.
-    """
-    resolved = (resolve_name(str(candidate.target)) for candidate in first_party_candidates)
-    return tuple(spec for spec in resolved if isinstance(spec, PluginSpec))
 
 
 @pytest.fixture(scope="session")

@@ -433,7 +433,7 @@ VALID_REASONS = frozenset(
         "duplicate-doctor-check",
         "doctor-check-failed",
         "malformed-entry-point",
-        "not-a-spec",
+        "not-a-plugin-class",
         "bad-app-factory",
         "bad-metadata",
         "bad-settings-keys",
@@ -1163,22 +1163,13 @@ def _check_own_declaration(spec: PluginSpec) -> None:
     _check_state_model(spec)
 
 
-def _check_factory(spec: PluginSpec, factory: Callable[[], App]) -> App:
+def _check_factory(factory: Callable[[], App]) -> App:
     try:
         staged = factory()
     except KindError as exc:
         raise _Quarantine(exc.reason, str(exc)) from None
     except Exception as exc:
-        raise _Quarantine(
-            "bad-app-factory",
-            f"app factory of plugin {spec.name!r} raised: {exc}",
-        ) from None
-    if not isinstance(staged, App):
-        raise _Quarantine(
-            "bad-app-factory",
-            f"app factory of plugin {spec.name!r} returned "
-            f"{type(staged).__name__}, expected cyclopts App",
-        )
+        raise _Quarantine("bad-app-factory", f"{type(exc).__name__}: {exc}") from None
     return staged
 
 
@@ -1197,7 +1188,7 @@ def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
     if factory is None:
         raise ConfigError(f"plugin {plugin.spec.name!r} has no commands to build")
     try:
-        return _check_factory(plugin.spec, factory)
+        return _check_factory(factory)
     except _Quarantine as failed:
         ref = plugin.plugin_ref
         return QuarantineRecord(
@@ -1374,7 +1365,7 @@ def _compose(
     core = _core(declared)
     state = _CompositionState(core)
     quarantined: dict[int, QuarantineRecord] = {}
-    provided: dict[int, PluginSpec | type[Plugin]] = {}
+    provided: dict[int, type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
     classes: set[int] = set()  # the plugin classes, as :func:`_refused` reads them
     contested = _replay(ordered, declared, replayed, quarantined)
@@ -1387,9 +1378,9 @@ def _compose(
             quarantined[index] = failed.to_record(candidate)
             if failed.plugin_class:
                 classes.add(index)
-        if declared is not None and (index in classes or _is_plugin_class(provided.get(index))):
+        if declared is not None and (index in classes or index in provided):
             raise _StaleDeclaration(candidate.name)
-    classes |= {index for index, each in provided.items() if not isinstance(each, PluginSpec)}
+    classes |= provided.keys()
     claimants = provided.keys() | replayed.keys() | contested
     for index, contest in _contested(ordered, claimants).items():
         quarantined.setdefault(index, contest.to_record(ordered[index]))
@@ -1398,7 +1389,7 @@ def _compose(
     if declared is None:
         claims, mount = _mounted(ordered, provided, state, quarantined)
     else:
-        claims, mount = _replayed(provided, replayed, declared)
+        claims, mount = _replayed(replayed, declared)
     plugins: list[RegisteredPlugin] = []
     for index, spec in claims.items():
         candidate = ordered[index]
@@ -1407,9 +1398,7 @@ def _compose(
                 _check_doctor_checks(spec, state)
             _check_skills(spec, state)
             factory = spec.app_factory
-            staged = (
-                None if factory is None or spec.help is not None else _check_factory(spec, factory)
-            )
+            staged = None if factory is None or spec.help is not None else _check_factory(factory)
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
             continue
@@ -1545,7 +1534,7 @@ def _core_alone() -> PluginDecl:
 
 def _mounted(
     ordered: Sequence[PluginCandidate],
-    provided: dict[int, PluginSpec | type[Plugin]],
+    provided: dict[int, type[Plugin]],
     state: _CompositionState,
     quarantined: dict[int, QuarantineRecord],
 ) -> tuple[dict[int, PluginSpec], Mount]:
@@ -1555,8 +1544,7 @@ def _mounted(
     names; one it composes reaches the rest of composition as the spec the
     mount builds for it (:func:`untaped.runtime.mount.plugin_spec`).
     """
-    claims = {index: spec for index, spec in provided.items() if isinstance(spec, PluginSpec)}
-    classes = {index: cls for index, cls in provided.items() if not isinstance(cls, PluginSpec)}
+    classes = dict(provided)
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
     from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
 
@@ -1588,24 +1576,20 @@ def _mounted(
             mounted[index] = spec
         if len(mounted) == len(classes):
             mount.problems.update(problems)
-            return dict(sorted({**claims, **mounted}.items())), mount
+            return dict(sorted(mounted.items())), mount
         # A class quarantined here must not shape the others' declaration
         # (a kind it owned, a command another one derives): compose without it.
         classes = {index: cls for index, cls in classes.items() if index in mounted}
 
 
 def _replayed(
-    provided: dict[int, PluginSpec | type[Plugin]],
-    replayed: Mapping[int, PluginDecl],
-    declared: Declaration,
+    replayed: Mapping[int, PluginDecl], declared: Declaration
 ) -> tuple[dict[int, PluginSpec], Mount]:
-    """Every claim as a spec, the plugin classes' read from ``declared``, none imported."""
-    claims = {index: spec for index, spec in provided.items() if isinstance(spec, PluginSpec)}
+    """Every claim as a spec, read from ``declared``, no plugin class imported."""
     from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
 
     mount = Mount.of(declared)
-    for index, plugin in replayed.items():
-        claims[index] = plugin_spec(mount, plugin.name)
+    claims = {index: plugin_spec(mount, plugin.name) for index, plugin in replayed.items()}
     return dict(sorted(claims.items())), mount
 
 
@@ -1660,26 +1644,32 @@ def candidate_entry_point(candidate: PluginCandidate) -> str:
 
 
 def _describe(value: object) -> str:
-    """How a ``not-a-spec`` detail names what an entry point resolved to."""
+    """How a ``not-a-plugin-class`` detail names what an entry point resolved to."""
     if callable(value):
         return f"the callable {getattr(value, '__qualname__', repr(value))!r}"
     return f"a {type(value).__name__}"
 
 
-def _module_of(candidate: PluginCandidate) -> str:
+def _package_of(candidate: PluginCandidate) -> str:
+    """The import package a ``not-a-plugin-class`` hint names: the target's, else the name's."""
     target = candidate.target
     if isinstance(target, str) and ":" in target:
-        return target.partition(":")[0]
+        return target.partition(":")[0].partition(".")[0]
     return "untaped_" + candidate.name.replace("-", "_")
 
 
-def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec | type[Plugin]:
-    """Resolve one candidate's entry point to its ``PluginSpec`` or plugin class.
+def _class_name(candidate: PluginCandidate) -> str:
+    """The class a ``not-a-plugin-class`` hint names: the plugin name in camel case."""
+    return "".join(part.capitalize() for part in candidate.name.split("-"))
 
-    The entry point names the spec itself (``untaped_acme:SPEC``) or a
-    12.0 plugin class (``untaped_acme.plugin:Acme``), which composition reads
-    with the other plugin classes (:func:`_mounted`); anything else, a
-    callable included, is ``not-a-spec`` and is never called.
+
+def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugin]:
+    """Resolve one candidate's entry point to its plugin class.
+
+    The entry point names the class (``untaped_acme.plugin:Acme``), which
+    composition reads with the other plugin classes (:func:`_mounted`);
+    anything else, an 11.x ``PluginSpec`` or a callable included, is
+    ``not-a-plugin-class`` and is never called.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
@@ -1707,21 +1697,13 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             failed.plugin_class = True
             raise
         return spec
-    if not isinstance(spec, PluginSpec):
-        raise _Quarantine(
-            "not-a-spec",
-            f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
-            f"names {_describe(spec)}, not a PluginSpec; name the module's SPEC constant "
-            f"('{_module_of(candidate)}:SPEC')",
-        )
-    _check_declaration(spec, state)
-    if candidate.name != spec.name:
-        raise _Quarantine(
-            "bad-metadata",
-            f"entry-point name {candidate.name!r} does not match plugin name {spec.name!r}",
-        )
-    _check_distribution(candidate)
-    return spec
+    what = "an 11.x PluginSpec" if isinstance(spec, PluginSpec) else _describe(spec)
+    raise _Quarantine(
+        "not-a-plugin-class",
+        f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
+        f"names {what}, not a plugin class; untaped 12.0 composes plugin classes: "
+        f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
+    )
 
 
 def _check_distribution(candidate: PluginCandidate) -> None:

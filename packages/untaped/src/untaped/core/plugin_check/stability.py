@@ -63,7 +63,7 @@ from cyclopts import App, Parameter
 
 from untaped.core.plugin_check.help_tree import as_groups
 from untaped.core.surface._sdk import foreign
-from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
 from untaped.runtime.root_options import resolve_command
 from untaped.runtime.settings import get_profile_settings_model, profile_section_models
 from untaped.sdk._schema import walk_settings
@@ -343,18 +343,19 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
 _UNDATED = "every deprecation is a promise with a date: add removed_in=<major> to its mark"
 
 
-def undated_violations(spec: PluginSpec) -> list[str]:
+def undated_violations(spec: PluginSpec, candidate: PluginCandidate) -> list[str]:
     """``undated-deprecation`` for each mark of ``spec``'s plugin that names no removal.
 
-    Read from its surface lines (:func:`untaped.core.surface.plugin_lines`), so
-    every kind the release check reads is covered by one walk: commands,
-    groups, aliases, settings, renamed keys and cache renames. Its ``sdk``
-    lines are :func:`deprecation_text_violations`' to report.
+    Read from the surface lines of ``candidate``, its entry point
+    (:func:`untaped.core.surface.plugin_lines`), so every kind the release
+    check reads is covered by one walk: commands, groups, aliases, settings,
+    renamed keys and cache renames. Its ``sdk`` lines are
+    :func:`deprecation_text_violations`' to report.
     """
     from untaped.core.surface import DeprecatedMark, SurfaceError, plugin_lines  # noqa: PLC0415
 
     try:
-        lines = plugin_lines(spec)
+        lines = plugin_lines(candidate)
     except SurfaceError as exc:
         return [
             f"{spec.name}::undated-deprecation::its marks can't be read from its surface "
