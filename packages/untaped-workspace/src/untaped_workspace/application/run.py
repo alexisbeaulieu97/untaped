@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import signal
 from collections import deque
 from collections.abc import Generator, Sequence
@@ -57,7 +58,8 @@ class RunInRepos:
                 if queue and not stop and len(pending) < self._parallel:
                     target = queue.popleft()
                     if target.path.is_dir():
-                        pending[pool.submit(self._execute, target, argv)] = target
+                        context = contextvars.copy_context()  # the command's run, per worker
+                        pending[pool.submit(context.run, self._execute, target, argv)] = target
                     else:
                         stop = self._finish(finished, self._missing(target)) or stop
                     continue

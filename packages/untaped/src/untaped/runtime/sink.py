@@ -18,12 +18,12 @@ Rules the sink keeps:
   warning and counts nothing.
 - **Muting.** ``--quiet`` mutes ``info``, ``success`` and progress, never a
   warning, a failure or a hint; ``debug`` prints only under ``--verbose``.
-- **Threads.** A worker writes to the run its context carries: one started
-  with a copied context (``bounded_map``, ``Parallel.map``) has its
-  invocation's. Owed, the 11.x seam: a line emitted off every run reaches
-  the most recently opened run still open (:func:`opened`), and with none
-  open a default text sink; both go with the seam. ``emit`` on a closed sink
-  writes the line plainly. The stream is ``sys.stderr`` read at each write,
+- **Threads.** A worker writes to the run its context carries, so every
+  thread untaped starts copies its starter's context (``bounded_map``,
+  ``Parallel.map``, a screen's jobs). A line emitted off every run (before
+  the root opens one, or from a thread that copied no context) goes to a
+  default text sink and counts nothing. ``emit`` on a closed sink writes
+  the line plainly. The stream is ``sys.stderr`` read at each write,
   so ``capsys`` and ``redirect_stderr`` see it.
 - **No deadlock.** The lock is never held across a callback or a thread
   ``join()``; nothing in this package logs; and a nested write from a thread
@@ -874,31 +874,22 @@ def forced_diagnostics() -> Literal["text", "json"] | None:
 
 
 def _default_policy() -> OutputPolicy:
-    """The default text sink's policy: the environment's, read at each line (owed, see below)."""
+    """The default text sink's policy: the environment's, read at each line."""
     return OutputPolicy(forced=forced_diagnostics())
 
 
-#: Owed, the 11.x seam: where a line emitted off every open run goes. It goes with the seam.
+#: Where a line off every run goes: before the root opens one, or from a bare thread.
 _DEFAULT = _RunSink(None)
-#: Owed, the 11.x seam: the open runs' outputs (:func:`opened`), in open order, for a
-#: line emitted off every run (a bare thread an 11.x path starts without copying its
-#: context). A worker gets its run from the invocation that started it, never from here;
-#: the list goes with the seam.
-_live: list[RunOutput] = []
-_live_lock = threading.Lock()
 
 
 def _output() -> RunOutput | None:
-    """The current run's output; off every run, the most recently opened one (owed)."""
+    """The current run's output (``None``: off every run)."""
     run = run_or_none()
-    if run is not None and isinstance(run.diag, RunOutput):
-        return run.diag
-    with _live_lock:
-        return _live[-1] if _live else None
+    return run.diag if run is not None and isinstance(run.diag, RunOutput) else None
 
 
 def current_sink() -> Sink:
-    """The current run's sink; off every run, the 11.x seam's fallbacks (owed); never ``None``."""
+    """The current run's sink; off every run, the default text sink; never ``None``."""
     output = _output()
     return output.sink if output is not None else _DEFAULT
 
@@ -913,22 +904,14 @@ def opened(output: RunOutput) -> Iterator[None]:
     ``untaped.deprecation`` record it carries, any other as a warning
     message, so JSON diagnostics stay one object per line. A warning
     something else records (``warnings.catch_warnings(record=True)``,
-    ``pytest.warns``) is left to it. The output is one of the open ones
-    (``_live``, owed) until the block ends, removed by identity wherever it sits.
+    ``pytest.warns``) is left to it.
     """
-    with _live_lock:
-        _live.append(output)
     shown = warnings.showwarning
     warnings.showwarning = _WarningRoute(shown)
     try:
         yield
     finally:
         warnings.showwarning = shown
-        with _live_lock:
-            for index in range(len(_live) - 1, -1, -1):
-                if _live[index] is output:
-                    del _live[index]
-                    break
         output.sink.close()
 
 

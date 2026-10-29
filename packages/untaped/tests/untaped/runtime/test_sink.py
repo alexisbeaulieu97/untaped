@@ -42,6 +42,12 @@ def _opened() -> AbstractContextManager[Run]:
     return entered(start_run())
 
 
+def _worker(target: Callable[[], None]) -> threading.Thread:
+    """A thread that starts in a copy of its starter's context, as untaped's own threads do."""
+    context = contextvars.copy_context()
+    return threading.Thread(target=lambda: context.run(target), daemon=True)
+
+
 def _bare_thread(target: Callable[[], None]) -> threading.Thread:
     """A thread that starts from an empty context, as a library's own thread would."""
     empty = contextvars.Context()
@@ -69,7 +75,7 @@ def _finishes(target: Callable[[], None]) -> None:
 # ---- (1) no interleaving ----------------------------------------------------
 
 
-def test_json_lines_from_the_main_and_a_bare_thread_never_interleave(
+def test_json_lines_from_the_main_and_a_worker_never_interleave(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
@@ -83,7 +89,7 @@ def test_json_lines_from_the_main_and_a_bare_thread_never_interleave(
 
     def run() -> None:
         with redirect_stderr(stream), _opened():
-            other = _bare_thread(failures)
+            other = _worker(failures)
             other.start()
             for n in range(10_000):
                 Diagnostics().warning(f"warning {n}")
@@ -110,7 +116,7 @@ def test_text_lines_stay_whole_around_the_spinner() -> None:
     def run() -> None:
         with redirect_stderr(stream), _opened():
             with Diagnostics().progress("Working"):
-                other = _bare_thread(failures)
+                other = _worker(failures)
                 other.start()
                 for n in range(2_000):
                     Diagnostics().warning(f"careful {n}")
@@ -226,21 +232,22 @@ def test_runs_overlapping_on_two_threads_keep_their_own_sinks() -> None:
     assert run_or_none() is None
 
 
-def test_a_bare_thread_off_every_run_reaches_the_last_run_opened() -> None:
-    """Owed, the 11.x seam: a bare thread emitting off every run finds whichever run is open."""
-    go = threading.Event()
+def test_a_bare_thread_writes_to_the_default_sink_and_counts_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A thread that copies no context is off every run: its line goes to the default sink."""
+    monkeypatch.delenv("UNTAPED_DIAGNOSTICS", raising=False)
+    stream = io.StringIO()
 
     def late() -> None:
-        go.wait(_DEADLINE)
         current_sink().emit(Failure.from_exception(ConfigError("late", category="auth")))
 
-    with _opened():
+    with redirect_stderr(stream), _opened():
         straggler = _bare_thread(late)
         straggler.start()
-    with _opened():
-        go.set()
         straggler.join(_DEADLINE)
-        assert failure_exit_code() == 4
+        assert failure_exit_code() == 1  # nothing counted: a failed run's floor, not auth's 4
+    assert stream.getvalue() == "error: late\n"
 
 
 # ---- (7) and (8) close and the default sink ---------------------------------
@@ -265,7 +272,7 @@ def test_close_twice_is_a_no_op_and_a_later_line_writes_plainly() -> None:
 def test_the_default_sink_writes_to_the_stderr_of_the_moment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Owed, the 11.x seam: a line off every run goes to the default text sink."""
+    """A line off every run goes to the default text sink."""
     assert run_or_none() is None
     current_sink().emit(Message(level="warning", message="unscoped"))
 

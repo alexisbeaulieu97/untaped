@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 from collections.abc import Mapping, Sequence
@@ -332,7 +333,7 @@ def test_fail_fast_reports_finished_failures_before_starting_more(
     class RecordingPool(ThreadPoolExecutor):
         def submit(self, fn: Any, /, *args: Any, **kwargs: Any) -> Any:
             future = super().submit(fn, *args, **kwargs)
-            futures[args[0].path.name] = future
+            futures[args[1].path.name] = future
             return future
 
     monkeypatch.setattr(run_module, "ThreadPoolExecutor", RecordingPool)
@@ -348,3 +349,35 @@ def test_fail_fast_reports_finished_failures_before_starting_more(
             assert not wait([futures["b"]], timeout=10).not_done
     assert [r.action for r in rows] == ["ran", "failed", "skipped"]
     assert [name for name, _ in runner.calls] == ["a", "b"]
+
+
+_STARTED_IN: contextvars.ContextVar[str] = contextvars.ContextVar("started_in", default="none")
+
+
+class ContextRunner(FakeRunner):
+    """Records which context each command runs in."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.seen: list[str] = []
+
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        self.seen.append(_STARTED_IN.get())
+        return super().run(argv, cwd=cwd, env=env, timeout=timeout)
+
+
+def test_each_worker_runs_in_the_invocations_context(tmp_path: Path) -> None:
+    """A worker's lines reach the command's run, so each copies the caller's context."""
+    runner = ContextRunner()
+    token = _STARTED_IN.set("the run")
+    try:
+        list(
+            RunInRepos(runner, parallel=2, timeout=5, fail_fast=False)(
+                _targets(tmp_path, "a", "b"), ["x"]
+            )
+        )
+    finally:
+        _STARTED_IN.reset(token)
+    assert runner.seen == ["the run", "the run"]

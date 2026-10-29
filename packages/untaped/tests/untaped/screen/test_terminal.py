@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import io
 import os
 import signal
@@ -733,3 +734,22 @@ def test_a_signal_ignored_on_purpose_stays_ignored() -> None:
         mp.undo()
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+
+
+_SPAWNED_IN: contextvars.ContextVar[str] = contextvars.ContextVar("spawned_in", default="none")
+
+
+@pytest.mark.parametrize("kind", ["background", "write"])
+def test_a_spawned_job_runs_in_its_spawners_context(kind: Any) -> None:
+    """A job writes to the run that started it, so its thread copies the context."""
+    seen: list[str] = []
+    done = threading.Event()
+    token = _SPAWNED_IN.set("the run")
+    try:
+        terminal.TerminalHost().spawn(
+            lambda: (seen.append(_SPAWNED_IN.get()), done.set()), kind=kind
+        )
+        assert done.wait(10)
+    finally:
+        _SPAWNED_IN.reset(token)
+    assert seen == ["the run"]
