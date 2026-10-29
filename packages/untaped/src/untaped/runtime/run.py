@@ -10,9 +10,9 @@ invocation (a library call, the testing kit) builds its own
 settings overlay is a child of the current run for a block
 (:func:`child_run`), and so is an invocation nested in a test's
 (:func:`invocation`), with its own output. Each member reads what the
-11.x runtime already provides: settings sections through
-``get_config_section`` (each section validated once per run and pick, on
-first read, so after every root option applies), the install's plugins through
+runtime provides: settings sections through ``get_config_section`` (each
+section validated once per run and pick, on first read, so after every root
+option applies), the install's plugins through
 ``installed_plugins()`` (read once, on first use), the home and the themed
 terminal (each resolved on first use: a home that doesn't resolve fails the
 read that needs it, through the run's own sink). The run's output

@@ -39,12 +39,11 @@ named in each violation line.
 
 - 0: return normally.
 - 1: raise an `UntapedError` (category `failed`, `not_found`, `invalid` or
-  `conflict`) inside `report_errors()`, or call `finish(any_failed)`; a 12.0
-  command yields a row whose `action` failed, or raises `Failed()` after them.
-- 2: raise `UsageError` inside `report_errors()`, or call `raise_usage()`
-  outside it.
-- 3: call `finish(any_failed, predicate_hit=True)`; a 12.0 command raises
-  `Matched()`.
+  `conflict`), yield a row whose `action` failed, or raise `Failed()` after
+  the rows.
+- 2: raise `UsageError(message)`; outside a command (a validator, option
+  parsing), call `raise_usage(message)`.
+- 3: raise `Matched()`.
 - 4: raise with category `config` (`ConfigError`), `auth` or `permission`.
 - 5: raise with category `unavailable` (`HttpTransportError` and 429/5xx
   statuses already are).
@@ -99,7 +98,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Message | Shape | Helper |
 |---|---|---|
 | Error | `error: <msg>`: lowercase, no trailing period | Raise an `UntapedError`; core prints it. |
-| Per-item error | `error: <item>: <msg>` | `resolve_each`, `batch_apply`, `ctx.diag.failure(exc, item=…)` (a failed row: `row.error`) |
+| Per-item error | `error: <item>: <msg>` | `ctx.diag.failure(exc, item=…)` (a failed row: `row.error`) |
 | Not found | `<noun> not found: 'x'; known: a, b` | `not_found("profile", name, known=names)` |
 | Quoted name | `'name'` | `q(name)` |
 | Count | `3 repos`, never `repo(s)` | `plural(3, "repo")` |
@@ -107,7 +106,7 @@ the helpers do this for you, so never print a JSON line yourself.
 | Warning | `warning: …` | `ctx.diag.warning(text)` |
 | Success | Muted by `-q` | `ctx.diag.success(text)` |
 | Summary | `<op>: 2 cloned, 1 failed` | `summary("sync", counts)` |
-| Decline | `cancelled; no changes made` (exit 1) | `raise OperationCancelledError`, or `finish(outcome)` after `batch_apply` |
+| Decline | `cancelled; no changes made` (exit 1) | A no to `self.confirm(...)`, or `raise OperationCancelledError` |
 | Empty list | `No <plural> found.`, in table format only | `self.output.empty("No repos found.")` |
 | Progress | `<label> · <phase> 3/12 · <text> (4s)`, composed by the sink: the label is a noun phrase without `…`; report counts, never a formatted fraction | `with ctx.diag.progress(label) as p:` then `p.update(text, phase=, done=, total=)`; an inner layer takes `progress: ProgressHandle = NO_PROGRESS` |
 | Styled line | A Rich `Text` line for streamed human output (live job events) | stdout: return the `Text` from an `Output` renderer (core prints it, in colour on a terminal); stderr: `ctx.diag.info(text, unmuted=True)`, or `ctx.diag.relay(text)` for another tool's output |
@@ -167,11 +166,7 @@ that prints records declares `Output[R]`, which gives it `--format`.
 
 ## Confirmation and stdin
 
-- Destructive batches go through `batch_apply(..., destructive=True,
-  assume_yes=yes)`. It previews, then confirms. On a decline it sets
-  `outcome.cancelled`, and `finish(outcome)` prints the decline line and
-  exits 1.
-- Single confirmations declare `confirm: Confirm` and ask
+- A command that asks before it writes declares `confirm: Confirm` and asks
   `self.confirm(question, preview=...)`: `--yes` answers it, `--dry-run`
   previews only, and a run with no terminal exits 2 naming `--yes`.
 - When stdin carries piped data, prompts read from the controlling terminal

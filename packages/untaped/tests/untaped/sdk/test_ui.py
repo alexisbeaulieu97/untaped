@@ -416,6 +416,13 @@ def test_can_prompt_follows_the_context_stdin(stdin: io.StringIO, expected: bool
     assert Ui(stdin=stdin).can_prompt is expected
 
 
+def test_a_terminal_process_stdin_does_not_open_a_piped_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.stdin", TtyStringIO())
+    assert Ui(stdin=io.StringIO()).can_prompt is False
+
+
 def test_can_prompt_is_true_inside_terminal_even_with_piped_stdin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

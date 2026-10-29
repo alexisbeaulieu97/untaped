@@ -31,7 +31,6 @@ NO_TWIN = frozenset({"scenarios", "snapshots"})
 STILL_IMPORTS_THE_RUN = frozenset(
     {
         "untaped.sdk._app_context",
-        "untaped.sdk._batch",
         "untaped.sdk._cli",
         "untaped.sdk._exports",
         "untaped.sdk._schema",

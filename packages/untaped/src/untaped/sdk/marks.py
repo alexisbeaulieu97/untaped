@@ -151,8 +151,6 @@ def deprecated(
     plugin's command (``"untaped other run"``), a setting key or prose. Both
     are keyword-only.
     Use it as ``stability = deprecated(...)``, or in a field's ``Annotated``.
-    The 11.x spellings (a command function or ``App``, ``@deprecated`` under
-    ``@app.command``) go with the 11.x plugin path.
     """
     return Deprecated(replacement=replacement, removed_in=removed_in)
 

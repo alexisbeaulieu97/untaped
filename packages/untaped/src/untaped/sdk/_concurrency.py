@@ -1,7 +1,6 @@
 """Bounded thread-pool mapping for standalone parallel work.
 
-Stdlib-only. ``resolve_each``/``batch_apply`` stay sequential by design —
-this is the standalone primitive for callers that manage their own loop.
+Stdlib-only: the standalone primitive for callers that manage their own loop.
 :func:`bounded_iter` is the same work as a generator, behind
 ``Parallel.map``; :func:`bounded_map` is its 11.x callback form.
 """
