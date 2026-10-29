@@ -8,7 +8,7 @@ from untaped.sdk import dir_bytes
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepo, Worktree
+from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Worktree
 
 
 class StatusCorpus:
@@ -24,14 +24,14 @@ class StatusCorpus:
 class CleanCorpus:
     """Release repositories from the corpus: each goes from disk unless another plugin uses it.
 
-    The row says ``removed`` with the bytes it freed in ``disk_bytes``, or
+    The outcome is ``deleted`` with the bytes it freed in ``disk_bytes``, or
     ``released`` with who kept the repo in ``kept``.
     """
 
     def __init__(self, corpus: GitCorpus) -> None:
         self._corpus = corpus
 
-    def __call__(self, *, repo: CorpusRepo) -> CorpusRepo:
+    def __call__(self, *, repo: CorpusRepo) -> CacheDeleteOutcome:
         return self._corpus.clean_repo(repo)
 
 

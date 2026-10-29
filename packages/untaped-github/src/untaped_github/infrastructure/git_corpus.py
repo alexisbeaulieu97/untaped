@@ -57,7 +57,7 @@ from untaped_github.domain import (
     profile_join,
 )
 from untaped_github.errors import GitCorpusError
-from untaped_github.records import CorpusRepo, Worktree
+from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Worktree
 
 DEFAULT_TIMEOUT = 60.0
 _PLAIN_ROOTS = ("refs/heads/", "refs/tags/")
@@ -373,22 +373,19 @@ class GitCorpusCache:
             )
         return None
 
-    def clean_repo(self, repo: CorpusRepo) -> CorpusRepo:
+    def clean_repo(self, repo: CorpusRepo) -> CacheDeleteOutcome:
         """Release one repo: it goes when nobody else uses it, else github's part of it goes.
 
-        The row says ``removed`` with the bytes freed in ``disk_bytes``, or
-        ``released`` with who kept the repo in ``kept``.
+        ``deleted`` with the bytes freed in ``disk_bytes``, or ``released``
+        with who kept the repo in ``kept``.
         """
         if repo.clone_url is None:
             raise GitCorpusError(f"{repo.full_name} has no clone_url in its corpus metadata")
         outcome = self._store(repo.clone_url).release()
+        row = {"full_name": repo.full_name, "ref": repo.ref, "path": repo.path}
         if isinstance(outcome, Removed):
-            return repo.model_copy(
-                update={"status": "removed", "kept": None, "disk_bytes": outcome.freed_bytes}
-            )
-        return repo.model_copy(
-            update={"status": "released", "kept": outcome.kept(), "disk_bytes": 0}
-        )
+            return CacheDeleteOutcome(action="deleted", disk_bytes=outcome.freed_bytes, **row)
+        return CacheDeleteOutcome(action="released", kept=outcome.kept(), **row)
 
     def materialize_worktree(self, repo: CorpusRepoTarget, *, ref: str | None) -> Worktree:
         """Check one stored ref out in a worktree github owns, detached."""

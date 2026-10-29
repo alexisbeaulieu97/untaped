@@ -122,38 +122,40 @@ class CorpusRepo(Repo):
     path: str = Field(
         description="The repo in the git plugin's repo store, which other plugins may share."
     )
-    status: Annotated[
-        Literal["synced", "cached", "released", "removed"],
-        Status(success=("synced", "removed")),
-    ] = Field(
+    status: Annotated[Literal["synced", "cached"], Status(success=("synced",))] = Field(
         default="cached",
-        description=(
-            "`cached` for a stored copy, `synced` for one just fetched; on a `cache delete` or "
-            "`prune` row, `removed` when nothing else used the repo, `released` when github's "
-            "refs, metadata and worktrees went but the repo stays."
-        ),
+        description="`cached` for a stored copy, `synced` for one just fetched.",
     )
-    kept: str | None = Field(
+    fetched_at: Annotated[UtcTimestamp | None, Age] = None
+    profile: str = "default"
+    ref_globs: tuple[str, ...] = ()
+    disk_bytes: Annotated[int, Bytes] = Field(
+        default=0, description="The stored copy's size on disk."
+    )
+
+
+class CacheDeleteOutcome(OutcomeRecord):
+    """What ``cache delete`` or ``cache prune`` did to one stored copy.
+
+    ``action`` is ``deleted`` when nothing else used the repo (``disk_bytes``
+    freed), ``released`` when github's refs, metadata and worktrees went but
+    the repo stays for another holder (``kept`` says which), ``planned`` under
+    --dry-run (``disk_bytes`` what deleting would free), or ``failed``
+    (``error`` says why, and the copy stays).
+    """
+
+    full_name: Annotated[str, Column]
+    ref: Annotated[str, Column]
+    action: Annotated[str, Column, Status(success=("deleted", "released"))]
+    disk_bytes: Annotated[int, Bytes, Column] = 0
+    kept: Annotated[str | None, Column] = Field(
         default=None,
         description=(
             "What still holds a `released` repo: other plugins, worktrees untaped didn't "
             "add, local branches or a stash."
         ),
     )
-    fetched_at: Annotated[UtcTimestamp | None, Age] = None
-    profile: str = "default"
-    ref_globs: tuple[str, ...] = ()
-    detail: str | None = Field(
-        default=None,
-        description=(
-            "On a `cache delete` or `prune` row: what a `removed` repo freed, or what "
-            "kept a `released` one."
-        ),
-    )
-    disk_bytes: Annotated[int, Bytes] = Field(
-        default=0,
-        description="The stored copy's size; on a `cache delete` row, what a `removed` repo freed.",
-    )
+    path: str
 
 
 class SweepRepo(Repo):
@@ -335,6 +337,7 @@ class UserHit(Record):
 
 __all__ = [
     "REPO_HIT_COLUMNS",
+    "CacheDeleteOutcome",
     "Code",
     "CorpusRepo",
     "Issue",
