@@ -1,7 +1,7 @@
 """The example provider as a whole, tested the way any third-party plugin would be.
 
-``install(Library)`` also composes ``shelf``, the owner library declares
-under its ``shelf`` extra, so the owner's commands and checks run against it.
+``install(Library)`` also composes ``shelf``, the owner library requires, so
+the owner's commands and checks run against it.
 """
 
 from __future__ import annotations

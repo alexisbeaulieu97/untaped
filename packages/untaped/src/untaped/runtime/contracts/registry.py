@@ -24,7 +24,7 @@ from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import (
     CompositionResult,
     admits,
-    owner_requirement,
+    plain_requirements,
     range_text,
 )
 from untaped.runtime.settings import (
@@ -274,8 +274,8 @@ def _out_of_range(state: _State, provider: ComposedPlugin, owner: str) -> str | 
     )
     if installed is None or not installed.distribution_version:
         return None
-    requires = provider.plugin_ref.requires_dist
-    requirement = owner_requirement(requires, owner, installed.distribution)
+    plain = plain_requirements(provider.plugin_ref.requires_dist, installed.distribution)
+    requirement = plain[0] if plain else None
     if requirement is None or admits(requirement, installed.distribution_version):
         return None
     return (

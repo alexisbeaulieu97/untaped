@@ -15,8 +15,8 @@ The models a kind's fields reach get the same lines, as
 ``record <owner>.<ClassName>``, written when a written kind reaches them.
 Core's diagnostic kinds (``untaped.failure``, ``untaped.progress``...) are
 printed on stderr and parsed like records, with a ``level`` choice line from
-their class constant. A 12.0 plugin's kinds come from its composed
-declaration; an 11.x plugin's records join when the plugin moves.
+their class constant. A plugin's kinds come from its composed
+declaration.
 """
 
 from __future__ import annotations

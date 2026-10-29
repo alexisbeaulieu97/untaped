@@ -31,12 +31,7 @@ def _target(name: str) -> str:
 
 def _requires(name: str) -> tuple[str, ...]:
     """The example's ``Requires-Dist``, read from its pyproject.toml."""
-    project = _project(name)
-    extras = project.get("optional-dependencies", {})
-    return (
-        *project["dependencies"],
-        *(f'{line}; extra == "{extra}"' for extra, lines in extras.items() for line in lines),
-    )
+    return tuple(_project(name)["dependencies"])
 
 
 def main() -> None:

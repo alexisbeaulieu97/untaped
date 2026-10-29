@@ -213,13 +213,8 @@ def _versioned(owner_version: str, *requires: str) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "requires",
-    ["untaped-shelf>=1,<2; extra == 'shelf'", "untaped-shelf>=1,<2"],
-    ids=["extra", "plain"],
-)
-def test_an_owner_outside_the_providers_range_quarantines_its_offer(requires: str) -> None:
-    _versioned("2.0.0", requires)
+def test_an_owner_outside_the_providers_range_quarantines_its_offer() -> None:
+    _versioned("2.0.0", "untaped-shelf>=1,<2")
     [entry] = offers(_info())
     assert isinstance(entry, Quarantined)
     assert entry.reason == "owner-out-of-range"
@@ -232,29 +227,16 @@ def test_an_owner_outside_the_providers_range_quarantines_its_offer(requires: st
 @pytest.mark.parametrize(
     "requires",
     [
-        ("untaped-shelf>=1,<2; extra == 'shelf'",),
-        ("untaped-shelf>=1,<2",),  # a plain dependency, as a 12.0 provider declares it
-        ("untaped-shelf>=9; extra == 'other'",),  # under another extra: not the owner range
+        ("untaped-shelf>=1,<2",),  # a plain dependency, as a provider declares it
+        ("untaped-shelf>=9; extra == 'shelf'",),  # under an extra: not the owner range
         (),
     ],
-    ids=["in-range", "plain", "other-extra", "undeclared"],
+    ids=["in-range", "extra", "undeclared"],
 )
 def test_an_owner_in_range_or_without_a_declared_range_is_asked(requires: tuple[str, ...]) -> None:
     _versioned("1.4.0", *requires)
     [entry] = offers(_info())
     assert not isinstance(entry, Quarantined)
-
-
-def test_an_owner_extra_behind_a_marker_the_environment_cannot_fill_adds_no_requirement() -> None:
-    from untaped.runtime.registry import owner_requirement
-
-    lines = [
-        'untaped-shelf>=1; extra == "shelf" and "x" in extras',
-        'untaped-shelf>=2; extra == "shelf"',
-    ]
-    found = owner_requirement(lines, "shelf")
-    assert found is not None
-    assert str(found.specifier) == ">=2"
 
 
 class _Lending(BookSource, Provider):

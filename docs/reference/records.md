@@ -30,7 +30,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `setup plan` | `untaped.setup_step` |
 | `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`) |
 | `setup prune` | `untaped.prune_outcome` (`what` `reference` or `folder`, `target_path`, `bytes`, `detail`; `action` `planned` under `--dry-run`, `removed`, `kept` with why in `detail`, `skipped` when it changed since the preview, or `failed` with `error`) |
-| `plugin list` | `untaped.installed_plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions it requires, canonical, including an extra named after an owner it fills) and `fills` (those owners)) |
+| `plugin list` | `untaped.installed_plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions a default install of it pulls in, canonical) and `fills` (the owners whose contracts it fills)) |
 | `plugin contracts` | `untaped.contract_method` |
 | `plugin rank` | `untaped.setting_outcome` (key `<owner>.extensions`) |
 | `plugin new` | `untaped.scaffold_outcome` (one per file, its `target_path`) |

@@ -455,7 +455,7 @@ def test_providers_reading_settings_get_the_section_the_test_writes(install: Ins
         install(Reader, providers={"fake": (Configured, Other)})
 
 
-def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
+def test_an_installed_plugin_brings_the_owner_it_requires(
     install: Installer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from untaped.runtime import registry
@@ -465,7 +465,7 @@ def test_an_installed_plugin_brings_the_owner_it_declares_under_its_extra(
         distribution="untaped-lender",
         name="lender",
         target=_target(Lender),
-        requires_dist=('untaped-reader>=1; extra == "reader"', 'untaped-gone; extra == "gone"'),
+        requires_dist=("untaped-reader>=1", 'untaped-gone; extra == "gone"'),
     )
     monkeypatch.setattr(registry, "discover_candidates", lambda: (owner, provider))
     lender = install(Lender, settings=[Pages()])  # the owner's section is writable too
@@ -485,7 +485,7 @@ def test_a_brought_plugin_that_fails_to_import_is_composition_s_to_report(
         distribution="untaped-lender",
         name="lender",
         target=_target(Lender),
-        requires_dist=('untaped-boom>=1; extra == "boom"',),
+        requires_dist=("untaped-boom>=1",),
     )
     monkeypatch.setattr(registry, "discover_candidates", lambda: (boom, provider))
     lender = install(Lender)  # reading boom's settings raises nothing here

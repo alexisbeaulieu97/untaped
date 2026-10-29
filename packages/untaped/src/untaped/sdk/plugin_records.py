@@ -53,8 +53,7 @@ class InstalledPlugin(Record):
     requires: tuple[str, ...] = Field(
         default=(),
         description=(
-            "The distributions it requires, canonical names: what a default install pulls "
-            "in, plus what an extra named after an owner it fills adds."
+            "The distributions it requires, canonical names: what a default install pulls in."
         ),
     )
     fills: tuple[str, ...] = Field(
@@ -138,7 +137,7 @@ def _ready(plugin: ComposedPlugin, candidate: PluginCandidate | None) -> Install
         package=package,
         source_dir=None if source_dir is None else source_dir.resolve(),
         tests_dir=tests_dir,
-        requires=tuple(sorted(declared_distributions(plugin.plugin_ref.requires_dist, fills))),
+        requires=tuple(sorted(declared_distributions(plugin.plugin_ref.requires_dist))),
         fills=tuple(sorted(fills)),
         root=plugin.root,
     )

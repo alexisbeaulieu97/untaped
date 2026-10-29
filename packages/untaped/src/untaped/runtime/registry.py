@@ -300,73 +300,19 @@ def plain_requirements(requires_dist: Sequence[str], distribution: str) -> list[
     ]
 
 
-def owner_requirement(
-    requires_dist: Sequence[str], owner: str, distribution: str | None = None
-) -> Requirement | None:
-    """The requirement a provider declares on ``owner``'s distribution.
-
-    A 12.0 provider requires the plugin it fills contracts for in its plain
-    dependencies, since a fill subclasses the owner's contract; an 11.x one
-    declares it under an extra named after the owner (``untaped-acme[workspace]``).
-    ``distribution`` is ``untaped-<owner>`` by default. A plain requirement
-    (:func:`plain_requirements`) wins. The ``provides-requirement`` convention
-    and the ``owner-out-of-range`` quarantine read this one requirement.
-    """
-    wanted = canonicalize_name(distribution or f"untaped-{owner}")
-    plain = plain_requirements(requires_dist, wanted)
-    if plain:
-        return plain[0]
-    found: Requirement | None = None
-    for line in requires_dist:
-        parsed = parse_requirement(line)
-        if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
-            continue
-        # The environment fills every other variable, so ``extra`` decides; a marker
-        # naming one it can't (``extras``) adds no owner requirement.
-        try:
-            added = parsed.marker.evaluate({"extra": owner})
-            added = added and not parsed.marker.evaluate({"extra": ""})
-        except KeyError:
-            continue
-        if added and found is None:
-            found = parsed
-    return found
-
-
-def declared_distributions(
-    requirements: Sequence[str], extras: frozenset[str] = frozenset()
-) -> set[str]:
+def declared_distributions(requirements: Sequence[str]) -> set[str]:
     """Canonical names of the distributions ``requirements`` (its ``Requires-Dist``) declare.
 
-    That is what a default install pulls in, plus what an extra in
-    ``extras`` (the owner keys the plugin fills) adds: the owner a provider
-    declares under ``untaped-acme[<owner>]``. Other extra-guarded
-    requirements are left out; other markers (``python_version``,
-    ``sys_platform``…) are ignored; invalid strings are skipped.
+    That is what a default install pulls in: extra-guarded requirements are
+    left out; other markers (``python_version``, ``sys_platform``…) are
+    ignored; invalid strings are skipped.
     """
     names: set[str] = set()
     for requirement in requirements:
         parsed = parse_requirement(requirement)
-        if parsed is None:
-            continue
-        if (
-            parsed.marker is None
-            or not mentions_extra(str(parsed.marker))
-            or _added_by(parsed, extras)
-        ):
+        if parsed is not None and (parsed.marker is None or not mentions_extra(str(parsed.marker))):
             names.add(canonicalize_name(parsed.name))
     return names
-
-
-def _added_by(requirement: Requirement, extras: frozenset[str]) -> bool:
-    """Whether one of ``extras`` turns ``requirement`` on."""
-    marker = requirement.marker
-    if marker is None:
-        return False
-    try:
-        return any(marker.evaluate({"extra": extra}) for extra in extras)
-    except KeyError:  # a variable the environment can't fill (``extras``)
-        return False
 
 
 def mentions_extra(marker: str) -> bool:
@@ -999,7 +945,7 @@ def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
     """Whether ``obj`` is a 12.0 plugin class, without importing the plugin interface.
 
     A plugin class subclasses :class:`untaped.sdk.plugin.Plugin`, so its import
-    loaded that module; a 11.x composition never pays for it.
+    loaded that module; an entry point naming anything else never pays for it.
     """
     module = sys.modules.get("untaped.sdk.plugin")
     return module is not None and isinstance(obj, type) and issubclass(obj, module.Plugin)
@@ -1076,8 +1022,8 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
 
     The entry point names the class (``untaped_acme.plugin:Acme``), which
     composition reads with the other plugin classes (:func:`_mounted`);
-    anything else, an 11.x ``SPEC`` or a callable included, is
-    ``not-a-plugin-class`` and is never called.
+    anything else (an object, a function) is ``not-a-plugin-class`` and is
+    never called.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
