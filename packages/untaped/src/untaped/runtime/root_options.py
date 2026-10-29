@@ -735,10 +735,9 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     Substituting the one registered name that the loose match would pick
     keeps the lenient spelling working and gives help the canonical chain.
     Exact names, cyclopts aliases and ambiguous spellings are left for
-    cyclopts to handle. Spellings registered with
-    :func:`untaped.sdk.marks.deprecated_alias` are rewritten too, with a warning:
-    command aliases along the chain, then option aliases of the selected
-    command (up to a ``--`` separator).
+    cyclopts to handle. Command names registered with
+    :func:`untaped.sdk.marks.deprecated_alias` along the chain are rewritten
+    too, with a warning.
     """
     rewritten = list(tokens)
     current = app
@@ -756,38 +755,17 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
         path = chain[-1][0] if chain else ()
         aliases = deprecated_aliases(current)
         if token not in current and token in aliases:
-            _warn_alias(("untaped", *path), token, aliases[token], command=True)
+            _warn_alias(("untaped", *path), token, aliases[token])
         token = rewritten[index] = name
         current = current[token]
         chain.append(((*path, token), current))
     path = ("untaped", *(chain[-1][0] if chain else ()))
     select_command(app, current, path)
-    if not consumed:
-        _rewrite_option_aliases(current, path, rewritten, index)
     if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
         _warn_deprecated_command(app, chain)
         if not consumed:
             _warn_deprecated_options(app, current, path, rewritten[index:])
     return rewritten
-
-
-def _rewrite_option_aliases(
-    command: App, path: tuple[str, ...], tokens: list[str], start: int
-) -> None:
-    """Rewrite ``command``'s deprecated option spellings in ``tokens[start:]`` (up to a ``--``).
-
-    ``path`` is the command's full path (``("untaped", "logs")``).
-    """
-    options = {old: alias for old, alias in deprecated_aliases(command).items() if old[0] == "-"}
-    if not options:
-        return
-    for position in range(start, len(tokens)):
-        name, separator, value = tokens[position].partition("=")
-        if name == "--":
-            break
-        if name in options:
-            _warn_alias(path, name, options[name], command=False)
-            tokens[position] = f"{options[name].new}{separator}{value}"
 
 
 def _warn_deprecated_options(
@@ -817,16 +795,15 @@ def _warn_deprecated_options(
         )
 
 
-def _warn_alias(path: tuple[str, ...], old: str, alias: Alias, *, command: bool) -> None:
-    """Warn that ``old`` is a deprecated spelling at ``path``, naming both spellings in full.
+def _warn_alias(path: tuple[str, ...], old: str, alias: Alias) -> None:
+    """Warn about the old command name ``old`` under ``path``, naming both spellings in full.
 
-    Both sides carry the full path (`` `untaped jira me` ``, `` `untaped logs -F` ``);
-    the id is the alias's surface line.
+    Both sides carry the full path (`` `untaped jira me` ``); the id is the
+    alias's surface line.
     """
     prefix = " ".join(path)
-    new = f"{prefix} {alias.new}" if command else alias.new
     notify_deprecation(
-        f"cli {prefix} {old} -> {new}",
+        f"cli {prefix} {old} -> {prefix} {alias.new}",
         f"`{prefix} {old}`",
         removed_in=alias.removed_in,
         owner=path_owner(path),

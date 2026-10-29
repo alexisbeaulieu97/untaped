@@ -180,7 +180,6 @@ def test_the_limit_is_the_major_main_carries(version: str, limit: int) -> None:
 KINDS = [
     Line("cli untaped awx put", DeprecatedMark(12, "untaped awx set")),
     Line("cli untaped jira me -> untaped jira whoami", DeprecatedMark(12)),
-    Line("cli untaped jira logs -F -> --follow", DeprecatedMark(12)),
     Line("cli untaped awx test run --dry-run switch", DeprecatedMark(12, "--limit 1 --yes")),
     Line("cfg acme.old_mode boolean default=false", DeprecatedMark(12, "acme.mode")),
     Line(

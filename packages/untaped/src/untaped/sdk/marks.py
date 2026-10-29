@@ -784,34 +784,27 @@ def stability_name(mark: Stability | None) -> SettingStability:
     return "experimental" if isinstance(mark, Experimental) else "deprecated"
 
 
-# --- renamed commands and options -------------------------------------------
+# --- renamed commands -------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Alias:
-    """A deprecated spelling's target and the major that removes the spelling."""
+    """A deprecated command name's new name and the major that removes the old one."""
 
     new: str
     removed_in: int | None = None
 
 
 def deprecated_alias(app: App, old: str, new: str, *, removed_in: int | None = None) -> None:
-    """Keep ``old`` working as a hidden, deprecated spelling of ``new`` on ``app``.
+    """Keep command name ``old`` working under ``app`` as a hidden, deprecated ``new``.
 
-    For a renamed command or group, ``app`` is its parent and the names are
-    command names (``deprecated_alias(jira_app, "me", "whoami", removed_in=12)``).
-    For a renamed option or short flag, ``app`` is the command itself and the
-    names are flags (``deprecated_alias(logs_app, "-f", "--follow", removed_in=12)``).
-    The root shell rewrites the old token to the new one before dispatch and
-    prints a warning naming both on stderr; the old spelling never appears in
-    ``--help``. Aliases apply to invocations through the ``untaped`` root
-    (test them with ``build_root_app``). ``removed_in`` is the major that
-    removes the old spelling; leaving it out is allowed until untaped 12 and
-    reads "a future major release".
+    Mount calls it for each ``Command.aliases`` entry (``app`` is the
+    command's parent). The root shell rewrites the old token to the new one
+    before dispatch and warns naming both on stderr; the old spelling never
+    appears in ``--help``. ``removed_in`` is the major that removes the old
+    spelling; ``None`` reads "a future major release".
     """
     check_removed_in(removed_in)
-    if old.startswith("-") != new.startswith("-"):
-        raise ValueError(f"alias {old!r} -> {new!r} mixes a command and an option")
     key = id(app)
     if key not in _DEPRECATED_ALIASES:
         _DEPRECATED_ALIASES[key] = {}

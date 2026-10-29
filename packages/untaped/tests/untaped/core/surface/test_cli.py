@@ -76,7 +76,6 @@ def _root() -> App:
         """Hidden, so not promised."""
 
     deprecated_alias(demo, "fetch", "get")
-    deprecated_alias(demo["get"], "--fmt", "--format")
     apply_marks(root)
     return root
 
@@ -96,7 +95,6 @@ def _of(lines: set[str], command: str) -> list[str]:
 
 def test_a_command_with_every_option_shape(lines: set[str]) -> None:
     assert _of(lines, "get") == [
-        "cli untaped demo get --fmt -> --format  [deprecated]",
         "cli untaped demo get --format VALUE default=table",
         "cli untaped demo get --format alias=-f",
         "cli untaped demo get --format choice=json",

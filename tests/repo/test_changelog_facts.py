@@ -97,7 +97,6 @@ def test_is_release_pr(version: str, text: str, fragments: list[str], expected: 
         ("cli untaped awx put", "awx put"),
         ("cli untaped awx test run --dry-run switch", "awx test run --dry-run"),
         ("cli untaped jira me -> untaped jira whoami", "jira me"),
-        ("cli untaped jira logs -F -> --follow", "jira logs -F"),
         ("cli untaped plugin check [NAME]@1 default=unset", "plugin check"),
         ("cfg ansible.stale_after_seconds -> ansible.caches.index.max_age_seconds", None),
         ("cfg acme.old_mode boolean default=false", "acme.old_mode"),
@@ -139,7 +138,7 @@ def test_a_raised_major_is_a_fact() -> None:
         Line("sdk untaped.sdk.report_error(exc)", DeprecatedMark(13, "Diagnostics.failure")),
         Line("cli untaped awx put", DeprecatedMark(13)),  # undated at the baseline: nothing moved
         Line("cli untaped jira me -> untaped jira whoami", DeprecatedMark(12)),
-        Line("cli untaped jira logs -F -> --follow", DeprecatedMark(14)),
+        Line("cli untaped awx test run --dry-run switch", DeprecatedMark(14)),
     )
 
     assert changelog.postponement_facts(baseline, current) == [
