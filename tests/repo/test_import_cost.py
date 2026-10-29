@@ -104,26 +104,37 @@ _DISPATCH_PROBE = (
     "from untaped.runtime.bootstrap import main\n"
     "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
     "    main({argv!r})\n"
-    "cli = sorted(\n"
+    "code = sorted(\n"
     "    m for m in sys.modules\n"
-    "    if m.startswith('untaped_') and 'cli' in m.split('.')\n"
+    "    if m.startswith('untaped_')\n"
+    "    and m.partition('.')[2].split('.')[0] in ('commands', 'application', 'api')\n"
     ")\n"
-    "print(' '.join(cli))\n"
+    "print(' '.join(code))\n"
 )
 
 
-def _plugin_cli_modules(argv: list[str]) -> set[str]:
-    """Plugin CLI modules a clean ``untaped <argv>`` run imports (httpx never)."""
-    # The verdict's heavy-module line follows the CLI line; empty lines strip away.
-    cli_line, _, heavy_line = _loaded_heavy_modules(_DISPATCH_PROBE.format(argv=argv)).partition(
-        "\n"
-    )
-    assert "httpx" not in heavy_line.split(",")
-    return set(cli_line.split())
+def _plugin_code_modules(argv: list[str], home: Path) -> tuple[set[str], set[str]]:
+    """Plugin command, application and API modules ``untaped <argv>`` imports: fresh, then kept.
+
+    The first start in ``home`` composes afresh (importing each plugin class);
+    the second reads the declaration cache, as a user's starts do. httpx is
+    never imported.
+    """
+    env = {**os.environ, "UNTAPED_HOME": str(home)}
+    probe = _DISPATCH_PROBE.format(argv=argv)
+    starts = []
+    for _start in ("fresh", "kept"):
+        # The verdict's heavy-module line follows the code line; empty lines strip away.
+        code_line, _, heavy_line = _loaded_heavy_modules(probe, env).partition("\n")
+        assert "httpx" not in heavy_line.split(",")
+        starts.append(set(code_line.split()))
+    return starts[0], starts[1]
 
 
-def test_root_help_imports_no_plugin_cli() -> None:
-    assert _plugin_cli_modules(["--help"]) == set()
+def test_a_kept_root_help_imports_no_plugin_code(tmp_path: Path) -> None:
+    fresh, kept = _plugin_code_modules(["--help"], tmp_path)
+    assert fresh  # the probe names modules a start can import
+    assert kept == set()
 
 
 _STARTUP_PROBE = (
@@ -190,9 +201,12 @@ _STARTUP_PROBE = (
 #: declaration cache design accepts. Core reads a 12.0 plugin's credential
 #: names from its declaration, so the warm start imports jira's settings and
 #: nothing more: 138 and 691, 2026-10-26, so the budget goes to 141 and the
-#: total to 694. With dotfiles and git moved: 137 and 690, 2026-10-27.
-_TOTAL_BUDGET = 694
-_UNTAPED_BUDGET = 141
+#: total to 694. With dotfiles and git moved: 137 and 690, 2026-10-27. With
+#: every plugin moved and ansible's settings no longer importing github's
+#: application code: 107 and 649, 2026-10-29, so the budget goes to 110 and
+#: the total to 652.
+_TOTAL_BUDGET = 652
+_UNTAPED_BUDGET = 110
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.
