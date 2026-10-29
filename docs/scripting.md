@@ -117,9 +117,7 @@ line printed; `--verbose` prints every update and `--quiet` none.
   `untaped`, an unknown command, a group's help) takes `--format` from the
   line, then `UNTAPED_FORMAT`, then `untaped.ui.format`. An error in a root
   option (a malformed `--profile`, `-v -q`) comes before any of that is read:
-  only a `--format` on the command line or `UNTAPED_FORMAT` switches it, as
-  for what a command a plugin still mounts the 11.x way prints before it
-  parses.
+  only a `--format` on the command line or `UNTAPED_FORMAT` switches it.
 
 ```json
 {"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth login awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}, "fix_by": "user"}

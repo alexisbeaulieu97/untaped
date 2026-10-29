@@ -120,11 +120,11 @@ def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> I
     found = candidate.distribution_version if candidate else _installed_version(distribution)
     version = found or _UNKNOWN
     name = spec.name
-    fills = frozenset(spec.provides)
+    fills = frozenset(spec.fill_owners)
     package: str | None
     source_dir: Path | None
     try:
-        package, source_dir = package_of(spec, None if candidate is None else candidate.target)
+        package, source_dir = package_of(spec)
     except LookupError:
         package, source_dir = None, None
     tests_dir = None if source_dir is None else _tests_dir(source_dir, name)
@@ -152,7 +152,7 @@ def _installed_version(distribution: str) -> str | None:
 
 
 def _entry_package(candidate: PluginCandidate) -> str | None:
-    """The package a quarantined plugin's entry point names (``package:SPEC``)."""
+    """The package a quarantined plugin's entry point names (``package.plugin:Class``)."""
     from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415 - not at startup
 
     return candidate_package(candidate.target)

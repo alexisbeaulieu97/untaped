@@ -9,11 +9,15 @@ import importlib
 from textwrap import dedent
 
 import pytest
-from cyclopts import App
+from pydantic import BaseModel
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.plugin_check.support import Install
 from untaped.core.plugin_check.structure import structure_class_violations, unimportable
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.composed import ComposedPlugin
+from untaped.runtime.composition import PluginEntry
+from untaped.runtime.declaration import target_of
+from untaped.runtime.mount import compose_plugins
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -59,11 +63,7 @@ def _violations(install: Install, files: dict[str, str]) -> list[str]:
     """Structure class violations of the package ``acme`` written from ``files``."""
     site = install(files)
     settings = importlib.import_module("acme.settings")
-    spec = PluginSpec(
-        name="acme",
-        app_factory=App,
-        settings=settings.AcmeSettings,
-    )
+    spec = _composed(settings.AcmeSettings)
     return structure_class_violations(spec, "acme", site / "acme")
 
 
@@ -162,3 +162,9 @@ def test_a_dependency_python_cannot_read_is_raised(install: Install) -> None:
     site = install({"acme/__init__.py": "import dep\n", "dep/__init__.py": "def (:\n"})
     with pytest.raises(SyntaxError):
         unimportable("acme", site / "acme")
+
+
+def _composed(settings: type[BaseModel]) -> ComposedPlugin:
+    """Plugin ``acme`` reading ``settings``, its class composed (a check may refuse it later)."""
+    cls = make_plugin("acme", settings=settings)
+    return ComposedPlugin.of(compose_plugins([PluginEntry("acme", target_of(cls), cls)]), "acme")

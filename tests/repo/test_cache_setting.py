@@ -16,7 +16,7 @@ from pkgutil import resolve_name
 
 from pydantic import BaseModel, Field
 
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Plugin
 from untaped.sdk._schema import unwrap_optional
 
@@ -39,10 +39,8 @@ def hand_made(model: type[BaseModel], prefix: str = "") -> Iterator[str]:
 
 
 def _settings(candidate: PluginCandidate) -> type[BaseModel] | None:
-    """The settings model of an 11.x spec or a 12.0 plugin class."""
+    """The settings model of a plugin class."""
     target = resolve_name(str(candidate.target))
-    if isinstance(target, PluginSpec):
-        return target.settings
     if isinstance(target, type) and issubclass(target, Plugin):
         return target.settings
     return None

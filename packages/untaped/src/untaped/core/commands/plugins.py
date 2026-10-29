@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from untaped.core.commands.records import ScaffoldOutcome
 from untaped.core.config.models import SettingOutcome
 from untaped.core.settings import CoreSettings
-from untaped.runtime.registry import CompositionResult, owns_contracts, run_deferred_factory
+from untaped.runtime.registry import CompositionResult
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.fields import Column, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
@@ -234,26 +234,11 @@ def _near(kind: str, kinds: Iterable[str]) -> list[str]:
 
 
 def kind_model(kind: str, result: CompositionResult) -> type[BaseModel] | None:
-    """The model declaring ``kind``, importing lazily what declares kinds (contracts, commands).
+    """The model declaring ``kind``: composition names every kind (``result``'s declaration).
 
-    ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here; a
-    plugin class's kinds are its declaration's.
+    ``plugin schema`` and the ``guide-yaml`` convention find a kind's model here.
     """
-    if (model := record_model(kind)) is not None:
-        return model
-    if kind in result.mount.kinds:
-        return result.mount.kinds[kind]
-    if any(owns_contracts(each.spec) or each.spec.provides for each in result.plugins):
-        from untaped.runtime.contracts.registry import every_offer, owned_contracts  # noqa: PLC0415
-
-        owned_contracts()
-        every_offer()
-        if (model := record_model(kind)) is not None:
-            return model
-    for registered in result.plugins:
-        if registered.spec.app_factory is not None:
-            run_deferred_factory(registered)
-    return record_model(kind)
+    return record_model(kind) or result.mount.kinds.get(kind)
 
 
 __all__ = ["INSTALL_HINT", "ContractMethod", "PluginGroup", "kind_model"]

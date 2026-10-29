@@ -16,6 +16,7 @@ checks.
 from __future__ import annotations
 
 import shlex
+from typing import TYPE_CHECKING
 
 from untaped.core.commands.doctor import run_line, selected_check_rows
 from untaped.core.commands.records import SetupActor, SetupState, SetupStep
@@ -29,7 +30,7 @@ from untaped.core.commands.setup_state import (
 from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.runtime.registry import CompositionResult
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
 from untaped.sdk.fields import default_columns, table_row
@@ -37,6 +38,9 @@ from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
 from untaped.sdk.network.auth import find_program
 from untaped.sdk.words import command_argv, command_line, shown_path, split_profile
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 Row = dict[str, object]
 
@@ -47,7 +51,7 @@ SETUP_ALTERNATIVE = "untaped setup plan --format json"
 
 def plan_rows(
     result: CompositionResult,
-    services: dict[str, PluginSpec],
+    services: dict[str, ComposedPlugin],
     profile: str,
     *,
     online: bool,
@@ -134,7 +138,7 @@ def _profile_row(profile: str, *, exists: bool) -> Row:
     return _row("profile", NAME, "todo", detail, ["profile", "create", profile])
 
 
-def _service_rows(spec: PluginSpec, state: ServiceState, profile: str) -> list[Row]:
+def _service_rows(spec: ComposedPlugin, state: ServiceState, profile: str) -> list[Row]:
     """A row per marked field, in declaration order: done, or the command that sets it."""
     name, section = spec.name, spec.name
     if state.invalid is not None:
@@ -168,7 +172,7 @@ def _done(field: MarkedField, state: ServiceState) -> str:
     return f"set by {source}" if source else "set"
 
 
-def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
+def _login_row(spec: ComposedPlugin, field: MarkedField, profile: str) -> Row:
     """A credential's step: ``auth login``, the person's, with its ``suggest`` when on PATH."""
     credential = field.credential
     assert credential is not None
@@ -188,7 +192,9 @@ def _login_row(spec: PluginSpec, field: MarkedField, profile: str) -> Row:
     return _row(f"{name}.{field.key}", name, "todo", detail, run, by="user")
 
 
-def _online_rows(spec: PluginSpec, checks: list[Row], *, online: bool, ready: bool) -> list[Row]:
+def _online_rows(
+    spec: ComposedPlugin, checks: list[Row], *, online: bool, ready: bool
+) -> list[Row]:
     """One row per declared online check, ``<service>.online.<check>`` in every state."""
     name = spec.name
     found = {str(row["check"]): row for row in checks if row["plugin"] == name}
@@ -209,7 +215,7 @@ def _online_rows(spec: PluginSpec, checks: list[Row], *, online: bool, ready: bo
     return rows
 
 
-def _failed_check(spec: PluginSpec, step: str, row: Row) -> Row:
+def _failed_check(spec: ComposedPlugin, step: str, row: Row) -> Row:
     name = spec.name
     detail = str(row["detail"])
     fix = row.get("fix")

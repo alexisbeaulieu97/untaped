@@ -70,7 +70,13 @@ from untaped.sdk.fields import (
     Written,
     unprintable_following,
 )
-from untaped.sdk.marks import COMMAND_TEXT, Deprecated, Experimental, class_mark
+from untaped.sdk.marks import (
+    COMMAND_TEXT,
+    Deprecated,
+    Experimental,
+    class_mark,
+    stability_refusal,
+)
 from untaped.sdk.plugin import (
     RESERVED_NAMES,
     Command,
@@ -776,14 +782,10 @@ class _PluginWalk:
 
     def stability_of(self, cls: type, mark: object) -> StabilityDecl | None:
         """The stability ``mark`` on ``cls``; anything but a stability mark is a problem."""
-        decl = _stability(mark)
-        if mark is not None and decl is None:
-            self.problem(
-                "reserved-name",
-                f"{cls.__qualname__}.stability",
-                f"holds {mark!r}, not experimental or deprecated(...)",
-            )
-        return decl
+        refusal = stability_refusal(mark)
+        if refusal is not None:
+            self.problem("reserved-name", f"{cls.__qualname__}.stability", refusal)
+        return _stability(mark)
 
     # --- the plugin class ---------------------------------------------------------
 

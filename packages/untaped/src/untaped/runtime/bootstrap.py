@@ -16,7 +16,7 @@ from contextvars import ContextVar
 from dataclasses import replace
 from importlib import metadata
 from itertools import chain
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from cyclopts import App, Group, Parameter
 from cyclopts.command_spec import CommandSpec
@@ -32,7 +32,6 @@ from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, 
 from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
-    PluginSpec,
     QuarantineRecord,
     RegisteredPlugin,
     compose,
@@ -78,6 +77,11 @@ from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage._refs import refresh
 from untaped.sdk.storage.cache import current_call
 
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
+    from untaped.sdk.marks import DeprecatedBehaviour
+    from untaped.sdk.network.credentials import Credential
+
 
 def _shell_app() -> App:
     return App(name=NAME, help="Unified untaped developer CLI.")
@@ -112,14 +116,33 @@ def _register_sections(result: CompositionResult) -> None:
             if not plugin.root
         }
     )
+    # read when first asked, so a start imports no plugin class
     bind_behaviours(
-        {plugin.spec.name: plugin.spec.deprecations for plugin in result.plugins if not plugin.root}
+        {
+            plugin.spec.name: _deprecations(plugin.spec)
+            for plugin in result.plugins
+            if not plugin.root
+        }
     )
-    bind_credentials({plugin.spec.name: plugin.spec.credentials for plugin in result.plugins})
+    bind_credentials(
+        {
+            plugin.spec.name: _credentials(plugin.spec)
+            for plugin in result.plugins
+            if plugin.spec.credential_names
+        }
+    )
     for spec in (plugin.spec for plugin in result.plugins):
-        section = section_settings(spec)
-        if section is not None:
-            register_profile_settings(spec.name, section, spec.stability)
+        register_profile_settings(spec.name, section_settings(spec), spec.stability)
+
+
+def _deprecations(plugin: ComposedPlugin) -> Callable[[], Sequence[DeprecatedBehaviour]]:
+    """A function reading ``plugin``'s deprecated behaviours when called."""
+    return lambda: plugin.deprecations
+
+
+def _credentials(plugin: ComposedPlugin) -> Callable[[], Sequence[Credential[Any]]]:
+    """A function reading ``plugin``'s credentials when called."""
+    return lambda: plugin.credentials
 
 
 def _attach(run: Run, result: CompositionResult) -> None:
@@ -338,11 +361,11 @@ def _mount_root(root: App, mount: Mount, name: str) -> None:
 
 
 class _LazyPluginCommand(CommandSpec):
-    """Cyclopts lazy command backed by a plugin's nullary app factory.
+    """Cyclopts lazy command for a plugin's commands, built from its declaration.
 
     Cyclopts lists an unresolved :class:`CommandSpec` from its ``help``
     without resolving it, and resolves it only when dispatch selects the
-    command. Resolution calls the factory exactly once and applies the same
+    command. Resolution builds the plugin's app exactly once and applies the same
     parent defaults an eager ``App.command(sub)`` mount would, against the
     root the command was mounted on (not whichever app dispatch passes in,
     which may be the meta app). The private cyclopts internals touched here
@@ -355,7 +378,7 @@ class _LazyPluginCommand(CommandSpec):
         super().__init__(
             import_path=f"<plugin {spec.name}>",
             name=spec.name,
-            help=spec.help,
+            help=spec.decl.summary,
             group=_root_panel(spec),  # placed without importing the plugin
         )
         self._plugin = plugin
@@ -373,7 +396,7 @@ class _LazyPluginCommand(CommandSpec):
             app[flag].show = False
         if app._name_transform is None:
             app.name_transform = self._mount_parent.name_transform
-        # Once resolved, cyclopts lists the app by its own group, not the spec's.
+        # Once resolved, cyclopts lists the app by its own group, not the command's.
         _place(app, self._plugin.spec)
         apply_marks(app, path=(self._plugin.spec.name,))
         _docs_footers(app, self._plugin.spec.name)
@@ -439,12 +462,12 @@ def fail_if_unbuildable(app: App) -> None:
         command()
 
 
-def _root_panel(spec: PluginSpec) -> Group:
+def _root_panel(spec: ComposedPlugin) -> Group:
     """The root help panel of ``spec``'s command: Plugins, or its stability panel."""
     return PLUGINS_GROUP if spec.stability is None else panel_for(spec.stability)
 
 
-def _place(app: App, spec: PluginSpec) -> None:
+def _place(app: App, spec: ComposedPlugin) -> None:
     """Put a plugin's app in its root panel, however it was mounted (its own group is ignored)."""
     app.group = (_root_panel(spec),)
     if spec.stability is not None:
@@ -454,7 +477,7 @@ def _place(app: App, spec: PluginSpec) -> None:
 def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
     """Mount one composed plugin's commands, built the first time one is dispatched."""
     spec = plugin.spec
-    if spec.app_factory is None:
+    if not spec.has_commands:
         return
     if spec.name in root:
         del root[spec.name]

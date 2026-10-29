@@ -18,7 +18,7 @@ from __future__ import annotations
 import shlex
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import SecretStr
 
@@ -26,7 +26,7 @@ from untaped.core.commands.setup_state import ServiceState, form_fields, service
 from untaped.core.commands.setup_write import Candidate, SecretChoice
 from untaped.core.config.fields import editor, written
 from untaped.core.config.repository import SettingsFileRepository
-from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.registry import settings_model
 from untaped.screen.components.buttons import Button, Buttons
 from untaped.screen.components.form import Form
 from untaped.screen.components.inputs import SecretInput, TextInput
@@ -36,6 +36,9 @@ from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.marks import MarkedField
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.prompt.prompts import PromptChoice
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 __all__ = [
     "anyway_buttons",
@@ -52,7 +55,7 @@ _TYPED = "typed"
 _TAB_LABELS = {"keep": "Keep", "command": "Command", "env": "Env"}
 
 
-def connection_form(spec: PluginSpec, state: ServiceState, store: TokenStore | None) -> Form:
+def connection_form(spec: ComposedPlugin, state: ServiceState, store: TokenStore | None) -> Form:
     """The setup form of ``spec``: its marked settings, its secrets, ``Save``.
 
     Each marked setting opens in its shape's field (as its row would); each
@@ -70,7 +73,7 @@ def connection_form(spec: PluginSpec, state: ServiceState, store: TokenStore | N
     return Form((*fields, ("buttons", _save_buttons())))
 
 
-def _descriptors(spec: PluginSpec) -> dict[tuple[str, ...], FieldDescriptor]:
+def _descriptors(spec: ComposedPlugin) -> dict[tuple[str, ...], FieldDescriptor]:
     model = settings_model(spec)
     return {d.path: d for d in walk_settings(model, include_collections=True)}
 
@@ -95,7 +98,7 @@ def _noun(secret: MarkedField) -> str:
 
 
 def _tab(
-    spec: PluginSpec, store: TokenStore | None, choice: PromptChoice[str], secret: MarkedField
+    spec: ComposedPlugin, store: TokenStore | None, choice: PromptChoice[str], secret: MarkedField
 ) -> Tab:
     how = choice.value
     label = store.name if how == "store" and store is not None else _TAB_LABELS[how]
@@ -180,7 +183,7 @@ def _token_command(name: str, text: str) -> list[str]:
     return argv
 
 
-def candidate(spec: PluginSpec, profile: str, form: Form, state: ServiceState) -> Candidate:
+def candidate(spec: ComposedPlugin, profile: str, form: Form, state: ServiceState) -> Candidate:
     """The form's validated values as what the user asked for.
 
     ``state`` is the one the form was built from: only the settings the user
@@ -242,7 +245,7 @@ def _choice(name: str, secret: MarkedField, tab: object) -> SecretChoice:
 
 
 def token_choices(
-    spec: PluginSpec,
+    spec: ComposedPlugin,
     current: ServiceState,
     store: TokenStore | None,
     *,

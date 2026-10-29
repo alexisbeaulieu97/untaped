@@ -7930,7 +7930,6 @@ sdk untaped.sdk.contracts.Reason.invalid_item = invalid-item
 sdk untaped.sdk.contracts.Reason.missing_bridge = missing-bridge
 sdk untaped.sdk.contracts.Reason.no_cache = no-cache
 sdk untaped.sdk.contracts.Reason.not_configured = not-configured
-sdk untaped.sdk.contracts.Reason.owner_not_installed = owner-not-installed
 sdk untaped.sdk.contracts.Reason.owner_out_of_range = owner-out-of-range
 sdk untaped.sdk.contracts.Reason.raised = raised
 sdk untaped.sdk.contracts.Reason.rank_not_installed = rank-not-installed

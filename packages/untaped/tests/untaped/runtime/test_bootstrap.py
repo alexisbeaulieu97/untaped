@@ -847,19 +847,19 @@ def test_core_s_removals_name_untaped_s_own_major_and_a_plugin_s_its_distributio
 def test_core_s_behaviours_are_the_sdk_s_to_list_never_a_listing_of_its_class(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The root's spec lists no behaviour, and its class is never asked which it lists."""
-    from untaped.runtime import mount
+    """The root lists no behaviour, and its class is never asked which it lists."""
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.sdk import marks
 
     def loaded(*_: object) -> None:
         raise AssertionError("a plugin declaring no behaviour had its blocks loaded")
 
-    monkeypatch.setattr(mount, "_spelled_blocks", loaded)
+    monkeypatch.setattr(ComposedPlugin, "_held", property(loaded))
     result = bootstrap.compose_root(candidates=[make_candidate(_plugin("acme"))])
     assert "untaped" not in marks._LISTINGS
     assert "acme" in marks._LISTINGS
     core = next(plugin.spec for plugin in result.plugins if plugin.root)
-    assert core.deprecations() == ()  # none declared: its blocks are never loaded
+    assert core.deprecations == ()  # none declared: its blocks are never loaded
 
 
 # --- a plugin whose commands can't be built -----------------------------------

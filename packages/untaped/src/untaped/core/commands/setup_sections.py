@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from rich.cells import cell_len
 from rich.console import Group, RenderableType
@@ -53,7 +53,6 @@ from untaped.core.config.use_cases import (
     SetSetting,
 )
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run
 from untaped.runtime.settings import section_stabilities
 from untaped.screen.components.draw import note_lines, option_row, role_style
@@ -66,6 +65,9 @@ from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.health.marks import SetupMarks
 from untaped.sdk.marks import stability_name
 from untaped.sdk.words import command_line
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 __all__ = [
     "CONNECTION",
@@ -153,7 +155,7 @@ class UnsetAsked:
     ranking: RankTarget | None = None
 
 
-def read_listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing:
+def read_listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listing:
     """What setup shows of ``profile``: every section's rows, and each of ``services``' state.
 
     A service's connection keys are its connection row, not rows of their own;
@@ -337,7 +339,7 @@ def write_command(
     key: str,
     value: str | None,
     expected: object,
-    services: Mapping[str, PluginSpec],
+    services: Mapping[str, ComposedPlugin],
     *,
     ranking: RankTarget | None = None,
     owners: Collection[str] = (),

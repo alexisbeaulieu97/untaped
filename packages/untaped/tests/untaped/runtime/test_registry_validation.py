@@ -12,7 +12,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import make_plugin
-from core_test_support.runtime.plugin_harness import make_candidate, make_spec
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime.registry import PluginCandidate, compose
 
 
@@ -125,14 +125,6 @@ def _needs_arg(value: str) -> object:
             None,
             "dict",
         ),
-        # An 11.x plugin stops composing at 12.0, told what to name instead.
-        (
-            make_candidate(make_spec(name="old"), "d"),
-            "not-a-plugin-class",
-            "old",
-            "names an 11.x PluginSpec, not a plugin class; untaped 12.0 composes plugin "
-            "classes: name the class ('untaped_old.plugin:Old')",
-        ),
     ],
     ids=[
         "unresolvable",
@@ -143,7 +135,6 @@ def _needs_arg(value: str) -> object:
         "callable",
         "raises",
         "not-a-class",
-        "11x-spec",
     ],
 )
 def test_bad_entry_point_target_quarantines(

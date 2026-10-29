@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
+from core_test_support.commands.support import make_plugin
 from untaped.runtime.bootstrap import build_root_app, composed_with
 from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
-    PluginSpec,
     named_plugin_dir,
     section_settings,
 )
@@ -145,7 +145,7 @@ def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> 
     assert [plugin.spec.name for plugin in again.plugins] == ["untaped", "toy"]
     assert "toyplug.plugin" not in sys.modules
     spec = again.plugins[1].spec
-    assert spec.help == "A toy plugin, composed from its target."
+    assert spec.decl.summary == "A toy plugin, composed from its target."
     # the settings model is read from its own module, the cache's setting from the declaration
     assert "toyplug.settings" in sys.modules
     assert "toyplug.plugin" not in sys.modules
@@ -214,7 +214,7 @@ def test_a_replayed_plugin_has_its_setting_ids_and_runs(toys: Path) -> None:
     assert keys["toy.caches.motd.max_age_seconds"]["value"] == 7200
     assert "toyplug.plugin" not in sys.modules
     result = compose_root(candidates=[toy])
-    assert result.plugins[1].spec.caches.ids == ("toy.motd",)  # type: ignore[attr-defined]
+    assert result.plugins[1].spec.block_ids("caches") == ("toy.motd",)
 
     greeted = invoke.invoke(root.meta, ["toy", "greet"])
     assert (greeted.exit_code, greeted.stdout) == (0, "hello from toy\n")
@@ -307,17 +307,17 @@ def test_a_home_it_cannot_write_composes_every_time(toys: Path) -> None:
 
 def test_a_candidate_given_as_an_object_composes_without_the_cache() -> None:
     compose_root(
-        candidates=[PluginCandidate(distribution="d", name="spec", target=PluginSpec("spec"))]
+        candidates=[PluginCandidate(distribution="d", name="given", target=make_plugin("given"))]
     )
     assert _declarations() == []
 
 
 def test_a_declaration_that_misses_a_plugin_class_is_composed_again(toys: Path) -> None:
-    """A target that was a spec when the declaration was kept and is a class now."""
+    """A target that was no plugin class when the declaration was kept and is one now."""
     folder = toys / "toyplug"
     toy = _package(toys, "toyplug")
     (folder / "plugin.py").write_text(
-        "from untaped.runtime.registry import PluginSpec\nToy = PluginSpec(name='toy')\n",
+        "Toy = object()\n",
         encoding="utf-8",
     )
     spec_only = compose_root(candidates=[toy]).mount
@@ -439,7 +439,7 @@ def test_a_second_start_routes_a_fill_to_its_owner_and_imports_the_owner_class_n
     _unload("toyplugfiller")
     replayed = registry._compose(ordered, fresh.mount.declaration)
     specs = {each.spec.name: each.spec for each in replayed.plugins}
-    assert list(specs["filler"].provides) == ["owner"]
-    [titles] = specs["owner"].contracts()
+    assert specs["filler"].fill_owners == ("owner",)
+    [titles] = specs["owner"].offers
     assert titles.__module__ == "toyplugowner.api"
     assert "toyplugowner.plugin" not in sys.modules

@@ -16,11 +16,10 @@ from pkgutil import resolve_name
 
 import pytest
 import release
-from cyclopts import App
 
 from repo.support import FIRST_PARTY, REPO_ROOT
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginRef, PluginSpec, compose
+from untaped.runtime.registry import PluginCandidate, PluginRef, compose
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Plugin, StubSkill
 from untaped.sdk.testing import CliInvoker
@@ -36,8 +35,8 @@ def candidates(
 
 
 @pytest.fixture(scope="module")
-def specs(candidates: dict[str, PluginCandidate]) -> dict[str, PluginSpec | type[Plugin]]:
-    """Each plugin's 11.x spec, or its 12.0 plugin class once it moved."""
+def specs(candidates: dict[str, PluginCandidate]) -> dict[str, type[Plugin]]:
+    """Each plugin's class."""
     return {name: resolve_name(str(each.target)) for name, each in candidates.items()}
 
 
@@ -73,17 +72,12 @@ def test_every_first_party_plugin_is_an_entry_point_listed_ready_in_name_order(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_the_entry_point_names_the_package_spec_or_plugin_class(
-    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec | type[Plugin]], name: str
+def test_the_entry_point_names_the_plugin_class(
+    candidates: dict[str, PluginCandidate], specs: dict[str, type[Plugin]], name: str
 ) -> None:
     module = f"untaped_{name}"
     package = import_module(module)
-    target = candidates[name].target
-    spec = specs[name]
-    if isinstance(spec, PluginSpec):
-        assert target == f"{module}:SPEC"
-    else:
-        assert target == f"{module}.plugin:{spec.__qualname__}"
+    assert candidates[name].target == f"{module}.plugin:{specs[name].__qualname__}"
     assert not hasattr(package, "provider")
 
 
@@ -110,20 +104,11 @@ def test_first_party_version_is_the_product_version(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_spec_ships_a_lazy_app_and_one_stub_skill(
-    specs: dict[str, PluginSpec | type[Plugin]], name: str
+def test_first_party_plugin_has_a_summary_and_one_stub_skill(
+    specs: dict[str, type[Plugin]], name: str
 ) -> None:
-    spec = specs[name]
-    if not isinstance(spec, PluginSpec):
-        assert spec.__doc__
-        assert isinstance(spec.skill, StubSkill)
-        return
-    assert spec.name == name
-    assert spec.help
-    assert isinstance(spec.app_factory(), App)
-    (skill,) = spec.skills
-    assert skill.name == f"untaped-{name}"
-    assert skill.description
+    assert specs[name].__doc__
+    assert isinstance(specs[name].skill, StubSkill)
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
@@ -137,18 +122,13 @@ def test_first_party_mounts_under_the_unified_root(
 
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
-def test_first_party_profile_fields_are_configurable_and_state_is_not(
-    candidates: dict[str, PluginCandidate], specs: dict[str, PluginSpec | type[Plugin]], name: str
+def test_first_party_profile_fields_are_configurable(
+    candidates: dict[str, PluginCandidate], specs: dict[str, type[Plugin]], name: str
 ) -> None:
-    spec = specs[name]
     stdout = _invoke(candidates[name], "config", "list", "--format", "raw", "--columns", "key")
     keys = set(stdout.splitlines())
-    assert spec.settings is not None
-    for field in spec.settings.model_fields:
+    for field in specs[name].settings.model_fields:
         assert any(key.split(".")[:2] == [name, field] for key in keys), field
-    state = spec.state if isinstance(spec, PluginSpec) else None
-    for field in state.model_fields if state else ():
-        assert f"{name}.{field}" not in keys
 
 
 def test_profile_scoped_plugin_setting_resolves(

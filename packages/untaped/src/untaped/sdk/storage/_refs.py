@@ -375,22 +375,12 @@ def composed_targets() -> tuple[RefTarget, ...] | None:
         result = composition()
     except RuntimeError:
         return None
-    from untaped.runtime.registry import DeclaredBlocks  # noqa: PLC0415 - read with the root
-    from untaped.sdk.storage.store import Store  # noqa: PLC0415 - store imports this module
-
     # A plugin class's numbered places are read from its declaration, never its class.
     targets = [
         RefTarget(plugin=plugin.name, store=block.name, layout=block.layout)
         for plugin in result.mount.declaration.plugins
         for block in plugin.blocks
         if block.block == "dir" and block.layout is not None
-    ]
-    targets += [
-        store.target
-        for registered in result.plugins
-        if not isinstance(registered.spec.stores, DeclaredBlocks)
-        for store in registered.spec.stores
-        if isinstance(store, Store)  # an item store's holds are its holders', not an install's
     ]
     return tuple(sorted(targets, key=lambda target: (target.plugin, target.store)))
 

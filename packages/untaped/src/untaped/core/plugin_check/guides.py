@@ -40,10 +40,11 @@ from untaped.runtime.command_lines import (
     console_lines,
     parse_problem,
 )
-from untaped.runtime.registry import CompositionResult, PluginSpec
+from untaped.runtime.registry import CompositionResult
 from untaped.sdk.errors import UsageError, first_validation_error
 
 if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.declaration import GuideDecl
 
 MAP_LINE_LIMIT = 120
@@ -52,7 +53,7 @@ MAP_LINE_LIMIT = 120
 _KIND_FENCE = re.compile(r"^```yaml[ \t]+(\S+)[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
 
-def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> list[str]:
+def guide_violations(root: App, result: CompositionResult, spec: ComposedPlugin) -> list[str]:
     """Every guide and map-line violation of the composed plugin ``spec``."""
     found = list(_map_lines(root, result, spec))
     for decl in _guide_decls(result, spec.name):
@@ -76,7 +77,7 @@ def _guide_decls(result: CompositionResult, name: str) -> tuple[GuideDecl, ...]:
 
 
 def _quoted(
-    root: App, result: CompositionResult, spec: PluginSpec, body: str
+    root: App, result: CompositionResult, spec: ComposedPlugin, body: str
 ) -> Iterator[tuple[str, str]]:
     quoted = [*((line, False) for line in console_lines(body)), *commands(body)]
     from untaped.core.docs import page  # noqa: PLC0415
@@ -119,7 +120,7 @@ def _yaml_blocks(result: CompositionResult, body: str) -> Iterator[tuple[str, st
             yield "guide-yaml", f"{kind}: {first_validation_error(exc)}"
 
 
-def _map_lines(root: App, result: CompositionResult, spec: PluginSpec) -> Iterator[str]:
+def _map_lines(root: App, result: CompositionResult, spec: ComposedPlugin) -> Iterator[str]:
     """The plugin's lines on the overview over the limit, as the overview reads them."""
     from untaped.core.docs._site import Site  # noqa: PLC0415
 

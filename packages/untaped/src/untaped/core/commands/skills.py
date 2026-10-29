@@ -57,7 +57,8 @@ def composed_skills(result: CompositionResult) -> dict[str, PackagedSkill]:
     skills_map: dict[str, PackagedSkill] = {}
     for registered in result.plugins:
         ref = registered.plugin_ref
-        for asset in registered.skills:
+        asset = registered.spec.skill
+        if asset is not None:
             skills_map[asset.name] = PackagedSkill(
                 asset,
                 plugin=registered.spec.name,

@@ -1,1 +1,1 @@
-"""awx's fillings of contracts other plugins own (``SPEC.provides``)."""
+"""awx's fillings of contracts other plugins own (``Awx.fills``)."""

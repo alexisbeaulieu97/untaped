@@ -1,11 +1,13 @@
 """Who owns each contract and who fills it, for the current composition.
 
-Owners are found through ``PluginSpec.contracts``; providers through
-``PluginSpec.provides[owner]``, whose function runs once per process and
-profile, on the first ask for one of that owner's contracts. A provider that
-breaks a rule is quarantined for its own offer only: the plugin's commands,
-settings and other offers are untouched. An owner whose ``contracts`` breaks
-loses its own contracts only; doctor names it.
+Owners are the plugins whose classes offer contracts
+(:attr:`~untaped.runtime.composed.ComposedPlugin.offers`); providers are the
+classes a plugin fills an owner's contracts with
+(:meth:`~untaped.runtime.composed.ComposedPlugin.providers`), made once per
+process and profile, on the first ask for one of that owner's contracts. A
+provider that breaks a rule is quarantined for its own offer only: the
+plugin's commands, settings and other offers are untouched. An owner whose
+offers can't be read loses its own contracts only; doctor names it.
 """
 
 from __future__ import annotations
@@ -21,11 +23,8 @@ from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import (
     CompositionResult,
-    DeclaredBlocks,
-    PluginSpec,
     admits,
     owner_requirement,
-    owns_contracts,
     range_text,
 )
 from untaped.runtime.settings import (
@@ -56,6 +55,7 @@ from untaped.sdk.records import kind_of
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.sdk.storage.cache import Cache
 
 _LOG = logging.getLogger("untaped.contracts")
@@ -122,7 +122,7 @@ def reset() -> None:
     _STATE = None
 
 
-def _plugins(state: _State) -> list[PluginSpec]:
+def _plugins(state: _State) -> list[ComposedPlugin]:
     return [plugin.spec for plugin in state.composition.plugins]
 
 
@@ -141,20 +141,18 @@ def _owners(state: _State) -> dict[type[Contract], str]:
     return state.owners
 
 
-def _listed(spec: PluginSpec, cache: Cache[Any]) -> bool:
-    """Whether ``spec`` lists a cache under the name ``@cached`` gave ``cache``.
+def _listed(spec: ComposedPlugin, cache: Cache[Any]) -> bool:
+    """Whether ``spec`` holds a cache under the name ``@cached`` gave ``cache``.
 
-    A 12.0 plugin's caches are read by id, so its class stays unimported.
+    Its caches are read by id, so its class stays unimported.
     """
     if cache._held_as is not None:
         return True
-    caches = spec.caches
-    ids = caches.ids if isinstance(caches, DeclaredBlocks) else ()
-    return f"{spec.name}.{cache._declared_as}" in ids
+    return f"{spec.name}.{cache._declared_as}" in spec.block_ids("caches")
 
 
-def _declared(spec: PluginSpec) -> tuple[type[Contract], ...]:
-    declared = tuple(spec.contracts())
+def _declared(spec: ComposedPlugin) -> tuple[type[Contract], ...]:
+    declared = spec.offers
     for each in declared:
         info = contract_of(each)
         if info is None or info.cls is not each:
@@ -181,7 +179,7 @@ def owner_of(contract: ContractInfo) -> str:
         )
         raise ConfigError(
             f"no installed plugin declares the contract {contract.cls.__qualname__} "
-            f"(list it in its PluginSpec.contracts){unread}"
+            f"(list it in its plugin class's offers){unread}"
         )
     return owner
 
@@ -192,7 +190,7 @@ def offers(contract: ContractInfo) -> list[BoundProvider | Quarantined]:
     owner = owner_of(contract)
     found: list[BoundProvider | Quarantined] = []
     for spec in _plugins(state):
-        if owner not in spec.provides:
+        if owner not in spec.fill_owners:
             continue
         for entry in _group(state, spec, owner):
             target = (
@@ -206,35 +204,27 @@ def offers(contract: ContractInfo) -> list[BoundProvider | Quarantined]:
 def every_offer() -> list[BoundProvider | Quarantined]:
     """Every provider and quarantined offer in the composition (doctor)."""
     state = _state()
-    installed = {spec.name for spec in _plugins(state)}
     _owners(state)
     found: list[BoundProvider | Quarantined] = []
     for spec in _plugins(state):
-        for owner in spec.provides:
-            if owner in state.broken:
-                continue
-            if owner not in installed:
-                found.append(
-                    Quarantined(
-                        spec.name,
-                        owner,
-                        Reason.owner_not_installed,
-                        f"{spec.name} provides for {owner}, which is not installed",
-                    )
-                )
-                continue
-            found.extend(_group(state, spec, owner))
+        for owner in spec.fill_owners:  # each one composed: a fill's owner is a dependency
+            if owner not in state.broken:
+                found.extend(_group(state, spec, owner))
     return found
 
 
-def _group(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | Quarantined, ...]:
+def _group(
+    state: _State, spec: ComposedPlugin, owner: str
+) -> tuple[BoundProvider | Quarantined, ...]:
     key = (spec.name, owner)
     if key not in state.groups:
         state.groups[key] = _load(state, spec, owner)
     return state.groups[key]
 
 
-def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | Quarantined, ...]:
+def _load(
+    state: _State, spec: ComposedPlugin, owner: str
+) -> tuple[BoundProvider | Quarantined, ...]:
     def whole(reason: QuarantineReason, detail: str) -> tuple[Quarantined, ...]:
         return (Quarantined(spec.name, owner, reason, detail),)
 
@@ -242,15 +232,15 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
     if out_of_range is not None:
         return whole(Reason.owner_out_of_range, out_of_range)
     try:
-        values = tuple(spec.provides[owner]())
+        values = spec.providers(owner)
     except ContractError as exc:
         return whole(_reason(exc.reason), str(exc))
     except Exception as exc:
         _LOG.debug(
-            "provides[%r] of %s raised %s", owner, spec.name, type(exc).__name__, exc_info=exc
+            "%s's providers for %s raised %s", spec.name, owner, type(exc).__name__, exc_info=exc
         )
         detail = f"{type(exc).__name__}: {exc}"
-        return whole(Reason.bad_provider, f"provides[{owner!r}] of {spec.name} raised {detail}")
+        return whole(Reason.bad_provider, f"{spec.name}'s providers for {owner} raised {detail}")
     owned = {cls for cls, name in _owners(state).items() if name == owner}
     entries: list[BoundProvider | Quarantined] = []
     seen: dict[type[Contract], int] = {}
@@ -270,10 +260,10 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
     return tuple(entries)
 
 
-def _out_of_range(state: _State, spec: PluginSpec, owner: str) -> str | None:
+def _out_of_range(state: _State, spec: ComposedPlugin, owner: str) -> str | None:
     """Why the installed ``owner`` is outside the range ``spec`` declares for it, if it is.
 
-    The range is the one the provider's ``<owner>`` extra requires; without
+    The range is the one the provider's dependency on the owner requires; without
     one, or without the owner's version, nothing is checked (the
     ``provides-requirement`` convention asks for the range).
     """
@@ -301,7 +291,7 @@ def _kinds(state: _State) -> Callable[[type[BaseModel]], str]:
 
 
 def _check(
-    spec: PluginSpec,
+    spec: ComposedPlugin,
     owner: str,
     owned: set[type[Contract]],
     value: object,
@@ -330,7 +320,7 @@ def _check(
     except ContractError as exc:
         return quarantined(_reason(exc.reason), str(exc), info.cls)
     binding = Binding(
-        spec=spec,
+        plugin=spec.name,
         owner=owner,
         contract=info,
         item=item,
@@ -363,8 +353,7 @@ def _check(
         return quarantined(
             Reason.bad_provider,
             f"{provider.__qualname__} reads Provider[{wanted.__qualname__}], but "
-            f"{spec.name}'s settings model is "
-            f"{spec.settings.__qualname__ if spec.settings else 'not declared'}",
+            f"{spec.name}'s settings model is {spec.settings.__qualname__}",
             info.cls,
         )
     bind(value, binding)
@@ -502,7 +491,7 @@ def doctor_rows(plugins: frozenset[str] | None = None) -> list[DoctorRow]:
     known |= {record.name for record in state.composition.quarantine}
     owners = owned_contracts()
     for spec in _plugins(state):
-        if owns_contracts(spec) and spec.name not in state.broken and wanted(spec.name):
+        if spec.owns_contracts and spec.name not in state.broken and wanted(spec.name):
             rows += _rank_rows(spec.name, owners.get(spec.name, []), known)
     return rows
 
@@ -511,9 +500,6 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     upgrade = upgrade_hint(entry.plugin)
     if isinstance(entry, Quarantined):
         name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
-        if entry.reason == Reason.owner_not_installed:
-            detail = f"waits for {entry.owner} (not installed)"
-            return DoctorRow("contract-provider", entry.plugin, "pass", entry.reason, detail)
         detail = f"{entry.owner}{name}: {entry.detail}; {upgrade}"
         return DoctorRow("contract-provider", entry.plugin, "warn", entry.reason, detail)
     info = entry.binding.contract

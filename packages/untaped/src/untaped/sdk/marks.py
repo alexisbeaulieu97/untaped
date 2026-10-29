@@ -6,7 +6,7 @@ on a command, group or plugin class), and core supplies the panel in the
 parent's ``--help``, the last help line, the run-time warning and the
 conventions checks:
 
-- the markers and their validation (:func:`check_stability`);
+- the markers and why a value is none (:func:`stability_refusal`);
 - the Experimental and Deprecated panels, and the ``--deprecated`` flag that
   shows the latter (:func:`show_deprecated`);
 - :func:`mark_app` and :func:`apply_marks`, which put a mark's group and help
@@ -160,22 +160,22 @@ def deprecated(
 type Stability = Experimental | Deprecated
 
 
-def check_stability(value: object, *, where: str) -> Stability | None:
-    """``value`` when it is ``None``, ``experimental`` or a ``deprecated(...)`` marker.
+def stability_refusal(value: object) -> str | None:
+    """Why ``value`` is no stability mark; ``None`` for no mark or a mark.
 
-    Anything else raises ``TypeError`` naming ``where``: the two likely
-    mistakes are ``deprecated`` without its call and Python's own
-    ``warnings.deprecated("...")``.
+    The marks are ``experimental`` and ``deprecated(...)``. The hint names
+    the two likely mistakes: ``deprecated`` without its call and Python's
+    own ``warnings.deprecated("...")``.
     """
     if value is None or isinstance(value, Experimental | Deprecated):
-        return value
+        return None
     hint = (
         "call it: deprecated(removed_in=..., replacement=...)"
         if value is deprecated
         else "use untaped.sdk.experimental or untaped.sdk.deprecated(removed_in=..., "
         "replacement=...), not warnings.deprecated"
     )
-    raise TypeError(f"{where}: stability must be experimental or deprecated(...); {hint}")
+    return f"holds {value!r}, not experimental or deprecated(...); {hint}"
 
 
 def function_mark(func: object) -> Stability | None:
@@ -598,16 +598,16 @@ def marks(root: App, result: CompositionResult, *, resolve: bool = False) -> lis
 def listed_behaviours(result: CompositionResult) -> list[tuple[str, DeprecatedBehaviour]]:
     """``(owner, behaviour)`` for core's behaviours (owner ``untaped``), then each plugin's.
 
-    Calls each spec's ``deprecations``, importing what it lists (checkers and
-    generators only, never the CLI path).
+    Reads each plugin's ``deprecations``, importing what it lists (checkers
+    and generators only, never the CLI path).
     """
-    listings = [(_CORE_OWNER, _core_behaviours)]
+    listings = [(_CORE_OWNER, _core_behaviours())]
     listings.extend((plugin.spec.name, plugin.spec.deprecations) for plugin in result.plugins)
     found: list[tuple[str, DeprecatedBehaviour]] = []
     owners: dict[int, str] = {}
     for name, listing in listings:
         seen: set[str] = set()
-        for item in listing():
+        for item in listing:
             if not isinstance(item, DeprecatedBehaviour):
                 raise ConfigError(f"{name} deprecations lists {item!r}, not a DeprecatedBehaviour")
             if item.name in seen:
@@ -1322,9 +1322,9 @@ def _core_behaviours() -> Sequence[DeprecatedBehaviour]:
     return ()
 
 
-# Plugin name → the ``deprecations`` callable of its spec, bound by the
-# composition and called only when a behaviour first asks who lists it, so a
-# spec module never imports its behaviours to compose. Core's are the rest.
+# Plugin name → a function reading its ``deprecations``, bound by the
+# composition and called only when a behaviour first asks who lists it, so
+# composing never imports a plugin class. Core's are the rest.
 _LISTINGS: dict[str, Callable[[], Sequence[DeprecatedBehaviour]]] = {}
 _BEHAVIOUR_OWNERS: dict[int, tuple[DeprecatedBehaviour, str | None]] = {}
 

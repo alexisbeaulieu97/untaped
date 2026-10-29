@@ -141,9 +141,9 @@ and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
-`unserialisable-signature`, `owner-not-installed`, `owner-out-of-range` (the
-plugin's extra named like the owner requires a range of it the installed
-owner is outside), or `bad-provider` (building it raised). A class in
+`unserialisable-signature`, `owner-out-of-range` (the plugin's dependency on
+its owner requires a range the installed owner is outside), or `bad-provider`
+(building it raised). A class in
 `fills` that is no `Provider`, or reads another plugin's settings, is a
 composition problem (`bad-provider`) that quarantines its plugin. A provider method
 the contract no longer has (`unused-method`) is simply never called.
@@ -212,11 +212,10 @@ docstring out.
 `untaped doctor` has a `contract-provider` row per provider, titled with
 one of these reasons:
 
-- passing: `active`, `not-configured` (it names the setting it waits for)
-  and `owner-not-installed`;
+- passing: `active` and `not-configured` (it names the setting it waits for);
 - warning: `unused-method` and the quarantine reasons above.
 
-A `contracts` row warns about an owner whose `contracts` function fails
+A `contracts` row warns about an owner whose offered contracts can't be read
 (`bad-contracts`), and a `rank` row warns about a ranking it can't follow:
 `rank-unknown-method` (no such contract or method) and `rank-not-installed`
 (a ranked plugin isn't installed), each with the `plugin rank` command that

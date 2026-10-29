@@ -104,8 +104,7 @@ def sections(
     ordered = sorted(result.plugins, key=lambda each: (not each.root, each.spec.name))
     for spec in (each.spec for each in ordered if owner in (None, each.spec.name)):
         settings = section_settings(spec, extensions=extensions)
-        if settings is not None:
-            found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
+        found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
         if settings_only:
             continue
         rows = _held_rows(result, spec.name)
