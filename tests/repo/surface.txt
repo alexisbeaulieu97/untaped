@@ -8922,9 +8922,6 @@ sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
 sdk untaped.sdk.write_data_file(path, value)  [experimental]
 sdk untaped.sdk.write_data_file(refreshed_at=) default=None  [experimental]
-sdk untaped.sdk.writes()
-sdk untaped.sdk.writes(destructive=) default=false
-sdk untaped.sdk.writes(func@1/=) default=None
 sdk untaped.sdk.yaml_mapping_indent(text)
 sdk untaped_awx.api.ControllerFacts()  [experimental]
 sdk untaped_awx.api.ControllerFacts(last_job_failed=) default=None  [experimental]

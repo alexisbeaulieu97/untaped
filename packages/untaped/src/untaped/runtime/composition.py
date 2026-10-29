@@ -1524,6 +1524,13 @@ class _CommandWalk:
                     f"{spelled} is a root option, which every command takes "
                     f"(`untaped {spelled}`); {fix}",
                 )
+        stability = next((s for s in map(_stability, marks) if s is not None), None)
+        if positional and _deprecated(stability):
+            self.problem(
+                "deprecated-argument",
+                where,
+                "an argument can't be deprecated: make it an option, or deprecate the command",
+            )
         self.seen.options.append(
             OptionDecl(
                 field=path,
@@ -1541,7 +1548,7 @@ class _CommandWalk:
                 allow_hyphen=AllowHyphen in marks,
                 or_stdin=OR_STDIN in marks,
                 reads_file=get_origin(value) is File and Written not in marks,
-                stability=next((s for s in map(_stability, marks) if s is not None), None),
+                stability=stability,
             )
         )
         self._file(value, marks)

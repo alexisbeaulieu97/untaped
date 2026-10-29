@@ -82,11 +82,10 @@ class DoctorResult:
     the row's ``fix`` argv and shows it under the row.
 
     ``automatic=True`` says the fix is safe to run unattended: it needs no
-    ``<NAME>`` value, no terminal input and no confirmation, it is a
-    declared write (``@writes``) that takes ``--format``, and it carries any
-    ``--yes`` it needs itself. It also asks for and prints no secret, so an
-    agent may run it. Doctor fails the row when an automatic fix is missing
-    or has a placeholder.
+    ``<NAME>`` value, no terminal input and no confirmation, it takes
+    ``--format``, and it carries any ``--yes`` it needs itself. It also asks
+    for and prints no secret, so an agent may run it. Doctor fails the row
+    when an automatic fix is missing or has a placeholder.
 
     The row's id is its check's: core names the row after the ``DoctorCheck``
     the body belongs to, so a body leaves ``id`` out. An 11.x body passes its

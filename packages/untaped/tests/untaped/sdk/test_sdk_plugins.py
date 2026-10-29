@@ -270,7 +270,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "retired_values",
         "shown_path",
         "size_text",
-        "writes",
     ),
     "screens": (
         "Activate",

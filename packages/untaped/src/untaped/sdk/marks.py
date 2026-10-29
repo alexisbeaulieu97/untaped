@@ -271,7 +271,7 @@ def marked_options(command: App) -> list[tuple[Any, Deprecated]]:
     """Each option of ``command``'s function marked ``deprecated(...)``, with its mark.
 
     Only a keyword-only parameter with its own spellings is an option: a mark on a positional
-    or a flattened dataclass is not listed (``deprecated-option-panel`` reports it).
+    or a flattened dataclass is not listed.
     """
     function = command.default_command
     if function is None:
@@ -343,7 +343,7 @@ def mark_app(
 
     Idempotent. The panel replaces the app's groups, so a marked command shows
     only in its stability panel. A ``"spec"`` mark never replaces an ``"own"``
-    one, so ``mark-on-spec`` can still see the author's. An object replacement
+    one. An object replacement
     can only be named against a ``tree`` (``prefix`` is where ``app``'s tree
     hangs from the root); without one the help line waits for
     :func:`apply_marks`.
@@ -1097,11 +1097,6 @@ def read_parameter_marks(
         elif problems:
             failures[name] = problems[0]
     return marks, failures
-
-
-def annotation_metadata(annotation: object) -> list[object]:
-    """The ``Annotated`` metadata of a resolved type, a union member's too."""
-    return _metadata(annotation, {}, [])
 
 
 def _metadata(
