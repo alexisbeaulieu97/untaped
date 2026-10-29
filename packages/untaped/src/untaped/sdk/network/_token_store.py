@@ -41,6 +41,7 @@ from untaped.sdk.network.auth import (
     pass_gpg_options,
     run_command,
 )
+from untaped.sdk.words import run_hint
 
 StoreName = Literal["security", "secret-tool", "pass"]
 """A store ``auth login --store`` accepts."""
@@ -317,18 +318,20 @@ def usable_stores() -> list[TokenStore]:
     return [store for store in STORES if store.usable()]
 
 
-def no_backend_message(plugin: str, name: str) -> tuple[str, str]:
-    """Why no credential store answers here, and the hint naming the command way that remains."""
+def no_backend_message(login: str) -> tuple[str, str]:
+    """Why no credential store answers here, and the hint naming the command way that remains.
+
+    ``login`` is the credential's ``auth login`` command.
+    """
     skipped = pass_problem() if find_program("pass") else None
     what = (
         f": {skipped}"
         if skipped
         else " (macOS security, secret-tool with a Secret Service, or pass with a gpg key)"
     )
-    login = f"untaped auth login {plugin}" + ("" if name == "token" else f" {name}")
     return (
         f"no credential store answers here{what}",
-        f"{login} --token-command '/absolute/path/to/a/command/printing/it'",
+        run_hint(f"{login} --token-command '/absolute/path/to/a/command/printing/it'"),
     )
 
 

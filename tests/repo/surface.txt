@@ -6387,6 +6387,8 @@ sdk untaped.sdk.Credential.get(key)
 sdk untaped.sdk.Credential.id(key)
 sdk untaped.sdk.Credential.key
 sdk untaped.sdk.Credential.label
+sdk untaped.sdk.Credential.login
+sdk untaped.sdk.Credential.login_args
 sdk untaped.sdk.Credential.module
 sdk untaped.sdk.Credential.name
 sdk untaped.sdk.Credential.name_problem(name)
@@ -8130,6 +8132,8 @@ sdk untaped.sdk.network.Credential.get(key)
 sdk untaped.sdk.network.Credential.id(key)
 sdk untaped.sdk.network.Credential.key
 sdk untaped.sdk.network.Credential.label
+sdk untaped.sdk.network.Credential.login
+sdk untaped.sdk.network.Credential.login_args
 sdk untaped.sdk.network.Credential.module
 sdk untaped.sdk.network.Credential.name
 sdk untaped.sdk.network.Credential.name_problem(name)

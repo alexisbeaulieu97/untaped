@@ -60,7 +60,7 @@ from untaped.sdk.network.credentials import (
 )
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.prompt.prompts import PromptChoice
-from untaped.sdk.words import command_line
+from untaped.sdk.words import run_hint
 
 _diag = Diagnostics()
 
@@ -142,11 +142,11 @@ def _choose(
             return choices[0]
     ui = build_terminal(strict=False)
     if not ui.can_prompt:
-        listed = ", ".join(_spelled(each) for each in choices)
+        listed = ", ".join(each.login_args for each in choices)
         what = "a plugin" if plugin is None else "a credential name"
         raise UsageError(
             f"name {what} when not at a terminal; choices: {listed}",
-            hint=command_line(f"auth {verb} {_spelled(choices[0])}"),
+            hint=run_hint(f"auth {verb} {choices[0].login_args}"),
         )
     targets = [_run_target(result, each) for each in choices]
     with ui.terminal():
@@ -154,13 +154,6 @@ def _choose(
             "Which credential?",
             [PromptChoice(each.credential, each.menu_label()) for each in targets],
         )
-
-
-def _spelled(credential: Credential[Any]) -> str:
-    """``awx`` for a plugin's ``token``, else ``<plugin> <name>``: what ``login`` takes."""
-    if credential.name == "token" and credential.plugin:
-        return credential.plugin
-    return f"{credential.plugin} {credential.name}"
 
 
 def _key(
@@ -179,7 +172,7 @@ def _key(
             raise ConfigError(
                 f"{credential.plugin} is not set up, so there is no server to file "
                 f"its {credential.name} for ({target.problem})",
-                hint=command_line(f"setup plan --only {credential.plugin}"),
+                hint=run_hint(f"setup plan --only {credential.plugin}"),
                 fix_by="user",
             )
         return target.key
@@ -280,7 +273,7 @@ def _forget(
         if plugin is None and not ui.can_prompt:
             raise UsageError(
                 "name a plugin or --id when not at a terminal",
-                hint=command_line("auth list"),
+                hint=run_hint("auth list"),
             )
         credential = _choose(result, plugin, name, verb="forget")
         key = _key(result, credential, fields)
@@ -322,7 +315,7 @@ def _forget_row(row: CredentialRow) -> None:
 def _id_by_prefix(prefix: str) -> str:
     found = ids_by_prefix(prefix)
     if not found:
-        raise UsageError(f"no stored credential has id {prefix!r}", hint=command_line("auth list"))
+        raise UsageError(f"no stored credential has id {prefix!r}", hint=run_hint("auth list"))
     if len(found) > 1:
         listed = ", ".join(ident[: SHORT_ID + 4] for ident in found)
         raise UsageError(f"id {prefix!r} matches several stored credentials: {listed}")
