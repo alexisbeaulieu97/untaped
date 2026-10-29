@@ -120,12 +120,14 @@ def test_save_writes_yaml_or_json_and_never_replaces_unasked(tmp_path: Path) -> 
     assert json.loads(as_json.path.read_text(encoding="utf-8")) == {"name": "db", "cases": ["a"]}
 
 
-def test_existing_file_must_exist(tmp_path: Path) -> None:
+def test_existing_file_must_exist_and_its_refusal_names_the_path(tmp_path: Path) -> None:
     present = tmp_path / "a.json"
     present.write_text("{}", encoding="utf-8")
     assert Run(compare=present).compare == present
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match=f"path does not exist: {tmp_path / 'missing.json'}"):
         Run(compare=tmp_path / "missing.json")
+    with pytest.raises(ValidationError, match=f"path is not a file: {tmp_path}"):
+        Run(compare=tmp_path)
 
 
 def test_key_value_splits_on_the_first_equals() -> None:
