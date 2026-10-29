@@ -20,7 +20,7 @@ SCHEMA_VERSION = 5
 #: never a change to an existing one). Stamped in ``schema_meta`` beside
 #: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
 #: index's ``additive_since`` opens it and reads its own tables by name, so
-#: 11.x releases sharing one ``~/.untaped`` share the index. A change to an
+#: releases sharing one untaped home share the index. A change to an
 #: existing table raises it to the new ``SCHEMA_VERSION``. Foreign keys are
 #: off and an older writer deletes and replaces rows in the tables it knows,
 #: so a table a newer version adds must tolerate rows whose parent is gone.

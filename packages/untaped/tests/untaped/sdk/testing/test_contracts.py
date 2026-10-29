@@ -66,7 +66,7 @@ class _Settings(BaseModel):
 
 
 class Acme(Plugin):
-    """A plugin class an 11.x plugin's tests compose beside their spec."""
+    """A plugin class a test composes beside the plugin it tests."""
 
     settings = _Settings
 

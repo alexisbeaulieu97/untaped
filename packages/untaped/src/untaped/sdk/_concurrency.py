@@ -2,7 +2,8 @@
 
 Stdlib-only: the standalone primitive for callers that manage their own loop.
 :func:`bounded_iter` is the same work as a generator, behind
-``Parallel.map``; :func:`bounded_map` is its 11.x callback form.
+``Parallel.map``; :func:`bounded_map` is its callback form, for code below a
+command that is handed a concurrency rather than the ``Parallel`` field.
 """
 
 from __future__ import annotations

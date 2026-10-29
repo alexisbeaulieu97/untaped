@@ -133,7 +133,7 @@ def test_a_run_reads_a_section_again_once_its_pick_changes(
     run = build_run(declaration, settings, home=tmp_path)
     with run_scope(run):
         assert settings_of(HelloSettings).greeting == "hello"
-        run.set_profiles(("work",))  # a late --profile, as the 11.x seam's dispatch takes one
+        run.set_profiles(("work",))  # a late --profile, as the root's options take one
         assert settings_of(HelloSettings).greeting == "hi"
         assert write_target() == "work"
 
