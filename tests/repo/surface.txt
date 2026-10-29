@@ -4363,7 +4363,7 @@ record ansible.source_alias_outcome
 record ansible.source_alias_outcome.action string
 record ansible.source_alias_outcome.alias string
 record ansible.source_alias_outcome.error Failure?
-record ansible.source_alias_outcome.repo string
+record ansible.source_alias_outcome.repo string?
 record ansible.source_outcome
 record ansible.source_outcome.action string
 record ansible.source_outcome.changes string[]

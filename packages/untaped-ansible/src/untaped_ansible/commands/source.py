@@ -35,6 +35,7 @@ from untaped_ansible.commands._ansible import (
     RefScanDefault,
     saved_source_key,
     source_definition,
+    unknown_source,
 )
 from untaped_ansible.commands._changes import Changes, edited
 from untaped_ansible.domain.identity import repo_key
@@ -182,15 +183,14 @@ class Remove(AnsibleCommand):
     output: Output[SourceOutcome]
 
     def run(self) -> SourceOutcome:
-        self.saved(self.name)
+        # Keys, not rows: a damaged row is removed here, and doesn't stop removing another.
+        names = SOURCES.keys()
+        if self.name not in names:
+            raise AnsibleError(unknown_source(self.name), category="not_found")
         dry_run = not self.confirm(f"Remove source {q(self.name)} and its cached source data?")
         index = open_index()
         key = saved_source_key(self.name)
-        others = {
-            saved_source_key(source.name): source.name
-            for source in SOURCES.all()
-            if source.name != self.name
-        }
+        others = {saved_source_key(name): name for name in names if name != self.name}
         selected = index.selecting_sources(others)
         changes, failures = _release_repos(
             index.source_repos(key),

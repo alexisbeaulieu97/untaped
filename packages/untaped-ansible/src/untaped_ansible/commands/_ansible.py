@@ -68,7 +68,7 @@ class AnsibleCommand(Command[AnsibleSettings]):
 
     def warn_saved_sources_need_refresh(self) -> None:
         """Aliases are baked into cached source data at refresh time: say what to refresh."""
-        names = [source.name for source in SOURCES.all()]
+        names = SOURCES.keys()  # a damaged row still needs its refresh named
         if not names:
             return
         from untaped_ansible.commands.source import Refresh  # noqa: PLC0415 - import cycle
@@ -82,7 +82,7 @@ class AnsibleCommand(Command[AnsibleSettings]):
 
 
 def unknown_source(name: str) -> str:
-    return not_found("source", name, known=sorted(source.name for source in SOURCES.all()))
+    return not_found("source", name, known=sorted(SOURCES.keys()))
 
 
 def source_definition(

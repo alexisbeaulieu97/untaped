@@ -40,10 +40,10 @@ class SourceAlias(Record):
 
 
 class SourceAliasOutcome(OutcomeRecord):
-    """What ``source-alias set`` or ``remove`` did to one alias."""
+    """What ``source-alias set`` or ``remove`` did to one alias (no ``repo`` for a damaged one)."""
 
     alias: str
-    repo: str
+    repo: str | None = None
 
 
 class SourceOutcome(OutcomeRecord):
