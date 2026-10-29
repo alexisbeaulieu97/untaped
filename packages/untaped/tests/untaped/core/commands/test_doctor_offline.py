@@ -19,8 +19,9 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
+from core_test_support.skills import install_skills
 from untaped.core.commands.skills import composed_skills
-from untaped.core.skills import SkillInstallScope, SkillInstallTarget, install_skills
+from untaped.core.skills import SkillInstallScope, SkillInstallTarget
 from untaped.sdk import ExecutableCheck
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker

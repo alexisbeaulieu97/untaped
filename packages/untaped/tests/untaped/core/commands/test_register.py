@@ -53,6 +53,21 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
     assert ref.plugins == ("acme", "untaped")  # everything it composes, core included
 
 
+def test_a_dry_run_plans_the_registration_and_its_removal_without_writing() -> None:
+    planned = _cli("--dry-run", "--format", "json")
+
+    assert planned.exit_code == 0, planned.output
+    [outcome] = json.loads(planned.stdout)
+    assert outcome["action"] == "planned"
+    assert outcome["targets"] == [{"plugin": "acme", "store": "data", "layout": 3}]
+    assert refs.this_install() is None
+    assert _cli().exit_code == 0
+    assert json.loads(_cli("--dry-run", "--format", "json").stdout)[0]["action"] == "unchanged"
+    removal = _cli("--remove", "--dry-run", "--format", "json")
+    assert json.loads(removal.stdout)[0]["action"] == "planned"
+    assert refs.this_install() is not None
+
+
 def _start(*command: str, plugins: tuple[str, ...] = ("acme", "jira")) -> CliResult:
     """One start of the registered install, composing ``plugins`` (acme holds its data)."""
     candidates = [

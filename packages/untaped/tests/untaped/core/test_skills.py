@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import untaped.core.skills as skills_module
+from core_test_support.skills import install_skills
 from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
 from untaped.runtime.composed import SkillAsset
 from untaped.sdk import checkout_root
@@ -28,7 +29,7 @@ def test_install_skills_installs_one_skill_and_returns_metadata(tmp_path: Path) 
     skill = _skill()
     target = tmp_path / "codex-skills"
 
-    results = skills_module.install_skills(
+    results = install_skills(
         {skill.name: skill},
         ["untaped-demo"],
         all_skills=False,
@@ -58,7 +59,7 @@ def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path)
     project.mkdir()
     project_root = project.resolve()
 
-    results = skills_module.install_skills(
+    results = install_skills(
         {one.name: one, two.name: two},
         [],
         all_skills=True,
@@ -78,7 +79,7 @@ def test_install_skills_all_targets_return_deterministic_results(tmp_path: Path)
 
 
 def _install_local_from_cwd(skill: PackagedSkill) -> list[skills_module.SkillInstallResult]:
-    return skills_module.install_skills(
+    return install_skills(
         {skill.name: skill},
         [skill.name],
         all_skills=False,
@@ -137,7 +138,7 @@ def test_install_skills_later_conflict_aborts_before_earlier_install(tmp_path: P
     target.joinpath("untaped-two").mkdir(parents=True)
 
     with pytest.raises(ConfigError, match="skill already exists: untaped-two"):
-        skills_module.install_skills(
+        install_skills(
             {one.name: one, two.name: two},
             [],
             all_skills=True,
@@ -170,7 +171,7 @@ def test_install_skills_selector_errors_preserve_messages(
     skill = _skill()
 
     with pytest.raises((ConfigError, UsageError), match=message):
-        skills_module.install_skills(
+        install_skills(
             {skill.name: skill},
             skill_names,
             all_skills=all_skills,
@@ -190,7 +191,7 @@ def test_install_skills_force_replaces_existing_without_merging(tmp_path: Path) 
     installed.joinpath("SKILL.md").write_text("old\n")
     installed.joinpath("STALE.md").write_text("stale\n")
 
-    results = skills_module.install_skills(
+    results = install_skills(
         {skill.name: skill},
         ["untaped-demo"],
         all_skills=False,
@@ -233,7 +234,7 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
     monkeypatch.setattr(skills_module.os, "replace", fail_final_replace)
 
     with pytest.raises(RuntimeError, match="placement failed"):
-        skills_module.install_skills(
+        install_skills(
             {skill.name: skill},
             ["untaped-demo"],
             all_skills=False,

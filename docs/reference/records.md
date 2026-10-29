@@ -24,11 +24,11 @@ command runs and needs at least one row, so use it on a read command or add
 | `project move`, `remove`, `prune` | `untaped.hold_outcome` (`holder`, `plugin`, `item`, `action` `planned`, `refused`, `failed`, `released`, `forgotten`, `repaired`, `moved`, `removed` or `skipped`, `detail`, `hint`; experimental) |
 | `skills list` | `untaped.skill` |
 | `skills status` | `untaped.installed_skill` |
-| `skills update`, `skills remove` | `untaped.skill_outcome` |
+| `skills install`, `skills update`, `skills remove` | `untaped.skill_outcome` |
 | `doctor`, `setup` | `untaped.doctor_check` |
 | `doctor fix` | `untaped.fix_outcome` |
 | `setup plan` | `untaped.setup_step` |
-| `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed` or `gone`) |
+| `setup register` | `untaped.register_outcome` (`holder` (`kind`, `name`; left out on `gone`), `environment`, `version`, `targets` (each `plugin`, `store`, `layout`), `action` `registered`, `unchanged`, `removed`, `gone`, or `planned` under `--dry-run`) |
 | `setup prune` | `untaped.prune_outcome` (`what` `reference` or `folder`, `target_path`, `bytes`, `detail`; `action` `planned` under `--dry-run`, `removed`, `kept` with why in `detail`, `skipped` when it changed since the preview, or `failed` with `error`) |
 | `plugin list` | `untaped.installed_plugin` (`name`, `status`, `distribution`, `version`; `package` (a quarantined plugin's from its entry point); a ready plugin's `source_dir`, from a checkout `tests_dir`, `requires` (the distributions a default install of it pulls in, canonical) and `fills` (the owners whose contracts it fills)) |
 | `plugin contracts` | `untaped.contract_method` |

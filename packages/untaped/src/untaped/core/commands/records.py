@@ -147,7 +147,10 @@ class RegisteredTarget(BaseModel):
 
 
 class RegisterOutcome(OutcomeRecord):
-    """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
+    """What ``setup register`` did.
+
+    ``action`` is ``registered``, ``unchanged``, ``removed``, ``gone`` or,
+    for ``--dry-run``, ``planned``.
 
     ``environment`` is the directory holding untaped's distribution,
     ``targets`` the store layouts the reference names. Its own models, not
@@ -276,13 +279,13 @@ class InstalledSkill(TargetRecord):
 
 
 class SkillOutcome(OutcomeRecord, TargetRecord):
-    """What ``skills update`` or ``skills remove`` did to one installed skill."""
+    """What ``skills install``, ``update`` or ``remove`` did to one skill."""
 
     name: Annotated[str, Column]
     target: Annotated[str, Column]
     scope: Annotated[str, Column]
     target_path: Annotated[AbsolutePath, Column]
-    action: Annotated[str, Status(success=("removed",)), Column]
+    action: Annotated[str, Column]
     error: _RowError = None
 
 

@@ -410,9 +410,12 @@ def others_text() -> str:
     return ", ".join(ref.describe() for ref in other_installs())
 
 
-def register(targets: Sequence[RefTarget], *, plugins: Sequence[str] = ()) -> Reference:
+def register(
+    targets: Sequence[RefTarget], *, plugins: Sequence[str] = (), dry_run: bool = False
+) -> Reference:
     """Write this install's reference naming ``targets`` and ``plugins``.
 
+    With ``dry_run``, return the reference it would write and write nothing.
     Raises when it has no environment.
     """
     env = environment()
@@ -423,6 +426,15 @@ def register(targets: Sequence[RefTarget], *, plugins: Sequence[str] = ()) -> Re
             hint="install it with a package installer (uv, pipx, pip), then register that install",
         )
     holder = install_holder(env)
+    if dry_run:
+        return Reference(
+            reference_file(holder),
+            holder=holder,
+            anchor=env,
+            version=_version(),
+            plugins=tuple(plugins),
+            targets=tuple(targets),
+        )
     with locked():
         _write(holder, env, targets, plugins)
     return read_reference(reference_file(holder))
@@ -439,13 +451,14 @@ def install_state() -> InstallState:
     return "registered" if this_install() is not None else "not registered"
 
 
-def register_this_install() -> tuple[Reference, bool]:
+def register_this_install(*, dry_run: bool = False) -> tuple[Reference, bool]:
     """Register this install for every store and plugin this run composes.
 
-    Returns the reference and whether that changed the file.
+    Returns the reference and whether that changed the file (with
+    ``dry_run``, would change it; nothing is written).
     """
     before = this_install()
-    ref = register(composed_targets() or (), plugins=composed_plugins() or ())
+    ref = register(composed_targets() or (), plugins=composed_plugins() or (), dry_run=dry_run)
     same = before is not None and _recorded(before) == _recorded(ref)
     return ref, not same
 
@@ -455,12 +468,17 @@ def _recorded(ref: Reference) -> tuple[object, ...]:
     return ref.version, ref.targets, ref.plugins
 
 
-def unregister() -> Reference | None:
-    """Remove this install's reference; the reference removed, or ``None`` when there was none."""
+def unregister(*, dry_run: bool = False) -> Reference | None:
+    """Remove this install's reference; the reference removed, or ``None`` when there was none.
+
+    With ``dry_run``, return the reference it would remove and remove nothing.
+    """
     env = environment()
     if env is None:
         return None
     file = reference_file(install_holder(env))
+    if dry_run:
+        return read_reference(file) if file.is_file() else None
     with locked():
         if not file.is_file():
             return None

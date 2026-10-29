@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -118,7 +118,17 @@ def skill_rows(skills: Mapping[str, PackagedSkill]) -> list[dict[str, object]]:
     ]
 
 
-def install_skills(
+@dataclass(frozen=True)
+class PlannedInstall:
+    """One skill install a plan makes: the stub, where it goes, and whether it replaces one."""
+
+    skill: PackagedSkill
+    destination: SkillInstallDestination
+    path: Path
+    replaces: bool
+
+
+def plan_install(
     skills: Mapping[str, PackagedSkill],
     skill_names: list[str],
     *,
@@ -128,9 +138,8 @@ def install_skills(
     scope: SkillInstallScope,
     project_dir: Path | None,
     target_dir: Path | None,
-    on_installed: Callable[[SkillInstallResult], None] | None = None,
-) -> list[SkillInstallResult]:
-    """Install selected skills after validating the full plan up front."""
+) -> list[PlannedInstall]:
+    """Validate the whole selection and return every install it makes, writing nothing."""
     selected_names = _selected_skill_names(skills, skill_names, all_skills=all_skills)
     targets = _install_targets(
         target,
@@ -138,19 +147,17 @@ def install_skills(
         project_dir=project_dir,
         target_dir=target_dir,
     )
-    install_plan = _plan_install(skills, selected_names, targets, force=force)
-    results: list[SkillInstallResult] = []
-    for asset, target_destination, destination in install_plan:
-        result = _install_skill(
-            asset,
-            target_destination=target_destination,
-            destination=destination,
-            force=force,
-        )
-        results.append(result)
-        if on_installed is not None:
-            on_installed(result)
-    return results
+    return _plan_install(skills, selected_names, targets, force=force)
+
+
+def install_planned(planned: PlannedInstall, *, force: bool) -> SkillInstallResult:
+    """Write one planned install."""
+    return _install_skill(
+        planned.skill,
+        target_destination=planned.destination,
+        destination=planned.path,
+        force=force,
+    )
 
 
 class SkillState(StrEnum):
@@ -438,15 +445,16 @@ def _plan_install(
     targets: list[SkillInstallDestination],
     *,
     force: bool,
-) -> list[tuple[PackagedSkill, SkillInstallDestination, Path]]:
-    plan: list[tuple[PackagedSkill, SkillInstallDestination, Path]] = []
+) -> list[PlannedInstall]:
+    plan: list[PlannedInstall] = []
     for name in selected_names:
         spec = skills[name]
         for target_destination in targets:
             destination = target_destination.root / name
-            if destination.exists() and not force:
+            exists = destination.exists()
+            if exists and not force:
                 raise ConfigError(f"skill already exists: {name}", category="conflict")
-            plan.append((spec, target_destination, destination))
+            plan.append(PlannedInstall(spec, target_destination, destination, replaces=exists))
     return plan
 
 

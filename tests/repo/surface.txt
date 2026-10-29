@@ -3977,6 +3977,7 @@ cli untaped setup prune --yes switch default=unset
 cli untaped setup register
 cli untaped setup register --columns VALUE... default=unset
 cli untaped setup register --columns alias=-c
+cli untaped setup register --dry-run switch default=unset
 cli untaped setup register --format VALUE default=table
 cli untaped setup register --format alias=-f
 cli untaped setup register --format choice=json
@@ -3988,7 +3989,17 @@ cli untaped setup register --remove switch default=unset
 cli untaped skills
 cli untaped skills install
 cli untaped skills install --all switch default=unset
+cli untaped skills install --columns VALUE... default=unset
+cli untaped skills install --columns alias=-c
+cli untaped skills install --dry-run switch default=unset
 cli untaped skills install --force switch default=unset
+cli untaped skills install --format VALUE default=table
+cli untaped skills install --format alias=-f
+cli untaped skills install --format choice=json
+cli untaped skills install --format choice=pipe
+cli untaped skills install --format choice=raw
+cli untaped skills install --format choice=table
+cli untaped skills install --format choice=yaml
 cli untaped skills install --project-dir VALUE default=unset
 cli untaped skills install --scope VALUE default=global
 cli untaped skills install --scope choice=global

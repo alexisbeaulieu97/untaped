@@ -53,11 +53,57 @@ def test_install_short_selector_keeps_full_installed_id(tmp_path: Path) -> None:
     target = tmp_path / "skills"
     result = CliInvoker().invoke(app, ["install", "demo", "--target-dir", str(target)])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
-    assert "installed skill: untaped-demo" in result.output
+    assert "installed 1 skill" in result.stderr
     installed = target / "untaped-demo"
     assert installed.joinpath("SKILL.md").is_file()
     marker = json.loads(installed.joinpath(STUB_MARKER).read_text())
     assert marker["name"] == "untaped-demo"
+
+
+def test_install_prints_a_row_per_skill_and_a_dry_run_writes_nothing(tmp_path: Path) -> None:
+    app = _skills_app("untaped-demo")
+    target = tmp_path / "skills"
+    args = ["install", "demo", "--target-dir", str(target), "--format", "json"]
+
+    planned = CliInvoker().invoke(app, [*args, "--dry-run"])  # type: ignore[arg-type]
+    assert planned.exit_code == 0, planned.output
+    assert not target.exists()
+    created = CliInvoker().invoke(app, args)  # type: ignore[arg-type]
+    replaced = CliInvoker().invoke(app, [*args, "--force"])  # type: ignore[arg-type]
+
+    rows = [json.loads(result.stdout) for result in (planned, created, replaced)]
+    assert [row["action"] for [row] in rows] == ["planned", "created", "updated"]
+    assert rows[1][0] == {
+        "action": "created",
+        "name": "untaped-demo",
+        "target": "codex",
+        "scope": "global",
+        "target_path": str(target.resolve() / "untaped-demo"),
+    }
+
+
+def test_a_failed_install_is_a_row_beside_the_ones_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = _skills_app("untaped-one", "untaped-two")
+    real = skills_cli.install_planned
+
+    def install(planned: object, *, force: bool) -> object:
+        if planned.skill.name == "untaped-two":  # type: ignore[attr-defined]
+            raise ConfigError("could not place it")
+        return real(planned, force=force)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(skills_cli, "install_planned", install)
+    target = tmp_path / "skills"
+    result = CliInvoker().invoke(
+        app,  # type: ignore[arg-type]
+        ["install", "--all", "--target-dir", str(target), "--format", "json"],
+    )
+
+    assert result.exit_code == 4, result.output  # the failure's own exit
+    rows = {row["name"]: row["action"] for row in json.loads(result.stdout)}
+    assert rows == {"untaped": "created", "untaped-one": "created", "untaped-two": "failed"}
+    assert (target / "untaped-one" / "SKILL.md").is_file()
 
 
 def test_install_short_via_stdin_keeps_full_id(tmp_path: Path) -> None:
