@@ -1,4 +1,4 @@
-"""Architecture guard: core must not import tool packages."""
+"""Architecture guard: core imports no plugin package."""
 
 from __future__ import annotations
 
@@ -6,35 +6,26 @@ import ast
 from pathlib import Path
 
 CORE_SRC = Path(__file__).resolve().parents[2] / "src" / "untaped"
-EXTERNAL_TOOL_MODULES = frozenset(
-    {
-        "untaped_ansible",
-        "untaped_apple_health",
-        "untaped_awx",
-        "untaped_github",
-        "untaped_jira",
-        "untaped_recipe",
-        "untaped_workspace",
-    }
-)
 
 
-def test_core_must_not_import_tool_packages() -> None:
-    violations: list[str] = []
-    for py_file in sorted(CORE_SRC.rglob("*.py")):
-        rel = py_file.relative_to(CORE_SRC.parent)
-        tree = ast.parse(py_file.read_text())
-        for imp in ast.walk(tree):
-            if isinstance(imp, ast.Import):
-                for alias in imp.names:
-                    root = alias.name.split(".", maxsplit=1)[0]
-                    if root in EXTERNAL_TOOL_MODULES:
-                        violations.append(f"{rel}:{imp.lineno} imports {alias.name}")
-            elif isinstance(imp, ast.ImportFrom) and imp.module:
-                root = imp.module.split(".", maxsplit=1)[0]
-                if root in EXTERNAL_TOOL_MODULES:
-                    violations.append(f"{rel}:{imp.lineno} imports {imp.module}")
+def _imported(tree: ast.Module) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node.lineno, alias.name) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            found.append((node.lineno, node.module))
+    return found
 
-    assert not violations, "untaped core must not import tool packages:\n  " + "\n  ".join(
+
+def test_core_imports_no_plugin_package() -> None:
+    """Any top-level ``untaped_*`` module is a plugin's; a string naming one is not an import."""
+    violations = [
+        f"{path.relative_to(CORE_SRC.parent)}:{line} imports {name}"
+        for path in sorted(CORE_SRC.rglob("*.py"))
+        for line, name in _imported(ast.parse(path.read_text(encoding="utf-8")))
+        if name.split(".", maxsplit=1)[0].startswith("untaped_")
+    ]
+    assert not violations, "untaped core must not import plugin packages:\n  " + "\n  ".join(
         violations
     )
