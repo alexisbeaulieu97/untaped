@@ -25,11 +25,10 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate, PluginSpec
-from untaped.sdk.contracts import Contract, Errored, Ok, Provider, Skipped, gather
+from untaped.sdk.contracts import Errored, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
-from untaped.sdk.records import Record
 
 
 def _rows() -> list[tuple[str, str, str, str]]:
@@ -86,37 +85,6 @@ def test_a_provider_breaking_a_rule_is_quarantined_alone() -> None:
     assert "must fill to_book" in quarantined.detail
     answers = {a.plugin: a for a in gather(BookSource.books)()}
     assert isinstance(answers["shop"], Ok)
-
-
-class _Kindless(Record):
-    name: str
-
-
-class _NoKind(BookSource[_Kindless]):
-    def to_book(self, item: _Kindless) -> Book:
-        return Book(title=item.name)
-
-    def books(self) -> list[Book]:
-        return []
-
-
-class _Elsewhere(Contract):
-    def names(self) -> list[str]:
-        raise NotImplementedError
-
-
-class _ElsewhereProvider(_Elsewhere):
-    def names(self) -> list[str]:
-        return []
-
-
-class _OtherSettings(BaseModel):
-    catalog: str = ""
-
-
-class _WrongSettings(BookSource, Provider[_OtherSettings]):
-    def books(self) -> list[Book]:
-        return []
 
 
 class _Again(Library):

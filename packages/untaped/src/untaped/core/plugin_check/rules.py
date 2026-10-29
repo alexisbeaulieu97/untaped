@@ -70,7 +70,7 @@ class _Checked:
     name: str
     root: App
     spec: PluginSpec
-    own: PluginCandidate | None
+    own: PluginCandidate
     candidates: Sequence[PluginCandidate]
     package: str
     source_dir: Path
@@ -97,7 +97,9 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
         # (a broken settings-key declaration, say) is its one violation.
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     own = next((candidate for candidate in candidates if candidate.name == name), None)
-    package, source_dir = package_of(spec, None if own is None else own.target)
+    if own is None:  # a composed plugin is one of the candidates
+        raise LookupError(f"no candidate named {name!r}")
+    package, source_dir = package_of(spec, own.target)
     unreadable = unimportable(package, source_dir)
     if unreadable is not None:
         # The class checks can't import the plugin; the file is its one violation.
@@ -114,7 +116,7 @@ def _core_lines(checked: _Checked) -> list[str]:
         *help_tree_violations(checked.root, commands),
         *guide_violations(checked.root, composition(), spec),
         *stability_violations(checked.root, composition(), commands, spec=spec),
-        *([] if checked.own is None else undated_violations(spec, checked.own)),
+        *undated_violations(spec, checked.own),
         *_sdk_deprecations(checked.package),
         *structure_class_violations(spec, checked.package, checked.source_dir),
     ]

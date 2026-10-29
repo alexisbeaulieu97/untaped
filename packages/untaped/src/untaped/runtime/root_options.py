@@ -5,11 +5,11 @@ accepted anywhere before a ``--``. One token pass writes them onto the run
 once it started (:func:`applied_root_options`), so they end with it. It reads
 the selected command's token shapes from the declaration, so it takes a root
 option wherever it sits among a declared command's own options and never one
-the command reads as a value.
-With no declaration kept, dispatch reads the line the same way by the
-composition's. Also the rewriting of a command's
-loose or deprecated spelling to its registered name, with the deprecation
-warnings. The bootstrap composition root uses this one implementation.
+the command reads as a value. With no declaration kept, the root reads the
+line the same way by the composition's once it is composed. Also the
+rewriting of a command's loose or deprecated spelling to its registered
+name, with the deprecation warnings. The bootstrap composition root uses
+this one implementation.
 """
 
 from __future__ import annotations
@@ -209,13 +209,11 @@ class RootLine:
         gives, else ``UNTAPED_FORMAT`` (an invalid one ignored), else
         ``untaped.ui.format``. The theme is the user's under text
         diagnostics. A first word the declaration doesn't hold is an unknown
-        command only when the composed ``root`` app has no command for it
-        either; a line read with no declaration whose word ``root`` holds, or
-        any such line without ``root``, gets ``None``.
+        command once the composition is mounted (``root`` given); before
+        that the line gets ``None``.
         """
         if not self.placed:
-            word = self.tokens[0] if self.tokens else None
-            if root is None or word is None or resolve_command(root, word) is not None:
+            if root is None:
                 return None
             return _rendering(self.run, _unnamed_format(self.tokens))
         command = self.command
@@ -249,8 +247,9 @@ def applied_root_options(
 
     The pass reads the line by ``declaration``'s token shapes, without
     importing a command (:func:`_read_line`). With no declaration to read it
-    by, it takes the leading root options only, and dispatch reads the rest
-    by the composition's own (:func:`dispatch_line`), onto the same run: only
+    by, it takes the leading root options only, and the root reads the rest
+    by the composition's own once it is composed
+    (:func:`untaped.runtime.bootstrap.run_root`), onto the same run: only
     when they apply differs, never what the tokens mean. Each ends with the run.
     """
     line = RootLine(run=run, tokens=[])
@@ -377,8 +376,8 @@ class _LineWalk:
         """Walk the command words: whether ``declaration`` holds them, and their command.
 
         Root options between words are taken only when another command word
-        follows them: otherwise they are the first
-        tokens of the group's own command, and its walk reads them.
+        follows them: otherwise they are the first tokens of the group's own
+        command, and its walk reads them.
         """
         nodes: Sequence[_Node] = () if declaration is None else _root_nodes(declaration)
         group: GroupDecl | PluginDecl | None = None
@@ -704,18 +703,13 @@ def _before_separator(tokens: Sequence[str]) -> Sequence[str]:
     return tokens[: _separator_index(tokens)]
 
 
-def dispatch_line(
-    app: App, line: RootLine, root_options: dict[str, _RootOption], declaration: Declaration
-) -> object:
-    """Dispatch the command ``line`` holds; ``declaration`` is the composition's.
+def dispatch_line(app: App, line: RootLine) -> object:
+    """Dispatch the command ``line`` holds, read by the composition's declaration.
 
-    A line the token pass had no declaration for is read now by
-    ``declaration``, as the pass reads one (:meth:`RootLine.read`), so it
-    holds no root option any more and parses once.
+    The line holds no root option any more (:meth:`RootLine.read`), so it
+    parses once.
     """
     with command_selection():
-        if not line.placed:
-            line.read(line.tokens, root_options, declaration)
         return _parsed(app, canonical_command_tokens(app, line.tokens))
 
 

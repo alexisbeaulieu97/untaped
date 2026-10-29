@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.plugin_harness import make_candidate
-from untaped.runtime import bootstrap
+from untaped.runtime import bootstrap, mount
 from untaped.runtime.profile_resolver import flag_pick
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings, reset_config_registry
 from untaped.sdk import Command, Group, Plugin, Positional
@@ -726,8 +726,8 @@ def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
 ) -> None:
     from untaped.runtime.settings import env_var_name, get_config_section
 
-    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
-    bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+    tools = make_plugin("acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[plugin_candidate(tools)])
     monkeypatch.setenv("UNTAPED_ACME_TOOLS__GREETING", "from env")
     monkeypatch.setenv("UNTAPED_ACME_TOOLS__TOKEN", "env-token")
     get_settings.cache_clear()
@@ -741,8 +741,8 @@ def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
 def test_a_hyphenated_plugin_reads_its_json_override(monkeypatch: pytest.MonkeyPatch) -> None:
     from untaped.runtime.settings import get_config_section
 
-    spec = PluginSpec(name="acme-tools", settings=_ToolsProfile)
-    bootstrap.compose_root(candidates=[plugin_candidate(spec)])
+    tools = make_plugin("acme-tools", settings=_ToolsProfile)
+    bootstrap.compose_root(candidates=[plugin_candidate(tools)])
     monkeypatch.setenv("UNTAPED_ACME_TOOLS", '{"greeting": "blob"}')
     get_settings.cache_clear()
 
@@ -860,3 +860,79 @@ def test_core_s_behaviours_are_the_sdk_s_to_list_never_a_listing_of_its_class(
     assert "acme" in marks._LISTINGS
     core = next(plugin.spec for plugin in result.plugins if plugin.root)
     assert core.deprecations() == ()  # none declared: its blocks are never loaded
+
+
+# --- a plugin whose commands can't be built -----------------------------------
+
+
+@pytest.fixture
+def built(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Each plugin whose commands were built, in order; building ``bad``'s raises."""
+    calls: list[str] = []
+    build = mount.build_app
+
+    def building(composed: mount.Mount, name: str) -> App:
+        calls.append(name)
+        if name == "bad":
+            raise RuntimeError("cli import failed")
+        return build(composed, name)
+
+    monkeypatch.setattr(mount, "build_app", building)
+    return calls
+
+
+def test_a_plugin_whose_commands_cant_be_built_fails_only_them(built: list[str]) -> None:
+    root = bootstrap.build_root_app(
+        candidates=[make_candidate(_plugin("bad"), "bad-dist"), make_candidate(_plugin("good"))]
+    )
+    assert built == []  # nothing built at startup
+    assert bootstrap.composition().quarantine == ()
+
+    for argv in (["bad", "who"], ["bad", "--help"], ["bad"]):
+        bad = CliInvoker().invoke(root.meta, argv)
+        assert bad.exit_code == 4, argv
+        assert (
+            "plugin 'bad' from 'bad-dist' could not build its commands: "
+            "RuntimeError: cli import failed"
+        ) in bad.stderr
+    good = CliInvoker().invoke(root.meta, ["good", "who"])
+    assert good.exit_code == 0, good.stderr
+    assert built == ["bad", "good"]  # bad's build ran once
+    assert _panel_rows(root)["Plugins"] == ["bad", "good"]
+
+
+def test_completion_survives_a_plugin_whose_commands_cant_be_built(
+    built: list[str], capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    root = bootstrap.build_root_app(
+        candidates=[make_candidate(_plugin("bad")), make_candidate(_plugin("goodcap"))]
+    )
+    capsys.readouterr()
+
+    # Through ``--install-completion``'s own path, which calls generate_completion.
+    installed = root.install_completion(
+        shell="bash", output=tmp_path / "untaped.bash", add_to_startup=False
+    )
+
+    assert "goodcap" in installed.read_text()
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.usefixtures("built")
+def test_run_root_reports_commands_that_cant_be_built_as_json_with_exit_4(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    argv = ["bad", "--help", "--format=json"]
+    with pytest.raises(SystemExit) as failed:
+        bootstrap.run_root(argv, candidates=[make_candidate(_plugin("bad"), "bad-dist")])
+    assert failed.value.code == 4
+    error = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert (error["level"], error["category"], error["system"], error["exit_code"]) == (
+        "error",
+        "config",
+        "bad",
+        4,
+    )
+    assert error["message"] == (
+        "plugin 'bad' from 'bad-dist' could not build its commands: RuntimeError: cli import failed"
+    )

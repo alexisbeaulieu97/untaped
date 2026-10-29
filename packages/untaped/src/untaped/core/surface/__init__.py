@@ -56,7 +56,6 @@ if TYPE_CHECKING:
     from untaped.runtime.registry import (
         CompositionResult,
         PluginCandidate,
-        PluginSpec,
         RegisteredPlugin,
     )
 
@@ -118,13 +117,13 @@ def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:
     return sorted(set(lines))
 
 
-def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
-    """The surface of one plugin (an 11.x spec, or any candidate), composed alone with core.
+def plugin_lines(candidate: PluginCandidate) -> list[Line]:
+    """The surface of one plugin, its ``candidate``, composed alone with core.
 
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
-    their payload models, its record kinds once it is a 12.0 plugin class, and
-    its ``api`` and ``testing`` modules when it has them: the lines
-    :func:`generate` takes from every composed plugin.
+    their payload models, its record kinds, and its ``api`` and ``testing``
+    modules when it has them: the lines :func:`generate` takes from every
+    composed plugin.
     """
     from untaped.core.surface._settings import check_quarantine  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
@@ -132,10 +131,7 @@ def plugin_lines(plugin: PluginSpec | PluginCandidate) -> list[Line]:
         composition,
         kept_composition,
     )
-    from untaped.runtime.registry import PluginCandidate  # noqa: PLC0415
-    from untaped.sdk.testing import plugin_candidate  # noqa: PLC0415
 
-    candidate = plugin if isinstance(plugin, PluginCandidate) else plugin_candidate(plugin)
     with kept_composition():
         root = build_root_app(candidates=[candidate])
         result = composition()

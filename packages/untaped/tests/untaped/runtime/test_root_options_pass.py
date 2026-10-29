@@ -1,8 +1,8 @@
 """The token pass reads a line by the declared command's shape, onto the run once it started.
 
 It takes a root option wherever it sits among a declared command's own
-options and never one the command reads as a value; an 11.x seam command
-gets only its leading root options taken here.
+options and never one the command reads as a value; a first word the
+declaration doesn't hold gets only its leading root options taken.
 """
 
 from __future__ import annotations
@@ -293,7 +293,7 @@ def test_a_separator_ends_the_line_unless_it_only_closed_the_leading_root_option
 
 
 @pytest.mark.usefixtures("read")
-def test_an_11x_command_gets_only_its_leading_root_options_taken() -> None:
+def test_an_unknown_command_gets_only_its_leading_root_options_taken() -> None:
     assert _line("-v", "old", "who", "--quiet") == (["old", "who", "--quiet"], False, True)
     with started_line(["old", "-v"]) as line:  # no declaration
         assert (line.tokens, line.placed, is_verbose()) == (["old", "-v"], False, False)

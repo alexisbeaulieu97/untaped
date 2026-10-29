@@ -75,8 +75,6 @@ def test_compose_with_and_plugin_candidate_take_a_plugin_class() -> None:
     with compose_with(Acme, shelf_plugin()) as result:
         assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "acme", "shelf"]
     assert plugin_candidate(Acme).target is Acme
-    with pytest.raises(TypeError, match="names its own distribution"):
-        plugin_candidate(Acme, distribution="untaped-other")
 
 
 def test_compose_with_refuses_what_it_cannot_compose() -> None:

@@ -32,8 +32,9 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.core.commands.doctor import collect_doctor_rows
-from untaped.runtime import bootstrap
+from untaped.runtime import bootstrap, mount
 from untaped.runtime.registry import (
     PluginCandidate,
     named_plugin_dir,
@@ -385,6 +386,34 @@ def test_doctor_performs_no_network_io(
     )
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 0, result.output
+
+
+class Ping(Command[ExtProfile]):
+    """Answer."""
+
+    def run(self) -> str:
+        return "pong"
+
+
+def test_a_plugin_whose_commands_cant_be_built_is_a_quarantine_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build = mount.build_app
+
+    def building(composed: mount.Mount, name: str) -> object:
+        if name == "bad":
+            raise RuntimeError("cli import failed")
+        return build(composed, name)
+
+    monkeypatch.setattr(mount, "build_app", building)
+    bad = make_plugin("bad", settings=ExtProfile, commands=(Ping,))
+    result = bootstrap.compose_root(candidates=[make_candidate(bad, "bad-dist")])
+
+    rows = collect_doctor_rows(result)
+
+    [row] = [row for row in rows if row["check"] == "quarantine"]
+    assert (row["plugin"], row["title"]) == ("bad", "bad-app-factory")
+    assert str(row["detail"]).startswith("RuntimeError: cli import failed [distribution bad-dist")
 
 
 # ── core, env, state and profile rows ────────────────────────────────────────

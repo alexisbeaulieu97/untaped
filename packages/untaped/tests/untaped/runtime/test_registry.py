@@ -209,6 +209,15 @@ def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
     assert calls == []
 
 
+def test_compose_hints_the_class_an_11x_entry_point_should_name() -> None:
+    candidate = make_candidate(make_spec("old-tool"), "old-dist", calls=[])
+    package = candidate.target.partition(".")[0]  # type: ignore[union-attr]
+    (record,) = compose([candidate]).quarantine
+    assert record.reason == "not-a-plugin-class"
+    assert "names an 11.x PluginSpec" in record.detail
+    assert f"'{package}.plugin:OldTool'" in record.detail
+
+
 def _runs(calls: list[str] | None = None) -> DoctorCheck:
     """A plugin class's check that records each run in ``calls``, or must never run."""
 

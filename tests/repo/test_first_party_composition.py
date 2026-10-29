@@ -13,7 +13,7 @@ import pytest
 
 from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options
 from untaped.runtime.run import entered, start_run
 from untaped.sdk import Command
@@ -51,40 +51,6 @@ def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
     assert result.exit_code == 2  # the picked profile is not defined: usage
     assert "Unknown command" not in result.stderr
     assert "'nope'" in result.stderr
-
-
-def test_lazy_first_party_plugins_render_like_eager_mounts(
-    first_party_candidates: tuple[PluginCandidate, ...],
-    first_party_specs: tuple[PluginSpec, ...],
-) -> None:
-    specs = first_party_specs
-    moved = [c for c in first_party_candidates if c.name not in {spec.name for spec in specs}]
-    eager_candidates = [
-        plugin_candidate(replace(spec, help=None), distribution="untaped") for spec in specs
-    ] + moved
-    argv_cases = [["--help"]] + [
-        [spec.name, flag] for spec in specs for flag in ("--help", "--version")
-    ]
-    for argv in argv_cases:
-        lazy = CliInvoker().invoke(
-            bootstrap.build_root_app(candidates=first_party_candidates).meta, argv
-        )
-        eager = CliInvoker().invoke(
-            bootstrap.build_root_app(candidates=eager_candidates).meta, argv
-        )
-        assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), (
-            f"lazy mount of {argv} renders differently from an eager mount; cyclopts "
-            "internals used by bootstrap._LazyPluginCommand may have drifted (see "
-            "test_cyclopts_private_internals_used_by_lazy_mounts_exist)"
-        )
-
-
-def test_first_party_help_matches_app_summary(
-    first_party_specs: tuple[PluginSpec, ...],
-) -> None:
-    for spec in first_party_specs:
-        assert spec.help is not None, spec.name
-        assert spec.help == spec.app_factory().help, spec.name
 
 
 def _panels(text: str) -> dict[str, str]:

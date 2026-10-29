@@ -630,7 +630,7 @@ def _install_root_callback(
                 # follows the --format the tokens ask for.
                 note_requested_format(command_tokens)
                 _refresh_reference(command_tokens)
-                outcome = dispatch_line(app, line, root_options, result.mount.declaration)
+                outcome = dispatch_line(app, line)
                 # A command that emitted a failure and returned still fails.
                 exit_on_counted_failure()
                 failed = False

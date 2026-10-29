@@ -8949,9 +8949,7 @@ sdk untaped.sdk.testing.memory_store(store@1=) default=None
 sdk untaped.sdk.testing.move_ask(store, item, *, moved_from)  [experimental]
 sdk untaped.sdk.testing.piped_through(bridge, row) callback(bridge, *)
 sdk untaped.sdk.testing.plan_release(project, store)  [experimental]
-sdk untaped.sdk.testing.plugin_candidate(distribution=) default=None
-sdk untaped.sdk.testing.plugin_candidate(requires_dist=) default=[]
-sdk untaped.sdk.testing.plugin_candidate(spec)
+sdk untaped.sdk.testing.plugin_candidate(plugin)
 sdk untaped.sdk.testing.progress_clock()
 sdk untaped.sdk.testing.read_rows(rows)  [experimental]
 sdk untaped.sdk.testing.release_ask(force=) default=false  [experimental]

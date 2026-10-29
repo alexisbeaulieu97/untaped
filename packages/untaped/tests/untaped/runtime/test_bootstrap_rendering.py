@@ -462,7 +462,7 @@ def test_a_fixed_rendering_is_fixed_once_and_notes_change_nothing(
     with bootstrap._started(["chime", "chords"], declaration) as (run, _):
         fixed = run.policy
         note_requested_format(["--format", "table"])
-        _note_theme(BUILTIN_THEMES["default"])  # the seam's phase 2
+        _note_theme(BUILTIN_THEMES["default"])  # a late theme note
         assert run.policy == fixed
         assert (fixed.format, fixed.theme) == ("json", None)
         with pytest.raises(RuntimeError, match="fixed once"):
