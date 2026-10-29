@@ -27,7 +27,7 @@ A project holds items other plugins own (:mod:`untaped.sdk.storage.holds`):
 ``project.release(STORE)`` lets go through the owner.
 
 Each plugin's committed files under ``.untaped/`` are named through
-:func:`committed_path`, so every name there is core's or one plugin's.
+:func:`plugin_committed_path`, so every name there is core's or one plugin's.
 """
 
 from __future__ import annotations
@@ -77,7 +77,6 @@ from untaped.sdk.storage.holds import (
 from untaped.sdk.words import shown_path
 
 if TYPE_CHECKING:
-    from untaped.runtime.registry import PluginSpec
     from untaped.sdk.records import OutcomeRecord
 
 #: The folder a project keeps its untaped files in, at its root.
@@ -127,10 +126,6 @@ class Project(BaseModel):
         """Hold the project's lock for the block: re-entrant; waits 600 s, then exit 5."""
         return holder_lock(holder_of(self), self.name)
 
-    def plugin_dir(self, spec: PluginSpec) -> Path:
-        """``<root>/.untaped/plugins/<name>/``: a plugin's machine files in this project."""
-        return self.root / DIRECTORY / PLUGINS_FOLDER / spec.name
-
     def hold(self, store: ItemStore[Any], item: object) -> None:
         """Hold ``item`` of ``store`` (an item store a composed plugin lists); idempotent.
 
@@ -168,21 +163,15 @@ class Project(BaseModel):
             return release_rows(holder_of(here), store, items=items, force=force, dry_run=dry_run)
 
 
-@experimental
-def committed_path(spec: PluginSpec, name: str, *, root: Path) -> Path:
-    """``<root>/.untaped/<name>``: a plugin's files that people write and may commit.
+def plugin_committed_path(plugin: str, name: str, *, root: Path) -> Path:
+    """``<root>/.untaped/<name>``: plugin ``plugin``'s files that people write and may commit.
 
     ``name`` is the plugin's own: its name (``awx``), ``<plugin>.<ext>``
     (``lint.yml``) or a path under ``<plugin>/`` (``lint/house.py``); any
     other name raises :class:`ValueError`, so a plugin never meets core's
-    files or another plugin's. ``root`` is the caller's choice: the
-    checkout's root, a project's, or ``Path()`` for a path relative to it.
+    files or another plugin's. A plugin reaches it as its handle's
+    :meth:`~untaped.sdk.PluginHandle.committed`.
     """
-    return plugin_committed_path(spec.name, name, root=root)
-
-
-def plugin_committed_path(plugin: str, name: str, *, root: Path) -> Path:
-    """:func:`committed_path` by the plugin's name, for a plugin's handle."""
     rest = name.removeprefix(f"{plugin}/") if name.startswith(f"{plugin}/") else None
     if rest is not None:
         parts = PurePosixPath(rest).parts

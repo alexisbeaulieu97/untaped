@@ -537,8 +537,8 @@ class Cache[M = None](OwnedBlock):
         """The max age in force now: the setting, read at call time, else the declared default.
 
         The default holds when the plugin's composed section has no such
-        cache (the plugin is used uncomposed, or does not list the cache on
-        ``PluginSpec.caches``). An invalid setting raises the settings
+        cache (the plugin is used uncomposed, or its class does not hold the
+        cache). An invalid setting raises the settings
         :class:`ConfigError`; a version-only cache, which has none, raises
         one too.
         """

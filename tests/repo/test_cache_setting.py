@@ -1,6 +1,6 @@
 """A cache's max age is the setting ``Cache`` generates, never a field of a plugin's settings.
 
-Declaring a ``Cache`` on ``PluginSpec.caches`` gives it
+Declaring a ``Cache`` on the plugin class gives it
 ``<plugin>.caches.<cache>.max_age_seconds``, documented, typed and named the
 same way for every plugin, and the ``--refresh`` help names it. A settings
 field whose name says ``max_age``, ``stale``, ``expir`` or ``ttl`` is a
@@ -63,7 +63,7 @@ def test_no_plugin_declares_a_max_age_setting_by_hand(
     found = _found(first_party_candidates)
     stray = sorted(f"{plugin}.{path}" for plugin, path in found - set(EXEMPT))
     assert not stray, (
-        f"{stray}: declare a Cache on the spec (PluginSpec.caches); its setting "
+        f"{stray}: declare a Cache on the plugin class; its setting "
         "<plugin>.caches.<cache>.max_age_seconds is generated, and Cache(renamed_from=) "
         "moves an old key into it; see docs/caches.md"
     )

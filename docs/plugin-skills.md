@@ -2,21 +2,18 @@
 
 A plugin's agent skill is a stub: a short `SKILL.md` that untaped writes from
 its own template and one sentence of the plugin's, and that sends the agent
-to `untaped docs` (see [Agent skills](./skills.md)). The plugin declares it
-on `PluginSpec.skills` with a name and a description, and nothing else:
+to `untaped docs` (see [Agent skills](./skills.md)). The plugin class holds
+it with its description, and nothing else:
 
 ```python
-SkillAsset(
-    name="untaped-acme",
-    description=(
+class Acme(Plugin):
+    skill = StubSkill(
         "Acme deployments through untaped: releases, rollbacks and their audit log. "
         "Use when the user wants to ship, roll back or inspect an Acme release."
-    ),
-)
+    )
 ```
 
-`name` is the skill's full ID, `untaped-<plugin>`. A plugin ships at most
-one skill.
+untaped names it `untaped-<plugin>`. A plugin ships at most one skill.
 
 ## The description
 

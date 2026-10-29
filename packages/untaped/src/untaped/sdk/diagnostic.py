@@ -268,7 +268,7 @@ def _check_owner(kind: str, model: type[WireModel]) -> None:
     The plugin is quarantined only when composing it registers the model:
     a model in a module that only a command body imports registers when
     that command runs, so a foreign or duplicate kind there is a traceback
-    instead. Declare models in a module the spec or app factory imports.
+    instead. Declare models in a module the plugin class's module imports.
     """
     owner = _declaring_plugin(model.__module__)
     prefix = kind.partition(".")[0]

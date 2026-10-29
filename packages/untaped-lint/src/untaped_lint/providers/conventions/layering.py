@@ -9,7 +9,7 @@ way, ``TYPE_CHECKING`` blocks included, is flagged as
 - ``application`` imports nothing from ``infrastructure`` or ``cli``;
 - ``infrastructure`` imports nothing from ``cli`` and ``application`` only
   under ``TYPE_CHECKING`` (adapters satisfy ports structurally);
-- none of them resolves settings (``app_context``, ``settings_of``): only ``cli``
+- none of them resolves settings (``settings_of``): only ``cli``
   does, as the composition root (flagged as ``<file>::settings::<layer> -> <name>``).
 
 ``# untaped: allow layer`` (or ``settings``) on the import line suppresses one.
@@ -34,7 +34,7 @@ FORBIDDEN = {
 # names the port it satisfies.
 TYPING_ONLY = frozenset({("infrastructure", "application")})
 # Only ``cli/`` resolves settings; lower layers receive narrowed models.
-SETTINGS_READERS = frozenset({"app_context", "settings_of"})
+SETTINGS_READERS = frozenset({"settings_of"})
 
 
 def _is_type_checking(test: ast.expr) -> bool:

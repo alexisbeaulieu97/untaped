@@ -117,7 +117,7 @@ class PluginContext:
 
     @property
     def diag(self) -> Diagnostics:
-        """The stderr handle, as on ``AppContext``: resolved at each call."""
+        """The stderr handle, as on a command's context: resolved at each call."""
         from untaped.runtime.sink import Diagnostics  # noqa: PLC0415 - the sink imports the SDK
 
         return Diagnostics()

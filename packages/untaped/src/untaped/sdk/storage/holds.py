@@ -1,7 +1,8 @@
 """Holds: a holder holds an item an owner declared, and core releases it through the owner.
 
 An **owner** is a plugin that lets others hold its items: it declares an
-:class:`ItemStore` on ``PluginSpec.stores`` and says how a holder lets go
+:class:`ItemStore` (``repos = Dir(items=RepoKey, ...)`` on its plugin class)
+and says how a holder lets go
 (``release=``) and whether a holder's move needs repair (``moved=``). A
 **holder** is a reference in core's ``refs`` (:mod:`untaped.sdk.storage._refs`) of
 some kind: a project (:mod:`untaped.sdk.projects`) today. A **hold** is one
@@ -166,7 +167,7 @@ class LetGo[T: str | RootModel[str]](BaseModel):
 
 @experimental
 class ItemStore[T: str | RootModel[str]]:
-    """Items plugin ``plugin`` keeps for its holders, listed on ``PluginSpec.stores``.
+    """Items plugin ``plugin`` keeps for its holders: a ``Dir(items=...)``'s ``items()``.
 
     ``name`` is one settings segment, unique among the plugin's stores.
     ``item`` is the item's type: ``str``, or a ``RootModel[str]`` that
@@ -175,7 +176,7 @@ class ItemStore[T: str | RootModel[str]]:
     that lets others hold its items says how they're released); ``moved``
     repairs what points into a holder that moved, or is ``None`` when
     nothing does (a required keyword: ``None`` is a choice). Both are module
-    functions with a local import, as ``PluginSpec.contracts`` is. Two
+    functions with a local import. Two
     declarations with the same values are equal.
     """
 
@@ -473,7 +474,7 @@ def add_hold(
         raise ConfigError(
             f"{store.qualified} is not an item store a composed plugin lists, "
             "so nothing could release a hold on it",
-            hint=f"list it on plugin {store.plugin}'s PluginSpec.stores",
+            hint=f"hold it on plugin {store.plugin}'s class as a Dir(items=...)",
         )
     try:
         target = store.target(item)

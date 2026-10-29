@@ -16,7 +16,7 @@ import respx
 
 from github_test_support import Result, Settings, installed, run
 from untaped.runtime.bootstrap import build_root_app
-from untaped.sdk import plugin_path
+from untaped.sdk import home
 from untaped.sdk.testing import assert_destructive_contract, invoke_root
 from untaped_git.api import RepoStore
 from untaped_github.errors import GitCorpusError
@@ -354,7 +354,8 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
-    assert Path(row["path"]).is_relative_to(plugin_path("github", "worktrees").expanduser())
+    worktrees = (home() / "plugins" / "github" / "worktrees").expanduser()
+    assert Path(row["path"]).is_relative_to(worktrees)
     assert next(iter(row)) == "target_path" and row["target_path"] == row["path"]
 
 
@@ -367,7 +368,7 @@ def test_cache_worktree_refuses_an_unknown_column_before_materializing(
 
     assert result.exit_code == 2, result.output
     assert "unknown column 'nope'" in result.stderr
-    assert not (plugin_path("github", "worktrees").expanduser()).exists()
+    assert not ((home() / "plugins" / "github" / "worktrees").expanduser()).exists()
 
 
 def test_cache_worktree_raw_format_prints_just_the_path(source_repo: SourceRepo) -> None:

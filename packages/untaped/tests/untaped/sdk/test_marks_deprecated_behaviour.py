@@ -23,7 +23,6 @@ from untaped.sdk.marks import (
     DeprecatedBehaviour,
     UntapedDeprecationWarning,
     deprecated,
-    deprecated_behaviour,
     forget_notices,
     marks,
 )
@@ -31,8 +30,8 @@ from untaped.sdk.testing import install, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
-UNLISTED = deprecated_behaviour("unlisted", removed_in=3)
-CORE = deprecated_behaviour("old-login", removed_in=12, replacement="untaped auth login")
+UNLISTED = DeprecatedBehaviour("unlisted", deprecated(removed_in=3))
+CORE = DeprecatedBehaviour("old-login", deprecated(removed_in=12, replacement="untaped auth login"))
 
 
 @pytest.fixture
@@ -70,12 +69,12 @@ def _compose(*plugins: type[Plugin]) -> App:
 @pytest.mark.parametrize("name", ["Plain", "plain_token", "-x", "x-", "", "a--b"])
 def test_a_behaviour_s_name_is_kebab_case(name: str) -> None:
     with pytest.raises(TypeError, match="kebab-case"):
-        deprecated_behaviour(name, removed_in=3)
+        DeprecatedBehaviour(name, deprecated(removed_in=3))
 
 
 def test_a_behaviour_names_its_major() -> None:
     with pytest.raises(TypeError, match="removed_in=12, not"):
-        deprecated_behaviour("x", removed_in="3")  # type: ignore[arg-type]
+        DeprecatedBehaviour("x", deprecated(removed_in="3"))  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="names the major"):
         DeprecatedBehaviour("x", deprecated(removed_in=None))
 
@@ -274,7 +273,9 @@ def test_a_behaviour_under_a_deprecated_plugin_is_nested() -> None:
 
 
 def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch) -> None:
-    gone = deprecated_behaviour("gone", removed_in=12, replacement="untaped auth nowhere")
+    gone = DeprecatedBehaviour(
+        "gone", deprecated(removed_in=12, replacement="untaped auth nowhere")
+    )
     monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (gone,))
     root = _compose()
     found = stability_violations(root, bootstrap.composition(), [], sections=["untaped"])

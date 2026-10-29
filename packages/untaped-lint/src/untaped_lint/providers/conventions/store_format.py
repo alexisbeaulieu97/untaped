@@ -8,14 +8,11 @@ which keeps each layout under its own name.
 Only the decidable case is flagged: a call to ``sqlite3.connect``,
 ``shelve.open`` or ``dbm.open`` (a submodule's too, such as ``dbm.gnu.open``,
 and a name ``from <module> import connect`` or ``open`` binds in the call's
-scope) one of whose arguments itself contains a ``plugin_dir(...)``,
-``named_plugin_dir(...)`` or ``plugin_path(...)`` call or a ``~/.untaped`` string. A path built
-elsewhere, kept on ``self`` or returned by a ``Dir``'s ``open()`` is not read.
-Lines are
-``<file>:<line>::store-format::sqlite3.connect() on a path under plugin_dir() ...``.
-
-``# untaped: allow store-format`` on the call's first line waives one, for
-a file whose layout is version-neutral.
+scope) one of whose arguments itself reads a ``.plugin.dir`` (a command's
+``self.ctx.plugin.dir``), calls ``home()`` or ``named_plugin_dir(...)``, or
+holds a ``~/.untaped`` string. A path built elsewhere, kept on ``self`` or
+returned by a ``Dir``'s ``open()`` is not read. Lines are
+``<file>:<line>::store-format::sqlite3.connect() on a path under plugin.dir ...``.
 """
 
 from __future__ import annotations
@@ -30,7 +27,7 @@ from untaped_lint.infrastructure.files import SourceFile, callee
 RULE = "store-format"
 #: The openers, by module: the function that opens a database file.
 _OPENERS = {"sqlite3": "connect", "shelve": "open", "dbm": "open"}
-_DIRS = frozenset({"plugin_dir", "named_plugin_dir", "plugin_path"})
+_DIRS = frozenset({"home", "named_plugin_dir"})
 _HOME = "~/.untaped"
 
 
@@ -140,11 +137,18 @@ def _opener(func: ast.expr, modules: dict[str, str], functions: dict[str, str]) 
 
 
 def _under(call: ast.Call) -> str | None:
-    """What an argument of ``call`` is built from: ``plugin_dir()``, or None."""
+    """What an argument of ``call`` is built from: ``plugin.dir``, ``home()``, or None."""
     for argument in [*call.args, *(keyword.value for keyword in call.keywords)]:
         for node in ast.walk(argument):
             if isinstance(node, ast.Call) and callee(node) in _DIRS:
                 return f"{callee(node)}()"
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == "dir"
+                and isinstance(node.value, ast.Attribute)
+                and node.value.attr == "plugin"
+            ):
+                return "plugin.dir"
             if (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)

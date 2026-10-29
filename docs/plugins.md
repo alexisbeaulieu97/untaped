@@ -273,12 +273,12 @@ class Acme(Plugin):
 
 ## Packaged skills
 
-A plugin ships its agent skill as a stub: a `SkillAsset` with a name and a
-description on `PluginSpec.skills`, which untaped writes from its own
-template. The root lists and installs every composed plugin's skills (see
-[Agent skills](./skills.md)), and [Writing a plugin's
-skill](./plugin-skills.md) says what the description holds and where the
-rest goes.
+A plugin ships its agent skill as a stub: `skill = StubSkill("...")` on its
+plugin class with its description, which untaped writes from its own template
+as `untaped-<plugin>`. The root lists and installs every composed plugin's
+skills (see [Agent skills](./skills.md)), and [Writing a plugin's
+skill](./plugin-skills.md) says what the description holds and where the rest
+goes.
 
 ## Validation and checks
 
@@ -299,11 +299,10 @@ uv run ruff check
 Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
-[Lint](./lint.md)) from the plugin's own tests,
-`untaped.sdk.testing.assert_surface(SPEC, path)` to keep its commands, settings
-and contracts from losing a line by accident (experimental), and, for a
-`PluginSpec` plugin,
-`untaped.sdk.testing.invoke_root(["acme", "hello"])` to run `untaped acme hello`
+[Lint](./lint.md)) from the plugin's own tests, and
+`untaped.sdk.testing.assert_surface(Hello)` to keep its commands, settings
+and contracts from losing a line by accident (experimental).
+`untaped.sdk.testing.invoke_root(["acme", "hello"])` runs `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
@@ -317,14 +316,11 @@ shows, as `Ran.diagnostics` are a command's (a command run inside reports on
 its own `Ran`), and `run.http` is the factory a client class takes
 (`JiraClient(settings, http=run.http)`); `clock`, `terminal` (absent until
 scripted) and `credentials` are the clock, terminal and password store
-commands meet; `check(install(Hello))`
-and `assert_surface(Hello)` guard its composition checks and surface.
-Define `build_app` (the `app_factory`) in the plugin package's
-`__init__.py`, because the checks scan that package. To waive a rule on one line,
-see [Enforcement](./reference/conventions.md#enforcement).
+commands meet; and `check(install(Hello))` guards its composition checks.
+To waive a rule on one line, see
+[Enforcement](./reference/conventions.md#enforcement).
 
-Test `SPEC.app_factory()` in isolation, assert that the entry-point name
-matches `SPEC.name`, and exercise root config, profile, skill, pipe and error
-paths. `untaped plugin list`, `untaped acme --help` and `untaped doctor` show
+Exercise root config, profile, skill, pipe and error paths too.
+`untaped plugin list`, `untaped acme --help` and `untaped doctor` show
 the composed surface and any quarantine reason: a malformed plugin is
 quarantined so the other plugins still boot.
