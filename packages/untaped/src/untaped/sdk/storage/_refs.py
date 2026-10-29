@@ -1,7 +1,7 @@
 """References: who still uses a store's layout, one file per holder in core's ``refs`` folder.
 
 A holder declares what it uses; the store decides when an unheld layout goes
-(:meth:`untaped.sdk.storage.store.Store.prune`). 11.1 writes one kind of holder, a
+(:meth:`untaped.sdk.storage.store.Store.prune`). There are two kinds of holder. A
 registered install: ``untaped setup register`` writes
 ``refs/install-<id>.json`` naming the install's environment (the directory
 holding untaped's own distribution, whatever installed it), its version and
@@ -215,7 +215,7 @@ class Reference:
         }
 
     def describe(self) -> str:
-        """How a row names the holder: ``untaped 11.1.0 at <env>``, or the holder itself."""
+        """How a row names the holder: ``untaped 12.0.0 at <env>``, or the holder itself."""
         from untaped.sdk.words import shown_path  # noqa: PLC0415 - no cycle
 
         if self.kind == INSTALL and self.anchor is not None:
@@ -402,7 +402,7 @@ def composed_plugins() -> tuple[str, ...] | None:
 
 
 def others_text() -> str:
-    """The other live installs, as rows name them (``untaped 11.0.2 at ~/…``); ``""`` for none.
+    """The other live installs, as rows name them (``untaped 12.0.1 at ~/…``); ``""`` for none.
 
     What ``doctor`` and ``config migrate`` name as other readers of the
     config: an older install may still read keys a migration rewrites.

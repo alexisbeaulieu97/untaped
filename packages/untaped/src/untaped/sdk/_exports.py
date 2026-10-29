@@ -2,8 +2,6 @@
 
 ``untaped.sdk`` reads this table lazily (PEP 562), on the first name a plugin
 asks for, so importing the package loads nothing else.
-The table shrinks as plugins move to the 12.0 shape and import each name from
-its group (``untaped.sdk.storage``, ``untaped.sdk.network``, ...).
 
 The screen names (``Screen``, ``Cmd``, the components such as
 ``TextInput``, ...) are lazy here too, so a plugin that asks for ``Cache``
@@ -327,7 +325,7 @@ _LAZY_EXPORTS: dict[str, str] = {
 }
 
 __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_the_topic_groups_in_order
-    # the plugin and its commands (12.0)
+    # the plugin and its commands
     "Plugin",
     "Command",
     "Context",
@@ -527,7 +525,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "PromptChoice",
     "Terminal",
     "run_editor",
-    # doctor checks
     # conventions
     "Deprecated",
     "DeprecatedBehaviour",

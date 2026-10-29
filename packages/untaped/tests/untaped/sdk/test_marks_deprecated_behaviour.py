@@ -73,7 +73,7 @@ def test_a_behaviour_s_name_is_kebab_case(name: str) -> None:
 
 
 def test_a_behaviour_names_its_major() -> None:
-    with pytest.raises(TypeError, match="removed_in=12, not"):
+    with pytest.raises(TypeError, match="removed_in=13, not"):
         DeprecatedBehaviour("x", deprecated(removed_in="3"))  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="names the major"):
         DeprecatedBehaviour("x", deprecated(removed_in=None))

@@ -1,4 +1,4 @@
-"""The mount: a composed 12.0 plugin's commands, parsed from the declaration and run.
+"""The mount: a composed plugin's commands, parsed from the declaration and run.
 
 Composition (:mod:`untaped.runtime.composition`) reads the plugin classes into
 a :class:`~untaped.runtime.declaration.Declaration`; the mount makes that

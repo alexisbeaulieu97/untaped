@@ -10,8 +10,8 @@ takes the caller's choices and answers with a position, so the
 backend maps an answer back to its choice (two rows may share a value).
 
 The question is the box's label. A question too long for the border (or one that
-spans lines) is drawn above an unlabelled box instead. How a prompt ends maps
-onto what the line prompts did: enter answers, esc and ctrl-d end it without an
+spans lines) is drawn above an unlabelled box instead. A prompt ends as a
+terminal prompt does: enter answers, esc and ctrl-d end it without an
 answer (``EOFError`` at the backend, exit 1) and ctrl-c is an interrupt (exit
 130). A ``secret_screen`` quits with the secrets as ``SecretStr`` so nothing
 secret is ever a frame or a ``repr``.

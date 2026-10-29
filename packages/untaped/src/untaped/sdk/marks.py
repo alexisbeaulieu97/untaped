@@ -68,12 +68,15 @@ _FUNCTION_ATTR = "__untaped_stability__"
 
 
 class _Marker:
-    """What both markers share: applied to a command function, they record themselves on it."""
+    """What both markers share: used as a decorator, they record themselves on what they mark."""
 
     def __call__[F: Callable[..., Any]](self, target: F, /) -> F:
-        """Mark a command function and return it unchanged (apply under ``@app.command``).
+        """Record this mark on ``target`` and return it unchanged.
 
-        On a descriptor (``classmethod``, ``staticmethod``, ``property``) the mark
+        A plugin decorates its Python API this way (a function, method or
+        class), and marks a command, group or plugin class with ``stability =``
+        instead; core marks the function it builds for a command too. On a
+        descriptor (``classmethod``, ``staticmethod``, ``property``) the mark
         lands on its function, where the surface walker reads it.
         """
         setattr(descriptor_function(target), _FUNCTION_ATTR, self)
@@ -102,19 +105,19 @@ def check_removed_in(value: object) -> int | None:
     """
     if value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 1):
         return value
-    raise TypeError(f"removed_in is the major number that removes it: removed_in=12, not {value!r}")
+    raise TypeError(f"removed_in is the major number that removes it: removed_in=13, not {value!r}")
 
 
 @dataclass(frozen=True, kw_only=True)
 class Deprecated(_Marker):
     """The ``deprecated`` marker: still works, with a warning, until its removal version.
 
-    ``removed_in`` is the major that removes it (``12``); ``None`` is undated
-    and reads "a future major release". ``replacement`` is a command function
-    or :class:`~cyclopts.App` (untaped derives its path), or text:
-    ``"untaped github sync"`` or a setting key (shown in backticks) or prose
-    (shown as is). In the 12.0 shape it is a command class or a
-    ``key(Model).field``.
+    ``removed_in`` is the major that removes it (``13``); ``None`` is undated
+    and reads "a future major release". ``replacement`` is a command class
+    or a ``key(Model).field`` (untaped spells either), the function or class
+    that replaces a Python API, or text: ``"untaped github sync"`` or a
+    setting key (shown in backticks) or prose (shown as is). Core's own
+    adapter also passes the app it builds for a command.
     """
 
     replacement: Callable[..., Any] | App | SettingKey | str | None = None
@@ -127,8 +130,8 @@ class Deprecated(_Marker):
             return
         if not isinstance(replacement, str) or not replacement.strip():
             raise TypeError(
-                "deprecated(replacement=...) takes a command function, an App or non-empty "
-                f"text, not {replacement!r}"
+                "deprecated(replacement=...) takes a command class, a function, a key(...) "
+                f"or non-empty text, not {replacement!r}"
             )
 
 
@@ -177,7 +180,7 @@ def stability_refusal(value: object) -> str | None:
 
 
 def function_mark(func: object) -> Stability | None:
-    """The marker ``@experimental`` or ``@deprecated(...)`` put on a command function."""
+    """The mark a decorator recorded on ``func``: a plugin's API, or a function core built."""
     mark = getattr(func, _FUNCTION_ATTR, None)
     return mark if isinstance(mark, Experimental | Deprecated) else None
 
@@ -969,7 +972,7 @@ def deprecation_sentence(obj: object, mark: Deprecated, *, subject: str | None =
 def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
     """Warn whenever a parameter marked ``deprecated(...)`` in its annotation is passed.
 
-    ``def emit(rows, *, kind: Annotated[str | None, deprecated(removed_in=12,
+    ``def emit(rows, *, kind: Annotated[str | None, deprecated(removed_in=13,
     replacement="kind= on the Record class")] = None)`` under
     ``@deprecated_parameters`` raises an :class:`UntapedDeprecationWarning`
     each time ``kind`` is passed, its default value included, since the major
@@ -1206,7 +1209,7 @@ class DeprecatedBehaviour(OwnedBlock):
         if not isinstance(mark, Deprecated) or callable(mark.replacement):
             raise TypeError("a deprecated behaviour's replacement is text or None")
         if mark.removed_in is None:
-            raise TypeError("a deprecated behaviour names the major that removes it: removed_in=12")
+            raise TypeError("a deprecated behaviour names the major that removes it: removed_in=13")
         self._spelled_name = name
         self.mark = mark
 

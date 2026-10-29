@@ -179,7 +179,7 @@ class SkillState(StrEnum):
 class InstalledSkill:
     """One untaped-installed stub skill directory found in a skill root.
 
-    ``written_by`` names what wrote a ``newer`` stub (``untaped (11.3.0)``).
+    ``written_by`` names what wrote a ``newer`` stub (``untaped (12.3.0)``).
     """
 
     name: str

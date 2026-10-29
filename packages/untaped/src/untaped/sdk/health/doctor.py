@@ -172,7 +172,7 @@ class OnlineCheck(DoctorCheck):
 
     ``probe = OnlineCheck(probe=whoami)`` on a plugin class is the check
     ``<plugin>.probe`` over the plugin's own settings section, run
-    against the active profile inside :func:`untaped.sdk.network.upstream.quick_probe`
+    against the profile this run picks inside :func:`untaped.sdk.network.upstream.quick_probe`
     (no retries, a short timeout), once every field the plugin marks as needed is
     set; ``title`` defaults to ``<plugin> API reachable``.
     """

@@ -268,10 +268,10 @@ class Contract(ABC):  # noqa: B024 - every method has a default
 
     An owner declares a contract by subclassing this directly, with each
     required method ``@abstractmethod`` and optional ones raising
-    ``NotImplementedError``; ``shell=`` is reserved for shell plugins (not in
-    11.0). The declaration is checked when the class is created: method names
-    may not shadow builtins or SDK names, and every parameter and return type
-    must be pydantic-serialisable (``unserialisable-signature``). A provider
+    ``NotImplementedError``; ``shell=`` is reserved for shell plugins. The
+    declaration is checked when the class is created: method names may not
+    shadow builtins or SDK names, and every parameter and return type must be
+    pydantic-serialisable (``unserialisable-signature``). A provider
     subclasses the contract; what it fills is the methods it overrides.
     """
 
@@ -285,7 +285,7 @@ class Contract(ABC):  # noqa: B024 - every method has a default
         _rewrap(cls)
 
     def ready(self) -> NotReady | None:
-        """``None`` when this provider can answer in the active profile, else why not.
+        """``None`` when this provider can answer in the profile this run picks, else why not.
 
         The default: a ``Provider[S]`` is ready when its settings validate;
         any other provider always is. Override only for a condition a settings
@@ -338,7 +338,7 @@ class Provider[S: BaseModel = BaseModel]:
     """Base of a provider beside the contract it fills, as a command is ``Command[S]``.
 
     ``S`` is the providing plugin's settings model, read in a method as
-    ``self.settings`` for the active profile, on first use; composition
+    ``self.settings`` for the profile this run picks, on first use; composition
     checks that it is the plugin's own. A provider whose plugin reads no
     settings writes plain ``Provider``. ``self.ctx`` is what a command's
     context has but the terminal: a provider runs inside someone else's
@@ -350,7 +350,7 @@ class Provider[S: BaseModel = BaseModel]:
 
     @property
     def settings(self) -> S:
-        """The plugin's settings section for the active profile."""
+        """The plugin's settings section for the profile this run picks."""
         settings = _per_profile(self, "_untaped_settings", lambda: _load_settings(self))
         return cast("S", settings)
 

@@ -1,4 +1,4 @@
-"""CLI helpers shared by every Cyclopts command in the suite."""
+"""How core reads a command's format, renders its rows and columns, and words its errors."""
 
 from __future__ import annotations
 

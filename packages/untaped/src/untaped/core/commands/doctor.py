@@ -54,7 +54,7 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.registry import (
     CompositionResult,
     QuarantineRecord,
-    run_deferred_factory,
+    build_plugin_app,
     section_settings,
 )
 from untaped.runtime.run import child_run
@@ -152,7 +152,7 @@ class Fix(Command[CoreSettings]):
     `pass` store exits 5 with a hint naming the unlock command. A `skipped`
     row's `fix` is the argv to run after `untaped`: a `<NAME>` token in it
     is a value to ask for, and a fix that asks for or reveals a token
-    (`auth login`, `config set ….token --prompt`) is the user's to run.
+    (`auth login`) is the user's to run.
 
     Examples:
         $ untaped doctor fix --dry-run
@@ -394,7 +394,7 @@ def collect_doctor_rows(
         selected = plugins is None or plugin.name in plugins
         if not plugin.has_commands or not selected:
             continue
-        built = run_deferred_factory(plugin)
+        built = build_plugin_app(plugin)
         if isinstance(built, QuarantineRecord):
             rows.append(_quarantine_row(built))
     return rows

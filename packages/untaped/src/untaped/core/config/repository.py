@@ -451,9 +451,9 @@ class SettingsFileRepository:
     ) -> None:
         """Validate the written key's section as ``profile`` would resolve it.
 
-        Merges from the *target* profile's perspective — otherwise an invalid
-        value silently lands in a non-active profile and only fails when that
-        profile is later activated. Env overrides are deliberately ignored:
+        Merges from the *target* profile's perspective: otherwise an invalid
+        value silently lands in a profile this run doesn't pick and only fails
+        when a later run picks it. Env overrides are deliberately ignored:
         the file must be valid on its own.
         """
         effective = active_settings_layout().effective(data, profile=profile)

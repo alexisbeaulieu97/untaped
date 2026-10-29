@@ -413,7 +413,7 @@ def test_a_plugin_whose_commands_cant_be_built_is_a_quarantine_row(
     rows = collect_doctor_rows(result)
 
     [row] = [row for row in rows if row["check"] == "quarantine"]
-    assert (row["plugin"], row["title"]) == ("bad", "bad-app-factory")
+    assert (row["plugin"], row["title"]) == ("bad", "bad-commands")
     assert str(row["detail"]).startswith("RuntimeError: cli import failed [distribution bad-dist")
 
 
