@@ -140,8 +140,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   way: `untaped <command> --deprecated --help` lists it under Deprecated
   options with that line, and using it warns until then.
 - A renamed command keeps working as a hidden, deprecated alias until the
-  major its warning names, and the warning names the new spelling. A flag or
-  group has no alias: renaming one waits for the next major.
+  major its warning names, and the warning names the new spelling.
 - A renamed setting's old name, and its `UNTAPED_*` variable, keeps working
   as a renamed key until the major its warning names; see
   [Renamed settings](./configuration.md#renamed-settings).

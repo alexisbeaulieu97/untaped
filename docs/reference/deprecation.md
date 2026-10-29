@@ -52,8 +52,8 @@ where its help is its `Deprecated:` line; core puts it there from the mark on
 its field. Only an option can carry the mark: composition refuses it on an
 argument (`deprecated-argument`). Any spelling of the flag warns
 (`--dry-run`, `--no-dry-run`, `--dry-run=false`, a short flag), up to a
-`--`. A renamed command keeps its old spelling as an alias; a flag or group
-has none, so renaming one waits for a major.
+`--`. A renamed command keeps its old spelling as an alias; a renamed flag
+or group has no declaration yet, so file an issue when a rename needs one.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a
