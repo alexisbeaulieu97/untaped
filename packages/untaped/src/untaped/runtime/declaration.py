@@ -27,7 +27,10 @@ class StabilityDecl(_Frozen):
 
     stability: Literal["experimental", "deprecated"]
     removed_in: int | None = None
+    #: What help and the warning name instead: a command line, a setting key or prose.
     replacement: str | None = None
+    #: The command class ``replacement`` was spelled from, when the mark named one.
+    replaced_by: str | None = None
 
 
 class OptionDecl(_Frozen):

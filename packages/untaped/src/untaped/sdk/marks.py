@@ -144,12 +144,16 @@ def deprecated(
 ) -> Deprecated:
     """Mark a command, group, plugin or setting deprecated, naming its removal and replacement.
 
-    ``removed_in`` is the major that removes it (``removed_in=12``; a plugin's
-    own major for a plugin's command). Every deprecation names one: leaving
-    it out is allowed until untaped 12 and reads "a future major release".
-    Both are keyword-only, so a bare ``@deprecated`` fails at import. Use it
-    as ``@deprecated(removed_in=12, replacement=set_command)`` under
-    ``@app.command`` or as ``stability=deprecated(...)``.
+    ``removed_in`` is the major that removes it (``removed_in=13``; a plugin's
+    own major for a plugin's command); without it the removal reads "a future
+    major release", which ``plugin check`` reports. ``replacement`` is one of
+    the plugin's own command or group classes (``replacement=Set``), which
+    help and the warning spell as `` `untaped svc set` ``, or text: another
+    plugin's command (``"untaped other run"``), a setting key or prose. Both
+    are keyword-only.
+    Use it as ``stability = deprecated(...)``, or in a field's ``Annotated``.
+    The 11.x spellings (a command function or ``App``, ``@deprecated`` under
+    ``@app.command``) go with the 11.x plugin path.
     """
     return Deprecated(replacement=replacement, removed_in=removed_in)
 

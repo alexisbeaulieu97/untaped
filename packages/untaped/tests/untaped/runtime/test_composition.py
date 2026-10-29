@@ -1105,6 +1105,246 @@ def test_stability_marks_reach_the_declaration() -> None:
     assert (old.stability.removed_in, old.stability.replacement) == (13, "hello say")
 
 
+class _Set(Command):
+    """Set it."""
+
+    def run(self) -> None:
+        return None
+
+
+def test_a_replacement_command_class_is_spelled_as_its_line() -> None:
+    class Put(Command):
+        """Put it."""
+
+        stability = deprecated(removed_in=13, replacement=_Set)
+
+        def run(self) -> None:
+            return None
+
+    [_, put] = compose([_entry(_plugin_with(_Set, Put))]).commands()
+    assert put.stability is not None
+    assert (put.stability.replacement, put.stability.replaced_by) == (
+        "untaped hello set",
+        f"{__name__}:_Set",
+    )
+
+
+@pytest.mark.parametrize(
+    ("replacement", "detail"),
+    [
+        (
+            "untaped hello set",
+            "names `untaped hello set`, a command of hello, as text; pass its class",
+        ),
+        (
+            "untaped hello set --yes",
+            "names `untaped hello set --yes`, a command of hello, as text; pass its class",
+        ),
+        ("untaped hello nope", "names `untaped hello nope`, which is not a command of hello"),
+    ],
+)
+def test_text_naming_the_plugin_s_own_command_is_a_problem(replacement: str, detail: str) -> None:
+    class Put(Command):
+        """Put it."""
+
+        stability = deprecated(removed_in=13, replacement=replacement)
+
+        def run(self) -> None:
+            return None
+
+    [problem] = _problems(_plugin_with(_Set, Put))
+    assert (problem.rule, problem.detail) == ("bad-replacement", detail)
+
+
+def test_text_may_name_another_plugin_s_command() -> None:
+    class Put(Command):
+        """Put it."""
+
+        stability = deprecated(removed_in=13, replacement="untaped other run")
+
+        def run(self) -> None:
+            return None
+
+    [put] = compose([_entry(_plugin_with(Put))]).commands()
+    assert put.stability is not None
+    assert put.stability.replacement == "untaped other run"
+
+
+def test_a_replacement_that_is_not_the_plugin_s_command_or_is_deprecated_is_a_problem() -> None:
+    class Older(Command):
+        """Older."""
+
+        stability = deprecated(removed_in=13)
+
+        def run(self) -> None:
+            return None
+
+    class ToOlder(Command):
+        """To older."""
+
+        stability = deprecated(removed_in=13, replacement=Older)
+
+        def run(self) -> None:
+            return None
+
+    class Elsewhere(Command):
+        """Elsewhere."""
+
+        stability = deprecated(removed_in=13, replacement=_Set)
+
+        def run(self) -> None:
+            return None
+
+    class Gone(Group):
+        """Gone."""
+
+        stability = deprecated(removed_in=13)
+        commands = (_Set,)
+
+    class ToGone(Command):
+        """To gone."""
+
+        stability = deprecated(removed_in=13, replacement=_Set)
+
+        def run(self) -> None:
+            return None
+
+    class ToFunction(Command):
+        """To a function."""
+
+        stability = deprecated(removed_in=13, replacement=_details)
+
+        def run(self) -> None:
+            return None
+
+    problems = _problems(_plugin_with(Older, ToOlder, Elsewhere, ToFunction))
+    elsewhere = (
+        "which is not a command or group of hello; pass one of its classes, or name another "
+        "plugin's command as text (`untaped <plugin> <command>`)"
+    )
+    assert sorted(_details(problems)) == [
+        ("Elsewhere.stability", f"names _Set, {elsewhere}"),
+        ("ToFunction.stability", f"names _details, {elsewhere}"),
+        ("ToOlder.stability", "names `untaped hello older`, itself deprecated"),
+    ]
+    assert _details(_problems(_plugin_with(Gone, ToGone))) == [
+        ("ToGone.stability", "names `untaped hello gone set`, deprecated with `untaped hello gone`")
+    ]
+
+
+def _details(problems: list[Problem]) -> list[tuple[str, str]]:
+    """``(where, detail)`` of each problem, ``where`` without the test function's ``<locals>``."""
+    return [(p.where.rpartition("<locals>.")[2], p.detail) for p in problems]
+
+
+def test_a_deprecated_plugin_s_replacement_is_not_one_of_its_commands() -> None:
+    for replacement in (_Set, "untaped hello set"):
+        plugin = _plugin_with(_Set)
+        plugin.stability = deprecated(removed_in=13, replacement=replacement)
+        assert _details(_problems(plugin)) == [
+            ("Demo.stability", "names `untaped hello set`, deprecated with hello")
+        ]
+    plugin = _plugin_with(_Set)
+    plugin.stability = deprecated(removed_in=13, replacement="untaped other run")
+    [decl] = compose([_entry(plugin)]).plugins
+    assert decl.stability is not None
+    assert decl.stability.replacement == "untaped other run"
+
+
+def test_a_replacement_group_or_default_command_is_spelled_at_its_path() -> None:
+    class Inner(Group):
+        """Inner."""
+
+        runs = _Set
+        commands = ()
+
+    class Outer(Group):
+        """Outer."""
+
+        commands = (Inner,)
+
+    class ToInner(Command):
+        """To inner."""
+
+        stability = deprecated(removed_in=13, replacement=Inner)
+
+        def run(self) -> None:
+            return None
+
+    found = {
+        each.target.rpartition(":")[2].rpartition(".")[2]: each
+        for each in compose([_entry(_plugin_with(Outer, ToInner))]).commands()
+    }
+    to_inner, runs = found["ToInner"], found["_Set"]
+    assert to_inner.stability is not None
+    assert to_inner.stability.replacement == "untaped hello outer inner"
+    assert runs.path == ("hello", "outer", "inner")
+
+
+def test_text_naming_an_alias_or_a_root_command_is_a_problem() -> None:
+    class Renamed(Command):
+        """Renamed."""
+
+        aliases = (Deprecated(replacement="old-name", removed_in=13),)
+
+        def run(self) -> None:
+            return None
+
+    class ToAlias(Command):
+        """To an alias."""
+
+        stability = deprecated(removed_in=13, replacement="untaped hello old-name")
+
+        def run(self) -> None:
+            return None
+
+    assert _details(_problems(_plugin_with(Renamed, ToAlias))) == [
+        (
+            "ToAlias.stability",
+            "names `untaped hello old-name`, a command of hello, as text; pass its class",
+        )
+    ]
+
+    class ToRoot(Command):
+        """To root."""
+
+        stability = deprecated(removed_in=13, replacement="untaped set")
+
+        def run(self) -> None:
+            return None
+
+    class ToOther(Command):
+        """To another plugin's."""
+
+        stability = deprecated(removed_in=13, replacement="untaped hello set")
+
+        def run(self) -> None:
+            return None
+
+    core = _plugin_with(_Set, ToRoot, ToOther)
+    [refused] = compose([PluginEntry("core", f"{__name__}:Core", core, root=True)]).quarantined
+    assert _details(list(refused.problems)) == [
+        ("ToRoot.stability", "names `untaped set`, a command of core, as text; pass its class")
+    ]
+
+
+def test_an_option_s_replacement_command_is_spelled_too() -> None:
+    class Put(Command):
+        """Put it."""
+
+        old: Annotated[bool, deprecated(removed_in=13, replacement=_Set)] = Field(
+            False, description="Old."
+        )
+
+        def run(self) -> None:
+            return None
+
+    [_, put] = compose([_entry(_plugin_with(_Set, Put))]).commands()
+    [old] = [option for option in put.options if option.field == "old"]
+    assert old.stability is not None
+    assert old.stability.replacement == "untaped hello set"
+
+
 def test_composing_twice_gives_the_same_declaration(declaration: Declaration) -> None:
     assert compose([_entry(Hello)]) == declaration
 

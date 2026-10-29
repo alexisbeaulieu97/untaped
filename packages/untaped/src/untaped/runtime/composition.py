@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import collections.abc
 import enum
+import itertools
 import sys
 import types
 import typing
@@ -69,7 +70,7 @@ from untaped.sdk.fields import (
     Written,
     unprintable_following,
 )
-from untaped.sdk.marks import Deprecated, Experimental, class_mark
+from untaped.sdk.marks import COMMAND_TEXT, Deprecated, Experimental, class_mark
 from untaped.sdk.plugin import (
     RESERVED_NAMES,
     Command,
@@ -550,13 +551,150 @@ def _stability(mark: object) -> StabilityDecl | None:
         return StabilityDecl(stability="experimental")
     if isinstance(mark, Deprecated):
         replacement = mark.replacement
-        text = None
-        if isinstance(replacement, str | SettingKey):
-            text = str(replacement)
-        elif replacement is not None:
-            text = target_of(replacement)
-        return StabilityDecl(stability="deprecated", removed_in=mark.removed_in, replacement=text)
+        if replacement is None or isinstance(replacement, str | SettingKey):
+            text = None if replacement is None else str(replacement)
+            return StabilityDecl(
+                stability="deprecated", removed_in=mark.removed_in, replacement=text
+            )
+        # a command class: spelled as its line once the plugin's commands are walked
+        return StabilityDecl(
+            stability="deprecated", removed_in=mark.removed_in, replaced_by=target_of(replacement)
+        )
     return None
+
+
+def _point_stability(mark: object) -> StabilityDecl | None:
+    """A contract's mark: its replacement is another contract, named by its target."""
+    decl = _stability(mark)
+    if decl is None or decl.replaced_by is None:
+        return decl
+    return decl.model_copy(update={"replacement": decl.replaced_by, "replaced_by": None})
+
+
+class _Replacements:
+    """A plugin's deprecation replacements: a command class spelled as its line, text checked.
+
+    A mark names its replacement command by class (``replacement=Set``), which
+    must be a command of the plugin that stays, deprecated neither itself nor
+    with its group or plugin, and is spelled ``untaped svc set`` for help,
+    the warning, docs and the surface. Another plugin's command is named as
+    text, so text naming one of the plugin's own commands is a problem: the
+    class survives a rename.
+    """
+
+    def __init__(
+        self,
+        walk: _PluginWalk,
+        commands: tuple[CommandDecl | GroupDecl, ...],
+        runs: CommandDecl | None,
+        plugin: StabilityDecl | None,
+    ) -> None:
+        self.walk = walk
+        self.root = walk.root
+        gone = f"deprecated with {walk.name}" if _deprecated(plugin) else None
+        #: Each command or group by target, and why it goes when it does; the first path wins.
+        self.own: dict[str, tuple[CommandDecl | GroupDecl, str | None]] = {}
+        self._index(commands, gone)
+        if runs is not None:
+            self._add(runs, gone)
+        #: Each line text may spell a command by, aliases included, and its target.
+        self.lines: dict[str, str] = {}
+        for target, (node, _) in self.own.items():
+            line = self._line(node)
+            self.lines.setdefault(line, target)
+            for alias in node.aliases if isinstance(node, CommandDecl) else ():
+                self.lines.setdefault(f"{line.rpartition(' ')[0]} {alias.name}", target)
+
+    def _add(self, node: CommandDecl | GroupDecl, gone: str | None) -> str | None:
+        if _deprecated(node.stability):
+            gone = "itself deprecated"
+        self.own.setdefault(node.target, (node, gone))
+        return gone
+
+    def _index(self, nodes: tuple[CommandDecl | GroupDecl, ...], gone: str | None) -> None:
+        for node in nodes:
+            within = self._add(node, gone)
+            if isinstance(node, GroupDecl):
+                if within == "itself deprecated":
+                    within = f"deprecated with `{self._line(node)}`"
+                if node.runs is not None:
+                    self._add(node.runs, within)
+                self._index(node.commands, within)
+
+    def _text(self, text: str, where: str) -> None:
+        """Text naming one of the plugin's own commands: pass the class, or it names none.
+
+        The root plugin's commands share ``untaped`` with every plugin's, so
+        its text is checked only when it names one of its own.
+        """
+        words = list(itertools.takewhile(lambda word: not word.startswith("-"), text.split()))
+        if not COMMAND_TEXT.match(" ".join(words)) or not (self.root or words[1] == self.walk.name):
+            return
+        named = next(
+            (
+                self.lines[line]
+                for end in range(len(words), 1, -1)
+                if (line := " ".join(words[:end])) in self.lines
+            ),
+            None,
+        )
+        if named is not None:
+            gone = self.own[named][1]
+            detail = f"names `{text}`, " + (
+                gone
+                if gone is not None
+                else f"a command of {self.walk.name}, as text; pass its class"
+            )
+        elif self.root or len(words) == 2:
+            return
+        else:
+            detail = f"names `{text}`, which is not a command of {self.walk.name}"
+        self.walk.problem("bad-replacement", f"{where}.stability", detail)
+
+    def _line(self, node: CommandDecl | GroupDecl) -> str:
+        return " ".join(("untaped", *(node.path[1:] if self.root else node.path)))
+
+    def node[N: CommandDecl | GroupDecl](self, node: N) -> N:
+        """``node`` with every replacement under it spelled."""
+        where = node.target.partition(":")[2]
+        update: dict[str, object] = {"stability": self.spelled(node.stability, where)}
+        if isinstance(node, GroupDecl):
+            update["commands"] = tuple(self.node(each) for each in node.commands)
+            update["runs"] = None if node.runs is None else self.node(node.runs)
+        else:
+            update["options"] = tuple(
+                option.model_copy(
+                    update={"stability": self.spelled(option.stability, f"{where}.{option.field}")}
+                )
+                for option in node.options
+            )
+        return typing.cast("N", node.model_copy(update=update))
+
+    def spelled(self, mark: StabilityDecl | None, where: str) -> StabilityDecl | None:
+        """``mark`` with its replacement command spelled; a wrong replacement is a problem."""
+        if mark is None:
+            return None
+        if mark.replaced_by is None:
+            self._text(mark.replacement or "", where)
+            return mark
+        if mark.replaced_by not in self.own:
+            self.walk.problem(
+                "bad-replacement",
+                f"{where}.stability",
+                f"names {mark.replaced_by.partition(':')[2]}, which is not a command or group "
+                f"of {self.walk.name}; pass one of its classes, or name another plugin's "
+                "command as text (`untaped <plugin> <command>`)",
+            )
+            return mark
+        node, gone = self.own[mark.replaced_by]
+        line = self._line(node)
+        if gone is not None:
+            self.walk.problem("bad-replacement", f"{where}.stability", f"names `{line}`, {gone}")
+        return mark.model_copy(update={"replacement": line})
+
+
+def _deprecated(mark: StabilityDecl | None) -> bool:
+    return mark is not None and mark.stability == "deprecated"
 
 
 class _PluginWalk:
@@ -567,6 +705,7 @@ class _PluginWalk:
     ) -> None:
         self.name = entry.name
         self.target = entry.target
+        self.root = entry.root
         module = entry.target.partition(":")[0]
         self.package = _package(entry.target)
         self.owners = owners
@@ -660,6 +799,11 @@ class _PluginWalk:
         runs = None
         if cls.runs is not None and _is_command(cls.runs):
             runs = self._command(cls.runs, (self.name,))
+        stability = _stability(cls.stability)
+        replacements = _Replacements(self, commands, runs, stability)
+        commands = tuple(replacements.node(each) for each in commands)
+        runs = None if runs is None else replacements.node(runs)
+        stability = replacements.spelled(stability, cls.__qualname__)
         blocks = self._removed_by(cls, blocks)
         summary, doc = prose(cls)
         if not summary:
@@ -676,7 +820,7 @@ class _PluginWalk:
             summary=summary,
             doc=doc,
             settings=target_of(settings),
-            stability=_stability(cls.stability),
+            stability=stability,
             commands=commands,
             runs=runs,
             offers=tuple(target_of(c) for c in cls.offers),
@@ -862,7 +1006,7 @@ class _PluginWalk:
                     name=kebab(info.cls.__name__),
                     summary=first_paragraph(doc),
                     doc=doc,
-                    stability=_stability(class_mark(info.cls)),
+                    stability=_point_stability(class_mark(info.cls)),
                     methods=tuple(
                         method_decl(method.name, method.function, method.hints)
                         for method in info.methods.values()

@@ -21,7 +21,9 @@ Checks every command of a subtree against ``docs/plugins.md``:
 - ``bad-replacement`` — a ``deprecated`` replacement that is not mounted, is
   itself deprecated, or is text naming a command that does not resolve, a
   command of the plugin itself (pass the object), or a setting that does
-  not exist (a setting's replacement is always text);
+  not exist (a setting's replacement is always text); composition already
+  refuses a plugin class whose replacement class is not its command or is
+  deprecated, or whose text names its own command;
 - ``mark-on-spec`` — a plugin's top app carries a mark of its own, which a
   lazy mount cannot see (mark the ``PluginSpec`` instead).
 
@@ -141,15 +143,22 @@ def stability_violations(
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
     found.extend(_behaviour_violations(root, result, spec, every))
+    # composition spells a plugin class's own replacements and refuses text naming them
+    own = None if spec is None or _is_class(result, spec.name) else spec.name
     for mark in (mark for mark in every if mark.target not in ("setting", "behaviour")):
         if mark.where.split()[0] in wanted:
             found.extend(f"{mark.where}::nested-mark::{d}" for d in _nested(mark, every))
             if isinstance(mark.stability, Deprecated):
                 found.extend(
                     f"{mark.where}::bad-replacement::{d}"
-                    for d in _bad_replacement(root, mark.stability, spec.name if spec else None)
+                    for d in _bad_replacement(root, mark.stability, own)
                 )
     return sorted(found)
+
+
+def _is_class(result: CompositionResult, name: str) -> bool:
+    """Whether plugin ``name`` is a plugin class, which its declaration holds."""
+    return any(plugin.name == name for plugin in result.mount.declaration.plugins)
 
 
 def _setting_violations(
