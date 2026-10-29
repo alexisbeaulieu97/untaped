@@ -35,9 +35,9 @@ class AcmeSettings(BaseModel):
     data_dir: Path | None = None
 
 
-def _row(data: Dir | None = None, *, check: str = "stores") -> dict[str, object]:
-    """Doctor's ``check`` row for plugin ``acme`` holding ``data`` (layout 4 of ``data.db``)."""
-    acme = make_plugin("acme", settings=AcmeSettings, data=data or _data())
+def _row(*, check: str = "stores") -> dict[str, object]:
+    """Doctor's ``check`` row for plugin ``acme`` holding its data (layout 4 of ``data.db``)."""
+    acme = make_plugin("acme", settings=AcmeSettings, data=_data())
     result = bootstrap.compose_root(candidates=[plugin_candidate(acme)])
     # under the composition's run, as doctor runs, so a fix is spelled from its class
     with run_scope(build_run(result.mount.declaration, result.mount.settings)):

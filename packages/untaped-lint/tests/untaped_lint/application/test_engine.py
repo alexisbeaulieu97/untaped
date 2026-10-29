@@ -28,7 +28,8 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
 def test_a_subject_reaches_only_the_rules_reading_its_kind() -> None:
-    Acme.forget(), Gizmo.forget()
+    Acme.forget()
+    Gizmo.forget()
     with install(LintPlugin, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
         report = run([Widget(name="w")])
     assert sorted(each.rule for each in report.findings) == ["acme.tall", "acme.wide"]
@@ -37,7 +38,8 @@ def test_a_subject_reaches_only_the_rules_reading_its_kind() -> None:
 
 
 def test_a_kind_no_rule_reads_warns_once_and_asks_nobody() -> None:
-    Acme.forget(), Gizmo.forget()
+    Acme.forget()
+    Gizmo.forget()
     with install(LintPlugin, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
         report = run([Sprocket(name="a"), Sprocket(name="b")])
     assert report.warnings == [

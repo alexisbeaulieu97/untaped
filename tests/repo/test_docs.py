@@ -153,6 +153,7 @@ class _Empty(BaseModel):
 
 
 def _motd() -> Cache[Any]:
+    """A fresh cache for each double: a block belongs to one plugin class."""
     return Cache(
         label="the message of the day", max_age=timedelta(hours=1), renamed_from=("motd_seconds",)
     )

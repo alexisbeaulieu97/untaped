@@ -75,7 +75,8 @@ class BinSource(Contract):
 
 def _bins(settings: type[BaseModel] = NoSettings, **blocks: object) -> PluginCandidate:
     """Plugin ``bins`` with ``settings``, holding ``blocks``, as a candidate."""
-    return plugin_candidate(make_plugin("bins", settings=settings, **blocks))  # type: ignore[arg-type]
+    bins = make_plugin("bins", settings=settings, **blocks)  # type: ignore[arg-type]
+    return plugin_candidate(bins)
 
 
 def _lines(candidate: PluginCandidate) -> set[str]:

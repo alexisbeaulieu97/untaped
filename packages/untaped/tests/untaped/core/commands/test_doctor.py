@@ -330,19 +330,6 @@ def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
     assert "duplicate plugin name: 'ghost'" in raw.stdout
 
 
-#: a plugin whose class can't be imported: composition quarantines it
-_BAD = PluginCandidate(distribution="bad-dist", name="bad", target="untaped_bad_nowhere.plugin:Bad")
-
-
-def test_doctor_reports_a_plugin_that_cannot_load_as_a_quarantine_row() -> None:
-    result = bootstrap.compose_root(candidates=[_BAD, plugin_candidate(make_plugin("good"))])
-    rows = collect_doctor_rows(result)
-    quarantine = [row for row in rows if row["check"] == "quarantine"]
-    assert [row["plugin"] for row in quarantine] == ["bad"]
-    assert quarantine[0]["status"] == "fail"
-    assert str(quarantine[0]["detail"]).endswith(" [distribution bad-dist]")
-
-
 def test_doctor_names_each_quarantined_plugin(
     broken_first_party_candidates: Callable[[], tuple[PluginCandidate, ...]],
 ) -> None:
@@ -365,15 +352,6 @@ def test_core_s_scope_is_read_as_a_plugin_s() -> None:
     assert "validate settings" not in [row["title"] for row in core_rows]
     picked = collect_doctor_rows(result, plugins=frozenset({"other"}))
     assert not [row for row in picked if str(row["check"]).startswith("untaped.")]
-
-
-def test_doctor_cli_exits_1_on_a_quarantined_plugin() -> None:
-    root = bootstrap.build_root_app(candidates=[_BAD])
-    result = CliInvoker().invoke(root.meta, ["doctor", "--format", "json"])
-    assert result.exit_code == 1
-    assert any(
-        row["check"] == "quarantine" and row["plugin"] == "bad" for row in json.loads(result.stdout)
-    )
 
 
 def test_undefined_active_profile_fails_section_rows(

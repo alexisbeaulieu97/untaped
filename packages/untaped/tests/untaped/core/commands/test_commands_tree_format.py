@@ -94,6 +94,15 @@ def test_failed_rows_still_set_the_exit_code_in_a_tree() -> None:
     assert result.stdout.startswith("root\n")
 
 
+@pytest.mark.parametrize("columns", ["name", "?"])
+def test_columns_do_not_apply_to_a_tree(columns: str) -> None:
+    result = _invoke(["trees", "list", "-f", "tree", "-c", columns])
+
+    assert result.exit_code == 2
+    assert "--columns does not apply to --format tree" in result.stderr
+    assert result.stdout == ""
+
+
 def test_other_formats_ignore_the_tree() -> None:
     result = _invoke(["trees", "list", "-f", "json"])
 

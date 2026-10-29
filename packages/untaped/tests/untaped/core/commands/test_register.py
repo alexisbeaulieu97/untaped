@@ -16,6 +16,7 @@ from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage import data_file
 from untaped.sdk.storage._refs import RefTarget
 from untaped.sdk.storage.dir import Dir
+from untaped.sdk.storage.store import Store
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("home_run")
@@ -70,11 +71,11 @@ def test_a_start_records_a_plugin_added_since(
     """A registered install gains jira and runs no command that opens a store."""
     assert _cli().exit_code == 0
     opened: list[object] = []
-    monkeypatch.setattr(Dir, "open", lambda self: opened.append(self))
+    monkeypatch.setattr(Store, "open", lambda self: opened.append(self))
 
     _start(*command)
 
-    assert [each for each in opened if each is not refs.REFS] == []  # refs records the start
+    assert opened == []
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
