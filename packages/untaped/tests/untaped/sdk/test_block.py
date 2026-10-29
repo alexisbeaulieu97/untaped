@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,35 @@ def test_an_unbound_block_names_itself_and_its_module() -> None:
     thing = Thing()
     with pytest.raises(UnboundBlockError, match=f"Thing created in {__name__}"):
         _ = thing.binding
+
+
+def test_a_block_read_before_its_owners_class_has_the_run_import_that_class(
+    tmp_path: Path,
+) -> None:
+    # A dependent plugin reads a dependency's credential through its api,
+    # and nothing in that run imported the dependency's class yet.
+    thing = Thing()
+
+    def import_demo() -> type[Plugin]:
+        class Demo(Plugin):
+            """Demo."""
+
+            settings = Settings
+            held = thing
+
+        return Demo
+
+    class Classes(dict[str, type]):
+        def __missing__(self, name: str) -> type:
+            self[name] = import_demo()
+            return self[name]
+
+    run = run_owning(tmp_path, __name__.partition(".")[0], "demo")
+    run = replace(run, composition=replace(run.composition, classes=Classes()))
+    with run_scope(run):
+        assert thing.binding.attribute == "held"
+    with run_scope(run_owning(tmp_path, "elsewhere", "demo")), pytest.raises(UnboundBlockError):
+        _ = Thing().binding
 
 
 def test_a_module_constant_binds_when_the_plugin_class_holds_it() -> None:

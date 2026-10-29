@@ -55,9 +55,15 @@ if TYPE_CHECKING:
 
 
 def composition_of(
-    declaration: Declaration, settings: Mapping[str, type[BaseModel]]
+    declaration: Declaration,
+    settings: Mapping[str, type[BaseModel]],
+    classes: Mapping[str, type] | None = None,
 ) -> Composition:
-    """Who owns what among the composed plugins of ``declaration`` (``settings`` models by name)."""
+    """Who owns what among the composed plugins of ``declaration`` (``settings`` models by name).
+
+    ``classes`` are the plugin classes by name, each imported on first read,
+    so a block read before its owner's class is imported can be bound.
+    """
     packages: dict[str, str] = {}
     for plugin in declaration.plugins:
         packages.setdefault(plugin.package, plugin.name)
@@ -68,6 +74,7 @@ def composition_of(
         spell=declaration.spell,
         remove_line=declaration.remove_line,
         kinds={kind.target: kind.kind for kind in declaration.kinds},
+        classes=classes or {},
     )
 
 
@@ -164,15 +171,21 @@ def invocation() -> Iterator[Run]:
 
 
 def build_run(
-    declaration: Declaration, settings: Mapping[str, type[BaseModel]], *, home: Path | None = None
+    declaration: Declaration,
+    settings: Mapping[str, type[BaseModel]],
+    classes: Mapping[str, type] | None = None,
+    *,
+    home: Path | None = None,
 ) -> Run:
     """A run over ``declaration``'s plugins, for code running outside any invocation."""
-    return start_run(home=home).attach(composition_of(declaration, settings))
+    return start_run(home=home).attach(composition_of(declaration, settings, classes))
 
 
 @contextmanager
 def current_or_built(
-    declaration: Declaration, settings: Mapping[str, type[BaseModel]]
+    declaration: Declaration,
+    settings: Mapping[str, type[BaseModel]],
+    classes: Mapping[str, type] | None = None,
 ) -> Iterator[Run]:
     """The invocation's run; outside one (a library call), a run built over ``declaration``.
 
@@ -184,11 +197,11 @@ def current_or_built(
     """
     run = run_or_none()
     if run is None:
-        with entered(build_run(declaration, settings)) as built:
+        with entered(build_run(declaration, settings, classes)) as built:
             yield built
         return
     if not run.attached:
-        run.attach(composition_of(declaration, settings))
+        run.attach(composition_of(declaration, settings, classes))
     yield run
 
 

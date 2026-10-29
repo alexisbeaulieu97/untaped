@@ -46,7 +46,7 @@ def compose_with(
 
     with (
         bootstrap.composed_with(_candidates(plugins)) as result,
-        entered(build_run(result.mount.declaration, result.mount.settings)),
+        entered(build_run(result.mount.declaration, result.mount.settings, result.mount.plugins)),
     ):
         token = _ACTIVE.set(result)
         try:

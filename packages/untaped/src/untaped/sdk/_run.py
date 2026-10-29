@@ -17,7 +17,7 @@ from __future__ import annotations
 import importlib
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -117,6 +117,8 @@ class Composition:
     remove_line: Callable[[str, str, str], str | None] = _no_remover
     #: Each composed record kind, by its model's ``module:Qualname``.
     kinds: Mapping[str, str] = field(default_factory=dict)
+    #: Each composed plugin's class, by plugin name, imported on first read.
+    classes: Mapping[str, type] = field(default_factory=dict)
 
     def owner_of_settings(self, model: type[BaseModel]) -> str:
         """The plugin whose settings model ``model`` is; :class:`LookupError` when none is.
@@ -147,6 +149,17 @@ class Composition:
         except ImportError, AttributeError:  # a class in a function, a module gone
             return None
         return found if isinstance(found, type) else None
+
+    def load_owner(self, module: str) -> None:
+        """Import the class of the plugin owning ``module``, binding the blocks it holds.
+
+        Nothing happens for a module no composed plugin owns, or a composition
+        holding no classes.
+        """
+        owner = self.packages.get(module.partition(".")[0])
+        if owner is not None:
+            with suppress(KeyError):
+                _ = self.classes[owner]
 
     def owner_of_module(self, module: str) -> str:
         """The plugin owning the classes defined in ``module``; :class:`LookupError` when none."""

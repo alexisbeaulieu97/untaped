@@ -470,7 +470,7 @@ def _dispatch(mount: Mount, decl: CommandDecl, given: Sequence[tuple[OptionDecl,
 
     with report_errors():
         cls = mount.command(decl)
-        with current_or_built(mount.declaration, mount.settings) as run:
+        with current_or_built(mount.declaration, mount.settings, mount.plugins) as run:
             command = _instance(mount, decl, cls, given)
             dispatched_now = _DISPATCHED.get()
             if dispatched_now is not None:
@@ -568,7 +568,7 @@ def run_built(
     """
     from untaped.runtime.run import current_or_built  # noqa: PLC0415 - a start runs no command
 
-    with current_or_built(mount.declaration, mount.settings):
+    with current_or_built(mount.declaration, mount.settings, mount.plugins):
         return _ran(mount, decl, _refilled(mount, decl, command, flags))
 
 
