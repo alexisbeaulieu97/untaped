@@ -25,12 +25,14 @@ from untaped.core.settings import CoreSettings
 from untaped.core.skills import (
     InstalledSkill,
     PackagedSkill,
+    PlannedInstall,
     SkillInstallScope,
     SkillInstallTarget,
     SkillState,
     find_installed_skills,
-    install_skills,
+    install_planned,
     local_project_root,
+    plan_install,
     remove_installed_skill,
     skill_roots,
     skill_rows,
@@ -101,7 +103,7 @@ class Install(Command[CoreSettings]):
 
     Examples:
         $ untaped skills install --all --target claude
-        $ untaped skills install awx --scope local
+        $ untaped skills install awx --scope local --dry-run
     """
 
     repairs = True
@@ -117,12 +119,14 @@ class Install(Command[CoreSettings]):
     target_dir: Path | None = Field(
         None, description="Override the selected target's skills directory."
     )
+    dry_run: DryRun
+    output: Output[SkillOutcome]
 
-    def run(self) -> None:
+    def run(self) -> Iterator[SkillOutcome]:
         if not self.skill_names and not self.stdin.requested and not self.all:
             raise UsageError("provide skill names, --stdin, or --all")
         _existing(self.project_dir)
-        _install(
+        yield from _install(
             _skills(),
             _selectors(self.skill_names, self.stdin, all_skills=self.all),
             all_skills=self.all,
@@ -131,6 +135,7 @@ class Install(Command[CoreSettings]):
             scope=self.scope,
             project_dir=self.project_dir,
             target_dir=self.target_dir,
+            dry_run=bool(self.dry_run),
         )
 
 
@@ -472,12 +477,13 @@ def _install(
     scope: SkillInstallScope,
     project_dir: Path | None,
     target_dir: Path | None,
-) -> None:
+    dry_run: bool,
+) -> Iterator[SkillOutcome]:
     if all_skills:
         selected = sorted(skills)
     else:
         selected = [_resolve_short(name, skills) for name in skill_names]
-    install_skills(
+    plan = plan_install(
         skills,
         selected,
         all_skills=False,
@@ -486,7 +492,32 @@ def _install(
         scope=scope,
         project_dir=project_dir,
         target_dir=target_dir,
-        on_installed=lambda result: _diag.success(f"installed skill: {result.name}"),
+    )
+    if dry_run:
+        yield from (_planned(item, "planned") for item in plan)
+        return
+    installed = 0
+    for item in plan:
+        try:
+            install_planned(item, force=force)
+        except UntapedError as exc:
+            error = _diag.failure(exc, item=item.skill.name)
+            yield _planned(item, "failed", error=error)
+            continue
+        installed += 1
+        yield _planned(item, "updated" if item.replaces else "created")
+    if installed:
+        _diag.success(f"installed {plural(installed, 'skill')}")
+
+
+def _planned(item: PlannedInstall, action: str, *, error: Failure | None = None) -> SkillOutcome:
+    return SkillOutcome(
+        name=item.skill.name,
+        target=item.destination.target,
+        scope=item.destination.scope.value,
+        target_path=item.path,
+        action=action,
+        error=error,
     )
 
 

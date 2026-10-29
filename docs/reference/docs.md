@@ -44,8 +44,9 @@ says so.
 
 `untaped docs [ADDRESS] --search TEXT` prints every line of the pages under
 the address that contains the text (ignoring case), after its page's
-address. An address this untaped lacks is a usage error (exit 2) that names
-the page listing what it has.
+address; when none does, it says so on stderr and prints nothing. A blank
+text, or an address this untaped lacks, is a usage error (exit 2); an
+unknown address's error names the page listing what it has.
 
 ## What the pages show
 

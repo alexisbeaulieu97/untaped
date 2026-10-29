@@ -354,7 +354,7 @@ def test_a_line_naming_no_command_takes_the_flag_then_untaped_format(
     assert code == 2
     expected = "text" if "--format" in argv else "json"  # bogus falls through to the setting
     assert set(_formats(err)) == {expected}, err
-    assert "Unknown command" in err
+    assert "command not found" in err
 
 
 @both

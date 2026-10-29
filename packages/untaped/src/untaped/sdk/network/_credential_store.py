@@ -41,6 +41,7 @@ from untaped.sdk.network.credentials import (
     key_data,
 )
 from untaped.sdk.storage.state import StateRows
+from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential, CredentialKey
@@ -175,7 +176,7 @@ def _memory_store() -> ReadableStore:
     if store is None:
         raise ConfigError(
             "a stored credential names untaped.sdk.testing's in-memory store, which only tests use",
-            hint="untaped auth forget --id <id>, then log in again",
+            hint=f"{run_hint('auth forget --id ID')}, then log in again",
         )
     return store
 
@@ -187,7 +188,7 @@ def _read_argv(row: CredentialRow) -> list[str]:
     if not row.argv:
         raise ConfigError(
             f"the stored {row.plugin} {row.name} ({row.short}) names no command",
-            hint=f"untaped auth forget --id {row.short}, then log in again",
+            hint=f"{run_hint(f'auth forget --id {row.short}')}, then log in again",
         )
     return list(row.argv)
 
@@ -267,7 +268,7 @@ def ready_store(credential: Credential[Any], backend: str | None = None) -> Secr
     """
     store: SecretStore | None = _TEST_STORE.get() or pick_store(_store_name(backend))
     if store is None:
-        message, hint = no_backend_message(credential.plugin, credential.name)
+        message, hint = no_backend_message(credential.login)
         raise ConfigError(message, hint=hint, fix_by="user")
     store.preflight()
     return store

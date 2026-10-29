@@ -107,7 +107,7 @@ def test_writes_that_only_add_take_no_yes(verb: str, run: Run) -> None:
     result, _, writes = run([*WRITES[verb], "--yes"])
 
     assert result.exit_code == 2, result.output
-    assert "Unknown option: --yes" in result.stderr
+    assert "unknown option: --yes" in result.stderr
     assert len(writes.calls) == 0
 
 

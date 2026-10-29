@@ -416,6 +416,16 @@ class Credential[K: CredentialKey](OwnedBlock):
         """How messages name it: ``awx token``."""
         return f"{self.plugin} {self.name.replace('_', ' ')}"
 
+    @property
+    def login_args(self) -> str:
+        """What ``auth login`` and ``auth forget`` take to name it: ``awx`` (``git hosts``)."""
+        return self.plugin if self.name == "token" else f"{self.plugin} {self.name}"
+
+    @property
+    def login(self) -> str:
+        """The command filing it, for a hint: ``auth login awx`` (``auth login git hosts``)."""
+        return f"auth login {self.login_args}"
+
     def __repr__(self) -> str:
         if not self.spelled:
             return f"Credential(key={self.key.__name__})"
@@ -558,15 +568,12 @@ class Credential[K: CredentialKey](OwnedBlock):
         return self._refusal(key, what) if folder_chose(key) else None
 
     def _missing(self, key: K) -> NoCredential:
-        from untaped.sdk.words import command_line  # noqa: PLC0415
+        from untaped.sdk.words import run_hint  # noqa: PLC0415
 
-        login = command_line(
-            f"auth login {self.plugin}" + ("" if self.name == "token" else f" {self.name}")
-        )
         variable = f", or set {self.env[0]}" if self.env else ""
         return NoCredential(
             f"no {self.label} for {describe_key(key)}",
-            hint=f"{login}{variable}",
+            hint=f"{run_hint(self.login)}{variable}",
             system=self.plugin,
             details={"credential": self.qualified, "key": key_data(key)},
         )

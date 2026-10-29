@@ -13,6 +13,7 @@ from pydantic import Field
 
 from untaped.core.settings import CoreSettings
 from untaped.sdk._cli import echo
+from untaped.sdk.errors import UsageError
 from untaped.sdk.fields import Positional
 from untaped.sdk.plugin import Command
 
@@ -59,7 +60,13 @@ class Docs(Command[CoreSettings]):
         )
 
         if self.search is not None:
-            echo(search(root_app(), composition(), self.address, self.search), nl=False)
+            if not self.search.strip():
+                raise UsageError("--search needs some text to look for")
+            found = search(root_app(), composition(), self.address, self.search)
+            if not found:
+                under = " ".join(("untaped docs", *self.address))
+                self.ctx.diag.info(f"no line under `{under}` contains {self.search!r}")
+            echo(found, nl=False)
             return
         text = page(root_app(), composition(), self.address)
         if stream_is_tty(sys.stdout):

@@ -52,7 +52,7 @@ from untaped.sdk.errors import (
 )
 from untaped.sdk.health.marks import section_marks
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
-from untaped.sdk.words import command_line, q, run_hint
+from untaped.sdk.words import q, run_hint
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -520,18 +520,16 @@ def rejected_token_error(
     from untaped.sdk.network.credentials import declared_credentials  # noqa: PLC0415
 
     details = cause.details if isinstance(cause, UntapedError) else None
-    declared = {each.name for each in declared_credentials(section)}
-    if field in declared:
-        command = f"auth login {section}" + ("" if field == "token" else f" {field}")
-    else:
-        command = f"config set {section}.{field} --prompt"
+    declared = {each.name: each for each in declared_credentials(section)}
+    credential = declared.get(field)
+    command = credential.login if credential else f"config set {section}.{field} --prompt"
     return ConfigError(
         message,
         category="auth",
         system=section,
-        hint=f"run `{command_line(command)}`",
+        hint=run_hint(command),
         details=details,
-        fix_by="user" if field in declared else None,
+        fix_by="user" if credential else None,
     )
 
 

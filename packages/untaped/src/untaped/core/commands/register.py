@@ -17,7 +17,7 @@ from pydantic import Field
 
 from untaped.core.commands.records import RegisteredHolder, RegisteredTarget, RegisterOutcome
 from untaped.core.settings import CoreSettings
-from untaped.sdk.fields import Output
+from untaped.sdk.fields import DryRun, Output
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._refs import Reference, register_this_install, unregister
 
@@ -33,7 +33,7 @@ class Register(Command[CoreSettings]):
 
     Examples:
         $ untaped setup register
-        $ untaped setup register --remove
+        $ untaped setup register --remove --dry-run
     """
 
     repairs = True
@@ -41,17 +41,20 @@ class Register(Command[CoreSettings]):
         False,
         description="Unregister this install: other installs may then remove the layouts it used.",
     )
+    dry_run: DryRun
     output: Output[RegisterOutcome]
 
     def run(self) -> Iterator[RegisterOutcome]:
         # a list of one row
-        diag = self.ctx.diag
-        yield _remove(diag) if self.remove else _register(diag)
+        diag, dry_run = self.ctx.diag, bool(self.dry_run)
+        yield _remove(diag, dry_run=dry_run) if self.remove else _register(diag, dry_run=dry_run)
 
 
-def _register(diag: Diag) -> RegisterOutcome:
-    ref, changed = register_this_install()
+def _register(diag: Diag, *, dry_run: bool) -> RegisterOutcome:
+    ref, changed = register_this_install(dry_run=dry_run)
     held = ", ".join(target.describe() for target in ref.targets) or "no stores"
+    if changed and dry_run:
+        return _outcome(ref, "planned")
     if changed:
         diag.success(f"registered {ref.describe()} ({held})")
     else:
@@ -59,11 +62,13 @@ def _register(diag: Diag) -> RegisterOutcome:
     return _outcome(ref, "registered" if changed else "unchanged")
 
 
-def _remove(diag: Diag) -> RegisterOutcome:
-    ref = unregister()
+def _remove(diag: Diag, *, dry_run: bool) -> RegisterOutcome:
+    ref = unregister(dry_run=dry_run)
     if ref is None:
         diag.info("this install is not registered; nothing to remove")
         return RegisterOutcome(action="gone", environment="", version=None, targets=[])
+    if dry_run:
+        return _outcome(ref, "planned")
     diag.success(f"unregistered {ref.describe()}: other installs may now remove its layouts")
     return _outcome(ref, "removed")
 

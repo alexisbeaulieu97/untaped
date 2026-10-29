@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -12,7 +13,13 @@ from functools import cache
 from typing import NoReturn, get_args, overload
 
 from cyclopts import App, Argument, ArgumentCollection, ResultAction, Token
-from cyclopts.exceptions import CycloptsError
+from cyclopts.exceptions import (
+    CycloptsError,
+    MissingArgumentError,
+    UnknownCommandError,
+    UnknownOptionError,
+    UnusedCliTokensError,
+)
 from pydantic import BaseModel
 from rich.console import Console
 
@@ -55,6 +62,7 @@ from untaped.sdk.records import (
     kind_of,
 )
 from untaped.sdk.tree import TreeGraph, print_tree
+from untaped.sdk.words import not_found, q
 
 #: Environment variable naming the default ``--format`` (wins over ``untaped.ui.format``).
 FORMAT_ENV = "UNTAPED_FORMAT"
@@ -229,6 +237,63 @@ def raise_usage(message: str) -> NoReturn:
     """
     Diagnostics().failure(UsageError(message))
     raise SystemExit(ExitCode.USAGE)
+
+
+#: Cyclopts' list of the commands an unknown one was looked up among.
+_AVAILABLE = re.compile(r" Available commands: (?P<known>.*)$")
+#: One suggested name; two synonyms (``"a" or "b"``) are not one.
+_ONE_SUGGESTION = re.compile(r' Did you mean "(?P<like>[^"]+)"\?')
+
+
+def parse_error(exc: CycloptsError) -> str:
+    """A command line cyclopts refused, said as untaped says errors (lowercase, no period).
+
+    A known option the parser refused is a stray token after ``--``: an
+    unexpected argument, not an unknown option.
+    """
+    text = str(exc)
+    if isinstance(exc, UnknownOptionError):
+        value = exc.token.keyword or exc.token.value
+        like = _suggestion(text)
+        if like == value:
+            return f"unexpected argument after --: {q(value)}"
+        message = f"unknown option: {value}"
+        return f"{message}; did you mean {like}?" if like else message
+    if isinstance(exc, UnusedCliTokensError) and exc.unused_tokens:
+        noun = "argument" if len(exc.unused_tokens) == 1 else "arguments"
+        return f"unexpected {noun}: {', '.join(q(token) for token in exc.unused_tokens)}"
+    if isinstance(exc, UnknownCommandError) and exc.unused_tokens:
+        message = not_found("command", exc.unused_tokens[0])
+        if like_found := _ONE_SUGGESTION.search(text):
+            return f"{message}; did you mean {q(like_found['like'])}?"
+        if available := _AVAILABLE.search(text):
+            known = available["known"]
+            known = (
+                known.removesuffix(", ...") + ", …"
+                if known.endswith(", ...")
+                else known.removesuffix(".")
+            )
+            return f"{message}; known: {known}"
+        return message
+    if type(exc) is MissingArgumentError and exc.argument is not None:
+        name = exc.keyword or exc.argument.name
+        where = f"{' '.join(exc.command_chain)}: " if exc.command_chain else ""
+        if exc.argument.token_count()[0] == 1 and not exc.tokens_so_far:
+            return f"{where}{name} requires an argument"
+    return _house(text)
+
+
+def _suggestion(text: str) -> str | None:
+    head, found, tail = text.rpartition(" Did you mean ")
+    return tail.removesuffix("?") if found and head else None
+
+
+def _house(text: str) -> str:
+    """Cyclopts' sentence in the house style: lowercase first word, no closing period."""
+    text = text.strip().removesuffix(".")
+    if text[:1].isupper() and not text[1:2].isupper():
+        text = text[0].lower() + text[1:]
+    return text
 
 
 def _validate_kind(kind: str | None) -> None:
@@ -860,7 +925,7 @@ def run_cyclopts_app(
             )
         except CycloptsError as exc:
             note_requested_format(argv)
-            raise_usage(str(exc))
+            raise_usage(parse_error(exc))
         except SystemExit as exc:
             exc.code = derived_exit_code(exc.code)
             raise

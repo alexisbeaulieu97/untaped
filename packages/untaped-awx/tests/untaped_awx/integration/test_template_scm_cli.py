@@ -143,4 +143,4 @@ def test_other_kinds_reject_the_flag(fake_aap: Any) -> None:
     result = run(["projects", "list", "--with-scm"])
 
     assert result.exit_code == 2
-    assert "Unknown option: --with-scm" in result.stderr
+    assert "unknown option: --with-scm" in result.stderr

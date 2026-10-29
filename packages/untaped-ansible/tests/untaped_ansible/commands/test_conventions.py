@@ -277,7 +277,7 @@ def test_graph_refuses_a_format_it_cannot_print_before_reading(
     result = run("graph", "acme/role", "--source", "missing", "-f", "yaml", "--out", str(out))
 
     assert result.exit_code == 2
-    assert 'Choose from: "tree", "mermaid", "json".' in json.loads(result.stderr)["message"]
+    assert 'Choose from: "tree", "mermaid", "json"' in json.loads(result.stderr)["message"]
     assert not out.exists()
 
 

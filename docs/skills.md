@@ -42,7 +42,9 @@ Each skill lands in `<root>/<full-id>/` with a marker, `.untaped-stub.json`,
 that records the untaped version and the plugin's distribution and version
 that wrote it, and a digest of what it wrote. The full ID is used even when
 you installed by short selector. An existing directory is replaced only with
-`--force`.
+`--force`. Each install prints one row (`created`, or `updated` for a
+replaced one); `--dry-run` checks the whole selection, prints `planned` rows
+and writes nothing.
 
 Agents usually pick up changed skills on their own. Restart the agent if a
 new skill does not appear in its catalog.
