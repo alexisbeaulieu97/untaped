@@ -279,7 +279,7 @@ def check_installed_skills(
     if older:
         _diag.warning(f"agent skills from an older untaped: {_names(older)}")
         change = "set untaped.skills.updates to auto or off to change this"
-        _diag.hint(f"{run_hint('skills update')} ({change})")
+        _diag.hint(f"{run_hint(Update.spelled())} ({change})")
 
 
 def _refresh(

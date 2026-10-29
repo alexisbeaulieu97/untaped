@@ -55,7 +55,8 @@ from typing import TYPE_CHECKING, Literal
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.core.commands.doctor import online_probe_rows
+from untaped.core.commands.doctor import Check, online_probe_rows, run_line
+from untaped.core.commands.register import Register
 from untaped.core.commands.setup_connection import (
     anyway_buttons,
     candidate,
@@ -63,7 +64,6 @@ from untaped.core.commands.setup_connection import (
     reset,
     with_buttons,
 )
-from untaped.core.commands.setup_plan import SETUP_ALTERNATIVE, SETUP_COMMAND
 from untaped.core.commands.setup_sections import (
     CONNECTION,
     FieldOpened,
@@ -116,7 +116,7 @@ from untaped.screen.core import (
 from untaped.sdk.errors import ConfigError, ErrorCategory
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.auth import CommandToken, forget_token_command
-from untaped.sdk.words import hint, shown_path
+from untaped.sdk.words import command_argv, command_line, hint, shown_path
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
@@ -288,12 +288,15 @@ def setup_screen(
     profile: str,
     store: TokenStore | None,
     profiles: Sequence[str] = (),
+    command: str,
+    alternative: str,
 ) -> Screen[SetupModel, SetupResult]:
     """The setup screen for ``sections`` (``services`` among them) in ``profile``.
 
     ``store`` is the token store picked once for the run (``None`` when none
     works or no service takes a command); ``profiles`` the names the profile
-    field completes.
+    field completes; ``command`` and ``alternative`` the command lines that
+    open the screen and do its work without one.
     """
     app = _Setup(result, dict(services), tuple(sections), store, tuple(profiles), profile)
     return Screen(
@@ -301,8 +304,8 @@ def setup_screen(
         update=app.update,
         view=app.view,
         title="Set up untaped",
-        command=SETUP_COMMAND,
-        alternative=SETUP_ALTERNATIVE,
+        command=command,
+        alternative=alternative,
         keys=(
             Binding("up", "previous", None, when=_moving),
             Binding("down", "next", None, when=_moving),
@@ -336,12 +339,12 @@ def _install_form() -> Form:
     if state == "registered" and ref is not None:
         text = (
             f"Registered: {ref.describe()}. Its runs remove the store layouts no registered "
-            "install uses. `untaped setup register --remove` takes it back."
+            f"install uses. `{command_line(Register.spelled('--remove'))}` takes it back."
         )
         return Form((("about", _Note(text)),))
     text = (
         f"Register {shown_path(env)} so its runs remove the store layouts no registered "
-        "install uses, and keep the ones it does (`untaped setup register`)."
+        f"install uses, and keep the ones it does (`{command_line(Register.spelled())}`)."
     )
     buttons = Buttons((Button("register", "Register", "primary"),))
     return Form((("about", _Note(text)), ("buttons", buttons)), focus=1)
@@ -1347,4 +1350,4 @@ def _result(model: SetupModel, *, interrupted: bool) -> SetupResult:
 
 
 def _check_hint(profile: str) -> str:
-    return hint(f"--profile {profile} doctor --online")
+    return hint(run_line(command_argv(Check.spelled("--online"), profile=profile)))

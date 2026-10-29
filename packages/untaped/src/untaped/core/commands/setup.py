@@ -39,8 +39,6 @@ from untaped.core.commands.doctor import report_check_rows, selected_check_rows
 from untaped.core.commands.notes import print_notes
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_plan import (
-    SETUP_ALTERNATIVE,
-    SETUP_COMMAND,
     emit_plan,
     pending,
     plan_rows,
@@ -55,6 +53,7 @@ from untaped.sdk._ui import build_terminal
 from untaped.sdk.errors import ConfigError, Failed, Matched, PromptInterruptedError
 from untaped.sdk.fields import Output
 from untaped.sdk.plugin import Command, Group
+from untaped.sdk.words import command_line
 
 _NO_SERVICE = "no composed plugin marks settings to set up"
 _NOTHING_TO_PLAN = "none of the named sections is a plugin with settings to set up"
@@ -88,7 +87,9 @@ class Screen(Command[CoreSettings]):
         only = self.only or None
         ui = build_terminal(strict=False)
         # Before anything is read or probed: with no terminal this exits 2 having touched nothing.
-        ui.require_screen_terminal(command=SETUP_COMMAND, alternative=SETUP_ALTERNATIVE)
+        command = command_line(Screen.spelled())
+        alternative = command_line(Plan.spelled("--format", "json"))
+        ui.require_screen_terminal(command=command, alternative=alternative)
         sections = setup_sections(only)
         services = setup_services(result, only)
         raw = read_config_dict()
@@ -100,6 +101,8 @@ class Screen(Command[CoreSettings]):
             profile=active,
             store=service_store(services),
             profiles=active_settings_layout().profile_names(raw),
+            command=command,
+            alternative=alternative,
         )
         outcome = ui.run(screen)
         print_notes(outcome.notes)

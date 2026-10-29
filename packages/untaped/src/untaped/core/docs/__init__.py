@@ -22,6 +22,7 @@ from importlib import metadata
 
 from cyclopts import App
 
+from untaped.core.commands.plugins import List as ListPlugins
 from untaped.core.docs import (
     _commands,
     _extensions,
@@ -162,7 +163,7 @@ def _not_installed(site: Site, name: str) -> str:
     if record is not None:
         return (
             f"{name} is installed but was quarantined [{record.reason}]: {record.detail}; "
-            "`untaped plugin list` shows it"
+            f"`{site.spell(ListPlugins.spelled())}` shows it"
         )
     return (
         f"{name} is not installed in this untaped ({metadata.version(CORE)}, "

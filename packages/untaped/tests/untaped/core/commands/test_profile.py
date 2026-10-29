@@ -310,6 +310,7 @@ def test_delete_dry_run_still_refuses_the_base(app, _isolated_config: Path) -> N
     result = CliInvoker().invoke(app, ["profile", "delete", "default", "--dry-run"])
     assert result.exit_code == 1
     assert "it is the base" in result.stderr
+    assert "hint: remove its keys with `untaped config unset`" in result.stderr
 
 
 def test_delete_emits_a_deleted_outcome(app, _isolated_config: Path) -> None:

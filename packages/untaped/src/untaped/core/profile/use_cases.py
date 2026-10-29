@@ -62,17 +62,21 @@ class CreateProfile:
 
 
 class DeleteProfile:
-    """Remove ``profiles.<name>``; the base (``default``) is not a profile to delete."""
+    """Remove ``profiles.<name>``; the base (``default``) is not a profile to delete.
 
-    def __init__(self, repo: ProfileWriter) -> None:
+    ``base_hint`` is the hint refusing the base gives: how to clear its keys instead.
+    """
+
+    def __init__(self, repo: ProfileWriter, *, base_hint: str | None = None) -> None:
         self._repo = repo
+        self._base_hint = base_hint
 
     def preview(self, name: str) -> ProfileDeletePreview:
         if name == DEFAULT_PROFILE:
             raise ConfigError(
                 "cannot delete `default`: it is the base, config.yml's top level",
                 category="invalid",
-                hint="remove its keys with `untaped config unset`",
+                hint=self._base_hint,
             )
         data = self._repo.read(name)
         if data is None:

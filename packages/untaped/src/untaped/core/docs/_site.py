@@ -32,6 +32,7 @@ from untaped.sdk.words import shown_path
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
+    from untaped.sdk.plugin import SpelledCommand
 
 #: The name core answers to (``untaped docs untaped``); no plugin may take it.
 CORE = "untaped"
@@ -157,6 +158,10 @@ class Site:
     def line(self, command: CommandDecl) -> str:
         """The command line ``command`` is typed as: ``untaped hello say``."""
         return " ".join(("untaped", *self.declaration.words(command)))
+
+    def spell(self, command: SpelledCommand) -> str:
+        """The command line a command named by its class is typed as, a run or not."""
+        return self.declaration.spell(command)
 
     # --- the header -----------------------------------------------------------------
 

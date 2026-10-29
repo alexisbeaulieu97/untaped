@@ -203,11 +203,12 @@ and record shapes; interactive screens are in [Screens](./screens.md).
 A doctor check (a `DoctorCheck` the plugin class holds) returns a
 `DoctorResult`; the row is named after its check, so the result needs
 no id. Its `fix` is the `untaped` command that repairs a failed or
-warned row, without the program name: a string (`"config set acme.server.url
-<URL>"`, split like a shell would) or an argv list. Write a value the user
-supplies as a `<NAME>` placeholder. `doctor` emits it as the row's `fix`
-argv, prefixed with `--profile NAME` unless it names one, so an agent can run
-it as is. Set `automatic=True` only on a fix that meets the rule in the
+warned row, without the program name: a command named by its class
+(`Refresh.spelled()`, `Set.spelled(key(AcmeSettings).url, "<URL>")`), which
+follows the command when it is renamed, a string split like a shell would, or
+an argv list. Write a value the user supplies as a `<NAME>` placeholder.
+`doctor` emits it as the row's `fix` argv, prefixed with `--profile NAME`
+unless it names one, so an agent can run it as is. Set `automatic=True` only on a fix that meets the rule in the
 `DoctorResult` docstring.
 
 ## Keeping what users create

@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
+from untaped.core.commands.doctor import Check
+from untaped.core.commands.plugins import Contracts
 from untaped.core.commands.setup_state import ServiceState, profile_exists, service_marks
 from untaped.core.config.models import SettingOutcome
 from untaped.core.config.repository import SettingsFileRepository
@@ -44,6 +46,7 @@ from untaped.runtime.run import child_run
 from untaped.runtime.settings import env_var_setting, load_settings_section
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.network.credentials import Credential, credential_key, describe_key, key_fields
+from untaped.sdk.words import run_hint
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
@@ -310,7 +313,12 @@ def write_ranking(
         if dot and owner != target.owner:
             raise UsageError(f"rank {contract} in {owner}'s section; this is {target.owner}'s")
         contract = f"{target.owner}.{name}"
-    rank = RankProviders(SettingsFileRepository(), owners)
+    rank = RankProviders(
+        SettingsFileRepository(),
+        owners,
+        contracts_hint=run_hint(Contracts.spelled()),
+        doctor_hint=run_hint(Check.spelled()),
+    )
     if not profile_exists(profile):
         if not plugins:
             return SettingChange(

@@ -104,6 +104,8 @@ def _build(profile: str = "default") -> Screen[SetupModel, SetupResult]:
         profile=profile,
         store=pick_store(),
         profiles=active_settings_layout().profile_names(raw),
+        command="untaped setup",
+        alternative="untaped setup plan --format json",
     )
 
 
@@ -355,7 +357,13 @@ class RosterProfile(BaseModel):
 def test_an_empty_list_the_plugin_needs_is_refused(_isolated_config: Path) -> None:
     result = compose(make_plugin("roster", settings=RosterProfile))
     screen = setup_screen(
-        result, setup_services(result), sections=setup_sections(), profile="default", store=None
+        result,
+        setup_services(result),
+        sections=setup_sections(),
+        profile="default",
+        store=None,
+        command="untaped setup",
+        alternative="untaped setup plan --format json",
     )
 
     run = drive_screen(screen, ["enter", "enter", "ctrl-s"])

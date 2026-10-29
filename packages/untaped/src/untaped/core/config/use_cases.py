@@ -33,7 +33,7 @@ from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.health.deprecated_keys import rename_keys
 from untaped.sdk.marks import Deprecated, owner, removal_text, replacement_text, stability_name
-from untaped.sdk.words import removal_phrase, run_hint
+from untaped.sdk.words import removal_phrase
 
 if TYPE_CHECKING:
     from untaped.runtime.render import MessageKind
@@ -221,12 +221,23 @@ class RankProviders:
 
     ``owners`` are the composed plugins that own contracts. The contract and
     method must exist; a provider that doesn't fill the method is kept, with
-    a warning, for when it does.
+    a warning, for when it does. ``contracts_hint`` and ``doctor_hint`` are the
+    hints a refusal gives: where contracts are listed, and where a plugin whose
+    contracts can't be read is diagnosed.
     """
 
-    def __init__(self, repo: SettingsWriter, owners: Collection[str]) -> None:
+    def __init__(
+        self,
+        repo: SettingsWriter,
+        owners: Collection[str],
+        *,
+        contracts_hint: str | None = None,
+        doctor_hint: str | None = None,
+    ) -> None:
         self._repo = repo
         self._owners = owners
+        self._contracts_hint = contracts_hint
+        self._doctor_hint = doctor_hint
 
     def current(self, contract: str, method: str, *, profile: str | None = None) -> Any:
         """The ranking ``profile`` sets itself, which a later ``expected`` names (``None``: none).
@@ -267,11 +278,13 @@ class RankProviders:
             owners = ", ".join(sorted(self._owners)) or "none"
             raise UsageError(
                 f"{owner_name!r} owns no contract (contract owners: {owners})",
-                hint=run_hint("plugin contracts"),
+                hint=self._contracts_hint,
             )
         notes: list[Note] = []
         if plugins:
-            notes.extend(_check_rankable(owner_name, name, method, plugins))
+            notes.extend(
+                _check_rankable(owner_name, name, method, plugins, doctor_hint=self._doctor_hint)
+            )
         changed = False
 
         def update(target: str, current: Any) -> str | None:
@@ -340,7 +353,9 @@ def _ranked(
     return extensions
 
 
-def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str]) -> list[Note]:
+def _check_rankable(
+    owner_name: str, name: str, method: str, plugins: list[str], *, doctor_hint: str | None
+) -> list[Note]:
     """Refuse a contract or method that doesn't exist; warn about a plugin that doesn't fill it."""
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415 - only when ranking
         method_providers,
@@ -352,7 +367,7 @@ def _check_rankable(owner_name: str, name: str, method: str, plugins: list[str])
         raise ConfigError(
             f"{owner_name}'s contracts couldn't be read",
             system=owner_name,
-            hint=run_hint("doctor"),
+            hint=doctor_hint,
         )
     info: ContractInfo | None = next(
         (each for each in owned[owner_name] if each.name == name), None

@@ -44,10 +44,6 @@ if TYPE_CHECKING:
 
 Row = dict[str, object]
 
-#: The interactive command and its non-interactive face, as a run without a terminal names them.
-SETUP_COMMAND = "untaped setup"
-SETUP_ALTERNATIVE = "untaped setup plan --format json"
-
 
 def plan_rows(
     result: CompositionResult,
@@ -234,4 +230,4 @@ def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
     return "user" if split_profile(run or [])[1][:1] == ["auth"] else "agent"
 
 
-__all__ = ["SETUP_ALTERNATIVE", "SETUP_COMMAND", "emit_plan", "pending", "plan_rows"]
+__all__ = ["emit_plan", "pending", "plan_rows"]

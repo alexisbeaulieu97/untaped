@@ -98,14 +98,14 @@ class RootConfigContext:
             raise ConfigError(
                 f"setting not found: {key!r} ({note})",
                 category="not_found",
-                hint=run_hint("config migrate"),
+                hint=run_hint(Migrate.spelled()),
             )
         if rest in scope.mappings.retired:
             new = f"{first}.{scope.mappings.migratable[rest]}"
             raise ConfigError(
                 f"setting not found: {key!r} (retired; now {new})",
                 category="not_found",
-                hint=run_hint("config migrate"),
+                hint=run_hint(Migrate.spelled()),
             )
         return key
 

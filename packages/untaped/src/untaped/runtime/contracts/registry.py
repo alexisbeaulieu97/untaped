@@ -51,6 +51,7 @@ from untaped.sdk.contracts._declare import (
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import kind_of
+from untaped.sdk.words import command_line
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -533,6 +534,8 @@ def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> li
         extensions = rankings(owner)
     except ConfigError:
         return []  # the owner's settings row already fails
+    from untaped.core.commands.plugins import Rank  # noqa: PLC0415 - core imports the runtime
+
     declared = {info.name: info for info in contracts}
     holders = _holders()
     rows: list[DoctorRow] = []
@@ -542,7 +545,8 @@ def _rank_rows(owner: str, contracts: list[ContractInfo], known: set[str]) -> li
             path = (owner, "extensions", contract, "rank", method)
             key = ".".join(path)
             holder = holders(path)
-            clear = f"plugin rank {owner}.{contract} {method}"
+            rank = command_line(Rank.spelled(f"{owner}.{contract}", method))
+            clear = rank.removeprefix("untaped ")
             if info is None or method not in info.methods or info.methods[method].bridge:
                 missing = (
                     f"declares no contract {contract}"

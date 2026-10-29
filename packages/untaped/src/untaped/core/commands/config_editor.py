@@ -21,6 +21,7 @@ from untaped.sdk._cli import report_errors
 from untaped.sdk.errors import ConfigError, attribution
 from untaped.sdk.prompt.editor import run_editor
 from untaped.sdk.storage._fs import atomic_write
+from untaped.sdk.words import run_hint
 
 #: A fresh home's draft: a non-empty config file is read only when stamped.
 _FRESH = f"format_version: {FORMAT_VERSION}\n"
@@ -87,8 +88,10 @@ def run_config_editor() -> None:
                 fields = {"category": "invalid"}
             if not edited_by_user:
                 # The editor failed after saving: its edits were never checked.
+                from untaped.core.commands.doctor import Check  # noqa: PLC0415 - a cycle
+
                 fields["hint"] = (
-                    f"to apply them, copy {draft} over {path}, then run `untaped doctor`"
+                    f"to apply them, copy {draft} over {path}, then {run_hint(Check.spelled())}"
                 )
             raise ConfigError(
                 f"{detail}\nconfig left unchanged; your edits are in {draft}", **fields
