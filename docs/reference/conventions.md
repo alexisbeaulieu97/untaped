@@ -125,6 +125,10 @@ class's `records` and emit it with `self.ctx.diag.emit(...)`. Relay another
 tool's output (a hook's stderr, a job log) with `diag.relay(text)`: it never
 counts.
 
+**Threads.** `ctx.diag` writes to the run in the thread's context: start
+workers with `bounded_map` or `Parallel.map`, or run your own thread's target
+in `contextvars.copy_context().run`, or its lines skip the run and never count.
+
 ## Options
 
 Declare a shared field block instead of a flag of your own:

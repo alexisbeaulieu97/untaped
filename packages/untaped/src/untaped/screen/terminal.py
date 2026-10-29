@@ -101,8 +101,11 @@ class TerminalHost:
         if kind == "suspend":
             self._call_soon(lambda: asyncio.ensure_future(run_in_terminal(job, in_executor=True)))
             return
-        threading.Thread(
-            target=job, daemon=kind == "background", name=f"untaped-screen-{kind}"
+        threading.Thread(  # the job writes to the run that spawned it
+            target=contextvars.copy_context().run,
+            args=(job,),
+            daemon=kind == "background",
+            name=f"untaped-screen-{kind}",
         ).start()
 
     def post(self, call: Callable[[], None]) -> None:
