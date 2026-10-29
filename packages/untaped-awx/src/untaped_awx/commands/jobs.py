@@ -232,7 +232,7 @@ class Wait(JobsCommand):
     """
 
     timeout: float | None = Field(
-        None, description="Seconds to wait before giving up (applies per id)."
+        None, ge=0, description="Seconds to wait before giving up (applies per id)."
     )
     output: Output[JobRecord] = Output(columns=_JOB_WAIT_COLUMNS)
 
@@ -244,7 +244,7 @@ class Wait(JobsCommand):
             for ident in ids:
                 try:
                     job_id, job = _job(awx, ident, kinds.get(ident, self.kind))
-                    final = WatchJob(awx.repo)(job, timeout=self.timeout)
+                    final = WatchJob(awx.repo, sleep=awx.pause)(job, timeout=self.timeout)
                 except UntapedError as exc:
                     awx.diag.failure(exc, item=ident)
                     continue

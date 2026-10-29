@@ -807,3 +807,21 @@ def test_jobs_list_empty_guides_with_stderr_hint(fake_aap: Any) -> None:
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert "No jobs found" in result.stderr
+
+
+@pytest.mark.parametrize("ident", ["abc", "0", "-1", "1_0"])
+def test_jobs_get_refuses_an_id_that_is_not_a_positive_integer(fake_aap: Any, ident: str) -> None:
+    _seed_running_job(fake_aap)
+
+    result = run(["jobs", "get", "-f", "json", "--", ident, "42"])
+
+    assert result.exit_code == 1, result.output
+    failure = json.loads(result.stderr)
+    assert (failure["item"], failure["message"]) == (ident, "not a job id (a positive integer)")
+    assert [row["id"] for row in json.loads(result.stdout)] == [42]
+
+
+def test_jobs_wait_refuses_a_negative_timeout(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap)
+
+    assert run(["jobs", "wait", "42", "--timeout=-1"]).exit_code == 2
