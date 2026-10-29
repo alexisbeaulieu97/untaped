@@ -36,6 +36,9 @@ from pydantic import BaseModel, Field
 
 from untaped.core.commands import records
 from untaped.core.commands._render import emit_check_list, emit_isolated
+from untaped.core.commands.config import Migrate
+from untaped.core.commands.skills import Remove as RemoveSkill
+from untaped.core.commands.skills import Update as UpdateSkills
 from untaped.core.commands.skills import composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import SkillState, local_project_root, outdated_skills
@@ -242,7 +245,7 @@ def _fix_hint(rows: list[dict[str, object]]) -> str | None:
     automatic = [argv for argv, auto in fixes.items() if auto]
     if not automatic:
         return None
-    command = run_line(command_argv("doctor fix", profile=selected_profile()))
+    command = run_line(command_argv(Fix.spelled(), profile=selected_profile()))
     text = (
         f"{run_hint(command)} to apply {plural(len(automatic), 'automatic fix', 'automatic fixes')}"
     )
@@ -507,7 +510,7 @@ def _deprecated_keys_row(raw: Mapping[str, Any]) -> dict[str, object]:
             parts.append(f"{variable.name} (environment): {variable.note}")
     fix = None
     if any(item.kind != "deprecated" for item in found):
-        fix = command_argv("config migrate", profile=fix_target())
+        fix = command_argv(Migrate.spelled(), profile=fix_target())
     return _row("deprecated-keys", NAME, _WARN, title, "; ".join(parts), fix, automatic=True)
 
 
@@ -528,16 +531,16 @@ def _skills_row(result: CompositionResult) -> dict[str, object]:
     parts = [f"{item.state.value} skill: {item.path}" for item in stale]
     fix = None
     if any(item.state is SkillState.outdated for item in stale):
-        fix = command_argv("skills update", profile=fix_target())
+        fix = command_argv(UpdateSkills.spelled(), profile=fix_target())
     if any(item.state is SkillState.edited for item in stale):
         parts.append(
             "edited stubs are never rewritten by a run: keep them, or replace one with"
-            " `untaped skills update --force NAME`"
+            f" `{command_line(UpdateSkills.spelled('--force', 'NAME'))}`"
         )
     if any(item.state is SkillState.orphaned for item in stale):
         parts.append(
             "orphaned skills are shipped by no plugin installed here: install the plugin"
-            " that ships one, or remove it with `untaped skills remove NAME`"
+            f" that ships one, or remove it with `{command_line(RemoveSkill.spelled('NAME'))}`"
         )
     detail = "; ".join(parts)
     return _row("skills", NAME, _WARN, title, detail, fix, automatic=True)

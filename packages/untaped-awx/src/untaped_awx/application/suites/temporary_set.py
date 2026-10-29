@@ -53,12 +53,12 @@ from untaped_awx.application.resources.mutation_types import MutationPlan
 from untaped_awx.application.resources.ports import Catalog, FkResolver, ResourceClient
 from untaped_awx.application.suites.preflight import PreflightLaunch, refused
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.domain.suites.case_failure import SCM
 from untaped_awx.domain.suites.suite import (
     JOB_TEMPLATE,
     WORKFLOW_TEMPLATE,
     TemplateBinding,
 )
+from untaped_awx.domain.suites.systems import SCM
 from untaped_awx.domain.suites.temporary_set import (
     TAG,
     TEMPLATE_KINDS,

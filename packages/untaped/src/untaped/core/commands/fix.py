@@ -33,6 +33,7 @@ from pydantic import ValidationError
 
 from untaped.core.commands._render import emit_fix_list, emit_isolated, fix_plan
 from untaped.core.commands.doctor import (
+    Check,
     collect_doctor_rows,
     group_fixes,
     is_automatic,
@@ -53,7 +54,15 @@ from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ErrorCategory, Failed, UntapedError
 from untaped.sdk.fields import Confirm, table_row
-from untaped.sdk.words import command_argv, not_found, plural, run_hint, split_profile, summary
+from untaped.sdk.words import (
+    command_argv,
+    command_line,
+    not_found,
+    plural,
+    run_hint,
+    split_profile,
+    summary,
+)
 
 _diag = Diagnostics()
 
@@ -171,7 +180,7 @@ def _refusal(fix: _Fix, builtin_for: Callable[[str], str | None]) -> UntapedErro
     name = builtin_for(first) if first else None
     if name is None:
         return UntapedError(not_found("command", first))
-    if name == "doctor":
+    if [name] == command_line(Check.spelled()).split()[1:2]:  # anything under doctor
         return UntapedError("a fix cannot run doctor")
     return None
 
@@ -352,7 +361,7 @@ def _show(rows: list[FixOutcome], *, columns: list[str] | None) -> None:
 def _exit_unhealthy(rows: list[dict[str, object]], profile: str) -> None:
     """Fail the run, pointing at ``doctor`` for ``profile``, when a check still fails."""
     if any(row["status"] == "fail" for row in rows):
-        _diag.hint(run_hint(run_line(command_argv("doctor", profile=profile))))
+        _diag.hint(run_hint(run_line(command_argv(Check.spelled(), profile=profile))))
         raise Failed("a doctor check still fails")
 
 

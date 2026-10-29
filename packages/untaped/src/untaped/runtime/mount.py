@@ -215,7 +215,10 @@ def _plugin_class(declaration: Declaration, name: str) -> type[Plugin]:
     target = declaration.plugin(name).target
     cls = resolve_target(target)
     if not (isinstance(cls, type) and issubclass(cls, Plugin)):
-        raise TypeError(f"{target} is no longer a plugin class; run `untaped doctor`")
+        from untaped.core.commands.doctor import Check  # noqa: PLC0415 - core imports the runtime
+
+        doctor = declaration.spell(Check.spelled())
+        raise TypeError(f"{target} is no longer a plugin class; run `{doctor}`")
     return cls
 
 

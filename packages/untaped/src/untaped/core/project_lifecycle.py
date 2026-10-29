@@ -25,6 +25,9 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from untaped.core.commands.project import Init
+from untaped.core.commands.project import List as ListProjects
+from untaped.core.commands.project import Move as MoveProject
 from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError
@@ -72,7 +75,7 @@ from untaped.sdk.storage.holds import (
     preview_rows,
     view,
 )
-from untaped.sdk.words import not_found, shown_path
+from untaped.sdk.words import command_line, not_found, run_hint, shown_path
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
 _CORE_FILES = (MARKER,)
@@ -316,7 +319,7 @@ def find_project(target: str) -> Project | Reference:
             if by_path
             else not_found("project", target, known=names),
             category="not_found",
-            hint="`untaped project list` shows the projects this home records",
+            hint=f"`{command_line(ListProjects.spelled())}` shows the projects this home records",
         )
     if len(matches) > 1:
         where = ", ".join(shown_path(ref.anchor) for ref in matches if ref.anchor is not None)
@@ -453,7 +456,7 @@ def _check_not_copy(old: Path, new: Path, project: Project) -> None:
     the recorded folder itself (then both are copies). When no folder has
     it, the record can't tell, and the move is the user's answer.
     """
-    hint = "`untaped project init --new-id` in the copy gives it its own id"
+    hint = f"`{command_line(Init.spelled('--new-id'))}` in the copy gives it its own id"
     kinds = {path: _situation(path, project.id) for path in (old, new)}
     anchor = kinds[new].anchor
     name = anchor.name if anchor is not None else project.name  # as its record names it
@@ -477,8 +480,8 @@ def _check_rename(old: Path, new: Path) -> None:
         raise UntapedError(
             f"{shown_path(old)} and {shown_path(new)} are on different filesystems; "
             "untaped never copies a project",
-            hint=f"move it yourself (`mv`), then run `untaped project move {shown_path(old)} "
-            f"{shown_path(new)}`",
+            hint=f"move it yourself (`mv`), then "
+            f"{run_hint(MoveProject.spelled(shown_path(old), shown_path(new)))}",
         )
     if new.is_relative_to(old):
         raise UsageError(f"{shown_path(new)} is inside {shown_path(old)}")
@@ -558,7 +561,7 @@ def _recorded_at(old: Path, new: Path) -> Project:
         raise UntapedError(
             f"no project recorded at {shown_path(old)}",
             category="not_found",
-            hint="`untaped project list` shows the projects this home records",
+            hint=f"`{command_line(ListProjects.spelled())}` shows the projects this home records",
         )
     recorded = os.path.lexists(new) and _situation(new.resolve(), holder.name).kind in {
         "ok",
@@ -570,10 +573,11 @@ def _recorded_at(old: Path, new: Path) -> Project:
         raise UntapedError(
             f"project {anchor.name} moved from {shown_path(old)} to {shown_path(anchor)}; "
             "nothing moved",
-            hint=f"`untaped project move {shown_path(old)} {shown_path(anchor)}` retries its repair"
+            hint=f"`{command_line(MoveProject.spelled(shown_path(old), shown_path(anchor)))}` "
+            "retries its repair"
             if here
-            else f"`untaped project move {shown_path(anchor)} NEW`, NEW where it is now, "
-            "retries its repair",
+            else f"`{command_line(MoveProject.spelled(shown_path(anchor), 'NEW'))}`, NEW where "
+            "it is now, retries its repair",
         )
     return Project(id=holder.name, root=old)
 

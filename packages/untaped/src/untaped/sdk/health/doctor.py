@@ -27,6 +27,7 @@ from untaped.sdk.network.auth import find_program
 
 if TYPE_CHECKING:
     from untaped.runtime.sink import Diagnostics
+    from untaped.sdk.plugin import SpelledCommand
 
 
 class DoctorCheck(OwnedBlock):
@@ -74,8 +75,9 @@ class DoctorResult:
     ``warn=True`` is a ``warn`` row: worth attention (a deprecated setting,
     say) but not a failure, so doctor still exits 0. ``fix`` is the
     ``untaped`` command (without the program name) that repairs a failed or
-    warned row, as a string (split like a shell would) or an argv list; a
-    value the user supplies is a ``<NAME>`` placeholder. Doctor emits it as
+    warned row: a command named by its class (``Refresh.spelled()``), a
+    string (split like a shell would) or an argv list; a value the user
+    supplies is a ``<NAME>`` placeholder. Doctor emits it as
     the row's ``fix`` argv and shows it under the row.
 
     ``automatic=True`` says the fix is safe to run unattended: it needs no
@@ -94,7 +96,7 @@ class DoctorResult:
     detail: str
     id: str | None = field(default=None, kw_only=True)
     warn: bool = False
-    fix: str | list[str] | None = None
+    fix: SpelledCommand | str | list[str] | None = None
     automatic: bool = False
 
 

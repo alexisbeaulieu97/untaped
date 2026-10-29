@@ -34,13 +34,12 @@ from untaped_awx.domain import Job
 from untaped_awx.domain.jobs.job import HostSummary
 from untaped_awx.domain.suites.case_failure import (
     APPROVALS_HINT,
-    EXPECTATION,
-    SUITE,
     CaseFailure,
     FailedTask,
     failure,
 )
 from untaped_awx.domain.suites.suite import Approvals, ExpectationResult, NodeExpectation
+from untaped_awx.domain.suites.systems import EXPECTATION, SUITE
 from untaped_awx.domain.suites.workflow_run import (
     APPROVAL,
     MAX_NESTING,

@@ -48,12 +48,12 @@ from untaped.sdk import (
 )
 from untaped_awx.domain.jobs.job import SUMMARY_FIELDS, HostSummary
 from untaped_awx.domain.suites.case_failure import (
-    SUITE,
     CaseFailure,
     FailedTask,
     clip,
     failure,
 )
+from untaped_awx.domain.suites.systems import SUITE
 from untaped_awx.domain.suites.workflow_run import NEVER_RAN, NodeResult
 
 

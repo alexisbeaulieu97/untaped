@@ -98,14 +98,14 @@ class RootConfigContext:
             raise ConfigError(
                 f"setting not found: {key!r} ({note})",
                 category="not_found",
-                hint=run_hint("config migrate"),
+                hint=run_hint(Migrate.spelled()),
             )
         if rest in scope.mappings.retired:
             new = f"{first}.{scope.mappings.migratable[rest]}"
             raise ConfigError(
                 f"setting not found: {key!r} (retired; now {new})",
                 category="not_found",
-                hint=run_hint("config migrate"),
+                hint=run_hint(Migrate.spelled()),
             )
         return key
 
@@ -195,8 +195,8 @@ class Get(Command[CoreSettings]):
     JSON); other formats give its default and where it came from.
 
     Examples:
-        $ untaped config get awx.server.url
-        $ untaped config get awx.server.url -f json
+        $ untaped config get untaped.http.timeout_seconds
+        $ untaped config get untaped.http.timeout_seconds -f json
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")
@@ -225,8 +225,8 @@ class Set(Command[CoreSettings]):
     written; --prompt asks for it by type, --stdin reads it.
 
     Examples:
-        $ untaped config set awx.server.url https://aap.example.com
-        $ printf %s "$URL" | untaped config set awx.server.url --stdin
+        $ untaped config set untaped.http.timeout_seconds 60
+        $ printf %s "$URL" | untaped config set PLUGIN.server.url --stdin
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")
@@ -253,7 +253,7 @@ class Unset(Command[CoreSettings]):
     """Remove one setting from the profile --profile names, else the base.
 
     Examples:
-        $ untaped config unset awx.server.url
+        $ untaped config unset untaped.http.timeout_seconds
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")

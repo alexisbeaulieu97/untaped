@@ -85,6 +85,8 @@ def _build(
         profile=profile,
         store=None,
         profiles=active_settings_layout().profile_names(raw),
+        command="untaped setup",
+        alternative="untaped setup plan --format json",
     )
 
 
@@ -779,6 +781,8 @@ def _shelf() -> Screen[SetupModel, SetupResult]:
         profile="default",
         store=None,
         profiles=("default",),
+        command="untaped setup",
+        alternative="untaped setup plan --format json",
     )
 
 
@@ -935,6 +939,8 @@ def test_an_owner_named_add_and_a_new_profile_rank_as_plugin_rank_does(
             sections=setup_sections(["shelf"]),
             profile="work",
             store=None,
+            command="untaped setup",
+            alternative="untaped setup plan --format json",
         ),
         keys,
         size=(120, 30),

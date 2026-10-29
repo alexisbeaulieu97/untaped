@@ -27,6 +27,8 @@ from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from untaped.core.commands.config import Set
+from untaped.core.commands.plugins import Contracts
 from untaped.core.commands.setup_state import (
     ServiceState,
     connection_keys,
@@ -224,7 +226,7 @@ def _row(
         help.append(shown.note)
     editable = shown.stability != "deprecated"
     if not editable:
-        command = command_line(f"config set {entry.key}")
+        command = command_line(Set.spelled(entry.key))
         help.append(
             f"Read-only here (deprecated); `{command}` sets it"
             + (", delete unsets it." if own else ".")
@@ -257,7 +259,7 @@ def _ranking_rows(
 ) -> list[SettingRow]:
     """A row per ranking the owner's ``extensions`` holds, then the row that adds one."""
     owner, label = descriptor.path[0], ".".join(descriptor.path[1:])
-    help_tail = f"`{command_line('plugin contracts')}` lists contracts and providers."
+    help_tail = f"`{command_line(Contracts.spelled())}` lists contracts and providers."
     rows = [
         SettingRow(
             key=f"{descriptor.key}.{each.contract}.rank.{each.method}",

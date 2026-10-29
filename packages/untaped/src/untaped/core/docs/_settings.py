@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_origin
 
+from untaped.core.commands.config import Set
 from untaped.core.docs._docstring import first_line
 from untaped.core.docs._site import ORGANIZED, Site
 from untaped.core.surface._types import home_relative
@@ -68,7 +69,8 @@ def page(site: Site, name: str) -> list[str]:
         ORGANIZED,
         "",
         f"The `{name}:` section of `{path}`. A named profile sets any of them under "
-        f"`profiles.<name>.{name}`; `untaped config set {name}.KEY VALUE` changes one.",
+        f"`profiles.<name>.{name}`; `{site.spell(Set.spelled(f'{name}.KEY', 'VALUE'))}` "
+        "changes one.",
         "",
     ]
     for setting in settings(site, name):

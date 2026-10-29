@@ -9,6 +9,7 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
+from untaped.runtime import mount
 from untaped.runtime.bootstrap import build_root_app, compose_root
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
@@ -410,3 +411,13 @@ def test_a_plugin_class_composition_refuses_is_quarantined_naming_the_problem() 
     [record] = result.quarantine
     assert (record.name, record.reason) == ("broken", "bad-plugin-class")
     assert record.detail == "Undocumented: a command's docstring is its help [missing-docstring]"
+
+
+def test_a_target_that_is_no_longer_a_plugin_class_points_at_doctor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    declaration = compose_root(candidates=[HELLO]).mount.declaration
+    monkeypatch.setattr(mount, "resolve_target", lambda target: object())
+
+    with pytest.raises(TypeError, match=r"no longer a plugin class; run `untaped doctor`$"):
+        mount._plugin_class(declaration, "hello")

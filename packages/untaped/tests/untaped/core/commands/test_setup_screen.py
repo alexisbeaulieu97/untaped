@@ -42,6 +42,7 @@ from untaped.core.commands.setup_screen import (
     CapRow,
     SetupModel,
     SetupResult,
+    _check_hint,
     setup_screen,
 )
 from untaped.core.commands.setup_state import (
@@ -60,7 +61,7 @@ from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.storage import _refs as refs
-from untaped.sdk.testing import MemoryCredentials, ScreenKeys, drive_screen
+from untaped.sdk.testing import MemoryCredentials, ScreenKeys, drive_screen, install
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun, rendered_text
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
@@ -97,6 +98,8 @@ def _build(
         profile=profile,
         store=pick_store(),
         profiles=active_settings_layout().profile_names(raw),
+        command="untaped setup",
+        alternative="untaped setup plan --format json",
     )
 
 
@@ -1129,3 +1132,10 @@ def test_a_source_tree_says_so_and_offers_no_button(monkeypatch: pytest.MonkeyPa
     assert run.model.rows[0].status == "source tree"
     assert "only an installed untaped can be registered" in _about(run.model)
     assert "Register" not in run.frame
+
+
+def test_a_note_for_another_profile_hints_its_online_doctor() -> None:
+    """``default`` goes without saying when the run picks no profile, as in doctor's own lines."""
+    with install().running():
+        assert _check_hint("prod") == "hint: run `untaped --profile prod doctor --online`"
+        assert _check_hint("default") == "hint: run `untaped doctor --online`"

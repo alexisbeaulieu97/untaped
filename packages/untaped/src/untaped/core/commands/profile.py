@@ -11,6 +11,7 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
+from untaped.core.commands.config import Unset
 from untaped.core.profile.models import (
     PickedProfile,
     Profile,
@@ -33,7 +34,7 @@ from untaped.runtime.settings import get_settings_model, resolve_config_path
 from untaped.sdk._schema import redact_secrets, secret_field_paths
 from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
-from untaped.sdk.words import q
+from untaped.sdk.words import command_line, q
 
 
 class List(Command[CoreSettings]):
@@ -145,7 +146,8 @@ class Delete(Command[CoreSettings]):
     output: Output[ProfileOutcome]
 
     def run(self) -> ProfileOutcome:
-        delete = DeleteProfile(ProfileFileRepository())
+        unset = command_line(Unset.spelled())
+        delete = DeleteProfile(ProfileFileRepository(), base_hint=f"remove its keys with `{unset}`")
         preview = delete.preview(self.name)
         if not self.confirm(f"Delete profile {q(preview.name)}?", preview=lambda: _lines(preview)):
             return ProfileOutcome(name=self.name, action="planned")

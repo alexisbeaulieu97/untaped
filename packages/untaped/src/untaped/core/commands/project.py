@@ -33,7 +33,7 @@ from untaped.sdk.projects import (
     writing,
 )
 from untaped.sdk.storage.holds import HolderView, HoldOutcome, unnamed, view
-from untaped.sdk.words import plural, shown_path
+from untaped.sdk.words import command_line, plural, shown_path
 
 if TYPE_CHECKING:
     from untaped.core.project_lifecycle import Removal
@@ -98,7 +98,9 @@ class List(Command[CoreSettings]):
     output: Output[RecordedProject]
 
     def run(self) -> Iterator[RecordedProject]:
-        self.output.empty("No projects yet. Make one with `untaped project init` in its folder.")
+        self.output.empty(
+            f"No projects yet. Make one with `{command_line(Init.spelled())}` in its folder."
+        )
         try:
             here = project_at(Path.cwd())
         except ConfigError as exc:  # a damaged marker here: still list the others
@@ -292,7 +294,7 @@ class Prune(Command[CoreSettings]):
                 raise UntapedError(
                     f"project {named.name} is at {shown_path(named.root)}; prune removes only "
                     "projects whose folder is gone",
-                    hint="remove it with `untaped project remove`",
+                    hint=f"remove it with `{command_line(Remove.spelled())}`",
                 )
             missing = [named]
         if not missing:

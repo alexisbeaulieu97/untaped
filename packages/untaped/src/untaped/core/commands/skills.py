@@ -103,7 +103,7 @@ class Install(Command[CoreSettings]):
 
     Examples:
         $ untaped skills install --all --target claude
-        $ untaped skills install awx --scope local --dry-run
+        $ untaped skills install SKILL --scope local --dry-run
     """
 
     repairs = True
@@ -176,7 +176,7 @@ class Update(Command[CoreSettings]):
 
     Examples:
         $ untaped skills update --dry-run
-        $ untaped skills update untaped-awx --force
+        $ untaped skills update SKILL --force
     """
 
     repairs = True
@@ -205,7 +205,7 @@ class Remove(Command[CoreSettings]):
     """Remove installed skills; only directories untaped installed are touched.
 
     Examples:
-        $ untaped skills remove untaped-awx --dry-run
+        $ untaped skills remove SKILL --dry-run
         $ untaped skills remove --all --target claude --yes
     """
 
@@ -279,7 +279,7 @@ def check_installed_skills(
     if older:
         _diag.warning(f"agent skills from an older untaped: {_names(older)}")
         change = "set untaped.skills.updates to auto or off to change this"
-        _diag.hint(f"{run_hint('skills update')} ({change})")
+        _diag.hint(f"{run_hint(Update.spelled())} ({change})")
 
 
 def _refresh(

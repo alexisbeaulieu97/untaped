@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from untaped.core.commands.config import Migrate
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import base_sections, profile_entries
 from untaped.runtime.settings import (
@@ -89,7 +90,7 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
         ok=True,
         warn=True,
         detail="; ".join(parts),
-        fix="config migrate" if deleted else None,
+        fix=Migrate.spelled() if deleted else None,
         automatic=bool(deleted),
     )
 

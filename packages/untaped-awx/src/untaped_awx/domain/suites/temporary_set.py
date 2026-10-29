@@ -41,6 +41,7 @@ from untaped_awx.domain.suites.suite import (
     Suite,
     TemplateBinding,
 )
+from untaped_awx.domain.suites.systems import SUITE
 from untaped_awx.domain.suites.workflow_run import MAX_NESTING
 from untaped_awx.domain.workflow_graph import (
     WorkflowNodeSpec,
@@ -319,7 +320,7 @@ def _match(
             f"{len(found)} specs match {kind} {q(name)}: {paths}; set the suite's organization "
             "or keep one spec per template",
             category="invalid",
-            system="awx.suite",
+            system=SUITE,
         )
     return found[0][0] if found else None
 
@@ -404,7 +405,7 @@ def _nodes(path: str, doc: Resource) -> list[WorkflowNodeSpec]:
     try:
         return parse_workflow_nodes(doc.spec.get("nodes", []))
     except ValueError as exc:
-        raise ConfigError(f"{path}: {exc}", category="invalid", system="awx.suite") from exc
+        raise ConfigError(f"{path}: {exc}", category="invalid", system=SUITE) from exc
 
 
 def _scope(organization: str | None) -> dict[str, str] | None:

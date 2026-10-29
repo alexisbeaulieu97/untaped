@@ -24,6 +24,7 @@ from untaped.core.commands.records import (
     StoredCredential,
     TokenSource,
 )
+from untaped.core.commands.setup import Plan
 from untaped.core.settings import CoreSettings
 from untaped.runtime.profile_resolver import (
     selected_profile,
@@ -85,7 +86,7 @@ class _Target:
         return self.credential.plugin
 
     def menu_label(self) -> str:
-        """``awx token  url=https://… (stored 9b07e4)``."""
+        """``PLUGIN token  url=https://… (stored 9b07e4)``."""
         where = describe_key(self.key) if self.key is not None else self.problem or "no key"
         answer = None if self.key is None else self.credential.answer(self.key)
         state = f" ({answer.source})" if answer is not None else ""
@@ -115,7 +116,11 @@ def _run_target(result: CompositionResult, credential: Credential[Any]) -> _Targ
 
 
 def _choose(
-    result: CompositionResult, plugin: str | None, name: str | None, *, verb: str
+    result: CompositionResult,
+    plugin: str | None,
+    name: str | None,
+    *,
+    command: type[Command[CoreSettings]],
 ) -> Credential[Any]:
     """The credential ``plugin`` and ``name`` name, or one picked from a menu on a terminal.
 
@@ -146,7 +151,7 @@ def _choose(
         what = "a plugin" if plugin is None else "a credential name"
         raise UsageError(
             f"name {what} when not at a terminal; choices: {listed}",
-            hint=run_hint(f"auth {verb} {choices[0].login_args}"),
+            hint=run_hint(command.spelled(choices[0].login_args)),
         )
     targets = [_run_target(result, each) for each in choices]
     with ui.terminal():
@@ -172,7 +177,7 @@ def _key(
             raise ConfigError(
                 f"{credential.plugin} is not set up, so there is no server to file "
                 f"its {credential.name} for ({target.problem})",
-                hint=run_hint(f"setup plan --only {credential.plugin}"),
+                hint=run_hint(Plan.spelled("--only", credential.plugin)),
                 fix_by="user",
             )
         return target.key
@@ -204,7 +209,7 @@ def _login(
     store: StoreName | None,
     fields: dict[str, str],
 ) -> CredentialOutcome:
-    credential = _choose(result, plugin, name, verb="login")
+    credential = _choose(result, plugin, name, command=Login)
     key = _key(result, credential, fields)
     _refuse_folder(credential, key, "logging in")
     _diag.info(f"{credential.label} for {describe_key(key)}")
@@ -277,9 +282,9 @@ def _forget(
         if plugin is None and not ui.can_prompt:
             raise UsageError(
                 "name a plugin or --id when not at a terminal",
-                hint=run_hint("auth list"),
+                hint=run_hint(List.spelled()),
             )
-        credential = _choose(result, plugin, name, verb="forget")
+        credential = _choose(result, plugin, name, command=Forget)
         key = _key(result, credential, fields)
         key_text = describe_key(key)
         found = find_row(credential.id(key))
@@ -319,7 +324,7 @@ def _forget_row(row: CredentialRow) -> None:
 def _id_by_prefix(prefix: str) -> str:
     found = ids_by_prefix(prefix)
     if not found:
-        raise UsageError(f"no stored credential has id {prefix!r}", hint=run_hint("auth list"))
+        raise UsageError(f"no stored credential has id {prefix!r}", hint=run_hint(List.spelled()))
     if len(found) > 1:
         listed = ", ".join(ident[: SHORT_ID + 4] for ident in found)
         raise UsageError(f"id {prefix!r} matches several stored credentials: {listed}")
@@ -425,7 +430,7 @@ def _key_fields(given: list[str]) -> dict[str, str]:
     return fields
 
 
-_PLUGIN = "The plugin, e.g. awx; a menu on a terminal when left out."
+_PLUGIN = "The plugin whose credential it is; a menu on a terminal when left out."
 _NAME = "The credential, when the plugin declares several."
 _KEY = "A key field the plugin's settings don't hold, as FIELD=VALUE; repeat for several."
 _STORE = "Store to use; default: the first usable one."
@@ -435,7 +440,7 @@ class Login(Command[CoreSettings]):
     """Store a token for this run's server, in this machine's password store.
 
     The server is the plugin's settings for the profile this run picks
-    (awx.server); the key is printed before anything is asked. The token is
+    (its server URL, say); the key is printed before anything is asked. The token is
     read from a hidden prompt, or from stdin when stdin is not a terminal;
     --token-command stores a command instead (its program a bare name or an
     absolute path, run from the config file's folder). The store is macOS
@@ -445,8 +450,8 @@ class Login(Command[CoreSettings]):
     replaces it. A server a folder's settings chose is refused.
 
     Examples:
-        $ untaped --profile prod auth login awx
-        $ untaped auth login github --token-command 'gh auth token'
+        $ untaped --profile prod auth login PLUGIN
+        $ untaped auth login PLUGIN --token-command 'pass show work/token'
     """
 
     plugin: Positional[str | None] = Field(None, description=_PLUGIN)
@@ -492,7 +497,7 @@ class Forget(Command[CoreSettings]):
     more. Nothing is revoked on the server: revoke the token there too.
 
     Examples:
-        $ untaped --profile prod auth forget awx --yes
+        $ untaped --profile prod auth forget PLUGIN --yes
         $ untaped auth forget --id 9b07e4 --dry-run
     """
 

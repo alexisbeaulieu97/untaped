@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 #: ``untaped`` install has no plugins.
 INSTALL_HINT = (
     "No plugins are installed. Reinstall untaped with an extra: 'untaped[all]' "
-    "for all of them, or one, e.g. 'untaped[awx]'."
+    "for all of them, or one by its name, 'untaped[NAME]'."
 )
 
 
@@ -105,12 +105,18 @@ class Rank(Command[CoreSettings]):
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
+        from untaped.core.commands.doctor import Check  # noqa: PLC0415 - a start's cost
         from untaped.core.commands.notes import print_notes  # noqa: PLC0415 - config's cost
         from untaped.core.config.repository import SettingsFileRepository  # noqa: PLC0415
         from untaped.core.config.use_cases import RankProviders  # noqa: PLC0415
         from untaped.runtime.registry import contract_owners  # noqa: PLC0415
 
-        rank = RankProviders(SettingsFileRepository(), contract_owners(_composition()))
+        rank = RankProviders(
+            SettingsFileRepository(),
+            contract_owners(_composition()),
+            contracts_hint=run_hint(Contracts.spelled()),
+            doctor_hint=run_hint(Check.spelled()),
+        )
         change = rank(self.contract, self.method, list(self.plugins), dry_run=bool(self.dry_run))
         print_notes(change.notes)
         return change.outcome
@@ -169,6 +175,7 @@ def _composition() -> CompositionResult:
 
 
 def _contract_methods(diag: Diag) -> list[ContractMethod]:
+    from untaped.core.commands.doctor import Check  # noqa: PLC0415 - a start's cost
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415 - only when listing contracts
         method_providers,
         owned_contracts,
@@ -179,7 +186,7 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
     rows: list[ContractMethod] = []
     owned = owned_contracts()
     for owner in unreadable_owners():
-        diag.warning(f"{owner}'s contracts couldn't be read", hint=run_hint("doctor"))
+        diag.warning(f"{owner}'s contracts couldn't be read", hint=run_hint(Check.spelled()))
     for owner, infos in sorted(owned.items()):
         try:
             extensions: Mapping[str, ExtensionSettings] = rankings(owner)
