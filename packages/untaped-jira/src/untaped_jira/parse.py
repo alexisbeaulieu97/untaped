@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Any
 
+from untaped.sdk import parse_utc
 from untaped_jira.records import (
     Board,
     Comment,
@@ -63,7 +63,7 @@ def parse_issue(data: Mapping[str, Any], *, detail: bool = False) -> Issue:
         "summary": _text(fields.get("summary")),
         "status": _name(fields.get("status")),
         "assignee": _display_name(fields.get("assignee")),
-        "updated_at": _timestamp(fields.get("updated")),
+        "updated_at": parse_utc(fields.get("updated")),
         "url": _browser_url(data),
         "api_url": _api_url(data),
         "issue_type": _name(fields.get("issuetype")),
@@ -74,7 +74,7 @@ def parse_issue(data: Mapping[str, Any], *, detail: bool = False) -> Issue:
         row |= {
             "reporter": _display_name(fields.get("reporter")),
             "labels": [str(label) for label in labels] if isinstance(labels, list) else [],
-            "created_at": _timestamp(fields.get("created")),
+            "created_at": parse_utc(fields.get("created")),
             "resolution": _name(fields.get("resolution")),
             "description": _text(fields.get("description")),
             "links": _links(fields.get("issuelinks")),
@@ -88,8 +88,8 @@ def parse_comment(data: Mapping[str, Any], *, issue_key: str) -> Comment:
         id=str(data.get("id") or ""),
         issue_key=issue_key,
         author=_display_name(data.get("author")),
-        created_at=_timestamp(data.get("created")),
-        updated_at=_timestamp(data.get("updated")),
+        created_at=parse_utc(data.get("created")),
+        updated_at=parse_utc(data.get("updated")),
         body=_text(data.get("body")),
         api_url=_api_url(data),
     )
@@ -141,8 +141,8 @@ def parse_sprint(data: Mapping[str, Any]) -> Sprint:
     """A sprint row from a raw Jira Software sprint; odd timestamps become ``None``."""
     row = _present(data, id="id", name="name", state="state", goal="goal")
     row |= _present(data, origin_board_id="originBoardId")
-    row["start_at"] = _timestamp(data.get("startDate"))
-    row["end_at"] = _timestamp(data.get("endDate"))
+    row["start_at"] = parse_utc(data.get("startDate"))
+    row["end_at"] = parse_utc(data.get("endDate"))
     return Sprint.model_validate(row)
 
 
@@ -224,18 +224,6 @@ def _adf_inline(node: dict[str, Any]) -> str:
     if kind == "date":
         return str(attrs.get("timestamp") or "")
     return "".join(_adf_inline(child) for child in _adf_children(node))
-
-
-def _timestamp(value: Any) -> datetime | None:
-    """Parse a Jira timestamp (``2026-06-05T10:00:00.000-0400``); ``None`` if absent or odd."""
-    if isinstance(value, datetime):
-        return value
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return datetime.fromisoformat(value.strip())
-    except ValueError:
-        return None
 
 
 def _name(value: Any) -> str:

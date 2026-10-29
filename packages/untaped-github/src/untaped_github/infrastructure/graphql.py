@@ -36,6 +36,7 @@ from untaped.sdk import (
     RetryPolicy,
     UntapedError,
     bounded_map,
+    parse_utc,
 )
 from untaped_github.domain.models import (
     BatchRepoRefsFailure,
@@ -689,21 +690,12 @@ def _rate_limit(payload: dict[str, Any]) -> _RateLimit:
         return _RateLimit()
     cost = rate_limit.get("cost")
     remaining = rate_limit.get("remaining")
-    reset_at = _parse_reset_at(rate_limit.get("resetAt"))
+    reset_at = parse_utc(rate_limit.get("resetAt"))
     return _RateLimit(
         cost=cost if isinstance(cost, int) else None,
         remaining=remaining if isinstance(remaining, int) else None,
         reset_at=reset_at,
     )
-
-
-def _parse_reset_at(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def _merge_rate_limit(current: _RateLimit, latest: _RateLimit) -> _RateLimit:
