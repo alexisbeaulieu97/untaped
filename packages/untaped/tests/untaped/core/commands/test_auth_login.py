@@ -16,7 +16,7 @@ from untaped.sdk.network._credential_store import INDEX, CredentialRow
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.credentials import describe_key
-from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend, current_memory_store
+from untaped.sdk.testing import CliInvoker, CliResult, MemoryCredentials, ScriptedPromptBackend
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -82,12 +82,14 @@ def _server(_isolated_config: Path) -> None:
 
 
 @pytest.mark.usefixtures("_server")
-def test_login_reads_the_token_from_stdin_for_this_runs_server() -> None:
+def test_login_reads_the_token_from_stdin_for_this_runs_server(
+    credentials: MemoryCredentials,
+) -> None:
     row = _json(_auth("login", "wiz", "--format", "json", input="s3cret\n"))
 
     assert (row["plugin"], row["name"], row["action"]) == ("wiz", "token", "stored")
     assert row["key"] == "url=https://wiz.example.com"
-    assert sorted(current_memory_store().entries.values()) == ["s3cret"]
+    assert sorted(credentials.entries.values()) == ["s3cret"]
     assert _secret(TOKEN, KEY) == "s3cret"
 
 
@@ -283,14 +285,14 @@ def test_an_empty_list_says_so() -> None:
 
 
 @pytest.mark.usefixtures("_server")
-def test_forget_deletes_the_row_and_its_entry() -> None:
+def test_forget_deletes_the_row_and_its_entry(credentials: MemoryCredentials) -> None:
     TOKEN.store(KEY, token="s3cret")
 
     row = _json(_auth("forget", "wiz", "--yes", "--format", "json"))
 
     assert row["action"] == "deleted"
     assert stored_rows() == []
-    assert current_memory_store().entries == {}
+    assert credentials.entries == {}
 
 
 @pytest.mark.usefixtures("_server")
@@ -380,11 +382,12 @@ def test_status_before_setup_says_so() -> None:
 @pytest.mark.usefixtures("_server")
 def test_login_tests_the_store_before_asking_for_the_token(
     monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     def broken() -> None:
         raise ConfigError("pass cannot decrypt", hint="unlock gpg")
 
-    monkeypatch.setattr(current_memory_store(), "preflight", broken)
+    monkeypatch.setattr(credentials, "preflight", broken)
     backend = ScriptedPromptBackend(secrets=["never"])
 
     result = _auth("login", "wiz", backend=backend)
@@ -395,8 +398,10 @@ def test_login_tests_the_store_before_asking_for_the_token(
 
 
 @pytest.mark.usefixtures("_server")
-def test_logging_in_again_into_another_entry_deletes_the_replaced_one() -> None:
-    memory = current_memory_store()
+def test_logging_in_again_into_another_entry_deletes_the_replaced_one(
+    credentials: MemoryCredentials,
+) -> None:
+    memory = credentials
     TOKEN.store(KEY, token="first")
     [row] = stored_rows()
     memory.entries["elsewhere"] = memory.entries.pop(row.entry or "")

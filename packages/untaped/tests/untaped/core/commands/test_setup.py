@@ -32,9 +32,9 @@ from untaped.runtime import bootstrap
 from untaped.screen.core import Cancel, Paste
 from untaped.sdk.testing import (
     CliResult,
+    MemoryCredentials,
     ScreenKeys,
     ScriptedPromptBackend,
-    current_memory_store,
     invoke_cli,
     plugin_candidate,
 )
@@ -121,7 +121,10 @@ def test_setup_without_a_terminal_touches_neither_the_config_nor_the_keychain(
 
 
 def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     backend = _scripted(*_keys("https://wiz", token=" tok "), "esc", "esc")
@@ -130,7 +133,7 @@ def test_setup_configures_the_service_and_prints_its_checks_after_the_screen(
 
     assert result.exit_code == 0, result.output
     assert _wiz(_isolated_config) == {"server": {"url": "https://wiz/"}}
-    assert list(current_memory_store().entries.values()) == ["tok"]
+    assert list(credentials.entries.values()) == ["tok"]
     assert [screen.title for screen in backend.ran] == ["Set up untaped"]
     # The record of the run is on stdout, after the screen: the doctor rows of what it set up.
     rows = {row["check"]: row for row in json.loads(result.stdout)}
@@ -167,7 +170,10 @@ def test_setup_ends_with_the_checklist(_isolated_config: Path) -> None:
 
 
 def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    _isolated_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    credentials: MemoryCredentials,
 ) -> None:
     stores = install_fake_stores(tmp_path, monkeypatch, "pass")
     FAIL.append(True)
@@ -181,7 +187,7 @@ def test_a_failed_check_saved_anyway_fails_setup_and_names_the_fix(
     assert row["fix"] == ["--profile", "default", "auth", "login", "wiz"]
     assert "setup:" in result.stderr and "1 fail" in result.stderr
     assert stores.entries() == {}
-    assert list(current_memory_store().entries.values()) == ["bad"]
+    assert list(credentials.entries.values()) == ["bad"]
 
 
 def test_a_failed_check_cancelled_writes_nothing(

@@ -185,6 +185,32 @@ def current_terminal() -> ScriptedTerminal | None:
     return _TERMINAL.get()
 
 
+@contextmanager
+def memory_credentials() -> Iterator[MemoryCredentials]:
+    """A fresh :class:`MemoryCredentials` as the password store for the block."""
+    from untaped.sdk.network._credential_store import (  # noqa: PLC0415
+        reset_test_store,
+        set_test_store,
+    )
+
+    store = MemoryCredentials()
+    token = set_test_store(store)
+    try:
+        yield store
+    finally:
+        reset_test_store(token)
+
+
+def current_credentials() -> MemoryCredentials:
+    """The password store this test runs with (``untaped.sdk.testing.plugin`` installs one)."""
+    from untaped.sdk.network._credential_store import _TEST_STORE  # noqa: PLC0415
+
+    store = _TEST_STORE.get()
+    if not isinstance(store, MemoryCredentials):
+        raise RuntimeError("no memory credentials are installed: load untaped.sdk.testing.plugin")
+    return store
+
+
 class MemoryCredentials:
     """The password store a test runs with: what a ``Credential`` stores and reads.
 
@@ -263,4 +289,11 @@ class MemoryCredentials:
         return f"memory ({entry})"
 
 
-__all__ = ["MemoryCredentials", "ScriptedTerminal", "current_terminal", "scripted_terminal"]
+__all__ = [
+    "MemoryCredentials",
+    "ScriptedTerminal",
+    "current_credentials",
+    "current_terminal",
+    "memory_credentials",
+    "scripted_terminal",
+]

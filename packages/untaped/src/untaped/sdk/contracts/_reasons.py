@@ -37,9 +37,9 @@ class Reason(StrEnum):
     rank_unknown_method = "rank-unknown-method"
     rank_not_installed = "rank-not-installed"
     active = "active"
-    """A doctor row's title for a provider that answers; goes with the 11.x reader."""
+    """A doctor row's title for a provider whose offer is in effect."""
     bad_contracts = "bad-contracts"
-    """An 11.x owner whose contracts can't be read; goes with the 11.x owner reader."""
+    """A doctor row's title for a plugin whose declared contracts can't be read."""
 
 
 #: Why the registry set a provider's offer aside at composition.

@@ -62,8 +62,10 @@ person takes. The token is bound to the server's origin (scheme, host and
 port): the client refuses to be built for another one, and a
 request elsewhere raises `HttpError` before it is sent. Redirects are
 returned unless a call passes `follow_redirects=True`, which follows them on
-the same origin only. In tests, `untaped.sdk.testing` keeps logins in memory
-(`current_memory_store()`), so `TOKEN.store(server, token="t")` sets one up.
+the same origin only. In tests, the testing kit's `credentials` fixture keeps
+logins in memory: after `install(Acme)`,
+`credentials.set(TOKEN, AcmeServer(url="https://acme.example"), "t")` files
+one.
 
 ## See also
 
