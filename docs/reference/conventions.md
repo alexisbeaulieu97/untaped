@@ -15,8 +15,9 @@ A plugin also follows these rules:
   (and, for typing only, the ports it implements); `domain` imports no layer.
 - Errors raise with a category and a system (see
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
-- Commands that write declare it with `@writes`, and a destructive one takes
-  both `--yes` and `--dry-run` (see [Options](#options)).
+- Commands that ask before they write declare `confirm: Confirm`, which
+  gives them `--yes` and `--dry-run`; one that writes without asking takes
+  `dry_run: DryRun` (see [Options](#options)).
 
 [`untaped lint`](#enforcement) flags part of this:
 
@@ -27,14 +28,13 @@ A plugin also follows these rules:
   resolved outside `cli`;
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
   exception that is not an `UntapedError`, or a plugin's base error
-  class without a `system`;
-- `undeclared-write`, `mutation-format` and `destructive-controls`: the
-  write rules under [Options](#options).
+  class without a `system`.
 
 It does not check state writes or an error's category. Composition, not
-`untaped lint`, quarantines a plugin whose skill name or doctor-check
-ID duplicates another's. The message and option rules below have their own
-checks, named in each violation line.
+`untaped lint`, quarantines a plugin whose doctor-check ID duplicates
+another's, and refuses a command class that breaks the option rules below,
+naming the rule and the field. The message rules have their own checks,
+named in each violation line.
 
 ## Exit codes
 
@@ -145,29 +145,25 @@ These short flags are reserved and have one meaning each: `-f --format`,
 `-c --columns`, `-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`,
 `-r --repo`.
 
-Rules for parameters:
+Rules for fields, which composition checks:
 
-- Every parameter is either positional-only or keyword-only. Options are never
-  positional.
-- Every parameter has help text.
-- Do not use `--empty-*` negative flags. Declare list options with `negative=""`.
-- Negative `--no-*` flags exist only for booleans that default to true.
-  Declare other booleans with `negative=""`.
+- A field is an option unless it is marked `Positional`; arguments fill in
+  field order, and none follows an optional or a list one.
+- Every field has help text: `Field(description=...)`.
+- A boolean that defaults to true, or a `bool | None`, turns off with
+  `--no-*`; no other option has a negative. A list option takes one value
+  per flag.
+- An argument can't be deprecated: deprecate an option, or the command.
 
 To rename a command, group or flag, keep the old spelling as a hidden alias,
 `deprecated_alias(parent_app, "me", "whoami", removed_in=12)` (a flag: `"--old"`,
 `"--new"` on the command's app), tested through `untaped.sdk.testing.invoke_root`;
 [Deprecating something](deprecation.md) covers every kind.
 
-Command names are kebab-case; use plural nouns for collections. Names are
-free, but a command that writes declares it with `@writes`, or
-`@writes(destructive=True)` when it deletes or overwrites data:
-
-- A command exposing `--yes` or `--dry-run` must be declared
-  (`undeclared-write`).
-- A declared write takes `--format` (`mutation-format`).
-- A destructive command takes both `--yes` and `--dry-run`
-  (`destructive-controls`).
+Command names are kebab-case; use plural nouns for collections. A command
+that asks before it writes declares `confirm: Confirm`, which gives it `--yes`
+and `--dry-run`; one that writes without asking takes `dry_run: DryRun`; one
+that prints records declares `Output[R]`, which gives it `--format`.
 
 ## Confirmation and stdin
 

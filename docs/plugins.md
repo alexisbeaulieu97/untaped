@@ -167,16 +167,14 @@ SPEC = PluginSpec(
 )
 ```
 
-The optional `help` field (one non-empty line) is its summary in the Plugins
-panel of `untaped --help`. With it, the plugin is mounted lazily: `build_app()`
+The `help` field (one non-empty line) is its summary in the Plugins
+panel of `untaped --help`. The plugin is mounted lazily: `build_app()`
 runs only when dispatched, so `untaped --help` never imports its CLI. A
-factory that raises or returns something other than a cyclopts `App` then
+factory that raises or returns something other than a cyclopts `App`
 fails that command, `--help` included, with exit 4, naming the plugin; other
 commands and shell completion keep working. `untaped doctor` runs every
 factory and reports a failing one as a quarantine row (`bad-app-factory`, or
 `duplicate-kind`/`foreign-kind` for a kind reused or not under its name).
-Without `help`, composition calls `build_app()` once at startup, a bad factory
-quarantines the plugin, and the listing shows the built app's own help.
 
 Importing the module must have no side effects (registration, filesystem,
 network, `ContextVar`); the root owns registration and mounting.
@@ -346,8 +344,7 @@ scripted) and `credentials` are the clock, terminal and password store
 commands meet; `check(install(Hello))`
 and `assert_surface(Hello)` guard its composition checks and surface.
 Define `build_app` (the `app_factory`) in the plugin package's
-`__init__.py`, because the checks scan that package. Declare writing commands
-with `@writes` (or `@writes(destructive=True)`). To waive a rule on one line,
+`__init__.py`, because the checks scan that package. To waive a rule on one line,
 see [Enforcement](./reference/conventions.md#enforcement).
 
 Test `SPEC.app_factory()` in isolation, assert that the entry-point name

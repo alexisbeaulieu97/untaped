@@ -137,7 +137,7 @@ def test_core_is_the_first_plugin_and_the_one_marked_root() -> None:
     core = result.plugins[0]
     assert core.plugin_ref == PluginRef(distribution="untaped", entry_point=target_of(Core))
     # its commands mount at the root from the declaration: no app is built under its name
-    assert (core.spec.app_factory, core.app) == (None, None)
+    assert core.spec.app_factory is None
 
 
 def test_core_is_read_as_a_plugin_spec() -> None:

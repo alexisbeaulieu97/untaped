@@ -142,11 +142,9 @@ class PluginSpec:
     (none when it is ``None``) and ``settings`` is the settings model of the
     plugin's config section.
 
-    ``help`` is the one-line summary shown in the Plugins panel of root help. A
-    plugin that declares it is mounted lazily: its ``app_factory`` (and
-    so its CLI import tree) runs only when the command is dispatched. Without
-    it, the factory runs during composition and the listing falls back to
-    the built app's own help.
+    ``help`` is the one-line summary shown in the Plugins panel of root help;
+    a plugin with commands has one, and its ``app_factory`` (so its CLI
+    import tree) runs only when one of its commands is dispatched.
 
     ``stability`` marks the whole plugin ``experimental`` or
     ``deprecated(...)``. It sits here, never on the app the factory returns:
@@ -374,10 +372,6 @@ class RegisteredPlugin:
     spec: PluginSpec
     plugin_ref: PluginRef
     skills: tuple[SkillAsset, ...]
-    #: App staged by the one validating ``app_factory`` call, reused at
-    #: mount time; ``None`` when the spec sets ``help`` (deferred) or has
-    #: no ``app_factory``.
-    app: App | None = None
     #: Its commands mount at the root, read from its declaration
     #: (:attr:`~untaped.runtime.declaration.PluginDecl.root`): core's.
     root: bool = False
@@ -387,8 +381,6 @@ class RegisteredPlugin:
 VALID_REASONS = frozenset(
     {
         "duplicate-name",
-        "duplicate-skill",
-        "bad-skill-asset",
         "duplicate-doctor-check",
         "doctor-check-failed",
         "malformed-entry-point",
@@ -741,8 +733,6 @@ class _CompositionState:
     """Mutable accumulation of one composition run (core + committed plugins)."""
 
     def __init__(self, core: PluginDecl) -> None:
-        # Core's own stub skill is named after it.
-        self.skill_names: set[str] = {core.name} if core.skill else set()
         self.doctor_ids: set[str] = {
             f"{core.name}.{block.name}"
             for block in core.blocks
@@ -784,29 +774,6 @@ def _check_section_keys(spec: PluginSpec) -> None:
             "bad-settings-keys",
             f"plugin {spec.name!r} settings declares {', '.join(taken)}, "
             "which untaped reserves for its own section keys",
-        )
-
-
-def _check_skills(spec: PluginSpec, state: _CompositionState) -> None:
-    # Shape before collision: a collision needs a valid name to report.
-    seen_skills: set[str] = set()
-    for index, skill in enumerate(spec.skills):
-        if (
-            not isinstance(skill, SkillAsset)
-            or not skill.name.strip()
-            or not skill.description.strip()
-        ):
-            raise _Quarantine(
-                "bad-skill-asset",
-                f"malformed skill asset at index {index} of plugin {spec.name!r}: {skill!r}",
-            )
-        if skill.name in state.skill_names or skill.name in seen_skills:
-            raise _Quarantine("duplicate-skill", f"duplicate skill name: {skill.name!r}")
-        seen_skills.add(skill.name)
-    if len(spec.skills) > 1:
-        names = ", ".join(skill.name for skill in spec.skills)
-        raise _Quarantine(
-            "bad-skill-asset", f"plugin {spec.name!r} ships more than one skill: {names}"
         )
 
 
@@ -935,7 +902,6 @@ def _check_composed_mappings(spec: PluginSpec) -> None:
 def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
     _check_free_name(spec.name, state)
     _check_own_declaration(spec)
-    _check_skills(spec, state)
     _check_doctor_checks(spec, state)
 
 
@@ -961,16 +927,12 @@ def _check_factory(factory: Callable[[], App]) -> App:
 
 
 def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
-    """The plugin's app, running a deferred factory; a failure as a quarantine record.
+    """The plugin's app, running its deferred factory; a failure as a quarantine record.
 
-    The one place a deferred factory runs, for first dispatch and
-    ``untaped doctor`` alike. An eager
-    plugin returns its staged app without running anything. A plugin
-    without an ``app_factory`` has no app to build: asking for one is a
-    caller bug and raises :class:`ConfigError`.
+    The one place the factory runs, for first dispatch and ``untaped doctor``
+    alike. A plugin without an ``app_factory`` has no app to build: asking
+    for one is a caller bug and raises :class:`ConfigError`.
     """
-    if plugin.app is not None:
-        return plugin.app
     factory = plugin.spec.app_factory
     if factory is None:
         raise ConfigError(f"plugin {plugin.spec.name!r} has no commands to build")
@@ -983,15 +945,8 @@ def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
         )
 
 
-def _commit(
-    spec: PluginSpec,
-    ref: PluginRef,
-    state: _CompositionState,
-    app: App | None,
-) -> RegisteredPlugin:
-    registered = RegisteredPlugin(spec=spec, plugin_ref=ref, skills=tuple(spec.skills), app=app)
-    for skill in registered.skills:
-        state.skill_names.add(skill.name)
+def _commit(spec: PluginSpec, ref: PluginRef, state: _CompositionState) -> RegisteredPlugin:
+    registered = RegisteredPlugin(spec=spec, plugin_ref=ref, skills=tuple(spec.skills))
     state.doctor_ids.update(_ids(spec.doctor_checks))
     return registered
 
@@ -1029,11 +984,9 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
     A plugin name that two or more of the survivors
     claim is contested: every claimant is quarantined, so the result never
     depends on candidate order. The rest commit in ``(name, distribution,
-    entry point)`` order, where a skill name or doctor-check id already taken
-    quarantines the later one. A spec with ``help`` is deferred: its factory
-    runs at first dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`).
-    An eager factory runs only after the contest, so a claimant whose factory
-    would fail still counts as a claimant.
+    entry point)`` order, where a doctor-check id already taken quarantines
+    the later one. A factory runs only at first dispatch and in
+    ``untaped doctor`` (:func:`run_deferred_factory`), never in composition.
 
     The plugin classes' part, core's included, is kept in core's declaration cache
     (:data:`untaped.core.settings.DECLARATION`), keyed by the candidates:
@@ -1183,9 +1136,6 @@ def _compose(
         try:
             if index not in replayed:  # a replayed plugin passed these when it was composed
                 _check_doctor_checks(spec, state)
-            _check_skills(spec, state)
-            factory = spec.app_factory
-            staged = None if factory is None or spec.help is not None else _check_factory(factory)
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(candidate)
             continue
@@ -1195,7 +1145,7 @@ def _compose(
             distribution_version=candidate.distribution_version,
             requires_dist=candidate.requires_dist,
         )
-        plugins.append(_commit(spec, ref, state, staged))
+        plugins.append(_commit(spec, ref, state))
     if declared is None:
         # Only a class the mount composed leaves it; one refused before it never got there.
         dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}

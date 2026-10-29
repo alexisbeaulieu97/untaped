@@ -53,7 +53,6 @@ from untaped.sdk._cli import (
     raise_usage,
     render_rows,
     resolve_each,
-    writes,
 )
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home, plugin_path
@@ -611,7 +610,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "retired_values",
     "shown_path",
     "size_text",
-    "writes",
     # screens (experimental)
     "Activate",
     "Back",

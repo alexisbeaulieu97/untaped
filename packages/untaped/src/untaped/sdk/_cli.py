@@ -303,38 +303,6 @@ LimitOption = Annotated[
 """Shared ``--limit N`` (``>= 1``; ``None`` means no limit)."""
 
 
-_WRITES_ATTR = "__untaped_writes__"
-WriteKind = Literal["write", "destructive"]
-
-
-@overload
-def writes[F: Callable[..., Any]](func: F, /) -> F: ...
-@overload
-def writes[F: Callable[..., Any]](*, destructive: bool = False) -> Callable[[F], F]: ...
-def writes[F: Callable[..., Any]](
-    func: F | None = None, /, *, destructive: bool = False
-) -> F | Callable[[F], F]:
-    """Declare that a command writes; ``destructive=True`` for deletes and cancels.
-
-    A declared write must take ``--format``; a destructive one must also take
-    ``--yes`` and ``--dry-run``. A command exposing ``--yes`` or ``--dry-run``
-    must be declared. ``untaped.sdk.testing.check_plugin`` enforces all three.
-    Apply it under ``@app.command`` so the registered function carries the mark.
-    """
-    kind: WriteKind = "destructive" if destructive else "write"
-
-    def mark(target: F) -> F:
-        setattr(target, _WRITES_ATTR, kind)
-        return target
-
-    return mark(func) if func is not None else mark
-
-
-def write_kind(func: object) -> WriteKind | None:
-    """The ``writes`` declaration on a command function, if any."""
-    return getattr(func, _WRITES_ATTR, None)
-
-
 def create_app(*, name: str, help: str = "", stability: Stability | None = None) -> App:
     """Create a Cyclopts app with the suite's default command-group settings.
 

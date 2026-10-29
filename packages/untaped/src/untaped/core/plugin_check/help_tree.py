@@ -2,24 +2,14 @@
 
 See ``docs/reference/conventions.md#options``.
 
-Checks each visible command of a command subtree:
+Checks each visible command of a command subtree. What a command class
+declares can't break the parameter rules (help, negatives, positionals and
+duplicate flags are composition's), so these are about names and prose:
 
-- ``missing-help`` — a parameter (positional or option) has no help text;
-- ``duplicate-option`` — two parameters of one command answer to one name;
-- ``empty-negative`` — an ``--empty-*`` negative flag is exposed;
-- ``needless-negative`` — a ``--no-*`` flag for a boolean that defaults to
-  false (declare it with ``negative=""``);
-- ``positional-or-keyword`` — a parameter can be passed both ways (options
-  must never be positional);
 - ``command-name`` — a command or group name is not kebab-case;
 - ``reserved-short`` — a reserved short flag means something else;
 - ``ambiguous-short`` — a non-reserved short flag has two meanings within
   the checked subtrees;
-- ``undeclared-write`` — a command exposes ``--yes``/``--dry-run`` without
-  declaring ``@writes`` (a plugin class's command has no such declaration:
-  its ``Confirm`` or ``DryRun`` field is one);
-- ``mutation-format`` — a declared write has no ``--format``;
-- ``destructive-controls`` — a destructive command lacks ``--yes``/``--dry-run``;
 - ``reserved-panel`` — a command or option group named after one of core's
   panels (Plugins, Experimental, Deprecated, Deprecated options, Global
   options) that is not core's own: a same-named group would merge into it;
@@ -35,19 +25,15 @@ no inline marker can suppress them.
 
 from __future__ import annotations
 
-import inspect
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from itertools import chain
-from typing import Any
 
 from cyclopts import App, Group
 
 from untaped.runtime.command_lines import console_lines, examples_of, parse_problem, segments
 from untaped.runtime.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
-from untaped.runtime.mount import is_declared
-from untaped.sdk._cli import write_kind
 
 RESERVED_SHORTS = {
     "-f": "--format",
@@ -89,26 +75,6 @@ def command_violations(path: tuple[str, ...], app: App) -> Iterator[tuple[str, s
     name = path[-1]
     if not _KEBAB.match(name):
         yield "command-name", name
-    if app.default_command is None:
-        return
-    arguments = [
-        argument
-        for argument in app.assemble_argument_collection(parse_docstring=True)
-        if argument.show and argument.parse
-    ]
-    yield from _argument_violations(arguments)
-    options = {flag for argument in arguments for flag in argument.names}
-    kind = write_kind(app.default_command)
-    if is_declared(app.default_command):
-        return
-    if kind is None and options & {"--yes", "--dry-run"}:
-        yield "undeclared-write", " ".join(sorted(options & {"--yes", "--dry-run"}))
-    if kind is not None and "--format" not in options:
-        yield "mutation-format", name
-    if kind == "destructive":
-        for flag in ("--yes", "--dry-run"):
-            if flag not in options:
-                yield "destructive-controls", flag
 
 
 def example_violations(root: App, app: App) -> Iterator[tuple[str, str]]:
@@ -120,26 +86,6 @@ def example_violations(root: App, app: App) -> Iterator[tuple[str, str]]:
             problem = parse_problem(root, command, inline=False)
             if problem is not None:
                 yield "example-command", f"{command}: {problem}"
-
-
-def _argument_violations(arguments: list[Any]) -> Iterator[tuple[str, str]]:
-    seen: Counter[str] = Counter()
-    for argument in arguments:
-        names = tuple(argument.names)
-        label = _long_name(names) if names else argument.field_info.name
-        if not argument.parameter.help:
-            yield "missing-help", label
-        for flag in names:
-            if flag.startswith("--empty-"):
-                yield "empty-negative", flag
-            elif flag.startswith("--no-") and argument.field_info.default is False:
-                yield "needless-negative", flag
-        if argument.field_info.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
-            yield "positional-or-keyword", label
-        seen.update(names)
-    for flag, count in sorted(seen.items()):
-        if count > 1:
-            yield "duplicate-option", flag
 
 
 #: cyclopts' own Commands, Parameters and Arguments panels, by their sort-key markers.

@@ -807,7 +807,7 @@ def _panel_rows(root: App) -> dict[str, list[str]]:
         pytest.param(
             [plugin_candidate(_plugin("demo"))],
             ["Commands", "Plugins", "Experimental", "Global options"],
-            id="eager",
+            id="plugin",
         ),
         pytest.param(
             [make_candidate(_plugin("demo"), error=RuntimeError("x"))],

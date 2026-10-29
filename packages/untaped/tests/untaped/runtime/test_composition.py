@@ -665,6 +665,21 @@ def test_field_problems_name_the_field() -> None:
     ]
 
 
+def test_an_argument_cannot_be_deprecated() -> None:
+    class Old(Command):
+        """Old."""
+
+        name: Annotated[Positional[str], deprecated(removed_in=13)] = Field(
+            description="Whom to greet."
+        )
+
+        def run(self) -> None:
+            pass
+
+    [problem] = _problems(_plugin_with(Old))
+    assert (problem.rule, problem.where.rpartition(".")[2]) == ("deprecated-argument", "name")
+
+
 def test_a_dry_run_beside_a_confirmation_is_one_flag_twice() -> None:
     class Both(Command):
         """Both."""

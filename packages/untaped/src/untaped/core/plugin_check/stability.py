@@ -5,15 +5,9 @@ Checks every command of a subtree against ``docs/plugins.md``:
 - ``hand-typed-mark`` — an ``Experimental:`` or ``Deprecated:`` line in an app
   help, a command docstring, a parameter's help (a hidden one's too) or a
   settings field's description (core writes the line from the mark);
-- ``deprecated-option-panel`` — an option marked ``deprecated(...)`` outside
-  ``DEPRECATED_OPTIONS`` (which hides it until ``--deprecated``) or with
-  ``show=False`` (which keeps it out of that panel), an unmarked option inside
-  it, or a mark (or the panel) on a parameter that is not an option (a
-  positional, a flattened dataclass or one of its fields), which nothing reads;
-- ``wrong-deprecated`` — a command function carries Python's
-  ``warnings.deprecated`` (cyclopts would print its text), or a settings field
-  pydantic's ``deprecated=``, where untaped's ``deprecated(...)`` alone belongs;
-  an SDK callable is the other way round and carries both (below);
+- ``wrong-deprecated`` — a settings field carries pydantic's ``deprecated=``,
+  where untaped's ``deprecated(...)`` alone belongs; an SDK callable is the
+  other way round and carries both (below);
 - ``nested-mark`` — a mark (a deprecated option's too) under a mark that makes
   it redundant or contradictory: experimental under experimental, or anything under
   deprecated (deprecated under experimental is allowed); a settings field
@@ -23,9 +17,7 @@ Checks every command of a subtree against ``docs/plugins.md``:
   command of the plugin itself (pass the object), or a setting that does
   not exist (a setting's replacement is always text); composition already
   refuses a plugin class whose replacement class is not its command or is
-  deprecated, or whose text names its own command;
-- ``mark-on-spec`` — a plugin's top app carries a mark of its own, which a
-  lazy mount cannot see (mark the ``PluginSpec`` instead).
+  deprecated, or whose text names its own command.
 
 A deprecated behaviour (``<plugin>.<name>``) is checked for ``nested-mark``
 (under its deprecated plugin) and ``bad-replacement`` (its text), the
@@ -59,9 +51,8 @@ from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
 from typing import Any
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from untaped.core.plugin_check.help_tree import as_groups
 from untaped.core.surface._sdk import foreign
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
 from untaped.runtime.root_options import resolve_command
@@ -69,14 +60,11 @@ from untaped.runtime.settings import get_settings_model, profile_section_models
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.marks import (
     COMMAND_TEXT,
-    DEPRECATED_OPTIONS,
     KEY_TEXT,
     Deprecated,
     Experimental,
     Mark,
     Stability,
-    annotation_metadata,
-    app_mark,
     children,
     class_mark,
     deprecation_sentence,
@@ -84,9 +72,7 @@ from untaped.sdk.marks import (
     field_descriptions,
     function_mark,
     mark_of,
-    marked_options,
     marks,
-    parameter_marks,
     pydantic_deprecated_fields,
     read_parameter_marks,
     replacement_path,
@@ -116,8 +102,8 @@ def stability_violations(
 ) -> list[str]:
     """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``.
 
-    ``spec`` is the checked plugin's, for the rule that needs it; its
-    settings section is checked too, as are the ``sections`` named (core's).
+    ``spec`` is the checked plugin's: its settings section is checked too, as
+    are the ``sections`` named (core's).
     The marks come from :func:`untaped.sdk.marks.marks` over the whole
     composition: the checked plugin's subtree is resolved by ``root[name]``;
     a lazy sibling is never imported (its spec mark is still seen).
@@ -127,19 +113,9 @@ def stability_violations(
     found: list[str] = []
     for top in sorted(wanted):
         subtree = root[top]
-        if spec is not None:
-            found.extend(_spec_violations(spec, subtree))
         for path, app in [((top,), subtree), *_walk(subtree, (top,))]:
             where = " ".join(path)
             found.extend(f"{where}::hand-typed-mark::{detail}" for detail in _hand_typed(app))
-            found.extend(
-                f"{where}::deprecated-option-panel::{detail}" for detail in _option_panel(app)
-            )
-            if getattr(app.default_command, "__deprecated__", None) is not None:
-                found.append(
-                    f"{where}::wrong-deprecated::{path[-1]} carries warnings.deprecated, whose "
-                    "text cyclopts would print; a command takes untaped's @deprecated(...) alone"
-                )
     every = marks(root, result)
     found.extend(_setting_violations(root, result, settings, every))
     found.extend(_behaviour_violations(root, result, spec, every))
@@ -211,14 +187,6 @@ def _behaviour_violations(
             )
 
 
-def _spec_violations(spec: PluginSpec, top: App) -> Iterator[str]:
-    entry = app_mark(top)
-    if entry is not None and entry.source == "own":
-        yield f"{spec.name}::mark-on-spec::{spec.name}"
-    if spec.help is not None and _HAND_TYPED.search(spec.help):
-        yield f"{spec.name}::hand-typed-mark::spec help"
-
-
 def _nested(mark: Mark, every: list[Mark]) -> Iterator[str]:
     """What makes ``mark`` redundant or contradictory: an enclosing mark of another mark."""
     own = tuple(mark.where.split())
@@ -230,55 +198,6 @@ def _nested(mark: Mark, every: list[Mark]) -> Iterator[str]:
             yield f"{_kind(mark.stability)} under deprecated {above.where}"
         elif isinstance(mark.stability, Experimental):
             yield f"experimental under experimental {above.where}"
-
-
-def _option_panel(app: App) -> Iterator[str]:
-    """A deprecated option and ``DEPRECATED_OPTIONS`` go together, and the panel shows it."""
-    if app.default_command is None:
-        return
-    marked = parameter_marks(app.default_command)
-    options = {argument.field_info.name for argument, _ in marked_options(app)}
-    for argument in app.assemble_argument_collection(parse_docstring=False):
-        if argument.keys:
-            if _field_deprecated(argument.field_info.annotation):
-                yield (
-                    f"{argument.names[0]} is a field of a dataclass or model parameter, which a "
-                    "deprecated(...) mark or DEPRECATED_OPTIONS can't deprecate: make it a "
-                    "keyword-only option of the command"
-                )
-            continue
-        field = argument.field_info.name
-        name = argument.names[0] if argument.names and not argument.children else field
-        inside = any(group is DEPRECATED_OPTIONS for group in as_groups(argument.parameter.group))
-        if field in marked and field not in options:
-            yield (
-                f"{name}'s deprecated(...) mark has no effect: only a keyword-only option "
-                "(after *) that is not a flattened dataclass can be deprecated"
-            )
-        elif field in options and not inside:
-            yield (
-                f"{name} carries a deprecated(...) mark, so it belongs in DEPRECATED_OPTIONS, "
-                "which hides it until --deprecated: Parameter(group=DEPRECATED_OPTIONS)"
-            )
-        elif field in options and argument.parameter.show is False:
-            yield (
-                f"{name} has show=False, which keeps it out of DEPRECATED_OPTIONS even under "
-                "--deprecated; the panel already hides it, so drop show=False"
-            )
-        elif inside and field not in marked:
-            yield f"{name} is in DEPRECATED_OPTIONS without a deprecated(removed_in=...) mark"
-
-
-def _field_deprecated(annotation: object) -> bool:
-    """Whether a field's own annotation carries a mark or ``DEPRECATED_OPTIONS``."""
-    for item in annotation_metadata(annotation):
-        if isinstance(item, Deprecated):
-            return True
-        if isinstance(item, Parameter) and any(
-            group is DEPRECATED_OPTIONS for group in as_groups(item.group)
-        ):
-            return True
-    return False
 
 
 def _hand_typed(app: App) -> Iterator[str]:

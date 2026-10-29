@@ -329,18 +329,6 @@ def root_command(token: str) -> str | None:
     return resolve_command(root_app(), token)
 
 
-def _mount(app: App, sub: App, *, name: str) -> None:
-    """Mount ``sub`` as ``name``, replacing any existing command.
-
-    Makes wiring idempotent so ``build_root_app`` can be called more than
-    once on the same composition (tests, embedding) without a collision.
-    """
-    if name in app:
-        del app[name]
-    app.command(sub, name=name)
-    apply_marks(sub, path=(name,))
-
-
 def _mount_root(root: App, mount: Mount, name: str) -> None:
     """Mount the root plugin ``name``'s commands (core's) at the root, from the declaration."""
     plugin = mount.declaration.plugin(name)
@@ -358,9 +346,8 @@ class _LazyPluginCommand(CommandSpec):
     parent defaults an eager ``App.command(sub)`` mount would, against the
     root the command was mounted on (not whichever app dispatch passes in,
     which may be the meta app). The private cyclopts internals touched here
-    are pinned by ``uv.lock`` and guarded by the internals-presence and
-    lazy-vs-eager rendering test in ``tests/repo/test_first_party_composition.py``
-    and the internals tests in ``packages/untaped/tests/untaped/runtime/test_bootstrap.py``.
+    are pinned by ``uv.lock`` and guarded by the internals tests in
+    ``packages/untaped/tests/untaped/runtime/test_bootstrap.py``.
     """
 
     def __init__(self, plugin: RegisteredPlugin, mount_parent: App) -> None:
@@ -465,14 +452,9 @@ def _place(app: App, spec: PluginSpec) -> None:
 
 
 def _mount_plugin(root: App, plugin: RegisteredPlugin) -> None:
-    """Mount one composed plugin's commands, lazily when its factory was deferred."""
+    """Mount one composed plugin's commands, built the first time one is dispatched."""
     spec = plugin.spec
     if spec.app_factory is None:
-        return
-    if plugin.app is not None:
-        _place(plugin.app, spec)
-        _mount(root, plugin.app, name=spec.name)
-        _docs_footers(plugin.app, spec.name)
         return
     if spec.name in root:
         del root[spec.name]
