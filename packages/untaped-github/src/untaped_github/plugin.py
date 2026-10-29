@@ -7,7 +7,7 @@ and the providers import without them.
 
 from __future__ import annotations
 
-from untaped.sdk import ExecutableCheck, OnlineCheck, Plugin, StubSkill
+from untaped.sdk import OnlineCheck, Plugin, StubSkill
 from untaped_github.commands.cache import CacheGroup
 from untaped_github.commands.repos import ReposGroup
 from untaped_github.commands.search import SearchGroup
@@ -27,7 +27,6 @@ class Github(Plugin):
     token = TOKEN
     sweep = SWEEP
     api = OnlineCheck(probe=probe)
-    git = ExecutableCheck("git", purpose="`untaped github sweep`")
     skill = StubSkill(
         "GitHub and GitHub Enterprise from untaped: org and team repository "
         "inventories; repository, code, issue and user search; and grep-style sweeps "

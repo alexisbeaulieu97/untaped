@@ -7,7 +7,7 @@ providers import) imports without them. Its docstring is the workspace guide.
 
 from __future__ import annotations
 
-from untaped.sdk import ExecutableCheck, Plugin, StubSkill, experimental
+from untaped.sdk import Plugin, StubSkill, experimental
 from untaped_workspace.api import RepoSource
 from untaped_workspace.commands.archive import Archive, Remove
 from untaped_workspace.commands.create import Add, Create
@@ -171,7 +171,6 @@ class WorkspacePlugin(Plugin):
     workspaces = WORKSPACES
     archived = ARCHIVED
     checkouts = CHECKOUTS
-    git = ExecutableCheck("git", purpose="workspace commands")
     skill = StubSkill(
         "untaped workspaces: one directory per task holding git worktrees of several "
         "repos on a shared branch. Use when the work concerns an untaped workspace: "
