@@ -24,7 +24,6 @@ tags connection from the query entirely.
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from itertools import batched
@@ -35,6 +34,7 @@ from untaped.sdk import (
     HttpClient,
     HttpError,
     HttpTransportError,
+    RetryPolicy,
     UntapedError,
 )
 from untaped_github.domain.models import (
@@ -54,7 +54,14 @@ _GRAPHQL_ACCESS_STATUSES = frozenset({401, 403, 429})
 _RATE_LIMIT_FIELD = "rateLimit { cost remaining resetAt }"
 # These short delays only catch immediate blips. Sustained transient
 # failures are handled by adaptive splitting and by callers rerunning.
-_TRANSIENT_RETRY_DELAYS = (0.01, 0.02)
+# A probe query only reads, so a resent POST is safe: retry 5xx and transport
+# failures twice before the chunk is split.
+_TRANSIENT_RETRY = RetryPolicy(
+    backoff_base=0.01,
+    retry_statuses=tuple(range(500, 600)),
+    honor_retry_after=False,
+    idempotent_methods=frozenset({"POST"}),
+)
 _NO_PROGRESS_SPLIT_LOOKAHEAD = 1
 # Annotated tags point at a Tag object instead of a commit; peel via
 # nested ``target { oid }`` two levels deep (covers tags-of-tags).
@@ -217,7 +224,7 @@ def _execute_chunk(
 ) -> _ChunkExecution:
     """POST one chunk; adaptively isolate retryable transient failures."""
     try:
-        payload = _post_with_transient_retries(http, endpoint, query(chunk))
+        payload = _post(http, endpoint, query(chunk))
         return _ChunkExecution([(chunk, payload)], [])
     except HttpError as exc:
         if not _is_transient_probe_error(exc):
@@ -241,21 +248,6 @@ def _is_transient_probe_error(exc: HttpError) -> bool:
     return _is_server_error(exc) or isinstance(exc, HttpTransportError)
 
 
-def _post_with_transient_retries(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
-    last_exc: HttpError | None = None
-    for delay in (0.0, *_TRANSIENT_RETRY_DELAYS):
-        if delay:
-            time.sleep(delay)
-        try:
-            return _post(http, endpoint, query)
-        except HttpError as exc:
-            if not _is_transient_probe_error(exc):
-                raise
-            last_exc = exc
-    assert last_exc is not None
-    raise last_exc
-
-
 def _split_failed_chunk(
     http: HttpClient,
     endpoint: str,
@@ -269,7 +261,7 @@ def _split_failed_chunk(
     any_success = False
     for half in (chunk[:mid], chunk[mid:]):
         try:
-            attempts.append((half, _post_with_transient_retries(http, endpoint, query(half))))
+            attempts.append((half, _post(http, endpoint, query(half))))
             any_success = True
         except HttpError as exc:
             if not _is_transient_probe_error(exc):
@@ -326,7 +318,7 @@ def _transient_failure(target: _RepoTarget, exc: HttpError) -> BatchRepoRefsFail
 
 def _post(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
     try:
-        payload = http.post_json(endpoint, json={"query": query}, retry=None)
+        payload = http.post_json(endpoint, json={"query": query}, retry=_TRANSIENT_RETRY)
     except HttpError as exc:
         if exc.status_code in _GRAPHQL_ACCESS_STATUSES:
             raise _graphql_http_error(exc) from exc
@@ -545,11 +537,7 @@ def _resolve_repo(
             if not page["hasNextPage"]:
                 break
             try:
-                payload = _post_with_transient_retries(
-                    http,
-                    endpoint,
-                    _build_page_query(target, kind, page["endCursor"]),
-                )
+                payload = _post(http, endpoint, _build_page_query(target, kind, page["endCursor"]))
             except HttpError as exc:
                 if not _is_transient_probe_error(exc):
                     raise
