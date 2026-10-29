@@ -206,5 +206,6 @@ def _dedupe_sorted(values: list[str]) -> list[str]:
 
 def is_repo_name(value: str) -> bool:
     """Return whether ``value`` is a GitHub ``owner/name`` repo id."""
-    owner, separator, repo = value.partition("/")
-    return bool(owner and separator and repo and "/" not in repo)
+    from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
+
+    return split_repo_id(value) is not None

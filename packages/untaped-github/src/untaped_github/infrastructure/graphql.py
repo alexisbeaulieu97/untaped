@@ -44,6 +44,7 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
+from untaped_github.domain.repo_id import split_repo_id
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
@@ -200,12 +201,12 @@ def _parse_repo_target(value: str) -> _RepoTarget:
     # UntapedError, not ValueError: repo strings can originate from user
     # source config (typos), and core's error boundary renders
     # UntapedError as a message instead of a traceback.
-    owner, sep, name = value.partition("/")
-    if not sep or not owner or not name or "/" in name:
+    parts = split_repo_id(value)
+    if parts is None:
         raise UntapedError(
             f"invalid repository {value!r}: expected 'owner/name'", category="invalid"
         )
-    return _RepoTarget(value, owner, name)
+    return _RepoTarget(value, *parts)
 
 
 def _execute_chunk(

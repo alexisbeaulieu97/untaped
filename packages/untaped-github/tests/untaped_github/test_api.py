@@ -31,6 +31,7 @@ from untaped_github.api import (
     github_web_host,
     is_global_github_failure,
     normalize_team_scopes,
+    split_repo_id,
 )
 
 EXPECTED_ALL = [
@@ -50,6 +51,7 @@ EXPECTED_ALL = [
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
+    "split_repo_id",
 ]
 
 
@@ -63,6 +65,7 @@ def test_exports_are_canonical_objects() -> None:
     import untaped_github.domain.errors as errors
     import untaped_github.domain.hosts as hosts
     import untaped_github.domain.models as models
+    import untaped_github.domain.repo_id as repo_id
     import untaped_github.errors as error_classes
     import untaped_github.infrastructure.github_client as client
     import untaped_github.settings as settings
@@ -79,6 +82,7 @@ def test_exports_are_canonical_objects() -> None:
     assert BatchRepoRefsFailure is models.BatchRepoRefsFailure
     assert RepoRefs is models.RepoRefs
     assert RepoRef is models.RepoRef
+    assert split_repo_id is repo_id.split_repo_id
     assert GithubClient is client.GithubClient
     assert GithubSettings is settings.GithubSettings
 

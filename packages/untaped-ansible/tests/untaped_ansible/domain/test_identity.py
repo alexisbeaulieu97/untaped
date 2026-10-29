@@ -34,7 +34,14 @@ def test_resolves_configured_aliases_before_marking_unresolved() -> None:
 def test_galaxy_names_and_path_like_sources_are_unresolved_but_preserved() -> None:
     resolver = IdentityResolver()
 
-    for source in ("common", "./local", "../roles/web", "/abs/role", ".hidden/role"):
+    for source in (
+        "common",
+        "./local",
+        "../roles/web",
+        "/abs/role",
+        ".hidden/role",
+        "acme/roles/web",
+    ):
         resolved = resolver.resolve(_dep(source))
         assert resolved.repo is None, source
         assert resolved.unresolved == source

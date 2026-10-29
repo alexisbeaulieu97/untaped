@@ -23,6 +23,7 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
+from untaped_github.domain.repo_id import split_repo_id
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped_github.infrastructure.github_client import GithubClient
 from untaped_github.settings import TOKEN, GithubSettings
@@ -44,6 +45,7 @@ __all__ = [
     "github_web_host",
     "is_global_github_failure",
     "normalize_team_scopes",
+    "split_repo_id",
 ]
 
 

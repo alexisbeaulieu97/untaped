@@ -67,5 +67,6 @@ def _url_patterns(host: str) -> tuple[re.Pattern[str], ...]:
 
 def _is_repo_id(value: str) -> bool:
     """Reject path-like sources such as ``./local`` or ``../roles/web``."""
-    owner, _, name = value.partition("/")
-    return bool(owner and name) and not owner.startswith(".") and name not in {".", ".."}
+    from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
+
+    return split_repo_id(value) is not None

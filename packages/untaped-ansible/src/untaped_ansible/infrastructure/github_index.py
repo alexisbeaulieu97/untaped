@@ -14,7 +14,7 @@ from untaped_ansible.domain.payloads import (
     SkippedDependencyFile,
 )
 from untaped_ansible.errors import AnsibleError
-from untaped_github.api import is_global_github_failure
+from untaped_github.api import is_global_github_failure, split_repo_id
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -288,10 +288,10 @@ class GithubDependencyIndex:
 
 
 def _split_repo(repo: str) -> tuple[str, str]:
-    owner, separator, name = repo.partition("/")
-    if not owner or not separator or not name:
+    parts = split_repo_id(repo)
+    if parts is None:
         raise AnsibleError(f"repo must be owner/name (got {repo!r})", category="invalid")
-    return owner, name
+    return parts
 
 
 def _default_branch(repository: dict[str, object]) -> str:

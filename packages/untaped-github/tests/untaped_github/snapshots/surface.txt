@@ -640,3 +640,4 @@ sdk untaped_github.api.github_web_host(base_url)
 sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
+sdk untaped_github.api.split_repo_id(value)
