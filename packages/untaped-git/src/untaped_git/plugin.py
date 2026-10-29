@@ -13,7 +13,7 @@ from untaped_git.commands.hosts import Hosts
 from untaped_git.commands.store import Store
 from untaped_git.doctor import store_check, version_check
 from untaped_git.hosts import GitHost
-from untaped_git.settings import GitSettings
+from untaped_git.settings import STORE, GitSettings
 
 
 class Git(Plugin):
@@ -22,6 +22,7 @@ class Git(Plugin):
     settings = GitSettings
     commands = (Credential, Hosts, Store)
     offers = (GitHost,)
+    store = STORE
     version = DoctorCheck(title="git version", run=version_check)
     repo_store = DoctorCheck(title="git store", run=store_check)
     skill = StubSkill(

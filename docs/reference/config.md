@@ -82,9 +82,9 @@ Kept in `~/.untaped/plugins/ansible/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `dotfiles.repos_dir` | path | `~/.untaped/plugins/dotfiles/repos` | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`). Experimental: may change in a minor release. |
-| `dotfiles.kept_dir` | path | `~/.untaped/plugins/dotfiles/kept` | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`. Experimental: may change in a minor release. |
-| `dotfiles.state_dir` | path | `~/.untaped/plugins/dotfiles` | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json` and `attention`, the files a prompt segment reads. Experimental: may change in a minor release. |
+| `dotfiles.repos_dir` | path (optional) | unset | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`), an absolute path. Unset: `plugins/dotfiles/clones/` under the home. Experimental: may change in a minor release. |
+| `dotfiles.kept_dir` | path (optional) | unset | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`; an absolute path. Unset: `plugins/dotfiles/kept/` under the home. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path (optional) | unset | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json` and `attention`, the files a prompt segment reads; an absolute path. Unset: `plugins/dotfiles/prompt/` under the home. Experimental: may change in a minor release. |
 | `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
 | `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
 
@@ -102,7 +102,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `git.store_dir` | path | `~/.untaped/plugins/git/store` | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`. |
+| `git.store_dir` | path (optional) | unset | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`; an absolute path. Unset: `plugins/git/store/` under the home. |
 | `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
 
 ## `github`
@@ -152,7 +152,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.workspaces_dir` | path | `~/.untaped/workspaces` | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one untaped home, which holds its workspaces' locks. Experimental: may change in a minor release. |
+| `workspace.workspaces_dir` | path (optional) | unset | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one untaped home, which holds its workspaces' locks. An absolute path; unset: `plugins/workspace/checkouts/` under the home. Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. 1 or more. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
 | `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. Experimental: may change in a minor release. |

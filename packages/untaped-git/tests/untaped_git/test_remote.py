@@ -17,7 +17,7 @@ from untaped_git.helpers import missing_helper, user_helpers
 from untaped_git.hosts import Credential, HostAuth
 from untaped_git.plugin import Git
 from untaped_git.remote import default_branch, ls_remote
-from untaped_git.settings import git_settings
+from untaped_git.settings import store_root
 from untaped_git.store import RepoStore, host_config
 
 
@@ -110,7 +110,7 @@ def test_for_url_keys_the_store_under_the_setting(remote: GitRemote) -> None:
     with install(Git).running():
         store = RepoStore.for_url(remote.url, plugin="github", error=StoreError)
         store.fetch(branches=["main"])
-        root = git_settings().store_dir.expanduser()
+        root = store_root()
         assert store.path == root / "git.example" / "app.git"
         assert store.refs() == {"heads/main": remote.oid("main")}
         with pytest.raises(TypeError, match="the caller's plugin"):
@@ -175,3 +175,14 @@ def test_a_fetch_without_the_default_branch_asks_nothing_more(
 
     starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
     assert not any("--symref" in argv for argv in starts)
+
+
+def test_the_store_follows_the_home_unless_the_setting_names_a_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "home"))
+    with install(Git).running():
+        assert store_root() == tmp_path / "home" / "plugins" / "git" / "store"
+    monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(tmp_path / "elsewhere"))
+    with install(Git).running():
+        assert store_root() == tmp_path / "elsewhere"

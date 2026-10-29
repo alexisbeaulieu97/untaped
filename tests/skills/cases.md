@@ -111,7 +111,7 @@ Is everything up to date?"
 
 ### C7 workspace: already inside one
 
-Request: "My shell is in `~/.untaped/workspaces/ops-123/api`. Fix the failing
+Request: "My shell is in `~/.untaped/plugins/workspace/checkouts/ops-123/api`. Fix the failing
 lint in the api repo and push the fix."
 
 - a. Checks whether the directory is a workspace (`untaped workspace path` or

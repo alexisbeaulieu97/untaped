@@ -1,7 +1,7 @@
 # untaped surface 1
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
-cfg git.store_dir string(format=path) default=~/.untaped/plugins/git/store
+cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cli untaped git
 cli untaped git credential --nonce VALUE default=unset

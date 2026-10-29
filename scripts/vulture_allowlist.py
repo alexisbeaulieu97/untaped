@@ -172,6 +172,7 @@ Core.unknown_keys
 Core.token_store
 Core.refs
 Dotfiles.sync
+Dotfiles.clones
 Git.repo_store
 WorkspacePlugin.workspaces
 WorkspacePlugin.checkouts

@@ -4,7 +4,7 @@ cfg workspace.caches.repo_source_repos.max_age_seconds integer(minimum=0) defaul
 cfg workspace.extensions.repo_source.rank.repos string[] default=[]  [experimental]
 cfg workspace.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg workspace.parallel integer(minimum=1)? default=unset  [experimental]
-cfg workspace.workspaces_dir string(format=path) default=~/.untaped/workspaces  [experimental]
+cfg workspace.workspaces_dir string(format=path)? default=unset  [experimental]
 cli untaped workspace  [experimental]
 cli untaped workspace add  [experimental]
 cli untaped workspace add --base VALUE default=unset  [experimental]

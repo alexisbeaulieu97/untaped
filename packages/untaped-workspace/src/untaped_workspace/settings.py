@@ -16,11 +16,12 @@ class WorkspaceSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    workspaces_dir: Path = Field(
-        default=Path("~/.untaped/workspaces"),
+    workspaces_dir: Path | None = Field(
+        default=None,
         description=(
             "Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one "
-            "untaped home, which holds its workspaces' locks."
+            "untaped home, which holds its workspaces' locks. An absolute path; unset: "
+            "`plugins/workspace/checkouts/` under the home."
         ),
     )
     parallel: int | None = Field(

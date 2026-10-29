@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import settings_of
+from untaped.sdk import Dir, key, settings_of
 
 
 class GitSettings(BaseModel):
@@ -14,11 +14,12 @@ class GitSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    store_dir: Path = Field(
-        default=Path("~/.untaped/plugins/git/store"),
+    store_dir: Path | None = Field(
+        default=None,
         description=(
             "Root of the repo store: one shared bare repository per remote, under "
-            "`<store_dir>/<host>/<path>.git`."
+            "`<store_dir>/<host>/<path>.git`; an absolute path. Unset: `plugins/git/store/` "
+            "under the home."
         ),
     )
     untaped_helper_only: bool = Field(
@@ -39,9 +40,13 @@ def git_settings() -> GitSettings:
     return settings_of(GitSettings)
 
 
+#: The repo store's folder: ``git.store_dir``, or ``plugins/git/store/`` under the home.
+STORE = Dir(at=key(GitSettings).store_dir)
+
+
 def store_root() -> Path:
-    """The repo store's directory (``git.store_dir``, ``~`` expanded)."""
-    return git_settings().store_dir.expanduser()
+    """The repo store's directory (:data:`STORE`'s path)."""
+    return STORE.path
 
 
 def credential_rank() -> tuple[str, ...]:

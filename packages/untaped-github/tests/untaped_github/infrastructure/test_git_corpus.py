@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from untaped.sdk import plugin_of
+from untaped.sdk.testing import Home
 from untaped_git.api import Prefetched, RepoStore
 from untaped_github.domain import (
     CorpusFreshness,
@@ -174,14 +175,16 @@ def test_a_stamped_copy_without_freshness_is_listed_but_never_fresh(
     assert [row.full_name for row in env.cache.list_repos()] == ["acme/api"]
 
 
-def test_sync_keeps_its_refs_and_metadata_to_itself(corpus: Callable[..., _Corpus]) -> None:
+def test_sync_keeps_its_refs_and_metadata_to_itself(
+    corpus: Callable[..., _Corpus], home: Home
+) -> None:
     env = corpus({"README.md": "hello\n"})
 
     synced = env.sync()
 
     store = env.store
     assert synced.path == str(store.path)
-    assert store.path.is_relative_to(Path.home() / ".untaped/plugins/git/store")
+    assert store.path.is_relative_to(home.plugin("git") / "store")
     assert store.private_file.name == "untaped-github.json"
     written = json.loads(store.private_file.read_text())
     assert written["repo"] == "acme/api"
@@ -686,12 +689,12 @@ def test_clean_repo_of_an_already_removed_repo_succeeds(corpus: Callable[..., _C
 
 
 def test_listing_reads_only_githubs_files_and_warns_on_corrupt_ones(
-    corpus: Callable[..., _Corpus], capfd: pytest.CaptureFixture[str]
+    corpus: Callable[..., _Corpus], capfd: pytest.CaptureFixture[str], home: Home
 ) -> None:
     warnings: list[str] = []
     env = corpus({"README.md": "hello\n"}, warn=warnings.append)
     env.sync()
-    store_root = Path.home() / ".untaped/plugins/git/store"
+    store_root = home.plugin("git") / "store"
     stray = json.dumps({"repo": "acme/stray", "ref": "main", "clone_url": "x"})
     for path in (
         store_root / "untaped-github.json",
@@ -767,7 +770,7 @@ def test_sync_records_pushed_at_and_touch_marks_copy_current(
 
 
 def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
-    corpus: Callable[..., _Corpus], rewrite_to: Rewrite
+    corpus: Callable[..., _Corpus], rewrite_to: Rewrite, home: Home
 ) -> None:
     """The store key ignores the URL form: sync over https, look up over ssh."""
     env = corpus({"README.md": "hello\n"})
@@ -777,7 +780,7 @@ def test_https_and_ssh_forms_of_one_repo_share_the_store_repo(
 
     synced = env.cache.sync_repo(target, selector=RefSelector())
 
-    expected = Path.home() / ".untaped/plugins/git/store/github.com/acme/app.git"
+    expected = home.plugin("git") / "store/github.com/acme/app.git"
     assert synced.path == str(expected)
     assert env.cache.repo_freshness(replace(target, clone_url=ssh)) is not None
     keys = {env.cache.cache_key(replace(target, clone_url=url)) for url in (https, ssh)}
