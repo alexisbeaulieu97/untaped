@@ -16,7 +16,7 @@ from untaped.sdk.network._credential_store import INDEX, CredentialRow
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.credentials import describe_key
-from untaped.sdk.testing import CliInvoker, CliResult, MemoryCredentials, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, CliResult, MemoryCredentials, ScriptedTerminal
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -45,7 +45,7 @@ KEY = WizServer(url=HttpUrl("https://wiz.example.com"))
 def _auth(
     *args: str,
     input: str | None = None,
-    backend: ScriptedPromptBackend | None = None,
+    backend: ScriptedTerminal | None = None,
 ) -> CliResult:
     app = root_group("auth", WIZ, VLT)
     return CliInvoker().invoke(
@@ -125,12 +125,12 @@ def test_a_damaged_index_row_names_auth_forget_by_id() -> None:
 
 @pytest.mark.usefixtures("_server")
 def test_login_prompts_on_a_terminal(_isolated_config: Path) -> None:
-    backend = ScriptedPromptBackend(secrets=["typed"])
+    backend = ScriptedTerminal().types("typed")
 
     result = _auth("login", "wiz", backend=backend)
 
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("secret", "wiz token")]
+    assert backend.asked == [("secret", "wiz token")]
     assert "stored the wiz token for url=https://wiz.example.com" in result.stderr
     assert "typed" not in result.output
 
@@ -239,12 +239,12 @@ def test_login_off_a_terminal_needs_a_declared_credential(
 
 @pytest.mark.usefixtures("_server")
 def test_login_without_a_plugin_offers_a_menu_on_a_terminal() -> None:
-    backend = ScriptedPromptBackend(selections=[TOKEN], secrets=["picked"])
+    backend = ScriptedTerminal().types("picked").selects(TOKEN)
 
     result = _auth("login", backend=backend)
 
     assert result.exit_code == 0, result.output
-    assert [method for method, _ in backend.calls] == ["select", "secret"]
+    assert [method for method, _ in backend.asked] == ["select", "secret"]
     assert _secret(TOKEN, KEY) == "picked"
 
 
@@ -388,13 +388,13 @@ def test_login_tests_the_store_before_asking_for_the_token(
         raise ConfigError("pass cannot decrypt", hint="unlock gpg")
 
     monkeypatch.setattr(credentials, "preflight", broken)
-    backend = ScriptedPromptBackend(secrets=["never"])
+    backend = ScriptedTerminal().types("never")
 
     result = _auth("login", "wiz", backend=backend)
 
     assert result.exit_code == 4, result.output
     assert "pass cannot decrypt" in result.stderr
-    assert backend.calls == []
+    assert backend.asked == []
 
 
 @pytest.mark.usefixtures("_server")

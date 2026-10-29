@@ -349,9 +349,9 @@ def test_default_prompt_backend_follows_reopened_terminal_streams() -> None:
 
 
 def test_injected_prompt_backend_survives_stream_changes() -> None:
-    from untaped.sdk.testing import ScriptedPromptBackend
+    from untaped.sdk.testing import ScriptedTerminal
 
-    injected = ScriptedPromptBackend(confirms=[])
+    injected = ScriptedTerminal().present()
     ui = Ui(prompt_backend=injected, stdin=io.StringIO())
     ui.stdin = io.StringIO()
     ui.stderr = io.StringIO()

@@ -11,12 +11,8 @@ import yaml
 
 import untaped_recipe.infrastructure.file_writer as file_writer_module
 from recipe_pack_support import default_columns
-from recipe_test_support import installed, library_dir, run
-from untaped.runtime.bootstrap import build_root_app
-from untaped.sdk.testing import (
-    ScriptedTerminal,
-    assert_destructive_contract,
-)
+from recipe_test_support import library_dir, run
+from untaped.sdk.testing import ScriptedTerminal
 from untaped_recipe.domain.plan import FileChange
 from untaped_recipe.infrastructure.backup import BackupDraft, BackupStore
 
@@ -301,20 +297,26 @@ def test_backup_prune_requires_a_policy(tmp_path: Path) -> None:
     assert "backups prune needs --keep/--older-than" in result.output
 
 
-def test_backup_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
+def test_backup_prune_asks_first_and_keeps_everything_when_declined(
+    tmp_path: Path, terminal: ScriptedTerminal
+) -> None:
     backups = library_dir() / "backups"
     old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
     new = _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
 
-    def assert_unchanged() -> None:
-        assert old.exists()
-        assert new.exists()
+    piped = run(["backups", "prune", "--keep", "1"])
 
-    assert_destructive_contract(
-        build_root_app(candidates=installed().candidates).meta,
-        ["recipe", "backups", "prune", "--keep", "1"],
-        assert_unchanged=assert_unchanged,
-    )
+    assert piped.exit_code == 2, piped.output
+    assert "requires --yes" in piped.output
+    assert old.exists() and new.exists()
+
+    terminal.answers(False)
+    declined = run(["backups", "prune", "--keep", "1"])
+
+    assert declined.exit_code == 1, declined.output
+    assert "cancelled; no changes made" in declined.output
+    assert [kind for kind, _ in terminal.asked] == ["confirm"]
+    assert old.exists() and new.exists()
 
 
 def test_backup_prune_counts_failed_deletions_and_continues(

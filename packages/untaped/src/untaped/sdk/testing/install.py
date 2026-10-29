@@ -124,7 +124,7 @@ class Install:
         is the exit code and its message, unless ``raise_on_error``.
         """
         from untaped.runtime.mount import watching  # noqa: PLC0415
-        from untaped.sdk.testing import ScriptedPromptBackend, invoke_cli  # noqa: PLC0415
+        from untaped.sdk.testing import ScriptedTerminal, invoke_cli  # noqa: PLC0415
         from untaped.sdk.testing.fixtures import current_terminal  # noqa: PLC0415
 
         mount = self._mount
@@ -152,7 +152,7 @@ class Install:
         elif scripted is not None:
             asking = scripted._declining()  # the test's terminal, its next answer no
         else:
-            asking = nullcontext(ScriptedPromptBackend(confirms=[False]))
+            asking = nullcontext(ScriptedTerminal().answers(False))
         with asking as backend, watching() as printed:
             result = invoke_cli(
                 go,
@@ -222,7 +222,7 @@ def _terminal() -> ScriptedTerminal | None:
     from untaped.sdk.testing.fixtures import current_terminal  # noqa: PLC0415
 
     terminal = current_terminal()
-    return terminal if terminal is not None and terminal.present else None
+    return terminal if terminal is not None and terminal.is_present else None
 
 
 def install(

@@ -39,7 +39,7 @@ from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import (
     CliResult,
     ScreenKeys,
-    ScriptedPromptBackend,
+    ScriptedTerminal,
     invoke_cli,
     plugin_candidate,
 )
@@ -347,7 +347,7 @@ def test_plan_setup_screen_and_doctor_agree(
     if token_done:
         assert (online["state"] == "failed") is (api["status"] == "fail")
         assert online["run"] == (api["fix"] or [])
-    backend = ScriptedPromptBackend(screens=[ScreenKeys("esc")])
+    backend = ScriptedTerminal().screens(ScreenKeys("esc"))
     root = bootstrap.build_root_app(candidates=(plugin_candidate(_wiz()),))
     setup = invoke_cli(
         root.meta, ["setup"], interactive=True, prompt_backend=backend, terminal=True

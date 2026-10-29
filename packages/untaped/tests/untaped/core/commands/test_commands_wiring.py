@@ -189,12 +189,12 @@ def test_target_profile_option_is_gone(_isolated_config: Path, verb: list[str]) 
 
 
 def test_ctrl_c_at_a_config_prompt_exits_130() -> None:
-    from untaped.sdk.testing import ScriptedPromptBackend, invoke_cli
+    from untaped.sdk.testing import ScriptedTerminal, invoke_cli
 
     result = invoke_cli(
         bootstrap.build_root_app(candidates=()),
         ["config", "set", "untaped.ui.theme", "--prompt"],
         interactive=True,
-        prompt_backend=ScriptedPromptBackend(interrupt=True),
+        prompt_backend=ScriptedTerminal().interrupts(),
     )
     assert result.exit_code == 130

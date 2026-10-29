@@ -22,7 +22,7 @@ from untaped.sdk.errors import (
     UntapedError,
     UsageError,
 )
-from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO, invoke_cli
+from untaped.sdk.testing import ScriptedTerminal, TtyStringIO, invoke_cli
 
 
 def test_exit_code_values_are_the_documented_contract() -> None:
@@ -73,7 +73,7 @@ def test_ctrl_c_anywhere_exits_130_without_a_traceback() -> None:
 
 
 def test_ctrl_c_at_a_prompt_exits_130() -> None:
-    class _Interrupting(ScriptedPromptBackend):
+    class _Interrupting(ScriptedTerminal):
         def confirm(self, message: str, *, default: bool) -> bool:
             raise KeyboardInterrupt
 
@@ -91,7 +91,7 @@ def test_ctrl_c_at_a_prompt_exits_130() -> None:
 
 
 def test_the_terminal_guard_needs_a_terminal() -> None:
-    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(confirms=[True]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedTerminal().answers(True))
 
     with (
         pytest.raises(UsageError, match="prune requires --yes when not interactive"),

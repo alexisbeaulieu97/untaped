@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from awx_test_support import human, run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 from untaped_awx.commands import parallel
 
 
@@ -479,12 +479,12 @@ def test_mass_actions_preview_and_confirm(
     fake_aap: Any, command: str, args: list[str], answer: bool
 ) -> None:
     seed(fake_aap)
-    backend = ScriptedPromptBackend(confirms=[answer])
+    backend = ScriptedTerminal().answers(answer)
     result = run([command, *args], interactive=True, prompt_backend=backend)
     assert result.exit_code == (0 if answer else 1), result.output + result.stderr
     if not answer:
         assert "cancelled; no changes made" in result.stderr
-    assert len(backend.calls) == 1
+    assert len(backend.asked) == 1
     assert bool(fake_aap.actions_called) is answer
     assert "id=" in result.stderr  # preview lists the targets before asking
 
@@ -500,23 +500,23 @@ def test_multi_name_launch_requires_confirmation_without_terminal(fake_aap: Any)
 
 def test_mass_launch_yes_skips_prompt(fake_aap: Any) -> None:
     seed(fake_aap)
-    backend = ScriptedPromptBackend(confirms=[])
+    backend = ScriptedTerminal().present()
     result = run(
         ["job-templates", "launch", "--all", "--yes"],
         interactive=True,
         prompt_backend=backend,
     )
     assert result.exit_code == 0, result.output
-    assert backend.calls == []
+    assert backend.asked == []
     assert len(fake_aap.actions_called) == 1
 
 
 def test_single_named_launch_does_not_prompt(fake_aap: Any) -> None:
     seed(fake_aap)
-    backend = ScriptedPromptBackend(confirms=[])
+    backend = ScriptedTerminal().present()
     result = run(["job-templates", "launch", "deploy"], interactive=True, prompt_backend=backend)
     assert result.exit_code == 0, result.output
-    assert backend.calls == []
+    assert backend.asked == []
 
 
 @pytest.mark.parametrize("flag", ["--wait", "--follow"])

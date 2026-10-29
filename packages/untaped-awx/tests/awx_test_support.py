@@ -68,7 +68,7 @@ def run(
     """
     root = build_root_app(candidates=(on or installed()).candidates)
     scripted = current_terminal()
-    if prompt_backend is None and scripted is not None and scripted.present:
+    if prompt_backend is None and scripted is not None and scripted.is_present:
         prompt_backend, terminal = scripted, True
         interactive = interactive or input is None
     return invoke_cli(

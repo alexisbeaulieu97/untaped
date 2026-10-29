@@ -99,7 +99,6 @@ from untaped.sdk.testing.schema import assert_schema_pinned
 from untaped.sdk.testing.screens import ScreenKeys, ScreenRun, drive_screen
 
 if TYPE_CHECKING:
-    from untaped.screen.picker import PickResult
     from untaped.sdk.diagnostic import Diagnostic
     from untaped.sdk.plugin import Plugin
 
@@ -119,10 +118,8 @@ __all__ = [
     "Running",
     "ScreenKeys",
     "ScreenRun",
-    "ScriptedPromptBackend",
     "ScriptedTerminal",
     "TtyStringIO",
-    "assert_destructive_contract",
     "assert_fills",
     "assert_schema_pinned",
     "assert_surface",
@@ -434,8 +431,8 @@ def invoke_cli(
     controlling terminal (``/dev/tty``, used for prompts while stdin is
     piped) is simulated: absent by default, present with ``terminal=True``
     (prompts then go to ``prompt_backend``). A command that runs a screen
-    (``ui.run``) needs neither with a :class:`ScriptedPromptBackend`, which
-    never touches a terminal: ``prompt_backend=ScriptedPromptBackend(screens=[...])``
+    (``ui.run``) needs neither with a :class:`ScriptedTerminal`, which
+    never touches a terminal: ``prompt_backend=ScriptedTerminal().screens(...)``
     is enough (and ``interactive=True`` only if the command checks for a TTY itself).
     """
     from untaped.runtime.run import invocation  # noqa: PLC0415
@@ -504,54 +501,6 @@ def invoke_root(argv: Sequence[str], *, input: str | None = None) -> CliResult:
 def no_terminal() -> TextIO:
     """Terminal opener for tests without a controlling terminal."""
     raise OSError("no controlling terminal (test harness)")
-
-
-def assert_destructive_contract(
-    command: App | Callable[..., Any],
-    args: Sequence[str],
-    *,
-    assert_unchanged: Callable[[], None] | None = None,
-) -> None:
-    """Assert a destructive verb honours the SDK confirmation contract.
-
-    Invokes ``command`` twice with the same ``args`` (which must target the
-    verb *positionally* — not via ``--stdin``, whose data leg would starve on
-    the interactive run):
-
-    1. **Piped stdin, no ``--yes``** → must refuse with the standard
-       ``requires --yes`` error and a nonzero exit.
-    2. **Interactive stdin, scripted decline** → must prompt exactly one
-       confirm and honour the decline (no crash beyond ``SystemExit``).
-
-    ``assert_unchanged`` (recommended) runs after each leg to verify the
-    destructive effect did not happen — the helper cannot know what "no
-    effect" means for the tool.
-    """
-    piped = invoke_cli(command, list(args))
-    assert piped.exit_code != 0, (
-        f"piped stdin without --yes must refuse, got exit {piped.exit_code}; "
-        f"stderr: {piped.stderr!r}"
-    )
-    # The refusal surfaces either as a rendered `error: ... requires --yes`
-    # line (command wrapped in report_errors) or as a caught ConfigError on
-    # the result (bare command body) — accept both shapes.
-    combined = f"{piped.stderr}{piped.stdout}{piped.exception or ''}"
-    assert "requires --yes" in combined, (
-        f"expected the standard 'requires --yes' refusal, got: {combined!r}"
-    )
-    if assert_unchanged is not None:
-        assert_unchanged()
-
-    backend = ScriptedPromptBackend(confirms=[False])
-    interactive = invoke_cli(command, list(args), interactive=True, prompt_backend=backend)
-    assert backend.calls and backend.calls[0][0] == "confirm", (
-        "interactive path must prompt for confirmation before acting"
-    )
-    assert interactive.exception is None or isinstance(interactive.exception, SystemExit), (
-        f"decline must exit cleanly, got {interactive.exception!r}"
-    )
-    if assert_unchanged is not None:
-        assert_unchanged()
 
 
 @contextmanager
@@ -736,53 +685,11 @@ class TtyStringIO(io.StringIO):
 
     Used as the harness stdin for interactive-path tests: TTY checks
     (``Terminal``, ``batch_apply``) pass, while prompts are answered by a
-    :class:`ScriptedPromptBackend` rather than a real terminal read.
+    :class:`ScriptedTerminal` rather than a real terminal read.
     """
 
     def isatty(self) -> bool:
         return True
-
-
-class ScriptedPromptBackend(ScriptedTerminal):
-    """A :class:`~untaped.sdk.prompt.prompts.PromptBackend` answering from fixed queues.
-
-    The 11.x spelling of :class:`ScriptedTerminal`, scripted all at once:
-    each prompt method pops its next scripted answer and records
-    ``(method, message)`` in ``calls``; an exhausted queue raises
-    :class:`ConfigError` so a test fails cleanly instead of hanging. With
-    ``interrupt=True`` every prompt raises :class:`PromptInterruptedError`,
-    simulating Ctrl-C. ``screens`` answers :meth:`Terminal.run` as
-    :meth:`ScriptedTerminal.screens` takes them. The backend never touches a
-    terminal, so ``Terminal.run`` and ``Terminal.pick_many`` do not require
-    one: a command test needs no ``terminal=True`` and no TTY stdin.
-    """
-
-    def __init__(
-        self,
-        *,
-        confirms: Sequence[bool] = (),
-        texts: Sequence[str] = (),
-        secrets: Sequence[str] = (),
-        selections: Sequence[Any] = (),
-        picks: Sequence[PickResult | None] = (),
-        screens: Sequence[object] = (),
-        interrupt: bool = False,
-    ) -> None:
-        super().__init__()
-        self.present = True
-        self._secrets_typed = False  # a secret prompt reads only ``secrets``
-        self._interrupt = interrupt
-        self._confirms.extend(confirms)
-        self._texts.extend(texts)
-        self._secrets.extend(secrets)
-        self._selections.extend(selections)
-        self._picks.extend(picks)
-        self._screens.extend(screens)
-
-    @property
-    def calls(self) -> list[tuple[str, str]]:
-        """Every prompt asked, as ``(method, message)``: :attr:`ScriptedTerminal.asked`."""
-        return self.asked
 
 
 def _call_command(

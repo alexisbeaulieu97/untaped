@@ -591,10 +591,10 @@ def test_the_backend_draws_the_picker_in_its_theme(monkeypatch: pytest.MonkeyPat
 
 
 def test_scripted_backend_answers_pick_many() -> None:
-    from untaped.sdk.testing import ScriptedPromptBackend
+    from untaped.sdk.testing import ScriptedTerminal
 
     picked = PickResult(title="t", defaults={}, picks=())
-    backend = ScriptedPromptBackend(picks=[picked])
+    backend = ScriptedTerminal().picks(picked)
     assert backend.pick_many(_REQUEST) is picked
     with pytest.raises(ConfigError, match="no scripted pick_many answer"):
         backend.pick_many(_REQUEST)
@@ -602,9 +602,9 @@ def test_scripted_backend_answers_pick_many() -> None:
 
 def test_interrupt_escapes_a_config_error_handler() -> None:
     from untaped.sdk._ui import Ui
-    from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
+    from untaped.sdk.testing import ScriptedTerminal, TtyStringIO
 
-    ui = Ui(stdin=TtyStringIO(), prompt_backend=ScriptedPromptBackend(interrupt=True))
+    ui = Ui(stdin=TtyStringIO(), prompt_backend=ScriptedTerminal().interrupts())
     with pytest.raises(PromptInterruptedError):
         try:
             ui.confirm("Continue?")

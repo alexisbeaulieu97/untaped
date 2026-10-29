@@ -24,7 +24,7 @@ from untaped.sdk.network import auth
 from untaped.sdk.network._credential_store import entry_for, reset_test_store, set_test_store
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network.auth import clear_token_cache
-from untaped.sdk.testing import CliInvoker, CliResult, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, CliResult, ScriptedTerminal
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "_real_stores", "_server", "_composed")
 
@@ -144,10 +144,10 @@ def test_login_with_a_forced_store_that_is_unusable_fails(stores: FakeStores) ->
 
 
 def test_login_prompts_for_the_token(stores: FakeStores) -> None:
-    backend = ScriptedPromptBackend(secrets=[SENTINEL])
+    backend = ScriptedTerminal().types(SENTINEL)
     result = _login(backend=backend)
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("secret", "svc token")]
+    assert backend.asked == [("secret", "svc token")]
     assert stores.entries() == {f"untaped/{_entry()}": SENTINEL}
     _no_leak(result, stores)
 
@@ -298,14 +298,14 @@ def test_login_stops_before_the_prompt_when_gpg_cannot_decrypt(
     stores: FakeStores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("STUB_MODE", "gpg-roundtrip")
-    backend = ScriptedPromptBackend(secrets=[SENTINEL])
+    backend = ScriptedTerminal().types(SENTINEL)
     result = _login(backend=backend)
     assert result.exit_code == 5
     assert (
         "gpg decrypt failed for the pass store: gpg: public key decryption failed" in result.stderr
     )
     assert result.stderr.count("decryption failed") == 1 and "pinentry" in result.stderr
-    assert backend.calls == [], "the store is tested before the token is asked for"
+    assert backend.asked == [], "the store is tested before the token is asked for"
     assert not [c for c in stores.calls() if c["argv"][0] == "pass"], "pass never ran"
     assert stored_rows() == []
 

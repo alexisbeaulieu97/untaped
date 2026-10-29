@@ -31,7 +31,7 @@ from untaped.sdk.prompt.prompts import (
     reset_terminal_override,
     set_terminal_override,
 )
-from untaped.sdk.testing import CliInvoker, ScreenKeys, ScriptedPromptBackend, TtyStringIO
+from untaped.sdk.testing import CliInvoker, ScreenKeys, ScriptedTerminal, TtyStringIO
 
 
 def _screen(title: str = "Name it") -> Screen[str, str]:
@@ -52,24 +52,24 @@ def _screen(title: str = "Name it") -> Screen[str, str]:
     )
 
 
-def _interactive(backend: ScriptedPromptBackend) -> Ui:
+def _interactive(backend: ScriptedTerminal) -> Ui:
     return Ui(stdin=TtyStringIO(), stderr=TtyStringIO(), prompt_backend=backend)
 
 
 def test_run_returns_the_quit_result() -> None:
-    backend = ScriptedPromptBackend(screens=["alpha"])
+    backend = ScriptedTerminal().screens("alpha")
     assert _interactive(backend).run(_screen()) == "alpha"
-    assert backend.calls == [("run_screen", "Name it")]
+    assert backend.asked == [("run_screen", "Name it")]
 
 
 def test_run_cancel_raises_operation_cancelled() -> None:
-    backend = ScriptedPromptBackend(screens=[Cancel()])
+    backend = ScriptedTerminal().screens(Cancel())
     with pytest.raises(OperationCancelledError):
         _interactive(backend).run(_screen())
 
 
 def test_run_interrupt_raises_prompt_interrupted() -> None:
-    backend = ScriptedPromptBackend(screens=[Cancel(interrupted=True)])
+    backend = ScriptedTerminal().screens(Cancel(interrupted=True))
     with pytest.raises(PromptInterruptedError, match="prompt cancelled"):
         _interactive(backend).run(_screen())
 
@@ -81,7 +81,7 @@ def test_run_interrupt_raises_prompt_interrupted() -> None:
 def test_run_maps_terminal_exceptions_like_every_prompt(
     raised: BaseException, expected: type[Exception]
 ) -> None:
-    backend = ScriptedPromptBackend(screens=[raised])
+    backend = ScriptedTerminal().screens(raised)
     with pytest.raises(expected, match="prompt cancelled"):
         _interactive(backend).run(_screen())
 
@@ -108,11 +108,11 @@ def test_a_command_test_runs_a_screen_through_the_scripted_backend_without_a_ter
             name = Ui().run(_screen())  # the context the command builds itself
             sys.stdout.write(f"hello {name}\n")
 
-    backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
+    backend = ScriptedTerminal().screens(ScreenKeys("a", "b", "enter"))
     result = CliInvoker().invoke(app, [], prompt_backend=backend)  # no interactive, no terminal
     assert (result.exit_code, result.stdout) == (0, "hello ab\n")
     assert result.stderr == ""
-    assert backend.calls == [("run_screen", "Name it")]
+    assert backend.asked == [("run_screen", "Name it")]
 
 
 def test_a_command_test_with_an_interactive_stdin_needs_no_terminal_for_a_screen() -> None:
@@ -123,16 +123,16 @@ def test_a_command_test_with_an_interactive_stdin_needs_no_terminal_for_a_screen
         with report_errors():
             sys.stdout.write(f"{Ui().run(_screen())}\n")
 
-    backend = ScriptedPromptBackend(screens=["typed"])
+    backend = ScriptedTerminal().screens("typed")
     result = CliInvoker().invoke(app, [], interactive=True, prompt_backend=backend)
     assert (result.exit_code, result.stdout) == (0, "typed\n")
 
 
 def test_a_backend_that_needs_a_terminal_still_gets_the_refusal() -> None:
-    class Plain(ScriptedPromptBackend):
+    class Plain(ScriptedTerminal):
         needs_terminal = True
 
-    ui = Ui(stdin=io.StringIO(), prompt_backend=Plain(screens=["x"]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=Plain().screens("x"))
     with pytest.raises(UsageError, match="needs a terminal"):
         ui.run(_screen())
 
@@ -191,13 +191,14 @@ class Opened:
         return handle
 
 
-class _Spy(ScriptedPromptBackend):
+class _Spy(ScriptedTerminal):
     """A scripted backend that remembers the streams the context pointed it at."""
 
     needs_terminal = True  # the terminal rules are what these tests are about
 
     def __init__(self, ui_holder: list[Ui], answer: object = "ok") -> None:
-        super().__init__(screens=[answer])
+        super().__init__()
+        self.screens(answer)
         self._holder = ui_holder
         self.streams: list[tuple[TextIO, TextIO]] = []
 
@@ -326,7 +327,7 @@ def test_the_terminal_override_serves_both_modes() -> None:
 # --- the picker is a screen too ---------------------------------------------------
 
 
-class _OnATerminal(ScriptedPromptBackend):
+class _OnATerminal(ScriptedTerminal):
     """A scripted backend that, like the real one, needs a terminal to draw on."""
 
     needs_terminal = True
@@ -342,7 +343,7 @@ def test_pick_many_opens_the_controlling_terminal_when_stdin_is_piped(
     opened = Opened([], [])
     monkeypatch.setattr("untaped.sdk._ui.open_controlling_terminal", opened)
     stdin, stderr = io.StringIO("piped"), TtyStringIO()
-    ui = Ui(stdin=stdin, stderr=stderr, prompt_backend=_OnATerminal(picks=[_PICKED]))
+    ui = Ui(stdin=stdin, stderr=stderr, prompt_backend=_OnATerminal().picks(_PICKED))
 
     assert ui.pick_many(_PICK_REQUEST) is _PICKED
     assert opened.modes == [False, True]
@@ -358,7 +359,7 @@ def test_pick_many_uses_the_streams_when_both_are_terminals(
     ui = Ui(
         stdin=TtyStringIO(),
         stderr=TtyStringIO(),
-        prompt_backend=_OnATerminal(picks=[_PICKED]),
+        prompt_backend=_OnATerminal().picks(_PICKED),
     )
     assert ui.pick_many(_PICK_REQUEST) is _PICKED
     assert opened.modes == []
@@ -366,7 +367,7 @@ def test_pick_many_uses_the_streams_when_both_are_terminals(
 
 def test_pick_many_needs_no_terminal_for_a_scripted_backend() -> None:
     # The harness has no controlling terminal and stderr is not a terminal either.
-    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedPromptBackend(picks=[_PICKED]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=ScriptedTerminal().picks(_PICKED))
     assert ui.pick_many(_PICK_REQUEST) is _PICKED
 
 
@@ -407,8 +408,8 @@ def test_pick_many_without_any_terminal_names_the_commands_own_alternative() -> 
 
 
 def test_scripted_screens_result_cancel_exception_and_keys() -> None:
-    backend = ScriptedPromptBackend(
-        screens=["plain result", Cancel(), RuntimeError("boom"), ScreenKeys("a", "b", "enter")]
+    backend = ScriptedTerminal().screens(
+        "plain result", Cancel(), RuntimeError("boom"), ScreenKeys("a", "b", "enter")
     )
     ui = _interactive(backend)
     screen = _screen()
@@ -420,11 +421,11 @@ def test_scripted_screens_result_cancel_exception_and_keys() -> None:
         ui.run(screen)
     assert ui.run(screen) == "ab"  # the keys ran through the real screen
     assert backend.ran == [screen] * 4
-    assert backend.calls == [("run_screen", "Name it")] * 4
+    assert backend.asked == [("run_screen", "Name it")] * 4
 
 
 def test_a_scripted_quit_returns_its_result_and_an_exception_class_is_raised() -> None:
-    backend = ScriptedPromptBackend(screens=[Quit("x"), RuntimeError, KeyboardInterrupt])
+    backend = ScriptedTerminal().screens(Quit("x"), RuntimeError, KeyboardInterrupt)
     ui = _interactive(backend)
     assert ui.run(_screen()) == "x"  # not Quit(Quit("x"))
     with pytest.raises(RuntimeError):
@@ -434,33 +435,33 @@ def test_a_scripted_quit_returns_its_result_and_an_exception_class_is_raised() -
 
 
 def test_a_scripted_cancel_class_is_a_cancel() -> None:
-    ui = _interactive(ScriptedPromptBackend(screens=[Cancel]))
+    ui = _interactive(ScriptedTerminal().screens(Cancel))
     with pytest.raises(OperationCancelledError):
         ui.run(_screen())
 
 
 def test_a_falsy_injected_backend_is_still_the_one_asked_about_the_terminal() -> None:
-    class Falsy(ScriptedPromptBackend):
+    class Falsy(ScriptedTerminal):
         def __bool__(self) -> bool:
             return False
 
-    ui = Ui(stdin=io.StringIO(), prompt_backend=Falsy(screens=["x"]))
+    ui = Ui(stdin=io.StringIO(), prompt_backend=Falsy().screens("x"))
     assert ui.run(_screen()) == "x"  # needs_terminal=False read from it, not from the override
 
 
 def test_scripted_keys_that_do_not_end_the_screen_fail_loudly() -> None:
-    backend = ScriptedPromptBackend(screens=[ScreenKeys("a")])
+    backend = ScriptedTerminal().screens(ScreenKeys("a"))
     with pytest.raises(ConfigError, match="did not end screen"):
         _interactive(backend).run(_screen())
 
 
 def test_an_empty_screens_queue_names_the_screen() -> None:
     with pytest.raises(ConfigError, match="no scripted run_screen answer for prompt 'Name it'"):
-        _interactive(ScriptedPromptBackend()).run(_screen())
+        _interactive(ScriptedTerminal().present()).run(_screen())
 
 
 def test_scripted_interrupt_applies_to_screens() -> None:
-    backend = ScriptedPromptBackend(screens=["unused"], interrupt=True)
+    backend = ScriptedTerminal().screens("unused").interrupts()
     with pytest.raises(PromptInterruptedError):
         _interactive(backend).run(_screen())
 

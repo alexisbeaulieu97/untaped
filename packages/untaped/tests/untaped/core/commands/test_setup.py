@@ -34,7 +34,7 @@ from untaped.sdk.testing import (
     CliResult,
     MemoryCredentials,
     ScreenKeys,
-    ScriptedPromptBackend,
+    ScriptedTerminal,
     invoke_cli,
     plugin_candidate,
 )
@@ -47,7 +47,7 @@ def _wiz_spec() -> Any:
     return make_plugin("wiz", settings=WizProfile, api=wiz_api())
 
 
-def _setup(backend: ScriptedPromptBackend | None, *args: str, terminal: bool = True) -> CliResult:
+def _setup(backend: ScriptedTerminal | None, *args: str, terminal: bool = True) -> CliResult:
     plain = make_plugin("plain", settings=ExtProfile)
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(plain))
@@ -69,8 +69,8 @@ def _keys(url: str, *, token: str | None = None, right: int = 0) -> list[ScreenK
     return [*keys, "enter"]
 
 
-def _scripted(*keys: ScreenKey) -> ScriptedPromptBackend:
-    return ScriptedPromptBackend(screens=[ScreenKeys(*keys)])
+def _scripted(*keys: ScreenKey) -> ScriptedTerminal:
+    return ScriptedTerminal().screens(ScreenKeys(*keys))
 
 
 @pytest.fixture(autouse=True)
@@ -255,7 +255,7 @@ def test_ctrl_c_with_nothing_saved_exits_130(_isolated_config: Path) -> None:
 
 
 def test_a_cancelled_screen_exits_1(_isolated_config: Path) -> None:
-    result = _setup(ScriptedPromptBackend(screens=[Cancel()]))
+    result = _setup(ScriptedTerminal().screens(Cancel()))
 
     assert result.exit_code == 1
     assert not _isolated_config.exists()
@@ -272,7 +272,7 @@ def test_only_lists_just_those_services(_isolated_config: Path) -> None:
 
 
 def test_only_rejects_a_name_that_is_not_a_section(_isolated_config: Path) -> None:
-    result = _setup(ScriptedPromptBackend(), "--only", "nope")
+    result = _setup(ScriptedTerminal().present(), "--only", "nope")
 
     assert result.exit_code == 2
     assert "section not found: 'nope'" in result.stderr
@@ -289,7 +289,7 @@ def test_notes_print_in_order_before_the_rows(_isolated_config: Path) -> None:
         (("success", "created profile: prod"), ("info", "export $WIZ_TOKEN in your shell")),
     )
 
-    result = _setup(ScriptedPromptBackend(screens=[done]))
+    result = _setup(ScriptedTerminal().screens(done))
 
     assert result.exit_code == 0, result.output
     assert result.stderr.index("created profile: prod") < result.stderr.index("export $WIZ_TOKEN")
@@ -302,7 +302,7 @@ def test_a_profile_other_than_the_active_one_says_how_to_use_it(_isolated_config
         "format_version: 2\nprofiles:\n  prod:\n    wiz:\n      base_url: https://wiz.prod\n",
     )
 
-    result = _setup(ScriptedPromptBackend(screens=[SetupResult("prod", ("wiz",), ())]))
+    result = _setup(ScriptedTerminal().screens(SetupResult("prod", ("wiz",), ())))
 
     assert result.exit_code == 0, result.output
     assert "profile prod is ready" in result.stderr
@@ -311,7 +311,7 @@ def test_a_profile_other_than_the_active_one_says_how_to_use_it(_isolated_config
 
 
 def test_nothing_touched_prints_the_notes_and_no_rows(_isolated_config: Path) -> None:
-    result = _setup(ScriptedPromptBackend(screens=[SetupResult("default", (), (("info", "hi"),))]))
+    result = _setup(ScriptedTerminal().screens(SetupResult("default", (), (("info", "hi"),))))
 
     assert result.exit_code == 0, result.output
     assert "hi" in result.stderr and "nothing saved; no changes made" in result.stderr
@@ -324,7 +324,7 @@ def test_rows_cover_only_the_touched_plugins(_isolated_config: Path) -> None:
     root = bootstrap.build_root_app(
         candidates=(plugin_candidate(_wiz_spec()), plugin_candidate(envy))
     )
-    backend = ScriptedPromptBackend(screens=[SetupResult("default", ("wiz",), ())])
+    backend = ScriptedTerminal().screens(SetupResult("default", ("wiz",), ()))
 
     result = invoke_cli(
         root.meta,
@@ -341,7 +341,7 @@ def test_written_keys_print_with_no_doctor_rows(_isolated_config: Path) -> None:
     line = "set plain.token in profile default (config: x)"
     done = SetupResult("default", (), (("success", line),), written=("plain.token",))
 
-    result = _setup(ScriptedPromptBackend(screens=[done]))
+    result = _setup(ScriptedTerminal().screens(done))
 
     assert result.exit_code == 0, result.output
     assert line in result.stderr

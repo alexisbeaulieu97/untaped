@@ -193,8 +193,8 @@ def test_auth_login_lands_in_the_test_s_store(
 @pytest.mark.parametrize("given", [(), (True,)])
 def test_answers_make_the_terminal_present(given: tuple[bool, ...]) -> None:
     terminal = ScriptedTerminal()
-    assert terminal.present is False
-    assert terminal.answers(*given).present is True
+    assert terminal.is_present is False
+    assert terminal.answers(*given).is_present is True
 
 
 def test_setting_a_credential_needs_its_plugin_installed(credentials: MemoryCredentials) -> None:
@@ -224,22 +224,13 @@ def test_answer_false_declines_through_the_test_s_terminal(
     ran = install(Vault).run(Rename(), answer=False)
     assert ran.exit == 1  # declined
     assert terminal.asked == [("text", "New name?"), ("confirm", "Rename to jar?")]
-    assert terminal.present is False  # as the test left it
+    assert terminal.is_present is False  # as the test left it
 
 
 def test_answers_in_order_keep_an_answer_for_every_question() -> None:
     terminal = ScriptedTerminal().answers(yes=True).answers(False)
     assert terminal.confirm("first?", default=True) is False
     assert terminal.confirm("second?", default=False) is True
-
-
-def test_the_11x_backend_reads_secrets_only_from_its_secrets() -> None:
-    from untaped.sdk.errors import ConfigError
-    from untaped.sdk.testing import ScriptedPromptBackend
-
-    with pytest.raises(ConfigError, match="no scripted secret answer"):
-        ScriptedPromptBackend(texts=["name"]).secret("Token?", confirmation=False)
-    assert ScriptedTerminal().types("typed").secret("Token?", confirmation=False) == "typed"
 
 
 def test_a_decline_nobody_asked_for_is_not_the_next_answer(
@@ -257,3 +248,11 @@ def test_an_inherited_credential_is_set_under_the_plugin_inheriting_it(
     install(Locker)
     credentials.set(Locker.token, VaultServer(), "s3cret")
     assert list(credentials.entries.values()) == ["s3cret"]
+
+
+def test_an_interrupting_terminal_interrupts_even_a_confirm_answered_yes() -> None:
+    from untaped.sdk.errors import PromptInterruptedError
+
+    terminal = ScriptedTerminal().answers(yes=True).interrupts()
+    with pytest.raises(PromptInterruptedError):
+        terminal.confirm("Delete?", default=False)

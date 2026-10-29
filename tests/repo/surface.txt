@@ -8615,55 +8615,31 @@ sdk untaped.sdk.testing.ScreenRun.frames  [experimental]
 sdk untaped.sdk.testing.ScreenRun.model  [experimental]
 sdk untaped.sdk.testing.ScreenRun.outcome  [experimental]
 sdk untaped.sdk.testing.ScreenRun.result  [experimental]
-sdk untaped.sdk.testing.ScriptedPromptBackend()
-sdk untaped.sdk.testing.ScriptedPromptBackend(confirms=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend(interrupt=) default=false
-sdk untaped.sdk.testing.ScriptedPromptBackend(picks=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend(screens=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend(secrets=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend(selections=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend(texts=) default=[]
-sdk untaped.sdk.testing.ScriptedPromptBackend.absent()
-sdk untaped.sdk.testing.ScriptedPromptBackend.answers()
-sdk untaped.sdk.testing.ScriptedPromptBackend.answers(*answers)
-sdk untaped.sdk.testing.ScriptedPromptBackend.answers(yes=) default=None
-sdk untaped.sdk.testing.ScriptedPromptBackend.calls
-sdk untaped.sdk.testing.ScriptedPromptBackend.confirm(message, *, default)
-sdk untaped.sdk.testing.ScriptedPromptBackend.needs_terminal class
-sdk untaped.sdk.testing.ScriptedPromptBackend.pick_many(request)
-sdk untaped.sdk.testing.ScriptedPromptBackend.picks()
-sdk untaped.sdk.testing.ScriptedPromptBackend.picks(*results)
-sdk untaped.sdk.testing.ScriptedPromptBackend.run_screen(screen, *, theme)
-sdk untaped.sdk.testing.ScriptedPromptBackend.screens()
-sdk untaped.sdk.testing.ScriptedPromptBackend.screens(*results)
-sdk untaped.sdk.testing.ScriptedPromptBackend.secret(message, *, confirmation)
-sdk untaped.sdk.testing.ScriptedPromptBackend.select(message, choices, *, default, search)
-sdk untaped.sdk.testing.ScriptedPromptBackend.text(message, *, default)
-sdk untaped.sdk.testing.ScriptedPromptBackend.types()
-sdk untaped.sdk.testing.ScriptedPromptBackend.types(*texts)
 sdk untaped.sdk.testing.ScriptedTerminal()
 sdk untaped.sdk.testing.ScriptedTerminal.absent()
 sdk untaped.sdk.testing.ScriptedTerminal.answers()
 sdk untaped.sdk.testing.ScriptedTerminal.answers(*answers)
 sdk untaped.sdk.testing.ScriptedTerminal.answers(yes=) default=None
 sdk untaped.sdk.testing.ScriptedTerminal.confirm(message, *, default)
+sdk untaped.sdk.testing.ScriptedTerminal.interrupts()
 sdk untaped.sdk.testing.ScriptedTerminal.needs_terminal class
 sdk untaped.sdk.testing.ScriptedTerminal.pick_many(request)
 sdk untaped.sdk.testing.ScriptedTerminal.picks()
 sdk untaped.sdk.testing.ScriptedTerminal.picks(*results)
+sdk untaped.sdk.testing.ScriptedTerminal.present()
 sdk untaped.sdk.testing.ScriptedTerminal.run_screen(screen, *, theme)
 sdk untaped.sdk.testing.ScriptedTerminal.screens()
 sdk untaped.sdk.testing.ScriptedTerminal.screens(*results)
 sdk untaped.sdk.testing.ScriptedTerminal.secret(message, *, confirmation)
 sdk untaped.sdk.testing.ScriptedTerminal.select(message, choices, *, default, search)
+sdk untaped.sdk.testing.ScriptedTerminal.selects()
+sdk untaped.sdk.testing.ScriptedTerminal.selects(*values)
 sdk untaped.sdk.testing.ScriptedTerminal.text(message, *, default)
 sdk untaped.sdk.testing.ScriptedTerminal.types()
 sdk untaped.sdk.testing.ScriptedTerminal.types(*texts)
 sdk untaped.sdk.testing.TtyStringIO()
 sdk untaped.sdk.testing.TtyStringIO(initial_value@1=) default=""
 sdk untaped.sdk.testing.TtyStringIO(newline@2=) default="\n"
-sdk untaped.sdk.testing.assert_destructive_contract(assert_unchanged=) default=None callback(0)
-sdk untaped.sdk.testing.assert_destructive_contract(command, args) callback(command, *)
 sdk untaped.sdk.testing.assert_fills(provider)
 sdk untaped.sdk.testing.assert_fills(samples=) default=[]
 sdk untaped.sdk.testing.assert_schema_pinned(ddl, *, version, additive_since, pins)  [experimental]

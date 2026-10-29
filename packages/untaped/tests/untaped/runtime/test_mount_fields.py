@@ -28,7 +28,7 @@ from untaped.sdk import (
     Written,
     key,
 )
-from untaped.sdk.testing import CliInvoker, CliResult, Install, ScriptedPromptBackend
+from untaped.sdk.testing import CliInvoker, CliResult, Install, ScriptedTerminal
 from untaped.sdk.words import command_argv
 
 #: A cache the plugin class holds: what Refresh's flags are about.
@@ -176,7 +176,7 @@ TOOL = PluginCandidate(distribution="untaped-tool", name="tool", target=Tool)
 
 
 def _run(
-    *argv: str, terminal: bool = False, prompt_backend: ScriptedPromptBackend | None = None
+    *argv: str, terminal: bool = False, prompt_backend: ScriptedTerminal | None = None
 ) -> CliResult:
     root = build_root_app(candidates=[TOOL])
     return CliInvoker().invoke(
@@ -223,7 +223,7 @@ def test_an_unanswerable_question_refuses_before_the_work_it_follows() -> None:
     for flag in ("--yes", "--dry-run"):
         assert _run("tool", "purge", "x", flag).exit_code == 0
     asked = _run(
-        "tool", "purge", "x", terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[True])
+        "tool", "purge", "x", terminal=True, prompt_backend=ScriptedTerminal().answers(True)
     )
     assert (asked.exit_code, asked.stdout) == (0, "purged\n")
     assert "scanned" in asked.stderr
@@ -248,14 +248,14 @@ def test_a_question_not_needed_goes_ahead_without_a_terminal() -> None:
 
 
 def test_at_a_terminal_it_previews_asks_and_a_no_cancels() -> None:
-    yes = ScriptedPromptBackend(confirms=[True])
+    yes = ScriptedTerminal().answers(True)
     asked = _run("tool", "delete", "x", terminal=True, prompt_backend=yes)
     assert (asked.exit_code, asked.stdout) == (0, "deleted\n")
     assert "would delete x" in asked.stderr
-    assert yes.calls == [("confirm", "Delete x?")]
+    assert yes.asked == [("confirm", "Delete x?")]
 
     declined = _run(
-        "tool", "delete", "x", terminal=True, prompt_backend=ScriptedPromptBackend(confirms=[False])
+        "tool", "delete", "x", terminal=True, prompt_backend=ScriptedTerminal().answers(False)
     )
     assert declined.exit_code == 1
     assert "cancelled; no changes made" in declined.stderr

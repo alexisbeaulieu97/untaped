@@ -16,7 +16,7 @@ from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.testing import (
     CliResult,
-    ScriptedPromptBackend,
+    ScriptedTerminal,
     invoke_cli,
     plugin_candidate,
     write_reference,
@@ -110,13 +110,13 @@ def test_yes_removes_both_and_keeps_installed_plugins_folders(tmp_path: Path) ->
 def test_a_terminal_asks_once_after_the_preview(tmp_path: Path) -> None:
     _dead(tmp_path)
     gone = _folder("gone")
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     root = bootstrap.build_root_app(candidates=[plugin_candidate(make_plugin("acme"))])
 
     result = invoke_cli(root.meta, ["setup", "prune"], interactive=True, prompt_backend=backend)
 
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Remove 1 reference and 1 plugin folder?")]
+    assert backend.asked == [("confirm", "Remove 1 reference and 1 plugin folder?")]
     assert not gone.exists()
 
 

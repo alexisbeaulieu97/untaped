@@ -34,10 +34,13 @@ class ScriptedTerminal:
     ``answers(yes=True)`` every one; ``types("Ada")`` answers the next text
     prompts (and secret ones); ``picks(...)`` answers the next pickers
     (``pick_many``) with a result, or ``None`` when cancelled;
+    ``selects(...)`` the next ``select`` prompts with their values;
     ``screens(...)`` answers the next screens:
     each entry is the screen's result, a ``Quit``, a ``Cancel`` (or the class),
     an exception (raised) or ``ScreenKeys`` (replayed through
-    ``drive_screen``). ``absent()`` takes the terminal away again. ``asked``
+    ``drive_screen``). ``present()`` makes it a terminal with nothing
+    scripted, ``interrupts()`` makes every prompt a Ctrl-C, and ``absent()``
+    takes the terminal away again. ``is_present`` says which it is. ``asked``
     lists each prompt as ``(kind, message)`` and ``ran`` each screen run. A
     prompt with nothing scripted for it fails the test instead of waiting.
     """
@@ -45,18 +48,16 @@ class ScriptedTerminal:
     needs_terminal = False
 
     def __init__(self) -> None:
-        self.present = False
+        #: Whether a command finds a terminal to ask on: scripting anything makes it so.
+        self.is_present = False
         #: Every prompt the commands asked, as ``(kind, message)``, in order.
         self.asked: list[tuple[str, str]] = []
         #: Every screen the commands ran, in order.
         self.ran: list[Screen[Any, Any]] = []
         self._always: bool | None = None
         self._interrupt = False
-        #: Whether a secret prompt with no secret scripted reads what was typed.
-        self._secrets_typed = True
         self._confirms: deque[bool] = deque()
         self._texts: deque[str] = deque()
-        self._secrets: deque[str] = deque()
         self._selections: deque[Any] = deque()
         self._picks: deque[PickResult | None] = deque()
         self._screens: deque[object] = deque()
@@ -66,50 +67,67 @@ class ScriptedTerminal:
         self._confirms.extend(answers)
         if yes is not None:
             self._always = yes
-        self.present = True
+        self.is_present = True
         return self
 
     def types(self, *texts: str) -> Self:
-        """Answer the next text prompts in order (and secret ones, when none is scripted)."""
+        """Answer the next text and secret prompts in order."""
         self._texts.extend(texts)
-        self.present = True
+        self.is_present = True
         return self
 
     def picks(self, *results: PickResult | None) -> Self:
         """Answer the next pickers in order: a result, or ``None`` for one cancelled."""
         self._picks.extend(results)
-        self.present = True
+        self.is_present = True
         return self
 
     def screens(self, *results: object) -> Self:
         """Answer the next screens in order."""
         self._screens.extend(results)
-        self.present = True
+        self.is_present = True
+        return self
+
+    def selects(self, *values: object) -> Self:
+        """Answer the next ``select`` prompts in order, each with its chosen value."""
+        self._selections.extend(values)
+        self.is_present = True
+        return self
+
+    def present(self) -> Self:
+        """A terminal with nothing scripted: the next prompt fails the test, not exits 2."""
+        self.is_present = True
+        return self
+
+    def interrupts(self) -> Self:
+        """Every prompt and screen from now on raises ``PromptInterruptedError``, as Ctrl-C."""
+        self._interrupt = True
+        self.is_present = True
         return self
 
     def absent(self) -> Self:
         """No terminal: a command that has to ask exits 2, as under a script."""
-        self.present = False
+        self.is_present = False
         return self
 
     @contextmanager
     def _declining(self) -> Iterator[Self]:
         """Present for the block, the next yes/no question answered no (``answer=False``)."""
-        was = self.present
+        was = self.is_present
         self._confirms.appendleft(False)
         queued = len(self._confirms)
-        self.present = True
+        self.is_present = True
         try:
             yield self
         finally:
-            self.present = was
+            self.is_present = was
             if len(self._confirms) == queued:  # never asked: the no is not the next answer
                 self._confirms.popleft()
 
     # --- what a command's prompts call (PromptBackend) ---------------------------
 
     def confirm(self, message: str, *, default: bool) -> bool:
-        if self._always is not None and not self._confirms:
+        if self._always is not None and not self._confirms and not self._interrupt:
             self.asked.append(("confirm", message))
             return self._always
         return bool(self._next(self._confirms, "confirm", message))
@@ -118,8 +136,7 @@ class ScriptedTerminal:
         return str(self._next(self._texts, "text", message))
 
     def secret(self, message: str, *, confirmation: bool) -> str:
-        typed = self._texts if self._secrets_typed and not self._secrets else self._secrets
-        return str(self._next(typed, "secret", message))
+        return str(self._next(self._texts, "secret", message))
 
     def select(
         self,

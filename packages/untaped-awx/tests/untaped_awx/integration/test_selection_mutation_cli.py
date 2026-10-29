@@ -8,7 +8,7 @@ import pytest
 
 from awx_integration_support import KINDS, pipe, seed
 from awx_test_support import run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 
 
 @pytest.mark.parametrize(("cli", "path"), KINDS)
@@ -45,7 +45,7 @@ def test_patch_invalid_batch_never_writes(fake_aap: Any, selection: list[str]) -
 @pytest.mark.parametrize("answer", [True, False])
 def test_patch_confirms_once_default_no(fake_aap: Any, answer: bool) -> None:
     seed(fake_aap, "projects")
-    backend = ScriptedPromptBackend(confirms=[answer])
+    backend = ScriptedTerminal().answers(answer)
     result = run(
         ["projects", "patch", "target", "--set", "description=new", "--format", "json"],
         interactive=True,
@@ -53,7 +53,7 @@ def test_patch_confirms_once_default_no(fake_aap: Any, answer: bool) -> None:
     )
     assert result.exit_code == (0 if answer else 1), result.output + result.stderr
     assert fake_aap.get_record("projects", 10)["description"] == ("new" if answer else "old")
-    assert len(backend.calls) == 1
+    assert len(backend.asked) == 1
     if not answer:
         assert '"message": "cancelled; no changes made"' in result.stderr
         assert result.stdout == ""
@@ -144,7 +144,7 @@ def test_membership_requires_confirmation_and_retains_unrelated(fake_aap: Any) -
         summary_fields={"inventory": {"id": 2, "name": "prod", "organization_name": "Default"}},
     )
     fake_aap.memberships[("groups", 10, "hosts")] = {99}
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     result = run(
         ["groups", "hosts", "add", "target", "member", "--format", "json"],
         interactive=True,
@@ -152,7 +152,7 @@ def test_membership_requires_confirmation_and_retains_unrelated(fake_aap: Any) -
     )
     assert result.exit_code == 0, result.output
     assert fake_aap.memberships[("groups", 10, "hosts")] == {20, 99}
-    assert len(backend.calls) == 1
+    assert len(backend.asked) == 1
 
 
 def test_save_multiple_ids_as_portable_documents(fake_aap: Any, tmp_path: Path) -> None:
@@ -534,7 +534,7 @@ def test_yes_with_dry_run_previews_without_writing(fake_aap: Any) -> None:
 @pytest.mark.parametrize("tty_available", [True, False])
 def test_piped_confirmation_uses_controlling_terminal(fake_aap: Any, tty_available: bool) -> None:
     seed(fake_aap, "projects")
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     result = run(
         ["projects", "patch", "--stdin", "--set", "description=new"],
         input="target\n",
@@ -543,7 +543,7 @@ def test_piped_confirmation_uses_controlling_terminal(fake_aap: Any, tty_availab
     )
     assert result.exit_code == (0 if tty_available else 2), result.output
     assert fake_aap.get_record("projects", 10)["description"] == ("new" if tty_available else "old")
-    assert len(backend.calls) == int(tty_available)
+    assert len(backend.asked) == int(tty_available)
     if not tty_available:
         assert "requires --yes when not interactive" in result.stderr
 
@@ -645,13 +645,13 @@ def test_writable_kinds_share_patch_selection_modes(
 def test_confirmation_executes_original_plan_and_detects_drift(fake_aap: Any) -> None:
     seed(fake_aap, "projects")
 
-    class DriftBackend(ScriptedPromptBackend):
+    class DriftBackend(ScriptedTerminal):
         def confirm(self, message: str, *, default: bool) -> bool:
             assert default is False
             fake_aap.store["projects"][10]["description"] = "concurrent change"
             return super().confirm(message, default=default)
 
-    backend = DriftBackend(confirms=[True])
+    backend = DriftBackend().answers(True)
     result = run(
         ["projects", "patch", "target", "--set", "description=new", "--format", "json"],
         interactive=True,

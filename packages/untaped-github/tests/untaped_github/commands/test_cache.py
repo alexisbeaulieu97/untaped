@@ -14,10 +14,9 @@ import httpx
 import pytest
 import respx
 
-from github_test_support import Result, Settings, installed, run
-from untaped.runtime.bootstrap import build_root_app
+from github_test_support import Result, Settings, run
 from untaped.sdk import home
-from untaped.sdk.testing import assert_destructive_contract, invoke_root
+from untaped.sdk.testing import ScriptedTerminal, invoke_root
 from untaped_git.api import RepoStore
 from untaped_github.errors import GitCorpusError
 
@@ -264,17 +263,24 @@ def test_cache_delete_of_an_uncached_repo_fails_before_deleting(
     assert _cached() == ["acme/api"]
 
 
-def test_cache_delete_repo_conforms_to_destructive_contract(source_repo: SourceRepo) -> None:
+def test_cache_delete_repo_asks_first_and_keeps_the_repo_when_declined(
+    source_repo: SourceRepo, terminal: ScriptedTerminal
+) -> None:
     _populate(source_repo, "acme/api")
 
-    def corpus_still_has_repo() -> None:
-        assert _cached() == ["acme/api"]
+    piped = run(["cache", "delete", "acme/api", "--format", "json"])
 
-    assert_destructive_contract(
-        build_root_app(candidates=installed().candidates).meta,
-        ["github", "cache", "delete", "acme/api", "--format", "json"],
-        assert_unchanged=corpus_still_has_repo,
-    )
+    assert piped.exit_code == 2, piped.output
+    assert "requires --yes" in piped.output
+    assert _cached() == ["acme/api"]
+
+    terminal.answers(False)
+    declined = run(["cache", "delete", "acme/api", "--format", "json"])
+
+    assert declined.exit_code == 1, declined.output
+    assert "cancelled; no changes made" in declined.output
+    assert [kind for kind, _ in terminal.asked] == ["confirm"]
+    assert _cached() == ["acme/api"]
 
 
 @pytest.mark.parametrize("command", ["delete", "prune"])
