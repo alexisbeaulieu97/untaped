@@ -151,10 +151,19 @@ def examples_in(doc: str | None) -> str:
 
 
 def console_lines(examples: str) -> list[str]:
-    """The commands in an ``Examples`` section's ``console`` fences (``$ `` lines, prompt cut)."""
-    return [
-        line.removeprefix("$ ").strip()
-        for block in _CONSOLE.findall(examples)
-        for line in block.splitlines()
-        if line.startswith("$ ")
-    ]
+    """The commands in an ``Examples`` section's ``console`` fences (``$ `` lines, prompt cut).
+
+    A line ending in ``\\`` goes on, as in a shell: the next line joins it.
+    """
+    found: list[str] = []
+    for block in _CONSOLE.findall(examples):
+        going_on = False
+        for line in block.splitlines():
+            if going_on:
+                found[-1] = f"{found[-1].removesuffix('\\').rstrip()} {line.strip()}"
+            elif line.startswith("$ "):
+                found.append(line.removeprefix("$ ").strip())
+            else:
+                continue
+            going_on = found[-1].endswith("\\")
+    return found

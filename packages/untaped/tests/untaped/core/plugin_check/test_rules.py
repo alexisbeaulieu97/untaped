@@ -2,37 +2,33 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.plugin_check.support import Install
 from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import kind_of
 from untaped.sdk.testing import PluginCheck, check_plugin, plugin_candidate
 
 # A plugin package outside src/untaped, one file per convention family:
-# an undeclared write (help tree), a print (messages, one allowed), a
-# Protocol outside the ports (structure) and a domain -> cli import (layering).
+# a print (messages, one allowed), a Protocol outside the ports (structure)
+# and a domain -> cli import (layering).
 _PLUGIN = {
     "demo_plugin/__init__.py": '''
         """Demo plugin."""
-
-        from __future__ import annotations
-
-        from typing import TYPE_CHECKING
+        ''',
+    "demo_plugin/plugin.py": '''
+        """The ``demo`` plugin class."""
 
         from pydantic import BaseModel, ConfigDict
 
-        from untaped.sdk import PluginSpec
-
-        if TYPE_CHECKING:
-            from cyclopts import App
+        from demo_plugin.cli import Nuke
+        from untaped.sdk import Plugin
 
 
         class DemoSettings(BaseModel):
@@ -41,18 +37,11 @@ _PLUGIN = {
             model_config = ConfigDict(frozen=True)
 
 
-        def build_app() -> App:
-            from demo_plugin.cli import build
+        class Demo(Plugin):
+            """Demo commands."""
 
-            return build()
-
-
-        SPEC = PluginSpec(
-            name="demo",
-            app_factory=build_app,
-            settings=DemoSettings,
-        )
-
+            settings = DemoSettings
+            commands = (Nuke,)
         ''',
     "demo_plugin/errors.py": '''
         """Demo errors."""
@@ -60,23 +49,15 @@ _PLUGIN = {
     "demo_plugin/cli.py": '''
         """Demo commands."""
 
-        from __future__ import annotations
-
-        from cyclopts import App
-
-        from untaped.sdk import YesOption, create_app
+        from untaped.sdk import Command
 
 
-        def nuke(*, yes: YesOption = False) -> None:
+        class Nuke(Command):
             """Nuke everything."""
-            print("nuked")
-            print("debug")  # untaped: allow print
 
-
-        def build() -> App:
-            app = create_app(name="demo", help="Demo commands.")
-            app.command(nuke, name="nuke")
-            return app
+            def run(self) -> None:
+                print("nuked")
+                print("debug")  # untaped: allow print
         ''',
     "demo_plugin/domain/__init__.py": '''
         """Demo domain."""
@@ -86,7 +67,7 @@ _PLUGIN = {
 
         from typing import Protocol
 
-        from demo_plugin.cli import build
+        from demo_plugin.cli import Nuke
 
 
         class Store(Protocol):
@@ -104,14 +85,15 @@ _TESTS = {
 def demo(install: Install) -> list[PluginCandidate]:
     """The demo plugin installed in ``tmp_path/site`` and discovered through its entry point."""
     install({**_PLUGIN, **_TESTS})
-    return [PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin:SPEC")]
+    return [
+        PluginCandidate(distribution="demo-plugin", name="demo", target="demo_plugin.plugin:Demo")
+    ]
 
 
 # The rules that read only the plugin's files (the print, the layering, the
 # test import) are untaped[lint]'s; core finds the rest.
 _FOUND = sorted(
     [
-        "demo nuke::undeclared-write::--yes",
         "demo::plugin-name::distribution 'demo-plugin' is not 'untaped-demo'",
         "demo::plugin-name::import package 'demo_plugin' is not 'untaped_demo'",
         "demo_plugin.domain.model.Store::protocol-location",
@@ -142,9 +124,9 @@ class _BrokenRenames(BaseModel):
 
 
 def test_a_quarantined_plugin_fails_with_why() -> None:
-    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
+    bad = make_plugin("bad", settings=_BrokenRenames)
 
-    [line] = plugin_violations("bad", candidates=[plugin_candidate(spec)])
+    [line] = plugin_violations("bad", candidates=[plugin_candidate(bad)])
     assert line.startswith("bad::quarantined::bad-settings-keys: ")
     assert "missing" in line
 
@@ -184,37 +166,15 @@ def test_a_check_keeps_the_composition_and_stays_quiet(
     assert "quarantined" not in capsys.readouterr().err
 
 
-def test_an_app_factory_outside_any_package_names_the_plugin(
-    demo: list[PluginCandidate], tmp_path: Path
-) -> None:
-    init = tmp_path / "site" / "demo_plugin" / "__init__.py"
-    text = init.read_text(encoding="utf-8")
-    partial = text.replace("app_factory=build_app", "app_factory=functools.partial(build_app)")
-    init.write_text(
-        partial.replace("import TYPE_CHECKING", "import TYPE_CHECKING\nimport functools"),
-        encoding="utf-8",
-    )
-    with pytest.raises(LookupError) as raised:
-        plugin_violations("demo", candidates=demo)
-    assert str(raised.value) == (
-        "plugin 'demo': its app factory or settings are not defined in a package"
-    )
-
-
 def test_stability_rules_run_with_the_other_checks(
     demo: list[PluginCandidate], install: Install
 ) -> None:
-    marked = (
-        _PLUGIN["demo_plugin/cli.py"]
-        .replace(
-            'create_app(name="demo", help="Demo commands.")',
-            'create_app(name="demo", help="Demo commands.", stability=experimental)',
-        )
-        .replace("import YesOption, create_app", "import YesOption, create_app, experimental")
+    marked = _PLUGIN["demo_plugin/cli.py"].replace(
+        '"""Nuke everything."""', '"""Nuke everything. Experimental: may change."""'
     )
     install({"demo_plugin/cli.py": marked})
 
-    assert "demo::mark-on-spec::demo" in plugin_violations("demo", candidates=demo)
+    assert "demo nuke::hand-typed-mark::docstring" in plugin_violations("demo", candidates=demo)
 
 
 def test_a_plugin_without_commands_is_found_through_its_settings(install: Install) -> None:
@@ -222,10 +182,13 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
         {
             "untaped_quiet/__init__.py": '''
                 """Quiet plugin: settings, no commands."""
+                ''',
+            "untaped_quiet/plugin.py": '''
+                """The ``quiet`` plugin class."""
 
                 from pydantic import BaseModel, ConfigDict
 
-                from untaped.sdk import PluginSpec
+                from untaped.sdk import Plugin
 
 
                 class QuietSettings(BaseModel):
@@ -234,7 +197,10 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
                     model_config = ConfigDict(frozen=True)
 
 
-                SPEC = PluginSpec(name="quiet", settings=QuietSettings)
+                class Quiet(Plugin):
+                    """Quiet plugin: settings, no commands."""
+
+                    settings = QuietSettings
                 ''',
             "untaped_quiet/errors.py": '''
                 """Quiet errors."""
@@ -242,37 +208,9 @@ def test_a_plugin_without_commands_is_found_through_its_settings(install: Instal
         }
     )
     candidate = PluginCandidate(
-        distribution="untaped-quiet", name="quiet", target="untaped_quiet:SPEC"
+        distribution="untaped-quiet", name="quiet", target="untaped_quiet.plugin:Quiet"
     )
     assert plugin_violations("quiet", candidates=[candidate]) == []
-
-
-def test_a_plugin_with_only_a_name_is_found_through_its_entry_point(install: Install) -> None:
-    install(
-        {
-            "untaped_bare/__init__.py": '''
-                """Bare plugin: a name and nothing else."""
-
-                from untaped.sdk import PluginSpec
-
-
-                SPEC = PluginSpec(name="bare")
-                ''',
-            "untaped_bare/errors.py": '''
-                """Bare errors."""
-                ''',
-        }
-    )
-    candidate = PluginCandidate(
-        distribution="untaped-bare", name="bare", target="untaped_bare:SPEC"
-    )
-    assert plugin_violations("bare", candidates=[candidate]) == []
-
-
-def test_a_plugin_with_only_a_name_and_no_entry_point_cannot_be_located() -> None:
-    candidate = plugin_candidate(PluginSpec(name="bare"))
-    with pytest.raises(LookupError, match="'bare' declares nothing to locate its package by"):
-        plugin_violations("bare", candidates=[candidate])
 
 
 def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Install) -> None:
@@ -280,11 +218,25 @@ def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Instal
         {
             "acme_tools/__init__.py": '''
                 """A hyphenated plugin under the wrong import package."""
+                ''',
+            "acme_tools/plugin.py": '''
+                """The ``acme-tools`` plugin class."""
 
-                from untaped.sdk import PluginSpec
+                from pydantic import BaseModel, ConfigDict
+
+                from untaped.sdk import Plugin
 
 
-                SPEC = PluginSpec(name="acme-tools")
+                class AcmeSettings(BaseModel):
+                    """Nothing to configure."""
+
+                    model_config = ConfigDict(frozen=True)
+
+
+                class AcmeTools(Plugin):
+                    """A hyphenated plugin under the wrong import package."""
+
+                    settings = AcmeSettings
                 ''',
             "acme_tools/errors.py": '''
                 """Errors."""
@@ -292,7 +244,7 @@ def test_a_hyphenated_plugin_is_named_with_underscores_to_import(install: Instal
         }
     )
     candidate = PluginCandidate(
-        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools:SPEC"
+        distribution="untaped-acme-tools", name="acme-tools", target="acme_tools.plugin:AcmeTools"
     )
     assert plugin_violations("acme-tools", candidates=[candidate]) == [
         "acme-tools::plugin-name::import package 'acme_tools' is not 'untaped_acme_tools'"
@@ -306,7 +258,6 @@ def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
     rows = check_plugin("demo", candidates=demo)
     assert all(isinstance(row, PluginCheck) for row in rows)
     assert {(row.check, row.title, row.status) for row in rows} == {
-        ("conventions", "undeclared-write", "fail"),
         ("conventions", "plugin-name", "fail"),
         ("conventions", "protocol-location", "fail"),
     }
@@ -314,7 +265,7 @@ def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
     assert "severity" not in PluginCheck.model_fields
 
 
-def test_check_plugin_checks_an_uninstalled_spec_through_candidates() -> None:
-    spec = PluginSpec(name="bad", app_factory=App, settings=_BrokenRenames)
-    [row] = check_plugin("bad", candidates=[plugin_candidate(spec)])
+def test_check_plugin_checks_an_uninstalled_plugin_through_candidates() -> None:
+    bad = make_plugin("bad", settings=_BrokenRenames)
+    [row] = check_plugin("bad", candidates=[plugin_candidate(bad)])
     assert (row.check, row.title, row.status) == ("registration", "bad-settings-keys", "fail")

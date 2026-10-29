@@ -18,25 +18,27 @@ from untaped.runtime.registry import PluginCandidate
 PACKAGES = ("untaped_rack", "untaped_bin")
 
 RACK = {
-    "untaped_rack/__init__.py": '''
-        """An owner: where items come from."""
+    "untaped_rack/__init__.py": '"""An owner: where items come from."""\n',
+    "untaped_rack/plugin.py": '''
+        """The ``rack`` plugin class."""
 
-        from untaped.sdk import PluginSpec
+        from pydantic import BaseModel, ConfigDict
 
-        #: A test sets it to make ``contracts`` fail.
-        BROKEN = False
-
-
-        def _contracts():
-            from untaped_rack.api import ItemSource
-
-            if BROKEN:
-                raise RuntimeError("the rack fell over")
-
-            return (ItemSource,)
+        from untaped.sdk import Plugin
+        from untaped_rack.api import ItemSource
 
 
-        SPEC = PluginSpec(name="rack", contracts=_contracts)
+        class RackSettings(BaseModel):
+            """Nothing to configure."""
+
+            model_config = ConfigDict(frozen=True)
+
+
+        class Rack(Plugin):
+            """Where items come from."""
+
+            settings = RackSettings
+            offers = (ItemSource,)
         ''',
     "untaped_rack/errors.py": '"""Errors."""\n',
     "untaped_rack/api.py": '''
@@ -84,19 +86,33 @@ RACK = {
 }
 
 BIN = {
-    "untaped_bin/__init__.py": '''
-        """A provider for rack."""
+    "untaped_bin/__init__.py": '"""A provider for rack."""\n',
+    "untaped_bin/settings.py": '''
+        """The bin settings."""
 
-        from untaped.sdk import PluginSpec
-
-
-        def _rack():
-            from untaped_bin.providers.rack import BinSource
-
-            return (BinSource(),)
+        from pydantic import BaseModel, ConfigDict
 
 
-        SPEC = PluginSpec(name="bin", provides={"rack": _rack})
+        class BinSettings(BaseModel):
+            """Where the boxes are."""
+
+            model_config = ConfigDict(frozen=True)
+
+            bins: list[str] = []
+        ''',
+    "untaped_bin/plugin.py": '''
+        """The ``bin`` plugin class."""
+
+        from untaped.sdk import Plugin
+        from untaped_bin.providers.rack import BinSource
+        from untaped_bin.settings import BinSettings
+
+
+        class Bin(Plugin):
+            """A provider for rack."""
+
+            settings = BinSettings
+            fills = (BinSource,)
         ''',
     "untaped_bin/errors.py": '"""Errors."""\n',
     "untaped_bin/providers/__init__.py": "",
@@ -105,15 +121,10 @@ BIN = {
 
         from typing import ClassVar
 
-        from pydantic import BaseModel
-
         from untaped.sdk import key
-        from untaped.sdk.contracts import NotReady, Record
+        from untaped.sdk.contracts import NotReady, Provider, Record
+        from untaped_bin.settings import BinSettings
         from untaped_rack.api import Item, ItemSource
-
-
-        class _Bins(BaseModel):
-            bins: list[str] = []
 
 
         class Box(Record, kind="bin.box"):
@@ -121,14 +132,15 @@ BIN = {
             label: str
 
 
-        class BinSource(ItemSource[Box]):
+        class BinSource(ItemSource[Box], Provider[BinSettings]):
             boxes: ClassVar[list[Box]] = [Box(id=1, label="tools"), Box(id=2, label="toys")]
             nonconforming: ClassVar[bool] = False
             broken: ClassVar[bool] = False
             waiting: ClassVar[bool] = False
 
             def ready(self) -> NotReady | None:
-                return NotReady("no bins yet", key(_Bins).bins) if type(self).waiting else None
+                waiting = type(self).waiting
+                return NotReady("no bins yet", key(BinSettings).bins) if waiting else None
 
             def to_item(self, item: Box) -> Item:
                 return Item(name=item.label)
@@ -159,12 +171,12 @@ def candidates(
     *, rack: bool = True, bin_requires: tuple[str, ...] | None = None
 ) -> list[PluginCandidate]:
     """Candidates for ``bin`` and, unless ``rack=False``, ``rack``, as discovery reads them."""
-    requires = bin_requires or (CORE_RANGE, "untaped-rack>=1,<2; extra == 'rack'")
+    requires = bin_requires or (CORE_RANGE, "untaped-rack>=1,<2")
     found = [
         PluginCandidate(
             distribution="untaped-bin",
             name="bin",
-            target="untaped_bin:SPEC",
+            target="untaped_bin.plugin:Bin",
             distribution_version="1.0",
             requires_dist=requires,
         )
@@ -174,7 +186,7 @@ def candidates(
             PluginCandidate(
                 distribution="untaped-rack",
                 name="rack",
-                target="untaped_rack:SPEC",
+                target="untaped_rack.plugin:Rack",
                 distribution_version="1.4",
                 requires_dist=(CORE_RANGE,),
             )

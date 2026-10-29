@@ -581,19 +581,23 @@ def requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
 def owner_requirement(
     requires_dist: Sequence[str], owner: str, distribution: str | None = None
 ) -> Requirement | None:
-    """The requirement on ``owner``'s distribution that the ``<owner>`` extra adds.
+    """The requirement a provider declares on ``owner``'s distribution.
 
-    A provider declares the plugin it fills contracts for under an extra named
-    after it (``untaped-acme[workspace]``), so ``distribution``
-    (``untaped-<owner>`` by default) is required only with that extra. The
-    import lint, the ``provides-requirement`` convention and the
+    A 12.0 provider requires the plugin it fills contracts for in its plain
+    dependencies, since a fill subclasses the owner's contract; an 11.x one
+    declares it under an extra named after the owner (``untaped-acme[workspace]``).
+    ``distribution`` is ``untaped-<owner>`` by default. A plain requirement
+    wins. The import lint, the ``provides-requirement`` convention and the
     ``owner-out-of-range`` quarantine all read this one requirement.
     """
     wanted = canonicalize_name(distribution or f"untaped-{owner}")
+    found: Requirement | None = None
     for line in requires_dist:
         parsed = parse_requirement(line)
-        if parsed is None or parsed.marker is None or canonicalize_name(parsed.name) != wanted:
+        if parsed is None or canonicalize_name(parsed.name) != wanted:
             continue
+        if parsed.marker is None:
+            return parsed
         # The environment fills every other variable, so ``extra`` decides; a marker
         # naming one it can't (``extras``) adds no owner requirement.
         try:
@@ -601,9 +605,9 @@ def owner_requirement(
             added = added and not parsed.marker.evaluate({"extra": ""})
         except KeyError:
             continue
-        if added:
-            return parsed
-    return None
+        if added and found is None:
+            found = parsed
+    return found
 
 
 def declared_distributions(

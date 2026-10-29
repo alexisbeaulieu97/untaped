@@ -12,55 +12,147 @@ from untaped.core.commands.plugin_new import _range
 from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime.registry import PluginCandidate
 
+
+def _owner(plugin: str, contract: str) -> dict[str, str]:
+    """Plugin ``plugin`` offering contract ``contract`` from its ``api`` module."""
+    package = f"untaped_{plugin}"
+    return {
+        f"{package}/__init__.py": "",
+        f"{package}/api.py": f'''
+            """What a provider may import."""
+
+            from untaped.sdk.contracts import Contract
+
+
+            class {contract}(Contract):
+                """Where {plugin} items come from."""
+
+                def items(self) -> list[str]:
+                    """Every item."""
+                    raise NotImplementedError
+            ''',
+        f"{package}/plugin.py": f'''
+            """The ``{plugin}`` plugin class."""
+
+            from pydantic import BaseModel, ConfigDict
+
+            from untaped.sdk import Plugin
+            from {package}.api import {contract}
+
+
+            class Settings(BaseModel):
+                """Nothing to configure."""
+
+                model_config = ConfigDict(frozen=True)
+
+
+            class Owner(Plugin):
+                """Where {plugin} items come from."""
+
+                settings = Settings
+                offers = ({contract},)
+            ''',
+    }
+
+
 _PLUGIN = {
-    "untaped_lend/__init__.py": '''
-        """A provider for shelf and kiosk."""
+    **_owner("shelf", "Shelf"),
+    **_owner("kiosk", "Kiosk"),
+    "untaped_lend/__init__.py": '"""A provider for shelf and kiosk."""\n',
+    "untaped_lend/errors.py": '"""Errors."""\n',
+    "untaped_lend/plugin.py": '''
+        """The ``lend`` plugin class."""
 
-        from untaped.sdk import PluginSpec
+        from pydantic import BaseModel, ConfigDict
 
-        SPEC = PluginSpec(name="lend", provides={"shelf": tuple, "kiosk": tuple})
-        ''',
-    "untaped_lend/errors.py": '''
-        """Errors."""
+        from untaped.sdk import Plugin
+        from untaped.sdk.contracts import Provider
+        from untaped_kiosk.api import Kiosk
+        from untaped_shelf.api import Shelf
+
+
+        class LendSettings(BaseModel):
+            """Nothing to configure."""
+
+            model_config = ConfigDict(frozen=True)
+
+
+        class LendShelf(Shelf, Provider):
+            """Lent books."""
+
+            def items(self) -> list[str]:
+                return []
+
+
+        class LendKiosk(Kiosk, Provider):
+            """Lent papers."""
+
+            def items(self) -> list[str]:
+                return []
+
+
+        class Lend(Plugin):
+            """A provider for shelf and kiosk."""
+
+            settings = LendSettings
+            fills = (LendShelf, LendKiosk)
         ''',
 }
 
+
+def _owners(kiosk: str = "untaped-kiosk") -> list[PluginCandidate]:
+    """The owners as installed, ``kiosk`` from distribution ``kiosk``."""
+    return [
+        PluginCandidate(
+            distribution="untaped-shelf", name="shelf", target="untaped_shelf.plugin:Owner"
+        ),
+        PluginCandidate(distribution=kiosk, name="kiosk", target="untaped_kiosk.plugin:Owner"),
+    ]
+
+
 _CORE = f"untaped{_range(version('untaped'))}"
-_RANGES = (
-    _CORE,
-    "untaped-shelf>=1,<2; extra == 'shelf'",
-    "untaped-kiosk>=3,<4; extra == 'kiosk'",
-)
+_RANGES = (_CORE, "untaped-shelf>=1,<2", "untaped-kiosk>=3,<4")
 
 
-def _rule(install: Install, requires: Sequence[str], *others: PluginCandidate) -> list[str]:
+def _rule(install: Install, requires: Sequence[str], kiosk: str = "untaped-kiosk") -> list[str]:
     install(_PLUGIN)
     candidate = PluginCandidate(
         distribution="untaped-lend",
         name="lend",
-        target="untaped_lend:SPEC",
+        target="untaped_lend.plugin:Lend",
         requires_dist=tuple(requires),
     )
-    found = plugin_violations("lend", candidates=[candidate, *others])
+    found = plugin_violations("lend", candidates=[candidate, *_owners(kiosk)])
     return [line for line in found if "::provides-requirement::" in line]
 
 
-def test_ranges_for_untaped_and_each_owner_extra_pass(install: Install) -> None:
+def test_ranges_for_untaped_and_each_owner_pass(install: Install) -> None:
     assert _rule(install, _RANGES) == []
 
 
-def test_an_owner_outside_an_extra_is_a_violation(install: Install) -> None:
-    requires = (_CORE, "untaped-shelf>=1,<2", "untaped-kiosk>=3,<4; extra == 'kiosk'")
+@pytest.mark.parametrize(
+    "kiosk",
+    [
+        "",
+        "untaped-kiosk>=3,<4; extra == 'kiosk'",
+        "untaped-kiosk>=3,<4; extra == 'kiosk' and 'x' in extras",
+    ],
+    ids=["absent", "extra", "unfillable-marker"],
+)
+def test_an_owner_not_in_the_plain_dependencies_is_a_violation(
+    install: Install, kiosk: str
+) -> None:
+    requires = [*_RANGES[:2], *([kiosk] if kiosk else [])]
     assert _rule(install, requires) == [
-        "lend::provides-requirement::provides for shelf but has no 'shelf' extra "
-        "requiring untaped-shelf"
+        "lend::provides-requirement::fills a contract of kiosk, which it does not require "
+        "(add untaped-kiosk>=M,<M+1 to its dependencies)"
     ]
 
 
-def test_an_extra_without_a_range_is_a_violation(install: Install) -> None:
-    requires = (_CORE, "untaped-shelf; extra == 'shelf'", _RANGES[2])
+def test_an_owner_without_a_range_is_a_violation(install: Install) -> None:
+    requires = (_CORE, "untaped-shelf", _RANGES[2])
     assert _rule(install, requires) == [
-        "lend::provides-requirement::its 'shelf' extra requires untaped-shelf with no version range"
+        "lend::provides-requirement::requires untaped-shelf with no version range"
     ]
 
 
@@ -73,31 +165,37 @@ def test_untaped_without_a_range_is_a_violation(install: Install, core: str | No
 
 
 def test_the_owner_is_named_by_its_installed_distribution(install: Install) -> None:
-    kiosk = PluginCandidate(distribution="Acme_Kiosk", name="kiosk", target="acme_kiosk:SPEC")
-    requires = (*_RANGES[:2], "acme-kiosk>=1,<2; extra == 'kiosk'")
-    assert _rule(install, requires, kiosk) == []
+    requires = (*_RANGES[:2], "acme-kiosk>=1,<2")
+    assert _rule(install, requires, kiosk="Acme_Kiosk") == []
 
 
-def test_a_plugin_without_provides_has_nothing_to_declare(install: Install) -> None:
+def test_a_plugin_without_fills_has_nothing_to_declare(install: Install) -> None:
     install(
         {
-            "untaped_plain/__init__.py": """
-                from untaped.sdk import PluginSpec
-
-                SPEC = PluginSpec(name="plain")
-                """,
+            "untaped_plain/__init__.py": '"""Plain."""\n',
             "untaped_plain/errors.py": '"""Errors."""\n',
+            "untaped_plain/plugin.py": """
+                \"\"\"The plain plugin class.\"\"\"
+
+                from pydantic import BaseModel, ConfigDict
+
+                from untaped.sdk import Plugin
+
+
+                class PlainSettings(BaseModel):
+                    \"\"\"Nothing to configure.\"\"\"
+
+                    model_config = ConfigDict(frozen=True)
+
+
+                class Plain(Plugin):
+                    \"\"\"Plain.\"\"\"
+
+                    settings = PlainSettings
+                """,
         }
     )
     candidate = PluginCandidate(
-        distribution="untaped-plain", name="plain", target="untaped_plain:SPEC"
+        distribution="untaped-plain", name="plain", target="untaped_plain.plugin:Plain"
     )
     assert plugin_violations("plain", candidates=[candidate]) == []
-
-
-def test_a_marker_the_environment_cannot_fill_is_reported_not_raised(install: Install) -> None:
-    requires = (*_RANGES[:2], "untaped-kiosk>=3,<4; extra == 'kiosk' and 'x' in extras")
-    assert _rule(install, requires) == [
-        "lend::provides-requirement::provides for kiosk but has no 'kiosk' extra "
-        "requiring untaped-kiosk"
-    ]

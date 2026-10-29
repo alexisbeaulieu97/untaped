@@ -13,13 +13,14 @@ its rows through :func:`untaped.sdk.testing.check_plugin`; this module is intern
 from __future__ import annotations
 
 import importlib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from cyclopts import App
 from packaging.utils import canonicalize_name
 
+from untaped.core.plugin_check.check import fill_owners
 from untaped.core.plugin_check.guides import guide_violations
 from untaped.core.plugin_check.help_tree import help_tree_violations
 from untaped.core.plugin_check.stability import (
@@ -158,12 +159,15 @@ def _provides_violations(
 ) -> list[str]:
     """Where a provider doesn't declare the ranges its offers rely on.
 
-    A plugin with ``provides`` requires ``untaped`` with a version range, and
-    each owner it fills contracts for under an extra named after the owner,
-    with a range too (``untaped-<owner>>=M,<M+1``): the registry checks the
-    installed owner against that range (``owner-out-of-range``).
+    A plugin with ``provides`` or ``fills`` requires ``untaped`` with a version
+    range. A plugin class requires each owner whose contract a fill subclasses
+    in its plain dependencies, with a range (``untaped-<owner>>=M,<M+1``),
+    since it imports the owner; an 11.x spec requires each owner under an
+    extra named after it. The registry checks the installed owner against
+    that range (``owner-out-of-range``).
     """
-    if not spec.provides:
+    owners = fill_owners(spec.name, composition(), candidates)
+    if not spec.provides and not owners:
         return []
     requires = () if candidate is None else candidate.requires_dist
     rule = f"{spec.name}::provides-requirement::"
@@ -177,6 +181,8 @@ def _provides_violations(
     ]
     if not any(parsed.specifier or parsed.url for parsed in core):
         found.append(f"{rule}requires no untaped version range (untaped>=M,<M+1)")
+    if owners:
+        return found + list(_fill_requirements(rule, requires, owners))
     distributions = {c.name: c.distribution for c in candidates}
     for owner in sorted(spec.provides):
         distribution = str(canonicalize_name(distributions.get(owner, f"untaped-{owner}")))
@@ -188,3 +194,29 @@ def _provides_violations(
         elif not (requirement.specifier or requirement.url):
             found.append(f"{rule}its {owner!r} extra requires {distribution} with no version range")
     return found
+
+
+def _fill_requirements(
+    rule: str, requires: Sequence[str], owners: Sequence[tuple[str, PluginCandidate | None]]
+) -> Iterator[str]:
+    """Each owner a plugin class's fills import, required plainly with a range."""
+    seen: set[str] = set()
+    for _, owner in owners:
+        if owner is None or owner.name in seen:
+            continue  # no installed owner: the registration row says so
+        seen.add(owner.name)
+        distribution = str(canonicalize_name(owner.distribution))
+        plain = [
+            parsed
+            for parsed in (parse_requirement(line) for line in requires)
+            if parsed is not None
+            and parsed.marker is None
+            and canonicalize_name(parsed.name) == distribution
+        ]
+        if not plain:
+            yield (
+                f"{rule}fills a contract of {owner.name}, which it does not require "
+                f"(add {distribution}>=M,<M+1 to its dependencies)"
+            )
+        elif not any(parsed.specifier or parsed.url for parsed in plain):
+            yield f"{rule}requires {distribution} with no version range"

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import enum
 from pathlib import Path
 
 import pytest
 from cyclopts import App
+from pydantic import Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.guides import MAP_LINE_LIMIT, guide_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginSpec
-from untaped.sdk import Record, create_app
+from untaped.sdk import Command, Plugin, Record, create_app
+from untaped.sdk.contracts import Contract, Provider
 from untaped.sdk.records import record_model
 from untaped.sdk.testing import plugin_candidate
 
@@ -50,12 +53,35 @@ def _guide(body: str, description: str = "Read before showing anything.") -> str
     return f"---\ndescription: {description}\n---\n\n{body}\n"
 
 
-def test_a_clean_guide_has_no_violation(tmp_path: Path) -> None:
+def _quoting(body: str) -> list[tuple[str, str, str]]:
+    """The violations of a plugin class's guide saying ``body``: enum ``Finish`` of ``svc show``."""
+    finish = enum.Enum("Finish", {"MATTE": "matte"}, module=__name__)  # type: ignore[misc]
+    finish.__doc__ = f"How it is finished.\n\n{body}"
+
+    def run(self: Command) -> None:
+        return None
+
+    show = type(
+        "Show",
+        (Command,),
+        {
+            "__doc__": "Show it.",
+            "__module__": __name__,
+            "__annotations__": {"finish": finish},
+            "finish": Field(finish.MATTE, description="The finish."),
+            "run": run,
+        },
+    )
+    found = _map_violations(make_plugin("svc", commands=(show,), records=(Widget,)))
+    return [tuple(line.split("::", 2)) for line in found]  # type: ignore[misc]
+
+
+def test_a_clean_guide_has_no_violation() -> None:
     body = (
         "Run `untaped svc show`, or read `untaped docs svc` and `untaped docs`.\n\n"
         "```console\n$ untaped svc show\n```\n"
     )
-    assert _violations(tmp_path, lifecycle=_guide(body)) == []
+    assert _quoting(body) == []
 
 
 def test_guide_names_are_kebab_case(tmp_path: Path) -> None:
@@ -97,118 +123,187 @@ def test_the_page_writes_the_guide_s_heading(tmp_path: Path) -> None:
     ]
 
 
-def test_a_quoted_docs_page_must_exist(tmp_path: Path) -> None:
+def test_a_quoted_docs_page_must_exist() -> None:
     body = (
         "See `untaped docs svc guides nothing`, `untaped docs jira` and "
         "`untaped docs svc guides NAME`."
     )
-    [(_, rule, detail)] = _violations(tmp_path, links=_guide(body))
+    [(_, rule, detail)] = _quoting(body)
     assert rule == "guide-link"
     assert detail.startswith('untaped docs svc guides nothing: no page "svc guides nothing"')
 
 
-def test_a_quoted_docs_address_is_checked_as_its_words(tmp_path: Path) -> None:
+def test_a_quoted_docs_address_is_checked_as_its_words() -> None:
     body = 'See `untaped docs "svc guides nothing"`.'
-    [(_, rule, detail)] = _violations(tmp_path, links=_guide(body))
+    [(_, rule, detail)] = _quoting(body)
     assert rule == "guide-link"
     assert 'no page "svc guides nothing"' in detail
 
 
-def test_a_quoted_address_naming_a_placeholder_is_no_link(tmp_path: Path) -> None:
+def test_a_quoted_address_naming_a_placeholder_is_no_link() -> None:
     body = (
         'See `untaped docs "svc guides NAME"`, `untaped docs "svc guides <name>"`, '
         "`untaped docs svc [SECTION]`, `untaped docs svc [SECTION]...` and "
         "`untaped docs svc SECTION...`."
     )
-    assert _violations(tmp_path, links=_guide(body)) == []
+    assert _quoting(body) == []
 
 
-def test_root_options_and_redirects_leave_a_broken_link_flagged(tmp_path: Path) -> None:
+def test_root_options_and_redirects_leave_a_broken_link_flagged() -> None:
     body = (
         "`untaped --profile PROD docs svc guides nothing` and "
         '`untaped docs "svc guides nothing" < IN`'
     )
-    found = _violations(tmp_path, links=_guide(body))
+    found = _quoting(body)
     assert [rule for _, rule, _ in found] == ["guide-link", "guide-link"]
 
 
-def test_a_console_block_with_a_title_is_still_checked(tmp_path: Path) -> None:
-    [(_, rule, _)] = _violations(
-        tmp_path, titled=_guide("```console title\n$ untaped svc nope\n```")
-    )
+def test_a_console_block_with_a_title_is_still_checked() -> None:
+    [(_, rule, _)] = _quoting("```console title\n$ untaped svc nope\n```")
     assert rule == "guide-command"
 
 
-def test_a_guide_may_link_another_guide(tmp_path: Path) -> None:
-    assert (
-        _violations(
-            tmp_path,
-            first=_guide("Then `untaped docs svc guides second`."),
-            second=_guide("Done."),
-        )
-        == []
-    )
+def test_a_guide_may_link_a_guide() -> None:
+    assert _quoting("Then `untaped docs svc guides finish`.") == []
 
 
-def test_quoted_commands_parse(tmp_path: Path) -> None:
+def test_quoted_commands_parse() -> None:
     body = "```console\n$ untaped svc show --nope\n```\n\nAnd `untaped svc missing`."
-    found = _violations(tmp_path, commands=_guide(body))
+    found = _quoting(body)
     assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
         ("guide-command", "untaped svc show --nope"),
         ("guide-command", "untaped svc missing"),
     ]
 
 
-def test_commands_in_yaml_comments_parse(tmp_path: Path) -> None:
-    body = "```yaml\n#   untaped svc show --nope\nkey: value\n```"
-    found = _violations(tmp_path, commands=_guide(body))
+def test_a_console_line_ending_in_a_backslash_goes_on() -> None:
+    body = "```console\n$ untaped svc show \\\n    --nope\n$ untaped svc show\n```"
+    found = _quoting(body)
     assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
         ("guide-command", "untaped svc show --nope"),
     ]
 
 
-def test_commands_after_a_kind_tagged_block_are_still_checked(tmp_path: Path) -> None:
+def test_commands_in_yaml_comments_parse() -> None:
+    body = "```yaml\n#   untaped svc show --nope\nkey: value\n```"
+    found = _quoting(body)
+    assert [(rule, detail.split(":", 1)[0]) for _, rule, detail in found] == [
+        ("guide-command", "untaped svc show --nope"),
+    ]
+
+
+def test_commands_after_a_kind_tagged_block_are_still_checked() -> None:
     body = (
         "```yaml svc.widget\nname: w\n```\n\nRun `untaped svc missing`.\n\n"
         "```bash\nuntaped svc show --nope\n```"
     )
-    found = _violations(tmp_path, after=_guide(body))
+    found = _quoting(body)
     assert sorted(detail.split(":", 1)[0] for _, _, detail in found) == [
         "untaped svc missing",
         "untaped svc show --nope",
     ]
 
 
-def test_a_kind_tagged_yaml_block_validates_against_its_model(tmp_path: Path) -> None:
+def test_a_kind_tagged_yaml_block_validates_against_its_model() -> None:
     assert record_model("svc.widget") is Widget
     good = "```yaml svc.widget\nname: w\nsize: 2\n```"
     bad = "```yaml svc.widget\nsize: big\n```"
     unknown = "```yaml svc.gadget\nname: g\n```"
     plain = "```yaml\nnot: checked\n```"
-    assert _violations(tmp_path, good=_guide(good), plain=_guide(plain)) == []
-    found = _violations(tmp_path, bad=_guide(bad), unknown=_guide(unknown))
-    assert [(where, rule) for where, rule, _ in found] == [
-        ("guides/bad.md", "guide-yaml"),
-        ("guides/unknown.md", "guide-yaml"),
-    ]
+    assert _quoting(f"{good}\n\n{plain}") == []
+    found = _quoting(f"{bad}\n\n{unknown}")
+    assert [rule for _, rule, _ in found] == ["guide-yaml", "guide-yaml"]
     assert found[0][2].startswith("svc.widget: name: ")
     assert found[1][2] == "svc.gadget: no record kind by that name"
 
 
-def test_map_lines_are_capped(tmp_path: Path) -> None:
-    long_help = "x" * (MAP_LINE_LIMIT + 1)
-    assert _violations(tmp_path, help_text=long_help) == [
-        (
-            "svc",
-            "map-line",
-            f"its summary line is {MAP_LINE_LIMIT + 1} characters, over {MAP_LINE_LIMIT}: "
-            "every agent session reads the overview",
-        )
+def _map_violations(*plugins: type[Plugin], name: str = "svc") -> list[str]:
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(each) for each in plugins])
+    result = bootstrap.composition()
+    assert not result.quarantine
+    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == name]
+    return guide_violations(root, result, spec)
+
+
+_OVER = (
+    f"{MAP_LINE_LIMIT + 1} characters, over {MAP_LINE_LIMIT}: "
+    "every agent session reads the overview"
+)
+
+
+@pytest.mark.parametrize(("length", "found"), [(MAP_LINE_LIMIT + 1, True), (MAP_LINE_LIMIT, False)])
+def test_map_lines_are_capped(length: int, found: bool) -> None:
+    svc = make_plugin("svc")
+    svc.__doc__ = "x" * length
+    assert _map_violations(svc) == (
+        [f"svc::map-line::its summary line is {_OVER}"] if found else []
+    )
+
+
+class Long(Contract):
+    """Where items come from, said at far too great a length for the overview to carry them."""
+
+    def items(self) -> list[str]:
+        """Every item."""
+        raise NotImplementedError
+
+
+class LongFill(Long, Provider):
+    """Items from svc, said at far too great a length for the line under the extension point."""
+
+    def items(self) -> list[str]:
+        return []
+
+
+def test_an_extension_point_s_line_and_a_fill_s_line_are_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("untaped.core.plugin_check.guides.MAP_LINE_LIMIT", 80)
+    owner = make_plugin("svc", offers=(Long,))
+    assert [line.split(" is ")[0] for line in _map_violations(owner)] == [
+        "svc::map-line::an extension point's line"
     ]
-    assert _violations(tmp_path, help_text="x" * MAP_LINE_LIMIT) == []
+    filler = make_plugin("bin", fills=(LongFill,))
+    assert [
+        line.split(" is ")[0]
+        for line in _map_violations(make_plugin("rack", offers=(Long,)), filler, name="bin")
+    ] == ["bin::map-line::its line under rack's extension point"]
 
 
 def test_a_plugin_without_guides_checks_only_its_map_lines() -> None:
-    spec = make_spec(name="svc", factory=_factory)
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
-    assert guide_violations(root, bootstrap.composition(), spec) == []
+    assert _map_violations(make_plugin("svc")) == []
+
+
+class Finish(enum.Enum):
+    """How a widget is finished.
+
+    Read `untaped docs svc nowhere` first, then run `untaped svc paint --nope`.
+
+    ```yaml svc.widget
+    name: w
+    size: big
+    ```
+    """
+
+    MATTE = "matte"
+    GLOSS = "gloss"
+
+
+class Paint(Command):
+    """Paint a widget."""
+
+    finish: Finish = Field(Finish.MATTE, description="The finish.")
+
+    def run(self) -> None:
+        return None
+
+
+def test_a_plugin_class_s_guides_quote_pages_commands_and_records_that_resolve() -> None:
+    svc = make_plugin("svc", commands=(Paint,), records=(Widget,))
+    found = _map_violations(svc)
+    where = f"{__name__}:Finish"
+    assert [line.partition(": ")[0] for line in found] == [
+        f"{where}::guide-link::untaped docs svc nowhere",
+        f"{where}::guide-command::untaped svc paint --nope",
+        f"{where}::guide-yaml::svc.widget",
+    ]
