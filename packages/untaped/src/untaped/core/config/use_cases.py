@@ -74,12 +74,12 @@ class SetSetting:
     ) -> SettingChange:
         """Set ``key`` to the raw ``value`` (as ``config set`` takes it) in ``profile``.
 
-        ``profile`` defaults to the active one. Writing a key removes its old
-        spellings in that profile. ``expected`` (from :meth:`current`) refuses
-        the write when the profile's own value changed since it was read, as
-        ``config edit`` refuses a file changed under it. Raises
-        :class:`ConfigError` when the value is invalid or changed; nothing is
-        written then.
+        ``profile`` defaults to the one --profile names, else the base.
+        Writing a key removes its old spellings in that profile. ``expected``
+        (from :meth:`current`) refuses the write when the profile's own value
+        changed since it was read, as ``config edit`` refuses a file changed
+        under it. Raises :class:`ConfigError` when the value is invalid or
+        changed; nothing is written then.
         """
         removed: list[str] = []
         holder = _holder(self._repo, key)
@@ -136,7 +136,7 @@ class UnsetSetting:
     def __call__(
         self, key: str, *, profile: str | None = None, dry_run: bool = False
     ) -> SettingChange:
-        """Unset ``key`` in ``profile`` (the active one by default); a key not set is unchanged."""
+        """Unset ``key`` in ``profile`` (--profile's, else the base); a key not set is unchanged."""
         spellings: list[str] = []
         holder = _holder(self._repo, key)
         removed, target = self._repo.unset_value(

@@ -174,22 +174,6 @@ def test_the_marker_is_a_data_file_whose_stamp_names_its_untaped(tmp_path: Path)
     }
 
 
-#: A marker from an 11.1 development build, before it moved onto the data file.
-_PRE_DATA_FILE = json.dumps(
-    {
-        "format": 1,
-        "untaped": "11.1.0.dev1",
-        "plugin": "untaped-jira",
-        "plugin_version": "11.1.0.dev1",
-        "sha256": "abc",
-        "name": "untaped-jira",
-        "target": "claude",
-        "scope": "global",
-        "install_root": "/home/u/.claude/skills",
-    }
-)
-
-
 @pytest.mark.parametrize(
     "text",
     [
@@ -198,7 +182,6 @@ _PRE_DATA_FILE = json.dumps(
         "[]",
         '{"untaped": "1"}',
         '{"untaped": {"file": 1, "by": "11.1.0"}, "plugin": "untaped-jira"}',
-        _PRE_DATA_FILE,
     ],
 )
 def test_an_unreadable_marker_reads_as_none(tmp_path: Path, text: str) -> None:

@@ -34,7 +34,8 @@ TAKEN = {
     "home": "the variable UNTAPED_HOME",
 }
 
-#: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
+
+#: Names nothing holds (core's own settings sit under ``untaped``): a plugin may take them.
 FREE = [
     "core",
     "sdk",
@@ -59,7 +60,7 @@ def test_a_taken_name_is_quarantined(name: str, by: str) -> None:
 
 
 @pytest.mark.parametrize("name", FREE)
-def test_a_name_11x_reserved_and_nothing_holds_composes(name: str) -> None:
+def test_a_name_nothing_holds_composes(name: str) -> None:
     result = compose([make_candidate(make_plugin(name))])
     assert result.quarantine == ()
     assert [plugin.name for plugin in result.plugins] == ["untaped", name]

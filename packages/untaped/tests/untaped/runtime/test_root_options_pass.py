@@ -376,7 +376,7 @@ class Grep(Command):
 
 
 class Hello(Plugin):
-    """Greet (a 12.0 plugin)."""
+    """Greet."""
 
     settings = HelloSettings
     commands = (Greet, Grep, Run)

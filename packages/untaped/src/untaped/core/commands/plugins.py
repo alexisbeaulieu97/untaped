@@ -90,10 +90,14 @@ class Contracts(Command[CoreSettings]):
 
 
 class Rank(Command[CoreSettings]):
-    """Order the providers of a contract method in the profile (the active one or --profile).
+    """Order the providers of a contract method in the profile --profile names, else the base.
 
     An unranked provider ranks below every ranked one; ranking none
     removes the method's ranking.
+
+    Examples:
+        $ untaped plugin rank OWNER.CONTRACT METHOD PLUGIN PLUGIN --dry-run
+        $ untaped --profile work plugin rank OWNER.CONTRACT METHOD
     """
 
     contract: Positional[str] = Field(description="The contract, as OWNER.CONTRACT.")

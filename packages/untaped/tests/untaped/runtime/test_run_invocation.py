@@ -39,7 +39,7 @@ class Ring(Command[ChimeSettings]):
 
 
 class Chime(Plugin):
-    """Ring a greeting (a 12.0 plugin)."""
+    """Ring a greeting."""
 
     settings = ChimeSettings
     commands = (Ring,)

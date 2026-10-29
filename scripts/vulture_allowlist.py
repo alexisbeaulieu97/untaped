@@ -1,8 +1,8 @@
 """Names ``vulture`` reports as unused that are in fact used.
 
-Decorator-registered code (cyclopts commands, pydantic validators, fixtures,
-key bindings) and fixed framework signatures are ignored by ``[tool.vulture]``
-in pyproject.toml. What's left is listed here as ``Owner.name  # why``. A name
+Decorator-registered code (pydantic validators, fixtures, key bindings) and
+fixed framework signatures are ignored by ``[tool.vulture]`` in
+pyproject.toml. What's left is listed here as ``Owner.name  # why``. A name
 listed here counts as used everywhere, so keep entries specific and remove a
 line once its code is gone.
 """
@@ -24,9 +24,7 @@ PingStatus.active_node  # awx.status
 PingStatus.install_uuid
 WorkflowNode.workflow_job_template  # awx workflow-nodes rows
 WorkflowNode.summary_fields
-WorkflowUsage.node_count  # a default column
 Project.scm_url  # awx catalog rows: AWX's fields, typed for plugin schema
-Project.allow_override
 JobTemplate.scm_url  # job-templates list/get --with-scm
 JobTemplate.project_allow_override
 ActionOutcome.target_kind  # awx.launch_outcome / awx.sync_outcome
@@ -40,10 +38,6 @@ ItemRow.suggested  # dotfiles rows
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
 User.email_address  # jira rows
-IssueResult.api_url
-IssueResult.priority
-Issue.reporter
-Issue.links  # printed as a following table
 IssueOutcome.comment_id
 IssueOutcome.linked_key
 Transition.to_status
@@ -65,7 +59,6 @@ RepoStore.delete_refs
 RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 
 # untaped.sdk.testing.git: fixtures for plugins that test against the repo store.
-GitRemote.spread
 GitRemote.delete_branch
 GitRemote.refuse_by_oid
 GitRemote.drop_pack
@@ -130,14 +123,11 @@ _plain_mapping_options_are_supported  # TYPE_CHECKING type probes
 _typed_options_are_supported
 
 # SDK and repo checks that only tests call.
-StateRows.per_project  # documented SDK: projects PR 6's workspace rows are the first caller
-StateRows.replace_all  # documented SDK
+StateRows.per_project  # documented SDK
 _.parent_app  # cyclopts' resolve() signature, overridden by the lazy plugin mount
-DataFile.copy_to  # documented SDK: the plugins' move PRs are the first callers
-Lock.try_locked  # documented SDK: dotfiles' move PR is the first caller
+DataFile.copy_to  # documented SDK
 _clear_for_tests  # test hook for the composed root
 ScreenRun.commands_run  # read by tests that drive screens
-ProgressClock.advance  # untaped.sdk.testing: a test moves the progress clock
 Ran.rows_as  # untaped.sdk.testing: a test reads its rows typed
 ScriptedTerminal.screens  # untaped.sdk.testing: a test scripts its terminal
 ScriptedTerminal.selects
@@ -149,29 +139,18 @@ drop_tasks  # the root conftest's cleanup of a leaked progress task
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 Stale.age_seconds
 
-# Settings fields read by name from the config (the secret lookup, `auth`).
-GithubSettings.token_command  # declared until 12.0; core adds it for other plugins
-
 # Data file fields kept for the record and shown by `backups get`, never read by name.
 BackupEntry.before_hash
 
-# The 12.0 declaration and run: read by the mount and help, which later delivery steps add.
-System.LOCAL  # error systems the plugins' move PRs use
+# Error systems the SDK names, which plugins still spell as strings.
+System.LOCAL
 System.GIT
 System.HTTP
-OptionDecl.metavar
-OptionDecl.allow_hyphen
-OptionDecl.or_stdin
-CommandDecl.asks_first
-Declaration.spell
-Positional.__class_getitem__  # Positional[T, ...] at run time
 
 # Blocks on a plugin class: composition reads them from the class, never by name.
 Core.config_permissions
 Core.unknown_keys
 Core.token_store
-Core.refs
-Dotfiles.sync
 Dotfiles.clones
 Git.repo_store
 WorkspacePlugin.workspaces

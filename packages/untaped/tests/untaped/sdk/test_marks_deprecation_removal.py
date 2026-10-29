@@ -47,9 +47,9 @@ def test_removed_in_is_a_major(value: int | None) -> None:
 
 @pytest.mark.parametrize("value", ["12.0", "12", True, 0, -1, 12.0])
 def test_removed_in_refuses_anything_but_a_major(value: object) -> None:
-    with pytest.raises(TypeError, match="removed_in=12, not"):
+    with pytest.raises(TypeError, match="removed_in=13, not"):
         deprecated(removed_in=value)  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="removed_in=12, not"):
+    with pytest.raises(TypeError, match="removed_in=13, not"):
         Renamed("new", removed_in=value)  # type: ignore[arg-type]
 
 

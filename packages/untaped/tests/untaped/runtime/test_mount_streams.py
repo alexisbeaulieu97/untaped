@@ -108,7 +108,7 @@ class ToolSettings(BaseModel):
 
 
 class Tool(Plugin):
-    """Do things (a 12.0 plugin)."""
+    """Do things."""
 
     settings = ToolSettings
     commands = (Follow, Batch, Cat, Echo, Toggle)

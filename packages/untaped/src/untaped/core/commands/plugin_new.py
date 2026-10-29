@@ -561,8 +561,8 @@ def _range(version: str, *, minor: bool = False) -> str:
     """The installed version's compatible range; ``""`` when the version is unknown.
 
     ``>=M,<M+1``, or ``>=0.m,<0.m+1`` before 1.0, where a minor may break; a
-    pre-release is its own lower bound (``>=11.0.0a1,<12``), since ``>=11``
-    leaves it out. ``minor`` floors it at this minor (``>=11.1,<12``), for an
+    pre-release is its own lower bound (``>=12.0.0a1,<13``), since ``>=12``
+    leaves it out. ``minor`` floors it at this minor (``>=12.1,<13``), for an
     extra an earlier minor didn't have.
     """
     try:

@@ -5,7 +5,7 @@ stub skill, a doctor check): the attribute names it, and the plugin class
 owns it. A :class:`FieldBlock` is a core-filled field type of a command
 (``Output``, ``Stdin``, ``Confirm``...): core fills it and gives it its flags.
 Both live here, in the root, so a group's blocks subclass them without the
-root importing the group (layout-12.0.md decision 2).
+root importing the group.
 """
 
 from __future__ import annotations

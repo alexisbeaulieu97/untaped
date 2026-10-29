@@ -5,8 +5,7 @@
 ``UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS``). :data:`DECLARATION` is the composed
 declaration of every plugin class, core's own included: a version-only
 cache keyed by the whole install's code, so a start reads it instead of
-importing a plugin class, which imports every command (plugin-interface.md,
-decision 11). Its files are under
+importing a plugin class, which imports every command. Its files are under
 ``~/.untaped/plugins/untaped/cached/declaration/``.
 """
 

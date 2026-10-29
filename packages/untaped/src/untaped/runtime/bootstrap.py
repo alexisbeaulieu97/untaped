@@ -1,4 +1,4 @@
-"""Plugin composition root for the unified ``untaped`` shell.
+"""Plugin composition root for the ``untaped`` command line.
 
 Every plugin is discovered through the ``untaped.plugins``
 entry-point group and validated before settings registration or app
@@ -33,10 +33,10 @@ from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
     QuarantineRecord,
+    build_plugin_app,
     compose,
     discover_candidates,
     kept_declaration,
-    run_deferred_factory,
     section_settings,
 )
 from untaped.runtime.root_options import (
@@ -83,7 +83,13 @@ if TYPE_CHECKING:
 
 
 def _shell_app() -> App:
-    return App(name=NAME, help="Unified untaped developer CLI.")
+    return App(
+        name=NAME,
+        help=(
+            "One command line for DevOps workflows: the plugins installed with it "
+            "share one config file, profiles and output rules."
+        ),
+    )
 
 
 _COMPOSED_RESULT: CompositionResult | None = None
@@ -382,7 +388,7 @@ class _LazyPluginCommand(CommandSpec):
         resolved = self._resolved
         if resolved is not None:
             return resolved
-        built = run_deferred_factory(self._plugin)
+        built = build_plugin_app(self._plugin)
         app = _unbuildable_app(built) if isinstance(built, QuarantineRecord) else built
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
@@ -419,7 +425,7 @@ def _docs_footers(app: App, name: str) -> None:
 
 
 def _unbuildable_app(failure: QuarantineRecord) -> App:
-    """Stand-in for a plugin whose deferred factory failed.
+    """Stand-in for a plugin whose commands failed to build.
 
     Every invocation, ``--help`` included (it declares no help or version
     flags), fails with a ``ConfigError`` (exit 4) attributed to the
@@ -692,7 +698,7 @@ def run_root(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Console-script entry point for the unified ``untaped`` shell."""
+    """Console-script entry point for the ``untaped`` command line."""
     forward_signals()
     run_root(argv)
 

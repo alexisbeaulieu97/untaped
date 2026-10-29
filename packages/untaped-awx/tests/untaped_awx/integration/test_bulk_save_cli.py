@@ -265,7 +265,6 @@ def test_save_all_skips_read_only_kinds_on_stderr_only(
     assert result.exit_code == 0, result.output
     assert [p.name for p in out_dir.iterdir()] == ["Project__Default__playbooks.yml"]
     assert "Credential: skipped" in result.stderr
-    assert "deprecated" not in result.output
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
     assert [Resource.model_validate(d).kind for d in docs] == ["Project"]
 

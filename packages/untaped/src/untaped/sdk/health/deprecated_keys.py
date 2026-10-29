@@ -3,10 +3,9 @@
 A section model declares two ClassVars, each mapping dotted paths relative
 to the section:
 
-- ``renamed_keys`` (``{"old": Renamed("new", removed_in=12)}``): the old
+- ``renamed_keys`` (``{"old": Renamed("new", removed_in=13)}``): the old
   key is still read, as the new one, with a warning, until the major
-  ``removed_in`` names (a bare ``"new"`` string is undated, allowed until
-  untaped 12);
+  ``removed_in`` names (a bare ``"new"`` string is undated);
 - ``retired_keys`` (same shape): the old key is no longer read, but
   ``config migrate`` still renames it. A :class:`Retired` value instead of a
   target retires a key nothing in its own section replaces: its ``note``
@@ -14,7 +13,7 @@ to the section:
   printing the value it held. A chain may end at such a key.
 
 A current field that is still read with its old meaning is marked on the
-field instead: ``Annotated[T, deprecated(removed_in=12, replacement="acme.mode")]``
+field instead: ``Annotated[T, deprecated(removed_in=13, replacement="acme.mode")]``
 (see :mod:`untaped.sdk.marks`); it is read with a warning that names the
 replacement.
 
@@ -72,7 +71,7 @@ class Renamed:
     """A ``renamed_keys`` value: the key the old one is read as, until ``removed_in``.
 
     ``removed_in`` is the plugin's major that stops reading the old key
-    (``Renamed("sweep.parallel", removed_in=12)``). It must be passed;
+    (``Renamed("sweep.parallel", removed_in=13)``). It must be passed;
     ``None`` leaves the rename undated, and is meant only for a
     ``Cache(renamed_from=...)`` declared without a date, which the release
     checks and ``assert_surface(version=)`` refuse.

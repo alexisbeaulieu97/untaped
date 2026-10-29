@@ -93,7 +93,7 @@ def compare(written: StubAuthor, run: StubAuthor) -> Comparison:
 
 
 def newer_side(written: StubAuthor, run: StubAuthor) -> str:
-    """Name what wrote a stub that ``run`` is older than: ``untaped (11.3.0)`` or the plugin."""
+    """Name what wrote a stub that ``run`` is older than: ``untaped (12.3.0)`` or the plugin."""
     if _order(run.untaped, written.untaped) < 0:
         return f"untaped ({written.untaped})"
     return f"{written.plugin} ({written.plugin_version})"
@@ -202,11 +202,7 @@ def write_marker(
 
 
 def read_marker(directory: Path) -> StubMarker | None:
-    """The stub marker in ``directory``; ``None`` when missing or unreadable.
-
-    A marker from before the data file (an 11.1 development build's) reads
-    as unreadable, as any damaged one does.
-    """
+    """The stub marker in ``directory``; ``None`` when missing or unreadable (damaged)."""
     from untaped.sdk.storage.data_file import Found, read_data_file  # noqa: PLC0415 - first use
 
     read = read_data_file(directory / STUB_MARKER, _MarkerFile)

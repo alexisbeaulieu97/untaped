@@ -16,7 +16,7 @@ import httpx
 import pytest
 import respx
 
-from jira_test_support import BASE, Invoke, Result, Settings
+from jira_test_support import BASE, Invoke, Result
 from untaped.sdk.testing import ScriptedTerminal
 
 #: ``run(args)``: run ``untaped jira ARGS`` against the mocked issue (the ``run`` fixture).
@@ -119,14 +119,6 @@ def test_yes_sends_without_previewing(verb: str, run: Run) -> None:
     assert len(writes.calls) == 1
     assert len(issue.calls) == 0
     assert "→" not in result.stderr
-
-
-def test_a_retired_confirm_setting_is_not_read(settings: Settings, run: Run) -> None:
-    settings["confirm"] = "never"
-    result, _, writes = run(WRITES["patch"])
-
-    assert result.exit_code == 2, result.output
-    assert len(writes.calls) == 0
 
 
 def test_an_additive_patch_does_not_ask(tmp_path: Path, run: Run) -> None:

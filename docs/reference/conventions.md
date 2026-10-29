@@ -157,7 +157,7 @@ Rules for fields, which composition checks:
 - An argument can't be deprecated: deprecate an option, or the command.
 
 To rename a command, keep the old spelling as a hidden alias on its class,
-`aliases = (Deprecated(replacement="me", removed_in=12),)`;
+`aliases = (Deprecated(replacement="me", removed_in=13),)`;
 [Deprecating something](deprecation.md) covers every kind.
 
 Command names are kebab-case; use plural nouns for collections. A command
@@ -372,14 +372,14 @@ retired_keys: ClassVar[Mapping[str, str | Retired]] = {"cache_dir": Retired(note
 
 - A key in `renamed_keys` (and its `UNTAPED_*` variable) is read as the new
   key, with a warning, until its removal version
-  (`Renamed("new", removed_in=12)`); then it moves to `retired_keys` and is
+  (`Renamed("new", removed_in=13)`); then it moves to `retired_keys` and is
   no longer read. Targets chain through old keys; a renamed key never
   points at a retired one; entries are never deleted, old names never reused.
   A key moving into a cache's setting is `Cache(renamed_from=...)` instead.
 - A key with no successor retires as `Retired(note=...)`: doctor prints the
   note and `config migrate` deletes the key, printing the value it held.
 - A rename keeps the meaning. A change of unit, type or choices is a new key;
-  mark the old leaf field `Annotated[bool, deprecated(removed_in=12, replacement="mode")]`
+  mark the old leaf field `Annotated[bool, deprecated(removed_in=13, replacement="mode")]`
   (outermost `Annotated`; never a model or state field). It is still read, with
   a warning naming the replacement, until then ([more](deprecation.md)).
 

@@ -1,7 +1,7 @@
 # untaped
 untaped VERSION · ENV
 
-Unified untaped developer CLI.
+One command line for DevOps workflows: the plugins installed with it share one config file, profiles and output rules.
 
 ## Navigation
 

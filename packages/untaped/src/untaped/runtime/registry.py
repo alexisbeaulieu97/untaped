@@ -149,7 +149,7 @@ VALID_REASONS = frozenset(
         "duplicate-name",
         "malformed-entry-point",
         "not-a-plugin-class",
-        "bad-app-factory",
+        "bad-commands",
         "bad-metadata",
         "bad-settings-keys",
         "duplicate-kind",
@@ -548,7 +548,7 @@ def _check_declaration(plugin: ComposedPlugin) -> None:
     _check_composed_mappings(plugin)
 
 
-def run_deferred_factory(plugin: ComposedPlugin) -> App | QuarantineRecord:
+def build_plugin_app(plugin: ComposedPlugin) -> App | QuarantineRecord:
     """The plugin's app, built from its declaration; a failure as a quarantine record.
 
     The one place it is built, for first dispatch and ``untaped doctor``
@@ -565,7 +565,7 @@ def run_deferred_factory(plugin: ComposedPlugin) -> App | QuarantineRecord:
             plugin.name,
             ref.distribution,
             ref.entry_point,
-            "bad-app-factory",
+            "bad-commands",
             f"{type(exc).__name__}: {exc}",
         )
 
@@ -597,7 +597,7 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
     claim is contested: every claimant is quarantined, so the result never
     depends on candidate order. The rest commit in ``(name, distribution,
     entry point)`` order. A plugin's commands are built only at first
-    dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`), never
+    dispatch and in ``untaped doctor`` (:func:`build_plugin_app`), never
     in composition.
 
     The plugin classes' part, core's included, is kept in core's declaration cache
@@ -890,7 +890,7 @@ def _mounted(
     names; one it composes is read through its :class:`ComposedPlugin`.
     """
     classes = dict(provided)
-    from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
+    from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - plugin classes only
     from untaped.runtime.mount import compose_plugins  # noqa: PLC0415
 
     problems: dict[str, tuple[Problem, ...]] = {}
@@ -942,7 +942,7 @@ def _replayed(
 
 
 def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
-    """Whether ``obj`` is a 12.0 plugin class, without importing the plugin interface.
+    """Whether ``obj`` is a plugin class, without importing the plugin interface.
 
     A plugin class subclasses :class:`untaped.sdk.plugin.Plugin`, so its import
     loaded that module; an entry point naming anything else never pays for it.
@@ -960,7 +960,7 @@ def _composed(mount: Mount, name: str, plugin_ref: PluginRef) -> ComposedPlugin:
 
 def _entry_target(candidate: PluginCandidate, cls: type[Plugin]) -> str:
     """The ``module:Qualname`` an entry point names: its target, or the class given directly."""
-    from untaped.runtime.declaration import target_of  # noqa: PLC0415 - 12.0 plugins only
+    from untaped.runtime.declaration import target_of  # noqa: PLC0415 - plugin classes only
 
     return candidate.target if isinstance(candidate.target, str) else target_of(cls)
 
@@ -1053,7 +1053,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
     raise _Quarantine(
         "not-a-plugin-class",
         f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
-        f"names {_describe(found)}, not a plugin class; untaped 12.0 composes plugin classes: "
+        f"names {_describe(found)}, not a plugin class; untaped composes plugin classes: "
         f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
     )
 
