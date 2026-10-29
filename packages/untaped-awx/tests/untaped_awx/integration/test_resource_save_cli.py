@@ -293,11 +293,11 @@ def test_export_comment_rejects_non_yaml_stdout(fake_aap: Any, fmt: str) -> None
     assert "--comment needs YAML output" in result.stderr
 
 
-def test_export_comment_allowed_with_out_dash_and_json(fake_aap: Any) -> None:
+def test_export_out_dash_refuses_another_format(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     result = _save_to("-", "--comment", "x", "--format", "json")
-    assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("# x\n")
+    assert result.exit_code == 2
+    assert "--out - writes YAML documents to stdout; drop --format" in result.stderr
 
 
 def test_export_comment_allowed_with_out_file(fake_aap: Any, tmp_path: Path) -> None:

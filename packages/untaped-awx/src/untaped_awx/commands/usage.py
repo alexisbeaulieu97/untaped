@@ -10,7 +10,7 @@ against; the underlying query is the same either way.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 
 from pydantic import Field
 
@@ -33,37 +33,43 @@ from untaped_awx.domain import WorkflowUsage
 from untaped_awx.domain.workflow_usage import usage_tree
 
 
-def _no_tree(rows: object) -> None:
-    """``--format tree`` before ``run`` drew its targets: a run that failed draws nothing."""
+def _trees(rows: WorkflowUsage | list[WorkflowUsage]) -> list[TreeGraph]:
+    """``--format tree``: one tree per target given, its rows drawn under it.
 
-
-def _drawing(trees: list[TreeGraph]) -> Callable[[object], list[TreeGraph]]:
-    """``--format tree``: one tree per target, a target in no workflow too (it has no row)."""
-    return lambda _rows: trees
+    A target's rows come together, and a target given twice comes twice: a
+    new tree starts at another target, or at a workflow the tree already has.
+    """
+    groups: list[list[WorkflowUsage]] = []
+    for row in [rows] if isinstance(rows, WorkflowUsage) else rows:
+        group = groups[-1] if groups else []
+        if not group or group[0].target != row.target or row.id in {r.id for r in group}:
+            groups.append(group := [])
+        group.append(row)
+    return [usage_tree(group[0].target, group) for group in groups]
 
 
 class Usage(ResourceCommand):
     """List the workflow job templates that contain one or more templates.
 
-    With --recursive, up to the top-level workflows. Each row says what
-    the workflow `contains` among the queried template (`target`)
-    and the other rows, as `id`, `type` and `node_count` (its
-    nodes running it), so the rows of one target hold its whole
-    ancestry: `depth` and `node_count` describe the first link, at
-    the shortest distance. A workflow reached along several paths is
-    one row. `stopped` is `depth` when the depth limit stopped the
-    walk before the workflow's own containers were looked up (without
-    --recursive or --depth, every row), so a row with `stopped: null`
-    that no row contains is a top-level workflow. --filter applies to
-    every lookup, so a workflow whose containers it filters out looks
-    top-level too. A workflow template in its own ancestry (a cycle) is
-    a row of its own usage, at the depth the walk met it, and each
-    cycle is warned about on stderr.
+    With --recursive, up to the top-level workflows. Each row names the
+    queried template (`target`: its `id`, `name` and `type`) and says
+    what the workflow `contains` among it and the other rows, as `id`,
+    `type` and `node_count` (its nodes running it), so the rows of one
+    target hold its whole ancestry: `depth` and `node_count` describe
+    the first link, at the shortest distance. A workflow reached along
+    several paths is one row. `stopped` is `depth` when the depth limit
+    stopped the walk before the workflow's own containers were looked
+    up (without --recursive or --depth, every row). `top_level` is true
+    for a workflow no workflow runs; never with --filter, which applies
+    to every lookup and can hide a workflow's containers. A workflow
+    template in its own ancestry (a cycle) is a row of its own usage, at
+    the depth the walk met it, and each cycle is warned about on stderr; a
+    target in no workflow is said there too (not under --quiet).
 
     --format tree draws the same rows: one tree per target, each
     workflow under every template it runs, highlighted (the theme's
     success color, bold green by default) and listed in the summary
-    when it is top-level (not with --filter), `(N nodes)` after a
+    when it is top-level, `(N nodes)` after a
     workflow running the line above in more than one node, and `…`
     where the depth limit stopped (a stderr hint says how to read
     further). A branch drawn earlier is numbered `[n]` and later holds
@@ -103,17 +109,13 @@ class Usage(ResourceCommand):
         default_factory=list,
         description="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
     )
-    output: Output[WorkflowUsage] = Output(render={"tree": _no_tree})
+    output: Output[WorkflowUsage] = Output(render={"tree": _trees})
 
     def run(self) -> Iterator[WorkflowUsage]:
         max_depth = resolve_max_depth(self.depth, self.recursive)
         self.output.empty("No containing workflows found.")
         diag = self.ctx.diag
         rows: list[WorkflowUsage] = []
-        trees: list[TreeGraph] = []
-        # the tree draws every target, which the rows alone can't: a target in no workflow has none
-        self.output.render = {**self.output.render, "tree": _drawing(trees)}
-        top_level = not self.filter_
         with self.awx() as awx:
             targets = template_targets(self.identifiers, self.stdin, by_id=self.by_id)
             scope = scope_for_command(awx, self.spec, scope_values(self.scope))
@@ -131,15 +133,15 @@ class Usage(ResourceCommand):
                 except UntapedError as exc:
                     diag.failure(exc, item=target)
                     continue
-                tree = usage_tree(answer.target, answer.rows, top_level=top_level)
-                for edge in tree.cycle_edges():
+                if not answer.rows:
+                    diag.info(f"{answer.target.name or target} runs in no workflow")
+                for edge in usage_tree(answer.target, answer.rows).cycle_edges():
                     diag.warning(
                         f"workflow {edge.child} runs itself (a cycle)"
                         if edge.child == edge.parent
                         else f"workflow {edge.child} runs workflow {edge.parent}, "
                         "which already runs it (a cycle)"
                     )
-                trees.append(tree)
                 rows.extend(answer.rows)
         if self.output.format == "tree" and (
             stopped := sum(row.stopped is not None for row in rows)

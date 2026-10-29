@@ -101,9 +101,10 @@ def test_a_diamond_is_one_row_at_its_shallowest_depth_holding_both_links() -> No
     answer = _use(nodes)(JOB_TEMPLATE_SPEC, identifier="10", by_id=True, max_depth=None)
 
     assert answer.target == UsageTarget(id=10, name="smoke-test", type="job_template")
-    assert [(u.id, u.depth, u.node_count, u.target, u.stopped) for u in answer.rows] == [
-        (100, 0, 1, 10, None),
-        (900, 0, 2, 10, None),
+    assert {u.target for u in answer.rows} == {answer.target}
+    assert [(u.id, u.depth, u.node_count, u.stopped, u.top_level) for u in answer.rows] == [
+        (100, 0, 1, None, False),
+        (900, 0, 2, None, True),
     ]
     assert _links(answer.rows[1]) == [
         (10, "job_template", 2),

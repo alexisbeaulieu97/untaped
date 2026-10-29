@@ -198,11 +198,7 @@ cli untaped ansible graph --format VALUE default=tree
 cli untaped ansible graph --format alias=-f
 cli untaped ansible graph --format choice=json
 cli untaped ansible graph --format choice=mermaid
-cli untaped ansible graph --format choice=pipe
-cli untaped ansible graph --format choice=raw
-cli untaped ansible graph --format choice=table
 cli untaped ansible graph --format choice=tree
-cli untaped ansible graph --format choice=yaml
 cli untaped ansible graph --live switch default=unset
 cli untaped ansible graph --org VALUE... default=unset
 cli untaped ansible graph --out VALUE default=unset
@@ -4554,6 +4550,12 @@ record awx.Unreadable  [experimental]
 record awx.Unreadable.error string  [experimental]
 record awx.Unreadable.index integer  [experimental]
 record awx.Unreadable.path string  [experimental]
+record awx.UsageTarget
+record awx.UsageTarget.id integer
+record awx.UsageTarget.name string?
+record awx.UsageTarget.type choice=job_template
+record awx.UsageTarget.type choice=workflow_job_template
+record awx.UsageTarget.type string
 record awx.apply_outcome_row
 record awx.apply_outcome_row.action string
 record awx.apply_outcome_row.detail string
@@ -4968,7 +4970,8 @@ record awx.workflow_usage.name string?
 record awx.workflow_usage.node_count integer
 record awx.workflow_usage.stopped choice=depth
 record awx.workflow_usage.stopped string?
-record awx.workflow_usage.target integer
+record awx.workflow_usage.target UsageTarget
+record awx.workflow_usage.top_level boolean
 record dotfiles.apply_outcome  [experimental]
 record dotfiles.apply_outcome.action choice=conflict  [experimental]
 record dotfiles.apply_outcome.action choice=created  [experimental]
@@ -7064,7 +7067,8 @@ sdk untaped.sdk.OutcomeRecord.error
 sdk untaped.sdk.OutcomeRecord.failed
 sdk untaped.sdk.Output()
 sdk untaped.sdk.Output(columns=) default=[]
-sdk untaped.sdk.Output(format=) default=table
+sdk untaped.sdk.Output(format=) default=None
+sdk untaped.sdk.Output(formats=) default=None
 sdk untaped.sdk.Output(render=) default=None callback(*)
 sdk untaped.sdk.Output(stream=) default=false
 sdk untaped.sdk.Output.empty(text)

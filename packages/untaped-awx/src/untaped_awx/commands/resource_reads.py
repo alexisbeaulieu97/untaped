@@ -169,8 +169,8 @@ class Export(ResourceCommand):
 
     def run(self) -> Iterator[Document]:
         require_source(self.names, self.selection, self.stdin)
-        if self.out is not None and str(self.out) == "-":
-            self.output.format = "yaml"  # --out names YAML documents, stdout's too
+        if self.out is not None and str(self.out) == "-" and self.output.format != "yaml":
+            raise UsageError("--out - writes YAML documents to stdout; drop --format")
         if self.comment and self.out is None and self.output.format != "yaml":
             raise UsageError("--comment needs YAML output; drop --format or pass --out FILE")
         with self.awx() as awx:

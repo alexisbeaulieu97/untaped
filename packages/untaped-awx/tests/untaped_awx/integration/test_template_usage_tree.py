@@ -68,15 +68,20 @@ def _link(id_: int, type_: str = "workflow_job_template", count: int = 1) -> dic
     return {"id": id_, "type": type_, "node_count": count}
 
 
+_TARGET = {"id": 10, "name": "smoke-test", "type": "job_template"}
 _ROWS = [
     {"id": 200, "name": "nightly-backups", "depth": 0, "node_count": 2,
-     "contains": [_link(10, "job_template", 2)], "target": 10, "stopped": None},
+     "contains": [_link(10, "job_template", 2)], "target": _TARGET, "stopped": None,
+     "top_level": False},
     {"id": 100, "name": "weekly-rollup", "depth": 1, "node_count": 1,
-     "contains": [_link(200)], "target": 10, "stopped": None},
+     "contains": [_link(200)], "target": _TARGET, "stopped": None,
+     "top_level": False},
     {"id": 300, "name": "quarterly-audit", "depth": 1, "node_count": 1,
-     "contains": [_link(200), _link(100)], "target": 10, "stopped": None},
+     "contains": [_link(200), _link(100)], "target": _TARGET, "stopped": None,
+     "top_level": False},
     {"id": 500, "name": "annual-review", "depth": 2, "node_count": 1,
-     "contains": [_link(300)], "target": 10, "stopped": None},
+     "contains": [_link(300)], "target": _TARGET, "stopped": None,
+     "top_level": True},
 ]  # fmt: skip
 
 _WHOLE_TREE = [
@@ -180,7 +185,6 @@ def test_the_tree_draws_exactly_the_json_rows(ancestry: Any, recursive: list[str
     tree = usage_tree(
         UsageTarget(id=10, name="smoke-test", type="job_template"),
         [WorkflowUsage.model_validate(row) for row in rows],
-        top_level=True,
     )
     assert tree_text(tree) + "\n" == drawn
 
@@ -350,9 +354,8 @@ def test_piped_records_get_one_tree_each(ancestry: Any) -> None:
         "└── annual-review …",
         "",
         "1 workflow · 1 stopped",
-        "",
-        "unused  job template · in no workflow",
     ]
+    assert "unused runs in no workflow" in result.stderr
 
 
 def test_an_unknown_id_is_not_found(ancestry: Any) -> None:
@@ -363,11 +366,12 @@ def test_an_unknown_id_is_not_found(ancestry: Any) -> None:
     assert "error: 999: JobTemplate not found (id=999)" in result.stderr
 
 
-def test_an_unused_template_is_in_no_workflow(ancestry: Any) -> None:
-    result = _run("job-templates", "usage", "unused", "-f", "tree")
+@pytest.mark.parametrize("fmt", ["tree", "table", "json"])
+def test_an_unused_template_is_said_to_be_in_no_workflow(ancestry: Any, fmt: str) -> None:
+    result = _run("job-templates", "usage", "unused", "-f", fmt)
 
     assert result.exit_code == 0, result.output
-    assert result.stdout == "unused  job template · in no workflow\n"
+    assert "unused runs in no workflow" in result.stderr
 
 
 @pytest.mark.parametrize("columns", ["id", "?"])
@@ -387,3 +391,11 @@ def test_untaped_format_still_sets_the_default(
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["id"] == 200
+
+
+def test_a_target_given_twice_is_drawn_twice(ancestry: Any) -> None:
+    once = _run("job-templates", "usage", "smoke-test", "--recursive", "-f", "tree").stdout
+    twice = _run("job-templates", "usage", "smoke-test", "smoke-test", "--recursive", "-f", "tree")
+
+    assert twice.exit_code == 0, twice.output
+    assert twice.stdout == f"{once}\n{once}"

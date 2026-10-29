@@ -45,7 +45,7 @@ from untaped.runtime.declaration import (
 )
 from untaped.runtime.registry import resolve_target
 from untaped.sdk._block import FieldBlock, Invocation
-from untaped.sdk._cli import report_errors
+from untaped.sdk._cli import follows_user_format, report_errors
 from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
@@ -424,7 +424,9 @@ def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
             settings["group"] = DEPRECATED_OPTIONS
             metadata.append(mark)
     if option.flag == "--format":
-        settings["show_default"] = format_default
+        # only a table default offering every core format follows the user's
+        follows = follows_user_format(option.choices, option.default or "table")
+        settings["show_default"] = format_default if follows else True
         return Annotated[value, Parameter(**settings), *metadata], option.default or "table"
     if option.required and option.block is None:
         return Annotated[value, Parameter(**settings), *metadata], inspect.Parameter.empty

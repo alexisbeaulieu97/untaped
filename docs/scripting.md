@@ -106,9 +106,10 @@ line printed; `--verbose` prints every update and `--quiet` none.
 - The format counts whether it comes from the flag, `UNTAPED_FORMAT` or
   `untaped.ui.format`. A command's own default, such as `export`'s YAML, does not.
 - `UNTAPED_FORMAT` and `untaped.ui.format` only set the format of a command
-  whose `--format` defaults to `table`. A command with another default
-  (`profile show`, YAML) keeps text on stderr unless `--format` is given on
-  the command line, and one with no `--format` (`config edit`) keeps text.
+  whose `--format` defaults to `table` and offers every core format. A
+  command with another default (`profile show`, YAML) keeps text on stderr
+  unless `--format` is given on the command line, and one with no
+  `--format` (`config edit`) keeps text.
 - `UNTAPED_DIAGNOSTICS=json` turns JSON Lines on for any format;
   `UNTAPED_DIAGNOSTICS=text` keeps text lines.
 - The format is decided before the first line, so a warning about a

@@ -24,5 +24,9 @@ the column table. `test run --source-ref` prints its results after the
 copies are torn down. Under `--yes` a write no longer
 prints its preview (`--dry-run` shows it). `raw` prints each row's first
 column unless `--columns` names more. A kind's `export --format json` prints
-a list, even of one document. `test init` prints the suite's path as its
-result.
+a list, even of one document, and `export --out -` refuses a `--format`
+other than `yaml` (exit 2) instead of ignoring it. `test init` prints the
+suite's path as its result. A `usage` row's `target` is the queried template
+(`id`, `name`, `type`) instead of its id, and its `top_level` says no
+workflow runs it; a target in no workflow is said on stderr, in every format,
+instead of drawn alone by `--format tree`.

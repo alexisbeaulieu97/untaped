@@ -140,7 +140,7 @@ awx.job_template` lists the typed fields "plus any others" (`additionalPropertie
 | `awx jobs events` | `awx.job_event_row` (`counter`, `event`, then the job id as `job`) |
 | `awx jobs logs` | `awx.job_log_line` (`line`, `job`) |
 | `awx unified-templates list/get` | `awx.unified_template` |
-| `awx job-templates usage`, `awx workflow-templates usage` | `awx.workflow_usage` (`contains` lists what each workflow runs, as `id`, `type` and `node_count`; `target` and `stopped`) |
+| `awx job-templates usage`, `awx workflow-templates usage` | `awx.workflow_usage` (`contains` lists what each workflow runs, as `id`, `type` and `node_count`; `target`, the queried template as `id`, `name` and `type`; `stopped` and `top_level`) |
 | `awx workflow-templates nodes` | `awx.workflow_node` |
 | `awx test list` | `awx.suite_case` |
 | `awx test run` | `awx.case_result` |

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from typing import Annotated, ClassVar
+from typing import Annotated, Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -200,6 +200,26 @@ class Pin(Command):
         return Shape(name="pin")
 
 
+class Draw(Command):
+    """Draw one shape, or show it as json."""
+
+    output: Output[Shape] = Output(
+        formats=("tree", "json"), render={"tree": lambda shape: f"* {shape.name}"}
+    )
+
+    def run(self) -> Shape:
+        return Shape(name="drawn")
+
+
+class Brief(Command):
+    """Show one shape as a table or json."""
+
+    output: Output[Shape] = Output(formats=("table", "json"))
+
+    def run(self) -> Shape:
+        return Shape(name="brief")
+
+
 class ShapesSettings(BaseModel):
     pass
 
@@ -223,6 +243,8 @@ class Shapes(Plugin):
         Pick,
         Broke,
         Pin,
+        Draw,
+        Brief,
     )
 
 
@@ -419,3 +441,43 @@ def test_an_output_s_own_default_format_prints_without_the_flag(
 def test_an_output_refuses_a_default_it_does_not_offer() -> None:
     with pytest.raises(ValueError, match="Output\\(format='tree'\\) is not one of"):
         Output(format="tree")
+
+
+def test_an_output_offers_only_the_formats_it_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_FORMAT", "yaml")  # not offered, so not followed
+
+    drawn = _run("shapes", "draw")
+    asked = _run("shapes", "draw", "--format", "json")
+    refused = _run("shapes", "draw", "--format", "yaml")
+
+    assert (drawn.exit_code, drawn.stdout) == (0, "* drawn\n"), drawn.stderr
+    assert json.loads(asked.stdout)["name"] == "drawn"
+    assert refused.exit_code == 2
+    assert "yaml" in refused.stderr
+
+
+@pytest.mark.parametrize(
+    ("given", "refused"),
+    [
+        ({"formats": ()}, "names no format"),
+        ({"formats": ("tree",)}, "tree, which neither core nor render= prints"),
+        ({"formats": ("json",), "render": {"tree": print}}, "tree, which formats= leaves out"),
+        ({"formats": ("json",), "format": "table"}, "Output\\(format='table'\\) is not one of"),
+    ],
+)
+def test_an_output_refuses_formats_it_cannot_print(given: dict[str, Any], refused: str) -> None:
+    with pytest.raises(ValueError, match=refused):
+        Output(**given)
+
+
+def test_a_table_default_offering_only_some_formats_ignores_the_user_s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_FORMAT", "yaml")
+
+    shown = _run("shapes", "brief")
+    helped = _run("shapes", "brief", "--help")
+
+    assert shown.stdout.splitlines()[0].startswith("name"), shown.output
+    assert "UNTAPED_FORMAT" not in helped.stdout
+    assert "[default: table]" in helped.stdout

@@ -523,6 +523,30 @@ OUTPUT_FORMATS: tuple[str, ...] = ("table", "json", "yaml", "pipe", "raw")
 """The formats every ``Output`` offers, before a plugin's own renderers."""
 
 
+def _offered_formats(
+    formats: Sequence[str] | None, render: Mapping[str, object]
+) -> tuple[str, ...]:
+    """The formats an ``Output`` offers: ``formats=``, else core's and the renderers'.
+
+    Each one named is core's or has a renderer, and each renderer's format is
+    named: a ``ValueError`` otherwise, raised when the plugin loads.
+    """
+    if formats is not None and not formats:
+        raise ValueError("Output(formats=) names no format")
+    if formats is None:
+        return tuple(dict.fromkeys((*OUTPUT_FORMATS, *render)))
+    offered = tuple(dict.fromkeys(formats))
+    unknown = [name for name in offered if name not in OUTPUT_FORMATS and name not in render]
+    if unknown:
+        raise ValueError(
+            f"Output(formats=) names {', '.join(unknown)}, which neither core nor render= prints"
+        )
+    unlisted = [name for name in render if name not in offered]
+    if unlisted:
+        raise ValueError(f"Output(render=) has {', '.join(unlisted)}, which formats= leaves out")
+    return offered
+
+
 class Output[R: BaseModel](FieldBlock):
     """What a command prints: ``output: Output[Salutation]`` adds ``--format`` and ``--columns``.
 
@@ -536,9 +560,11 @@ class Output[R: BaseModel](FieldBlock):
     ``Output(render={"tree": render_tree})`` adds a format of the plugin's own
     (one named after a core format replaces it, though ``--columns`` still
     prints core's table): the renderer returns what to print and core prints
-    it (:func:`print_rendered`), and ``Output(format="raw")`` makes another
-    format the default (only a ``table`` default follows ``UNTAPED_FORMAT`` and
-    ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
+    it (:func:`print_rendered`), ``Output(format="raw")`` makes another
+    format the default, and ``Output(formats=("tree", "json"))`` offers only
+    those formats, each core's or a renderer's, the first the default (only
+    a ``table`` default offering every core format follows ``UNTAPED_FORMAT``
+    and ``untaped.ui.format``). ``Output(stream=True)`` prints each row ``run``
     yields as it comes (a log being followed): json one object per line, yaml
     one document per row, pipe and raw one line per row, a table one row per
     line under its header, and a plugin renderer once per row; a stream with
@@ -559,7 +585,8 @@ class Output[R: BaseModel](FieldBlock):
         *,
         columns: Sequence[SettingKey | str] = (),
         render: Mapping[str, Callable[..., Rendered]] | None = None,
-        format: str = "table",
+        format: str | None = None,
+        formats: Sequence[str] | None = None,
         stream: bool = False,
     ) -> None:
         self._given = tuple(columns)
@@ -567,6 +594,8 @@ class Output[R: BaseModel](FieldBlock):
         #: Each row prints as ``run`` yields it, not once the run ends.
         self.stream = stream
         self.render: Mapping[str, Callable[..., Rendered]] = dict(render or {})
+        self._offered = _offered_formats(formats, self.render)
+        format = format or self._offered[0]
         if format not in self.formats:
             raise ValueError(f"Output(format={format!r}) is not one of {', '.join(self.formats)}")
         #: The format a run without ``--format`` prints.
@@ -584,7 +613,7 @@ class Output[R: BaseModel](FieldBlock):
     @property
     def formats(self) -> tuple[str, ...]:
         """Every value ``--format`` takes for this command."""
-        return tuple(dict.fromkeys((*OUTPUT_FORMATS, *self.render)))
+        return self._offered
 
     @property
     def requested(self) -> list[str] | None:

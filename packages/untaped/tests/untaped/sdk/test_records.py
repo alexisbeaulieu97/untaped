@@ -823,7 +823,7 @@ def _awx_samples() -> list[WireModel]:
             name="pipeline",
             node_count=2,
             contains=[{"id": 1, "type": "job_template", "node_count": 2}],
-            target=1,
+            target={"id": 1, "name": "deploy", "type": "job_template"},
         ),
         JobCancelOutcome(id=2, kind="job", action="canceled"),
         JobRelaunchOutcome(id=3, kind="job", target_id=2, action="completed"),
