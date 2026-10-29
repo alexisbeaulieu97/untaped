@@ -430,7 +430,7 @@ class Declaration(_Frozen):
         return self._line(block.removed_by, (*flag, shlex.quote(key)))
 
     def _line(self, target: str, args: tuple[object, ...]) -> str:
-        from untaped.sdk.fields import SettingKey  # noqa: PLC0415 - only a spelled hint needs it
+        from untaped.sdk._keys import SettingKey  # noqa: PLC0415 - only a spelled hint needs it
 
         command = next((c for c in self.commands() if c.target == target), None)
         if command is None:

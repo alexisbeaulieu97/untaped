@@ -43,8 +43,9 @@ from untaped.runtime.settings import (
     notify_config_key,
 )
 from untaped.sdk._cli import echo, emit
+from untaped.sdk._keys import key
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import DryRun, Output, Positional, default_columns, key
+from untaped.sdk.fields import DryRun, Output, Positional, default_columns
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,

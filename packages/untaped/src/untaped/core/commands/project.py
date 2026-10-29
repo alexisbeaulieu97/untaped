@@ -19,8 +19,9 @@ from pydantic import Field
 
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
 from untaped.core.settings import CoreSettings
+from untaped.sdk._keys import key
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional, key, table_row
+from untaped.sdk.fields import Confirm, Output, Positional, table_row
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (

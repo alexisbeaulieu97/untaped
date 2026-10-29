@@ -42,9 +42,9 @@ from pydantic import (
 )
 from pydantic_core import PydanticSerializationError, to_json
 
+from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import key as setting_key
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
-from untaped.sdk.fields import SettingKey
-from untaped.sdk.fields import key as setting_key
 from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
 

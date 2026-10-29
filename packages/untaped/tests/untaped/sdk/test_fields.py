@@ -35,7 +35,8 @@ from untaped.sdk import (
     key,
 )
 from untaped.sdk._block import POSITIONAL, Invocation
-from untaped.sdk.fields import CORE_SHORTS, SettingKey, column_fields, default_columns, key_field
+from untaped.sdk._keys import SettingKey
+from untaped.sdk.fields import CORE_SHORTS, column_fields, default_columns, key_field
 
 
 class Suite(BaseModel):

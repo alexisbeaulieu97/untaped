@@ -55,6 +55,7 @@ from untaped.runtime.describe import (
 )
 from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, Block, FieldBlock, OwnedBlock
+from untaped.sdk._keys import SettingKey
 from untaped.sdk._names import _WORDS, kebab, snake
 from untaped.sdk.fields import (
     CORE_SHORTS,
@@ -64,7 +65,6 @@ from untaped.sdk.fields import (
     Output,
     Parallel,
     Refresh,
-    SettingKey,
     Short,
     Stdin,
     Written,

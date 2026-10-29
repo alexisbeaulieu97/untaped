@@ -32,6 +32,7 @@ from untaped.screen.picker import (
 from untaped.sdk._cli import raise_usage
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home
+from untaped.sdk._keys import SettingKey, key
 from untaped.sdk._run import (
     Context,
     Diag,
@@ -97,7 +98,6 @@ from untaped.sdk.fields import (
     Positional,
     PreviewItem,
     Refresh,
-    SettingKey,
     Short,
     Spread,
     Status,
@@ -105,7 +105,6 @@ from untaped.sdk.fields import (
     TextOrStdin,
     Verbatim,
     Written,
-    key,
     table_row,
 )
 from untaped.sdk.git import (

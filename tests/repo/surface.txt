@@ -7567,7 +7567,7 @@ sdk untaped.sdk.Stdin.requested
 sdk untaped.sdk.Stdin.rows()
 sdk untaped.sdk.Stdin.rows(allow_empty=) default=false
 sdk untaped.sdk.Stdin.rows(given@1=) default=[]
-sdk untaped.sdk.Stdin.text(*, what)
+sdk untaped.sdk.Stdin.text(*, what)  [experimental]
 sdk untaped.sdk.Stdin.values()
 sdk untaped.sdk.Stdin.values(allow_empty=) default=false
 sdk untaped.sdk.Stdin.values(given@1=) default=[]

@@ -49,10 +49,10 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._keys import SettingKey
 from untaped.sdk._run import run_or_none
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.fields import SettingKey
 from untaped.sdk.words import (
     EXPERIMENTAL_LINE,
     deprecated_ignored_message,
