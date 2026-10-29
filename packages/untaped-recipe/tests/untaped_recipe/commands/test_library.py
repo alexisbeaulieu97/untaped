@@ -11,6 +11,8 @@ import pytest
 from recipe_pack_support import install_pack, write_hook_project, write_pack, write_pack_project
 from recipe_test_support import library_dir, run
 from untaped_recipe.domain.paths import is_path_ref
+from untaped_recipe.errors import UvMissingError
+from untaped_recipe.infrastructure import pack_files
 
 
 def _write_hookless_pack_project(root: Path, *, lock: bool = True) -> None:
@@ -715,3 +717,30 @@ def test_library_miss_hints_only_at_an_existing_path(
     else:
         assert hint in result.stderr
         assert "prefix ./" in result.stderr
+
+
+def test_recipe_validate_without_uv_exits_as_setup_not_as_a_broken_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No uv on the machine says nothing about the pack: exit 4, no fail rows.
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "recipe.yml").write_text(
+        "version: 1\nsteps:\n  - type: validate\n    hook: check\n"
+    )
+    write_hook_project(
+        recipe_dir,
+        public_name="check",
+        module_name="check",
+        code="def validate(*, inputs, target, args, helpers):\n    return helpers.pass_()\n",
+    )
+
+    def no_uv(project_root: Path) -> None:
+        raise UvMissingError("uv executable not found for project lock")
+
+    monkeypatch.setattr(pack_files, "check_lock", no_uv)
+    result = run(["validate", str(recipe_dir), "--format", "json"])
+
+    assert result.exit_code == 4, result.output
+    assert "uv executable not found" in result.stderr
+    assert result.stdout.strip() in ("", "[]")

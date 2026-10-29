@@ -94,3 +94,19 @@ class PartialRemovalError(RecipeError):
     """
 
     category = ErrorCategory.FAILED
+
+
+#: What says the machine, not the pack, is wrong: no ``uv``, a store busy elsewhere.
+_ENVIRONMENT = frozenset(
+    {ErrorCategory.CONFIG, ErrorCategory.UNAVAILABLE, ErrorCategory.INTERRUPTED}
+)
+
+
+def raise_environment(exc: BaseException | None) -> None:
+    """Re-raise ``exc`` when it is about the machine, so a check exits with its category.
+
+    ``validate`` and ``test`` report a broken pack or case as a row; a
+    machine problem would make every row fail, so it ends the run instead.
+    """
+    if isinstance(exc, UntapedError) and exc.category in _ENVIRONMENT:
+        raise exc

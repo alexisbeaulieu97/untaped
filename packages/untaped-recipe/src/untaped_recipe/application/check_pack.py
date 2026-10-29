@@ -25,7 +25,7 @@ from untaped_recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
-from untaped_recipe.errors import RecipeNotFoundError
+from untaped_recipe.errors import RecipeNotFoundError, raise_environment
 from untaped_recipe.records import Check
 
 
@@ -101,6 +101,7 @@ def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> Check:
         if orphans:
             raise ValueError("tests directory names no known recipe: " + ", ".join(orphans))
     except (UntapedError, ValueError, OSError) as exc:
+        raise_environment(exc)
         return _failed_pack(pack.name, pack.root, str(exc))
     return Check(name=pack.name, type="pack", status="pass", path=str(pack.root))
 
@@ -118,6 +119,7 @@ def _check_recipe(
         _check_local_hook_project(local_hook_project, inspector)
         _check_hooks(recipe, local_hook_project, inspector)
     except (UntapedError, ValueError, OSError) as exc:
+        raise_environment(exc)
         return Check(
             name=recipe_ref, type="recipe", status="fail", path=str(recipe_path), detail=str(exc)
         )
