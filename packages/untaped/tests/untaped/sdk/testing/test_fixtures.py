@@ -211,6 +211,12 @@ def test_a_credential_is_set_under_the_install_holding_it(
     assert vault.run(Peek()).text == "s3cret"
 
 
+def test_a_spelled_credential_is_set_outside_a_run(credentials: MemoryCredentials) -> None:
+    spelled = Credential("vault", "token", key=VaultServer)
+    credentials.set(spelled, VaultServer(), "s3cret")
+    assert list(credentials.entries.values()) == ["s3cret"]
+
+
 def test_answer_false_declines_through_the_test_s_terminal(
     install: Installer, terminal: ScriptedTerminal
 ) -> None:

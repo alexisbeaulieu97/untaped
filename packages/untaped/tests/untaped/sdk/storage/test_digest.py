@@ -21,6 +21,9 @@ from untaped.sdk.network.credentials import Credential, CredentialKey, bind_cred
 from untaped.sdk.storage._digest import digest_of, settings_digest, settings_terms
 from untaped.sdk.storage.cache import Cache
 
+#: The credential index is core's state rows, read under a run like every block.
+pytestmark = pytest.mark.usefixtures("home_run")
+
 ITEMS = Cache("toy", "items", label="toy items", max_age=timedelta(hours=1))
 
 

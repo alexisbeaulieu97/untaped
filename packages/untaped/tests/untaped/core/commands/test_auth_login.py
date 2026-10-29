@@ -12,7 +12,7 @@ from pydantic import BaseModel, HttpUrl
 from core_test_support.commands.support import compose, make_plugin, root_group, write_config
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.network._credential_store import CredentialRow, index
+from untaped.sdk.network._credential_store import INDEX, CredentialRow
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.credentials import describe_key
@@ -89,6 +89,36 @@ def test_login_reads_the_token_from_stdin_for_this_runs_server() -> None:
     assert row["key"] == "url=https://wiz.example.com"
     assert sorted(current_memory_store().entries.values()) == ["s3cret"]
     assert _secret(TOKEN, KEY) == "s3cret"
+
+
+@pytest.mark.usefixtures("_server")
+def test_the_index_is_core_s_own_state_rows() -> None:
+    from untaped.sdk import home
+
+    _auth("login", "wiz", input="s3cret\n")
+    [row] = stored_rows()
+
+    assert INDEX.path() == home() / "plugins" / "untaped" / "state.yml"
+    assert INDEX.path().is_file()
+    assert not (home() / "state.yml").exists()
+    assert row.plugin == "wiz"
+
+
+def test_a_damaged_index_row_names_auth_forget_by_id() -> None:
+    INDEX.put(CredentialRow(id="a" * 64, plugin="wiz", name="token", backend="memory"))
+    text = INDEX.path().read_text().replace("backend: memory", "backend: nowhere")
+    INDEX.path().write_text(text)
+
+    result = _auth("list")
+
+    assert result.exit_code == 4, result.output
+    assert f"untaped auth forget --id {'a' * 64}" in result.stderr
+
+    forgot = _auth("forget", "--id", "a" * 64, "--yes")
+
+    assert forgot.exit_code == 0, forgot.output
+    assert "forgot the damaged stored credential" in forgot.stderr
+    assert INDEX.keys() == []
 
 
 @pytest.mark.usefixtures("_server")
@@ -370,7 +400,7 @@ def test_logging_in_again_into_another_entry_deletes_the_replaced_one() -> None:
     TOKEN.store(KEY, token="first")
     [row] = stored_rows()
     memory.entries["elsewhere"] = memory.entries.pop(row.entry or "")
-    index().put(row.model_copy(update={"entry": "elsewhere"}))
+    INDEX.put(row.model_copy(update={"entry": "elsewhere"}))
 
     TOKEN.store(KEY, token="second")
 
@@ -403,7 +433,7 @@ def test_a_replaced_entry_that_cannot_be_deleted_only_warns(
 
     monkeypatch.setattr(TokenStore, "delete", locked)
     monkeypatch.setattr(TokenStore, "gone", lambda self, entry: False)
-    index().put(
+    INDEX.put(
         CredentialRow(id=TOKEN.id(KEY), plugin="wiz", name="token", backend="pass", entry="old")
     )
 

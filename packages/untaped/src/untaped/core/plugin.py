@@ -20,6 +20,7 @@ from untaped.core.commands.setup import Setup
 from untaped.core.commands.skills import Skills
 from untaped.core.doctor_checks import CONFIG_PERMISSIONS, TOKEN_STORE, UNKNOWN_KEYS
 from untaped.core.settings import DECLARATION, NAME, CoreSettings
+from untaped.sdk.network._credential_store import INDEX
 from untaped.sdk.plugin import Plugin, StubSkill
 from untaped.sdk.storage._refs import REFS
 
@@ -52,6 +53,7 @@ class Core(Plugin):
     unknown_keys = UNKNOWN_KEYS
     token_store = TOKEN_STORE
     refs = REFS
+    credentials = INDEX
 
 
 __all__ = ["NAME", "Core"]

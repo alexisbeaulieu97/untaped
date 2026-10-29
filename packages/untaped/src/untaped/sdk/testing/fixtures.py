@@ -207,6 +207,7 @@ class MemoryCredentials:
     def set(self, credential: Credential[Any], key: CredentialKey, secret: str) -> None:
         """File ``secret`` as ``credential``'s for ``key``, under the latest install holding it."""
         from untaped.sdk._run import NoRunError, current_run  # noqa: PLC0415
+        from untaped.sdk.testing import _in_a_run  # noqa: PLC0415
 
         try:
             current_run()
@@ -215,6 +216,9 @@ class MemoryCredentials:
                 with self._install_of(credential).running():
                     credential.store(key, token=secret)
                 return
+            with _in_a_run():  # the index is core's state rows, under a run
+                credential.store(key, token=secret)
+            return
         credential.store(key, token=secret)
 
     def _install_of(self, credential: Credential[Any]) -> Install:

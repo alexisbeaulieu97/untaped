@@ -170,6 +170,8 @@ class BlockDecl(_Frozen):
     items: bool = False
     #: The target of the command marked ``removes =`` these state rows, if one is.
     removed_by: str | None = None
+    #: The remover's flag taking the row's key (``--id``); ``None``: its positional does.
+    removed_with: str | None = None
 
 
 class FieldDecl(_Frozen):
@@ -424,7 +426,8 @@ class Declaration(_Frozen):
             raise LookupError(f"{plugin} holds no state rows named {rows!r}")
         if block.removed_by is None:
             return None
-        return self._line(block.removed_by, (shlex.quote(key),))
+        flag = () if block.removed_with is None else (block.removed_with,)
+        return self._line(block.removed_by, (*flag, shlex.quote(key)))
 
     def _line(self, target: str, args: tuple[object, ...]) -> str:
         from untaped.sdk.fields import SettingKey  # noqa: PLC0415 - only a spelled hint needs it

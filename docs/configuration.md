@@ -324,9 +324,10 @@ gpg encrypt and decrypt, run with your `PASSWORD_STORE_GPG_OPTS`;
 `secret-tool`: a store and read back) and stops with the cause if that fails.
 It hands the token to the store on stdin and reads it back before filing it.
 Run it again to replace a rotated token. The index of logins (never the
-tokens) is kept in `state.yml`; entries are `<plugin>/<name>/<id>` under the
-`untaped` service, prefixed by a hash of the config file's path for a home
-other than `~/.untaped`, so two homes never share one.
+tokens) is kept in core's `plugins/untaped/state.yml`; entries are
+`<plugin>/<name>/<id>` under the `untaped` service, prefixed by a hash of the
+config file's path for a home other than `~/.untaped`, so two homes never
+share one.
 
 A plugin's token for a server comes from the first of these that has one:
 

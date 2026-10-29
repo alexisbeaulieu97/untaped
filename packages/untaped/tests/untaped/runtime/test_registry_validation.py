@@ -29,14 +29,24 @@ TAKEN = {
     "skills": "a root command",
     "profiles": "a config key",
     "active": "a config key",
-    "credentials": "a config key",
     "extensions": "a config key",
     "caches": "a config key",
     "home": "the variable UNTAPED_HOME",
 }
 
 #: Names 11.x reserved that nothing holds any more (core's settings sit under ``untaped``).
-FREE = ["core", "sdk", "contracts", "plugins", "default", "state", "shell", "http", "ui"]
+FREE = [
+    "core",
+    "sdk",
+    "contracts",
+    "plugins",
+    "default",
+    "state",
+    "shell",
+    "http",
+    "ui",
+    "credentials",
+]
 
 
 @pytest.mark.parametrize(("name", "by"), TAKEN.items(), ids=list(TAKEN))

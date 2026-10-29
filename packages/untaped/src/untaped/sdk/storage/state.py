@@ -35,7 +35,7 @@ from untaped.runtime.config_file import (
     read_state_dict,
     write_state_dict,
 )
-from untaped.runtime.settings import CORE_STATE_SECTIONS, RESERVED_SECTIONS, resolve_state_path
+from untaped.runtime.settings import RESERVED_SECTIONS, resolve_state_path
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, first_validation_error
@@ -53,20 +53,19 @@ _HERE = frozenset({__name__})
 class _RowFile:
     """The rows under ``<section>.<name>`` of one state file (the home's unless ``path``)."""
 
-    __slots__ = ("_core", "_path", "name", "section")
+    __slots__ = ("_path", "name", "section")
 
-    def __init__(self, section: str, name: str, path: Path | None, *, core: bool = False) -> None:
+    def __init__(self, section: str, name: str, path: Path | None) -> None:
         self.section = section
         self.name = name
         self._path = path
-        self._core = core
 
     def path(self) -> Path:
         return self._path or resolve_state_path()
 
     def read(self) -> list[Any]:
         """The raw rows; ``[]`` when unset. Anything but a list raises ConfigError."""
-        return self.rows(read_plugin_state(self.section, self._path, core=self._core))
+        return self.rows(read_plugin_state(self.section, self._path))
 
     def mutate(self, fn: Callable[[list[Any]], list[Any] | None]) -> None:
         """Replace the rows under the state file's lock; ``None`` from ``fn`` writes nothing."""
@@ -80,7 +79,7 @@ class _RowFile:
             else:
                 state.pop(self.name, None)
 
-        mutate_plugin_state(self.section, _apply, self._path, core=self._core)
+        mutate_plugin_state(self.section, _apply, self._path)
 
     def rows(self, state: Mapping[str, Any]) -> list[Any]:
         if self.name not in state:
@@ -149,9 +148,10 @@ class StateRows[M: BaseModel](OwnedBlock):
     ``plugins/<plugin>/state.yml``, stamped and written under that file's
     lock. The row's key is its one required ``str`` field marked ``Key``; a
     model with no such field makes the rows a list (:meth:`all`,
-    :meth:`append`, :meth:`replace_all`). The command that removes a row,
-    called with its key, marks itself ``removes = items``: a damaged row's
-    error offers it.
+    :meth:`append`, :meth:`replace_all`). The command that removes a row
+    marks itself ``removes = items`` and takes the key under the ``Key``
+    field's name, as its first positional or an option (else composition
+    names the problem ``remover-key``): a damaged row's error offers it.
 
     The 11.x spelling keeps them in the shared ``state.yml`` →
     ``<plugin>.<name>``: ``model`` is the rows' pydantic model, or a function
@@ -254,11 +254,10 @@ class StateRows[M: BaseModel](OwnedBlock):
         remove_hint: str | None,
         path: Path | None,
         *,
-        core: bool = False,
         own: bool = False,
     ) -> StateRows[M]:
         rows: StateRows[M] = object.__new__(cls)
-        rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path, core=core)
+        rows._setup(plugin, name, model, key_field, omit_none, remove_hint, path)
         rows._own = own
         return rows
 
@@ -271,8 +270,6 @@ class StateRows[M: BaseModel](OwnedBlock):
         omit_none: bool,
         remove_hint: str | None,
         path: Path | None,
-        *,
-        core: bool = False,
     ) -> None:
         OwnedBlock.__init__(self, plugin, name)
         self.model = model
@@ -282,9 +279,7 @@ class StateRows[M: BaseModel](OwnedBlock):
         self._resolved: _Shape | None = None
         self._path = path
         self._own = plugin is None
-        self._rows_file = (
-            None if plugin is None or name is None else _RowFile(plugin, name, path, core=core)
-        )
+        self._rows_file = None if plugin is None or name is None else _RowFile(plugin, name, path)
 
     @classmethod
     def name_problem(cls, name: str) -> str | None:
@@ -294,6 +289,10 @@ class StateRows[M: BaseModel](OwnedBlock):
 
     def problems(self) -> tuple[str, ...]:
         return _shape_problems(self)
+
+    def _keyed_by(self) -> str | None:
+        """The model's field keying the rows; ``None``: a list, or a shape composition refuses."""
+        return _key_field(self)
 
     @property
     def _file(self) -> _RowFile | _PluginFile:
@@ -638,6 +637,10 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
     def problems(self) -> tuple[str, ...]:
         return _shape_problems(self)
 
+    def _keyed_by(self) -> str | None:
+        """The model's field keying the rows; ``None``: a list, or a shape composition refuses."""
+        return _key_field(self)
+
     @property
     def qualified(self) -> str:
         return f"{self.plugin}.{self.name}"
@@ -693,27 +696,6 @@ class ProjectStateRows[M: BaseModel](OwnedBlock):
             project.root / DIRECTORY / PLUGINS_FOLDER / plugin / _STATE_FILE,
             own=True,
         )
-
-
-def core_rows[M: BaseModel](
-    section: str,
-    name: str,
-    *,
-    model: type[M] | Callable[[], type[M]],
-    key_field: str,
-    omit_none: bool = False,
-    remove_hint: str | None = None,
-) -> StateRows[M]:
-    """Core's own typed rows, in a state section core reserves (``credentials``).
-
-    Core's, not the SDK's: no plugin may keep rows there.
-    """
-    if section not in CORE_STATE_SECTIONS:
-        raise ConfigError(f"core_rows: {section!r} is not a state section core reserves")
-    _check_declaration(None, name, model, key_field, remove_hint)
-    return StateRows._bound(
-        section, name, model, key_field, omit_none, remove_hint, None, core=True
-    )
 
 
 def project_state_path(project: Project) -> Path:
@@ -776,6 +758,13 @@ def _shape_problems(rows: StateRows[Any] | ProjectStateRows[Any]) -> tuple[str, 
     except (_ShapeProblem, ConfigError) as exc:  # ConfigError: a model function refusing
         return (str(exc),)
     return ()
+
+
+def _key_field(rows: StateRows[Any] | ProjectStateRows[Any]) -> str | None:
+    try:
+        return _shape_from(rows).field or None
+    except _ShapeProblem, ConfigError:
+        return None
 
 
 def _shape_from(rows: StateRows[Any] | ProjectStateRows[Any]) -> _Shape:

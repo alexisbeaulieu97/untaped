@@ -9635,6 +9635,20 @@ state dotfiles.repos.path string  [experimental]
 state dotfiles.repos.ref string  [experimental]
 state dotfiles.repos.subscribed_at string(format=date-time)  [experimental]
 state dotfiles.repos.url string  [experimental]
+state untaped.credentials CredentialRow[]
+state untaped.credentials.argv string[]? default=None
+state untaped.credentials.backend choice=command
+state untaped.credentials.backend choice=memory
+state untaped.credentials.backend choice=pass
+state untaped.credentials.backend choice=secret-tool
+state untaped.credentials.backend choice=security
+state untaped.credentials.backend string
+state untaped.credentials.entry string? default=None
+state untaped.credentials.id string
+state untaped.credentials.key object default={}
+state untaped.credentials.label string default=""
+state untaped.credentials.name string
+state untaped.credentials.plugin string
 state workspace.archived ArchivedRecord[]  [experimental]
 state workspace.archived.archived_at string(format=date-time)  [experimental]
 state workspace.archived.created_at string(format=date-time)  [experimental]

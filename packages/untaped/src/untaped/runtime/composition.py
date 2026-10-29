@@ -793,8 +793,9 @@ class _PluginWalk:
         blocks = self._blocks(cls)
         #: Each attribute's value by identity: the blocks a command's fields may name.
         self.held = {id(value): attribute for attribute, value in self._attributes(cls).items()}
-        #: Each state rows attribute's removers (``removes =``), by command target.
-        self.removers: dict[str, dict[str, str]] = {}
+        #: Each state rows attribute's removers (``removes =``), by command target: where
+        #: the command is, and the flag taking the key (``None``: a positional).
+        self.removers: dict[str, dict[str, tuple[str, str | None]]] = {}
         commands = self._nodes(cls.commands, (self.name,), where=f"{cls.__qualname__}.commands")
         runs = None
         if cls.runs is not None and _is_command(cls.runs):
@@ -840,15 +841,17 @@ class _PluginWalk:
                 self.problem(
                     "duplicate-remover",
                     f"{cls.__qualname__}.{attribute}",
-                    f"is removed by {', '.join(sorted(removers.values()))}; "
+                    f"is removed by {', '.join(sorted(w for w, _ in removers.values()))}; "
                     "one command removes a plugin's rows",
                 )
-        return tuple(
-            block.model_copy(update={"removed_by": next(iter(removers))})
-            if len(removers := self.removers.get(block.attribute, {})) == 1
-            else block
-            for block in blocks
-        )
+        found: list[BlockDecl] = []
+        for block in blocks:
+            removers = self.removers.get(block.attribute, {})
+            if len(removers) == 1:
+                [(target, (_, flag))] = removers.items()
+                block = block.model_copy(update={"removed_by": target, "removed_with": flag})
+            found.append(block)
+        return tuple(found)
 
     def _settings(self, cls: type[Plugin]) -> type[BaseModel] | None:
         model = getattr(cls, "settings", None)
@@ -1288,7 +1291,11 @@ class _CommandWalk:
         )
 
     def _removes(self) -> None:
-        """Record the state rows the command marks ``removes =``: rows its plugin class holds."""
+        """Record the state rows the command marks ``removes =``: rows its plugin class holds.
+
+        Keyed rows' remover takes the key under the key field's name, as its first
+        positional or as an option, so a damaged row's hint can spell the command.
+        """
         rows = self.cls.removes
         if rows is None:
             return
@@ -1300,7 +1307,24 @@ class _CommandWalk:
                 f"holds {rows!r}, not state rows its plugin class holds",
             )
             return
-        self.plugin.removers.setdefault(attribute, {})[target_of(self.cls)] = self.where
+        removers = self.plugin.removers.setdefault(attribute, {})
+        key = rows._keyed_by()
+        if key is None:  # rows that are a list, or a shape the block's own problems name
+            removers[target_of(self.cls)] = (self.where, None)
+            return
+        top = [o for o in self.seen.options if o.block is None and "." not in o.field]
+        option = next((o for o in top if o.field.rstrip("_") == key), None)
+        first = next((o for o in top if o.positional), None)
+        if option is None or (option.positional and option is not first):
+            self.problem(
+                "remover-key",
+                f"{self.where}.removes",
+                f"removes {self.plugin.name}.{attribute}, whose rows are keyed by {key!r}, "
+                f"but takes no top-level field {key!r} as its first positional or an option: "
+                f"add one taking the row's key",
+            )
+            return
+        removers[target_of(self.cls)] = (self.where, option.flag)
 
     def _mark(self, cls: type[Command[Any]]) -> StabilityDecl | None:
         return self.plugin.stability_of(cls, cls.stability)

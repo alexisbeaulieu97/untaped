@@ -33,6 +33,14 @@ overridden for one process with the environment variable shown.
 | `untaped.ui.color_roles` | mapping | empty | `UNTAPED_UNTAPED__UI__COLOR_ROLES` | Color-role overrides merged over the theme's colors. Names: `header`, `border`, `key`, `value`, `success`, `info`, `warning`, `error`, `screen.accent`, `screen.muted`, `screen.highlight`, `screen.focus`, `screen.border`, `screen.value`, `screen.success`, `screen.error`, `screen.caret`, `screen.emphasis`, `screen.match`. |
 | `untaped.skills.updates` | `warn` \| `auto` \| `off` | `auto` | `UNTAPED_UNTAPED__SKILLS__UPDATES` | What each run does about agent skills in your home folder that an older untaped wrote: `auto` (refresh them), `warn` (print a warning), or `off`. Skills inside a project are never changed by a run. |
 
+## `untaped` state
+
+Kept in `~/.untaped/plugins/untaped/state.yml`.
+
+| Key | Type | Description |
+|---|---|---|
+| `untaped.credentials` | list | One stored credential in the index: what it is for and how to read it, never the secret. |
+
 ## `ansible`
 
 | Key | Type | Default | Environment | Description |
