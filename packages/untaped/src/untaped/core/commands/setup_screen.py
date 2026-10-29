@@ -50,7 +50,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cache
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from rich.console import Group, RenderableType
 from rich.text import Text
@@ -88,7 +88,7 @@ from untaped.core.commands.setup_write import (
     write_candidate,
 )
 from untaped.core.config.use_cases import Note
-from untaped.runtime.registry import CompositionResult, PluginSpec, contract_owners
+from untaped.runtime.registry import CompositionResult, contract_owners
 from untaped.runtime.settings import resolve_config_path
 from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import ListItem, SingleList
@@ -117,6 +117,9 @@ from untaped.sdk.errors import ConfigError, ErrorCategory
 from untaped.sdk.network._token_store import TokenStore
 from untaped.sdk.network.auth import CommandToken, forget_token_command
 from untaped.sdk.words import hint, shown_path
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 __all__ = ["SetupModel", "SetupResult", "setup_screen"]
 
@@ -279,7 +282,7 @@ class SetupModel:
 
 def setup_screen(
     result: CompositionResult,
-    services: Mapping[str, PluginSpec],
+    services: Mapping[str, ComposedPlugin],
     *,
     sections: Sequence[str],
     profile: str,
@@ -449,7 +452,7 @@ class _Setup:
     def __init__(
         self,
         result: CompositionResult,
-        services: dict[str, PluginSpec],
+        services: dict[str, ComposedPlugin],
         sections: tuple[str, ...],
         store: TokenStore | None,
         profiles: tuple[str, ...],
@@ -1256,7 +1259,7 @@ def _section(key: str) -> str:
     return key.partition(".")[0]
 
 
-def _listing(profile: str, services: Mapping[str, PluginSpec]) -> Listing | None:
+def _listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listing | None:
     """What ``profile`` shows now, or ``None`` when the config cannot be read."""
     try:
         return read_listing(profile, services)

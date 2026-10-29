@@ -1,11 +1,12 @@
 """Internal plugin composition kernel.
 
 Implements the plugin pipeline: discovery and metadata pre-checks, entry-point
-resolution, declaration validation, quarantine of every claimant of a contested
-name, then app-factory staging and commit. Every plugin,
-first-party ones included, arrives as an entry-point candidate; every violation
-yields a :class:`QuarantineRecord` while composition continues. Doctor-check
-bodies never run here.
+resolution, composition of the plugin classes and the checks of each one's
+declaration, quarantine of every claimant of a contested name, then commit.
+Every plugin, first-party ones included, arrives as an entry-point candidate;
+every violation yields a :class:`QuarantineRecord` while composition
+continues. A plugin's commands are built only when first dispatched, and
+doctor-check bodies never run here.
 
 This module is intentionally NOT re-exported: plugin authors import the
 stable surface from :mod:`untaped.sdk` instead.
@@ -19,14 +20,13 @@ import logging
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, TypeGuard, overload
+from typing import TYPE_CHECKING, TypeGuard
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
@@ -48,35 +48,24 @@ from untaped.runtime.settings import (
     plugins_root,
     reserved_section_keys,
     section_model,
-    timed_caches,
 )
 from untaped.sdk._home import HOME_ENV
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import mapping_errors
-from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.health.marks import setup_mark_errors
-from untaped.sdk.marks import (
-    DeprecatedBehaviour,
-    Stability,
-    check_stability,
-)
 from untaped.sdk.network.credentials import (
-    Credential,
     CredentialKey,
-    credential_list,
     key_errors,
     key_fields,
 )
-from untaped.sdk.storage.cache import Cache, Filled
-from untaped.sdk.storage.store import Store
+from untaped.sdk.storage.cache import Filled
 
 if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.composition import PluginEntry
     from untaped.runtime.mount import Mount
-    from untaped.sdk.contracts import Contract
     from untaped.sdk.plugin import Plugin
     from untaped.sdk.progress import ProgressHandle
-    from untaped.sdk.storage.holds import ItemStore
 
 _LOG = logging.getLogger("untaped.registry")
 
@@ -85,28 +74,6 @@ _CORE_DISTRIBUTION = "untaped"
 
 #: Entry-point group every plugin is discovered from.
 PLUGINS_ENTRY_POINT_GROUP = "untaped.plugins"
-
-
-@dataclass(frozen=True)
-class SkillAsset:
-    """The stub skill a plugin ships: core writes it from its own template and
-    ``description``, and the stub sends the agent to ``untaped docs``. A
-    plugin ships at most one.
-    """
-
-    name: str
-    description: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ConfigError("skill asset name must not be empty")
-        if not self.description.strip():
-            raise ConfigError(f"skill asset {self.name!r} must have a description")
-
-
-def _check_model(model: object, field: str, label: str) -> None:
-    if model is not None and not (isinstance(model, type) and issubclass(model, BaseModel)):
-        raise ConfigError(f"{label} {field} must be a pydantic BaseModel subclass or None")
 
 
 def check_plugin_name(name: str) -> None:
@@ -124,177 +91,13 @@ def check_plugin_name(name: str) -> None:
         )
 
 
-def _no_deprecations() -> Sequence[DeprecatedBehaviour]:
-    return ()
-
-
-def _no_contracts() -> Sequence[type[Contract]]:
-    return ()
-
-
-@dataclass(frozen=True)
-class PluginSpec:
-    """One composable plugin unit.
-
-    ``name`` is also the plugin's config section and CLI group. Every part
-    is optional: ``app_factory`` builds the commands mounted under the name
-    (none when it is ``None``) and ``settings`` is the settings model of the
-    plugin's config section.
-
-    ``help`` is the one-line summary shown in the Plugins panel of root help;
-    a plugin with commands has one, and its ``app_factory`` (so its CLI
-    import tree) runs only when one of its commands is dispatched.
-
-    ``stability`` marks the whole plugin ``experimental`` or
-    ``deprecated(...)``. It sits here, never on the app the factory returns:
-    a lazy mount reads only the spec.
-
-    ``contracts`` returns the :class:`~untaped.sdk.contracts.Contract` classes the
-    plugin owns, and ``provides`` maps an owner plugin's name to a function
-    returning this plugin's providers of that owner's contracts. Both are
-    functions with a local import, so nothing under them is imported until a
-    contract is first asked for (``untaped.sdk.contracts``).
-
-    ``deprecations`` returns the plugin's deprecated behaviours
-    (:func:`~untaped.sdk.marks.deprecated_behaviour`), a function with a local
-    import for the same reason: each gets a ``behaviour`` line in the public
-    surface, and its warnings name this plugin's distribution.
-
-    ``caches`` are the :class:`~untaped.sdk.storage.cache.Cache` objects the plugin
-    keeps; each gets the setting ``<name>.caches.<cache>.max_age_seconds``,
-    except a version-only one (``max_age=None``), which has none.
-    ``stores`` is what the plugin keeps on disk outside its settings: the
-    :class:`~untaped.sdk.storage.store.Store` objects, each file in a layout of its own
-    (``doctor`` lists them), and the :class:`~untaped.sdk.storage.holds.ItemStore`
-    objects whose items projects may hold (core asks the plugin how to
-    release them), which share one namespace.
-
-    ``credentials`` are the :class:`~untaped.sdk.network.credentials.Credential` objects
-    whose secrets the plugin needs: core keeps them outside configuration,
-    owns ``untaped auth login`` for them.
-    """
-
-    name: str
-    app_factory: Callable[[], App] | None = None
-    settings: type[BaseModel] | None = None
-    skills: tuple[SkillAsset, ...] = ()
-    doctor_checks: tuple[DoctorCheck, ...] = ()
-    help: str | None = None
-    stability: Stability | None = None
-    contracts: Callable[[], Sequence[type[Contract]]] = _no_contracts
-    provides: Mapping[str, Callable[[], Sequence[Contract]]] = field(
-        default_factory=lambda: MappingProxyType({}), hash=False
-    )
-    caches: tuple[Cache[Any], ...] = ()
-    stores: tuple[Store | ItemStore[Any], ...] = ()
-    credentials: tuple[Credential[Any], ...] = ()
-    deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
-
-    def __post_init__(self) -> None:
-        check_plugin_name(self.name)
-        _check_model(self.settings, "settings", f"plugin {self.name!r}")
-        if self.app_factory is not None and not callable(self.app_factory):
-            raise ConfigError(f"plugin {self.name!r} app_factory must be callable or None")
-        try:
-            check_stability(self.stability, where=f"plugin {self.name!r}")
-        except TypeError as exc:
-            raise ConfigError(str(exc)) from exc
-        if self.help is not None and (
-            not isinstance(self.help, str) or not self.help.strip() or "\n" in self.help
-        ):
-            raise ConfigError(f"plugin {self.name!r} help must be a non-empty single line or None")
-        if self.help is not None and self.app_factory is None:
-            raise ConfigError(
-                f"plugin {self.name!r} help describes commands it has no app_factory for"
-            )
-        _check_listings(self)
-        object.__setattr__(self, "skills", tuple(self.skills))
-        object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
-        object.__setattr__(self, "caches", tuple(self.caches))
-        for cache in self.caches:
-            if not isinstance(cache, Cache):
-                raise ConfigError(f"plugin {self.name!r} caches holds {cache!r}, not a Cache")
-        try:
-            object.__setattr__(self, "credentials", credential_list(self.credentials))
-        except TypeError as exc:
-            raise ConfigError(f"plugin {self.name!r} {exc}") from None
-        object.__setattr__(self, "stores", tuple(self.stores))
-        for store in self.stores:
-            if not isinstance(store, Store) and not _is_item_store(store):
-                raise ConfigError(
-                    f"plugin {self.name!r} stores holds {store!r}, not a Store or an ItemStore"
-                )
-        object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
-
-
-class DeclaredBlocks[B](Sequence[B]):
-    """A 12.0 plugin's blocks of one kind, for its spec: counted from its declaration, loaded late.
-
-    A start reads the declaration, not the plugin class, which imports every
-    command; the class is imported the first time a block is read (``doctor``,
-    ``setup``). Its caches' settings come from the declaration too
-    (``timed``), so composing the settings section never imports it. This
-    goes with the 11.x seam (:func:`untaped.runtime.mount.plugin_spec`).
-    """
-
-    def __init__(
-        self,
-        ids: tuple[str, ...],
-        load: Callable[[], tuple[B, ...]],
-        *,
-        timed: tuple[Cache[Any], ...] = (),
-    ) -> None:
-        #: Each block's id (``<plugin>.<name>``), in the class's order.
-        self.ids = ids
-        self._load = load
-        #: The caches with a max age, as their settings read them (caches only).
-        self.timed = timed
-
-    def __len__(self) -> int:
-        return len(self.ids)
-
-    def __iter__(self) -> Iterator[B]:
-        # none declared: nothing to import the class for
-        return iter(self._load() if self.ids else ())
-
-    @overload
-    def __getitem__(self, index: int) -> B: ...
-    @overload
-    def __getitem__(self, index: slice) -> tuple[B, ...]: ...
-    def __getitem__(self, index: int | slice) -> B | tuple[B, ...]:
-        return self._load()[index]
-
-    def __repr__(self) -> str:
-        return f"DeclaredBlocks({', '.join(self.ids)})"
-
-
-def _check_listings(spec: PluginSpec) -> None:
-    """``contracts``, ``deprecations`` and each ``provides`` entry are functions."""
-    for listing in ("contracts", "deprecations"):
-        if not callable(getattr(spec, listing)):
-            raise ConfigError(f"plugin {spec.name!r} {listing} must be a function")
-    for owner, providers in spec.provides.items():
-        check_plugin_name(owner)
-        if not callable(providers):
-            raise ConfigError(f"plugin {spec.name!r} provides[{owner!r}] must be a function")
-
-
-class _NoSettings(BaseModel):
-    """The settings of a plugin that declares none: no fields."""
-
-
-def owns_contracts(spec: PluginSpec) -> bool:
-    """Whether ``spec`` declares contracts (read from the spec; nothing is imported)."""
-    return spec.contracts is not _no_contracts
-
-
 def contract_owners(result: CompositionResult) -> tuple[str, ...]:
     """The composed plugins that own contracts, which a ranking may name."""
-    return tuple(each.spec.name for each in result.plugins if owns_contracts(each.spec))
+    return tuple(each.spec.name for each in result.plugins if each.spec.owns_contracts)
 
 
-def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseModel] | None:
-    """The model registered for ``spec``'s config section; ``None`` when it has none.
+def section_settings(plugin: ComposedPlugin, *, extensions: bool = True) -> type[BaseModel]:
+    """The model registered for ``plugin``'s config section.
 
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
@@ -303,36 +106,21 @@ def section_settings(spec: PluginSpec, *, extensions: bool = True) -> type[BaseM
     overrides one. ``extensions=False`` leaves ``extensions`` out (the config
     reference documents it elsewhere).
     """
-    owner = extensions and owns_contracts(spec)
-    caches = _timed_caches(spec)
-    if owner or caches or spec.credentials:
+    owner = extensions and plugin.owns_contracts
+    if owner or plugin.timed_caches or plugin.credential_names:
         return section_model(
-            spec.settings or _NoSettings,
+            plugin.settings,
             extensions=owner,
-            caches=caches,
-            section=spec.name,
-            credentials=_credential_names(spec),
+            caches=plugin.timed_caches,
+            section=plugin.name,
+            credentials=plugin.credential_names,
         )
-    return spec.settings
+    return plugin.settings
 
 
-def _credential_names(spec: PluginSpec) -> frozenset[str]:
-    """The plugin's credential names; a 12.0 plugin's from its declaration, unimported."""
-    if isinstance(spec.credentials, DeclaredBlocks):
-        return frozenset(each.partition(".")[2] for each in spec.credentials.ids)
-    return frozenset(each.name for each in spec.credentials)
-
-
-def _timed_caches(spec: PluginSpec) -> tuple[Cache[Any], ...]:
-    """The plugin's caches with a setting; a 12.0 plugin's from its declaration, unimported."""
-    if isinstance(spec.caches, DeclaredBlocks):
-        return spec.caches.timed
-    return timed_caches(spec.caches)
-
-
-def settings_model(spec: PluginSpec) -> type[BaseModel]:
-    """The plugin's section model, or a model with no fields when it has none."""
-    return section_settings(spec) or _NoSettings
+def settings_model(plugin: ComposedPlugin) -> type[BaseModel]:
+    """The plugin's section model, the keys core injects included."""
+    return section_settings(plugin)
 
 
 def named_plugin_dir(name: str) -> Path:
@@ -359,9 +147,8 @@ class PluginRef:
 class RegisteredPlugin:
     """A fully validated, committed plugin."""
 
-    spec: PluginSpec
+    spec: ComposedPlugin
     plugin_ref: PluginRef
-    skills: tuple[SkillAsset, ...]
     #: Its commands mount at the root, read from its declaration
     #: (:attr:`~untaped.runtime.declaration.PluginDecl.root`): core's.
     root: bool = False
@@ -371,8 +158,6 @@ class RegisteredPlugin:
 VALID_REASONS = frozenset(
     {
         "duplicate-name",
-        "duplicate-doctor-check",
-        "doctor-check-failed",
         "malformed-entry-point",
         "not-a-plugin-class",
         "bad-app-factory",
@@ -409,8 +194,8 @@ class QuarantineRecord:
 class PluginCandidate:
     """One discovered candidate awaiting composition.
 
-    ``target`` is the entry point's ``module:attr`` string, or the
-    :class:`PluginSpec` itself for a plugin composed without installing it.
+    ``target`` is the entry point's ``module:attr`` string, or the plugin
+    class itself for a plugin composed without installing it.
     ``distribution_version``, ``entry_point_group``, and ``requires_dist``
     are captured at discovery via :mod:`importlib.metadata` without importing
     plugin code; ``untaped plugin list`` reports ``distribution_version``
@@ -635,6 +420,15 @@ def _check_entry_point_group(candidate: PluginCandidate) -> None:
         )
 
 
+def _check_entry_point_name(candidate: PluginCandidate) -> None:
+    try:
+        check_plugin_name(candidate.name)
+    except ConfigError as exc:
+        raise _Quarantine(
+            "bad-metadata", f"entry point of distribution {candidate.distribution!r}: {exc}"
+        ) from None
+
+
 def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -> None:
     untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
@@ -716,11 +510,6 @@ class _CompositionState:
     """Mutable accumulation of one composition run (core + committed plugins)."""
 
     def __init__(self, core: PluginDecl) -> None:
-        self.doctor_ids: set[str] = {
-            f"{core.name}.{block.name}"
-            for block in core.blocks
-            if block.block == DoctorCheck.block_kind
-        }
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
@@ -745,152 +534,105 @@ def _check_free_name(name: str, state: _CompositionState) -> None:
         raise _Quarantine("duplicate-name", f"duplicate plugin name: {name!r} is taken by {taken}")
 
 
-def _check_section_keys(spec: PluginSpec) -> None:
+def _check_section_keys(plugin: ComposedPlugin) -> None:
     # Only an owner's settings section gets ``extensions``, and only one with caches ``caches``.
     injected = frozenset(
-        ({"extensions"} if owns_contracts(spec) else set())
-        | ({"caches"} if _timed_caches(spec) else set())
+        ({"extensions"} if plugin.owns_contracts else set())
+        | ({"caches"} if plugin.timed_caches else set())
     )
-    taken = [] if spec.settings is None else reserved_section_keys(spec.settings, injected=injected)
+    taken = reserved_section_keys(plugin.settings, injected=injected)
     if taken:
         raise _Quarantine(
             "bad-settings-keys",
-            f"plugin {spec.name!r} settings declares {', '.join(taken)}, "
+            f"plugin {plugin.name!r} settings declares {', '.join(taken)}, "
             "which untaped reserves for its own section keys",
         )
 
 
-def _check_doctor_checks(spec: PluginSpec, state: _CompositionState) -> None:
-    seen_checks: set[str] = set()
-    for check in spec.doctor_checks:
-        if (
-            not isinstance(check, DoctorCheck)
-            or not check.id.strip()
-            or not check.title.strip()
-            or not callable(check.run)
-        ):
-            raise _Quarantine(
-                "doctor-check-failed",
-                f"malformed doctor check of plugin {spec.name!r}: {check!r}",
-            )
-        if check.id in state.doctor_ids or check.id in seen_checks:
-            raise _Quarantine("duplicate-doctor-check", f"duplicate doctor id: {check.id!r}")
-        seen_checks.add(check.id)
-
-
-def _check_setup_marks(spec: PluginSpec) -> None:
+def _check_setup_marks(plugin: ComposedPlugin) -> None:
     # ``NeedsSetup`` and ``Secret`` take effect only where core can act on them.
-    if spec.settings is None:
-        return
-    errors = setup_mark_errors(spec.settings)
+    errors = setup_mark_errors(plugin.settings)
     if errors:
-        raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
+        raise _Quarantine("bad-settings-keys", f"plugin {plugin.name!r}: {errors[0]}")
 
 
-def _check_key_mappings(spec: PluginSpec) -> None:
+def _check_key_mappings(plugin: ComposedPlugin) -> None:
     # The plugin's own model: an old key may never point at an injected key.
-    if spec.settings is None:
-        return
-    errors = mapping_errors(spec.settings)
+    errors = mapping_errors(plugin.settings)
     if errors:
-        raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {errors[0]}")
+        raise _Quarantine("bad-settings-keys", f"plugin {plugin.name!r}: {errors[0]}")
 
 
-def _check_credentials(spec: PluginSpec) -> None:
-    fields = {} if spec.settings is None else spec.settings.model_fields
+def _check_credentials(plugin: ComposedPlugin) -> None:
+    fields = plugin.settings.model_fields
     holders: dict[type[CredentialKey], list[str]] = {}
-    if spec.settings is not None:
-        for path, model in key_fields(spec.settings):
-            holders.setdefault(model, []).append(".".join(path))
-    for credential in spec.credentials:
+    for path, model in key_fields(plugin.settings):
+        holders.setdefault(model, []).append(".".join(path))
+    for credential in plugin.credentials:
         errors = key_errors(credential.key)
         if errors:
             raise _Quarantine(
                 "bad-credential",
-                f"plugin {spec.name!r} credential {credential.name!r}: {errors[0]}",
+                f"plugin {plugin.name!r} credential {credential.name!r}: {errors[0]}",
             )
         if credential.name in fields:
             raise _Quarantine(
                 "bad-credential",
-                f"plugin {spec.name!r} credential {credential.name!r} has the name of a "
+                f"plugin {plugin.name!r} credential {credential.name!r} has the name of a "
                 "setting of its section; a credential is not a setting",
             )
         held = holders.get(credential.key, [])
         if len(held) > 1:
             raise _Quarantine(
                 "bad-credential",
-                f"plugin {spec.name!r} credential {credential.name!r}: several settings hold a "
+                f"plugin {plugin.name!r} credential {credential.name!r}: several settings hold a "
                 f"{credential.key.__name__} ({', '.join(held)}); keep one",
             )
 
 
-def _check_composed_mappings(spec: PluginSpec) -> None:
+def _check_composed_mappings(plugin: ComposedPlugin) -> None:
     # A cache's renamed_from exists on the composed model only: check it there.
-    if not any(cache.renamed_from for cache in spec.caches):
+    if not any(cache.renamed_from for cache in plugin.timed_caches):
         return
     try:
-        errors = mapping_errors(settings_model(spec))
+        errors = mapping_errors(settings_model(plugin))
     except ConfigError as exc:
         errors = [str(exc)]
     if errors:
         raise _Quarantine(
-            "bad-settings-keys", f"plugin {spec.name!r} caches renamed_from: {errors[0]}"
+            "bad-settings-keys", f"plugin {plugin.name!r} caches renamed_from: {errors[0]}"
         )
 
 
-def _check_declaration(spec: PluginSpec, state: _CompositionState) -> None:
-    _check_free_name(spec.name, state)
-    _check_own_declaration(spec)
-    _check_doctor_checks(spec, state)
-
-
-def _check_own_declaration(spec: PluginSpec) -> None:
-    """The checks of ``spec``'s own declaration, no other plugin's needed: core's too."""
-    _check_credentials(spec)
-    _check_setup_marks(spec)
-    _check_section_keys(spec)
-    _check_key_mappings(spec)
-    _check_composed_mappings(spec)
-
-
-def _check_factory(factory: Callable[[], App]) -> App:
-    try:
-        staged = factory()
-    except Exception as exc:
-        raise _Quarantine("bad-app-factory", f"{type(exc).__name__}: {exc}") from None
-    return staged
+def _check_declaration(plugin: ComposedPlugin) -> None:
+    """The checks of ``plugin``'s own declaration, no other plugin's needed: core's too."""
+    _check_credentials(plugin)
+    _check_setup_marks(plugin)
+    _check_section_keys(plugin)
+    _check_key_mappings(plugin)
+    _check_composed_mappings(plugin)
 
 
 def run_deferred_factory(plugin: RegisteredPlugin) -> App | QuarantineRecord:
-    """The plugin's app, running its deferred factory; a failure as a quarantine record.
+    """The plugin's app, built from its declaration; a failure as a quarantine record.
 
-    The one place the factory runs, for first dispatch and ``untaped doctor``
-    alike. A plugin without an ``app_factory`` has no app to build: asking
-    for one is a caller bug and raises :class:`ConfigError`.
+    The one place it is built, for first dispatch and ``untaped doctor``
+    alike. A plugin without commands has no app to build: asking for one is a
+    caller bug and raises :class:`ConfigError`.
     """
-    factory = plugin.spec.app_factory
-    if factory is None:
+    if not plugin.spec.has_commands:
         raise ConfigError(f"plugin {plugin.spec.name!r} has no commands to build")
     try:
-        return _check_factory(factory)
-    except _Quarantine as failed:
+        return plugin.spec.build_app()
+    except Exception as exc:
         ref = plugin.plugin_ref
         return QuarantineRecord(
-            plugin.spec.name, ref.distribution, ref.entry_point, failed.reason, failed.detail
+            plugin.spec.name,
+            ref.distribution,
+            ref.entry_point,
+            "bad-app-factory",
+            f"{type(exc).__name__}: {exc}",
         )
-
-
-def _commit(spec: PluginSpec, ref: PluginRef, state: _CompositionState) -> RegisteredPlugin:
-    registered = RegisteredPlugin(spec=spec, plugin_ref=ref, skills=tuple(spec.skills))
-    state.doctor_ids.update(_ids(spec.doctor_checks))
-    return registered
-
-
-def _ids(blocks: Sequence[DoctorCheck]) -> tuple[str, ...]:
-    """Each block's id; a 12.0 plugin's from its declaration, so its class stays unimported."""
-    if isinstance(blocks, DeclaredBlocks):
-        return blocks.ids
-    return tuple(block.id for block in blocks)
 
 
 def resolve_target(target: object) -> object:
@@ -919,9 +661,9 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
     A plugin name that two or more of the survivors
     claim is contested: every claimant is quarantined, so the result never
     depends on candidate order. The rest commit in ``(name, distribution,
-    entry point)`` order, where a doctor-check id already taken quarantines
-    the later one. A factory runs only at first dispatch and in
-    ``untaped doctor`` (:func:`run_deferred_factory`), never in composition.
+    entry point)`` order. A plugin's commands are built only at first
+    dispatch and in ``untaped doctor`` (:func:`run_deferred_factory`), never
+    in composition.
 
     The plugin classes' part, core's included, is kept in core's declaration cache
     (:data:`untaped.core.settings.DECLARATION`), keyed by the candidates:
@@ -1066,21 +808,15 @@ def _compose(
     else:
         claims, mount = _replayed(replayed, declared)
     plugins: list[RegisteredPlugin] = []
-    for index, spec in claims.items():
+    for index, composed in claims.items():
         candidate = ordered[index]
-        try:
-            if index not in replayed:  # a replayed plugin passed these when it was composed
-                _check_doctor_checks(spec, state)
-        except _Quarantine as failed:
-            quarantined[index] = failed.to_record(candidate)
-            continue
         ref = PluginRef(
             distribution=candidate.distribution,
             entry_point=candidate_entry_point(candidate),
             distribution_version=candidate.distribution_version,
             requires_dist=candidate.requires_dist,
         )
-        plugins.append(_commit(spec, ref, state))
+        plugins.append(RegisteredPlugin(spec=composed, plugin_ref=ref))
     if declared is None:
         # Only a class the mount composed leaves it; one refused before it never got there.
         dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}
@@ -1154,11 +890,8 @@ def _root_plugin(mount: Mount, core: PluginDecl) -> RegisteredPlugin:
     class's target; its version is read only where it is shown, so composing
     reads no metadata for it.
     """
-    from untaped.runtime.mount import plugin_spec  # noqa: PLC0415 - mount imports this module
-
-    spec = plugin_spec(mount, core.name)
     ref = PluginRef(distribution=_CORE_DISTRIBUTION, entry_point=core.target)
-    return RegisteredPlugin(spec=spec, plugin_ref=ref, skills=spec.skills, root=core.root)
+    return RegisteredPlugin(spec=_composed(mount, core.name), plugin_ref=ref, root=core.root)
 
 
 def _core_entry() -> PluginEntry:
@@ -1192,13 +925,13 @@ def _core_alone() -> PluginDecl:
     """
     from untaped.core.settings import NAME  # noqa: PLC0415 - core imports the runtime
     from untaped.runtime.composition import compose as compose_classes  # noqa: PLC0415
-    from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415
+    from untaped.runtime.mount import Mount  # noqa: PLC0415
 
     composed = compose_classes([_core_entry()])
     for refused in composed.quarantined:
         raise RuntimeError(f"core's own class does not compose: {refused.detail}")
     try:
-        _check_own_declaration(plugin_spec(Mount.of(composed), NAME))
+        _check_declaration(_composed(Mount.of(composed), NAME))
     except _Quarantine as failed:
         raise RuntimeError(f"core's own class does not compose: {failed.detail}") from None
     return composed.plugin(NAME)
@@ -1209,16 +942,15 @@ def _mounted(
     provided: dict[int, type[Plugin]],
     state: _CompositionState,
     quarantined: dict[int, QuarantineRecord],
-) -> tuple[dict[int, PluginSpec], Mount]:
-    """Every claim as a spec, and the mount: core's class and the plugins' composed in one walk.
+) -> tuple[dict[int, ComposedPlugin], Mount]:
+    """Every claim composed, and the mount: core's class and the plugins' composed in one walk.
 
     A plugin class composition refuses is quarantined with every problem it
-    names; one it composes reaches the rest of composition as the spec the
-    mount builds for it (:func:`untaped.runtime.mount.plugin_spec`).
+    names; one it composes is read through its :class:`ComposedPlugin`.
     """
     classes = dict(provided)
     from untaped.runtime.composition import PluginEntry  # noqa: PLC0415 - 12.0 plugins only
-    from untaped.runtime.mount import compose_plugins, plugin_spec  # noqa: PLC0415
+    from untaped.runtime.mount import compose_plugins  # noqa: PLC0415
 
     problems: dict[str, tuple[Problem, ...]] = {}
     while True:
@@ -1234,18 +966,18 @@ def _mounted(
         )
         refused = {each.name: each for each in mount.declaration.quarantined}
         problems.update({name: each.problems for name, each in refused.items()})
-        mounted: dict[int, PluginSpec] = {}
+        mounted: dict[int, ComposedPlugin] = {}
         for index in classes:
             candidate = ordered[index]
             try:
                 if candidate.name in refused:
                     raise _Quarantine("bad-plugin-class", refused[candidate.name].detail)
-                spec = plugin_spec(mount, candidate.name)
-                _check_declaration(spec, state)
+                composed = _composed(mount, candidate.name)
+                _check_declaration(composed)
             except _Quarantine as failed:
                 quarantined[index] = failed.to_record(candidate)
                 continue
-            mounted[index] = spec
+            mounted[index] = composed
         if len(mounted) == len(classes):
             mount.problems.update(problems)
             return dict(sorted(mounted.items())), mount
@@ -1256,12 +988,12 @@ def _mounted(
 
 def _replayed(
     replayed: Mapping[int, PluginDecl], declared: Declaration
-) -> tuple[dict[int, PluginSpec], Mount]:
-    """Every claim as a spec, read from ``declared``, no plugin class imported."""
-    from untaped.runtime.mount import Mount, plugin_spec  # noqa: PLC0415 - 12.0 plugins only
+) -> tuple[dict[int, ComposedPlugin], Mount]:
+    """Every claim composed, read from ``declared``, no plugin class imported."""
+    from untaped.runtime.mount import Mount  # noqa: PLC0415 - mount imports this module
 
     mount = Mount.of(declared)
-    claims = {index: plugin_spec(mount, plugin.name) for index, plugin in replayed.items()}
+    claims = {index: _composed(mount, plugin.name) for index, plugin in replayed.items()}
     return dict(sorted(claims.items())), mount
 
 
@@ -1275,6 +1007,13 @@ def _is_plugin_class(obj: object) -> TypeGuard[type[Plugin]]:
     return module is not None and isinstance(obj, type) and issubclass(obj, module.Plugin)
 
 
+def _composed(mount: Mount, name: str) -> ComposedPlugin:
+    """The composed plugin ``name`` of ``mount``, as core's readers read it."""
+    from untaped.runtime.composed import ComposedPlugin  # noqa: PLC0415 - imports the SDK blocks
+
+    return ComposedPlugin.of(mount, name)
+
+
 def _entry_target(candidate: PluginCandidate, cls: type[Plugin]) -> str:
     """The ``module:Qualname`` an entry point names: its target, or the class given directly."""
     from untaped.runtime.declaration import target_of  # noqa: PLC0415 - 12.0 plugins only
@@ -1286,8 +1025,7 @@ def _contested(ordered: Sequence[PluginCandidate], claims: Iterable[int]) -> dic
     """A quarantine per claimant of a plugin name two or more claims share.
 
     The name is also the config section and CLI group, so one contest
-    covers all three. A claim carries its candidate's name (a spec's name
-    was checked against it).
+    covers all three. A claim carries its candidate's name.
     """
     claimants: defaultdict[str, list[int]] = defaultdict(list)
     for index in claims:
@@ -1340,7 +1078,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
 
     The entry point names the class (``untaped_acme.plugin:Acme``), which
     composition reads with the other plugin classes (:func:`_mounted`);
-    anything else, an 11.x ``PluginSpec`` or a callable included, is
+    anything else, an 11.x ``SPEC`` or a callable included, is
     ``not-a-plugin-class`` and is never called.
 
     Raises :class:`_Quarantine` on the first failed check.
@@ -1349,6 +1087,7 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
     # admission are decided from distribution metadata without executing
     # plugin code.
     _check_entry_point_group(candidate)
+    _check_entry_point_name(candidate)
     _check_requires_dist(candidate, state)
     try:
         spec = resolve_target(candidate.target)
@@ -1367,11 +1106,10 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
             failed.plugin_class = True
             raise
         return spec
-    what = "an 11.x PluginSpec" if isinstance(spec, PluginSpec) else _describe(spec)
     raise _Quarantine(
         "not-a-plugin-class",
         f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
-        f"names {what}, not a plugin class; untaped 12.0 composes plugin classes: "
+        f"names {_describe(spec)}, not a plugin class; untaped 12.0 composes plugin classes: "
         f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
     )
 
@@ -1382,9 +1120,3 @@ def _check_distribution(candidate: PluginCandidate) -> None:
             "bad-metadata",
             f"plugin {candidate.name!r} declares an empty distribution name",
         )
-
-
-def _is_item_store(value: object) -> bool:
-    from untaped.sdk.storage.holds import ItemStore  # noqa: PLC0415 - kept off the startup path
-
-    return isinstance(value, ItemStore)

@@ -9,6 +9,7 @@ invalid plugin values cannot block it.
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from importlib import metadata
 from pathlib import Path
@@ -70,12 +71,40 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
     ]
 
 
-def test_a_ready_plugin_says_where_its_code_is() -> None:
+def test_a_ready_plugin_says_where_its_code_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``untaped.installed_plugin`` records carry what lint's plugin subject reads."""
-    [row] = _listing([make_candidate(make_plugin("acme"), "acme-dist")])
-    assert row["package"] == "core_test_support.commands"
-    assert row["source_dir"] == str(Path(__file__).parents[3] / "core_test_support" / "commands")
-    assert row["tests_dir"] is None  # no pyproject.toml declaring acme above it
+    package = tmp_path / "site" / "untaped_located"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text('"""Located plugin."""\n', encoding="utf-8")
+    (package / "plugin.py").write_text(_LOCATED_PLUGIN, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(package.parent))
+    monkeypatch.delitem(sys.modules, "untaped_located", raising=False)
+    target = "untaped_located.plugin:Located"
+    [row] = _listing([PluginCandidate(distribution="d", name="located", target=target)])
+    assert row["package"] == "untaped_located"  # its class's package
+    assert row["source_dir"] == str(package.resolve())
+    assert row["tests_dir"] is None  # no pyproject.toml declaring it above it
+
+
+_LOCATED_PLUGIN = """\
+\"\"\"The located plugin's class.\"\"\"
+
+from pydantic import BaseModel
+
+from untaped.sdk import Plugin
+
+
+class LocatedSettings(BaseModel):
+    \"\"\"Nothing to set.\"\"\"
+
+
+class Located(Plugin):
+    \"\"\"A plugin with code on disk.\"\"\"
+
+    settings = LocatedSettings
+"""
 
 
 def test_a_ready_plugin_says_what_it_may_import_from() -> None:

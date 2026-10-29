@@ -728,25 +728,26 @@ def forget_provenance() -> None:
 # What the composition declares
 # --------------------------------------------------------------------------- #
 
-_DECLARED: dict[str, Sequence[Credential[Any]]] = {}
+_DECLARED: dict[str, Callable[[], Sequence[Credential[Any]]]] = {}
 
 
-def bind_credentials(declared: Mapping[str, Sequence[Credential[Any]]]) -> None:
-    """Record each composed plugin's credentials (composition calls it on every commit).
+def bind_credentials(declared: Mapping[str, Callable[[], Sequence[Credential[Any]]]]) -> None:
+    """Record how to read each composed plugin's credentials (composition calls it on every commit).
 
-    They are kept as given and read when first asked, so a plugin class whose
-    declaration lists them isn't imported at every start.
+    Each is read when first asked, so a plugin class whose declaration lists
+    them isn't imported at every start.
     """
     _DECLARED.clear()
-    _DECLARED.update({plugin: each for plugin, each in declared.items() if each})
+    _DECLARED.update(declared)
     forget_provenance()
 
 
 def declared_credentials(section: str | None = None) -> tuple[Credential[Any], ...]:
     """The credentials ``section``'s plugin declares; every composed plugin's without one."""
     if section is not None:
-        return tuple(_DECLARED.get(section, ()))
-    return tuple(each for declared in _DECLARED.values() for each in declared)
+        listed = _DECLARED.get(section)
+        return () if listed is None else tuple(listed())
+    return tuple(each for listed in _DECLARED.values() for each in listed())
 
 
 def credential_key(credential: Credential[Any], settings: BaseModel | None) -> CredentialKey | None:
@@ -777,15 +778,6 @@ def credential_key(credential: Credential[Any], settings: BaseModel | None) -> C
 def held_by_settings(credential: Credential[Any], model: type[BaseModel] | None) -> bool:
     """Whether a field of ``model`` holds ``credential``'s key (else its fields are options)."""
     return model is not None and any(each is credential.key for _path, each in key_fields(model))
-
-
-def credential_list(objects: object) -> tuple[Credential[Any], ...]:
-    """``objects`` as a tuple of credentials, or a :class:`TypeError` naming the stray one."""
-    values = tuple(cast("Sequence[object]", objects))
-    for each in values:
-        if not isinstance(each, Credential):
-            raise TypeError(f"credentials holds {each!r}, not a Credential")
-    return cast("tuple[Credential[Any], ...]", values)
 
 
 __all__ = [

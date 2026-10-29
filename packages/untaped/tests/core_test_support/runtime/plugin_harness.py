@@ -4,23 +4,15 @@ from __future__ import annotations
 
 import itertools
 import sys
-from collections.abc import Callable
 from types import ModuleType
 from typing import Any
 
-from cyclopts import App
 from pydantic import BaseModel
 
-from untaped.runtime.registry import (
-    PLUGINS_ENTRY_POINT_GROUP,
-    PluginCandidate,
-    PluginSpec,
-    SkillAsset,
-)
+from untaped.runtime.registry import PLUGINS_ENTRY_POINT_GROUP, PluginCandidate
 from untaped.sdk import Plugin
 from untaped.sdk._names import kebab
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.marks import Stability
 
 
 class Profile(BaseModel):
@@ -31,17 +23,6 @@ class Profile(BaseModel):
 class OtherProfile(BaseModel):
     endpoint: str = "https://example.invalid"
     retries: int = 3
-
-
-def nullary_app(name: str = "test-app") -> Callable[[], App]:
-    def _factory() -> App:
-        return App(name=name, help=f"{name} help")
-
-    return _factory
-
-
-def make_skill(name: str = "test-skill") -> SkillAsset:
-    return SkillAsset(name=name, description=f"{name} skill")
 
 
 def make_check(
@@ -58,34 +39,16 @@ def make_check(
     return DoctorCheck(title=title, run=_run)._spelled_as(plugin, name)
 
 
-def make_spec(
-    name: str = "alpha",
-    settings: type[BaseModel] | None = Profile,
-    skills: tuple[SkillAsset, ...] = (),
-    checks: tuple[DoctorCheck, ...] = (),
-    factory: Callable[[], App] | None = None,
-    stability: Stability | None = None,
-) -> PluginSpec:
-    return PluginSpec(
-        name=name,
-        app_factory=factory or nullary_app(f"{name}-app"),
-        settings=settings,
-        skills=skills,
-        doctor_checks=checks,
-        stability=stability,
-    )
-
-
 _TARGETS = itertools.count()
 
 
-def plugin_name(spec: PluginSpec | type[Plugin]) -> str:
-    """The name a spec gives itself, or a plugin class's: its class name in kebab case."""
-    return spec.name if isinstance(spec, PluginSpec) else kebab(spec.__name__)
+def plugin_name(spec: type[Plugin]) -> str:
+    """A plugin class's name: its class name in kebab case."""
+    return kebab(spec.__name__)
 
 
 def spec_target(
-    spec: PluginSpec | type[Plugin],
+    spec: type[Plugin],
     *,
     error: Exception | None = None,
     result: Any = None,
@@ -93,9 +56,9 @@ def spec_target(
 ) -> object:
     """A candidate target resolving to ``spec``, to ``result``, or raising ``error``.
 
-    A plain spec is its own target; otherwise it is a ``package.plugin:SPEC``
+    A plain class is its own target; otherwise it is a ``package.plugin:SPEC``
     string naming a synthetic leaf module, as an installed plugin's entry point
-    does, whose ``SPEC`` attribute raises or returns, and appends the spec's
+    does, whose ``SPEC`` attribute raises or returns, and appends the class's
     name to ``calls`` each time it is resolved.
     """
     if error is None and result is None and calls is None:
@@ -121,7 +84,7 @@ def spec_target(
 
 
 def make_candidate(
-    spec: PluginSpec | type[Plugin],
+    spec: type[Plugin],
     distribution: str = "example-dist",
     name: str | None = None,
     *,

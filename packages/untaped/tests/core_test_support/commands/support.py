@@ -9,7 +9,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Annotated, Any, Literal, cast
 
-from cyclopts import App
 from pydantic import BaseModel, HttpUrl, SecretStr
 from rich.console import Console
 
@@ -17,7 +16,7 @@ from core_test_support.runtime.run import hold_run
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, SkillAsset
+from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.sdk import (
     Credential,
@@ -126,38 +125,6 @@ def wiz_api() -> OnlineCheck:
     return OnlineCheck(probe=wiz_probe)
 
 
-def make_spec(
-    name: str,
-    *,
-    settings: type[BaseModel] = ExtProfile,
-    skills: tuple[SkillAsset, ...] = (),
-    doctor_checks: tuple[DoctorCheck, ...] = (),
-    stability: Stability | None = None,
-    stores: tuple[Any, ...] = (),
-    caches: tuple[Any, ...] = (),
-    credentials: tuple[Credential[Any], ...] | None = None,
-) -> PluginSpec:
-    """Return a minimal plugin spec double mounting an empty sub-app.
-
-    ``credentials`` defaults to what :data:`CREDENTIALS` lists for ``settings``.
-    """
-
-    def _factory() -> App:
-        return App(name=name, help=f"{name} plugin.")
-
-    return PluginSpec(
-        name=name,
-        app_factory=_factory,
-        settings=settings,
-        skills=skills,
-        doctor_checks=doctor_checks,
-        stability=stability,
-        stores=stores,
-        caches=caches,
-        credentials=CREDENTIALS.get(settings, ()) if credentials is None else credentials,
-    )
-
-
 def _credentials(settings: type[BaseModel]) -> dict[str, Credential[Any]]:
     """The credentials a service double declares, made afresh for each plugin class."""
     if settings is WizProfile:
@@ -215,7 +182,7 @@ def ghost_candidates(*distributions: str) -> tuple[PluginCandidate, ...]:
     )
 
 
-def compose(*plugins: PluginSpec | type[Plugin]) -> CompositionResult:
+def compose(*plugins: type[Plugin]) -> CompositionResult:
     """Compose ``plugins`` (registers settings sections) and hold a run of it (``hold_run``)."""
     result = bootstrap.compose_root(candidates=[plugin_candidate(each) for each in plugins])
     hold_run(result)
@@ -223,7 +190,7 @@ def compose(*plugins: PluginSpec | type[Plugin]) -> CompositionResult:
 
 
 def root_group(
-    word: str, *specs: PluginSpec | type[Plugin], also: Sequence[PluginCandidate] = ()
+    word: str, *specs: type[Plugin], also: Sequence[PluginCandidate] = ()
 ) -> Callable[..., None]:
     """The composed root with ``specs`` and ``also``'s candidates, run as ``untaped <word> …``."""
     candidates = [*(plugin_candidate(spec) for spec in specs), *also]
@@ -241,7 +208,7 @@ def root_group(
     return run
 
 
-def config_root(*specs: PluginSpec) -> Callable[..., None]:
+def config_root(*specs: type[Plugin]) -> Callable[..., None]:
     """The composed root with ``specs``, run as ``untaped config <args>``."""
     return root_group("config", *specs)
 
@@ -255,11 +222,6 @@ def write_config(path: Path, text: str) -> None:
 def written_profile(path: Path, name: str) -> dict[str, Any]:
     """Profile ``name``'s raw values in the config file at ``path`` (the base for ``default``)."""
     return active_settings_layout().profile_data(read_config_dict(path), name) or {}
-
-
-def asset(name: str) -> SkillAsset:
-    """Return a stub skill asset double named ``name``."""
-    return SkillAsset(name=name, description=f"Teach agents how to use {name}.")
 
 
 def check(
@@ -290,12 +252,10 @@ __all__ = [
     "StrictProfile",
     "WizProfile",
     "WizServer",
-    "asset",
     "check",
     "compose",
     "ghost_candidates",
     "make_plugin",
-    "make_spec",
     "wiz_api",
     "wiz_probe",
     "write_config",

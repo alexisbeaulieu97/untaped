@@ -24,7 +24,7 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.contracts import Errored, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
@@ -43,17 +43,6 @@ def _info():  # type: ignore[no-untyped-def]
 
 def _reasons() -> dict[str, str]:
     return {entry.plugin: entry.reason for entry in every_offer() if isinstance(entry, Quarantined)}
-
-
-def test_provides_and_contracts_are_validated_on_the_spec() -> None:
-    with pytest.raises(ConfigError, match="plugin name"):
-        PluginSpec(name="x", provides={"Bad Owner": lambda: ()})
-    with pytest.raises(ConfigError, match=r"provides\['shelf'\] must be a function"):
-        PluginSpec(name="x", provides={"shelf": ()})  # type: ignore[dict-item]  # the point
-    with pytest.raises(ConfigError, match="contracts must be a function"):
-        PluginSpec(name="x", contracts=(BookSource,))  # type: ignore[arg-type]  # the point
-    assert dict(PluginSpec(name="x").provides) == {}
-    hash(PluginSpec(name="x", provides={"shelf": lambda: ()}))
 
 
 def test_a_contract_nobody_declares_is_a_config_error() -> None:
@@ -289,4 +278,4 @@ def test_a_fill_no_composed_plugin_owns_waits_silently() -> None:
     lends = PluginCandidate(distribution="untaped-lends", name="lends", target=_Lends)
     result = bootstrap.compose_root(candidates=[lends])
     [spec] = [each.spec for each in result.plugins if each.spec.name == "lends"]
-    assert dict(spec.provides) == {}
+    assert spec.fill_owners == ()

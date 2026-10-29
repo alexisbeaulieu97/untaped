@@ -22,7 +22,7 @@ import json
 import shlex
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
@@ -40,11 +40,13 @@ from untaped.core.config.use_cases import (
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.core.profile.use_cases import CreateProfile
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import PluginSpec
 from untaped.runtime.run import child_run
 from untaped.runtime.settings import env_var_setting, load_settings_section
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.network.credentials import Credential, credential_key, describe_key, key_fields
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 __all__ = [
     "Candidate",
@@ -155,7 +157,7 @@ def landed(candidate: Candidate, state: ServiceState) -> tuple[str, ...]:
 
 
 def write_candidate(
-    spec: PluginSpec,
+    spec: ComposedPlugin,
     candidate: Candidate,
     preflight: Callable[[], None],
 ) -> list[Note]:

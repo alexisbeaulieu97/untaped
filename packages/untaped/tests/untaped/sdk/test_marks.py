@@ -13,11 +13,11 @@ from untaped.sdk import Command, Group
 from untaped.sdk.marks import (
     Deprecated,
     Experimental,
-    check_stability,
     deprecated,
     experimental,
     function_mark,
     replacement_text,
+    stability_refusal,
 )
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped.sdk.words import EXPERIMENTAL_LINE
@@ -119,15 +119,20 @@ def test_the_markers_are_not_python_deprecation_markers() -> None:
 
 @pytest.mark.parametrize("wrong", [deprecated, warnings.deprecated("x"), "experimental", 1])
 def test_a_wrong_stability_value_is_refused(wrong: object) -> None:
-    with pytest.raises(TypeError, match="stability must be experimental or deprecated"):
-        check_stability(wrong, where="here")
+    refusal = stability_refusal(wrong)
+    assert refusal is not None
+    assert refusal.startswith(f"holds {wrong!r}, not experimental or deprecated(...); ")
 
 
 def test_an_uncalled_deprecated_says_to_call_it() -> None:
-    with pytest.raises(
-        TypeError, match=r"call it: deprecated\(removed_in=\.\.\., replacement=\.\.\.\)"
-    ):
-        check_stability(deprecated, where="here")
+    assert str(stability_refusal(deprecated)).endswith(
+        "call it: deprecated(removed_in=..., replacement=...)"
+    )
+
+
+@pytest.mark.parametrize("mark", [None, experimental, deprecated(removed_in=13)])
+def test_a_stability_mark_is_not_refused(mark: object) -> None:
+    assert stability_refusal(mark) is None
 
 
 # --- panels and help lines ----------------------------------------------------

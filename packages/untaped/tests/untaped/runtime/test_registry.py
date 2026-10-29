@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,18 +12,14 @@ from core_test_support.runtime.plugin_harness import (
     OtherProfile,
     Profile,
     make_candidate,
-    make_check,
-    make_skill,
-    make_spec,
 )
+from untaped.runtime.composed import ComposedPlugin
 from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
     PluginRef,
-    PluginSpec,
     QuarantineRecord,
     RegisteredPlugin,
-    SkillAsset,
     _core_alone,
     compose,
     kept_declaration,
@@ -34,19 +31,6 @@ from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 @pytest.mark.parametrize(
     "build",
     [
-        lambda: SkillAsset(name="   ", description="d"),
-        lambda: SkillAsset(name="s", description="   "),
-        lambda: make_spec(name="   "),
-        lambda: make_spec(name="Acme"),
-        lambda: make_spec(name="acme_tools"),
-        lambda: make_spec(name="acme--tools"),
-        lambda: make_spec(name="github@ghes"),
-        lambda: make_spec(name=""),
-        lambda: make_spec(name="9tools"),
-        lambda: make_spec(name="-acme"),
-        lambda: make_spec(name="acme-"),
-        lambda: PluginSpec(name="quiet", help="Has no commands."),
-        lambda: make_spec(settings=dict),
         lambda: QuarantineRecord(
             name="n", distribution="d", entry_point="e", reason="nope", detail="x"
         ),
@@ -55,19 +39,6 @@ from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
         ),
     ],
     ids=[
-        "skill-blank-name",
-        "skill-blank-description",
-        "spec-blank-name",
-        "spec-name-uppercase",
-        "spec-name-underscore",
-        "spec-name-double-hyphen",
-        "spec-name-at",
-        "spec-name-empty",
-        "spec-name-leading-digit",
-        "spec-name-leading-hyphen",
-        "spec-name-trailing-hyphen",
-        "spec-help-without-commands",
-        "spec-settings-not-model",
         "quarantine-unknown-reason",
         "quarantine-blank-detail",
     ],
@@ -75,19 +46,6 @@ from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 def test_records_reject_invalid_construction(build: Callable[[], object]) -> None:
     with pytest.raises(ConfigError):
         build()
-
-
-def test_spec_normalizes_sequences_to_tuples() -> None:
-    spec = PluginSpec(
-        name="a",
-        app_factory=make_spec().app_factory,
-        settings=Profile,
-        skills=[make_skill("s1")],
-        doctor_checks=[make_check("a.b")],
-    )
-    assert spec.skills == (make_skill("s1"),)
-    assert isinstance(spec.skills, tuple)
-    assert isinstance(spec.doctor_checks, tuple)
 
 
 def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,7 +65,8 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "github", "jira"]
     _, composed_github, composed_jira = result.plugins
     assert isinstance(composed_github, RegisteredPlugin)
-    assert [skill.name for skill in composed_github.skills] == ["untaped-github"]
+    assert composed_github.spec.skill is not None
+    assert composed_github.spec.skill.name == "untaped-github"
     assert composed_github.plugin_ref == PluginRef(
         distribution="untaped", entry_point="untaped_double_github.plugin:Github"
     )
@@ -133,32 +92,33 @@ def test_core_is_the_first_plugin_and_the_one_marked_root() -> None:
     core = result.plugins[0]
     assert core.plugin_ref == PluginRef(distribution="untaped", entry_point=target_of(Core))
     # its commands mount at the root from the declaration: no app is built under its name
-    assert core.spec.app_factory is None
+    assert not core.spec.has_commands
 
 
-def test_core_is_read_as_a_plugin_spec() -> None:
-    """Core's spec is built from the declaration as a plugin's is."""
+def test_core_is_read_as_a_composed_plugin() -> None:
+    """Core is read from its declaration as a plugin is."""
     from untaped.core.settings import NAME, CoreSettings
 
     core = compose().plugins[0].spec
     assert (core.name, core.settings) == (NAME, CoreSettings)
     assert f"{NAME}.token-store" in [check.id for check in core.doctor_checks]
     # core's stub skill is named after it, not ``untaped-untaped``
-    assert [skill.name for skill in core.skills] == [NAME]
+    assert core.skill is not None
+    assert core.skill.name == NAME
 
 
-def _read(core: PluginSpec) -> tuple[object, ...]:
+def _read(core: ComposedPlugin) -> tuple[object, ...]:
     return (
         core.name,
         core.settings,
         tuple(check.id for check in core.doctor_checks),
-        core.skills,
+        core.skill,
         tuple(cache.qualified for cache in core.caches),
     )
 
 
 def test_core_reads_the_same_from_a_kept_declaration() -> None:
-    """A warm composition (the kept declaration, no class composed) gives the same core spec."""
+    """A warm composition (the kept declaration, no class composed) reads core the same."""
     cold = compose()
     assert kept_declaration(()) is not None
     warm = compose()
@@ -203,12 +163,29 @@ def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
 
 
 def test_compose_hints_the_class_an_11x_entry_point_should_name() -> None:
-    candidate = make_candidate(make_spec("old-tool"), "old-dist", calls=[])
+    spec = make_plugin("old-tool")
+    candidate = make_candidate(spec, "old-dist", result=SimpleNamespace(name="old-tool"))
     package = candidate.target.partition(".")[0]  # type: ignore[union-attr]
     (record,) = compose([candidate]).quarantine
     assert record.reason == "not-a-plugin-class"
-    assert "names an 11.x PluginSpec" in record.detail
+    assert "names a SimpleNamespace" in record.detail
     assert f"'{package}.plugin:OldTool'" in record.detail
+
+
+@pytest.mark.parametrize(
+    "name", ["Acme", "acme_tools", "acme--tools", "github@ghes", "9tools", "-acme", "acme-"]
+)
+def test_a_malformed_entry_point_name_is_quarantined_before_anything_is_imported(
+    name: str,
+) -> None:
+    calls: list[str] = []
+    candidate = make_candidate(make_plugin("fine"), "odd-dist", name, calls=calls)
+    result = compose([candidate])
+    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    (record,) = result.quarantine
+    assert (record.reason, record.name) == ("bad-metadata", name)
+    assert f"plugin name {name!r}" in record.detail
+    assert calls == []
 
 
 def _runs(calls: list[str] | None = None) -> DoctorCheck:
@@ -257,7 +234,7 @@ def test_failed_provider_registers_nothing() -> None:
     assert [cap.spec.name for cap in result.plugins] == ["untaped", "good", "later"]
     assert [q.reason for q in result.quarantine] == ["duplicate-name"]
     added = [cap for cap in result.plugins if not cap.root]
-    registered_skills = [skill.name for cap in added for skill in cap.skills]
+    registered_skills = [cap.spec.skill.name for cap in added if cap.spec.skill is not None]
     assert registered_skills == ["untaped-good"]
     registered_checks = [check.id for cap in added for check in cap.spec.doctor_checks]
     assert registered_checks == ["good.ok"]
@@ -330,24 +307,3 @@ def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
     result = compose([broken, sound])
     assert [c.plugin_ref.distribution for c in result.plugins] == ["untaped", "b-dist"]
     assert [(q.distribution, q.reason) for q in result.quarantine] == [("a-dist", reason)]
-
-
-@pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])
-def test_plugin_help_must_be_one_non_empty_line(bad_help: object) -> None:
-    with pytest.raises(ConfigError, match="help must be a non-empty single line"):
-        PluginSpec(
-            name="alpha",
-            app_factory=make_spec().app_factory,
-            settings=Profile,
-            help=bad_help,  # type: ignore[arg-type]
-        )
-
-
-def test_a_name_with_an_at_says_it_is_reserved() -> None:
-    with pytest.raises(ConfigError, match=r"must not contain '@' \(reserved\)"):
-        PluginSpec(name="github@ghes")
-
-
-def test_an_app_factory_must_be_callable() -> None:
-    with pytest.raises(ConfigError, match="app_factory must be callable or None"):
-        PluginSpec(name="bare", app_factory="not callable")  # type: ignore[arg-type]

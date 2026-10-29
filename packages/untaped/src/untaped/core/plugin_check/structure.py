@@ -28,11 +28,14 @@ import inspect
 import pkgutil
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped.core.plugin_check.settings_names import settings_name_violations
-from untaped.runtime.registry import PluginSpec, settings_model
+from untaped.runtime.registry import settings_model
 from untaped.sdk.errors import UntapedError
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 
 def _modules(package: str) -> Iterator[Any]:
@@ -109,13 +112,13 @@ def _unattributed_base(cls: type, package: str) -> bool:
     return not own_parents and "system" not in vars(cls)
 
 
-def _settings_violations(spec: PluginSpec) -> Iterator[str]:
+def _settings_violations(spec: ComposedPlugin) -> Iterator[str]:
     model = spec.settings
-    if model is not None and not model.model_config.get("frozen", False):
+    if not model.model_config.get("frozen", False):
         yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::settings"
 
 
-def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path) -> list[str]:
+def structure_class_violations(spec: ComposedPlugin, package: str, source_dir: Path) -> list[str]:
     """The checks that import the package or read its models: they need the installed code."""
     return [
         *_runtime_violations(package),

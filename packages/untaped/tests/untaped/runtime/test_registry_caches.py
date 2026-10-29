@@ -1,4 +1,4 @@
-"""``PluginSpec.caches``: what composition accepts, what it quarantines, what it injects."""
+"""A plugin's caches: what composition quarantines and what it injects."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from pydantic import BaseModel
 from core_test_support.commands.support import make_plugin
 from core_test_support.contracts.support import BookSource
 from core_test_support.runtime.plugin_harness import make_candidate
+from untaped.runtime.composed import ComposedPlugin
 from untaped.runtime.registry import (
     CompositionResult,
-    PluginSpec,
     compose,
     section_settings,
 )
@@ -22,11 +22,13 @@ from untaped.sdk import Plugin
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage.cache import Cache
 
-MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))._spelled_as("hello", "motd")
-
 
 class HelloSettings(BaseModel):
     greeting: str = "hi"
+
+
+class NoSettings(BaseModel):
+    """A plugin's settings with no field."""
 
 
 def _compose(plugin: type[Plugin]) -> CompositionResult:
@@ -50,31 +52,27 @@ def test_a_plugin_composes_its_caches() -> None:
     assert [cache.qualified for cache in result.plugins[1].spec.caches] == ["hello.motd"]
 
 
-def test_caches_holds_only_caches() -> None:
-    with pytest.raises(ConfigError, match="not a Cache"):
-        PluginSpec(name="hello", caches=("motd",))  # type: ignore[arg-type]
-
-
 def test_a_plugin_with_caches_and_no_settings_gets_a_section() -> None:
-    section = section_settings(PluginSpec(name="hello", caches=(MOTD,)))
-    assert section is not None
+    section = section_settings(_hello(settings=NoSettings, motd=_motd()))
     assert list(section.model_fields) == ["caches"]
 
 
 def test_a_plugin_without_caches_keeps_its_own_model() -> None:
-    assert section_settings(PluginSpec(name="hello", settings=HelloSettings)) is HelloSettings
+    assert section_settings(_hello(settings=HelloSettings)) is HelloSettings
 
 
 def test_an_owner_with_caches_gets_extensions_and_caches() -> None:
-    owner = PluginSpec(
-        name="shelf", settings=HelloSettings, contracts=lambda: (BookSource,), caches=(SHELF,)
-    )
-    section = section_settings(owner)
-    assert section is not None
+    books = Cache(label="books", max_age=timedelta(days=1))
+    shelf = make_plugin("shelf", settings=HelloSettings, offers=(BookSource,), books=books)
+    section = section_settings(_compose(shelf).plugins[1].spec)
     assert list(section.model_fields) == ["greeting", "extensions", "caches"]
 
 
-SHELF = Cache(label="books", max_age=timedelta(days=1))._spelled_as("shelf", "books")
+def _hello(**attributes: Any) -> ComposedPlugin:
+    """Plugin ``hello`` with ``attributes``, composed."""
+    result = _compose(make_plugin("hello", **attributes))
+    assert result.quarantine == ()
+    return result.plugins[1].spec
 
 
 class OwnOldKeyUnderCaches(BaseModel):
@@ -89,13 +87,6 @@ def test_an_own_old_key_under_caches_collides_once_caches_are_injected() -> None
     reason, detail = _reason(make_plugin("hello", settings=OwnOldKeyUnderCaches, motd=_motd()))
     assert reason == "bad-settings-keys"
     assert "caches, which untaped reserves" in detail
-
-
-def _renamed(*old: str, settings: type[BaseModel] = HelloSettings) -> PluginSpec:
-    cache = Cache(
-        label="message of the day", max_age=timedelta(hours=1), renamed_from=old
-    )._spelled_as("hello", "motd")
-    return PluginSpec(name="hello", settings=settings, caches=(cache,))
 
 
 def _held(*old: str, settings: type[BaseModel] = HelloSettings) -> type[Plugin]:
@@ -148,10 +139,10 @@ def test_an_old_key_two_caches_rename_is_refused() -> None:
 )
 def test_renamed_from_is_checked_for_shape_at_declaration(old: str, problem: str | None) -> None:
     if problem is None:
-        assert _renamed(old).caches[0].renamed_from == (old,)
+        assert _hello(settings=HelloSettings, motd=_motd(old)).caches[0].renamed_from == (old,)
         return
     with pytest.raises(ConfigError, match=problem):
-        _renamed(old)
+        _motd(old)._spelled_as("hello", "motd")
 
 
 @pytest.mark.parametrize(

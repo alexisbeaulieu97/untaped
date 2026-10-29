@@ -1458,6 +1458,18 @@ def test_marks_on_commands_and_groups_are_checked() -> None:
     ]
 
 
+def test_a_plugin_class_s_mark_is_checked_too() -> None:
+    """An uncalled ``deprecated`` is refused, with the hint to call it, not dropped."""
+    plugin = _plugin_with()
+    plugin.stability = deprecated  # type: ignore[assignment]
+    [problem] = _problems(plugin)
+    assert (problem.rule, problem.where.rpartition("<locals>.")[2]) == (
+        "reserved-name",
+        "Demo.stability",
+    )
+    assert "call it: deprecated(removed_in=..., replacement=...)" in problem.detail
+
+
 def test_a_refresh_on_a_plugin_whose_offers_is_not_a_tuple() -> None:
     class Books(Command):
         """Books."""

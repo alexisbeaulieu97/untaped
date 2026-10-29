@@ -346,13 +346,11 @@ def _excluded[R](
 ) -> Answer[R]:
     """A provider the SDK set aside: skipped when unranked, failed when ranked.
 
-    The failure hints at upgrading ``plugin`` unless the reason is no defect
-    of its own (its owner is not installed).
+    The failure hints at upgrading ``plugin``.
     """
     if rank is None:
         return Skipped(plugin, cast("SkipReason", reason), detail, rank)
-    hint = None if reason == Reason.owner_not_installed else upgrade_hint(plugin)
-    error = ConfigError(detail, system=plugin, hint=hint)
+    error = ConfigError(detail, system=plugin, hint=upgrade_hint(plugin))
     return Errored(plugin, error, rank, reason)
 
 

@@ -49,12 +49,12 @@ import inspect
 import re
 from collections.abc import Callable, Iterable, Iterator
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cyclopts import App
 
 from untaped.core.surface._sdk import foreign
-from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
+from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.root_options import resolve_command
 from untaped.runtime.settings import get_settings_model, profile_section_models
 from untaped.sdk._schema import walk_settings
@@ -79,6 +79,9 @@ from untaped.sdk.marks import (
     warns_parameters,
 )
 
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
+
 _HAND_TYPED = re.compile(r"\b(?:Experimental|Deprecated):")
 
 
@@ -97,7 +100,7 @@ def stability_violations(
     result: CompositionResult,
     names: Iterable[str],
     *,
-    spec: PluginSpec | None = None,
+    spec: ComposedPlugin | None = None,
     sections: Iterable[str] = (),
 ) -> list[str]:
     """``["<command path>::<rule>::<detail>", ...]`` for the subtrees ``root[name]``.
@@ -169,7 +172,7 @@ def _setting_violations(
 
 
 def _behaviour_violations(
-    root: App, result: CompositionResult, spec: PluginSpec | None, every: list[Mark]
+    root: App, result: CompositionResult, spec: ComposedPlugin | None, every: list[Mark]
 ) -> Iterator[str]:
     """The rules for the checked plugin's deprecated behaviours (core's when ``spec`` is None)."""
     owner = "untaped" if spec is None else spec.name
@@ -262,7 +265,7 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
 _UNDATED = "every deprecation is a promise with a date: add removed_in=<major> to its mark"
 
 
-def undated_violations(spec: PluginSpec, candidate: PluginCandidate) -> list[str]:
+def undated_violations(spec: ComposedPlugin, candidate: PluginCandidate) -> list[str]:
     """``undated-deprecation`` for each mark of ``spec``'s plugin that names no removal.
 
     Read from the surface lines of ``candidate``, its entry point

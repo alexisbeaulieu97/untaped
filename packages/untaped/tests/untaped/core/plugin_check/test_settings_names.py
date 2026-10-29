@@ -7,13 +7,16 @@ from pathlib import Path
 from textwrap import dedent, indent
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, create_model
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.plugin_check.support import Install
 from untaped.core.plugin_check.settings_names import name_problem, settings_name_violations
 from untaped.core.plugin_check.structure import structure_class_violations
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.composed import ComposedPlugin
+from untaped.runtime.composition import PluginEntry
+from untaped.runtime.declaration import target_of
+from untaped.runtime.mount import compose_plugins
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -61,11 +64,7 @@ def _violations(install: Install, body: str) -> list[str]:
         }
     )
     settings = importlib.import_module("acme.settings")
-    spec = PluginSpec(
-        name="acme",
-        app_factory=App,
-        settings=settings.AcmeSettings,
-    )
+    spec = _composed(settings.AcmeSettings)
     source_dir = site / "acme"
     return structure_class_violations(spec, "acme", source_dir)
 
@@ -163,3 +162,9 @@ def test_a_model_outside_the_root_keeps_its_full_path() -> None:
         f"{Path(__file__).as_posix()}:{Outside.__firstlineno__ + 1}::settings-naming::"
         f"out.timeout: {DURATION}"
     ]
+
+
+def _composed(settings: type[BaseModel]) -> ComposedPlugin:
+    """Plugin ``acme`` reading ``settings``, its class composed (a check may refuse it later)."""
+    cls = make_plugin("acme", settings=settings)
+    return ComposedPlugin.of(compose_plugins([PluginEntry("acme", target_of(cls), cls)]), "acme")

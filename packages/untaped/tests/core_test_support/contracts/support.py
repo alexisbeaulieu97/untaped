@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import hold_run, holding_runs
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import BoundProvider, offers, reset
-from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
+from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Plugin, experimental
 from untaped.sdk._home import config_path
@@ -186,14 +186,14 @@ def bound(name: str) -> Contract:
     return found
 
 
-def candidates(*plugins: PluginCandidate | PluginSpec) -> list[PluginCandidate]:
-    """``plugins`` as candidates; a ``PluginSpec`` tests the 11.x path and goes with it."""
+def candidates(*plugins: PluginCandidate | type[Plugin]) -> list[PluginCandidate]:
+    """``plugins`` as candidates: a plugin class is a candidate of its own name."""
     return [
         each if isinstance(each, PluginCandidate) else plugin_candidate(each) for each in plugins
     ]
 
 
-def compose(*plugins: PluginCandidate | PluginSpec) -> CompositionResult:
+def compose(*plugins: PluginCandidate | type[Plugin]) -> CompositionResult:
     """Compose ``plugins``; under :func:`fresh_providers`, hold a run of it (``hold_run``)."""
     reset()
     result = bootstrap.compose_root(candidates=candidates(*plugins))

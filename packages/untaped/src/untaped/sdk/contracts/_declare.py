@@ -49,7 +49,6 @@ from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
-    from untaped.runtime.registry import PluginSpec
     from untaped.sdk._run import ProviderContext
 
 #: Set to ``True`` on a function a provider base defines for its own role (a rule
@@ -130,7 +129,8 @@ class ContractInfo:
 class Binding:
     """What the registry tells a provider instance about itself."""
 
-    spec: PluginSpec
+    #: The plugin whose provider this is.
+    plugin: str
     owner: str
     contract: ContractInfo
     #: The provider's own item type ``T`` (the owner's model when it has none).
@@ -141,10 +141,6 @@ class Binding:
     #: threads may not see the run that names them.
     item_kind: str = ""
     owner_kind: str = ""
-
-    @property
-    def plugin(self) -> str:
-        return self.spec.name
 
     @property
     def owns_item(self) -> bool:

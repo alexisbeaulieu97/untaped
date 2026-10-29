@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -22,7 +22,7 @@ from untaped.core.config.use_cases import SetSetting
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.registry import CompositionResult, PluginSpec, settings_model
+from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.settings import (
     active_settings_layout,
     check_settings_field,
@@ -40,6 +40,9 @@ from untaped.sdk.health._setup_status import (
 from untaped.sdk.health.marks import MarkedField, SetupMarks
 from untaped.sdk.network._token_store import TokenStore, pick_store
 from untaped.sdk.words import not_found
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 
 def setup_sections(only: list[str] | None = None) -> tuple[str, ...]:
@@ -60,7 +63,7 @@ def setup_sections(only: list[str] | None = None) -> tuple[str, ...]:
 
 def setup_services(
     result: CompositionResult, only: list[str] | None = None
-) -> dict[str, PluginSpec]:
+) -> dict[str, ComposedPlugin]:
     """The composed services by name (empty when none), narrowed to the sections in ``only``.
 
     Raises :class:`UsageError` for an ``only`` name that is not a section.
@@ -75,14 +78,14 @@ def setup_services(
     return services
 
 
-def service_marks(spec: PluginSpec) -> SetupMarks:
+def service_marks(spec: ComposedPlugin) -> SetupMarks:
     """What service ``spec`` marks, and the credentials it declares."""
     marks = plugin_marks(spec)
     assert marks is not None, f"{spec.name} is not a service"
     return marks
 
 
-def form_fields(spec: PluginSpec) -> tuple[MarkedField, ...]:
+def form_fields(spec: ComposedPlugin) -> tuple[MarkedField, ...]:
     """The settings the setup form edits: every marked setting, each in its shape's field.
 
     A marked model (a :class:`~untaped.sdk.network.credentials.CredentialKey` such as
@@ -104,7 +107,7 @@ def form_fields(spec: PluginSpec) -> tuple[MarkedField, ...]:
     return tuple(fields)
 
 
-def connection_keys(spec: PluginSpec) -> frozenset[str]:
+def connection_keys(spec: ComposedPlugin) -> frozenset[str]:
     """The keys of ``spec``'s connection, which setup edits together as one row."""
     return frozenset(f"{spec.name}.{field.key}" for field in form_fields(spec))
 
@@ -159,7 +162,7 @@ class ServiceState:
         return self.invalid is None and not self.missing
 
 
-def service_state(spec: PluginSpec, node: object, profile: str) -> ServiceState:
+def service_state(spec: ComposedPlugin, node: object, profile: str) -> ServiceState:
     """Resolve one service in ``profile``; ``node`` is its effective section."""
     data = node if isinstance(node, dict) else {}
     section = spec.name
@@ -213,7 +216,7 @@ def _at(data: dict[str, Any], path: tuple[str, ...]) -> object:
 
 
 def service_states(
-    services: dict[str, PluginSpec], profile: str, raw: dict[str, Any]
+    services: dict[str, ComposedPlugin], profile: str, raw: dict[str, Any]
 ) -> dict[str, ServiceState]:
     """Every service's state in ``profile``, from the parsed config ``raw``."""
     values = profile_view(raw, profile)
@@ -222,7 +225,7 @@ def service_states(
     }
 
 
-def read_states(services: dict[str, PluginSpec], profile: str) -> dict[str, ServiceState]:
+def read_states(services: dict[str, ComposedPlugin], profile: str) -> dict[str, ServiceState]:
     """Every service's state in ``profile``, read from the config file now."""
     return service_states(services, profile, read_config_dict())
 
@@ -232,7 +235,7 @@ def profile_exists(profile: str) -> bool:
     return profile == DEFAULT_PROFILE or ProfileFileRepository().read(profile) is not None
 
 
-def service_store(services: dict[str, PluginSpec]) -> TokenStore | None:
+def service_store(services: dict[str, ComposedPlugin]) -> TokenStore | None:
     """The store a secret goes to, probed once per run; ``None`` when no service stores one.
 
     A service stores one when its plugin declares a credential. One probe

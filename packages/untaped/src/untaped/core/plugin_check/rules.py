@@ -16,6 +16,7 @@ import importlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cyclopts import App
 from packaging.utils import canonicalize_name
@@ -33,13 +34,15 @@ from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import (
     PluginCandidate,
-    PluginSpec,
     discover_candidates,
     mentions_extra,
     owner_requirement,
     parse_requirement,
     plain_requirements,
 )
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 
 def plugin_violations(
@@ -69,7 +72,7 @@ class _Checked:
 
     name: str
     root: App
-    spec: PluginSpec
+    spec: ComposedPlugin
     own: PluginCandidate
     candidates: Sequence[PluginCandidate]
     package: str
@@ -99,7 +102,7 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     if own is None:  # a composed plugin is one of the candidates
         raise LookupError(f"no candidate named {name!r}")
-    package, source_dir = package_of(spec, own.target)
+    package, source_dir = package_of(spec)
     unreadable = unimportable(package, source_dir)
     if unreadable is not None:
         # The class checks can't import the plugin; the file is its one violation.
@@ -109,7 +112,7 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
 
 def _core_lines(checked: _Checked) -> list[str]:
     spec, name = checked.spec, checked.name
-    commands = [] if spec.app_factory is None else [name]  # its mounted subtree
+    commands = [name] if spec.has_commands else []  # its mounted subtree
     return [
         *_name_violations(name, checked.package, checked.own),
         *_provides_violations(spec, checked.own, checked.candidates),
@@ -158,7 +161,7 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
 
 
 def _provides_violations(
-    spec: PluginSpec, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
+    spec: ComposedPlugin, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
 ) -> list[str]:
     """Where a provider doesn't declare the ranges its offers rely on.
 
@@ -170,7 +173,7 @@ def _provides_violations(
     that range (``owner-out-of-range``).
     """
     owners = fill_owners(spec.name, composition(), candidates)
-    if not spec.provides and not owners:
+    if not spec.fill_owners and not owners:
         return []
     requires = () if candidate is None else candidate.requires_dist
     rule = f"{spec.name}::provides-requirement::"
@@ -187,7 +190,7 @@ def _provides_violations(
     if owners:
         return found + list(_fill_requirements(rule, requires, owners))
     distributions = {c.name: c.distribution for c in candidates}
-    for owner in sorted(spec.provides):
+    for owner in sorted(spec.fill_owners):
         distribution = str(canonicalize_name(distributions.get(owner, f"untaped-{owner}")))
         requirement = owner_requirement(requires, owner, distribution)
         if requirement is None:

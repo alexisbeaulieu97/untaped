@@ -29,11 +29,12 @@ from pydantic import BaseModel, ValidationError
 from untaped.core.commands.records import PluginCheck
 from untaped.runtime.declaration import target_of
 from untaped.runtime.plugin_package import package_of
-from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
+from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.sdk.errors import UsageError, first_validation_error
 from untaped.sdk.words import not_found, plural
 
 if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.contracts.registry import BoundProvider
 
 
@@ -71,9 +72,9 @@ def _check(
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
     rows = _conventions(name, candidates, row)
     spec = next(plugin.spec for plugin in result.plugins if plugin.spec.name == name)
-    if owns_contracts(spec):
+    if spec.owns_contracts:
         rows += _contracts(name, candidates, row)
-    if spec.provides:
+    if spec.fill_owners:
         rows += _offers(spec, candidates, row)
     return rows + _unowned(name, result, candidates, row)
 
@@ -117,14 +118,13 @@ def _contracts(name: str, candidates: Sequence[PluginCandidate], row: _Row) -> l
 
 
 def _offers(
-    spec: PluginSpec, candidates: Sequence[PluginCandidate], row: _Row
+    spec: ComposedPlugin, candidates: Sequence[PluginCandidate], row: _Row
 ) -> list[PluginCheck]:
     from untaped.runtime.bootstrap import composed_with  # noqa: PLC0415
     from untaped.runtime.contracts.registry import BoundProvider, every_offer  # noqa: PLC0415
-    from untaped.sdk.contracts import Reason  # noqa: PLC0415
 
     installed = {candidate.name for candidate in candidates}
-    owners = [owner for owner in spec.provides if owner in installed]
+    owners = [owner for owner in spec.fill_owners if owner in installed]
     rows: list[PluginCheck] = []
     with composed_with(_hermetic([spec.name, *owners], candidates)) as composed:
         unusable = _unusable_owners(owners, composed)
@@ -137,12 +137,7 @@ def _offers(
                 title = (
                     entry.owner if entry.contract is None else _what(entry.owner, entry.contract)
                 )
-                if entry.reason == Reason.owner_not_installed:
-                    rows.append(row("registration", title, "pass", f"skipped: {entry.detail}"))
-                else:
-                    rows.append(
-                        row("registration", title, "fail", f"{entry.reason}: {entry.detail}")
-                    )
+                rows.append(row("registration", title, "fail", f"{entry.reason}: {entry.detail}"))
                 continue
             rows += _provider(entry, composed, candidates, row)
     return rows
@@ -278,9 +273,8 @@ def _owner_conformance(
     spec = next((plugin.spec for plugin in composed.plugins if plugin.spec.name == owner), None)
     if spec is None:
         return None
-    target = next((c.target for c in candidates if c.name == owner), None)
     try:
-        package = package_of(spec, target)[0]
+        package = package_of(spec)[0]
         module_name = f"{package}.testing"
         if find_spec(module_name) is None:
             return None

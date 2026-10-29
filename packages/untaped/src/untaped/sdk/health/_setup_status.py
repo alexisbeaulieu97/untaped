@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.sdk.health.marks import MarkedField, SetupMarks, is_set, section_marks, setup_marks
+from untaped.sdk.health.marks import MarkedField, SetupMarks, is_set, setup_marks
 from untaped.sdk.network.credentials import (
     CredentialKey,
     credential_key,
@@ -28,17 +28,15 @@ from untaped.sdk.network.credentials import (
 )
 
 if TYPE_CHECKING:
-    from untaped.runtime.registry import PluginSpec
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.sdk.health.doctor import DoctorResult
 
 #: The id and title of core's doctor row for a plugin that marks what it needs.
 SETUP_CHECK = "setup"
 
 
-def plugin_marks(spec: PluginSpec) -> SetupMarks | None:
+def plugin_marks(spec: ComposedPlugin) -> SetupMarks | None:
     """What ``spec`` needs set up (its marks and credentials); else ``None``."""
-    if spec.settings is None:
-        return section_marks(spec.name, None) if spec.credentials else None
     return setup_marks(spec.settings, spec.credentials)
 
 

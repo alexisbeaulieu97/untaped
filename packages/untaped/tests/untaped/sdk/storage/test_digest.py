@@ -56,7 +56,7 @@ def _register(model: type[BaseModel] = ToySettings) -> None:
         model, extensions=True, caches=(ITEMS,), section="toy", credentials=frozenset({TOKEN.name})
     )
     register_profile_settings("toy", composed)
-    bind_credentials({"toy": (TOKEN,)})
+    bind_credentials({"toy": lambda: (TOKEN,)})
 
 
 def _config(**profiles: str) -> None:

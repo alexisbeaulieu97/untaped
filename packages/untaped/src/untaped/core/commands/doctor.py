@@ -50,9 +50,7 @@ from untaped.runtime.profile_resolver import (
 )
 from untaped.runtime.registry import (
     CompositionResult,
-    PluginSpec,
     QuarantineRecord,
-    owns_contracts,
     run_deferred_factory,
     section_settings,
 )
@@ -93,6 +91,7 @@ from untaped.sdk.words import (
 )
 
 if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.sdk.projects import Project
     from untaped.sdk.storage._refs import Reference, RefHolder
     from untaped.sdk.storage.store import Layout, Store
@@ -326,7 +325,7 @@ def _scopes(result: CompositionResult) -> list[_SectionScope]:
 
 
 def _plugin_scope(
-    spec: PluginSpec,
+    spec: ComposedPlugin,
     *,
     settings: bool = True,
     held: tuple[StateRows[Any] | ProjectStateRows[Any], ...] = (),
@@ -390,7 +389,7 @@ def collect_doctor_rows(
         rows.append(_quarantine_row(record))
     for registered in result.plugins:
         selected = plugins is None or registered.spec.name in plugins
-        if registered.spec.app_factory is None or not selected:
+        if not registered.spec.has_commands or not selected:
             continue
         built = run_deferred_factory(registered)
         if isinstance(built, QuarantineRecord):
@@ -1057,7 +1056,7 @@ def _contract_rows(
 ) -> list[dict[str, object]]:
     """Doctor's rows about contracts: one per provider offer, owner problem and bad ranking."""
     specs = [registered.spec for registered in result.plugins]
-    if not any(owns_contracts(spec) or spec.provides for spec in specs):
+    if not any(spec.owns_contracts or spec.fill_owners for spec in specs):
         return []
     # Imported here: ``untaped.sdk.contracts`` stays out of a composition without contracts.
     from untaped.runtime.contracts.registry import doctor_rows  # noqa: PLC0415

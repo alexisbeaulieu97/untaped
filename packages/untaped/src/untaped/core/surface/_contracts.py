@@ -41,19 +41,18 @@ from untaped.core.surface._types import (
 from untaped.sdk.marks import Experimental, class_mark, function_mark
 
 if TYPE_CHECKING:
-    from untaped.runtime.registry import PluginSpec
+    from untaped.runtime.composed import ComposedPlugin
     from untaped.sdk.contracts._declare import ContractInfo
 
 
-def owned_contracts(spec: PluginSpec) -> list[ContractInfo]:
+def owned_contracts(spec: ComposedPlugin) -> list[ContractInfo]:
     """The contracts ``spec`` declares, as the SDK knows them."""
-    from untaped.runtime.registry import owns_contracts  # noqa: PLC0415
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
 
-    if not owns_contracts(spec):
+    if not spec.owns_contracts:
         return []
     infos = []
-    for cls in spec.contracts():
+    for cls in spec.offers:
         info = contract_of(cls)
         if info is None or info.cls is not cls:
             raise SurfaceError(f"plugin {spec.name!r} lists {cls!r}, which is not a contract")

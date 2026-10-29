@@ -8,7 +8,7 @@ import pytest
 
 import untaped.core.skills as skills_module
 from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
-from untaped.runtime.registry import SkillAsset
+from untaped.runtime.composed import SkillAsset
 from untaped.sdk import checkout_root
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.git import run_git

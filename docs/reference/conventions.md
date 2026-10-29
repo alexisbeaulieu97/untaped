@@ -29,8 +29,7 @@ A plugin also follows these rules:
   class without a `system`.
 
 It does not check state writes or an error's category. Composition, not
-`untaped lint`, quarantines a plugin whose doctor-check ID duplicates
-another's, and refuses a command class that breaks the option rules below,
+`untaped lint`, refuses a command class that breaks the option rules below,
 naming the rule and the field. The message rules have their own checks,
 named in each violation line.
 

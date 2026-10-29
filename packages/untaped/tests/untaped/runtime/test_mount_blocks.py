@@ -119,7 +119,7 @@ def test_plugin_schema_finds_a_kind_the_declaration_names() -> None:
     assert (schema["$id"], list(schema["properties"])) == ("keeper.note", ["title"])
 
 
-def test_credentials_and_behaviours_reach_the_spec_named_and_compose_again() -> None:
+def test_credentials_and_behaviours_are_read_named_and_compose_again() -> None:
     first = compose_root(candidates=[KEEPER])
     again = compose_root(candidates=[KEEPER])
     assert not first.quarantine and not again.quarantine
@@ -127,8 +127,8 @@ def test_credentials_and_behaviours_reach_the_spec_named_and_compose_again() -> 
     [token] = plugin.spec.credentials
     assert token.qualified == "keeper.token"
     assert token is first.plugins[1].spec.credentials[0]
-    assert [each.name for each in plugin.spec.deprecations()] == ["plain-notes"]
-    assert not plugin.spec.stores  # its rows are read from the class, not the spec
+    assert [each.name for each in plugin.spec.deprecations] == ["plain-notes"]
+    assert not plugin.spec.stores  # its rows are read from the class by their own readers
     assert _run("keeper", "show").exit_code == 0
 
 
@@ -138,9 +138,9 @@ def test_an_unknown_kind_suggests_the_declaration_s_kinds() -> None:
     assert "keeper.note" in result.stderr
 
 
-def test_every_owned_block_core_ships_reaches_a_spec_field() -> None:
+def test_every_owned_block_core_ships_is_read_through_a_member() -> None:
     import untaped.sdk as sdk
-    from untaped.runtime.mount import _SPEC_FIELDS
+    from untaped.runtime.composed import _MEMBERS
     from untaped.sdk._block import OwnedBlock
 
     for name in sdk.__all__:  # load the blocks the SDK exports lazily (Lock)
@@ -152,4 +152,4 @@ def test_every_owned_block_core_ships_reaches_a_spec_field() -> None:
     kinds = {
         sub.block_kind for sub in subclasses(OwnedBlock) if sub.__module__.startswith("untaped.")
     }
-    assert kinds == set(_SPEC_FIELDS)
+    assert kinds == set(_MEMBERS)

@@ -234,25 +234,13 @@ class _Composed:
     def _modules_of(self, plugin: RegisteredPlugin) -> dict[str, LineMark | None]:
         """The plugin's Python API, with its mark.
 
-        The SDK for the root, else its package's ``api`` and ``testing``: the
-        package its declaration names, or for an 11.x spec (no declaration)
-        its entry point's, else its spec's.
+        The SDK for the root, else the ``api`` and ``testing`` of the package
+        its declaration names.
         """
-        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
-
-        name = plugin.spec.name
-        mark = self.marks[name]
+        mark = self.marks[plugin.spec.name]
         if plugin.root:
             return dict.fromkeys(SDK_MODULES, mark)
-        try:
-            package: str | None = self.result.mount.declaration.plugin(name).package
-        except LookupError:
-            package = candidate_package(plugin.plugin_ref.entry_point) or candidate_package(
-                plugin.spec
-            )
-        if package is None:
-            return {}
-        return dict.fromkeys(plugin_sdk_modules(package), mark)
+        return dict.fromkeys(plugin_sdk_modules(plugin.spec.decl.package), mark)
 
 
 def plugin_sdk_modules(package: str) -> list[str]:

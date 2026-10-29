@@ -10,15 +10,13 @@ fill itself from its flags (:meth:`~untaped.sdk._block.FieldBlock._fill`), runs
 invocation opened one: :func:`untaped.runtime.run.current_or_built`) and
 prints what it returns.
 
-Until core reads the declaration itself (12.0 delivery step 4), a composed
-plugin reaches the rest of composition as the :class:`PluginSpec` core already
-reads (:func:`plugin_spec`), so ``config``, ``plugin list``, ``skills`` and
-``doctor`` see it like any other plugin.
+The rest of core reads a composed plugin through its
+:class:`~untaped.runtime.composed.ComposedPlugin`, an accessor over its
+declaration that imports the plugin class only when asked.
 """
 
 from __future__ import annotations
 
-import functools
 import inspect
 import sys
 import types
@@ -28,7 +26,6 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
 from functools import cached_property, partial
 from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeGuard, cast, get_args, get_origin
 
@@ -37,19 +34,17 @@ from pydantic import BaseModel, ValidationError
 
 from untaped.runtime.declaration import (
     BlockDecl,
-    CacheDecl,
     CommandDecl,
     Declaration,
     GroupDecl,
     OptionDecl,
-    PluginDecl,
     Problem,
     Quarantined,
     StabilityDecl,
     target_of,
 )
-from untaped.runtime.registry import DeclaredBlocks, PluginSpec, SkillAsset, resolve_target
-from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
+from untaped.runtime.registry import resolve_target
+from untaped.sdk._block import FieldBlock, Invocation
 from untaped.sdk._cli import report_errors
 from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
@@ -67,8 +62,6 @@ from untaped.sdk.marks import (
 )
 from untaped.sdk.plugin import Command, Plugin, field_block, held_by
 from untaped.sdk.plugin import Group as CommandGroup
-from untaped.sdk.storage.cache import Cache
-from untaped.sdk.storage.dir import Dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -271,163 +264,6 @@ def compose_plugins(entries: Sequence[PluginEntry], *, taken: Iterable[str] = ()
     )
 
 
-def plugin_spec(mount: Mount, name: str) -> PluginSpec:
-    """The composed plugin ``name`` as the :class:`PluginSpec` the rest of composition reads.
-
-    It is built from the declaration alone, so composing never imports the
-    plugin class: its help is the plugin's summary (its commands are mounted
-    from the declaration the first time one is dispatched), its settings
-    model comes from its own module, and its owned blocks are counted from the
-    declaration and read from the class the first time a reader asks for them
-    (:class:`~untaped.runtime.registry.DeclaredBlocks`).
-    """
-    plugin = mount.declaration.plugin(name)
-    # a root plugin's commands mount at the root from the declaration, no app built for them
-    has_commands = not plugin.root and (bool(plugin.commands) or plugin.runs is not None)
-    # core's stub skill is named after it, a plugin's after the plugin under core's name
-    skill_name = name if plugin.root else f"untaped-{name}"
-    skills = (SkillAsset(name=skill_name, description=plugin.skill),) if plugin.skill else ()
-    loaded = functools.cache(partial(_spelled_blocks, mount, name))
-    # none declared: nothing to import the class for (as DeclaredBlocks)
-    behaviours = any(block.block == "deprecated-behaviour" for block in plugin.blocks)
-    factory = partial(build_app, mount, name)
-    # the factory builds the plugin's app, so it stands for the plugin's module
-    # where its package is looked for (untaped.runtime.plugin_package)
-    factory.__module__ = plugin.target.partition(":")[0]
-    spec = PluginSpec(
-        name=name,
-        app_factory=factory if has_commands else None,
-        settings=mount.settings[name],
-        help=plugin.summary if has_commands else None,
-        stability=_mark(plugin.stability),
-        skills=skills,
-        deprecations=lambda: loaded()["deprecations"] if behaviours else (),
-        **_contract_fields(mount, plugin),
-    )
-    for field_name in ("caches", "doctor_checks", "credentials", "stores"):
-        kinds = {kind for kind, each in _SPEC_FIELDS.items() if each == field_name}
-        declared = [
-            block
-            for block in plugin.blocks
-            if block.block in kinds and (block.block != "dir" or block.layout or block.items)
-        ]
-        blocks = DeclaredBlocks(
-            tuple(f"{name}.{block.name}" for block in declared),
-            partial(lambda field: loaded()[field], field_name),
-            timed=_timed_caches(name, declared) if field_name == "caches" else (),
-        )
-        # the spec's own checks read every block, so the lazy ones go in after them
-        object.__setattr__(spec, field_name, blocks)
-    return spec
-
-
-def _contract_fields(mount: Mount, plugin: PluginDecl) -> dict[str, Any]:
-    """The 11.x registry's ``contracts`` and ``provides`` from ``offers`` and ``fills``.
-
-    Both read the plugin class only when the registry first asks, as the
-    11.x functions did. A fill's owner is the composed plugin class offering its
-    contract; a fill no composed plugin owns is left out, since a class
-    names no plugin before its owner is composed.
-    """
-    fields: dict[str, Any] = {}
-    if plugin.offers:
-        fields["contracts"] = partial(_offered, mount, plugin.name, plugin.offers)
-    owners = {target: each.name for each in mount.declaration.plugins for target in each.offers}
-    grouped: dict[str, list[int]] = defaultdict(list)
-    for index, fill in enumerate(plugin.fills):
-        owner = owners.get(fill.contract)
-        if owner is not None:
-            grouped[owner].append(index)
-    if grouped:
-        fields["provides"] = {
-            owner: partial(_instances, mount, plugin.name, tuple(indexes))
-            for owner, indexes in grouped.items()
-        }
-    return fields
-
-
-def _offered(mount: Mount, name: str, targets: Sequence[str]) -> tuple[Any, ...]:
-    """The contracts the plugin offers, imported by name so a start imports no plugin class.
-
-    A contract made at run time (a test's, in a function) has no importable
-    name, so it is read from the plugin class, as its fills always are.
-    """
-    try:
-        return tuple(resolve_target(target) for target in targets)
-    except ImportError, AttributeError:
-        return tuple(mount.plugins[name].offers)
-
-
-def _instances(mount: Mount, name: str, indexes: Sequence[int]) -> tuple[Any, ...]:
-    """One instance of each provider class: core instantiates a provider at the first ask.
-
-    The classes are the plugin class's ``fills``, in the declaration's order,
-    so a class made at run time (``providing``) needs no importable name and
-    two such classes sharing one never stand for each other.
-    """
-    filled = mount.plugins[name].fills
-    return tuple(filled[index]() for index in indexes)
-
-
-def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any], ...]:
-    """Each declared cache with a max age, as its setting reads it: label, max age, old keys."""
-    return tuple(
-        _timed_cache(plugin, block.name, block.cache)
-        for block in declared
-        if block.cache is not None and block.cache.max_age_seconds is not None
-    )
-
-
-@functools.cache
-def _timed_cache(plugin: str, name: str, declared: CacheDecl) -> Cache[Any]:
-    """One declared cache, the same object at every composition, which keys the settings model."""
-    assert declared.max_age_seconds is not None  # _timed_caches(): a cache with a max age only
-    return Cache(
-        label=declared.label,
-        max_age=timedelta(seconds=declared.max_age_seconds),
-        renamed_from=declared.renamed_from,
-        removed_in=declared.removed_in,
-    )._spelled_as(plugin, name)
-
-
-#: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind
-#: no spec reader needs (state rows, which their own readers find, or a lock). A
-#: ``Dir`` goes to ``stores`` when it is numbered (its layouts, which references
-#: name and doctor lists) or holds ``items=`` (its item store, which holds use).
-_SPEC_FIELDS: dict[str, str | None] = {
-    "cache": "caches",
-    "doctor-check": "doctor_checks",
-    "credential": "credentials",
-    "deprecated-behaviour": "deprecations",
-    "state-rows": None,
-    "lock": None,
-    "dir": "stores",
-}
-
-
-def _spelled_blocks(mount: Mount, name: str) -> dict[str, tuple[Any, ...]]:
-    """The plugin's owned blocks by spec field, each given its plugin and name for 11.x readers."""
-    cls = mount.plugins[name]
-    blocks: dict[str, list[Any]] = {
-        field: [] for field in _SPEC_FIELDS.values() if field is not None
-    }
-    held = held_by(cls)
-    for decl in mount.declaration.plugin(name).blocks:
-        block = held[decl.attribute]
-        # every owned block core ships has an entry (tested); one of a kind core
-        # doesn't know has no 11.x reader to reach
-        field = _SPEC_FIELDS.get(decl.block)
-        if isinstance(block, Dir):
-            spelled = block._spelled_as(name, decl.name)
-            if block.layout is not None or block.item_type is not None:
-                blocks["stores"].append(
-                    spelled._layouts() if block.layout is not None else spelled.items()
-                )
-        elif isinstance(block, OwnedBlock) and field is not None:
-            blocks[field].append(block._spelled_as(name, decl.name))
-    return {field: tuple(each) for field, each in blocks.items()}
-
-
 # --- the command line ----------------------------------------------------------
 
 
@@ -453,7 +289,7 @@ def _add(app: App, mount: Mount, nodes: Sequence[CommandDecl | GroupDecl]) -> No
         if isinstance(node, GroupDecl):
             sub = App(name=node.name, help=_node_help(node.doc, node.runs))
             docs_footer(sub, _docs_address(node))
-            mark = _mark(node.stability)
+            mark = stability_mark(node.stability)
             if mark is not None:
                 mark_app(sub, mark, source="own")
             _add(sub, mount, node.commands)
@@ -523,7 +359,7 @@ def _command(mount: Mount, decl: CommandDecl) -> Callable[..., None]:
     command.__name__ = command.__qualname__ = decl.name.replace("-", "_")
     command.__doc__ = decl.doc
     setattr(command, _DECLARED_ATTR, decl)
-    mark = _mark(decl.stability)
+    mark = stability_mark(decl.stability)
     return mark(command) if mark is not None else command
 
 
@@ -587,7 +423,7 @@ def _parameter(option: OptionDecl, panel: Group) -> tuple[object, object]:
         if option.token.startswith("list["):
             # one value per flag, as `--case a --case b`, so a positional after it stays one
             settings["consume_multiple"] = False
-        mark = _mark(option.stability)
+        mark = stability_mark(option.stability)
         if isinstance(mark, Deprecated):
             settings["group"] = DEPRECATED_OPTIONS
             metadata.append(mark)
@@ -618,7 +454,8 @@ class DeclaredDefault:
         return str(self.value)
 
 
-def _mark(stability: StabilityDecl | None) -> Stability | None:
+def stability_mark(stability: StabilityDecl | None) -> Stability | None:
+    """The mark a declared stability stands for, as the marks machinery reads it."""
     if stability is None:
         return None
     if stability.stability == "experimental":
@@ -1069,7 +906,6 @@ __all__ = [
     "declared",
     "dispatching",
     "is_declared",
-    "plugin_spec",
     "repairs_at",
     "run_built",
     "watching",
