@@ -140,7 +140,7 @@ class Create(Provisions):
     Repo names piped one per line:
 
     ```console
-    $ printf 'acme/api\nacme/web\n' | untaped workspace create PROJ-123 --stdin
+    $ printf 'acme/api\\nacme/web\\n' | untaped workspace create PROJ-123 --stdin
     ```
     """
 
