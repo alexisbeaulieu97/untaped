@@ -834,6 +834,8 @@ class _Stream:
 
     def _table_line(self, record: BaseModel) -> None:
         """One row of a streamed table: its cells padded to the widths the first row set."""
+        from rich.cells import cell_len  # noqa: PLC0415 - rendering is heavy
+
         from untaped.sdk._cli import _as_row, _selected_columns  # noqa: PLC0415 - heavy
 
         row = _as_row(record)
@@ -847,13 +849,20 @@ class _Stream:
                 table_columns=list(self.output.columns) or None,
             )
             names = names or list(row)
-            self.widths = {name: max(len(name), len(_cell(row.get(name)))) for name in names}
-            print("  ".join(name.ljust(width) for name, width in self.widths.items()).rstrip())
-        print(
-            "  ".join(
-                _cell(row.get(name)).ljust(width) for name, width in self.widths.items()
-            ).rstrip()
-        )
+            self.widths = {
+                name: max(cell_len(name), cell_len(_cell(row.get(name)))) for name in names
+            }
+            print(_line({name: name for name in self.widths}, self.widths))
+        print(_line({name: _cell(row.get(name)) for name in self.widths}, self.widths))
+
+
+def _line(cells: dict[str, str], widths: dict[str, int]) -> str:
+    """A streamed table's line: each cell padded to its column's width in terminal cells."""
+    from rich.cells import cell_len  # noqa: PLC0415 - rendering is heavy
+
+    return "  ".join(
+        text + " " * (widths[name] - cell_len(text)) for name, text in cells.items()
+    ).rstrip()
 
 
 def _cell(value: object) -> str:
