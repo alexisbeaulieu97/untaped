@@ -386,8 +386,17 @@ def test_search_from_the_overview_covers_every_page(acme: Install) -> None:
     assert "untaped docs acme inputs plan: " in out
 
 
-def test_search_finding_nothing_prints_nothing(acme: Install) -> None:
-    assert _docs(acme, "--search", "no such text anywhere") == (0, "", "")
+def test_search_finding_nothing_says_so_on_stderr_only(acme: Install) -> None:
+    code, out, err = _docs(acme, "acme", "--search", "no such text anywhere")
+    assert (code, out) == (0, "")
+    assert "no line under `untaped docs acme` contains 'no such text anywhere'" in err
+
+
+@pytest.mark.parametrize("text", ["", "  "])
+def test_a_blank_search_is_a_usage_error(acme: Install, text: str) -> None:
+    code, out, err = _docs(acme, "--search", text)
+    assert (code, out) == (2, "")
+    assert "--search needs some text to look for" in err
 
 
 # --- errors ----------------------------------------------------------------------
