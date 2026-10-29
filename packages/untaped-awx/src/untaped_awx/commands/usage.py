@@ -15,7 +15,6 @@ from collections.abc import Iterator
 from pydantic import Field
 
 from untaped.sdk import (
-    KeyValue,
     Output,
     Positional,
     Record,
@@ -26,7 +25,13 @@ from untaped.sdk import (
 )
 from untaped_awx.application import ListTemplateUsage
 from untaped_awx.commands._awx import ResourceCommand
-from untaped_awx.commands._options import OrganizationScope, resolve_max_depth, scope_values
+from untaped_awx.commands._options import (
+    ById,
+    Filters,
+    OrganizationScope,
+    resolve_max_depth,
+    scope_values,
+)
 from untaped_awx.commands._template_targets import template_targets
 from untaped_awx.commands.context import scope_for_command
 from untaped_awx.domain import WorkflowUsage
@@ -86,9 +91,7 @@ class Usage(ResourceCommand):
         ),
     )
     stdin: Stdin[Record]
-    by_id: bool = Field(
-        False, description="Look up identifiers as AWX numeric ids instead of names."
-    )
+    by_id: ById
     scope: OrganizationScope
     recursive: bool = Field(
         False,
@@ -105,10 +108,7 @@ class Usage(ResourceCommand):
             "alone."
         ),
     )
-    filter_: list[KeyValue] = Field(
-        default_factory=list,
-        description="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
-    )
+    filter_: Filters
     output: Output[WorkflowUsage] = Output(render={"tree": _trees})
 
     def run(self) -> Iterator[WorkflowUsage]:
