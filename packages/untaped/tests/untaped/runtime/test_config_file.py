@@ -318,6 +318,26 @@ def test_unreadable_config_is_a_config_error(
         read_config_dict()
 
 
+@pytest.mark.parametrize(
+    ("make", "message"),
+    [
+        (lambda cfg: cfg.write_bytes(b"ui: caf\xe9\n"), "not UTF-8 text"),
+        (lambda cfg: cfg.write_bytes(b"\xff\xfeu\x00i\x00"), "not UTF-8 text"),
+        (Path.mkdir, "not a file"),
+    ],
+)
+def test_a_config_that_is_not_utf8_text_or_not_a_file_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make: Any, message: str
+) -> None:
+    cfg = tmp_path / "config.yml"
+    make(cfg)
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
+    with pytest.raises(ConfigError, match=f"could not read .*config.yml: {message}"):
+        read_config_dict()
+    with pytest.raises(ConfigError, match=f"could not read .*config.yml: {message}"):
+        mutate_config(lambda data: data.update(ui={"theme": "plain"}))
+
+
 def test_write_creates_the_file_owner_only_from_the_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
