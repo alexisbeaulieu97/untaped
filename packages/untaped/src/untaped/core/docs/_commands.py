@@ -20,6 +20,7 @@ from untaped.core.docs._site import CORE, ORGANIZED, Site
 from untaped.runtime.declaration import (
     CommandDecl,
     GroupDecl,
+    KindDecl,
     OptionDecl,
     PluginDecl,
     StabilityDecl,
@@ -265,21 +266,26 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
     accepted = [site.kind_of_target(target) for target in command.stdin]
     named = [each for each in accepted if each is not None]
     if named:
-        listed = ", ".join(
-            f"`{each.kind}` (`{kind_address(each, 'outputs')}`)"
-            if site.printers(each.kind)
-            else f"`{each.kind}`"
-            for each in named
-        )
-        lines += ["", f"Accepts on stdin (`--stdin`): {listed}."]
+        lines += ["", f"Accepts on stdin (`--stdin`): {_kinds(site, named)}."]
     via = command.stdin_via
-    found = None if via is None or not site.fillers(via) else site.point(via)
-    if found is not None:
+    found = None if via is None else site.point(via)
+    provided = [] if via is None else site.provided(via)
+    if found is not None and provided:
         owner, point = found
         lines += [
             "",
-            f"Also accepts on stdin each installed `{point.name}` provider's own records, which "
-            f"that provider turns into these (`untaped docs {owner.name} extensions "
-            f"{point.name}`).",
+            f"Also accepts on stdin the records the installed `{point.name}` providers turn "
+            f"into these (`untaped docs {owner.name} extensions {point.name}`): "
+            f"{_kinds(site, provided)}.",
         ]
     return ["", "## Outputs", *lines[1:]] if lines else []
+
+
+def _kinds(site: Site, kinds: list[KindDecl]) -> str:
+    """``kinds`` listed for a page: each one's page named when a command prints it."""
+    return ", ".join(
+        f"`{each.kind}` (`{kind_address(each, 'outputs')}`)"
+        if site.printers(each.kind)
+        else f"`{each.kind}`"
+        for each in kinds
+    )

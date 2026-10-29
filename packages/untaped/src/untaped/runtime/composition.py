@@ -1051,6 +1051,7 @@ class _PluginWalk:
                 target=target_of(filled),
                 contract=target_of(info.cls),
                 summary=first_paragraph(prose(filled)[1]),
+                item=_item_target(filled, info),
             )
             for filled in cls.fills
             if (info := contract_of(filled)) is not None
@@ -1902,3 +1903,17 @@ def _nested_block(annotation: object) -> bool:
         for arg in get_args(annotation)
         if not isinstance(arg, str)
     )
+
+
+def _item_target(provider: type, info: ContractInfo) -> str | None:
+    """The provider's own record (its ``T`` when not the contract's), which a bridge reads."""
+    from untaped.sdk.contracts._declare import (  # noqa: PLC0415 - contracts' cost
+        ContractError,
+        item_type,
+    )
+
+    try:
+        item = item_type(typing.cast("type[Contract]", provider), info)
+    except ContractError:
+        return None  # the registry quarantines the offer, naming why
+    return None if item is None or item is info.item else target_of(item)

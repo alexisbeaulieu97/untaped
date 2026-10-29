@@ -156,26 +156,15 @@ def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[st
 
 def _through(command: CommandDecl, mount: Mount) -> list[str]:
     """The kinds ``Stdin(via=)`` reads: the own records of the contract's composed providers."""
-    from untaped.runtime.registry import resolve_target  # noqa: PLC0415
-    from untaped.sdk.contracts._declare import contract_of, item_type  # noqa: PLC0415
-
     if command.stdin_via is None:
         return []
-    kinds = []
-    for plugin in mount.declaration.plugins:
-        for fill in plugin.fills:
-            if fill.contract != command.stdin_via:
-                continue
-            try:
-                provider = resolve_target(fill.target)
-                info = contract_of(provider)  # type: ignore[arg-type]
-                item = None if info is None else item_type(provider, info)  # type: ignore[arg-type]
-            except Exception:
-                continue
-            kind = None if item is None else mount.kind_of(item)
-            if kind is not None:
-                kinds.append(kind)
-    return kinds
+    kinds = {kind.target: kind.kind for kind in mount.declaration.kinds}
+    return [
+        kinds[fill.item]
+        for plugin in mount.declaration.plugins
+        for fill in plugin.fills
+        if fill.contract == command.stdin_via and fill.item in kinds
+    ]
 
 
 def _commands(

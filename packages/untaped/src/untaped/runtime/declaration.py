@@ -270,6 +270,8 @@ class FillDecl(_Frozen):
     contract: str
     #: The provider's docstring's first line: what it fills the point with.
     summary: str = ""
+    #: The provider's own record (its ``T``), which a ``Stdin(via=)`` bridge reads; ``None``: none.
+    item: str | None = None
 
 
 class PluginDecl(_Frozen):
