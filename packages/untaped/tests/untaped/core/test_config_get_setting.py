@@ -147,8 +147,22 @@ def test_get_secrets_follow_the_reveal_gate(
 
 
 def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="unknown setting"):
+    with pytest.raises(ConfigError, match="setting not found"):
         GetSetting(SettingsFileRepository())("plugins.tool.spec")
+
+
+def test_an_unknown_key_lists_its_sections_keys_or_the_sections(_isolate_settings: Path) -> None:
+    get = GetSetting(SettingsFileRepository())
+    with pytest.raises(ConfigError) as in_section:
+        get("demo.nope")
+    assert str(in_section.value) == (
+        "setting not found: 'demo.nope'; known: demo.base_url, demo.token, demo.default_token"
+    )
+    assert in_section.value.category == "not_found"
+    with pytest.raises(ConfigError) as no_section:
+        get("bogus.key")
+    assert "; known: " in str(no_section.value)
+    assert "demo" in str(no_section.value).partition("; known: ")[2].split(", ")
 
 
 _SYMBOLS = (

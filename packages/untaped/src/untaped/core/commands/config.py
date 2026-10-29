@@ -55,7 +55,7 @@ from untaped.sdk.health.deprecated_keys import (
 )
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.plugin import Command, Group
-from untaped.sdk.words import hint, plural
+from untaped.sdk.words import plural, run_hint
 
 
 @dataclass(frozen=True)
@@ -96,14 +96,16 @@ class RootConfigContext:
         if rest in scope.mappings.deleted:
             note = scope.mappings.deleted[rest].reason()
             raise ConfigError(
-                f"unknown setting: {key!r} ({note})\n{hint('config migrate')}",
-                category="invalid",
+                f"setting not found: {key!r} ({note})",
+                category="not_found",
+                hint=run_hint("config migrate"),
             )
         if rest in scope.mappings.retired:
             new = f"{first}.{scope.mappings.migratable[rest]}"
             raise ConfigError(
-                f"unknown setting: {key!r} (retired; now {new})\n{hint('config migrate')}",
-                category="invalid",
+                f"setting not found: {key!r} (retired; now {new})",
+                category="not_found",
+                hint=run_hint("config migrate"),
             )
         return key
 
