@@ -6,9 +6,7 @@ bundle and an enum with docstrings (its guides), settings, an experimental
 command and an extension point a provider (``store``) fills. Each page is
 compared with a golden page in ``snapshots/docs/<case>.md``, whose second
 line (the version and environment) is normalised; run with
-``UNTAPED_UPDATE_SNAPSHOTS=1`` to rewrite them. A plugin still in the 11.x
-shape (``PluginSpec``) is the seam: its page sends readers to ``--help`` and
-serves its guide files.
+``UNTAPED_UPDATE_SNAPSHOTS=1`` to rewrite them.
 """
 
 from __future__ import annotations
@@ -17,22 +15,16 @@ import enum
 import os
 import re
 import sys
-import zipfile
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from importlib import metadata
-from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Annotated, Literal
 
 import pytest
-from cyclopts import App
 from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.core.docs._docstring import _fenced
-from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.sdk import (
     Column,
     Command,
@@ -47,10 +39,9 @@ from untaped.sdk import (
     deprecated,
     experimental,
 )
-from untaped.sdk._cli import create_app
 from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Contract, Provider
-from untaped.sdk.testing import CliInvoker, Install
+from untaped.sdk.testing import Install
 from untaped.sdk.words import shown_path
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -506,113 +497,3 @@ def test_every_help_screen_ends_with_its_page_s_address(acme: Install) -> None:
     ):
         out = acme.cli(line).stdout.rstrip()
         assert out.splitlines()[-1].strip() == f"Full documentation: {address}", line
-
-
-# --- a plugin still in the 11.x shape: the seam ----------------------------------------
-
-_LIFECYCLE = """\
----
-description: "Read before adding or dropping widgets: how a widget's life runs."
----
-
-A widget is added once and dropped for good: `untaped legacy drop` keeps nothing.
-
-## Sizes
-
-See `untaped docs legacy guides sizes` for the sizes.
-"""
-
-
-def _legacy_app() -> App:
-    app = create_app(name="legacy", help="An 11.x plugin.")
-
-    @app.command(name="drop")
-    def drop_command() -> None:
-        """Drop a widget."""
-
-    return app
-
-
-def _guides(tmp_path: Path, **files: str) -> Path:
-    folder = tmp_path / "guides"
-    folder.mkdir()
-    for name, text in files.items():
-        (folder / f"{name.replace('_', '-')}.md").write_text(text, encoding="utf-8")
-    return folder
-
-
-def _legacy(folder: Traversable | None = None) -> list[PluginCandidate]:
-    spec = PluginSpec(name="legacy", app_factory=_legacy_app, help="An 11.x plugin.", guides=folder)
-    return [make_candidate(spec, "untaped-legacy", distribution_version="2.3.4")]
-
-
-def _run(candidates: list[PluginCandidate], *words: str) -> tuple[int, str, str]:
-    root = bootstrap.build_root_app(candidates=candidates)
-    invoked = CliInvoker().invoke(root.meta, ["docs", *words])
-    return invoked.exit_code, invoked.stdout, invoked.stderr
-
-
-def test_an_11x_plugin_is_on_the_overview_and_its_page_sends_readers_to_help(
-    tmp_path: Path,
-) -> None:
-    candidates = _legacy(_guides(tmp_path, lifecycle=_LIFECYCLE))
-    _, top, _ = _run(candidates)
-    code, page, _ = _run(candidates, "legacy")
-    assert "### legacy\nAn 11.x plugin.\n" in top
-    assert code == 0
-    _assert_snapshot("seam-plugin", page)
-
-
-def test_an_11x_plugin_s_guide_files_are_its_guides(tmp_path: Path) -> None:
-    candidates = _legacy(_guides(tmp_path, lifecycle=_LIFECYCLE))
-    code, out, _ = _run(candidates, "legacy", "guides", "lifecycle")
-    assert code == 0
-    _assert_snapshot("seam-guide", out)
-    _, listed, _ = _run(candidates, "legacy", "guides")
-    assert "- `lifecycle`: Read before adding" in listed
-
-
-def test_an_11x_plugin_s_commands_are_in_its_help_not_its_pages(tmp_path: Path) -> None:
-    code, _, err = _run(_legacy(), "legacy", "commands")
-    assert code == 2
-    assert "`untaped docs legacy` lists its pages and `untaped legacy --help` its commands" in err
-
-
-def test_a_guide_whose_front_matter_is_broken_still_prints(tmp_path: Path) -> None:
-    candidates = _legacy(_guides(tmp_path, notes="No front matter here.\n"))
-    code, out, _ = _run(candidates, "legacy", "guides", "notes")
-    assert code == 0
-    assert "No front matter here." in out
-
-
-def test_files_beside_the_guides_are_not_guides(tmp_path: Path) -> None:
-    folder = _guides(tmp_path, lifecycle=_LIFECYCLE)
-    (folder / "suite.yml").write_text("a: 1\n", encoding="utf-8")
-    (folder / "drafts").mkdir()
-    (folder / "drafts" / "later.md").write_text(_LIFECYCLE, encoding="utf-8")
-    _, listed, _ = _run(_legacy(folder), "legacy", "guides")
-    assert "lifecycle" in listed
-    assert "suite" not in listed
-    assert "later" not in listed
-
-
-def test_guides_read_from_a_zip_import(tmp_path: Path) -> None:
-    archive = tmp_path / "legacy.zip"
-    with zipfile.ZipFile(archive, "w") as zipped:
-        zipped.writestr("untaped_legacy/guides/lifecycle.md", _LIFECYCLE)
-    folder = zipfile.Path(archive, "untaped_legacy/guides/")
-    code, out, _ = _run(_legacy(folder), "legacy", "guides", "lifecycle")  # type: ignore[arg-type]
-    assert code == 0
-    assert "A widget is added once" in out
-
-
-def test_a_byte_order_mark_does_not_hide_the_front_matter(tmp_path: Path) -> None:
-    _, listed, _ = _run(_legacy(_guides(tmp_path, lifecycle="﻿" + _LIFECYCLE)), "legacy")
-    assert "Read before adding" in listed
-
-
-def test_an_11x_plugin_s_help_screens_end_with_its_page_s_address() -> None:
-    root = bootstrap.build_root_app(candidates=_legacy())
-    for argv in (["legacy", "--help"], ["legacy", "drop", "--help"]):
-        out = CliInvoker().invoke(root.meta, argv).stdout.rstrip()
-        assert out.splitlines()[-1].strip() == "Full documentation: untaped docs legacy", argv

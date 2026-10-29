@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from cyclopts import App
+from pydantic import BaseModel
 
-from core_test_support.commands.support import ExtProfile, write_config
+from core_test_support.commands.support import ExtProfile, make_plugin, write_config
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
-from untaped.sdk import Diagnostics, FormatOption, create_app
+from untaped.sdk import Command, Diagnostics, Output
 from untaped.sdk._run import current_run
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
@@ -21,27 +21,35 @@ _CONFIG = "format_version: 2\n"
 _YELLOW = "\x1b[1;33mwarning: careful\x1b[0m\n"
 
 
-def _factory() -> App:
-    app = create_app(name="ext", help="ext plugin.")
+class Said(BaseModel):
+    """Nothing: the commands only warn."""
 
-    @app.command
-    def warn(*, format: FormatOption = "table") -> None:
-        """Print a warning."""
-        del format
+    name: str
+
+
+class Warn(Command):
+    """Print a warning."""
+
+    output: Output[Said]
+
+    def run(self) -> Iterator[Said]:
         Diagnostics().warning("careful")
+        yield from ()
 
-    @app.command
-    def theme(*, format: FormatOption = "table") -> None:
-        """Say whether a theme was resolved."""
-        del format
+
+class Theme(Command):
+    """Say whether a theme was resolved."""
+
+    output: Output[Said]
+
+    def run(self) -> Iterator[Said]:
         Diagnostics().warning(f"theme resolved: {current_run().policy.theme is not None}")
-
-    return app
+        yield from ()
 
 
 def _invoke(argv: list[str]) -> CliResult:
-    spec = PluginSpec(name="ext", app_factory=_factory, settings=ExtProfile)
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
+    ext = make_plugin("ext", settings=ExtProfile, commands=(Warn, Theme))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(ext),))
     return CliInvoker().invoke(root.meta, argv)
 
 

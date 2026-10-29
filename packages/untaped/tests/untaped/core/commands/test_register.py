@@ -6,27 +6,30 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
 
+from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginSpec
+from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage import data_file
 from untaped.sdk.storage._refs import RefTarget
-from untaped.sdk.storage.store import Store
+from untaped.sdk.storage.dir import Dir
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("home_run")
 
-STORE = Store("acme", "data", base=lambda: Path("/nowhere/data.db"), layout=3)
-_JIRA = plugin_candidate(PluginSpec(name="jira"))
+_JIRA = plugin_candidate(make_plugin("jira"))
+
+
+def _acme() -> PluginCandidate:
+    """Plugin ``acme`` holding its ``data`` directory at layout 3."""
+    return plugin_candidate(make_plugin("acme", data=Dir(layout=3, file="data.db")))
 
 
 def _cli(*args: str) -> CliResult:
-    spec = PluginSpec(name="acme", stores=(STORE,))
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
+    root = bootstrap.build_root_app(candidates=[_acme()])
     return invoke_cli(root.meta, ["setup", "register", *args])
 
 
@@ -50,9 +53,11 @@ def test_register_writes_this_installs_reference_with_every_store_layout() -> No
 
 
 def _start(*command: str, plugins: tuple[str, ...] = ("acme", "jira")) -> CliResult:
-    """One start of the registered install, composing ``plugins`` (acme holds STORE)."""
-    specs = [PluginSpec(name=name, stores=(STORE,) if name == "acme" else ()) for name in plugins]
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec) for spec in specs])
+    """One start of the registered install, composing ``plugins`` (acme holds its data)."""
+    candidates = [
+        _acme() if name == "acme" else plugin_candidate(make_plugin(name)) for name in plugins
+    ]
+    root = bootstrap.build_root_app(candidates=candidates)
     result = invoke_cli(root.meta, list(command))
     assert result.exit_code == 0, result.output
     return result
@@ -65,11 +70,11 @@ def test_a_start_records_a_plugin_added_since(
     """A registered install gains jira and runs no command that opens a store."""
     assert _cli().exit_code == 0
     opened: list[object] = []
-    monkeypatch.setattr(Store, "open", lambda self: opened.append(self))
+    monkeypatch.setattr(Dir, "open", lambda self: opened.append(self))
 
     _start(*command)
 
-    assert opened == []
+    assert [each for each in opened if each is not refs.REFS] == []  # refs records the start
     ref = refs.this_install()
     assert ref is not None and ref.plugins == ("acme", "jira", "untaped")
 
@@ -207,8 +212,7 @@ def test_the_busy_lock_warning_follows_the_commands_format(
 
     assert _cli().exit_code == 0
     monkeypatch.setattr(refs.REFS, "wait", timedelta(seconds=0.01))
-    spec = PluginSpec(name="acme", stores=(STORE,))
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec), _JIRA])
+    root = bootstrap.build_root_app(candidates=[_acme(), _JIRA])
     with FileLock(str(refs.REFS.lock_path())):
         # Nothing marks settings to set up, so plan fails: its error is a JSON line too.
         result = invoke_cli(root.meta, ["setup", "plan", "--format", "json"])

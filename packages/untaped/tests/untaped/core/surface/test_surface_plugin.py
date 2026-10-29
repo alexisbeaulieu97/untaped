@@ -14,15 +14,18 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel, Field
 
+from core_test_support.commands.support import make_plugin
 from untaped.core.settings import CoreSettings
 from untaped.core.surface import DeprecatedMark, Line, SurfaceError, generate, plugin_lines
 from untaped.core.surface._sdk import own_mark
 from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import Key
 from untaped.sdk.contracts import Contract
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.marks import experimental
+from untaped.sdk.storage.state import StateRows
 from untaped.sdk.testing import plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -42,8 +45,14 @@ class Settings(BaseModel):
     root: Path = Field(default_factory=lambda: Path.home() / ".bins")
 
 
-class State(BaseModel):
-    seen: list[str] = Field(default_factory=list)
+class Seen(BaseModel):
+    """One bin seen."""
+
+    name: Annotated[str, Key]
+
+
+class NoSettings(BaseModel):
+    """Nothing to set."""
 
 
 class Bin(BaseModel):
@@ -64,12 +73,17 @@ class BinSource(Contract):
     def bins(self, *, full: bool = False) -> list[Bin]: ...
 
 
-def _lines(spec: PluginSpec) -> set[str]:
-    return {str(line) for line in plugin_lines(spec)}
+def _bins(settings: type[BaseModel] = NoSettings, **blocks: object) -> PluginCandidate:
+    """Plugin ``bins`` with ``settings``, holding ``blocks``, as a candidate."""
+    return plugin_candidate(make_plugin("bins", settings=settings, **blocks))  # type: ignore[arg-type]
+
+
+def _lines(candidate: PluginCandidate) -> set[str]:
+    return {str(line) for line in plugin_lines(candidate)}
 
 
 def test_settings_and_state_lines() -> None:
-    lines = _lines(PluginSpec(name="bins", settings=Settings, state=State))
+    lines = _lines(_bins(settings=Settings, seen=StateRows(model=Seen)))
     assert {line for line in lines if line.startswith(("cfg ", "state "))} == {
         "cfg bins.output choice=json",
         "cfg bins.output choice=table",
@@ -79,17 +93,18 @@ def test_settings_and_state_lines() -> None:
         "cfg bins.timeout number? default=unset",
         "cfg bins.timeout_secs -> bins.timeout  [deprecated]",
         "cfg bins.window.days integer(minimum=1) default=7",
-        "state bins.seen string[]",
+        "state bins.seen Seen[]",
+        "state bins.seen.name string",
     }
 
 
 def test_an_experimental_plugin_marks_every_line() -> None:
-    lines = plugin_lines(PluginSpec(name="bins", settings=Settings, stability=experimental))
+    lines = plugin_lines(_bins(settings=Settings, stability=experimental))
     assert {line.mark for line in lines} == {"experimental", DeprecatedMark()}
 
 
 def test_a_contract_and_the_payload_models_it_reaches() -> None:
-    lines = _lines(PluginSpec(name="bins", contracts=lambda: (BinSource,)))
+    lines = _lines(_bins(offers=(BinSource,)))
     assert {line for line in lines if line.startswith("contract ")} == {
         "contract bins.Bin(name)",
         "contract bins.Bin.kind choice=glass",
@@ -106,15 +121,13 @@ def test_a_contract_and_the_payload_models_it_reaches() -> None:
 
 
 def test_a_plugin_without_surface_has_no_lines() -> None:
-    assert plugin_lines(PluginSpec(name="bins")) == []
+    assert plugin_lines(_bins()) == []
 
 
 def test_a_plugin_reaching_no_other_owner_adds_only_its_own_lines() -> None:
     # Only for a plugin whose kinds and models reach no other owner's: one
     # that reaches core's kinds would add to their marks.
-    bins = plugin_candidate(
-        PluginSpec(name="bins", settings=Settings, contracts=lambda: (BinSource,))
-    )
+    bins = _bins(settings=Settings, offers=(BinSource,))
 
     core = set(generate([]))
 
@@ -164,27 +177,6 @@ def test_a_record_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> 
         generate([])
 
 
-def _ghost() -> App:
-    app = App(name="ghost", help="Hidden.", show=False)
-
-    @app.command
-    def boo() -> None:
-        """Boo."""
-
-    return app
-
-
-def test_a_hidden_plugin_has_no_cli_lines() -> None:
-    ghost = plugin_candidate(PluginSpec(name="ghost", app_factory=_ghost, settings=Settings))
-
-    whole = {line.text for line in generate([ghost])}
-    own = {line.text for line in plugin_lines(ghost)}
-
-    assert not [text for text in whole | own if text.startswith("cli untaped ghost")]
-    assert "cfg ghost.timeout number? default=unset" in own
-    assert own <= whole
-
-
 def test_a_plugin_class_gets_its_api_modules_lines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -220,10 +212,10 @@ def test_a_plugin_class_gets_its_api_modules_lines(
 
 
 def test_lines_do_not_depend_on_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    spec = PluginSpec(name="bins", settings=Settings, contracts=lambda: (BinSource,))
-    before = plugin_lines(spec)
+    bins = _bins(settings=Settings, offers=(BinSource,))
+    before = plugin_lines(bins)
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert plugin_lines(spec) == before
+    assert plugin_lines(bins) == before
     assert Line("cfg bins.timeout number? default=unset") in before
 
 
@@ -250,7 +242,7 @@ def test_extension_rank_keys_take_their_methods_marks() -> None:
         @abstractmethod
         def crates(self) -> list[Bin]: ...
 
-    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateSource,)))
+    lines = plugin_lines(_bins(offers=(CrateSource,)))
     assert (
         Line("cfg bins.extensions.crate_source.rank.crates string[] default=[]", "experimental")
         in lines
@@ -276,14 +268,14 @@ def test_a_stable_contract_reaching_an_experimental_model_is_refused() -> None:
         def crates(self) -> list[Wrapper]: ...
 
     with pytest.raises(SurfaceError, match=r"the stable crate_source\.crates reaches Crate"):
-        plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateSource,)))
+        plugin_lines(_bins(offers=(CrateSource,)))
 
     @experimental
     class CrateDraft(Contract):
         @abstractmethod
         def crates(self) -> list[Wrapper]: ...
 
-    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (CrateDraft,)))
+    lines = plugin_lines(_bins(offers=(CrateDraft,)))
     assert Line("contract bins.Crate(label)", "experimental") in lines
 
 
@@ -296,7 +288,7 @@ def test_a_model_does_not_inherit_its_base_class_mark() -> None:
         @abstractmethod
         def crates(self) -> list[StableCrate]: ...
 
-    lines = plugin_lines(PluginSpec(name="bins", contracts=lambda: (StableCrateSource,)))
+    lines = plugin_lines(_bins(offers=(StableCrateSource,)))
     assert any(line.text.startswith("contract bins.StableCrate(") for line in lines)
 
 

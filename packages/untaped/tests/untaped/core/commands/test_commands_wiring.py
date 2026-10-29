@@ -19,7 +19,6 @@ from core_test_support.commands.support import (
     JiraProfile,
     check,
     make_plugin,
-    make_spec,
     write_config,
 )
 from core_test_support.runtime.plugin_harness import make_candidate
@@ -113,7 +112,7 @@ def test_jira_isolation_end_to_end(_isolated_config: Path) -> None:
 
 def test_quarantined_provider_lists_and_fails_doctor_only() -> None:
     good = make_candidate(make_plugin("good", skill="Teach agents how to use untaped-good."))
-    bad = make_candidate(make_spec("good"), name="bad")
+    bad = make_candidate(make_plugin("bad"), error=RuntimeError("broken"))
     root = _root(candidates=(good, bad))
 
     plugins = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])  # type: ignore[union-attr]
@@ -137,16 +136,6 @@ def test_skills_short_selector_through_root(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert (target / "untaped-demo" / "SKILL.md").is_file()
-
-
-def test_state_write_rejected_through_root(_isolated_config: Path) -> None:
-    from core_test_support.commands.support import GithubState
-
-    root = _root(make_spec("github", settings=GithubProfile, state=GithubState))
-    result = CliInvoker().invoke(root.meta, ["config", "set", "github.cursor", "x"])  # type: ignore[union-attr]
-    assert result.exit_code != 0
-    assert "managed by" in result.output
-    assert not _isolated_config.exists()
 
 
 def test_profile_round_trip_through_root() -> None:

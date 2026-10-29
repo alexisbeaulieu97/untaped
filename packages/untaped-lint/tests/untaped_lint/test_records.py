@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.testing import compose_with
+from untaped.sdk.testing import install
 from untaped_lint.api import FileLocation, Finding, Rules, Tree, finding, rule, target_of
 from untaped_lint.application.tree_paths import tree_paths
+from untaped_lint.plugin import LintPlugin
 from untaped_lint.testing import run, run_rule, tree
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -89,7 +90,7 @@ def test_a_file_reads_as_text_lines_json_yaml_and_python() -> None:
 def test_a_new_untracked_file_is_linted_before_git_add(tmp_path: Path) -> None:
     _git(tmp_path, "init", "-q")
     _write(tmp_path, {"new.py": "# TODO\n"})
-    with compose_with("lint", provides={"acme": [TodoRules()]}):
+    with install(LintPlugin, providers={"acme": [TodoRules]}).running():
         report = run(root=tmp_path)
     assert [(each.rule, each.target) for each in report.findings] == [("acme.todo", "new.py")]
 
@@ -98,7 +99,7 @@ def test_a_file_that_is_not_utf8_is_one_finding_and_the_rule_reads_the_rest(
     tmp_path: Path,
 ) -> None:
     _write(tmp_path, {"bad.py": b"\xff\xfe# TODO\n", "good.py": "# TODO\n"})
-    with compose_with("lint", provides={"acme": [TodoRules()]}):
+    with install(LintPlugin, providers={"acme": [TodoRules]}).running():
         report = run(root=tmp_path)
     assert sorted((each.rule, each.target) for each in report.findings) == [
         ("acme.todo", "good.py"),
@@ -114,7 +115,7 @@ def test_no_tree_is_built_when_no_rule_reads_one(
         raise AssertionError("the tree was listed")
 
     monkeypatch.setattr("untaped_lint.application.engine.tree_paths", listed)
-    with compose_with("lint"):
+    with install(LintPlugin).running():
         report = run(root=tmp_path)
     assert report.warnings == [
         "nothing to lint here: run it in a plugin repository, a repository with "

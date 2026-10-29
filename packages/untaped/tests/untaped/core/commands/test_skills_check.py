@@ -8,20 +8,16 @@ refreshed (``untaped.skills.updates: auto``, the default), reported on stderr
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from pathlib import Path
-from typing import Annotated
 
 import pytest
-from cyclopts import App, Parameter
 from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import age_stub, asset, make_plugin, make_spec, write_config
+from core_test_support.commands.support import age_stub, make_plugin, write_config
 from untaped.core.commands import skills as skills_cli
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Command, Confirm, DryRun, Plugin
-from untaped.sdk._cli import create_app
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.plugin import StubSkill
 from untaped.sdk.testing import CliInvoker, plugin_candidate
@@ -165,51 +161,6 @@ def test_unshipped_skill_is_left_to_doctor(_isolated_config: Path, mode: str) ->
     assert "untaped-gone" not in output
     assert "warning" not in output
     assert _installed("untaped-gone").is_file()
-
-
-def _root_with_commands() -> object:
-    """A ``demo`` plugin with a previewing ``apply`` and a passthrough ``run``."""
-    skill = asset("untaped-demo")
-
-    def _factory() -> App:
-        app = create_app(name="demo", help="demo plugin.")
-
-        @app.command(name="apply")
-        def apply(
-            *, check: Annotated[bool, Parameter(name="--check", negative="")] = False
-        ) -> None:
-            """Preview-capable apply."""
-
-        @app.command(name="run")
-        def run(*args: str) -> None:
-            """Pass arguments through."""
-
-        return app
-
-    spec = replace(make_spec("demo", skills=(skill,)), app_factory=_factory)
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
-    assert _run(root, "skills", "install", "demo")[0] == 0
-    age_stub(_installed("untaped-demo").parent, text=_OLDER)
-    return root
-
-
-@pytest.mark.parametrize(
-    ("args", "updated"),
-    [
-        (("demo", "apply", "--check"), False),
-        (("demo", "apply"), True),
-        (("demo", "run", "--", "--dry-run", "--check"), True),
-    ],
-    ids=["check-previews", "apply-writes", "after-double-dash"],
-)
-def test_auto_treats_only_preview_flags_before_double_dash_as_previews(
-    _isolated_config: Path, args: tuple[str, ...], updated: bool
-) -> None:
-    write_config(_isolated_config, "format_version: 2\nuntaped:\n  skills: {updates: auto}\n")
-    root = _root_with_commands()
-    code, output = _run(root, *args)
-    assert code == 0, output
-    assert (_installed("untaped-demo").read_text() != _OLDER) is updated
 
 
 class _Apply(Command):

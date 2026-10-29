@@ -16,16 +16,13 @@ import pytest
 
 from core_test_support.commands.support import (
     GithubProfile,
-    GithubState,
     JiraProfile,
     config_root,
     make_plugin,
-    make_spec,
     write_config,
 )
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import FORMAT_VERSION, get_settings
-from untaped.sdk.storage.state import StateMap
 from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -101,34 +98,6 @@ def test_core_s_key_resolves_to_core_settings(_isolated_config: Path) -> None:
     data = read_config_dict(_isolated_config)
     assert data["untaped"]["http"] == {"timeout_seconds": 5.0}
     assert "http" not in data.get("github", {})
-
-
-# ── state writes rejected per section schema ─────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "argv", [["set", "github.cursor", "abc"], ["get", "github.cursor"], ["unset", "github.cursor"]]
-)
-def test_state_field_is_rejected_without_writing(_isolated_config: Path, argv: list[str]) -> None:
-    # 11.x: a state model shares its section with the settings; goes with PluginSpec
-    app = config_root(make_spec("github", settings=GithubProfile, state=GithubState))
-    result = CliInvoker().invoke(app, argv)  # type: ignore[arg-type]
-    assert result.exit_code != 0
-    assert "github.cursor" in result.output
-    assert "managed by" in result.output
-    assert not _isolated_config.exists()
-
-
-@pytest.mark.parametrize("argv", [["set", "acme.aliases", "abc"], ["get", "acme.aliases"]])
-def test_a_declared_state_key_is_rejected(_isolated_config: Path, argv: list[str]) -> None:
-    acme = make_spec("acme", stores=(StateMap("acme", "aliases"),))
-    app = config_root(acme)
-
-    result = CliInvoker().invoke(app, argv)  # type: ignore[arg-type]
-
-    assert result.exit_code != 0
-    assert "managed by" in result.output
-    assert not _isolated_config.exists()
 
 
 # ── NO bare-key implicit expansion ───────────────────────────────────────────

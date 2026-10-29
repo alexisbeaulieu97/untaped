@@ -1,4 +1,4 @@
-"""``--format tree``: a command opts in with ``TreeFormatOption`` and passes ``emit(tree=)``.
+"""``--format tree``: a command opts in with ``Output(render={"tree": ...})``.
 
 The user's default format (``UNTAPED_FORMAT``, ``untaped.ui.format``) still applies
 to such a command, and stays one of the shared formats.
@@ -8,29 +8,26 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
-from cyclopts import App
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from core_test_support.commands.support import GithubProfile, write_config
+from core_test_support.commands.support import GithubProfile, make_plugin, write_config
 from untaped.runtime import bootstrap
 from untaped.sdk import (
-    ColumnsOption,
+    Command,
     Diagnostics,
-    FormatOption,
-    PluginSpec,
-    TreeFormatOption,
+    Output,
     TreeGraph,
     TreeGraphEdge,
     TreeGraphNode,
-    check_columns,
-    create_app,
     emit,
 )
 from untaped.sdk._cli import emit_with
 from untaped.sdk._ui import Ui
+from untaped.sdk.diagnostic import Failure
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -43,43 +40,42 @@ _TREE = TreeGraph(
 )
 
 
-class _Row(BaseModel):
+class TreeRow(BaseModel):
+    """One listed row; a failed one carries its error."""
+
     name: str
+    error: Failure | None = None
 
 
-def _spec() -> PluginSpec:
-    def factory() -> App:
-        app = create_app(name="trees", help="Tree plugin.")
+def _tree(_rows: Sequence[TreeRow]) -> TreeGraph:
+    return _TREE
 
-        @app.command(name="list")
-        def list_command(
-            *,
-            fmt: TreeFormatOption = "table",
-            columns: ColumnsOption = None,
-            failed: bool = False,
-            early: bool = False,
-        ) -> None:
-            """List one row, or draw it as a tree."""
-            if early:
-                check_columns(_Row, columns=columns, fmt=fmt)
-            Diagnostics().warning("careful")
-            rows: list[dict[str, object]] = [{"name": "alpha"}]
-            if failed:
-                rows.append({"name": "beta", "error": {"category": "failed", "message": "x"}})
-            emit(rows, fmt=fmt, columns=columns, tree=_TREE)
 
-        @app.command(name="plain")
-        def plain_command(*, fmt: FormatOption = "table") -> None:
-            """List one row."""
-            emit([{"name": "alpha"}], fmt=fmt)
+class List(Command):
+    """List one row, or draw it as a tree."""
 
-        return app
+    output: Output[TreeRow] = Output(render={"tree": _tree})
+    failed: bool = Field(False, description="Add a failed row.")
 
-    return PluginSpec(name="trees", app_factory=factory, settings=GithubProfile, help="Trees.")
+    def run(self) -> Iterator[TreeRow]:
+        Diagnostics().warning("careful")
+        yield TreeRow(name="alpha")
+        if self.failed:
+            yield TreeRow(name="beta", error=Failure(message="x", category="failed", system="x"))
+
+
+class Plain(Command):
+    """List one row."""
+
+    output: Output[TreeRow]
+
+    def run(self) -> Iterator[TreeRow]:
+        yield TreeRow(name="alpha")
 
 
 def _invoke(argv: list[str]) -> CliResult:
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(_spec()),))
+    trees = make_plugin("trees", settings=GithubProfile, commands=(List, Plain))
+    root = bootstrap.build_root_app(candidates=(plugin_candidate(trees),))
     return CliInvoker().invoke(root.meta, argv)
 
 
@@ -98,28 +94,18 @@ def test_failed_rows_still_set_the_exit_code_in_a_tree() -> None:
     assert result.stdout.startswith("root\n")
 
 
-@pytest.mark.parametrize("columns", ["name", "?"])
-@pytest.mark.parametrize("early", [False, True], ids=["emit", "check_columns"])
-def test_columns_do_not_apply_to_a_tree(columns: str, early: bool) -> None:
-    result = _invoke(["trees", "list", "-f", "tree", "-c", columns, *(["--early"] * early)])
-
-    assert result.exit_code == 2
-    assert "--columns does not apply to --format tree" in result.stderr
-    assert result.stdout == ""
-
-
 def test_other_formats_ignore_the_tree() -> None:
     result = _invoke(["trees", "list", "-f", "json"])
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [{"name": "alpha"}]
+    assert json.loads(result.stdout) == [{"name": "alpha", "error": None}]
 
 
 @pytest.mark.parametrize(
     ("setting", "env", "expected"),
     [
-        ("untaped:\n  ui:\n    format: yaml\n", None, "- name: alpha\n"),
-        ("", "json", '[{"name": "alpha"}]\n'),
+        ("untaped:\n  ui:\n    format: yaml\n", None, "- name: alpha\n  error: null\n"),
+        ("", "json", '[{"name": "alpha", "error": null}]\n'),
     ],
     ids=["untaped.ui.format", "UNTAPED_FORMAT"],
 )
