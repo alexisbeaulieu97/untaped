@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import contextvars
 import logging
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import closing
 
 
 def bounded_map[ItemT, ResultT](
@@ -34,39 +35,22 @@ def bounded_map[ItemT, ResultT](
     hanging while the executor's default shutdown runs every queued task.
     ``on_abort`` (optional) then runs on the calling thread *before* waiting
     for in-flight calls, so callers can stop them (e.g. kill child processes)
-    instead of blocking until they finish on their own.
+    instead of blocking until they finish on their own; the original
+    exception wins over one ``on_abort`` raises. Serially nothing is in
+    flight between items, so an ``on_each`` that raises there skips
+    ``on_abort``; one ``fn`` raises still runs it.
 
     ``while_running`` (optional) runs on the calling thread once every item
     is submitted and before any result is consumed, so the caller can do
     foreground work (e.g. drain a queue the workers feed) while they run.
     Supplying it always uses worker threads, even for a single item.
     """
-    if concurrency < 1:
-        raise ValueError("concurrency must be positive")
-    if while_running is None and (len(items) <= 1 or concurrency == 1):
-        try:
-            for item in items:
-                on_each(item, fn(item))
-        except BaseException:
-            if on_abort is not None:
-                on_abort()
-            raise
-        return
-    with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(items)))) as executor:
-        try:
-            futures = {
-                executor.submit(contextvars.copy_context().run, fn, item): item for item in items
-            }
-            if while_running is not None:
-                while_running()
-            for future in as_completed(futures):
-                on_each(futures[future], future.result())
-        except BaseException:
-            executor.shutdown(wait=False, cancel_futures=True)
-            if on_abort is not None:
-                on_abort()
-            executor.shutdown(wait=True)
-            raise
+    pairs = bounded_iter(
+        fn, items, concurrency=concurrency, on_abort=on_abort, while_running=while_running
+    )
+    with closing(pairs):  # an on_each that raises stops the work still queued
+        for item, result in pairs:
+            on_each(item, result)
 
 
 def bounded_iter[ItemT, ResultT](
@@ -77,7 +61,7 @@ def bounded_iter[ItemT, ResultT](
     ordered: bool = False,
     on_abort: Callable[[], None] | None = None,
     while_running: Callable[[], None] | None = None,
-) -> Iterator[tuple[ItemT, ResultT]]:
+) -> Generator[tuple[ItemT, ResultT]]:
     """Yield ``(item, fn(item))`` for every item, at most ``concurrency`` running at once.
 
     Pairs come in completion order, so a slow first item never holds back the

@@ -103,6 +103,17 @@ def test_on_abort_runs_on_serial_path() -> None:
     assert aborted == [True]
 
 
+def test_the_original_error_wins_over_one_on_abort_raises() -> None:
+    def boom(_item: int) -> int:
+        raise ValueError("the work failed")
+
+    def abort() -> None:
+        raise RuntimeError("abort failed too")
+
+    with pytest.raises(ValueError, match="the work failed"):
+        bounded_map(boom, [1, 2], concurrency=2, on_each=lambda i, r: None, on_abort=abort)
+
+
 def test_on_abort_not_called_on_success() -> None:
     aborted: list[bool] = []
     bounded_map(
