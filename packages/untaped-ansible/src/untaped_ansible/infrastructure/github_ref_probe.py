@@ -1,10 +1,10 @@
 """GraphQL-backed remote ref freshness probe satisfying the RefProbe port.
 
-All-ref scans use ``batch_repo_refs`` in 50-repo GraphQL chunks; default-branch
-scans with no explicit ref filters use ``batch_default_branch_refs`` in
-100-repo chunks. Annotated tags are peeled up to two levels, matching the SHA
-the Git probe records for branches, lightweight tags, annotated tags, and
-tags-of-tags; 3+ level tag chains can churn if a refresh switches backend.
+All-ref scans use ``batch_repo_refs``; default-branch scans with no explicit
+ref filters use ``batch_default_branch_refs``. Annotated tags are peeled up
+to two levels, matching the SHA the Git probe records for branches,
+lightweight tags, annotated tags, and tags-of-tags; 3+ level tag chains can
+churn if a refresh switches backend.
 Known limitation: an all-repo per-alias ``FORBIDDEN`` inside a ``200 OK``
 response is still reported as per-repo missing/inaccessible.
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal
 
-from untaped.sdk import ErrorCategory, HttpError, UntapedError, bounded_map
+from untaped.sdk import ErrorCategory
 from untaped_ansible.domain.payloads import (
     GitRef,
     ProbedRepo,
@@ -22,45 +22,28 @@ from untaped_ansible.domain.payloads import (
     ProbeReport,
     ProbeTarget,
 )
-from untaped_github.api import GithubGraphqlError
 
 if TYPE_CHECKING:
     from untaped_ansible.application.ports import BatchRepoRefsClient
-    from untaped_github.api import BatchRepoRefsResult
+    from untaped_github.api import BatchRepoRefsFailure
 
-ALL_REFS_GRAPHQL_CHUNK_SIZE = 50
-DEFAULT_BRANCH_GRAPHQL_CHUNK_SIZE = 100
 _MISSING_REASON = "repository not found or inaccessible on GitHub"
 TRANSIENT_REF_PROBE_FAILURE_PREFIX = "transient ref probe failed: "
 
 
 class GithubRefProbe:
-    """Probe branch/tag heads for many repos via batched GraphQL queries.
+    """Probe branch/tag heads for many repos through github's batched GraphQL probe.
 
-    Splits ``repos`` into GraphQL-sized chunks and drives them through a
-    bounded thread pool; each worker issues one ``batch_repo_refs`` call.
-    Generic chunk-level transport errors mark every repo in that chunk as
-    failed; classified global GraphQL failures abort the probe.
+    github chunks the repos and runs ``concurrency`` chunks at once; this
+    adapter turns what it read into the probe report. A repo github could
+    not read becomes a failure; a global GraphQL failure aborts the probe.
     """
 
-    def __init__(
-        self,
-        github: BatchRepoRefsClient,
-        *,
-        concurrency: int = 8,
-        chunk_size: int = ALL_REFS_GRAPHQL_CHUNK_SIZE,
-        default_branch_chunk_size: int = DEFAULT_BRANCH_GRAPHQL_CHUNK_SIZE,
-    ) -> None:
+    def __init__(self, github: BatchRepoRefsClient, *, concurrency: int = 8) -> None:
         if concurrency < 1 or concurrency > 32:
             raise ValueError("concurrency must be between 1 and 32")
-        if chunk_size < 1:
-            raise ValueError("chunk_size must be at least 1")
-        if default_branch_chunk_size < 1:
-            raise ValueError("default_branch_chunk_size must be at least 1")
         self._github = github
         self._concurrency = concurrency
-        self._chunk_size = chunk_size
-        self._default_branch_chunk_size = default_branch_chunk_size
 
     def probe(
         self,
@@ -72,102 +55,51 @@ class GithubRefProbe:
     ) -> ProbeReport:
         if mode not in {"all", "default_branch"}:
             raise ValueError("mode must be 'all' or 'default_branch'")
-        repo_names = tuple(_target_full_name(target) for target in repos)
-        total = len(repo_names)
-        chunk_size = (
-            self._default_branch_chunk_size if mode == "default_branch" else self._chunk_size
-        )
-        chunks = [
-            tuple(repo_names[start : start + chunk_size]) for start in range(0, total, chunk_size)
-        ]
-        probed: dict[str, ProbedRepo] = {}
-        failures: dict[str, ProbeFailure] = {}
-        rate_limit_cost: int | None = None
-        rate_limit_remaining: int | None = None
-        rate_limit_reset_at = None
-        done = 0
-
-        def merge(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | ProbeFailure) -> None:
-            nonlocal rate_limit_cost, rate_limit_remaining, rate_limit_reset_at
-            if isinstance(outcome, ProbeFailure):
-                failures.update(dict.fromkeys(chunk, outcome))
-                return
-            for repo_refs in outcome.repos:
-                probed[repo_refs.full_name] = ProbedRepo(
+        names = tuple(_target_full_name(target) for target in repos)
+        if mode == "default_branch":
+            result = self._github.batch_default_branch_refs(
+                names, concurrency=self._concurrency, on_progress=on_progress
+            )
+        else:
+            result = self._github.batch_repo_refs(
+                names, kinds=kinds, concurrency=self._concurrency, on_progress=on_progress
+            )
+        failures = {
+            repo: ProbeFailure(
+                kind="missing", reason=_MISSING_REASON, category=ErrorCategory.NOT_FOUND
+            )
+            for repo in result.missing
+        }
+        failures.update({failure.full_name: _failure(failure) for failure in result.failures})
+        return ProbeReport(
+            repos={
+                repo_refs.full_name: ProbedRepo(
                     default_branch=repo_refs.default_branch,
                     refs=tuple(
                         GitRef(kind=ref.kind, name=ref.name, sha=ref.sha) for ref in repo_refs.refs
                     ),
                 )
-            failures.update(
-                {
-                    repo: ProbeFailure(
-                        kind="missing", reason=_MISSING_REASON, category=ErrorCategory.NOT_FOUND
-                    )
-                    for repo in outcome.missing
-                }
-            )
-            for failure in outcome.failures:
-                failures[failure.full_name] = ProbeFailure(
-                    kind="transient",
-                    reason=_format_transient_failure(failure.reason),
-                    category=ErrorCategory.UNAVAILABLE,
-                )
-            if outcome.rate_limit_remaining is not None:
-                rate_limit_remaining = (
-                    outcome.rate_limit_remaining
-                    if rate_limit_remaining is None
-                    else min(rate_limit_remaining, outcome.rate_limit_remaining)
-                )
-            cost = outcome.rate_limit_cost
-            if cost is not None:
-                rate_limit_cost = cost if rate_limit_cost is None else rate_limit_cost + cost
-            reset_at = outcome.rate_limit_reset_at
-            if reset_at is not None:
-                rate_limit_reset_at = reset_at
-
-        def probe_chunk(chunk: tuple[str, ...]) -> BatchRepoRefsResult | ProbeFailure:
-            return self._probe_chunk(chunk, kinds, mode=mode)
-
-        def record(chunk: tuple[str, ...], outcome: BatchRepoRefsResult | ProbeFailure) -> None:
-            nonlocal done
-            merge(chunk, outcome)
-            done += len(chunk)
-            if on_progress is not None:
-                on_progress(done, total)
-
-        bounded_map(probe_chunk, chunks, concurrency=self._concurrency, on_each=record)
-        return ProbeReport(
-            repos=probed,
+                for repo_refs in result.repos
+            },
             failures=failures,
-            rate_limit_cost=rate_limit_cost,
-            rate_limit_remaining=rate_limit_remaining,
-            rate_limit_reset_at=rate_limit_reset_at,
+            rate_limit_cost=result.rate_limit_cost,
+            rate_limit_remaining=result.rate_limit_remaining,
+            rate_limit_reset_at=result.rate_limit_reset_at,
         )
 
-    def _probe_chunk(
-        self,
-        chunk: tuple[str, ...],
-        kinds: Sequence[str],
-        *,
-        mode: Literal["all", "default_branch"],
-    ) -> BatchRepoRefsResult | ProbeFailure:
-        try:
-            if mode == "default_branch":
-                return self._github.batch_default_branch_refs(chunk, chunk_size=len(chunk))
-            return self._github.batch_repo_refs(chunk, kinds=kinds, chunk_size=len(chunk))
-        except GithubGraphqlError:
-            # Must precede the broad UntapedError catch: this is a global
-            # GraphQL failure, not a per-repo chunk failure.
-            raise
-        except (HttpError, UntapedError) as exc:
-            # Provenance prefix: distinguishes probe transport failures from
-            # git-fetch failures in `failed <repo>: <reason>` stderr listings.
-            return ProbeFailure(
-                kind="chunk",
-                reason=f"ref probe failed: {str(exc) or type(exc).__name__}",
-                category=exc.category,
-            )
+
+def _failure(failure: BatchRepoRefsFailure) -> ProbeFailure:
+    if failure.kind == "request":
+        # Provenance prefix: distinguishes probe failures from git-fetch
+        # failures in `failed <repo>: <reason>` stderr listings.
+        return ProbeFailure(
+            kind="chunk", reason=f"ref probe failed: {failure.reason}", category=failure.category
+        )
+    return ProbeFailure(
+        kind="transient",
+        reason=_format_transient_failure(failure.reason),
+        category=ErrorCategory.UNAVAILABLE,
+    )
 
 
 def _format_transient_failure(reason: str) -> str:

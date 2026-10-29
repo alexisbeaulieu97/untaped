@@ -7,11 +7,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from untaped.sdk import ErrorCategory
+
 RefKind = Literal["heads", "tags"]
 """Ref namespace probed by ``GithubClient.batch_repo_refs``."""
 
-BatchRepoRefsFailureKind = Literal["server_error", "transport"]
-"""Retryable per-repo failure class from a batched GraphQL ref probe."""
+BatchRepoRefsFailureKind = Literal["server_error", "transport", "request"]
+"""Why a batched GraphQL ref probe could not read a repo.
+
+``server_error`` and ``transport`` are transient and worth retrying later;
+``request`` is any other failure of the request that held the repo.
+"""
 
 
 class RepoRef(BaseModel):
@@ -40,13 +46,14 @@ class RepoRefs(BaseModel):
 
 
 class BatchRepoRefsFailure(BaseModel):
-    """Retryable per-repo failure from a batched GraphQL ref probe."""
+    """A repo a batched GraphQL ref probe could not read, and why."""
 
     model_config = ConfigDict(frozen=True)
 
     full_name: str
     reason: str
     kind: BatchRepoRefsFailureKind
+    category: ErrorCategory = ErrorCategory.UNAVAILABLE
     status_code: int | None = None
     url: str | None = None
 
@@ -57,11 +64,11 @@ class BatchRepoRefsResult(BaseModel):
     ``repos`` preserves input order, skipping entries listed in
     ``missing`` (repositories GitHub reported as ``NOT_FOUND`` or
     ``FORBIDDEN``) or ``failures`` (repositories whose chunk was narrowed
-    down to a retryable transient failure). ``rate_limit_cost`` is the
-    summed GraphQL ``rateLimit.cost`` across all POSTs in this operation, while
-    ``rate_limit_remaining`` and ``rate_limit_reset_at`` surface the
-    latest available budget values so callers can warn or stop when the
-    hourly budget runs low.
+    down to a failure). ``rate_limit_cost`` is the summed GraphQL
+    ``rateLimit.cost`` across all POSTs in this operation, while
+    ``rate_limit_remaining`` is the lowest budget a response reported and
+    ``rate_limit_reset_at`` the latest reset, so callers can warn or stop
+    when the hourly budget runs low.
     """
 
     model_config = ConfigDict(frozen=True)

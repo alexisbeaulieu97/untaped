@@ -124,10 +124,10 @@ def test_client_covers_ansible_reader_operations() -> None:
     assert list(raw) == ["self", "owner", "repo", "path", "ref"]
     assert raw["ref"].kind is inspect.Parameter.KEYWORD_ONLY
     batch = params("batch_repo_refs")
-    assert list(batch) == ["self", "repos", "kinds", "chunk_size"]
+    assert list(batch) == ["self", "repos", "kinds", "chunk_size", "concurrency", "on_progress"]
     assert batch["kinds"].kind is inspect.Parameter.KEYWORD_ONLY
     default_branch = params("batch_default_branch_refs")
-    assert list(default_branch) == ["self", "repos", "chunk_size"]
+    assert list(default_branch) == ["self", "repos", "chunk_size", "concurrency", "on_progress"]
     assert default_branch["chunk_size"].kind is inspect.Parameter.KEYWORD_ONLY
 
 

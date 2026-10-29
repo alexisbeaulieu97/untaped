@@ -230,12 +230,14 @@ class BatchRepoRefsClient(Protocol):
         repos: Sequence[str],
         *,
         kinds: Sequence[str] = ("heads", "tags"),
-        chunk_size: int = 50,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> BatchRepoRefsResult: ...
 
     def batch_default_branch_refs(
         self,
         repos: Sequence[str],
         *,
-        chunk_size: int = 200,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> BatchRepoRefsResult: ...

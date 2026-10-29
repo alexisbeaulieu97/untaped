@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -109,16 +109,19 @@ class GithubClient:
         *,
         kinds: Sequence[str] = ("heads", "tags"),
         chunk_size: int = 50,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> BatchRepoRefsResult:
         """Probe branch/tag heads for many ``owner/name`` repos via GraphQL.
 
         Batches ``chunk_size`` repos per aliased GraphQL POST, so ~1500
         repos resolve in ~30 API calls. ``kinds`` selects the ref
         namespaces; passing only ``("heads",)`` omits the tags
-        connection and halves the GraphQL point cost. Transient 5xx or
-        transport failures are returned per repo in
-        ``BatchRepoRefsResult.failures`` when adaptive retries cannot
-        resolve them.
+        connection and halves the GraphQL point cost. ``concurrency`` chunks
+        run at once, and ``on_progress(done, total)`` hears of each finished
+        chunk in repos. A chunk whose request fails for any reason but a
+        GraphQL error (which stops the probe) returns its repos in
+        ``BatchRepoRefsResult.failures``.
         """
         return fetch_repo_refs(
             self._http,
@@ -126,24 +129,29 @@ class GithubClient:
             repos,
             kinds=kinds,
             chunk_size=chunk_size,
+            concurrency=concurrency,
+            on_progress=on_progress,
         )
 
     def batch_default_branch_refs(
         self,
         repos: Sequence[str],
         *,
-        chunk_size: int = 200,
+        chunk_size: int = 100,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> BatchRepoRefsResult:
         """Probe only default-branch heads for many ``owner/name`` repos via GraphQL.
 
-        Uses the same transient failure reporting contract as
-        :meth:`batch_repo_refs`.
+        Runs and reports failures as :meth:`batch_repo_refs` does.
         """
         return fetch_default_branch_refs(
             self._http,
             self._graphql_endpoint,
             repos,
             chunk_size=chunk_size,
+            concurrency=concurrency,
+            on_progress=on_progress,
         )
 
     def close(self) -> None:
