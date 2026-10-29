@@ -67,9 +67,10 @@ class Command[S: BaseModel](BaseModel):
     ``stability``, ``aliases``, ``repairs`` and ``removes`` are class-level
     marks; ``repairs = True`` says the command repairs untaped's setup, so it
     runs under a bad ``UNTAPED_FORMAT`` and the per-run skills check skips
-    it. ``removes = ITEMS`` says the command, given a row's key, removes that
-    row of the ``StateRows`` its plugin class holds: a damaged row's error
-    offers it. One command removes a plugin's rows.
+    it. ``removes = ITEMS`` says the command removes rows of the
+    ``StateRows`` its plugin class holds; for keyed rows it takes the key
+    under the ``Key`` field's name, as its first positional or an option, so
+    a damaged row's error offers it. One command removes a plugin's rows.
     """
 
     model_config = ConfigDict(extra="forbid", ignored_types=(Experimental, Deprecated))

@@ -18,7 +18,6 @@ from untaped.sdk.storage.state import (
     StateCollection,
     StateMap,
     StateRows,
-    core_rows,
 )
 from untaped.sdk.testing import make_project, read_rows, write_rows
 
@@ -431,25 +430,6 @@ def test_a_project_string_map(tmp_path: Path) -> None:
 def test_per_project_returns_a_declaration_with_of_only() -> None:
     assert isinstance(PER_PROJECT, ProjectStateRows)
     assert not hasattr(PER_PROJECT, "get")
-
-
-# -- core's own rows -----------------------------------------------------------
-
-
-def test_core_rows_live_in_a_section_core_reserves() -> None:
-    rows = core_rows("credentials", "index", model=Repo, key_field="name")
-    rows.add(Repo(name="a", url="u"))
-
-    assert yaml.safe_load(_state_text())["credentials"]["index"][0]["name"] == "a"
-    with pytest.raises(ConfigError, match="not a state section core reserves"):
-        core_rows("demo", "index", model=Repo, key_field="name")
-    with pytest.raises(ConfigError, match="section core reserves"):
-        StateRows("credentials", "index", model=Repo, key_field="name")
-    with pytest.raises(ConfigError, match="credentials"):
-        StateMap("credentials", "index").set("a", "b")
-    with pytest.raises(ConfigError, match="credentials"):
-        StateCollection("credentials", "index").upsert({"id": "a"})
-    assert rows.keys() == ["a"]
 
 
 # -- two processes ---------------------------------------------------------------

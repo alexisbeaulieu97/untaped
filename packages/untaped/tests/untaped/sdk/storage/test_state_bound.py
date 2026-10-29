@@ -9,13 +9,14 @@ from typing import Annotated
 
 import pytest
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import Declaration
 from untaped.sdk import Command, ConfigError, Key, Plugin, StateRows, UntapedError
 from untaped.sdk._run import Run, run_scope
+from untaped.sdk.fields import Positional
 from untaped.sdk.projects import Project
 
 
@@ -46,6 +47,8 @@ class Remove(Command):
 
     removes = ITEMS
 
+    name: Positional[str] = Field(description="The row's key.")
+
     def run(self) -> None:
         return None
 
@@ -54,6 +57,8 @@ class Forget(Command):
     """Forget a checkout."""
 
     removes = CHECKOUTS
+
+    name: Positional[str] = Field(description="The row's key.")
 
     def run(self) -> None:
         return None
@@ -162,6 +167,84 @@ def test_the_remover_is_recorded_on_the_rows_it_removes() -> None:
     }
 
 
+def test_a_remover_takes_the_key_under_the_key_field_s_name() -> None:
+    rows = StateRows[Item]()
+
+    class Drop(Command):
+        """Drop an item."""
+
+        removes = rows
+
+        id: str = Field(description="The row's id.")
+
+        def run(self) -> None:
+            return None
+
+    class Keyed(Plugin):
+        """Keyed."""
+
+        settings = Settings
+        commands = (Drop,)
+        items = rows
+
+    [quarantined] = _composed(Keyed).quarantined
+    [problem] = quarantined.problems
+    assert (problem.rule, problem.where.rpartition("<locals>.")[2]) == (
+        "remover-key",
+        "Drop.removes",
+    )
+    assert "keyed by 'name', but takes no top-level field 'name'" in problem.detail
+
+
+def test_a_remover_taking_the_key_as_a_later_positional_is_refused() -> None:
+    rows = StateRows[Item]()
+
+    class Drop(Command):
+        """Drop an item."""
+
+        removes = rows
+
+        scope: Positional[str] = Field(description="Where to drop.")
+        name: Positional[str] = Field(description="The row's key.")
+
+        def run(self) -> None:
+            return None
+
+    class Late(Plugin):
+        """Late."""
+
+        settings = Settings
+        commands = (Drop,)
+        items = rows
+
+    [quarantined] = _composed(Late).quarantined
+    assert [p.rule for p in quarantined.problems] == ["remover-key"]
+
+
+def test_a_remover_taking_the_key_as_an_option_is_offered_with_its_flag() -> None:
+    rows = StateRows[Item]()
+
+    class Drop(Command):
+        """Drop an item."""
+
+        removes = rows
+
+        name: str = Field(description="The row's key.")
+
+        def run(self) -> None:
+            return None
+
+    class Optioned(Plugin):
+        """Optioned."""
+
+        settings = Settings
+        commands = (Drop,)
+        items = rows
+
+    line = _composed(Optioned).remove_line("demo", "items", "a b")
+    assert line == "untaped demo drop --name 'a b'"
+
+
 def test_rows_have_one_remover_and_it_names_rows_the_plugin_holds() -> None:
     rows = StateRows[Item]()
 
@@ -169,6 +252,8 @@ def test_rows_have_one_remover_and_it_names_rows_the_plugin_holds() -> None:
         """Drop an item."""
 
         removes = rows
+
+        name: Positional[str] = Field(description="The row's key.")
 
         def run(self) -> None:
             return None
@@ -374,3 +459,30 @@ def test_composition_refuses_rows_per_project_it_cannot_key() -> None:
     assert ("block-shape", "Twice marks a and b Key; a row has one key") in problems
     assert ("block-shape", "model is not a pydantic model: <class 'int'>") in problems
     assert ("block-shape", "no model today") in problems
+
+
+def test_list_rows_have_one_remover_too() -> None:
+    notes = StateRows[Note]()
+
+    class Clear(Command):
+        """Clear the notes."""
+
+        removes = notes
+
+        def run(self) -> None:
+            return None
+
+    class Wipe(Clear):
+        """Wipe the notes."""
+
+    class Listed(Plugin):
+        """Listed."""
+
+        settings = Settings
+        commands = (Clear, Wipe)
+        log = notes
+
+    [quarantined] = _composed(Listed).quarantined
+    assert [(p.rule, p.where.rpartition("<locals>.")[2]) for p in quarantined.problems] == [
+        ("duplicate-remover", "Listed.log")
+    ]

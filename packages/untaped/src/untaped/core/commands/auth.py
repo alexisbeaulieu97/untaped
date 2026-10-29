@@ -36,11 +36,12 @@ from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, Output, Positional
 from untaped.sdk.network._credential_store import (
+    INDEX,
     CredentialRow,
     find_row,
+    ids_by_prefix,
     ready_store,
     rows,
-    rows_by_prefix,
     store_token,
 )
 from untaped.sdk.network._token_store import (
@@ -268,7 +269,12 @@ def _forget(
     if ident is not None:
         if plugin is not None or fields:
             raise UsageError("--id names the row on its own; leave out the plugin and --key")
-        row = _row_by_id(ident)
+        ident = _id_by_prefix(ident)
+        try:
+            row = INDEX.get(ident)
+        except ConfigError:  # a damaged row: forget the row, its entry is unknown
+            return _forget_damaged(ident, confirm)
+        assert row is not None  # its id was just listed
         key_text = _row_key(row)
     else:
         if plugin is None and not ui.can_prompt:
@@ -313,14 +319,32 @@ def _forget_row(row: CredentialRow) -> None:
     _diag.info("nothing was revoked on the server")
 
 
-def _row_by_id(ident: str) -> CredentialRow:
-    found = rows_by_prefix(ident)
+def _id_by_prefix(prefix: str) -> str:
+    found = ids_by_prefix(prefix)
     if not found:
-        raise UsageError(f"no stored credential has id {ident!r}", hint=command_line("auth list"))
+        raise UsageError(f"no stored credential has id {prefix!r}", hint=command_line("auth list"))
     if len(found) > 1:
-        listed = ", ".join(row.id[: SHORT_ID + 4] for row in found)
-        raise UsageError(f"id {ident!r} matches several stored credentials: {listed}")
+        listed = ", ".join(ident[: SHORT_ID + 4] for ident in found)
+        raise UsageError(f"id {prefix!r} matches several stored credentials: {listed}")
     return found[0]
+
+
+def _forget_damaged(ident: str, confirm: Confirm) -> CredentialOutcome:
+    """Forget the damaged row ``ident``: the row only, as what it points at can't be read."""
+    outcome = CredentialOutcome(
+        plugin="unknown",
+        name="unknown",
+        key="(a damaged row)",
+        id=ident[:SHORT_ID],
+        store=None,
+        action="planned",
+    )
+    if not confirm(f"Forget the damaged stored credential {ident[:SHORT_ID]}?"):
+        return outcome
+    INDEX.delete(ident)
+    _diag.success(f"forgot the damaged stored credential {ident[:SHORT_ID]}")
+    _diag.info("its store entry, if it had one, was not deleted; nothing was revoked on the server")
+    return outcome.model_copy(update={"action": "deleted"})
 
 
 def _row_key(row: CredentialRow) -> str:
@@ -474,6 +498,8 @@ class Forget(Command[CoreSettings]):
         $ untaped --profile prod auth forget awx --yes
         $ untaped auth forget --id 9b07e4 --dry-run
     """
+
+    removes = INDEX
 
     plugin: Positional[str | None] = Field(None, description=_PLUGIN)
     name: Positional[str | None] = Field(None, description=_NAME)

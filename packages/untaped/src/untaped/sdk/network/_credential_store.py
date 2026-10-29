@@ -1,10 +1,11 @@
-"""Where credentials are kept: an index in ``state.yml`` and this machine's password store.
+"""Where credentials are kept: an index in core's ``state.yml`` and this machine's password store.
 
-The index is core's rows in the reserved state section ``credentials``
-(:func:`untaped.sdk.storage.state.core_rows`): one row per stored credential, holding
-its plugin, name, key fields, backend, and the entry name or argv that
-reads it, never the secret. The file is written 0600 like the rest of
-``state.yml``. A row's id is :func:`untaped.sdk.network.credentials.key_id`.
+The index is core's state rows ``credentials`` (:data:`INDEX`, which
+``Core.credentials`` holds), in ``plugins/untaped/state.yml``: one row per
+stored credential, holding its plugin, name, key fields, backend, and the
+entry name or argv that reads it, never the secret. The file is written
+0600, as every state file is. A row's id is
+:func:`untaped.sdk.network.credentials.key_id`.
 
 Secrets go to the stores :mod:`untaped.sdk.network._token_store` drives (macOS
 ``security``, ``secret-tool``, ``pass``) under service ``untaped``, entry
@@ -22,15 +23,15 @@ import hashlib
 import shlex
 from collections.abc import Sequence
 from contextvars import ContextVar, Token
-from functools import cache
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from untaped.runtime.settings import resolve_config_path
 from untaped.runtime.sink import Diagnostics
-from untaped.sdk._home import CONFIG_FILE, DEFAULT_HOME
+from untaped.sdk._home import CONFIG_FILE, CORE, DEFAULT_HOME
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.fields import Key
 from untaped.sdk.network._token_store import StoreName, TokenStore, no_backend_message, pick_store
 from untaped.sdk.network.auth import check_program, read_command
 from untaped.sdk.network.credentials import (
@@ -39,10 +40,10 @@ from untaped.sdk.network.credentials import (
     describe_key,
     key_data,
 )
+from untaped.sdk.storage.state import StateRows
 
 if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential, CredentialKey
-    from untaped.sdk.storage.state import StateRows
 
 Backend = Literal["security", "secret-tool", "pass", "command", "memory"]
 """How a row's secret is read: a store's tool, the row's own command, or
@@ -87,16 +88,14 @@ def reset_test_store(token: Token[ReadableStore | None]) -> None:
     _TEST_STORE.reset(token)
 
 
-SECTION = "credentials"
-"""The reserved state section the index lives in."""
-
-
 class CredentialRow(BaseModel):
     """One stored credential in the index: what it is for and how to read it, never the secret."""
 
     model_config = ConfigDict(frozen=True)
 
-    id: str = Field(description="sha256 of the plugin, name and key: what the row answers.")
+    id: Annotated[str, Key] = Field(
+        description="sha256 of the plugin, name and key: what the row answers."
+    )
     plugin: str
     name: str
     key: dict[str, JsonValue] = Field(
@@ -130,34 +129,26 @@ class CredentialRow(BaseModel):
         return f"command: {program}{' …' if len(self.argv or []) > 1 else ''}"
 
 
-@cache
-def index() -> StateRows[CredentialRow]:
-    """The credential index's rows (core's, under ``credentials.index`` in ``state.yml``)."""
-    from untaped.sdk.storage.state import core_rows  # noqa: PLC0415 - state imports the config file
-
-    return core_rows(
-        SECTION,
-        "index",
-        model=CredentialRow,
-        key_field="id",
-        remove_hint="untaped auth forget --id {key}",
-    )
+#: Core's ``credentials``: the index's rows, read with no plugin class imported.
+#: ``Core.credentials`` holds it, and ``auth forget`` removes its rows.
+INDEX = StateRows[CredentialRow]()._bound_to(CORE, "credentials")
 
 
 def rows() -> list[CredentialRow]:
     """Every stored row, in file order."""
-    return index().all()
+    return INDEX.all()
 
 
 def find_row(ident: str) -> CredentialRow | None:
     """The row filed under the full id ``ident``, or ``None``."""
-    return index().get(ident)
+    return INDEX.get(ident)
 
 
-def rows_by_prefix(prefix: str) -> list[CredentialRow]:
-    """The rows whose id starts with ``prefix`` (``auth forget --id``)."""
+def ids_by_prefix(prefix: str) -> list[str]:
+    """The ids starting with ``prefix`` (``auth forget --id``), a damaged row's too."""
     wanted = prefix.strip().lower()
-    return [row for row in rows() if row.id.startswith(wanted)] if wanted else []
+    known = INDEX.keys()  # not the rows: a damaged one is found too
+    return [ident for ident in known if ident.startswith(wanted)] if wanted else []
 
 
 def read_row(row: CredentialRow, *, origin: str | None) -> BoundSecret:
@@ -259,7 +250,7 @@ def store_token(
         entry = f"{entry}-{ident[16:24]}"
     store.save(entry, token, label=label_for(credential, key))
     old = find_row(ident)
-    index().put(_row(credential, key, ident, backend=cast("Backend", store.name), entry=entry))
+    INDEX.put(_row(credential, key, ident, backend=cast("Backend", store.name), entry=entry))
     if old is not None and (old.backend, old.entry) != (store.name, entry):
         try:
             _delete_entry(old)
@@ -290,7 +281,7 @@ def store_command(credential: Credential[Any], key: CredentialKey, argv: Sequenc
     check_program(command, setting="--token-command", category="usage")
     ident = credential.id(key)
     old = find_row(ident)
-    index().put(_row(credential, key, ident, backend="command", argv=command))
+    INDEX.put(_row(credential, key, ident, backend="command", argv=command))
     if old is not None:
         _delete_entry(old)
     return f"will run `{shlex.join(command)}` from the config folder when this token is needed"
@@ -302,7 +293,7 @@ def forget_row(ident: str) -> CredentialRow | None:
     if row is None:
         return None
     _delete_entry(row)
-    index().delete(ident)
+    INDEX.delete(ident)
     return row
 
 
@@ -330,13 +321,8 @@ def _store_name(backend: str | None) -> StoreName | None:
     return backend  # type: ignore[return-value]
 
 
-# --------------------------------------------------------------------------- #
-# The deprecated config settings (11.x only)
-# --------------------------------------------------------------------------- #
-
-
 __all__ = [
-    "SECTION",
+    "INDEX",
     "Backend",
     "CredentialRow",
     "ReadableStore",
@@ -345,12 +331,11 @@ __all__ = [
     "entry_for",
     "find_row",
     "forget_row",
-    "index",
+    "ids_by_prefix",
     "label_for",
     "read_row",
     "reset_test_store",
     "rows",
-    "rows_by_prefix",
     "set_test_store",
     "store_available",
     "store_command",

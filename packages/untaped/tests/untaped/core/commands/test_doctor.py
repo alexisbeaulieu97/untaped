@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Annotated
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core_test_support.commands.stores import install_fake_stores
 from core_test_support.commands.support import (
@@ -41,7 +41,8 @@ from untaped.runtime.registry import (
 )
 from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
 from untaped.sdk import Command, Key, Plugin
-from untaped.sdk.network._credential_store import CredentialRow, index
+from untaped.sdk.fields import Positional
+from untaped.sdk.network._credential_store import INDEX, CredentialRow
 from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.data_file import write_lines
 from untaped.sdk.storage.state import StateRows
@@ -75,7 +76,7 @@ def test_all_pass_exits_zero(_isolated_config: Path) -> None:
 
 def _file_row(**values: object) -> None:
     """A stored ``github`` credential row, as ``auth login`` files one."""
-    index().put(CredentialRow(id="a" * 64, plugin="github", name="token", **values))  # type: ignore[arg-type]
+    INDEX.put(CredentialRow(id="a" * 64, plugin="github", name="token", **values))  # type: ignore[arg-type]
 
 
 def test_a_pass_credential_that_cannot_decrypt_is_a_failed_row(
@@ -540,7 +541,17 @@ def _removes(self: Command) -> None:
 
 def _acme(*, removes: object = None, **blocks: object) -> type[Plugin]:
     """``acme`` holding ``blocks``; ``untaped acme rm`` removes the ``removes`` rows."""
-    rm = type("Rm", (Command,), {"__doc__": "Remove an item.", "removes": removes, "run": _removes})
+    rm = type(
+        "Rm",
+        (Command,),
+        {
+            "__doc__": "Remove an item.",
+            "__annotations__": {"name": Positional[str]},
+            "name": Field(description="The item's name."),
+            "removes": removes,
+            "run": _removes,
+        },
+    )
     acme = make_plugin("acme", commands=() if removes is None else (rm,), **blocks)
     assert not compose(acme).quarantine  # its blocks know their plugin, as an installed one's do
     return acme

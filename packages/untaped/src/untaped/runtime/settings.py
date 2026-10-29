@@ -925,9 +925,6 @@ def splice_registered_state(
 #: the on-disk format stamp), never usable as plugin state names.
 RESERVED_STATE_SECTIONS = frozenset({"active", *FILE_KEYS})
 
-#: ``state.yml`` sections core keeps its own rows in (:func:`untaped.sdk.storage.state.core_rows`).
-CORE_STATE_SECTIONS = frozenset({"credentials"})
-
 
 #: Config sections core owns: the top-level layout keys and the keys
 #: injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
@@ -937,20 +934,12 @@ RESERVED_SECTIONS = frozenset(
     {
         *RESERVED_SECTION_KEYS,
         *RESERVED_STATE_SECTIONS,
-        *CORE_STATE_SECTIONS,
     }
 )
 
 
-def check_state_section_name(section: str, *, core: bool = False) -> None:
-    """Reject a state section name that collides with ``config.yml``'s own keys.
-
-    ``core=True`` takes only core's own sections (:data:`CORE_STATE_SECTIONS`).
-    """
-    if core:
-        if section not in CORE_STATE_SECTIONS:
-            raise ConfigError(f"{section!r} is not a state section core keeps")
-        return
+def check_state_section_name(section: str) -> None:
+    """Reject a state section name that collides with ``config.yml``'s own keys."""
     if not section or section in RESERVED_SECTIONS:
         raise ConfigError(f"reserved or invalid state section name: {section!r}")
 
