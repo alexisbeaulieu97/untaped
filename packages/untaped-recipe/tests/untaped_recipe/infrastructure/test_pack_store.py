@@ -15,6 +15,8 @@ from untaped_recipe.domain.pack import InstalledPack, PackManifest, parse_ref
 from untaped_recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
+    PackFetchError,
+    PackNotFoundError,
     RecipeError,
     RecipeNotFoundError,
 )
@@ -111,7 +113,7 @@ def test_pack_library_ambiguity_lists_installed_candidates(tmp_path: Path) -> No
     library.add(source_a, source=str(source_a), rev=None, name="a", force=False)
     library.add(source_b, source=str(source_b), rev=None, name="b", force=False)
 
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(AmbiguousRefError) as excinfo:
         library.find_hook(parse_ref("x"))
 
     message = str(excinfo.value)
@@ -422,7 +424,7 @@ def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: 
     library.record_commit("ansible", "3" * 40)
 
     assert PackLibrary(library_dir=tmp_path / "library").packs()[0].commit == "3" * 40
-    with pytest.raises(ValueError, match="pack not found: 'ghost'"):
+    with pytest.raises(PackNotFoundError, match="pack not found: 'ghost'"):
         library.record_commit("ghost", "3" * 40)
 
 
@@ -554,7 +556,7 @@ def test_checkout_commit_resolves_a_branch_checkout_to_its_sha(tmp_path: Path) -
 
 
 def test_checkout_commit_reports_a_non_git_directory(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="rev-parse"):
+    with pytest.raises(PackFetchError, match="rev-parse"):
         checkout_commit(tmp_path)
 
 
@@ -586,7 +588,7 @@ def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
 
     monkeypatch.setattr("untaped.sdk.git._run_process", fake_run)
 
-    with pytest.raises(ValueError, match="Authentication failed"):
+    with pytest.raises(PackFetchError, match="Authentication failed"):
         fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
     assert len(calls) == 1
 

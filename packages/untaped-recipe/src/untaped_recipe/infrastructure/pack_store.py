@@ -372,7 +372,7 @@ class PackLibrary:
                 continue
             try:
                 manifest = read_pack_manifest(root)
-            except (ValueError, OSError) as exc:
+            except (RecipeError, ValueError, OSError) as exc:
                 load_errors[root.name] = str(exc)
                 continue
             index_entry = index.get(root.name, _IndexEntry(version=manifest.version))
@@ -444,7 +444,7 @@ class PackLibrary:
         """Resolve a bare or qualified recipe reference.
 
         A miss raises :class:`RecipeNotFoundError`; a bare ref several packs
-        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        export raises :class:`AmbiguousRefError`.
         """
         return self._find_entry(
             ref, table=lambda manifest: manifest.recipes, noun="recipe", missing=RecipeNotFoundError
@@ -454,7 +454,7 @@ class PackLibrary:
         """Resolve a bare or qualified hook reference.
 
         A miss raises :class:`HookNotFoundError`; a bare ref several packs
-        export raises :class:`AmbiguousRefError` (both are ``ValueError``).
+        export raises :class:`AmbiguousRefError`.
         """
         return self._find_entry(
             ref, table=lambda manifest: manifest.hooks, noun="hook", missing=HookNotFoundError
@@ -614,7 +614,7 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
     clone_args.extend(["--", url, str(dest)])
     try:
         _run_git(clone_args)
-    except ValueError as exc:
+    except PackFetchError as exc:
         if rev is None or not _is_missing_branch_error(str(exc)):
             raise
         if dest.exists():

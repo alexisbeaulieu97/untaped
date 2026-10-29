@@ -14,6 +14,7 @@ from untaped_recipe.application.targets import Target
 from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.plan import HookDebugResult, HookWorkerCallResult, Verdict
 from untaped_recipe.domain.recipe import RecipeFile
+from untaped_recipe.errors import HookFailedError
 from untaped_recipe.hook_worker import handle_request
 from untaped_recipe.infrastructure.file_writer import flush_changes
 from untaped_recipe.infrastructure.hook_executor import HookExecutor
@@ -840,7 +841,7 @@ def test_apply_recipe_failing_validate_aborts_target_without_changes(tmp_path: P
         }
     )
 
-    with pytest.raises(ValueError, match="not ready"):
+    with pytest.raises(HookFailedError, match="not ready"):
         _planner(tmp_path)(
             recipe=recipe,
             recipe_dir=recipe_dir,

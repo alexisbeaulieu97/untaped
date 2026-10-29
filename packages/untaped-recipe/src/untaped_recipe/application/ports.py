@@ -90,8 +90,7 @@ class PackLibraryPort(Protocol):
 
         A miss raises :class:`~untaped_recipe.errors.RecipeNotFoundError`;
         a bare ref several packs export raises
-        :class:`~untaped_recipe.errors.AmbiguousRefError`. Both are
-        ``ValueError`` subclasses.
+        :class:`~untaped_recipe.errors.AmbiguousRefError`.
         """
 
     def local_pack(self, path: Path) -> InstalledPack:

@@ -14,7 +14,7 @@ from untaped_recipe.application.apply_recipe import ApplyRecipe
 from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.plan import FileChange
 from untaped_recipe.domain.recipe import RecipeFile
-from untaped_recipe.errors import HookNotFoundError
+from untaped_recipe.errors import HookNotFoundError, LocalChangesError
 from untaped_recipe.infrastructure.backup import (
     BackupBundle,
     BackupDraft,
@@ -289,9 +289,9 @@ def test_backup_store_plans_and_restores_touched_files_behind_a_hash_guard(
         RestoreItem(path=removed, action="create"),
     ]
     existing.write_text("user edit\n")
-    with pytest.raises(ValueError, match="changed since backup"):
+    with pytest.raises(LocalChangesError, match="changed since backup"):
         store.plan_restore(bundle.id)
-    with pytest.raises(ValueError, match="changed since backup"):
+    with pytest.raises(LocalChangesError, match="changed since backup"):
         store.restore(bundle.id[:8])
     assert created.read_text() == "new\n"
     assert not removed.exists()

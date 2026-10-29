@@ -49,8 +49,8 @@ def resolve_targets(
 
     Prompts (global inputs first, then each target's) therefore never race
     each other or a progress display, and a cancelled prompt propagates to
-    abort the whole run. A resolution failure (``ValueError``) only fails its
-    own target.
+    abort the whole run. A resolution failure (a :class:`RecipeError` such as
+    a bad input source, or a plain ``ValueError``) only fails its own target.
     """
     config = prepare_input_resolution(
         recipe, fixed_values=inputs, input_from=input_from or {}, prompt=prompt
@@ -62,7 +62,7 @@ def resolve_targets(
             result = resolve_target_inputs(
                 recipe, target, config=config, global_values=global_values
             )
-        except ValueError as exc:
+        except (RecipeError, ValueError) as exc:
             resolved.append(ResolvedTarget(target=target, error=str(exc), failure=_failure(exc)))
         else:
             resolved.append(ResolvedTarget(target=target, inputs=result))

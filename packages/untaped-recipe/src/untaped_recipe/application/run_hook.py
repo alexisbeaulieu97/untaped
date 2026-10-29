@@ -45,7 +45,7 @@ class ValidateHookRun:
 HookRun = TransformHookRun | ValidateHookRun
 
 
-class AmbiguousHookVerbError(RecipeError, ValueError):
+class AmbiguousHookVerbError(RecipeError):
     """Raised when hook exports need an explicit debug-run verb."""
 
 

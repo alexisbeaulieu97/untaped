@@ -46,7 +46,7 @@ def hook_api_requirements(
 _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements()
 
 
-class ScaffoldLockError(RecipeError, ValueError):
+class ScaffoldLockError(RecipeError):
     """Raised when scaffold files were written but ``uv.lock`` could not refresh.
 
     It keeps the attribution of the lock failure (a missing ``uv`` is ``config``).

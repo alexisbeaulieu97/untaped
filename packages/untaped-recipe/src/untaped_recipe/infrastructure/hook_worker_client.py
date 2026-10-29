@@ -55,7 +55,7 @@ class HookWorkerResponse(BaseModel):
         return self
 
 
-class FatalHookWorkerError(RecipeError, ValueError):
+class FatalHookWorkerError(RecipeError):
     """Raised when a worker process cannot safely be reused (the hook run failed)."""
 
     category = ErrorCategory.FAILED

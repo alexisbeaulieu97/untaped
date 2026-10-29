@@ -75,7 +75,7 @@ def _other_noun(library: PackLibrary, ref_text: str) -> str | None:
         find_hook(library, ref_text)
     except AmbiguousRefError:
         return "hooks"
-    except ValueError:
+    except HookNotFoundError, ValueError:
         return None
     return "hooks"
 

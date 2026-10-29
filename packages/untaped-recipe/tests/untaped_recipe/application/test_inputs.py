@@ -17,6 +17,7 @@ from untaped_recipe.application.inputs import (
     resolve_target_inputs,
 )
 from untaped_recipe.application.targets import Target
+from untaped_recipe.domain.input_jinja import InputSourceError
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
 
@@ -170,7 +171,7 @@ def test_input_resolution_rejects_unsafe_template_access() -> None:
         }
     )
 
-    with pytest.raises(ValueError, match="invalid input source expression"):
+    with pytest.raises(InputSourceError, match="invalid input source expression"):
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),
@@ -421,46 +422,51 @@ def test_jinja_allows_scalar_literals_and_target_record_field_access() -> None:
 
 
 @pytest.mark.parametrize(
-    ("spec", "record", "match"),
+    ("spec", "record", "error", "match"),
     [
         pytest.param(
             {"type": "str", "from": "{{ record.value }}"},
             {"value": 2**9000},
+            InputSourceError,
             "maximum length",
             id="bounded-record-integer",
         ),
         pytest.param(
             {"type": "str", "from": "{{ record }}"},
             {"value": "TOP-SECRET-9000"},
+            InputSourceError,
             "derived input value must be a scalar",
             id="container-not-copied",
         ),
         pytest.param(
             {"type": "str", "from": "{{ record.value }}"},
             {"value": ["api"]},
+            InputSourceError,
             "derived input value must be a scalar",
             id="scalar-rejects-list",
         ),
         pytest.param(
             {"type": "list", "from": "{{ record.value }}"},
             {"value": ["x" * 9000]},
+            InputSourceError,
             "maximum length",
             id="structured-size-bound",
         ),
         pytest.param(
             {"type": "list", "from": "{{ record.value }}"},
             {"value": [["nested"]]},
+            ValueError,
             "cannot coerce value to list",
             id="structured-rejects-nesting",
         ),
     ],
 )
 def test_derived_values_are_bounded_and_shape_checked(
-    spec: dict[str, object], record: dict[str, object], match: str
+    spec: dict[str, object], record: dict[str, object], error: type[Exception], match: str
 ) -> None:
     recipe = RecipeFile.model_validate({"version": 1, "inputs": {"value": spec}})
 
-    with pytest.raises(ValueError, match=match) as exc_info:
+    with pytest.raises(error, match=match) as exc_info:
         _resolve(recipe, Target(path=Path("/work/acme/api"), record=record))
 
     assert "TOP-SECRET-9000" not in str(exc_info.value)
