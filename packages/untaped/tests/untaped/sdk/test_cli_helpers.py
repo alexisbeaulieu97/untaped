@@ -17,6 +17,7 @@ from pydantic import Field as PydanticField
 from core_test_support.runtime.run import quiet
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings
+from untaped.runtime.sink import Diagnostics
 from untaped.sdk import (
     HttpError,
     HttpTransportError,
@@ -25,7 +26,6 @@ from untaped.sdk import (
     Record,
     UntapedError,
     UtcTimestamp,
-    resolve_each,
 )
 from untaped.sdk._cli import (
     check_columns,
@@ -159,60 +159,26 @@ def test_data_command_into_closed_pipe_exits_zero_quietly() -> None:
     assert proc.stderr == ""
 
 
-# ---- resolve_each --------------------------------------------------------
+# ---- per-item failures ----------------------------------------------------
 
 
-@pytest.mark.parametrize(("ids", "expected"), [([], []), (["a", "b"], ["A", "B"])])
-def test_resolve_each_without_failures(
-    ids: list[str], expected: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert resolve_each(ids, str.upper) == (expected, False)
-    assert capsys.readouterr().err == ""
-
-
-def test_resolve_each_collects_successes_and_echoes_per_id_untaped_errors(
+def test_a_per_item_failure_surfaces_the_json_api_message(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fn(n: str) -> str:
-        if n == "bad":
-            raise UntapedError("not found")
-        return n.upper()
-
-    results, any_failed = resolve_each(["a", "bad", "c"], fn)
-    assert results == ["A", "C"]
-    assert any_failed is True
-    assert "error: bad: not found" in capsys.readouterr().err
-
-
-def test_resolve_each_surfaces_json_api_message(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def fn(_id: str) -> str:
-        raise HttpError(
+    Diagnostics().failure(
+        HttpError(
             "HTTP 403 for https://api.example.test/secure",
             status_code=403,
             url="https://api.example.test/secure",
             body='{"detail":"missing permission"}',
-        )
-
-    results, any_failed = resolve_each(["secure"], fn)
+        ),
+        item="secure",
+    )
 
     err = capsys.readouterr().err
-    assert results == []
-    assert any_failed is True
     assert "error: secure: HTTP 403 for https://api.example.test/secure" in err
     assert "— missing permission" in err
     assert "response:" not in err
-
-
-def test_resolve_each_propagates_non_untaped_exceptions() -> None:
-    """Non-UntapedError exceptions are bugs and must surface, not be swallowed."""
-
-    def fn(n: str) -> str:
-        raise ValueError("bug")
-
-    with pytest.raises(ValueError, match="bug"):
-        resolve_each(["x"], fn)
 
 
 # ---- render_rows -----------------------------------------------------------

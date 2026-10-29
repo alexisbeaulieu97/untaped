@@ -9,8 +9,7 @@ import pytest
 from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap
 from untaped.sdk import Command, Diagnostics
-from untaped.sdk._batch import finish
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, Matched
 from untaped.sdk.records import Failure
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
 
@@ -60,10 +59,13 @@ def test_an_explicit_exit_never_hides_a_counted_failure(code: int) -> None:
 
 
 def test_a_predicate_hit_exits_3_without_a_failure_and_1_with_one() -> None:
-    assert _run(lambda: finish(False, predicate_hit=True)).exit_code == 3
+    def matched() -> None:
+        raise Matched()
+
+    assert _run(matched).exit_code == 3
 
     def body() -> None:
         Diagnostics().failure(Failure.plain("x: unreadable"))
-        finish(False, predicate_hit=True)
+        raise Matched()
 
     assert _run(body).exit_code == 1

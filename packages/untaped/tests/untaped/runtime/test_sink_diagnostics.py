@@ -21,12 +21,12 @@ from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.sink import Diagnostics
 from untaped.sdk import Command, Output
 from untaped.sdk import _cli as cli
-from untaped.sdk._batch import finish
-from untaped.sdk._cli import emit, render_rows, report_declined, resolve_each
+from untaped.sdk._cli import emit, render_rows, report_declined
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
     ConfigError,
+    Failed,
     HttpStatusError,
     HttpTransportError,
     OperationCancelledError,
@@ -154,8 +154,10 @@ def test_per_item_errors_name_their_item() -> None:
         raise HttpStatusError("HTTP 404", status_code=404, url="https://h/x", system="jira")
 
     def body() -> None:
-        _, failed = resolve_each(["ABC-1"], fail)
-        finish(failed)
+        try:
+            fail("ABC-1")
+        except UntapedError as exc:
+            Diagnostics().failure(exc, item="ABC-1")
 
     result = _run(body, ["--format", "json"])
 
@@ -170,15 +172,18 @@ def test_the_most_severe_failure_in_the_run_selects_the_exit_code() -> None:
         raise UntapedError(f"{name} failed", category=category)
 
     def body() -> None:
-        _, failed = resolve_each(["a", "b", "c"], fail)
-        finish(failed)
+        for name in ("a", "b", "c"):
+            try:
+                fail(name)
+            except UntapedError as exc:
+                Diagnostics().failure(exc, item=name)
 
     assert _run(body, []).exit_code == 5
 
 
 def test_an_environment_failure_outranks_a_later_error() -> None:
     def body() -> None:
-        resolve_each(["x"], lambda _: _rejected_token())
+        Diagnostics().failure(_rejected_token(), item="x")
         raise UntapedError("x not found", category="not_found")
 
     assert _run(body, []).exit_code == 4
@@ -236,10 +241,10 @@ def test_url_passwords_never_leave_the_process() -> None:
 # ---- the derived exit code ---------------------------------------------------
 
 
-def test_an_emitted_failure_alone_sets_the_exit_code_of_a_failed_run() -> None:
+def test_a_failed_command_exits_with_its_most_severe_counted_failure() -> None:
     def body() -> None:
         Diagnostics().failure(ConfigError("token rejected", category="auth"))
-        finish(True)
+        raise Failed()
 
     assert _run(body, []).exit_code == 4
 

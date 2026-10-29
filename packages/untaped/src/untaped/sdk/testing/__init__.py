@@ -684,7 +684,7 @@ class TtyStringIO(io.StringIO):
     """A ``StringIO`` that claims to be a terminal.
 
     Used as the harness stdin for interactive-path tests: TTY checks
-    (``Terminal``, ``batch_apply``) pass, while prompts are answered by a
+    (``Terminal``) pass, while prompts are answered by a
     :class:`ScriptedTerminal` rather than a real terminal read.
     """
 

@@ -29,11 +29,7 @@ from untaped.screen.picker import (
     PickResult,
     PickSetting,
 )
-from untaped.sdk._batch import BatchOutcome, batch_apply, finish
-from untaped.sdk._cli import (
-    raise_usage,
-    resolve_each,
-)
+from untaped.sdk._cli import raise_usage
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home
 from untaped.sdk._run import (
@@ -412,7 +408,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "TreeOutputFormat",
     "UtcTimestamp",
     "now",
-    "finish",
     "kind_of",
     "record_model",
     "summary",
@@ -442,10 +437,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "read_stdin",
     "read_stdin_text",
     "read_structured_file",
-    "resolve_each",
-    # batch and concurrency
-    "BatchOutcome",
-    "batch_apply",
+    # concurrency
     "bounded_map",
     # http
     "BoundSecret",

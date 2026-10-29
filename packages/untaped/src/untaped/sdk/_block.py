@@ -168,10 +168,10 @@ class OwnedBlock(Block):
     def _spelled_as(self, plugin: str, name: str) -> Self:
         """A copy given ``plugin`` and ``name``, for a reader that runs outside any run.
 
-        The 11.x seam hands a plugin class's blocks to core's 11.x readers
-        (``config``, ``doctor``, ``setup``) this way; it goes with that seam. The
-        copy is made once: a block hashed by identity (``Credential``) keys
-        cached settings models, so each composition must hand over the same one.
+        A composed plugin hands its class's blocks to core's readers
+        (``config``, ``doctor``, ``setup``) this way. The copy is made once: a
+        block hashed by identity (``Credential``) keys cached settings models,
+        so each composition must hand over the same one.
         """
         copies: dict[tuple[str, str], Self] = self.__dict__.setdefault("_spelled_copies", {})
         if (plugin, name) not in copies:

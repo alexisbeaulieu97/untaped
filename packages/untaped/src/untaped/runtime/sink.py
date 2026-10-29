@@ -1003,14 +1003,13 @@ def count_row_failures(rows: Iterable[object]) -> None:
 
 
 def count_failed_actions(rows: Iterable[object]) -> None:
-    """Count each outcome row whose ``action`` says it failed, error or not: the 12.0 rule.
+    """Count each outcome row whose ``action`` says it failed, error or not.
 
     ``failed``, ``partial`` and ``conflict`` count ``1`` (a row's error
     counts on its own, through :func:`count_row_failures`), unless a field
     marked :data:`~untaped.sdk.diagnostic.NOT_COUNTED` holds a
     :class:`~untaped.sdk.diagnostic.Failure`: the failure is remembered from
-    an earlier run. A 12.0 command's printed rows go through it; an 11.x
-    command still decides with ``finish``.
+    an earlier run. A command's printed rows go through it.
     """
     output = _output()
     if output is None:

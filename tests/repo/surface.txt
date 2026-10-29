@@ -6214,16 +6214,6 @@ sdk untaped.sdk.Activate()  [experimental]
 sdk untaped.sdk.Age
 sdk untaped.sdk.AllowHyphen
 sdk untaped.sdk.Back()  [experimental]
-sdk untaped.sdk.BatchOutcome(cancelled@4=) default=false
-sdk untaped.sdk.BatchOutcome(failures@3=) default=[]
-sdk untaped.sdk.BatchOutcome(results, planned_rows)
-sdk untaped.sdk.BatchOutcome.any_failed
-sdk untaped.sdk.BatchOutcome.cancelled
-sdk untaped.sdk.BatchOutcome.failed
-sdk untaped.sdk.BatchOutcome.failures
-sdk untaped.sdk.BatchOutcome.planned_rows
-sdk untaped.sdk.BatchOutcome.results
-sdk untaped.sdk.BatchOutcome.total
 sdk untaped.sdk.Binding(key, label, message)  [experimental]
 sdk untaped.sdk.Binding(when@4=) default=None callback(1)  [experimental]
 sdk untaped.sdk.Binding.key  [experimental]
@@ -7824,12 +7814,6 @@ sdk untaped.sdk.atomic_write(mode=) default=None
 sdk untaped.sdk.atomic_write(newline=) default=""
 sdk untaped.sdk.atomic_write(path, content)
 sdk untaped.sdk.attribution(error)
-sdk untaped.sdk.batch_apply(assume_yes=) default=false
-sdk untaped.sdk.batch_apply(destructive=) default=false
-sdk untaped.sdk.batch_apply(items, action, *, verb, noun, label, describe, ui) callback(action, 1) callback(label, 1) callback(describe, 1)
-sdk untaped.sdk.batch_apply(preview=) default=None callback(1)
-sdk untaped.sdk.batch_apply(preview_only=) default=false
-sdk untaped.sdk.batch_apply(render_generic_preview=) default=true
 sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) callback(on_each, 2)
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
@@ -7974,8 +7958,6 @@ sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.experimental
 sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
 sdk untaped.sdk.find_program(name)
-sdk untaped.sdk.finish(outcome)
-sdk untaped.sdk.finish(predicate_hit=) default=false
 sdk untaped.sdk.first_validation_error(exc)
 sdk untaped.sdk.git.GitCommandError(category=) default=None
 sdk untaped.sdk.git.GitCommandError(hint=) default=None
@@ -8297,7 +8279,6 @@ sdk untaped.sdk.record_model(kind)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(field=) default=token
 sdk untaped.sdk.rejected_token_error(section, message)
-sdk untaped.sdk.resolve_each(ids, fn) callback(fn, 1)
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.run_editor(argv=) default=None
 sdk untaped.sdk.run_editor(path)

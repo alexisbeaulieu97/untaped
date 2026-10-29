@@ -94,7 +94,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "TreeOutputFormat",
         "UtcTimestamp",
         "now",
-        "finish",
         "kind_of",
         "record_model",
         "summary",
@@ -126,13 +125,8 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "read_stdin",
         "read_stdin_text",
         "read_structured_file",
-        "resolve_each",
     ),
-    "batch and concurrency": (
-        "BatchOutcome",
-        "batch_apply",
-        "bounded_map",
-    ),
+    "concurrency": ("bounded_map",),
     "http": (
         "BoundSecret",
         "Credential",

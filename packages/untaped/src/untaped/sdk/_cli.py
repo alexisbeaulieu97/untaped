@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import replace
@@ -935,30 +935,6 @@ def _exit_broken_pipe() -> NoReturn:
     with suppress(OSError, ValueError):
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
     raise SystemExit(0) from None
-
-
-def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
-    """Resolve each identifier via ``fn``; aggregate per-id failures.
-
-    Reports ``error: <id>: <exc>`` (``Diagnostics.failure``) for any
-    :class:`UntapedError` and
-    returns ``(results, any_failed)`` so the caller decides exit code and
-    aggregate rendering, for commands acting on many identifiers.
-
-    Only :class:`UntapedError` is caught: non-:class:`UntapedError` exceptions
-    (including :class:`SystemExit` raised by interactive prompts) propagate
-    immediately, aborting the loop. This is intentional — bugs and explicit
-    user aborts must not be swallowed alongside per-id resolution failures.
-    """
-    results: list[R] = []
-    any_failed = False
-    for id_ in ids:
-        try:
-            results.append(fn(id_))
-        except UntapedError as exc:
-            Diagnostics().failure(exc, item=id_)
-            any_failed = True
-    return results, any_failed
 
 
 @contextmanager
