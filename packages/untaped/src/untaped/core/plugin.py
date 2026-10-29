@@ -46,7 +46,7 @@ class Core(Plugin):
         "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
         "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
         "skills). Use when the user asks to install or set up untaped, configure or "
-        "switch a profile, connect AWX/AAP, GitHub or Jira, fix a failing "
+        "switch a profile, connect a service (its URL and token), fix a failing "
         "`untaped doctor`, or install untaped's skills for an agent."
     )
     config_permissions = CONFIG_PERMISSIONS

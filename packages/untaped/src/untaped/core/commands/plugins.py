@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 #: ``untaped`` install has no plugins.
 INSTALL_HINT = (
     "No plugins are installed. Reinstall untaped with an extra: 'untaped[all]' "
-    "for all of them, or one, e.g. 'untaped[awx]'."
+    "for all of them, or one by its name, 'untaped[NAME]'."
 )
 
 

@@ -70,7 +70,7 @@ class Screen(Command[CoreSettings]):
 
     Examples:
         $ untaped setup
-        $ untaped --profile work setup --only awx,jira
+        $ untaped --profile work setup --only SECTION,SECTION
     """
 
     repairs = True
@@ -141,8 +141,8 @@ class Plan(Command[CoreSettings]):
     The `profile` row comes before every service row, since they name
     the profile; a service has a row per setting its plugin marks as
     needing setup. A token that comes only from its conventional
-    variable (such as `$JIRA_API_TOKEN`) counts once the service's other
-    marked settings are set (GitHub has none, so `$GH_TOKEN` alone does).
+    variable counts once the service's other marked settings are set, and
+    alone when it has none.
     Each row's `run` is the complete argv to pass after `untaped`; every
     one but `profile create` starts with `--profile NAME`, so it acts on
     that profile. A `<NAME>` token in it (`<BASE_URL>`, `<COMMAND>`) is a
@@ -152,7 +152,7 @@ class Plan(Command[CoreSettings]):
 
     Examples:
         $ untaped setup plan --format json
-        $ untaped --profile work setup plan --only jira --online --check
+        $ untaped --profile work setup plan --only SECTION --online --check
     """
 
     repairs = True

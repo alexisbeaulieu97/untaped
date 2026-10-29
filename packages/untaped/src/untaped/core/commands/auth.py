@@ -86,7 +86,7 @@ class _Target:
         return self.credential.plugin
 
     def menu_label(self) -> str:
-        """``awx token  url=https://… (stored 9b07e4)``."""
+        """``PLUGIN token  url=https://… (stored 9b07e4)``."""
         where = describe_key(self.key) if self.key is not None else self.problem or "no key"
         answer = None if self.key is None else self.credential.answer(self.key)
         state = f" ({answer.source})" if answer is not None else ""
@@ -430,7 +430,7 @@ def _key_fields(given: list[str]) -> dict[str, str]:
     return fields
 
 
-_PLUGIN = "The plugin, e.g. awx; a menu on a terminal when left out."
+_PLUGIN = "The plugin whose credential it is; a menu on a terminal when left out."
 _NAME = "The credential, when the plugin declares several."
 _KEY = "A key field the plugin's settings don't hold, as FIELD=VALUE; repeat for several."
 _STORE = "Store to use; default: the first usable one."
@@ -440,7 +440,7 @@ class Login(Command[CoreSettings]):
     """Store a token for this run's server, in this machine's password store.
 
     The server is the plugin's settings for the profile this run picks
-    (awx.server); the key is printed before anything is asked. The token is
+    (its server URL, say); the key is printed before anything is asked. The token is
     read from a hidden prompt, or from stdin when stdin is not a terminal;
     --token-command stores a command instead (its program a bare name or an
     absolute path, run from the config file's folder). The store is macOS
@@ -450,8 +450,8 @@ class Login(Command[CoreSettings]):
     replaces it. A server a folder's settings chose is refused.
 
     Examples:
-        $ untaped --profile prod auth login awx
-        $ untaped auth login github --token-command 'gh auth token'
+        $ untaped --profile prod auth login PLUGIN
+        $ untaped auth login PLUGIN --token-command 'pass show work/token'
     """
 
     plugin: Positional[str | None] = Field(None, description=_PLUGIN)
@@ -497,7 +497,7 @@ class Forget(Command[CoreSettings]):
     more. Nothing is revoked on the server: revoke the token there too.
 
     Examples:
-        $ untaped --profile prod auth forget awx --yes
+        $ untaped --profile prod auth forget PLUGIN --yes
         $ untaped auth forget --id 9b07e4 --dry-run
     """
 
