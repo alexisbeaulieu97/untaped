@@ -15,7 +15,7 @@ import yaml
 
 from awx_integration_support import KINDS, pipe, seed
 from awx_test_support import run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def changed(documents: list[Any]) -> list[Any]:
 def test_edit_all_writable_kinds(fake_aap: Any, editor: Any, cli: str, path: str) -> None:
     seed(fake_aap, path)
     paths = editor(changed)
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     result = run(
         [cli, "edit", "10", "--by-id", "--field", "description", "--format", "json"],
         prompt_backend=backend,
@@ -90,7 +90,7 @@ def test_edit_all_writable_kinds(fake_aap: Any, editor: Any, cli: str, path: str
     assert result.exit_code == 0, result.output
     assert fake_aap.get_record(path, 10)["description"] == "new"
     assert json.loads(result.stdout)[0]["action"] == "updated"
-    assert len(backend.calls) == 1
+    assert len(backend.asked) == 1
     assert not paths[0].parent.exists()
 
 
@@ -156,7 +156,7 @@ def test_invalid_edit_retains_owner_only_file_without_writes(
     paths = editor(invalid)
     result = run(
         ["projects", "edit", "target", "--field", "description", "--yes"],
-        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        prompt_backend=ScriptedTerminal().answers(False),
         terminal=True,
     )
     assert result.exit_code != 0, result.output
@@ -178,7 +178,7 @@ def test_invalid_yaml_reopen_then_confirm_with_piped_selection(fake_aap: Any, ed
 
     # Second launch ignores the invalid contents and repairs using original snapshot.
     paths = editor(invalid, lambda _: changed(original))
-    backend = ScriptedPromptBackend(confirms=[True, True])
+    backend = ScriptedTerminal().answers(True, True)
     result = run(
         ["projects", "edit", "--stdin", "--format", "json"],
         input=pipe("awx.project", 10),
@@ -187,7 +187,7 @@ def test_invalid_yaml_reopen_then_confirm_with_piped_selection(fake_aap: Any, ed
     )
     assert result.exit_code == 0, result.output
     assert len(paths) == 2 and paths[0] == paths[1]
-    assert len(backend.calls) == 2
+    assert len(backend.asked) == 2
     assert fake_aap.get_record("projects", 10)["description"] == "new"
 
 
@@ -245,7 +245,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
         ]
     else:
         args = ["target"]
-    backend = ScriptedPromptBackend(confirms=[])
+    backend = ScriptedTerminal().present()
     result = run(
         [*([] if command == "apply" else ["job-templates"]), command, *args, "--format", "json"],
         prompt_backend=backend,
@@ -253,7 +253,7 @@ def test_noop_batch_with_secret_and_existing_membership_never_prompts(
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "unchanged"
-    assert not backend.calls
+    assert not backend.asked
     assert not any(call.request.method in {"PATCH", "POST"} for call in fake_aap.router.calls)
     assert "existing-secret" not in result.output
     if paths:
@@ -272,7 +272,7 @@ def test_edit_manual_project_to_scm_keeps_unchanged_local_path(fake_aap: Any, ed
     editor(to_scm)
     result = run(
         ["projects", "edit", "target", "--yes", "--format", "json"],
-        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        prompt_backend=ScriptedTerminal().answers(True),
         terminal=True,
     )
     assert result.exit_code == 0, result.output
@@ -291,7 +291,7 @@ def test_retarget_to_same_named_selected_id_is_invalid(fake_aap: Any, editor: An
     editor(retarget)
     result = run(
         ["projects", "edit", "10", "11", "--by-id", "--yes"],
-        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        prompt_backend=ScriptedTerminal().answers(False),
         terminal=True,
     )
     assert result.exit_code != 0, result.output
@@ -484,7 +484,7 @@ def test_editor_cleanup_or_retention_after_runner(
             "json",
             *(["--dry-run"] if mode == "dry-run" else []),
         ],
-        prompt_backend=ScriptedPromptBackend(confirms=[mode == "failure"]),
+        prompt_backend=ScriptedTerminal().answers(mode == "failure"),
         terminal=True,
     )
     # The failed write is an AWX 500: a temporary failure exits 5.
@@ -540,7 +540,7 @@ def test_invalid_fk_mapping_never_leaks_parser_values(fake_aap: Any, editor: Any
     paths = editor(update)
     result = run(
         ["job-templates", "edit", "target", "--yes"],
-        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        prompt_backend=ScriptedTerminal().answers(False),
         terminal=True,
     )
     assert result.exit_code == 1, result.output
@@ -586,7 +586,7 @@ def test_configured_editor_uses_real_nonseekable_terminal(
         assert os.isatty(slave)
         monkeypatch.setattr(builtins, "open", open_terminal)
         os.write(master, b"editor-input\n")
-        backend = ScriptedPromptBackend(confirms=[True])
+        backend = ScriptedTerminal().answers(True)
         result = run(
             [
                 "projects",
@@ -611,7 +611,7 @@ def test_configured_editor_uses_real_nonseekable_terminal(
         assert "editor-terminal-" not in result.output
         assert json.loads(result.stdout)[0]["action"] == "updated"
         assert fake_aap.get_record("projects", 10)["description"] == "new"
-        assert len(backend.calls) == (0 if yes else 1)
+        assert len(backend.asked) == (0 if yes else 1)
         assert not list(tmp_path.glob("untaped-awx-edit-*"))
     finally:
         os.close(master)

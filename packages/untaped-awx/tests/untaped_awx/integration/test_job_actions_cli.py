@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from awx_test_support import human, run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 
 
 def _posts(fake: Any) -> list[str]:
@@ -30,7 +30,7 @@ def _seed_jobs(fake: Any) -> None:
 
 def test_cancel_confirms_then_requests_cancel(fake_aap: Any) -> None:
     _seed_jobs(fake_aap)
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
 
     result = run(
         ["jobs", "cancel", "41", "42", "--format", "json"],
@@ -39,7 +39,7 @@ def test_cancel_confirms_then_requests_cancel(fake_aap: Any) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Cancel 2 jobs?")]
+    assert backend.asked == [("confirm", "Cancel 2 jobs?")]
     assert _posts(fake_aap) == ["jobs/41/cancel/", "jobs/42/cancel/"]
     rows = json.loads(result.stdout)
     assert [(r["id"], r["kind"], r["status"], r["action"]) for r in rows] == [
@@ -55,7 +55,7 @@ def test_cancel_decline_writes_nothing(fake_aap: Any) -> None:
     result = run(
         ["jobs", "cancel", "41"],
         interactive=True,
-        prompt_backend=ScriptedPromptBackend(confirms=[False]),
+        prompt_backend=ScriptedTerminal().answers(False),
     )
 
     assert result.exit_code == 1, result.output
@@ -147,7 +147,7 @@ def test_cancel_uses_the_piped_execution_kind(fake_aap: Any) -> None:
 
 def test_relaunch_failed_hosts_posts_and_reports_the_new_job(fake_aap: Any) -> None:
     fake_aap.seed("jobs", id=41, name="deploy", status="failed")
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
 
     result = run(
         ["jobs", "relaunch", "41", "--failed-hosts", "--format", "json"],
@@ -156,7 +156,7 @@ def test_relaunch_failed_hosts_posts_and_reports_the_new_job(fake_aap: Any) -> N
     )
 
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Relaunch 1 job?")]
+    assert backend.asked == [("confirm", "Relaunch 1 job?")]
     assert fake_aap.actions_called[-1][1:] == (41, "relaunch", {"hosts": "failed"})
     row = json.loads(result.stdout)[0]
     assert row["action"] == "relaunched"

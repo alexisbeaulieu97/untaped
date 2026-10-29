@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from awx_test_support import run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 
 
 def _seed_jt(fake: Any, *, id_: int, name: str) -> None:
@@ -53,7 +53,7 @@ def test_delete_rereads_each_target_once_after_a_prompt(seeded_default_org: Any)
     result = run(
         ["job-templates", "delete", "--by-id", "10"],
         interactive=True,
-        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        prompt_backend=ScriptedTerminal().answers(True),
     )
 
     assert result.exit_code == 0, result.output
@@ -70,7 +70,7 @@ def test_delete_scoped_batch_reads_the_parent_once(fake_aap: Any) -> None:
     result = run(
         ["hosts", "delete", "--all", "--inventory", "prod", "--inventory-organization", "Default"],
         interactive=True,
-        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        prompt_backend=ScriptedTerminal().answers(True),
     )
 
     assert result.exit_code == 0, result.output
@@ -138,7 +138,7 @@ def test_decline_after_prior_resolve_failure_exits_1(
     real input error already reported on stderr.
     """
     _seed_jt(seeded_default_org, id_=10, name="alpha")
-    backend = ScriptedPromptBackend(confirms=[False])
+    backend = ScriptedTerminal().answers(False)
 
     result = run(
         ["job-templates", "delete", "--by-id", "10", "999"],
@@ -242,13 +242,13 @@ def test_delete_refusals_write_nothing(
 
 @pytest.mark.parametrize("answer", [True, False])
 def test_delete_prompt_previews_then_asks_once(alpha_beta: Any, answer: bool) -> None:
-    backend = ScriptedPromptBackend(confirms=[answer])
+    backend = ScriptedTerminal().answers(answer)
     result = run(
         ["job-templates", "delete", "--by-id", "10", "--format", "raw"],
         interactive=True,
         prompt_backend=backend,
     )
-    assert backend.calls == [("confirm", "Delete 1 resource?")]
+    assert backend.asked == [("confirm", "Delete 1 resource?")]
     assert "Delete JobTemplate/alpha" in result.stderr  # stdout stays clean for piping
     assert result.exit_code == (0 if answer else 1), result.output
     assert (10 in alpha_beta.store["job_templates"]) is not answer
@@ -258,7 +258,7 @@ def test_delete_prompt_previews_then_asks_once(alpha_beta: Any, answer: bool) ->
 
 def test_delete_preview_prints_under_quiet(alpha_beta: Any) -> None:
     """-q mutes commentary, not the preview the prompt asks about."""
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     result = run(
         ["job-templates", "delete", "--by-id", "10", "--format", "raw"],
         before=["-q"],
@@ -266,7 +266,7 @@ def test_delete_preview_prints_under_quiet(alpha_beta: Any) -> None:
         prompt_backend=backend,
     )
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Delete 1 resource?")]
+    assert backend.asked == [("confirm", "Delete 1 resource?")]
     assert "Delete JobTemplate/alpha id=10" in result.stderr
     assert 10 not in alpha_beta.store["job_templates"]
 

@@ -16,7 +16,7 @@ from pydantic import BaseModel, SecretStr
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import FORMAT_VERSION, get_settings, register_profile_settings
-from untaped.sdk.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
+from untaped.sdk.testing import CliInvoker, ScriptedTerminal, TtyStringIO, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -142,11 +142,11 @@ def test_delete_without_confirmation_does_not_mutate_noninteractive_input(
 
 def test_delete_decline_is_cancelled_with_exit_one(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
-    backend = ScriptedPromptBackend(confirms=[False])
+    backend = ScriptedTerminal().answers(False)
     # stdin is a pipe, so the prompt goes to the controlling terminal.
     result = invoke_cli(app, ["profile", "delete", "stage"], terminal=True, prompt_backend=backend)
     assert result.exit_code == 1
-    assert backend.calls == [("confirm", "Delete profile 'stage'?")]
+    assert backend.asked == [("confirm", "Delete profile 'stage'?")]
     assert result.stderr.endswith("\ncancelled; no changes made\n")
     assert "stage" in read_config_dict(_isolated_config)["profiles"]
 

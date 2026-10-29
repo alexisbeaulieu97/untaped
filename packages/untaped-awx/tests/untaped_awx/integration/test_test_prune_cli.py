@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from awx_test_support import human, run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 from untaped_awx.domain.suites.temporary_set import Marker
 
 if TYPE_CHECKING:  # pragma: no cover — pytest --import-mode=importlib hides 'tests'
@@ -132,13 +132,13 @@ def test_without_a_terminal_prune_needs_yes(aap: FakeAap) -> None:
 
 def test_a_declined_prune_deletes_and_prints_nothing(aap: FakeAap) -> None:
     copy = _copy(aap, "job_templates", "Deploy", "k3x9", timedelta(hours=3))
-    backend = ScriptedPromptBackend(confirms=[False])
+    backend = ScriptedTerminal().answers(False)
 
     result = run(["test", "prune", "-f", "json"], interactive=True, prompt_backend=backend)
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert backend.calls == [("confirm", "Delete 1 temporary template?")]
+    assert backend.asked == [("confirm", "Delete 1 temporary template?")]
     assert "info: delete JobTemplate 'Deploy [untaped-test 1a2b3c4 k3x9]'" in human(result.stderr)
     assert human(result.stderr).rstrip().endswith("cancelled; no changes made")
     assert aap.list_records("job_templates") == [copy]

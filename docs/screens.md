@@ -252,19 +252,20 @@ key (`frames`), the last (`frame`), the `result`, the `outcome` and the final
 other string raises, so a typo fails loudly. Commands run synchronously after
 each key; pass `commands={name: message}` to stub one by its `Cmd.name`.
 
-A command's own test does not run the screen: give the scripted backend a
-result, a `Quit(result)`, a `Cancel()`, an exception (instance or class) to
-raise or `ScreenKeys("a", "enter")` to replay through the real screen. The
-scripted backend never touches a terminal, so `terminal.run` and `terminal.pick_many` do
-not look for one:
-`invoke_cli(command, args, prompt_backend=ScriptedPromptBackend(screens=[...]))`
-needs no `terminal=True` and no TTY stdin.
+A command's own test does not run the screen: script the `terminal` fixture's
+next screens with a result, a `Quit(result)`, a `Cancel()`, an exception
+(instance or class) to raise or `ScreenKeys("a", "enter")` to replay through
+the real screen. The scripted terminal never touches a real one, so the
+command's `Terminal.run` and `Terminal.pick_many` do not look for one.
 
 ```python
-from untaped.sdk.testing import CliInvoker, ScreenKeys, ScriptedPromptBackend
+from acme.plugin import Acme  # `acme name` runs the "Name it" screen
+from untaped.sdk.testing import ScreenKeys, ScriptedTerminal, install
 
-backend = ScriptedPromptBackend(screens=[ScreenKeys("a", "b", "enter")])
-result = CliInvoker().invoke(app, ["name"], prompt_backend=backend)
-assert result.exit_code == 0
-assert backend.calls == [("run_screen", "Name it")]
+
+def test_name_it(terminal: ScriptedTerminal) -> None:
+    terminal.screens(ScreenKeys("a", "b", "enter"))
+    ran = install(Acme).cli("acme name")
+    assert ran.exit == 0
+    assert terminal.asked == [("run_screen", "Name it")]
 ```

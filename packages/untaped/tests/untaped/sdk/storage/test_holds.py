@@ -45,7 +45,7 @@ from untaped.sdk.storage.holds import (
 )
 from untaped.sdk.testing import (
     CliResult,
-    ScriptedPromptBackend,
+    ScriptedTerminal,
     invoke_cli,
     make_project,
     move_ask,
@@ -535,7 +535,7 @@ def test_remove_at_a_terminal_previews_the_holds_as_the_rows_print_them(tmp_path
         root.meta,
         ["project", "remove", str(first.root)],
         terminal=True,
-        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+        prompt_backend=ScriptedTerminal().answers(True),
     )
     assert result.exit_code == 0, result.output
     header = next(line for line in result.stderr.splitlines() if "plugin" in line)

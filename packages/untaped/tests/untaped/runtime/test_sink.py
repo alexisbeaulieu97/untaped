@@ -32,7 +32,7 @@ from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
 from untaped.sdk.errors import ConfigError, UntapedError
-from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO, install
+from untaped.sdk.testing import ScriptedTerminal, TtyStringIO, install
 
 _DEADLINE = 10.0
 
@@ -436,7 +436,7 @@ def test_debug_lines_appear_only_under_verbose(
 # ---- (13) and (14) screens and the relay ------------------------------------
 
 
-class _EmittingBackend(ScriptedPromptBackend):
+class _EmittingBackend(ScriptedTerminal):
     """Emits a warning while its screen runs, then quits with ``done``."""
 
     def run_screen[M, R](self, screen: Screen[M, R], *, theme: ThemeSpec) -> Any:

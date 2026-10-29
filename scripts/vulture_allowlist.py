@@ -139,6 +139,10 @@ _clear_for_tests  # test hook for the composed root
 ScreenRun.commands_run  # read by tests that drive screens
 ProgressClock.advance  # untaped.sdk.testing: a test moves the progress clock
 Ran.rows_as  # untaped.sdk.testing: a test reads its rows typed
+ScriptedTerminal.screens  # untaped.sdk.testing: a test scripts its terminal
+ScriptedTerminal.selects
+ScriptedTerminal.interrupts
+CliResult.exception  # untaped.sdk.testing: a test reads what a command raised
 open_tasks  # tests check that no progress task is left open
 drop_tasks  # the root conftest's cleanup of a leaked progress task
 

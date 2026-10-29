@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from awx_test_support import run
-from untaped.sdk.testing import ScriptedPromptBackend
+from untaped.sdk.testing import ScriptedTerminal
 
 PACKAGE = Path(__file__).resolve().parents[3]
 GUIDES = sorted((PACKAGE / "src/untaped_awx").rglob("*.py"))
@@ -52,7 +52,7 @@ def test_inventory_scope_guide_examples_execute(
             update_cache_timeout=60,
             update_on_launch=False,
         )
-    result = run(args, interactive=True, prompt_backend=ScriptedPromptBackend(confirms=[True]))
+    result = run(args, interactive=True, prompt_backend=ScriptedTerminal().answers(True))
     assert result.exit_code == 0, result.output + result.stderr
     assert fake_aap.router.calls
     if args[1] == "export":

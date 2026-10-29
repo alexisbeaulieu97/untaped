@@ -24,7 +24,7 @@ from untaped.sdk import Command, Plugin
 from untaped.sdk._home import config_path
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
-from untaped.sdk.testing import CliResult, ScriptedPromptBackend, invoke_cli, plugin_candidate
+from untaped.sdk.testing import CliResult, ScriptedTerminal, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -344,14 +344,14 @@ def test_a_dry_run_with_a_refused_fix_fails_like_the_real_run(
 
 
 def test_a_declined_prompt_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    backend = ScriptedPromptBackend(confirms=[False])
+    backend = ScriptedTerminal().answers(False)
     spec = _spec(_MIGRATE, ("svc.token", "auth login svc", {"automatic": False}))
     result = _cli(spec, monkeypatch=monkeypatch, terminal=True, prompt_backend=backend)
     assert result.exit_code == 1
     assert result.stderr.endswith("cancelled; no changes made\n")
     assert "Fixes to run (1):\n  → untaped config migrate  svc.a\n" in result.stderr
     assert "Needs you (1):\n  → untaped auth login svc  svc.token\n" in result.stderr
-    assert backend.calls == [("confirm", "Run 1 automatic fix?")]
+    assert backend.asked == [("confirm", "Run 1 automatic fix?")]
     assert RAN == []
 
 
@@ -390,7 +390,7 @@ def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.Monke
 def test_quiet_keeps_the_plan_and_rows_but_mutes_nothing_to_fix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     spec = _spec(_MIGRATE)
     monkeypatch.setattr(fix, "_run_one", _stub())
     root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
@@ -478,7 +478,7 @@ def test_an_ascii_theme_swaps_the_glyphs(
     write_config(_isolated_config, "format_version: 2\nuntaped:\n  ui: {theme: plain}\n")
     STUBBORN.add("svc.b")
     spec = _spec(_MIGRATE, _UPDATE)
-    backend = ScriptedPromptBackend(confirms=[True])
+    backend = ScriptedTerminal().answers(True)
     result = _cli(spec, monkeypatch=monkeypatch, terminal=True, prompt_backend=backend)
     assert [line.split()[0] for line in result.stdout.splitlines()] == ["+", "~"]
     assert "  -> untaped config migrate" in result.stderr

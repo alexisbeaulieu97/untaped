@@ -16,7 +16,7 @@ from untaped.sdk._batch import BatchOutcome, batch_apply, finish
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import HttpError, UntapedError, UsageError
 from untaped.sdk.prompt.prompts import reset_terminal_override, set_terminal_override
-from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
+from untaped.sdk.testing import ScriptedTerminal, TtyStringIO
 
 
 def _describe(item: str) -> dict[str, object]:
@@ -39,7 +39,7 @@ def _ui(*, interactive: bool, confirms: list[bool] | None = None) -> Ui:
         stdin=TtyStringIO() if interactive else io.StringIO(),
         stdout=io.StringIO(),
         stderr=io.StringIO(),
-        prompt_backend=ScriptedPromptBackend(confirms=confirms or []),
+        prompt_backend=ScriptedTerminal().answers(*confirms or []),
     )
 
 
@@ -62,7 +62,7 @@ def test_interactive_destructive_previews_and_confirms(capsys: pytest.CaptureFix
     assert "About to delete 2 Widgets:" in captured.err
     assert "name-a" in captured.err and "name-b" in captured.err
     assert captured.out == ""  # preview/progress stay off stdout
-    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
+    assert ui.prompt_backend.asked == [("confirm", "Continue?")]
     assert calls == ["a", "b"]
     assert outcome.failed == 0
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
@@ -86,7 +86,7 @@ def test_interactive_destructive_can_skip_generic_preview(
     assert "name-a" not in captured.err
     assert "name-b" not in captured.err
     assert captured.out == ""
-    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
+    assert ui.prompt_backend.asked == [("confirm", "Continue?")]
     assert calls == ["a", "b"]
     assert outcome.failed == 0
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
@@ -160,7 +160,7 @@ def test_piped_stdin_confirms_on_the_controlling_terminal() -> None:
     finally:
         reset_terminal_override(token)
 
-    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
+    assert ui.prompt_backend.asked == [("confirm", "Continue?")]
     assert calls == ["a"]
     assert outcome.cancelled is False
     assert not isinstance(ui.stdin, TtyStringIO)  # the data stream is restored
@@ -174,7 +174,7 @@ def test_assume_yes_skips_gate_and_preview(
     outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui, assume_yes=True)
 
     assert "About to delete" not in capsys.readouterr().err
-    assert ui.prompt_backend.calls == []
+    assert ui.prompt_backend.asked == []
     assert calls == ["a", "b"]
     assert outcome.failed == 0
 
@@ -194,7 +194,7 @@ def test_assume_yes_skips_generic_preview_even_when_enabled(
     )
 
     assert "About to delete" not in capsys.readouterr().err
-    assert ui.prompt_backend.calls == []
+    assert ui.prompt_backend.asked == []
     assert calls == ["a", "b"]
     assert outcome.failed == 0
 
@@ -241,7 +241,7 @@ def test_preview_only_returns_plan_without_acting() -> None:
     outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui, preview_only=True)
 
     assert calls == []
-    assert ui.prompt_backend.calls == []
+    assert ui.prompt_backend.asked == []
     assert outcome.planned_rows == [_describe("a"), _describe("b")]
 
 
@@ -307,7 +307,7 @@ def test_empty_items_is_a_noop() -> None:
     outcome = _run(interactive=True, items=[], action=action, ui=ui)
 
     assert calls == []
-    assert ui.prompt_backend.calls == []
+    assert ui.prompt_backend.asked == []
     assert outcome.total == 0
     assert outcome.results == []
     assert outcome.planned_rows == []

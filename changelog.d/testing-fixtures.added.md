@@ -1,8 +1,9 @@
 The testing kit gains the `terminal` fixture (a `ScriptedTerminal`, absent
 until a test scripts it: `terminal.answers(yes=True)`,
 `terminal.types("Ada")`, `terminal.picks(result)` for a picker,
-`terminal.screens(...)`), the `credentials` fixture
-(the `MemoryCredentials` every test runs with:
+`terminal.selects(value)`, `terminal.screens(...)`, `terminal.present()`
+with nothing scripted, `terminal.interrupts()` for Ctrl-C), the
+`credentials` fixture (the `MemoryCredentials` every test runs with:
 `credentials.set(Hello.token, key, "secret")`), `check(install(Hello))`
 (every failing row of `untaped plugin check` at once) and
 `assert_surface(Hello)` (a plugin class, with the snapshot at
