@@ -182,7 +182,7 @@ def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_conf
     app = _root()
     result = CliInvoker().invoke(app, ["--profile", "typo", "profile", "current"])
     assert result.exit_code == 2  # a pick naming no profile is a usage error
-    assert "'typo' (from flag) is not defined" in result.stderr
+    assert "profile not found: 'typo'" in result.stderr
 
 
 def test_current_lists_a_stacked_pick_with_each_source(
@@ -334,9 +334,9 @@ def test_create_and_rename_refuse_a_name_profile_cannot_pick(
 @pytest.mark.parametrize(
     ("pick", "args", "message"),
     [
-        ("typo", ["create", "qa"], "profile 'typo' is not defined"),
-        ("typo", ["rename", "stage", "qa"], "profile 'typo' is not defined"),
-        ("typo", ["delete", "stage", "--yes"], "profile 'typo' is not defined"),
+        ("typo", ["create", "qa"], "profile not found: 'typo'"),
+        ("typo", ["rename", "stage", "qa"], "profile not found: 'typo'"),
+        ("typo", ["delete", "stage", "--yes"], "profile not found: 'typo'"),
         ("stage", ["delete", "stage", "--yes"], "profile 'stage' is in this run's pick"),
         ("stage", ["rename", "stage", "qa"], "profile 'stage' is in this run's pick"),
     ],

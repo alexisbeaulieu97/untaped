@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from untaped.sdk._run import run_or_none
 from untaped.sdk.errors import ConfigError, UsageError
+from untaped.sdk.words import not_found
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 #: The base's name: what ``--profile default`` picks and what provenance calls it.
@@ -234,12 +235,11 @@ def check_defined(picks: Sequence[str], profiles: dict[str, Any]) -> None:
     """
     for name in picks:
         if name != DEFAULT_PROFILE and name not in profiles:
-            known = sorted(profiles)
+            known = [DEFAULT_PROFILE, *sorted(profiles)]
             raise ConfigError(
-                f"profile {name!r} is not defined in `profiles`. "
-                f"Known profiles: {', '.join([DEFAULT_PROFILE, *known])}",
+                not_found("profile", name, known=known),
                 category="usage",
-                details={"known": [DEFAULT_PROFILE, *known]},
+                details={"known": known},
             )
 
 

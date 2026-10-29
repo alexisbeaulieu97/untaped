@@ -253,7 +253,7 @@ def test_an_unknown_picked_profile_exits_2_naming_the_known(_isolated_config: Pa
     result = CliInvoker().invoke(root.meta, ["--profile", "wrok", "ext", "who"])
 
     assert result.exit_code == 2, result.output
-    assert "profile 'wrok' is not defined" in result.stderr
+    assert "profile not found: 'wrok'" in result.stderr
 
 
 @pytest.mark.parametrize(

@@ -183,17 +183,7 @@ class CurrentProfile:
         self._repo = repo
 
     def __call__(self) -> tuple[Picked, ...]:
-        picks = self._repo.pick()
-        names = self._repo.names()
-        for pick in picks:
-            if pick.name not in names:
-                raise ConfigError(
-                    f"profile {pick.name!r} (from {pick.source}) is not defined; "
-                    f"known: {', '.join(sorted(names))}",
-                    category="usage",
-                    details={"known": names},
-                )
-        return picks
+        return self._repo.pick()
 
 
 __all__ = [
