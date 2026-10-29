@@ -375,7 +375,7 @@ def test_the_stub_skill_and_status_reach_the_plugin_listing() -> None:
 
 def test_a_plugin_class_composition_refuses_is_quarantined_naming_the_problem() -> None:
     result = compose_root(candidates=[HELLO, _candidate("broken", Broken)])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "hello"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped", "hello"]
     [record] = result.quarantine
     assert (record.name, record.reason) == ("broken", "bad-plugin-class")
     assert record.detail == "Undocumented: a command's docstring is its help [missing-docstring]"

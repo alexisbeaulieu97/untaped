@@ -31,7 +31,7 @@ def test_default_composition_is_the_first_party_plugins(
 
     composition = bootstrap.compose_root(candidates=first_party_candidates)
 
-    assert tuple(plugin.spec.name for plugin in composition.plugins) == ("untaped", *expected)
+    assert tuple(plugin.name for plugin in composition.plugins) == ("untaped", *expected)
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(candidates=first_party_candidates)
@@ -83,17 +83,17 @@ def test_each_root_command_sits_in_exactly_one_panel(
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
     composition = bootstrap.composition()
-    plugins = {plugin.spec.name: plugin.spec for plugin in composition.plugins if not plugin.root}
+    plugins = {plugin.name: plugin for plugin in composition.plugins if not plugin.root}
     expected: dict[str, str] = {}
     for name in root:
         if name.startswith("-"):
             continue
-        spec = plugins.get(name)
-        mark = spec.stability if spec is not None else mark_of(root[name])
+        composed = plugins.get(name)
+        mark = composed.stability if composed is not None else mark_of(root[name])
         if mark is not None:
             expected[name] = panel_for(mark).name
         else:
-            expected[name] = "Plugins" if spec is not None else "Commands"
+            expected[name] = "Plugins" if composed is not None else "Commands"
 
     def placed() -> list[tuple[str, str]]:
         text = CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout

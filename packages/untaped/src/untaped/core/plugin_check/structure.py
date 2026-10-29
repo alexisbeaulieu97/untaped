@@ -112,16 +112,16 @@ def _unattributed_base(cls: type, package: str) -> bool:
     return not own_parents and "system" not in vars(cls)
 
 
-def _settings_violations(spec: ComposedPlugin) -> Iterator[str]:
-    model = spec.settings
+def _settings_violations(plugin: ComposedPlugin) -> Iterator[str]:
+    model = plugin.settings
     if not model.model_config.get("frozen", False):
         yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::settings"
 
 
-def structure_class_violations(spec: ComposedPlugin, package: str, source_dir: Path) -> list[str]:
+def structure_class_violations(plugin: ComposedPlugin, package: str, source_dir: Path) -> list[str]:
     """The checks that import the package or read its models: they need the installed code."""
     return [
         *_runtime_violations(package),
-        *_settings_violations(spec),
-        *settings_name_violations(spec.name, settings_model(spec), source_dir.parent),
+        *_settings_violations(plugin),
+        *settings_name_violations(plugin.name, settings_model(plugin), source_dir.parent),
     ]

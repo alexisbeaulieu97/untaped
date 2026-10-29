@@ -464,9 +464,7 @@ class _Setup:
         self.store = store
         self.profiles = profiles
         self.profile = profile
-        self.plugins = frozenset(
-            registered.spec.name for registered in result.plugins if not registered.root
-        )
+        self.plugins = frozenset(plugin.name for plugin in result.plugins if not plugin.root)
         self.owners = contract_owners(result)
         # Tested once, just before the first token goes to the store.
         self.preflight = cache(store.preflight) if store is not None else _no_preflight
@@ -891,10 +889,10 @@ class _Setup:
         if model.phase != "idle":
             return model, []  # one check at a time: a save while one runs is ignored
         name = model.name
-        spec = self.services[name]
+        plugin = self.services[name]
         del values  # the form itself holds them, each in its shape's field
         try:
-            asked = candidate(spec, model.current, model.forms[name], model.opened[name])
+            asked = candidate(plugin, model.current, model.forms[name], model.opened[name])
         except ConfigError as exc:
             field = exc.details.get("field")
             if isinstance(field, str):
@@ -907,7 +905,9 @@ class _Setup:
                 argv = list(command)
                 forget_token_command(argv)  # every check runs the command, a retry included
                 try:
-                    CommandToken(argv, setting=f"the {spec.name} token command").get_secret_value()
+                    CommandToken(
+                        argv, setting=f"the {plugin.name} token command"
+                    ).get_secret_value()
                 except ConfigError as exc:
                     return Probed(name, (("fail", str(exc)),))
             return Primed(name)
@@ -988,11 +988,11 @@ class _Setup:
 
     def _save(self, model: SetupModel, asked: Candidate) -> tuple[SetupModel, list[Cmd]]:
         name = asked.name
-        spec, preflight, services = self.services[name], self.preflight, self.services
+        plugin, preflight, services = self.services[name], self.preflight, self.services
 
         def save() -> object:
             try:
-                notes = write_candidate(spec, asked, preflight)
+                notes = write_candidate(plugin, asked, preflight)
             except Exception as exc:  # shown on the form, as any failed command is
                 conflict = isinstance(exc, ConfigError) and exc.category is ErrorCategory.CONFLICT
                 listing = _listing(asked.profile, services)
@@ -1206,8 +1206,8 @@ class _Setup:
 
     def _forms(self, states: Mapping[str, ServiceState], profile: str) -> dict[str, Form]:
         return {
-            name: connection_form(spec, states[name], self.store)
-            for name, spec in self.services.items()
+            name: connection_form(plugin, states[name], self.store)
+            for name, plugin in self.services.items()
         }
 
 

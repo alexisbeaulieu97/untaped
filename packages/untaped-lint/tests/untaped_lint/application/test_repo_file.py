@@ -103,7 +103,7 @@ def _lint_file(root: Path) -> Path:
 
 def _plugin_project(root: Path) -> None:
     (root / "pyproject.toml").write_text(
-        '[project]\nname = "p"\n[project.entry-points."untaped.plugins"]\nacme = "acme:SPEC"\n',
+        '[project]\nname = "p"\n[project.entry-points."untaped.plugins"]\nacme = "acme:Plugin"\n',
         encoding="utf-8",
     )
 

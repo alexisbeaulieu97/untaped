@@ -72,7 +72,7 @@ class _Checked:
 
     name: str
     root: App
-    spec: ComposedPlugin
+    plugin: ComposedPlugin
     own: PluginCandidate
     candidates: Sequence[PluginCandidate]
     package: str
@@ -83,16 +83,16 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
     """The composed plugin ``name``, or a quarantined plugin's one violation."""
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
-    spec = next(
+    checked = next(
         (
-            plugin.spec
+            plugin
             for plugin in composition().plugins
             # the root plugin is untaped itself, not one installed into it
-            if plugin.spec.name == name and not plugin.root
+            if plugin.name == name and not plugin.root
         ),
         None,
     )
-    if spec is None:
+    if checked is None:
         record = next((r for r in composition().quarantine if r.name == name), None)
         if record is None:
             raise LookupError(f"no installed plugin named {name!r}")
@@ -102,26 +102,26 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
     own = next((candidate for candidate in candidates if candidate.name == name), None)
     if own is None:  # a composed plugin is one of the candidates
         raise LookupError(f"no candidate named {name!r}")
-    package, source_dir = package_of(spec)
+    package, source_dir = package_of(checked)
     unreadable = unimportable(package, source_dir)
     if unreadable is not None:
         # The class checks can't import the plugin; the file is its one violation.
         return [unreadable]
-    return _Checked(name, root, spec, own, candidates, package, source_dir)
+    return _Checked(name, root, checked, own, candidates, package, source_dir)
 
 
 def _core_lines(checked: _Checked) -> list[str]:
-    spec, name = checked.spec, checked.name
-    commands = [name] if spec.has_commands else []  # its mounted subtree
+    plugin, name = checked.plugin, checked.name
+    commands = [name] if plugin.has_commands else []  # its mounted subtree
     return [
         *_name_violations(name, checked.package, checked.own),
-        *_provides_violations(spec, checked.own, checked.candidates),
+        *_provides_violations(plugin, checked.own, checked.candidates),
         *help_tree_violations(checked.root, commands),
-        *guide_violations(checked.root, composition(), spec),
-        *stability_violations(checked.root, composition(), commands, spec=spec),
-        *undated_violations(spec, checked.own),
+        *guide_violations(checked.root, composition(), plugin),
+        *stability_violations(checked.root, composition(), commands, plugin=plugin),
+        *undated_violations(plugin, checked.own),
         *_sdk_deprecations(checked.package),
-        *structure_class_violations(spec, checked.package, checked.source_dir),
+        *structure_class_violations(plugin, checked.package, checked.source_dir),
     ]
 
 
@@ -142,7 +142,7 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
     One name runs through a plugin: ``untaped-<name>`` on PyPI,
     ``untaped_<name>`` to import, ``<name>`` as entry point, config section
     and command group. Composition already holds the entry point to the
-    spec's name.
+    plugin's name.
     """
     violations: list[str] = []
     expected_package = "untaped_" + name.replace("-", "_")
@@ -161,7 +161,7 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
 
 
 def _provides_violations(
-    spec: ComposedPlugin, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
+    plugin: ComposedPlugin, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
 ) -> list[str]:
     """Where a provider doesn't declare the ranges its offers rely on.
 
@@ -172,11 +172,11 @@ def _provides_violations(
     extra named after it. The registry checks the installed owner against
     that range (``owner-out-of-range``).
     """
-    owners = fill_owners(spec.name, composition(), candidates)
-    if not spec.fill_owners and not owners:
+    owners = fill_owners(plugin.name, composition(), candidates)
+    if not plugin.fill_owners and not owners:
         return []
     requires = () if candidate is None else candidate.requires_dist
-    rule = f"{spec.name}::provides-requirement::"
+    rule = f"{plugin.name}::provides-requirement::"
     found: list[str] = []
     core = [
         parsed
@@ -190,7 +190,7 @@ def _provides_violations(
     if owners:
         return found + list(_fill_requirements(rule, requires, owners))
     distributions = {c.name: c.distribution for c in candidates}
-    for owner in sorted(spec.fill_owners):
+    for owner in sorted(plugin.fill_owners):
         distribution = str(canonicalize_name(distributions.get(owner, f"untaped-{owner}")))
         requirement = owner_requirement(requires, owner, distribution)
         if requirement is None:

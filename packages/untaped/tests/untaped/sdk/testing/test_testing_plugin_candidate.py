@@ -12,6 +12,6 @@ def test_plugin_candidate_composes_a_spec_without_installing_it(
 ) -> None:
     spec = make_plugin("demo")
     root = build_root_app(candidates=[plugin_candidate(spec)])
-    [registered] = [c for c in composition().plugins if c.spec.name == "demo"]
+    [registered] = [c for c in composition().plugins if c.name == "demo"]
     assert registered.plugin_ref.distribution == "untaped-demo"
     assert CliInvoker().invoke(root.meta, ["demo", "--help"]).exit_code == 0

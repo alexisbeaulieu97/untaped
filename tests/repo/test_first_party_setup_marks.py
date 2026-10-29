@@ -31,15 +31,15 @@ def test_no_first_party_model_keeps_a_secret_in_a_setting(
     assert composed.quarantine == ()
     unmarked: list[str] = []
     for plugin in composed.plugins:
-        model = plugin.spec.settings
+        model = plugin.settings
         if model is None:
             continue
         deprecated = field_marks(model)
         for name, field in model.model_fields.items():
             if unwrap_optional(field.annotation) is SecretStr and name not in deprecated:
-                unmarked.append(f"{plugin.spec.name}.{name}")
+                unmarked.append(f"{plugin.name}.{name}")
     assert unmarked == []
-    assert {plugin.spec.name for plugin in composed.plugins if plugin.spec.credentials} >= {
+    assert {plugin.name for plugin in composed.plugins if plugin.credentials} >= {
         "awx",
         "github",
         "jira",

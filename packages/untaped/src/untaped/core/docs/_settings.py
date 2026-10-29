@@ -39,7 +39,7 @@ def settings(site: Site, name: str) -> list[Setting]:
     from untaped.core.surface._settings import sections, setting_leaves  # noqa: PLC0415
 
     strip = f"{name}."
-    inherited = site.result_plugin(name).spec.stability
+    inherited = site.result_plugin(name).stability
     rows: list[Setting] = []
     for section in sections(site.result, extensions=False, owner=name, settings_only=True):
         for leaf in setting_leaves(section):

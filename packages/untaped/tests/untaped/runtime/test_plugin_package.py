@@ -13,9 +13,9 @@ from untaped.runtime.plugin_package import candidate_package
 @pytest.mark.parametrize(
     ("target", "package"),
     [
-        ("untaped.core:SPEC", "untaped.core"),  # the module is the package
+        ("untaped.core:Plugin", "untaped.core"),  # the module is the package
         ("untaped.core.plugin:Core", "untaped.core"),  # a class in a leaf module
-        ("untaped_nowhere:SPEC", "untaped_nowhere"),  # not installed: the name as written
+        ("untaped_nowhere:Plugin", "untaped_nowhere"),  # not installed: the name as written
         ("untaped_nowhere.plugin:X", "untaped_nowhere.plugin"),
         ("no-colon", None),
     ],
@@ -46,4 +46,4 @@ def test_a_namespace_subpackage_and_a_compiled_leaf_name_their_package(
     (tmp_path / "acme_ns" / "sub" / "plugin.cpython-314-x86_64-linux-gnu.so").write_bytes(b"")
     monkeypatch.syspath_prepend(str(tmp_path))
     assert candidate_package("acme_ns.sub.plugin:Acme") == "acme_ns.sub"
-    assert candidate_package("acme_ns.sub:SPEC") == "acme_ns.sub"
+    assert candidate_package("acme_ns.sub:Plugin") == "acme_ns.sub"

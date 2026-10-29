@@ -19,7 +19,6 @@ from untaped.runtime.registry import (
     PluginCandidate,
     PluginRef,
     QuarantineRecord,
-    RegisteredPlugin,
     _core_alone,
     compose,
     kept_declaration,
@@ -62,11 +61,11 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert isinstance(result, CompositionResult)
     assert result.quarantine == ()
-    assert [cap.spec.name for cap in result.plugins] == ["untaped", "github", "jira"]
+    assert [cap.name for cap in result.plugins] == ["untaped", "github", "jira"]
     _, composed_github, composed_jira = result.plugins
-    assert isinstance(composed_github, RegisteredPlugin)
-    assert composed_github.spec.skill is not None
-    assert composed_github.spec.skill.name == "untaped-github"
+    assert isinstance(composed_github, ComposedPlugin)
+    assert composed_github.skill is not None
+    assert composed_github.skill.name == "untaped-github"
     assert composed_github.plugin_ref == PluginRef(
         distribution="untaped", entry_point="untaped_double_github.plugin:Github"
     )
@@ -75,7 +74,7 @@ def test_compose_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_compose_core_only() -> None:
     result = compose()
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped"]
     assert result.quarantine == ()
 
 
@@ -85,21 +84,21 @@ def test_core_is_the_first_plugin_and_the_one_marked_root() -> None:
     from untaped.runtime.declaration import target_of
 
     result = compose([make_candidate(make_plugin("later"))])
-    assert [(each.spec.name, each.root) for each in result.plugins] == [
+    assert [(each.name, each.root) for each in result.plugins] == [
         ("untaped", True),
         ("later", False),
     ]
     core = result.plugins[0]
     assert core.plugin_ref == PluginRef(distribution="untaped", entry_point=target_of(Core))
     # its commands mount at the root from the declaration: no app is built under its name
-    assert not core.spec.has_commands
+    assert not core.has_commands
 
 
 def test_core_is_read_as_a_composed_plugin() -> None:
     """Core is read from its declaration as a plugin is."""
     from untaped.core.settings import NAME, CoreSettings
 
-    core = compose().plugins[0].spec
+    core = compose().plugins[0]
     assert (core.name, core.settings) == (NAME, CoreSettings)
     assert f"{NAME}.token-store" in [check.id for check in core.doctor_checks]
     # core's stub skill is named after it, not ``untaped-untaped``
@@ -123,7 +122,7 @@ def test_core_reads_the_same_from_a_kept_declaration() -> None:
     assert kept_declaration(()) is not None
     warm = compose()
     assert warm.mount.declaration == cold.mount.declaration
-    assert _read(warm.plugins[0].spec) == _read(cold.plugins[0].spec)
+    assert _read(warm.plugins[0]) == _read(cold.plugins[0])
     assert warm.plugins[0].plugin_ref == cold.plugins[0].plugin_ref
 
 
@@ -154,7 +153,7 @@ def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
 
     candidate = PluginCandidate(distribution="fn-dist", name="func", target=provider)
     result = compose([candidate])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert record.reason == "not-a-plugin-class"
     assert "names the callable" in record.detail
@@ -163,8 +162,8 @@ def test_compose_refuses_a_callable_entry_point_without_calling_it() -> None:
 
 
 def test_compose_hints_the_class_an_11x_entry_point_should_name() -> None:
-    spec = make_plugin("old-tool")
-    candidate = make_candidate(spec, "old-dist", result=SimpleNamespace(name="old-tool"))
+    cls = make_plugin("old-tool")
+    candidate = make_candidate(cls, "old-dist", result=SimpleNamespace(name="old-tool"))
     package = candidate.target.partition(".")[0]  # type: ignore[union-attr]
     (record,) = compose([candidate]).quarantine
     assert record.reason == "not-a-plugin-class"
@@ -181,7 +180,7 @@ def test_a_malformed_entry_point_name_is_quarantined_before_anything_is_imported
     calls: list[str] = []
     candidate = make_candidate(make_plugin("fine"), "odd-dist", name, calls=calls)
     result = compose([candidate])
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped"]
     (record,) = result.quarantine
     assert (record.reason, record.name) == ("bad-metadata", name)
     assert f"plugin name {name!r}" in record.detail
@@ -205,7 +204,7 @@ def test_compose_never_runs_doctor_bodies() -> None:
     watched = make_plugin("watched", ok=_runs(calls), boom=_runs())
     result = compose([make_candidate(watched), make_candidate(make_plugin("ext"))])
     assert calls == []
-    assert [cap.spec.name for cap in result.plugins] == ["untaped", "ext", "watched"]
+    assert [cap.name for cap in result.plugins] == ["untaped", "ext", "watched"]
 
 
 def test_compose_leaves_global_settings_registry_untouched() -> None:
@@ -231,12 +230,12 @@ def test_failed_provider_registers_nothing() -> None:
             make_candidate(make_plugin("later"), "later-dist"),
         ],
     )
-    assert [cap.spec.name for cap in result.plugins] == ["untaped", "good", "later"]
+    assert [cap.name for cap in result.plugins] == ["untaped", "good", "later"]
     assert [q.reason for q in result.quarantine] == ["duplicate-name"]
     added = [cap for cap in result.plugins if not cap.root]
-    registered_skills = [cap.spec.skill.name for cap in added if cap.spec.skill is not None]
+    registered_skills = [cap.skill.name for cap in added if cap.skill is not None]
     assert registered_skills == ["untaped-good"]
-    registered_checks = [check.id for cap in added for check in cap.spec.doctor_checks]
+    registered_checks = [check.id for cap in added for check in cap.doctor_checks]
     assert registered_checks == ["good.ok"]
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
 
@@ -245,7 +244,7 @@ def test_plugins_compose_in_name_order_whatever_the_distribution() -> None:
     zeta = make_candidate(make_plugin("zeta"), "aaa-dist")
     alpha = make_candidate(make_plugin("alpha"), "zzz-dist")
     result = compose([zeta, alpha])
-    assert [c.spec.name for c in result.plugins] == ["untaped", "alpha", "zeta"]
+    assert [c.name for c in result.plugins] == ["untaped", "alpha", "zeta"]
     assert result.quarantine == ()
 
 
@@ -259,7 +258,7 @@ def _github_rivals() -> list[PluginCandidate]:
 
 def test_a_contested_name_quarantines_every_claimant() -> None:
     result = compose(_github_rivals())
-    assert [c.spec.name for c in result.plugins] == ["untaped", "jira"]
+    assert [c.name for c in result.plugins] == ["untaped", "jira"]
     detail = "duplicate plugin name: 'github' (claimed by 'acme-dist', 'untaped')"
     assert [(q.distribution, q.reason, q.detail) for q in result.quarantine] == [
         ("acme-dist", "duplicate-name", detail),
@@ -270,7 +269,7 @@ def test_a_contested_name_quarantines_every_claimant() -> None:
 def test_a_contested_name_does_not_depend_on_candidate_order() -> None:
     forward = compose(_github_rivals())
     backward = compose(list(reversed(_github_rivals())))
-    assert [c.spec.name for c in backward.plugins] == ["untaped", "jira"]
+    assert [c.name for c in backward.plugins] == ["untaped", "jira"]
     assert backward.quarantine == forward.quarantine
 
 
@@ -279,7 +278,7 @@ def test_three_claimants_are_all_quarantined() -> None:
         make_candidate(make_plugin("github"), dist) for dist in ("c-dist", "a-dist", "b-dist")
     ]
     result = compose(claimants)
-    assert [plugin.spec.name for plugin in result.plugins] == ["untaped"]
+    assert [plugin.name for plugin in result.plugins] == ["untaped"]
     assert [(q.distribution, q.reason) for q in result.quarantine] == [
         ("a-dist", "duplicate-name"),
         ("b-dist", "duplicate-name"),

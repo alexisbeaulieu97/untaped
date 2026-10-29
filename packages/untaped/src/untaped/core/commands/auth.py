@@ -93,12 +93,12 @@ class _Target:
 
 
 def _declared(result: CompositionResult) -> list[Credential[Any]]:
-    return [each for plugin in result.plugins for each in plugin.spec.credentials]
+    return [each for plugin in result.plugins for each in plugin.credentials]
 
 
 def _settings_model(result: CompositionResult, plugin: str) -> type[BaseModel] | None:
-    spec = next((each.spec for each in result.plugins if each.spec.name == plugin), None)
-    return None if spec is None else settings_model(spec)
+    found = next((each for each in result.plugins if each.name == plugin), None)
+    return None if found is None else settings_model(found)
 
 
 def _run_target(result: CompositionResult, credential: Credential[Any]) -> _Target:

@@ -49,7 +49,7 @@ def test_a_plugin_composes_its_caches() -> None:
     hello = make_plugin("hello", settings=HelloSettings, motd=_motd())
     result = _compose(hello)
     assert result.quarantine == ()
-    assert [cache.qualified for cache in result.plugins[1].spec.caches] == ["hello.motd"]
+    assert [cache.qualified for cache in result.plugins[1].caches] == ["hello.motd"]
 
 
 def test_a_plugin_with_caches_and_no_settings_gets_a_section() -> None:
@@ -64,7 +64,7 @@ def test_a_plugin_without_caches_keeps_its_own_model() -> None:
 def test_an_owner_with_caches_gets_extensions_and_caches() -> None:
     books = Cache(label="books", max_age=timedelta(days=1))
     shelf = make_plugin("shelf", settings=HelloSettings, offers=(BookSource,), books=books)
-    section = section_settings(_compose(shelf).plugins[1].spec)
+    section = section_settings(_compose(shelf).plugins[1])
     assert list(section.model_fields) == ["greeting", "extensions", "caches"]
 
 
@@ -72,7 +72,7 @@ def _hello(**attributes: Any) -> ComposedPlugin:
     """Plugin ``hello`` with ``attributes``, composed."""
     result = _compose(make_plugin("hello", **attributes))
     assert result.quarantine == ()
-    return result.plugins[1].spec
+    return result.plugins[1]
 
 
 class OwnOldKeyUnderCaches(BaseModel):
@@ -164,6 +164,6 @@ def test_max_age_is_whole_seconds() -> None:
 def test_each_composition_hands_over_the_same_cache_and_settings_model() -> None:
     """Caches hash by identity and key the settings model, so a recomposition reuses both."""
     hello = make_plugin("hello", settings=HelloSettings, motd=_motd())
-    first, second = (_compose(hello).plugins[1].spec for _ in range(2))
+    first, second = (_compose(hello).plugins[1] for _ in range(2))
     assert first.caches[0] is second.caches[0]
     assert section_settings(first) is section_settings(second)

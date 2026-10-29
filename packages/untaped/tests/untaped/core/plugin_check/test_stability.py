@@ -36,8 +36,8 @@ def _violations(
     )
     result = bootstrap.composition()
     assert not result.quarantine
-    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == "svc"]
-    found = stability_violations(root, result, ["svc"], spec=spec)
+    [composed] = [plugin for plugin in result.plugins if plugin.name == "svc"]
+    found = stability_violations(root, result, ["svc"], plugin=composed)
     _marks[:] = marks(root, result)  # the check mounted svc's commands
     return found
 

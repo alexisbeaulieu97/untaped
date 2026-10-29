@@ -124,11 +124,11 @@ def test_credentials_and_behaviours_are_read_named_and_compose_again() -> None:
     again = compose_root(candidates=[KEEPER])
     assert not first.quarantine and not again.quarantine
     [_, plugin] = again.plugins
-    [token] = plugin.spec.credentials
+    [token] = plugin.credentials
     assert token.qualified == "keeper.token"
-    assert token is first.plugins[1].spec.credentials[0]
-    assert [each.name for each in plugin.spec.deprecations] == ["plain-notes"]
-    assert not plugin.spec.stores  # its rows are read from the class by their own readers
+    assert token is first.plugins[1].credentials[0]
+    assert [each.name for each in plugin.deprecations] == ["plain-notes"]
+    assert not plugin.stores  # its rows are read from the class by their own readers
     assert _run("keeper", "show").exit_code == 0
 
 

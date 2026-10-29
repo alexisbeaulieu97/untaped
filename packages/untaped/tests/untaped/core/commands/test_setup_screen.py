@@ -703,7 +703,7 @@ def test_tabs_offer_the_same_choices_as_before(
 ) -> None:
     install_fake_stores(tmp_path, monkeypatch, "pass")
     store = pick_store()
-    [wiz] = [each.spec for each in compose(_wiz()).plugins if each.spec.name == "wiz"]
+    [wiz] = [each for each in compose(_wiz()).plugins if each.name == "wiz"]
 
     def offered(state: ServiceState, store: Any = store) -> list[str]:
         return [c.value for c in _token_choices(wiz, state, store)]

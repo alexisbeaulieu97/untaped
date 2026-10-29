@@ -64,7 +64,7 @@ def everything_composed() -> Iterator[Composition]:
     try:
         with compose_with(*discover_candidates(), *examples) as result:
             assert not result.quarantine, result.quarantine
-            composed = {plugin.spec.name for plugin in result.plugins}
+            composed = {plugin.name for plugin in result.plugins}
             assert {*FIRST_PARTY, *(name for name, _ in EXAMPLES)} <= composed, composed
             yield current_run().composition
     finally:

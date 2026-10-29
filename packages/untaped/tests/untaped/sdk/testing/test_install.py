@@ -480,7 +480,7 @@ def test_a_brought_plugin_that_fails_to_import_is_composition_s_to_report(
 
     (tmp_path / "untaped_boom.py").write_text('raise RuntimeError("boom")\n')
     monkeypatch.syspath_prepend(tmp_path)
-    boom = PluginCandidate(distribution="untaped-boom", name="boom", target="untaped_boom:SPEC")
+    boom = PluginCandidate(distribution="untaped-boom", name="boom", target="untaped_boom:Plugin")
     provider = PluginCandidate(
         distribution="untaped-lender",
         name="lender",

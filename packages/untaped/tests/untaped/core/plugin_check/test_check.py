@@ -114,7 +114,7 @@ def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> 
 
 
 def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) -> None:
-    broken = PluginCandidate(distribution="untaped-gone", name="gone", target="untaped_gone:SPEC")
+    broken = PluginCandidate(distribution="untaped-gone", name="gone", target="untaped_gone:Plugin")
     found = [*candidates(), broken]
     result = bootstrap.compose_root(candidates=found)
     [row] = check_plugins(result, found, "gone")
@@ -126,7 +126,7 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
 ) -> None:
     monkeypatch.setattr("untaped.runtime.registry.discover_candidates", lambda: candidates())
     with compose_with() as result:
-        assert sorted(plugin.spec.name for plugin in result.plugins) == ["bin", "rack", "untaped"]
+        assert sorted(plugin.name for plugin in result.plugins) == ["bin", "rack", "untaped"]
     box = importlib.import_module("untaped_bin.providers.rack").Box
     assert_fills(_bin(), samples=[box(id=3, label="pens")])
     assert not (contract_plugins_site / "untaped_bin" / "fills.json").exists()

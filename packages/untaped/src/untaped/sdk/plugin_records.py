@@ -13,7 +13,7 @@ from __future__ import annotations
 import tomllib
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
@@ -21,12 +21,14 @@ from untaped.runtime.registry import (
     PLUGINS_ENTRY_POINT_GROUP,
     CompositionResult,
     PluginCandidate,
-    RegisteredPlugin,
     candidate_distribution,
     declared_distributions,
 )
 from untaped.sdk.fields import Column, Status
 from untaped.sdk.records import AbsolutePath, Record
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 _UNKNOWN = "unknown"
 
@@ -76,15 +78,15 @@ def plugin_records(
     marked ``root``.
     """
     # A distribution declares each entry-point name once, and a plugin whose
-    # spec name differs from it is quarantined, so the reported (distribution,
+    # name differs from it is quarantined, so the reported (distribution,
     # name) finds the candidate of every row, an entry point that never resolved
     # and a blank distribution (reported as ``unknown``) included.
     by_key = {(candidate_distribution(item), item.name): item for item in candidates}
     rows: list[InstalledPlugin] = []
-    for registered in result.plugins:
-        distribution = registered.plugin_ref.distribution
-        candidate = by_key.get((distribution, registered.spec.name))
-        rows.append(_ready(registered, candidate))
+    for plugin in result.plugins:
+        distribution = plugin.plugin_ref.distribution
+        candidate = by_key.get((distribution, plugin.name))
+        rows.append(_ready(plugin, candidate))
     for record in result.quarantine:
         candidate = by_key.get((record.distribution, record.name))
         version = (candidate.distribution_version if candidate else None) or _UNKNOWN
@@ -112,19 +114,19 @@ def installed_plugins() -> list[InstalledPlugin]:
     return plugin_records(result, result.candidates)
 
 
-def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> InstalledPlugin:
+def _ready(plugin: ComposedPlugin, candidate: PluginCandidate | None) -> InstalledPlugin:
     from untaped.runtime.plugin_package import package_of  # noqa: PLC0415 - not at startup
 
-    spec, distribution = registered.spec, registered.plugin_ref.distribution
+    distribution = plugin.plugin_ref.distribution
     # no candidate (the root's): its distribution's version, read now, never while composing
     found = candidate.distribution_version if candidate else _installed_version(distribution)
     version = found or _UNKNOWN
-    name = spec.name
-    fills = frozenset(spec.fill_owners)
+    name = plugin.name
+    fills = frozenset(plugin.fill_owners)
     package: str | None
     source_dir: Path | None
     try:
-        package, source_dir = package_of(spec)
+        package, source_dir = package_of(plugin)
     except LookupError:
         package, source_dir = None, None
     tests_dir = None if source_dir is None else _tests_dir(source_dir, name)
@@ -136,9 +138,9 @@ def _ready(registered: RegisteredPlugin, candidate: PluginCandidate | None) -> I
         package=package,
         source_dir=None if source_dir is None else source_dir.resolve(),
         tests_dir=tests_dir,
-        requires=tuple(sorted(declared_distributions(registered.plugin_ref.requires_dist, fills))),
+        requires=tuple(sorted(declared_distributions(plugin.plugin_ref.requires_dist, fills))),
         fills=tuple(sorted(fills)),
-        root=registered.root,
+        root=plugin.root,
     )
 
 

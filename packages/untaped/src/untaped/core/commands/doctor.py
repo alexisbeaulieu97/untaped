@@ -316,26 +316,26 @@ def _scopes(result: CompositionResult) -> list[_SectionScope]:
     # reads its part with load_core_part.
     return [
         _plugin_scope(
-            registered.spec,
-            settings=not registered.root,
-            held=tuple(block for _, block in result.mount.held(registered.spec.name, "state-rows")),
+            plugin,
+            settings=not plugin.root,
+            held=tuple(block for _, block in result.mount.held(plugin.name, "state-rows")),
         )
-        for registered in result.plugins
+        for plugin in result.plugins
     ]
 
 
 def _plugin_scope(
-    spec: ComposedPlugin,
+    plugin: ComposedPlugin,
     *,
     settings: bool = True,
     held: tuple[StateRows[Any] | ProjectStateRows[Any], ...] = (),
 ) -> _SectionScope:
-    """``spec``'s scope; without ``settings`` no section row. ``held``: its class's state rows."""
+    """``plugin``'s scope; without ``settings`` no section row. ``held``: its class's state rows."""
     return _SectionScope(
-        plugin=spec.name,
-        section=spec.name,
-        settings_model=section_settings(spec) if settings else None,
-        checks=tuple(spec.doctor_checks),
+        plugin=plugin.name,
+        section=plugin.name,
+        settings_model=section_settings(plugin) if settings else None,
+        checks=tuple(plugin.doctor_checks),
         rows=held,
     )
 
@@ -387,11 +387,11 @@ def collect_doctor_rows(
         rows.append(_plugin_folders_row(result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
-    for registered in result.plugins:
-        selected = plugins is None or registered.spec.name in plugins
-        if not registered.spec.has_commands or not selected:
+    for plugin in result.plugins:
+        selected = plugins is None or plugin.name in plugins
+        if not plugin.has_commands or not selected:
             continue
-        built = run_deferred_factory(registered)
+        built = run_deferred_factory(plugin)
         if isinstance(built, QuarantineRecord):
             rows.append(_quarantine_row(built))
     return rows
@@ -435,13 +435,10 @@ def online_probe_rows(
     ``setup`` runs this on a worker thread inside a copy of its own context;
     the child run lives in that copy only.
     """
-    spec = next(
-        (registered.spec for registered in result.plugins if registered.spec.name == plugin),
-        None,
-    )
-    if spec is None:
+    composed = next((each for each in result.plugins if each.name == plugin), None)
+    if composed is None:
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
-    scope = _plugin_scope(spec)
+    scope = _plugin_scope(composed)
     overlay = SettingsOverlay(profile, scope.section, dict(values))
     with child_run(profiles=profile, overlay=overlay):
         settings, error = None, None
@@ -558,8 +555,8 @@ def _stores_row(result: CompositionResult) -> dict[str, object]:
     title = "stores keep one layout each, or every layout is held"
     stores = [
         store
-        for registered in result.plugins
-        for store in registered.spec.stores
+        for plugin in result.plugins
+        for store in plugin.stores
         if isinstance(store, Store)  # an item store keeps no layouts
     ]
     if not stores:
@@ -597,8 +594,8 @@ def _caches_row(result: CompositionResult) -> dict[str, object]:
 
     title = "no caches of another version"
     parts: list[str] = []
-    for spec in (registered.spec for registered in result.plugins):
-        for cache in spec.caches:
+    for plugin in result.plugins:
+        for cache in plugin.caches:
             try:
                 outdated = outdated_keys(cache)
             except Exception as exc:  # the plugin's version= or model= code runs here
@@ -801,8 +798,8 @@ def _other_layouts(result: CompositionResult, references: Sequence[Reference]) -
     """Whether any composed store has a layout on disk besides its own."""
     from untaped.sdk.storage.store import Store, survey  # noqa: PLC0415 - runs only in doctor
 
-    for registered in result.plugins:
-        for store in registered.spec.stores:
+    for plugin in result.plugins:
+        for store in plugin.stores:
             if not isinstance(store, Store):
                 continue
             try:
@@ -1055,8 +1052,7 @@ def _contract_rows(
     result: CompositionResult, profile: str, plugins: frozenset[str] | None
 ) -> list[dict[str, object]]:
     """Doctor's rows about contracts: one per provider offer, owner problem and bad ranking."""
-    specs = [registered.spec for registered in result.plugins]
-    if not any(spec.owns_contracts or spec.fill_owners for spec in specs):
+    if not any(plugin.owns_contracts or plugin.fill_owners for plugin in result.plugins):
         return []
     # Imported here: ``untaped.sdk.contracts`` stays out of a composition without contracts.
     from untaped.runtime.contracts.registry import doctor_rows  # noqa: PLC0415

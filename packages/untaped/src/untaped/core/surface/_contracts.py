@@ -45,17 +45,17 @@ if TYPE_CHECKING:
     from untaped.sdk.contracts._declare import ContractInfo
 
 
-def owned_contracts(spec: ComposedPlugin) -> list[ContractInfo]:
-    """The contracts ``spec`` declares, as the SDK knows them."""
+def owned_contracts(plugin: ComposedPlugin) -> list[ContractInfo]:
+    """The contracts ``plugin`` declares, as the SDK knows them."""
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
 
-    if not spec.owns_contracts:
+    if not plugin.owns_contracts:
         return []
     infos = []
-    for cls in spec.offers:
+    for cls in plugin.offers:
         info = contract_of(cls)
         if info is None or info.cls is not cls:
-            raise SurfaceError(f"plugin {spec.name!r} lists {cls!r}, which is not a contract")
+            raise SurfaceError(f"plugin {plugin.name!r} lists {cls!r}, which is not a contract")
         infos.append(info)
     return sorted(infos, key=lambda info: info.name)
 

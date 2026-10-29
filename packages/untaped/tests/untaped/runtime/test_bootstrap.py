@@ -66,7 +66,7 @@ def _write_config(path: Path, text: str) -> None:
 
 def test_zero_plugin_root_lists_no_plugins() -> None:
     composition = bootstrap.compose_root(candidates=())
-    assert [plugin.spec.name for plugin in composition.plugins] == ["untaped"]
+    assert [plugin.name for plugin in composition.plugins] == ["untaped"]
     assert composition.quarantine == ()
 
     root = bootstrap.build_root_app(candidates=())
@@ -457,7 +457,7 @@ def test_quarantined_providers_warn_and_the_root_boots(
     candidates = [good, *rivals, raising]
 
     composition = bootstrap.compose_root(candidates=candidates)
-    assert [cap.spec.name for cap in composition.plugins] == ["untaped", "good"]
+    assert [cap.name for cap in composition.plugins] == ["untaped", "good"]
     assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
         ("awx", "untaped", "malformed-entry-point"),
         ("rival", "acme-dist", "duplicate-name"),
@@ -858,7 +858,7 @@ def test_core_s_behaviours_are_the_sdk_s_to_list_never_a_listing_of_its_class(
     result = bootstrap.compose_root(candidates=[make_candidate(_plugin("acme"))])
     assert "untaped" not in marks._LISTINGS
     assert "acme" in marks._LISTINGS
-    core = next(plugin.spec for plugin in result.plugins if plugin.root)
+    core = next(plugin for plugin in result.plugins if plugin.root)
     assert core.deprecations == ()  # none declared: its blocks are never loaded
 
 

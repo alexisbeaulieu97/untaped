@@ -263,8 +263,8 @@ def test_marks_report_behaviours() -> None:
 def _svc_violations(svc: type[Plugin]) -> list[str]:
     root = _compose(svc)
     result = bootstrap.composition()
-    [spec] = [plugin.spec for plugin in result.plugins if plugin.spec.name == "svc"]
-    return stability_violations(root, result, ["svc"], spec=spec)
+    [composed] = [plugin for plugin in result.plugins if plugin.name == "svc"]
+    return stability_violations(root, result, ["svc"], plugin=composed)
 
 
 def test_a_behaviour_under_a_deprecated_plugin_is_nested() -> None:

@@ -17,6 +17,7 @@ from untaped.runtime.composed import ComposedPlugin
 from untaped.runtime.composition import PluginEntry
 from untaped.runtime.declaration import target_of
 from untaped.runtime.mount import compose_plugins
+from untaped.runtime.registry import PluginRef
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -64,9 +65,9 @@ def _violations(install: Install, body: str) -> list[str]:
         }
     )
     settings = importlib.import_module("acme.settings")
-    spec = _composed(settings.AcmeSettings)
+    plugin = _composed(settings.AcmeSettings)
     source_dir = site / "acme"
-    return structure_class_violations(spec, "acme", source_dir)
+    return structure_class_violations(plugin, "acme", source_dir)
 
 
 PATH = "a path setting ends in _dir or _path"
@@ -167,4 +168,5 @@ def test_a_model_outside_the_root_keeps_its_full_path() -> None:
 def _composed(settings: type[BaseModel]) -> ComposedPlugin:
     """Plugin ``acme`` reading ``settings``, its class composed (a check may refuse it later)."""
     cls = make_plugin("acme", settings=settings)
-    return ComposedPlugin.of(compose_plugins([PluginEntry("acme", target_of(cls), cls)]), "acme")
+    mount = compose_plugins([PluginEntry("acme", target_of(cls), cls)])
+    return ComposedPlugin.of(mount, "acme", PluginRef("untaped-acme", target_of(cls)))

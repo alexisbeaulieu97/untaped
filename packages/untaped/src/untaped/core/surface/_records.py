@@ -101,7 +101,7 @@ def _diagnostics(result: CompositionResult) -> dict[str, _Reached]:
     """The root plugin's (core's) diagnostic kinds: the SDK's, which core owns."""
     from untaped.sdk.diagnostic import DIAGNOSTICS, kind_of  # noqa: PLC0415
 
-    core = next(plugin.spec.name for plugin in result.plugins if plugin.root)
+    core = next(plugin.name for plugin in result.plugins if plugin.root)
     return {str(kind_of(model)): _Reached(core, model, {None}) for model in DIAGNOSTICS}
 
 

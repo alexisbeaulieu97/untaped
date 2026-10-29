@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cyclopts import App
 
@@ -26,8 +27,11 @@ from untaped.runtime.declaration import (
     PluginDecl,
     PointDecl,
 )
-from untaped.runtime.registry import CompositionResult, RegisteredPlugin
+from untaped.runtime.registry import CompositionResult
 from untaped.sdk.words import shown_path
+
+if TYPE_CHECKING:
+    from untaped.runtime.composed import ComposedPlugin
 
 #: The name core answers to (``untaped docs untaped``); no plugin may take it.
 CORE = "untaped"
@@ -55,23 +59,23 @@ class Site:
 
     def names(self) -> list[str]:
         """Every composed plugin's name: core first, then by name."""
-        ordered = sorted(self.result.plugins, key=lambda each: (not each.root, each.spec.name))
-        return [each.spec.name for each in ordered]
+        ordered = sorted(self.result.plugins, key=lambda each: (not each.root, each.name))
+        return [each.name for each in ordered]
 
     def plugin(self, name: str) -> PluginDecl | None:
         """The composed plugin ``name``; ``None`` for none."""
         return next((each for each in self.declaration.plugins if each.name == name), None)
 
-    def registered(self, name: str) -> RegisteredPlugin | None:
-        return next((each for each in self.result.plugins if each.spec.name == name), None)
+    def composed(self, name: str) -> ComposedPlugin | None:
+        return next((each for each in self.result.plugins if each.name == name), None)
 
     def summary(self, name: str) -> str:
         """A plugin's help line."""
         decl = self.plugin(name)
         return "" if decl is None else first_line(decl.summary)
 
-    def result_plugin(self, name: str) -> RegisteredPlugin:
-        found = self.registered(name)
+    def result_plugin(self, name: str) -> ComposedPlugin:
+        found = self.composed(name)
         if found is None:
             raise LookupError(name)
         return found
@@ -150,9 +154,9 @@ class Site:
         """A page's title, the line naming who answered, and the project mismatch line."""
         version = metadata.version(CORE)
         parts = [f"untaped {version}"]
-        registered = None if name is None or name == CORE else self.registered(name)
-        if registered is not None:
-            ref = registered.plugin_ref
+        composed = None if name is None or name == CORE else self.composed(name)
+        if composed is not None:
+            ref = composed.plugin_ref
             distribution = " ".join(
                 part for part in (ref.distribution, ref.distribution_version) if part
             )

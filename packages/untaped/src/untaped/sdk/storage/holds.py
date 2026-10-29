@@ -543,13 +543,13 @@ class Owners:
         """The owners a composition offers."""
         stores = {
             (store.plugin, store.name): store
-            for registered in result.plugins
-            for store in registered.spec.stores
+            for plugin in result.plugins
+            for store in plugin.stores
             if isinstance(store, ItemStore)
         }
         return cls(
             stores=stores,
-            composed=frozenset(registered.spec.name for registered in result.plugins),
+            composed=frozenset(plugin.name for plugin in result.plugins),
             quarantined={record.name: record.detail for record in result.quarantine},
         )
 

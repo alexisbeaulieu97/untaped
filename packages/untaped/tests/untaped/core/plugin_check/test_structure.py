@@ -18,6 +18,7 @@ from untaped.runtime.composed import ComposedPlugin
 from untaped.runtime.composition import PluginEntry
 from untaped.runtime.declaration import target_of
 from untaped.runtime.mount import compose_plugins
+from untaped.runtime.registry import PluginRef
 
 _ERRORS = dedent('''
     """Acme errors."""
@@ -63,8 +64,8 @@ def _violations(install: Install, files: dict[str, str]) -> list[str]:
     """Structure class violations of the package ``acme`` written from ``files``."""
     site = install(files)
     settings = importlib.import_module("acme.settings")
-    spec = _composed(settings.AcmeSettings)
-    return structure_class_violations(spec, "acme", site / "acme")
+    plugin = _composed(settings.AcmeSettings)
+    return structure_class_violations(plugin, "acme", site / "acme")
 
 
 def test_a_clean_package_has_no_violations(install: Install) -> None:
@@ -167,4 +168,5 @@ def test_a_dependency_python_cannot_read_is_raised(install: Install) -> None:
 def _composed(settings: type[BaseModel]) -> ComposedPlugin:
     """Plugin ``acme`` reading ``settings``, its class composed (a check may refuse it later)."""
     cls = make_plugin("acme", settings=settings)
-    return ComposedPlugin.of(compose_plugins([PluginEntry("acme", target_of(cls), cls)]), "acme")
+    mount = compose_plugins([PluginEntry("acme", target_of(cls), cls)])
+    return ComposedPlugin.of(mount, "acme", PluginRef("untaped-acme", target_of(cls)))
