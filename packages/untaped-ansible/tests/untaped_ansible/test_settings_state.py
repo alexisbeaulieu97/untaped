@@ -25,7 +25,7 @@ from untaped_ansible.settings import SOURCES, alias_map
             SOURCES.all,
             {"sources": [{"name": "prod"}]},
             "ansible.sources row prod in {path} is damaged: "
-            "source requires --org, --team, or --repo",
+            "a source selects at least one org, team or repo",
         ),
     ],
 )

@@ -51,7 +51,7 @@ class SourceDefinition(BaseModel):
     @model_validator(mode="after")
     def _validate_source(self) -> Self:
         if not any((self.orgs, self.teams, self.repos)):
-            raise ValueError("source requires --org, --team, or --repo")
+            raise ValueError("a source selects at least one org, team or repo")
         for repo in self.repos:
             if not is_repo_name(repo):
                 raise ValueError(f"repo must be owner/name: {repo!r}")

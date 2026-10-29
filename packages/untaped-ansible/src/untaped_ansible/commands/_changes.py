@@ -99,7 +99,8 @@ def edited(source: SourceDefinition, edit: Changes) -> tuple[SourceDefinition, l
             ref_scan_default=scan,
         )
     except ValidationError as exc:
-        raise AnsibleError(first_validation_error(exc), category="invalid") from exc
+        # The flags made it, as source set's do: the same usage error.
+        raise UsageError(first_validation_error(exc)) from exc
     return result, changes
 
 
