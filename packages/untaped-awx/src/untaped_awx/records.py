@@ -16,10 +16,11 @@ Two families:
   and their fields are the dict rows they replaced, except that a field the
   row used to leave out when unset is now ``null``.
 
-A model a use case builds declares its kind in the domain module it belongs
-to (``PingStatus``, ``WorkflowNode``, ``WorkflowUsage``, ``CaseResult``, the
-copy and rename outcomes, and ``Resources``, the snapshot ``awx lint``'s
-rules read, in ``domain/lint/resources.py``).
+A model a use case builds lives in the domain module it belongs to, which is
+awx's, so composition names its kind (``PingStatus``, ``WorkflowNode``,
+``WorkflowUsage``, ``CaseResult``, the copy and rename outcomes, and
+``Resources``, the snapshot ``awx lint``'s rules read, in
+``domain/lint/resources.py``).
 """
 
 from __future__ import annotations

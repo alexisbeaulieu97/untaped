@@ -21,7 +21,7 @@ from untaped.sdk.storage import Cache
 from untaped.sdk.testing import CliInvoker
 
 
-class Crate(Record, kind="depot.crate"):
+class Crate(Record):
     """One crate."""
 
     name: Annotated[str, Key]

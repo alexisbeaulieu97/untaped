@@ -47,7 +47,7 @@ class ShopSettings(BaseModel):
     max_items: int = Field(1, alias="max-items", description="At most this many.")
 
 
-class Item(Record, kind="shop.item"):
+class Item(Record):
     """One item on the shelf."""
 
     name: Annotated[str, Key, Column]

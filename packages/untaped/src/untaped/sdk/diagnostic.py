@@ -2,11 +2,11 @@
 
 :class:`WireModel` is the one base for everything untaped writes as JSON with
 a ``kind``: stdout records (``untaped.sdk.records.Record``) and stderr diagnostics
-(:class:`Diagnostic`). A subclass declares its kind as a class keyword
-(``class Thing(Message, kind="toy.thing")``), checked against the kind grammar
-and registered in one registry, so ``untaped plugin schema <kind>`` prints a
-record's or a diagnostic's schema alike; every subclass is checked at
-definition for fields that would not survive a JSON round trip.
+(:class:`Diagnostic`). A subclass's kind is composition's, the plugin and the
+class in snake case (a plugin lists the ones no command prints in its
+``records``), so ``untaped plugin schema <kind>`` prints a record's or a
+diagnostic's schema alike; every subclass is checked at definition for fields
+that would not survive a JSON round trip.
 
 Every stderr line is a :class:`Diagnostic`:
 
@@ -36,7 +36,6 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from functools import cache
-from types import MappingProxyType
 from typing import (
     Annotated,
     Any,
@@ -154,35 +153,12 @@ def check_data_kind(kind: str) -> None:
         )
 
 
-class KindError(ValueError):
-    """A kind declaration composition refuses; ``reason`` is its quarantine reason."""
-
-    reason: ClassVar[str]
-
-
-class DuplicateKindError(KindError):
-    """Two models declare the same kind (reason ``duplicate-kind``)."""
-
-    reason = "duplicate-kind"
-
-
-class ForeignKindError(KindError):
-    """A model declares a kind under another plugin's name (reason ``foreign-kind``)."""
-
-    reason = "foreign-kind"
-
-
-_MODELS: dict[str, type[WireModel]] = {}
-_KINDS: dict[type[BaseModel], str] = {}
-
-
 def kind_of(model: type[BaseModel]) -> str | None:
     """``model``'s kind (``None``: a kind-less model, such as the record bases).
 
     The current run's composition gives it; before or without one, the
-    diagnostics (:data:`DIAGNOSTICS`) have theirs, and an 11.x ``kind=`` is
-    read last. A parametrized generic record (``Page[int]``) has the kind
-    composition gave it, else its generic's.
+    diagnostics (:data:`DIAGNOSTICS`) have theirs. A parametrized generic record
+    (``Page[int]``) has the kind composition gave it, else its generic's.
     """
     origin = model.__pydantic_generic_metadata__["origin"]
     run = run_or_none()
@@ -192,12 +168,7 @@ def kind_of(model: type[BaseModel]) -> str | None:
             composed = run.composition.kind_of(origin)
         if composed is not None:
             return composed
-    return _diagnostic_kinds().get(origin or model) or _spelled_kind(model)
-
-
-def _spelled_kind(model: type[BaseModel]) -> str | None:
-    """``model``'s 11.x ``kind=`` (``None``: it spells none)."""
-    return _KINDS.get(model.__pydantic_generic_metadata__["origin"] or model)
+    return _diagnostic_kinds().get(origin or model)
 
 
 def record_model(kind: str) -> type[BaseModel] | None:
@@ -206,83 +177,13 @@ def record_model(kind: str) -> type[BaseModel] | None:
     composed = None if run is None else run.composition.model_of(kind)
     if isinstance(composed, type) and issubclass(composed, BaseModel):
         return composed
-    diagnostic = next(
-        (model for model, given in _diagnostic_kinds().items() if given == kind), None
-    )
-    return diagnostic or _MODELS.get(kind)
+    return next((model for model, given in _diagnostic_kinds().items() if given == kind), None)
 
 
 @cache
 def _diagnostic_kinds() -> dict[type[BaseModel], str]:
     """The diagnostics' kinds, read before or without a composition."""
     return {model: f"{CORE}.{snake(model.__name__)}" for model in DIAGNOSTICS}
-
-
-def record_kinds() -> Mapping[str, type[WireModel]]:
-    """Every 11.x ``kind=`` and its model, read-only; :func:`kind_of` reads composition first."""
-    return MappingProxyType(_MODELS)
-
-
-def _register(kind: str, model: type[WireModel]) -> None:
-    """Map ``kind`` to ``model``; another model already declaring it is ``duplicate-kind``.
-
-    The same class defined again (a module imported twice) replaces itself.
-    A plugin's model declaring a kind under another name is ``foreign-kind``.
-    """
-    held = _MODELS.get(kind)
-    if held is not None and (held.__module__, held.__qualname__) != (
-        model.__module__,
-        model.__qualname__,
-    ):
-        raise DuplicateKindError(
-            f"kind {kind!r} is declared by both "
-            f"{held.__module__}.{held.__qualname__} and {model.__module__}.{model.__qualname__}; "
-            "each kind has exactly one schema, so give one of them another kind"
-        )
-    _check_owner(kind, model)
-    _MODELS[kind] = model
-    _KINDS[model] = kind
-
-
-def _declaring_plugin(module: str) -> str | None:
-    """The plugin whose import package holds ``module`` (``None``: no plugin's).
-
-    ``untaped_acme_tools`` is ``acme-tools`` and ``untaped`` is core: plugin
-    names have no ``_``, so the mapping is unambiguous.
-    """
-    package = module.partition(".")[0]
-    if package == "untaped":
-        return "untaped"
-    if package.startswith("untaped_"):
-        return package.removeprefix("untaped_").replace("_", "-")
-    return None
-
-
-def _check_owner(kind: str, model: type[WireModel]) -> None:
-    """A plugin's model declares kinds under its own name only (``foreign-kind``).
-
-    The plugin is read from the model's import package, since a plugin's
-    name and its package are one name. A model outside ``untaped`` and
-    ``untaped_*`` packages (a test module) is not checked.
-
-    The plugin is quarantined only when composing it registers the model:
-    a model in a module that only a command body imports registers when
-    that command runs, so a foreign or duplicate kind there is a traceback
-    instead. Declare models in a module the plugin class's module imports.
-    """
-    owner = _declaring_plugin(model.__module__)
-    prefix = kind.partition(".")[0]
-    if owner is None or prefix == owner:
-        return
-    noun = kind.partition(".")[2]
-    declarer = "core" if owner == "untaped" else f"plugin {owner!r}"
-    # The package can be what is misnamed: a plugin's package is its name read with ``_``.
-    package = "untaped" if prefix == "untaped" else f"untaped_{prefix.replace('-', '_')}"
-    raise ForeignKindError(
-        f"{model.__module__}.{model.__qualname__} declares kind {kind!r}, but its package "
-        f"belongs to {declarer}; a kind starts with its declaring plugin's name, "
-        f"so name it {owner}.{noun}, or ship it in the package {package}"
-    )
 
 
 def dumped_names(model: type[BaseModel]) -> dict[str, str]:
@@ -463,14 +364,11 @@ def _check_type(where: str, annotation: object, seen: set[Any]) -> None:
 class WireModel(BaseModel):
     """Base for what untaped writes as JSON with a kind: frozen, unknown fields rejected.
 
-    Dumps list the model's own fields before inherited ones. A subclass
-    declares its kind with a class keyword (``kind="gitlab.project"``),
-    checked against the kind grammar (:func:`check_data_kind`) and registered
-    kind → model; a second model declaring the same kind raises
-    :class:`DuplicateKindError`. A subclass without ``kind=`` is kind-less,
-    not its parent's kind. Every subclass, with every model nested in it, is
-    checked for what would lose data in a JSON round trip (a kind-less
-    diagnostic only where a record or a kind nests it): secrets
+    Dumps list the model's own fields before inherited ones. A subclass's
+    kind is composition's: the plugin whose package defines it and its class
+    name in snake case (:func:`kind_of`), never its parent's. Every
+    subclass, with every model nested in it, is checked for what would lose
+    data in a JSON round trip: secrets
     (``SecretStr``, ``Secret``), ``Field(exclude=True)``, an ``exclude_if``
     other than core's omit-when-``None``, an alias validation does not accept,
     computed fields, custom serializers and forward references not yet
@@ -485,23 +383,10 @@ class WireModel(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    def __init_subclass__(cls, *, kind: str | None = None, **kwargs: Any) -> None:
-        if kind is not None:
-            check_data_kind(kind)
-        super().__init_subclass__(**kwargs)
-
     @classmethod
-    def __pydantic_init_subclass__(cls, *, kind: str | None = None, **kwargs: Any) -> None:
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         super().__pydantic_init_subclass__(**kwargs)
-        if kind is not None or cls._checked_without_kind():
-            _check_round_trip(cls, set())
-        if kind is not None:
-            _register(kind, cls)
-
-    @classmethod
-    def _checked_without_kind(cls) -> bool:
-        """Whether a kind-less subclass is checked at definition (records: yes)."""
-        return True
+        _check_round_trip(cls, set())
 
     @classmethod
     def _reorder(cls, names: list[str], declared_by: Mapping[str, type]) -> list[str]:
@@ -553,21 +438,15 @@ class Diagnostic(WireModel):
     ``message`` is the human line without its ``level:`` prefix; ``hint``
     the "what next" line, without its ``hint:`` prefix. ``level`` is a class
     constant on every fixed-level kind, written beside ``kind``; an
-    intermediate base with no ``kind=`` is never a line by itself.
+    intermediate base no plugin lists is never a line by itself.
     """
 
     level: ClassVar[Level]
     message: str
     hint: _Omitted = None
 
-    @classmethod
-    def _checked_without_kind(cls) -> bool:
-        # A kind-less diagnostic is never a line by itself (``emit`` refuses it):
-        # it is checked where a record or a kind nests it.
-        return False
 
-
-class Message(Diagnostic, kind="untaped.message"):
+class Message(Diagnostic):
     """An ``info``, ``success``, ``warning`` or ``hint`` line."""
 
     level: Literal["info", "warning", "hint", "success"]  # type: ignore[misc]
@@ -579,7 +458,7 @@ def _jsonable(details: Mapping[str, object]) -> dict[str, JsonValue]:
     return converted if isinstance(converted, dict) else {}
 
 
-class Failure(Diagnostic, kind="untaped.failure"):
+class Failure(Diagnostic):
     """Why something failed: a counted ``error`` line, and a failed row's ``error``.
 
     ``category`` selects the exit code; ``system`` names who is responsible;
@@ -716,7 +595,7 @@ status row, a test case's failure that the run reports itself).
 """
 
 
-class Debug(Diagnostic, kind="untaped.debug"):
+class Debug(Diagnostic):
     """A log record under ``--verbose``: ``logger`` names who logged it."""
 
     level: ClassVar[Level] = "debug"
@@ -724,7 +603,7 @@ class Debug(Diagnostic, kind="untaped.debug"):
     logger: str
 
 
-class Progress(Diagnostic, kind="untaped.progress"):
+class Progress(Diagnostic):
     """A step of a long operation, at the sink's cadence: never counted, muted by ``--quiet``.
 
     The sink builds every one from the task a ``progress(label)`` block
@@ -749,7 +628,7 @@ class Progress(Diagnostic, kind="untaped.progress"):
     state: Literal["running", "done", "failed"]
 
 
-class Stale(Diagnostic, kind="untaped.stale"):
+class Stale(Diagnostic):
     """Cached data served past its freshness, and why: a ``warning``, never counted.
 
     ``plugin`` names whose data it is: the plugin that declared the cache
@@ -843,7 +722,7 @@ class Stale(Diagnostic, kind="untaped.stale"):
         )
 
 
-class Pruned(Diagnostic, kind="untaped.pruned"):
+class Pruned(Diagnostic):
     """A store layout nothing holds, removed after a complete fill: an ``info`` line, unmuted.
 
     ``plugin`` and ``store`` name the store, ``layout`` the removed layout's
@@ -861,7 +740,7 @@ class Pruned(Diagnostic, kind="untaped.pruned"):
     bytes: int
 
 
-class Deprecation(Diagnostic, kind="untaped.deprecation"):
+class Deprecation(Diagnostic):
     """A deprecated thing was used: a ``warning``, never counted; the sentence is ``message``.
 
     ``id`` is its surface identity (``cli untaped awx put``,
@@ -1044,10 +923,7 @@ __all__ = [
     "Debug",
     "Deprecation",
     "Diagnostic",
-    "DuplicateKindError",
     "Failure",
-    "ForeignKindError",
-    "KindError",
     "Level",
     "Message",
     "Pruned",
@@ -1061,7 +937,6 @@ __all__ = [
     "format_error",
     "format_utc",
     "kind_of",
-    "record_kinds",
     "record_model",
     "split_hint",
 ]

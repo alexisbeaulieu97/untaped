@@ -6,14 +6,17 @@ from collections.abc import Iterator
 
 import pytest
 
-from lint_fakes import Widget, default_branch
+from lint_fake_records import Linttest, Widget
+from lint_fakes import default_branch
 from untaped.sdk import Record
+from untaped.sdk.testing import install
 from untaped_lint.api import Finding, Rules, finding, rule, rule_row
 from untaped_lint.testing import run_rule
 
 
 def test_the_id_summary_and_model_are_read_from_the_function() -> None:
-    declared = rule_row(default_branch)
+    with install(Linttest).running():
+        declared = rule_row(default_branch)
     assert (declared.id, declared.reads) == ("default-branch", "linttest.gadget")
     assert declared.severity == "error"
     assert declared.summary == "A gadget names its default branch."
@@ -43,7 +46,8 @@ class _Methods(Rules):
 
 
 def test_a_method_reads_the_parameter_after_self() -> None:
-    (declared,) = _Methods().rules()
+    with install(Linttest).running():
+        (declared,) = _Methods().rules()
     assert (declared.id, declared.reads) == ("narrow", "linttest.widget")
 
 

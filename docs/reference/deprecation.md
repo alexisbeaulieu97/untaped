@@ -19,8 +19,8 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A renamed setting key | `renamed_keys = {"old_key": Renamed("new_key", removed_in=3)}` on the section's model |
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 | A function or method of your Python API | `@deprecated(removed_in=3, replacement=new_api)` over `@warnings.deprecated("<its sentence>")`, under any `@classmethod`, `@staticmethod` or `@property` |
-| A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="kind= on the Record class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
-| A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="kind= on the Record class")` on the plugin class |
+| A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="records on the plugin class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
+| A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="records on the plugin class")` on the plugin class |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
 3.0`. untaped's own plugins use untaped's majors, since they release in

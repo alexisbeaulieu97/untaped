@@ -28,8 +28,8 @@ serialize before the base fields they inherit (the identifying field stays
 first for ``--format raw`` and the first table column), except that an
 inherited ``action`` follows the identifying field.
 
-A record type declares its kind as a class keyword,
-``class GitlabProject(Record, kind="gitlab.project")``; :func:`emit
+A record's kind is composition's, the plugin and its class in snake case
+(``untaped_gitlab``'s ``Project`` is ``gitlab.project``); :func:`emit
 <untaped.sdk._cli.emit>` reads it from the rows, and :func:`record_model` maps a
 kind back to its model. Every record's fields must survive a JSON round trip,
 which the class definition checks (:class:`Record`).
@@ -53,17 +53,13 @@ from typing import (
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue
 
 from untaped.sdk.diagnostic import (
-    DuplicateKindError,
     Failure,
-    ForeignKindError,
-    KindError,
     UtcTimestamp,
     WireModel,
     _is_none,
     check_data_kind,
     format_utc,
     kind_of,
-    record_kinds,
     record_model,
 )
 from untaped.sdk.fields import Column, Status
@@ -155,12 +151,9 @@ class Record(WireModel):
     Dumps list the record's own fields before inherited base fields, except
     that an inherited ``action`` follows the identifying field.
 
-    A subclass declares its kind with a class keyword,
-    ``class GitlabProject(Record, kind="gitlab.project")``, checked against
-    the kind grammar (:func:`check_data_kind`) and registered kind → model;
-    a second model declaring the same kind raises :class:`DuplicateKindError`.
-    A subclass without ``kind=`` is kind-less, not its parent's kind. Every
-    subclass, with every model nested in it, is checked for what would lose
+    A subclass's kind is the plugin whose package defines it and its class
+    in snake case, given at composition (:func:`kind_of`), never its
+    parent's. Every subclass, with every model nested in it, is checked for what would lose
     data in a JSON round trip of the dump ``emit`` writes: secrets
     (``SecretStr``, ``Secret``), ``Field(exclude=True)``, an ``exclude_if``
     other than core's omit-when-``None``, an alias validation does not accept,
@@ -189,7 +182,7 @@ _RowError = Annotated[Failure | None, Field(exclude_if=_is_none)]
 
 
 class OutcomeRecord(Record):
-    """A mutation result; declare its kind as ``<plugin>.<verb>_outcome``.
+    """A mutation result; name it ``<Verb>Outcome``, so its kind is ``<plugin>.<verb>_outcome``.
 
     ``action`` is a ``Column``, so a table showing the record's own marked
     columns shows it too.
@@ -280,10 +273,7 @@ __all__ = [
     "AbsolutePath",
     "CheckRecord",
     "CheckStatus",
-    "DuplicateKindError",
-    "ForeignKindError",
     "Issued",
-    "KindError",
     "OutcomeRecord",
     "Record",
     "Source",
@@ -293,6 +283,5 @@ __all__ = [
     "check_data_kind",
     "format_utc",
     "kind_of",
-    "record_kinds",
     "record_model",
 ]

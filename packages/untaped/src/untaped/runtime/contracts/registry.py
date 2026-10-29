@@ -51,7 +51,7 @@ from untaped.sdk.contracts._declare import (
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import SettingKey
-from untaped.sdk.records import DuplicateKindError, KindError, kind_of
+from untaped.sdk.records import kind_of
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -243,10 +243,6 @@ def _load(state: _State, spec: PluginSpec, owner: str) -> tuple[BoundProvider | 
         return whole(Reason.owner_out_of_range, out_of_range)
     try:
         values = tuple(spec.provides[owner]())
-    except DuplicateKindError as exc:
-        return whole(Reason.duplicate_kind, str(exc))
-    except KindError as exc:
-        return whole(Reason.bad_provider, str(exc))
     except ContractError as exc:
         return whole(_reason(exc.reason), str(exc))
     except Exception as exc:
@@ -295,7 +291,7 @@ def _out_of_range(state: _State, spec: PluginSpec, owner: str) -> str | None:
 
 
 def _kinds(state: _State) -> Callable[[type[BaseModel]], str]:
-    """Each model's kind as the composition gave it, else its 11.x ``kind=`` (``""``: none).
+    """Each model's kind as composition gave it, else as :func:`kind_of` reads it (``""``: none).
 
     Read from the composition the registry holds, not the run, so a first ask
     from a thread that doesn't see the run binds the same kinds.

@@ -268,7 +268,7 @@ def test_profile_show_resolves_old_keys_to_new_names(config: Path) -> None:
     assert ProfileFileRepository().resolved("prod") == {"demo": {"cache_dir": "/old"}}
 
 
-class CacheDir(Record, kind="demo.cache_dir"):
+class CacheDir(Record):
     """Where demo caches."""
 
     path: str

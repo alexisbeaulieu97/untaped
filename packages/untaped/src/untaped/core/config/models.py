@@ -90,7 +90,7 @@ class SettingEntry(BaseModel):
     """For a deprecated setting: the plugin distribution whose major that is (``None``: core)."""
 
 
-class SettingOutcome(OutcomeRecord, kind="untaped.setting_outcome"):
+class SettingOutcome(OutcomeRecord):
     """The result of ``config set``/``unset``.
 
     ``action`` is ``updated`` (set), ``deleted`` or ``unchanged`` (unset), or
@@ -106,7 +106,7 @@ _UNSET = TableGlyph(none="—")
 """Tables show an unset value as ``—``; every other format prints it natively."""
 
 
-class Setting(Record, kind="untaped.setting"):
+class Setting(Record):
     """One row of ``config list``/``get``.
 
     ``value``/``default`` are native (``None`` when unset, secrets already

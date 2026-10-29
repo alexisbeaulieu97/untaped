@@ -1,6 +1,6 @@
 """The lint records: a rule, a finding, the tree lint reads, and where a finding is.
 
-Every kind is declared once, on its model. A rule's id is bare
+Composition names each kind after its model. A rule's id is bare
 (``default-branch``); the engine prefixes it with the provider's plugin
 (``acme.default-branch``), so nobody types a public id in source. A rule
 reads one record model, its subject; a ``Tree`` is the subject lint builds
@@ -233,7 +233,7 @@ def public(key: str, finding: Finding) -> Finding:
 
 
 def declared_kind(model: type[BaseModel]) -> str:
-    """The kind ``model`` declares, spelled only to write a record: the one place lint names one."""
+    """The kind composition gave ``model``, spelled only to write a record: lint's one place."""
     kind = kind_of(model)
     if kind is None:
         raise TypeError(f"{model.__qualname__} declares no kind")

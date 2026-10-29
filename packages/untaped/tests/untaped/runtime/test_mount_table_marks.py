@@ -224,12 +224,6 @@ class Cloned(OutcomeRecord):
     action: Annotated[str, Status(success=("cloned",), warning=("created",))]
 
 
-class Spelled(OutcomeRecord, kind="keeper.spelled_outcome"):
-    """An 11.x record (``kind=``): an unmarked column keeps the word map."""
-
-    status: str = "running"
-
-
 class Plain(Record):
     """A column named ``status`` with no ``Status``."""
 
@@ -263,7 +257,6 @@ def _roles(record: BaseModel) -> dict[str, str | None]:
         (Plain(status="failed"), {"status": None}),
         (Phased(phase=Phase.BROKEN), {"phase": "error"}),  # an enum, inside ``X | None``
         (Phased(), {"phase": None}),
-        (Spelled(action="removed"), {"action": "success", "status": "warning"}),
     ],
 )
 def test_a_field_s_status_roles_merge_down_its_classes(

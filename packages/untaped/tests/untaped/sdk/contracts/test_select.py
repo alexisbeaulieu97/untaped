@@ -34,7 +34,7 @@ from untaped.sdk.contracts import (
 )
 from untaped.sdk.contracts._select import bridged
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError, UsageError
-from untaped.sdk.records import record_model
+from untaped.sdk.records import kind_of, record_model
 
 
 def _answers(*items: Ok[list[Book]] | Errored | Skipped) -> Answers[list[Book]]:
@@ -214,7 +214,7 @@ class _Copycat(BookSource[Volume], Provider):
 
 
 def test_a_bridge_picks_the_most_derived_reader_and_refuses_a_tie() -> None:
-    archive = plugin("archive", fills=(_Archive,))
+    archive = plugin("archive", fills=(_Archive,), module=__name__)
     compose(shelf_plugin(), library_plugin(), archive)
     write_config(LIBRARY_CONFIG)
     signed = _envelope("library.special_volume", {"id": 4, "name": "Emma", "signed": True})
@@ -223,8 +223,8 @@ def test_a_bridge_picks_the_most_derived_reader_and_refuses_a_tie() -> None:
     assert book.source is not None and book.source.plugin == "archive"
     plain = convert(BookSource.to_book, _envelope("library.volume", {"id": 1, "name": "A"}))
     assert plain.source is not None and plain.source.plugin == "library"
-    copycat = plugin("copycat", fills=(_Copycat,))
+    copycat = plugin("copycat", fills=(_Copycat,), module=__name__)
     compose(shelf_plugin(), library_plugin(), copycat)
-    with pytest.raises(ConfigError, match="duplicate-kind") as err:
-        convert(BookSource.to_book, _envelope("library.volume", {"id": 1, "name": "A"}))
+    with pytest.raises(ConfigError, match="duplicate-kind") as err:  # its kind, whoever claims it
+        convert(BookSource.to_book, _envelope(kind_of(Volume), {"id": 1, "name": "A"}))
     assert err.value.exit_code == ExitCode.ENVIRONMENT

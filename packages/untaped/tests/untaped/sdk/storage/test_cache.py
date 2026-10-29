@@ -1129,7 +1129,7 @@ def test_code_version_refuses_a_module_without_a_file_and_a_bare_string(module: 
 # ---- the status row ------------------------------------------------------------
 
 
-class _ToyStatus(FreshnessRecord, kind="toy.status"):
+class _ToyStatus(FreshnessRecord):
     key: str
 
 

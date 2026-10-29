@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from lint_fake_records import Linttest
 from untaped.sdk import Plugin
 from untaped.sdk.testing import Ran, install
 from untaped_lint.plugin import LintPlugin
@@ -36,9 +37,10 @@ def run(
 ) -> Result:
     """``untaped lint ARGS``, with ``input`` piped on stdin.
 
-    lint is installed with ``plugins`` and ``providers``, one plugin per key.
+    lint is installed with the fake records' plugin, ``plugins`` and
+    ``providers``, one plugin per key.
     """
-    ran = install(LintPlugin, *plugins, settings=settings, providers=providers).cli(
+    ran = install(LintPlugin, Linttest, *plugins, settings=settings, providers=providers).cli(
         ["lint", *args], input=input
     )
     return Result(int(ran.exit), ran.stdout, "".join(f"{line}\n" for line in ran.stderr), ran)

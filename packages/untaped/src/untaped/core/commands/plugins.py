@@ -60,7 +60,7 @@ class List(Command[CoreSettings]):
         yield from rows
 
 
-class ContractMethod(Record, kind="untaped.contract_method"):
+class ContractMethod(Record):
     """One method of an installed contract and who fills it."""
 
     contract: Annotated[str, Column] = Field(description="`owner.contract`.")

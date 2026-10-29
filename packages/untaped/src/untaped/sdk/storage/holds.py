@@ -34,7 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from untaped.sdk.diagnostic import Failure, _Omitted
 from untaped.sdk.errors import ConfigError, UntapedError
-from untaped.sdk.fields import Column
+from untaped.sdk.fields import Column, Status
 from untaped.sdk.marks import experimental
 from untaped.sdk.records import OutcomeRecord
 from untaped.sdk.storage._fs import file_lock
@@ -602,7 +602,7 @@ class Plan:
         return not self.forget and not isinstance(self.answer, LetGo)
 
 
-class HoldOutcome(OutcomeRecord, kind="untaped.hold_outcome"):
+class HoldOutcome(OutcomeRecord):
     """One hold, or the holder itself, in a release, a move or a removal.
 
     ``holder`` names who lets go (``project PROJ-123``); ``plugin`` and
@@ -612,6 +612,7 @@ class HoldOutcome(OutcomeRecord, kind="untaped.hold_outcome"):
     """
 
     holder: str
+    action: Annotated[str, Status(success=("removed",)), Column]
     plugin: Annotated[str, Column]
     item: Annotated[str, Column]
     detail: Annotated[str, Column]

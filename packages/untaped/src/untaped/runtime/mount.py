@@ -53,7 +53,6 @@ from untaped.sdk._block import FieldBlock, Invocation, OwnedBlock
 from untaped.sdk._cli import report_errors
 from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
-from untaped.sdk.diagnostic import record_kinds
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, DryRun, File, Output, Stdin, _Stream
 from untaped.sdk.marks import (
@@ -183,8 +182,8 @@ class Mount:
 
     @cached_property
     def kinds(self) -> Mapping[str, type[BaseModel]]:
-        """Every record kind core knows and its model: the declaration's and 11.x's."""
-        found: dict[str, type[BaseModel]] = dict(record_kinds())
+        """Every record kind the declaration gives and its model."""
+        found: dict[str, type[BaseModel]] = {}
         for kind in self.declaration.kinds:
             try:
                 cls = resolve_target(kind.target)

@@ -15,7 +15,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from untaped_lint.providers.conventions import RULES
+from untaped_lint.providers.conventions import DECLARED
 from untaped_lint.records import RULE_ID
 
 PACKAGES = Path(__file__).resolve().parents[5]
@@ -109,11 +109,11 @@ def test_the_extraction_sees_each_way_an_id_is_written() -> None:
 
 
 def test_every_emitted_id_is_declared() -> None:
-    declared = {rule.id for rule in RULES}
+    declared = {rule.id for rule in DECLARED}
     undeclared = {rule: files for rule, files in _all_emitted().items() if rule not in declared}
     assert not undeclared, f"emitted but not in Conventions' table: {undeclared}"
 
 
 def test_every_declared_id_is_emitted() -> None:
     emitted = _all_emitted()
-    assert not [rule.id for rule in RULES if rule.id not in emitted]
+    assert not [rule.id for rule in DECLARED if rule.id not in emitted]

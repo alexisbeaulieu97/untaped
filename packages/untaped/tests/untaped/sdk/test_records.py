@@ -32,6 +32,7 @@ from untaped.runtime.sink import (
     current_sink,
     failure_exit_code,
 )
+from untaped.sdk import Plugin
 from untaped.sdk.diagnostic import (
     Debug,
     Deprecation,
@@ -44,18 +45,15 @@ from untaped.sdk.diagnostic import (
 from untaped.sdk.errors import ConfigError, HttpStatusError, HttpTransportError
 from untaped.sdk.records import (
     CheckRecord,
-    DuplicateKindError,
     Failure,
-    ForeignKindError,
     OutcomeRecord,
     Record,
     TargetRecord,
     UtcTimestamp,
     kind_of,
-    record_kinds,
     record_model,
 )
-from untaped.sdk.testing import compose_with
+from untaped.sdk.testing import Install, compose_with, install
 
 
 class _Stamped(BaseModel):
@@ -249,127 +247,61 @@ def test_an_interrupt_is_interrupted_everywhere() -> None:
 # ---- kinds -----------------------------------------------------------------
 
 
-class _Widget(Record, kind="acme-tools.widget"):
+class Widget(Record):
     name: str
 
 
-class _WidgetSummary(Record, kind="acme-tools.widget.summary"):
-    total: int
-
-
-class _SpecialWidget(_Widget):
+class SpecialWidget(Widget):
     colour: str
 
 
-def test_a_record_declares_its_kind_and_is_registered_under_it() -> None:
-    assert kind_of(_Widget) == "acme-tools.widget"
-    assert record_model("acme-tools.widget") is _Widget
-    assert record_kinds()["acme-tools.widget.summary"] is _WidgetSummary
-    assert "kind" not in _Widget.model_fields
-
-
-def test_bases_and_subclasses_without_kind_are_kind_less() -> None:
-    assert [kind_of(base) for base in (Record, OutcomeRecord, TargetRecord, CheckRecord)] == [
-        None,
-        None,
-        None,
-        None,
-    ]
-    assert kind_of(_SpecialWidget) is None
-    assert record_model("acme-tools.nothing") is None
-
-
-@pytest.mark.parametrize(
-    "kind",
-    ["acme_tools.widget", "acme.widget.extra", "acme.summary", "Acme.widget", "acme"],
-)
-def test_a_kind_outside_the_grammar_fails_at_definition(kind: str) -> None:
-    with pytest.raises(ValueError, match="invalid record kind"):
-
-        class _Bad(Record, kind=kind):
-            name: str
-
-
-def test_two_models_declaring_one_kind_is_duplicate_kind() -> None:
-    with pytest.raises(DuplicateKindError, match=r"kind 'acme-tools\.widget' is declared by both"):
-
-        class _Rival(Record, kind="acme-tools.widget"):
-            name: str
-
-    assert record_model("acme-tools.widget") is _Widget
-
-
-def test_a_plugin_package_declares_kinds_under_its_own_name() -> None:
-    class _Own(Record, kind="acme-tools.kit_part"):
-        __module__ = "untaped_acme_tools.records"
-        name: str
-
-    assert record_model("acme-tools.kit_part") is _Own
-
-
-@pytest.mark.parametrize(
-    ("module", "kind", "declarer", "fixes"),
-    [
-        (
-            "untaped_acme_tools.records",
-            "acme.gizmo",
-            "plugin 'acme-tools'",
-            "name it acme-tools.gizmo, or ship it in the package untaped_acme",
-        ),
-        (
-            "untaped_awx.records",
-            "untaped.gizmo",
-            "plugin 'awx'",
-            "name it awx.gizmo, or ship it in the package untaped",
-        ),
-        (
-            "untaped.records_extra",
-            "acme-tools.gizmo",
-            "core",
-            "name it untaped.gizmo, or ship it in the package untaped_acme_tools",
-        ),
-    ],
-)
-def test_a_kind_under_another_plugins_name_is_foreign_kind(
-    module: str, kind: str, declarer: str, fixes: str
-) -> None:
-    with pytest.raises(ForeignKindError, match=f"belongs to {declarer}; ") as caught:
-
-        class _Foreign(Record, kind=kind):
-            __module__ = module
-            name: str
-
-    assert str(caught.value).endswith(fixes)
-    assert caught.value.reason == "foreign-kind"
-    assert record_model(kind) is None
-
-
-def test_a_model_outside_plugin_packages_is_nobodys() -> None:
-    class _Anywhere(Record, kind="forge.gizmo"):
-        name: str
-
-    assert record_model("forge.gizmo") is _Anywhere
-
-
-def test_the_same_class_defined_again_replaces_itself() -> None:
-    def define() -> type[Record]:
-        class _Reloaded(Record, kind="acme-tools.reloaded"):
-            name: str
-
-        return _Reloaded
-
-    first, second = define(), define()
-
-    assert record_model("acme-tools.reloaded") is second
-    assert kind_of(first) == kind_of(second) == "acme-tools.reloaded"
-
-
-class _Page[T](Record, kind="acme-tools.page"):
+class Page[T](Record):
     items: list[T]
 
 
+class _NoSettings(BaseModel):
+    """Acme configures nothing."""
+
+
+class AcmeTools(Plugin):
+    """Lists the records whose kinds these tests read."""
+
+    settings = _NoSettings
+    records = (Widget, Page)
+
+
+def _acme() -> Install:
+    return install(AcmeTools, names={AcmeTools: "acme-tools"})
+
+
+def test_a_record_takes_its_kind_from_the_plugin_that_lists_it() -> None:
+    with _acme().running():
+        assert kind_of(Widget) == "acme-tools.widget"
+        assert record_model("acme-tools.widget") is Widget
+    assert "kind" not in Widget.model_fields
+
+
+def test_bases_and_unlisted_subclasses_are_kind_less() -> None:
+    with _acme().running():
+        assert [kind_of(base) for base in (Record, OutcomeRecord, TargetRecord, CheckRecord)] == [
+            None,
+            None,
+            None,
+            None,
+        ]
+        assert kind_of(SpecialWidget) is None
+        assert record_model("acme-tools.nothing") is None
+
+
+def test_outside_a_run_only_cores_own_records_have_kinds() -> None:
+    assert kind_of(Widget) is None
+    assert kind_of(Message) == "untaped.message"
+    assert record_model("untaped.message") is Message
+
+
 def test_a_parametrized_generic_record_has_its_generics_kind() -> None:
-    assert kind_of(_Page[int]) == "acme-tools.page"
+    with _acme().running():
+        assert kind_of(Page[int]) == "acme-tools.page"
 
 
 # ---- the round-trip check ----------------------------------------------------
@@ -447,7 +379,7 @@ class _Tree(BaseModel):
     children: list[_Tree] = []
 
 
-class _RoundTrips(Record, kind="acme-tools.round_trips"):
+class _RoundTrips(Record):
     model_config = ConfigDict(frozen=True, extra="forbid", validate_by_name=True)
 
     named: str = Field(alias="Named")
@@ -459,7 +391,7 @@ class _RoundTrips(Record, kind="acme-tools.round_trips"):
     tree: _Tree = _Tree()
 
 
-class _ByAlias(Record, kind="acme-tools.by_alias"):
+class _ByAlias(Record):
     model_config = ConfigDict(frozen=True, extra="forbid", serialize_by_alias=True)
 
     html_url: str = Field(alias="url")
@@ -989,12 +921,15 @@ _ROW_KEYS = {
     "untaped.skill": ["name", "description"],
     "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],
     "untaped.skill_outcome": ["name", "target", "scope", "target_path", "action"],
+    "untaped.register_outcome": ["holder", "action", "environment", "version", "targets"],
+    "untaped.hold_outcome": ["holder", "action", "plugin", "item", "detail", "hint"],
 }
 
 
 @pytest.mark.parametrize("kind", sorted(_ROW_KEYS))
 def test_a_core_model_writes_its_old_row_keys_in_their_order(kind: str) -> None:
-    sample = _samples()[kind]
+    with compose_with():  # the samples are keyed by composition's kinds
+        sample = _samples()[kind]
 
     assert list(json.loads(sample.model_dump_json())) == _ROW_KEYS[kind]
 
@@ -1016,7 +951,7 @@ def test_a_failed_prune_row_keeps_its_error_before_the_inherited_target_path(
     assert keys == ["what", "action", "detail", "bytes", "error", "target_path"]
 
 
-class _Answered(Record, kind="acme-tools.answered"):
+class _Answered(Record):
     """A service's row passed through: two typed fields, every other one kept."""
 
     model_config = ConfigDict(extra="allow")
@@ -1054,7 +989,7 @@ def test_an_open_record_writes_a_field_set_later_and_one_built_in_python() -> No
     }
 
 
-class _AnsweredProject(_Answered, kind="acme-tools.answered_project"):
+class _AnsweredProject(_Answered):
     """A subclass adding a typed field: the base's identity still leads."""
 
     scm_url: str | None = None

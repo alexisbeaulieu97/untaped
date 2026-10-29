@@ -24,7 +24,7 @@ from untaped.sdk.records import OutcomeRecord
 _NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 
 
-class _Row(OutcomeRecord, kind="acme-tools.row_outcome"):
+class _Row(OutcomeRecord):
     name: str
 
 

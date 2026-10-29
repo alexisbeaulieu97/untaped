@@ -950,7 +950,7 @@ def table_rows(
     word its field's ``Status`` names is a :class:`Roled` cell.
     """
     from untaped.sdk._run import run_clock  # noqa: PLC0415 - no cycle at import
-    from untaped.sdk.diagnostic import _spelled_kind, dumped_names  # noqa: PLC0415
+    from untaped.sdk.diagnostic import dumped_names  # noqa: PLC0415
 
     now = run_clock().now()
     spread_keys: dict[str, dict[str, None]] = {}
@@ -964,7 +964,6 @@ def table_rows(
             for name, dumped in dumped_names(type(record)).items()
         }
         roles = status_roles(type(record))
-        spelled = _spelled_kind(type(record)) is not None  # 11.x ``kind=``: the seam below
         out: dict[str, object] = {}
         for dumped, cell in row.items():  # the dump's order is the table's
             name, marks = fields.get(dumped, (None, []))
@@ -977,7 +976,7 @@ def table_rows(
                         out[str(key)] = item
             else:
                 out[dumped] = _marked_cell(marks, value, cell, now)
-            role = _role(roles.get(name or ""), value, seam=spelled and dumped in _SEAM_COLUMNS)
+            role = _role(roles.get(name or ""), value)
             if role is not None and isinstance(text := out.get(dumped), str):
                 out[dumped] = Roled(text, role)
         shown.append(out)
@@ -1019,62 +1018,13 @@ def _marked_cell(marks: list[object], value: object, cell: object, now: datetime
     return cell
 
 
-def _role(words: Mapping[str, str] | None, value: object, *, seam: bool) -> str | None:
-    """The role ``value``'s word is drawn in: its field's ``Status``, else the 11.x seam's."""
+def _role(words: Mapping[str, str] | None, value: object) -> str | None:
+    """The role ``value``'s word is drawn in: its field's ``Status``."""
     word = _plain(value)
     if not isinstance(word, str):
         return None  # a number, a list, ``None``: no word to draw
-    role = words.get(word) if words else None
-    if role is None and seam:
-        role = _SEAM_ROLES.get(word.lower())
-    return role
+    return words.get(word) if words else None
 
-
-#: The 11.x seam, removed with ``kind=``: a record of a plugin not yet moved
-#: keeps colouring these columns by these words where its field has no ``Status``.
-_SEAM_COLUMNS = frozenset({"status", "action", "result", "state", "job_status"})
-_SEAM_ROLES: dict[str, str] = {
-    **dict.fromkeys(
-        ("failed", "failure", "fail", "error", "errored", "conflict", "partial"), "error"
-    ),
-    **dict.fromkeys(
-        (
-            "warn",
-            "warning",
-            "skipped",
-            "pending",
-            "waiting",
-            "running",
-            "planned",
-            "stale",
-            "outdated",
-            "unavailable",
-            "canceled",
-            "cancelled",
-            "cancel_requested",
-        ),
-        "warning",
-    ),
-    **dict.fromkeys(
-        (
-            "successful",
-            "success",
-            "pass",
-            "passed",
-            "ok",
-            "ready",
-            "created",
-            "updated",
-            "deleted",
-            "synced",
-            "cloned",
-            "added",
-            "removed",
-            "completed",
-        ),
-        "success",
-    ),
-}
 
 #: A full git object name, and how much of it a table shows.
 _FULL_NAME = re.compile(r"[0-9a-f]{40}")
