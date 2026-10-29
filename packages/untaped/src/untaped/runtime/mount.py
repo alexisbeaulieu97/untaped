@@ -654,14 +654,24 @@ def _instance(
     data: dict[str, Any] = {}
     blocks: defaultdict[str, dict[str, object]] = defaultdict(dict)
     piped = any(option.block == Stdin.field_kind and value for option, value in given)
+    dashes = [
+        option
+        for option, value in given
+        if option.block is None
+        and option.or_stdin
+        and (value == "-" or (isinstance(value, list) and "-" in value))
+    ]
+    if len(dashes) > 1:
+        names = " and ".join(option.flag or option.metavar for option in dashes)
+        raise UsageError(f"{names} each give -, but only one can read stdin")
     for option, value in given:
         if option.block is not None:
             blocks[option.field][option.flag or ""] = value
         elif value is not None:
-            if option.or_stdin and (value == "-" or (isinstance(value, list) and "-" in value)):
+            if option in dashes:
                 _check_dash(option, piped=piped)
                 if _value_type(cls, option.field) is str:
-                    value = read_stdin_text()
+                    value = _piped_text(option)
             _put(data, cls, option.field, value)
     for path, flags in blocks.items():
         info = _field(cls, path)
@@ -755,6 +765,14 @@ def _check_dash(option: OptionDecl, *, piped: bool) -> None:
         raise UsageError(f"{name}: - reads stdin, so it can't be combined with --stdin")
     if stream_is_tty(sys.stdin):  # a terminal: never a wait for typing
         raise UsageError(f"{name}: - reads stdin; pipe it")
+
+
+def _piped_text(option: OptionDecl) -> str:
+    """The text a ``TextOrStdin`` ``-`` reads; an empty pipe is a usage error, as no value."""
+    text = read_stdin_text()
+    if not text:
+        raise UsageError(f"{option.flag or option.metavar}: - reads stdin, but nothing was piped")
+    return text
 
 
 def _value_type(cls: type[BaseModel], path: str) -> object:

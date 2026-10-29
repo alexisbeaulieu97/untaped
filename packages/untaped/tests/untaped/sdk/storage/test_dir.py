@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 from dataclasses import replace
@@ -76,12 +77,15 @@ def test_an_optional_setting_left_unset_is_the_default_place(
     assert Demo.checkouts.path == tmp_path / "home" / "plugins" / "demo" / "checkouts"
 
 
-@pytest.mark.parametrize("value", ["", "relative/checkouts", "/"])
+@pytest.mark.parametrize(
+    ("value", "shown"), [("", "."), ("relative/checkouts", "relative/checkouts"), ("/", "/")]
+)
 def test_a_setting_that_names_no_absolute_folder_says_so(
-    picked: dict[str, object], value: object
+    picked: dict[str, object], value: object, shown: str
 ) -> None:
     picked["checkouts_dir"] = value
-    with pytest.raises(ConfigError, match=r"demo\.checkouts: .* not an absolute path to a folder"):
+    said = f"demo.checkouts: the setting demo.checkouts_dir holds '{shown}', not an absolute"
+    with pytest.raises(ConfigError, match=re.escape(said)):
         Demo.checkouts.open()
 
 

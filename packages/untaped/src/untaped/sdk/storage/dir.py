@@ -162,18 +162,22 @@ class Dir(OwnedBlock):
             settings_of,
         )
 
-        default = current_run().home / PLUGINS_FOLDER / self.plugin / self.name
+        run = current_run()
+        default = run.home / PLUGINS_FOLDER / self.plugin / self.name
         if self.at is None:
             return default
-        value: object = settings_of(SettingKey.model_of(self.at))
-        for part in SettingKey.path_of(self.at):
+        model = SettingKey.model_of(self.at)
+        path = SettingKey.path_of(self.at)
+        value: object = settings_of(model)
+        for part in path:
             value = getattr(value, part)
         if value is None:
             return default  # an optional setting left unset
         folder = Path(value).expanduser() if isinstance(value, str | Path) and value else None
         if folder is None or not folder.is_absolute() or not folder.name:
+            setting = ".".join((run.composition.owner_of_settings(model), *path))
             raise ConfigError(
-                f"{self._label}: the setting {self.at!r} holds {value!r}, not an absolute "
+                f"{self._label}: the setting {setting} holds {str(value)!r}, not an absolute "
                 "path to a folder",
             )
         return folder

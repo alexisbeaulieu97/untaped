@@ -1,4 +1,4 @@
-"""A 12.0 plugin class's blocks and kinds reach core's 11.x commands: config and doctor."""
+"""A plugin class's blocks and kinds reach core's config and doctor commands."""
 
 from __future__ import annotations
 

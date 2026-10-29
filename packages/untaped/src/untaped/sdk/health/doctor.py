@@ -85,7 +85,8 @@ class DoctorResult:
     when an automatic fix is missing or has a placeholder.
 
     The row's id is its check's: core names the row after the ``DoctorCheck``
-    the body belongs to, so a body leaves ``id`` out. An 11.x body passes its
+    the body belongs to, so a body leaves ``id`` out. The SDK's built-in
+    checks (``ProgramCheck``, ``OnlineCheck``, the setup row) pass their
     check's ``id``, and a different one fails the row.
     """
 

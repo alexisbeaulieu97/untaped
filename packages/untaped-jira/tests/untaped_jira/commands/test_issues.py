@@ -309,18 +309,27 @@ def test_issue_comment_missing_body_uses_sdk_error(jira: Invoke) -> None:
     assert len(route.calls) == 0
 
 
-@pytest.mark.parametrize(
-    ("body", "piped"), [(["--body", "  "], None), (["--body", "-"], ""), (["--body", "-"], "\n")]
-)
+@pytest.mark.parametrize(("body", "piped"), [("  ", None), ("-", " \n")])
 def test_a_blank_comment_body_is_refused_before_sending(
-    body: list[str], piped: str | None, jira: Invoke
+    body: str, piped: str | None, jira: Invoke
 ) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = mock.route()
-        result = jira(["issues", "comment", "ABC-1", *body], input=piped)
+        result = jira(["issues", "comment", "ABC-1", "--body", body], input=piped)
 
     assert result.exit_code == 1, result.output
     assert "no body provided" in result.stderr
+    assert len(route.calls) == 0
+
+
+@pytest.mark.parametrize("piped", ["", "\n"])
+def test_a_body_of_dash_on_an_empty_pipe_is_a_usage_error(piped: str, jira: Invoke) -> None:
+    with respx.mock(base_url=BASE, assert_all_called=False) as mock:
+        route = mock.route()
+        result = jira(["issues", "comment", "ABC-1", "--body", "-"], input=piped)
+
+    assert result.exit_code == 2, result.output
+    assert "--body: - reads stdin, but nothing was piped" in result.stderr
     assert len(route.calls) == 0
 
 

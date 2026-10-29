@@ -54,10 +54,10 @@ def test_the_environment_forces_the_diagnostics_either_way() -> None:
     assert OutputPolicy(format="table").diagnostics == "text"
 
 
-def test_a_fixed_rendering_fixes_the_policy_and_an_11x_note_changes_nothing() -> None:
+def test_a_fixed_rendering_fixes_the_policy_and_a_later_note_changes_nothing() -> None:
     theme = BUILTIN_THEMES["high-contrast"]
     with entered(start_run()) as run:
-        note_requested_format(["-f", "json"])  # the 11.x seam's phase 1, before it is fixed
+        note_requested_format(["-f", "json"])  # the root's first phase, before it is fixed
         assert run.policy.diagnostics == "json"
         run.render_with(Rendering(format="table", theme=theme))
         note_requested_format(["-f", "json"])
@@ -86,7 +86,7 @@ def test_a_policy_written_under_a_child_run_is_the_one_its_shared_sink_follows()
         with child_run(overlay=SettingsOverlay("default", "hello", {})) as child:
             quiet(child)  # written under the child
             Diagnostics().info("muted in the child")
-            note_requested_format(["--format", "json"])  # the 11.x seam's phase 1
+            note_requested_format(["--format", "json"])  # the root's first phase
             Diagnostics().warning("a JSON line")
             assert is_quiet() and run.policy.quiet
             assert child.policy is run.policy

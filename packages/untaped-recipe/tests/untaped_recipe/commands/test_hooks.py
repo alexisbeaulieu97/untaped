@@ -858,3 +858,29 @@ def test_a_successful_hook_that_prints_error_still_exits_0(
     assert result.exit_code == 0, result.output
     assert result.stdout == "start!"
     assert "error: only the hook's own log line" in result.stderr
+
+
+def test_hook_run_content_from_an_empty_pipe_is_refused_while_an_empty_value_runs(
+    tmp_path: Path,
+) -> None:
+    hook_project = tmp_path / "hooks"
+    write_hook_project(
+        hook_project,
+        public_name="show_context",
+        module_name="show_context",
+        code=(
+            "def transform(content, *, inputs, target, file, args, helpers):\n"
+            "    return f'[{content}]'\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+    args = ["hooks", "run", "show_context", *_ctx(hook_project, target), "--file", "f.txt"]
+
+    piped = run([*args, "--content", "-"], input="")
+    given = run([*args, "--content", ""])
+
+    assert piped.exit_code == 2, piped.output
+    assert "error: --content: - reads stdin, but nothing was piped" in piped.stderr
+    assert given.exit_code == 0, given.output
+    assert given.stdout == "[]"
