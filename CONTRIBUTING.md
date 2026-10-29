@@ -165,7 +165,7 @@ or becomes an SDK helper that every plugin can use. Declare a
   [`CHANGELOG.md`](CHANGELOG.md). Never copy `--help` output, default columns
   or API signatures into docs.
 - **Config and state format.** Within a major, a core-owned key may be added
-  to `config.yml` or `state.yml` only if an older reader ignoring it is safe;
+  to `config.yml` or a state file only if an older reader ignoring it is safe;
   anything else (TLS verification, a proxy, anything security-relevant) is a
   `format_version` bump, which only a major makes.
 - **Config reference.** After changing a settings model, run
@@ -451,8 +451,8 @@ under the owner's `cached/<contract>_<method>/`.
 **Repo store**: the git plugin's shared bare repositories under
 `plugins/git/store/`, which every consumer's refs and worktrees depend on.
 
-**State**: data a plugin keeps as the only copy, in `state.yml`, through
-`StateRows` (typed rows) or `StateMap` (strings).
+**State**: data a plugin keeps as the only copy, in its own `state.yml`,
+through `StateRows` (typed rows).
 
 **Cache**: upstream data a plugin keeps and can fetch again, checked once it
 is older than its max age; see [Caches](docs/caches.md).

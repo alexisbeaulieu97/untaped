@@ -174,16 +174,13 @@ def test_a_redundant_spelling_is_dropped(
     assert "mig:\n  cache_dir: /b\n" in _isolated_config.read_text()
 
 
-def test_state_and_deprecated_settings_are_left_alone(_isolated_config: Path) -> None:
-    state = _isolated_config.parent / "state.yml"
-    state.write_text("mig:\n  corpus_path: /s\n")
+def test_deprecated_settings_are_left_alone(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\nmig:\n  legacy: true\n")
 
     result = _migrate()
 
     assert result.exit_code == 0, result.output
     assert "no renamed, retired or deleted keys in the config" in result.stderr
-    assert state.read_text() == "mig:\n  corpus_path: /s\n"
     assert "legacy: true" in _isolated_config.read_text()
 
 

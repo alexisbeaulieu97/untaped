@@ -75,8 +75,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "AppContext",
         "ProjectStateRows",
         "RowExists",
-        "StateCollection",
-        "StateMap",
         "StateRows",
         "app_context",
     ),

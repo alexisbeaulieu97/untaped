@@ -235,8 +235,6 @@ from untaped.sdk.storage.holds import (
 from untaped.sdk.storage.state import (
     ProjectStateRows,
     RowExists,
-    StateCollection,
-    StateMap,
     StateRows,
 )
 from untaped.sdk.storage.store import Store, setting_guard
@@ -425,8 +423,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "AppContext",
     "ProjectStateRows",
     "RowExists",
-    "StateCollection",
-    "StateMap",
     "StateRows",
     "app_context",
     # output and records

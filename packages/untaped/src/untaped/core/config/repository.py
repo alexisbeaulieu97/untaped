@@ -33,7 +33,7 @@ from untaped.runtime.settings import (
     active_settings_layout,
     env_var_name,
     env_var_setting,
-    get_profile_settings_model,
+    get_settings_model,
     load_core_part,
     load_settings_section,
     model_sections,
@@ -440,7 +440,7 @@ class SettingsFileRepository:
         return [(section, *old.split(".")) for old in old_spellings(model, _relative(descriptor))]
 
     def _profile_model(self) -> type[Settings]:
-        return self._settings_cls or get_profile_settings_model()
+        return self._settings_cls or get_settings_model()
 
     def _validate_section(
         self, data: dict[str, Any], descriptor: FieldDescriptor, *, profile: str

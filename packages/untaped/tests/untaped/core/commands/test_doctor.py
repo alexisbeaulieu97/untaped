@@ -39,7 +39,7 @@ from untaped.runtime.registry import (
     PluginCandidate,
     named_plugin_dir,
 )
-from untaped.runtime.settings import FORMAT_VERSION, STATE_FORMAT_VERSION, get_settings
+from untaped.runtime.settings import FORMAT_VERSION, get_settings
 from untaped.sdk import Command, Key, Plugin
 from untaped.sdk.fields import Positional
 from untaped.sdk.network._credential_store import INDEX, CredentialRow
@@ -499,21 +499,25 @@ def test_non_mapping_config_root_fails_config_row(_isolated_config: Path) -> Non
 def test_a_newer_format_fails_the_config_rows(_isolated_config: Path) -> None:
     newer = FORMAT_VERSION + 1
     write_config(_isolated_config, f"format_version: {newer}\nprofiles: {{}}\n")
-    (_isolated_config.parent / "state.yml").write_text(f"format_version: {newer}\n")
     code, rows = _rows(_doctor_app())
     assert code == 1
-    failed = _failed(rows)
-    assert f"written by a newer untaped (format {newer}" in failed["load config file"]
-    assert f"written by a newer untaped (format {newer}" in failed["load state file"]
+    assert f"written by a newer untaped (format {newer}" in _failed(rows)["load config file"]
+
+
+def test_11x_shared_state_fails_the_config_rows(_isolated_config: Path) -> None:
+    write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n")
+    (_isolated_config.parent / "state.yml").write_text("demo: {}\n")
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    assert _failed(rows)["load config file"].endswith(
+        "written by untaped 11.x; this release keeps each plugin's state under plugins/ and "
+        "has no upgrade path; delete it, or keep untaped 11.1 for this home"
+    )
 
 
 def test_an_explicit_format_version_is_not_an_unknown_key(_isolated_config: Path) -> None:
     write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\nprofiles: {{}}\n")
-    acme = _acme(items=StateRows[_Row]())
-    state_file = _isolated_config.parent / "plugins" / "acme" / "state.yml"
-    state_file.parent.mkdir(parents=True)
-    state_file.write_text(f"format_version: {STATE_FORMAT_VERSION}\n")
-    code, rows = _rows(_doctor_app(acme))
+    code, rows = _rows(_doctor_app())
     assert code == 0, _failed(rows)
     (unknown,) = [row for row in rows if row["check"] == "untaped.unknown-keys"]
     assert unknown["status"] == _PASS

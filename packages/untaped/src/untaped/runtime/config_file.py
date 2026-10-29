@@ -1,9 +1,9 @@
-"""Read/write helpers for ``~/.untaped/config.yml`` and ``state.yml``.
+"""Read/write helpers for ``~/.untaped/config.yml`` and a plugin's ``state.yml``.
 
 These are the lowest-level primitives behind the root ``untaped config
 set/unset`` commands and plugin state writes. They never validate
 against the Settings schema — that's the caller's job. Settings writes only
-touch the config file; state writes only touch the state file.
+touch the config file; state writes only touch a plugin's state file.
 
 Writes are round-trips (see :mod:`untaped.runtime.yaml_roundtrip`): only the keys a
 mutation changed are rewritten, so the user's comments, key order and
@@ -25,12 +25,10 @@ from pydantic import SecretStr
 from untaped.runtime.settings import (
     FORMAT_VERSION,
     FormatVersionError,
-    check_state_section_name,
     get_settings,
     load_config_yaml,
     load_state_yaml,
     resolve_config_path,
-    resolve_state_path,
 )
 from untaped.runtime.yaml_roundtrip import KeyRename, plain_dump, render_preserving
 from untaped.sdk.errors import ConfigError
@@ -50,12 +48,9 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     return load_config_yaml(path or resolve_config_path())
 
 
-def read_state_dict(path: Path | None = None) -> dict[str, Any]:
-    """Load a state file (default: the top-level ``state.yml``) as a plain dict.
-
-    Raises as :func:`read_config_dict` does, but a state file may be unstamped.
-    """
-    return load_state_yaml(path or resolve_state_path())
+def read_state_dict(path: Path) -> dict[str, Any]:
+    """Load a plugin's state file as a plain dict, raising as :func:`read_config_dict` does."""
+    return load_state_yaml(path)
 
 
 def write_config_dict(
@@ -200,61 +195,6 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
             atomic_write(target, text, mode=0o600)
         except OSError as exc:
             raise ConfigError(f"could not write {target}: {exc.strerror or exc}") from exc
-        get_settings.cache_clear()
-
-
-def read_plugin_state(section: str, path: Path | None = None) -> dict[str, Any]:
-    """Return a copy of a plugin's state ``section`` dict, or ``{}``.
-
-    State is read from ``state.yml`` (``path``, default
-    :func:`~untaped.runtime.settings.resolve_state_path`).
-    """
-    check_state_section_name(section)
-    raw = read_state_dict(path).get(section)
-    return copy.deepcopy(raw) if isinstance(raw, dict) else {}
-
-
-def mutate_plugin_state(
-    section: str,
-    fn: Callable[[dict[str, Any]], None],
-    path: Path | None = None,
-) -> None:
-    """Safely mutate a plugin's state ``section`` in ``state.yml`` under its lock.
-
-    ``fn`` receives only the named section's dict to mutate in place; every other
-    section — and any keys within this section that ``fn`` does not touch — is
-    preserved. Independent plugins share one state file (possibly across SDK
-    versions), so a write must never drop data it doesn't understand. The section
-    is removed when ``fn`` leaves it empty; nothing is written when ``fn``
-    changes nothing. ``path`` resolves as in :func:`read_plugin_state`. A
-    write to the same file from inside ``fn`` raises :class:`UntapedError`
-    and writes nothing; a failed write (a full disk) raises
-    :class:`ConfigError` and leaves the file as it was.
-    """
-    check_state_section_name(section)
-    state_path = path or resolve_state_path()
-    with _locked(state_path):
-        state = read_state_dict(state_path)
-        existing = state.get(section)
-        if existing is not None and not isinstance(existing, dict):
-            raise ConfigError(
-                f"invalid state: section {section!r} in {state_path} must be a mapping"
-            )
-        before: dict[str, Any] = copy.deepcopy(existing) if existing is not None else {}
-        sub = copy.deepcopy(before)
-        fn(sub)
-        if sub == before:
-            return
-        if sub:
-            state[section] = sub
-        else:
-            state.pop(section, None)
-        try:
-            write_state_dict(state, state_path)
-        except OSError as exc:
-            raise ConfigError(
-                f"could not write {state_path}: {exc.strerror or exc}; nothing changed"
-            ) from exc
         get_settings.cache_clear()
 
 

@@ -51,7 +51,6 @@ from untaped.sdk.records import DuplicateKindError, record_model
         lambda: make_spec(name="acme-"),
         lambda: PluginSpec(name="quiet", help="Has no commands."),
         lambda: make_spec(settings=dict),
-        lambda: make_spec(state=dict),
         lambda: QuarantineRecord(
             name="n", distribution="d", entry_point="e", reason="nope", detail="x"
         ),
@@ -73,7 +72,6 @@ from untaped.sdk.records import DuplicateKindError, record_model
         "spec-name-trailing-hyphen",
         "spec-help-without-commands",
         "spec-settings-not-model",
-        "spec-state-not-model",
         "quarantine-unknown-reason",
         "quarantine-blank-detail",
     ],
@@ -147,7 +145,7 @@ def test_core_is_read_as_a_plugin_spec() -> None:
     from untaped.core.settings import NAME, CoreSettings
 
     core = compose().plugins[0].spec
-    assert (core.name, core.settings, core.state) == (NAME, CoreSettings, None)
+    assert (core.name, core.settings) == (NAME, CoreSettings)
     assert f"{NAME}.token-store" in [check.id for check in core.doctor_checks]
     # core's stub skill is named after it, not ``untaped-untaped``
     assert [skill.name for skill in core.skills] == [NAME]
@@ -157,7 +155,6 @@ def _read(core: PluginSpec) -> tuple[object, ...]:
     return (
         core.name,
         core.settings,
-        core.state,
         tuple(check.id for check in core.doctor_checks),
         core.skills,
         tuple(cache.qualified for cache in core.caches),
@@ -242,12 +239,10 @@ def test_compose_leaves_global_settings_registry_untouched() -> None:
     from untaped.runtime.settings import _CONFIG_REGISTRY
 
     before_profiles = dict(_CONFIG_REGISTRY.profile_sections)
-    before_state = dict(_CONFIG_REGISTRY.state_sections)
     compose(
         [make_candidate(make_plugin("alpha")), make_candidate(make_plugin("beta"))],
     )
     assert dict(_CONFIG_REGISTRY.profile_sections) == before_profiles
-    assert dict(_CONFIG_REGISTRY.state_sections) == before_state
 
 
 def test_failed_provider_registers_nothing() -> None:

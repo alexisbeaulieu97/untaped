@@ -1,8 +1,8 @@
 """Generate ``docs/reference/config.md`` from the composed settings models.
 
 The page lists every setting of core (``untaped.http.*``, ``untaped.ui.*``,
-``untaped.skills.*``) and of each first-party plugin's settings model, plus each
-plugin's state model. Types, defaults and environment variables come from
+``untaped.skills.*``) and of each first-party plugin's settings model, plus the
+state rows each plugin class holds. Types, defaults and environment variables come from
 the Pydantic models, and each description from the field's
 ``Field(description=...)``, followed by its :class:`~untaped.sdk._schema.Choices`
 names and its bounds when it has them.
@@ -45,8 +45,8 @@ _HEADER = """\
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `<section>` in `~/.untaped/config.yml` (a named profile's
 under `profiles.<name>.<section>`);
-state lives in `~/.untaped/state.yml`, or the file its section names, and
-is written only by the owning plugin's commands. See
+state lives in each plugin's own `~/.untaped/plugins/<plugin>/state.yml`
+and is written only by that plugin's commands. See
 [Configuration](../configuration.md) for the file layout, profiles and
 precedence.
 

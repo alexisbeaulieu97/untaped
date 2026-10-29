@@ -217,7 +217,7 @@ it as is. Set `automatic=True` only on a fix that meets the rule in the
 ## Keeping what users create
 
 What only your plugin holds, such as the records its commands create, is
-[state](./state.md): typed rows in a `StateRows` listed on `PluginSpec.stores`.
+[state](./state.md): typed rows in a `StateRows` your plugin class holds.
 
 ## Caching what an upstream answers
 

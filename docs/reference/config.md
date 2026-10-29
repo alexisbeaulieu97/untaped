@@ -5,8 +5,8 @@
 Every setting `untaped` reads, generated from the settings models. Profile
 settings live under `<section>` in `~/.untaped/config.yml` (a named profile's
 under `profiles.<name>.<section>`);
-state lives in `~/.untaped/state.yml`, or the file its section names, and
-is written only by the owning plugin's commands. See
+state lives in each plugin's own `~/.untaped/plugins/<plugin>/state.yml`
+and is written only by that plugin's commands. See
 [Configuration](../configuration.md) for the file layout, profiles and
 precedence.
 

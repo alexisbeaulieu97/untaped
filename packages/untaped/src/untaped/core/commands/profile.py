@@ -29,7 +29,7 @@ from untaped.core.profile.use_cases import (
     ShowProfile,
 )
 from untaped.core.settings import CoreSettings
-from untaped.runtime.settings import get_profile_settings_model, resolve_config_path
+from untaped.runtime.settings import get_settings_model, resolve_config_path
 from untaped.sdk._schema import redact_secrets, secret_field_paths
 from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
@@ -73,7 +73,7 @@ class Show(Command[CoreSettings]):
         profile = ShowProfile(ProfileFileRepository())(self.name, raw=self.raw)
         data = profile.data
         if not self.show_secrets:
-            data = redact_secrets(data, secret_field_paths(get_profile_settings_model()))
+            data = redact_secrets(data, secret_field_paths(get_settings_model()))
         return ProfileView(name=profile.name, selected=profile.selected, raw=self.raw, data=data)
 
 

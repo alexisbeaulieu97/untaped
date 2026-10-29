@@ -27,7 +27,6 @@ from pydantic import BaseModel
 
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.health.deprecated_keys import mapping_errors
-from untaped.sdk.marks import mark_errors
 
 NAMING = "settings-naming"
 RENAMES = "settings-renames"
@@ -59,21 +58,14 @@ def settings_name_violations(
     section: str,
     model: type[BaseModel],
     root: Path,
-    *,
-    state: type[BaseModel] | None = None,
 ) -> list[str]:
     """Violations of ``model`` (the ``section`` model) and the models it reaches.
 
-    Paths are relative to ``root`` when the model's file is under it. The
-    section's ``state`` model, when given, is checked only for stability marks.
+    Paths are relative to ``root`` when the model's file is under it.
     """
     errors = mapping_errors(model)
     where = _class_location(model, root) if errors else ""
     found = [f"{where}::{RENAMES}::{error}" for error in errors]
-    if state is not None:
-        state_errors = mark_errors(state, state=True)
-        state_where = _class_location(state, root) if state_errors else ""
-        found.extend(f"{state_where}::{RENAMES}::{error}" for error in state_errors)
     found.extend(_naming_violations(section, model, root))
     return found
 

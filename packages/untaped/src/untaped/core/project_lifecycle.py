@@ -4,7 +4,7 @@
 project's holds: each owner plans, the plans are previewed, one refusal
 applies nothing, and after confirmation each plan applies on a fresh ask.
 When no hold is left, ``remove`` deletes only what core wrote in the folder
-(``project.json``, ``state.yml``, ``plugins/``, its own lock files and an untouched
+(``project.json``, ``plugins/``, its own lock file and an untouched
 ``.gitignore``) and then the reference; ``config.yml`` and people's files
 stay, and so does the folder unless nothing else is in it. ``prune`` does
 the same for every project whose folder is gone, keeping those it can't read
@@ -25,7 +25,6 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.runtime.settings import STATE_FILE_NAME
 from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError
@@ -76,7 +75,7 @@ from untaped.sdk.storage.holds import (
 from untaped.sdk.words import shown_path
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
-_CORE_FILES = (MARKER, STATE_FILE_NAME)
+_CORE_FILES = (MARKER,)
 
 
 @dataclass(frozen=True)

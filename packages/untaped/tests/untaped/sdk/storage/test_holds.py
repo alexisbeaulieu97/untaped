@@ -270,7 +270,6 @@ def test_remove_releases_each_hold_then_deletes_only_what_core_wrote(tmp_path: P
     folder = first.root / ".untaped"
     (folder / "config.yml").write_text("awx: {}\n", encoding="utf-8")
     (folder / "lint.yml").write_text("version: 1\n", encoding="utf-8")
-    (folder / "state.yml").write_text("format_version: 1\n", encoding="utf-8")
     (folder / "plugins" / "acme").mkdir(parents=True)
     (first.root / "notes.md").write_text("mine\n", encoding="utf-8")
     result = _cli("project", "remove", str(first.root), "--yes", "--format", "json")
@@ -870,7 +869,7 @@ def test_remove_keeps_lock_named_files_that_are_not_cores(tmp_path: Path) -> Non
     (folder / "mine.lock").mkdir()
     (folder / "mine.lock" / "precious.txt").write_text("x", encoding="utf-8")
     (folder / "recipe.lock").write_text("pinned\n", encoding="utf-8")
-    (folder / "state.yml.lock").write_text("", encoding="utf-8")
+    (folder / "config.yml.lock").write_text("", encoding="utf-8")
     (folder / "plugins").write_text("not a folder", encoding="utf-8")
     result = _cli("project", "remove", str(project.root), "--yes", "-f", "json")
     assert result.exit_code == 0, result.output

@@ -84,7 +84,7 @@ def _lines(candidate: PluginCandidate) -> set[str]:
 
 
 def test_settings_and_state_lines() -> None:
-    lines = _lines(_bins(settings=Settings, seen=StateRows(model=Seen)))
+    lines = _lines(_bins(settings=Settings, seen=StateRows[Seen]()))
     assert {line for line in lines if line.startswith(("cfg ", "state "))} == {
         "cfg bins.output choice=json",
         "cfg bins.output choice=table",

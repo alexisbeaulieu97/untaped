@@ -16,12 +16,12 @@ import yaml
 from untaped.core.profile.repository import ProfileFileRepository
 from untaped.runtime.config_file import (
     mutate_config,
-    mutate_plugin_state,
     read_config_dict,
     read_state_dict,
     set_at_path,
     unset_at_path,
     write_config_dict,
+    write_state_dict,
 )
 from untaped.sdk import yaml_mapping_indent
 
@@ -122,28 +122,23 @@ def test_written_strings_read_back_as_strings(cfg: Path, value: str) -> None:
     assert "# rotate monthly" in text  # round-tripped, not re-dumped
 
 
-def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
-    state_file = cfg.parent / "state.yml"
+def test_a_state_write_preserves_the_state_file_s_comments(cfg: Path) -> None:
+    state_file = cfg.parent / "plugins" / "workspace" / "state.yml"
+    state_file.parent.mkdir(parents=True)
     state_file.write_text(
-        "# managed by untaped\nworkspace:\n  active:\n    - name: alpha   # first\n"
-        '      created_at: "2026-10-01T00:00:00Z"\n      repos: []\n',
+        "# managed by untaped\nactive:\n  - name: alpha   # first\n"
+        '    created_at: "2026-10-01T00:00:00Z"\n    repos: []\n',
         encoding="utf-8",
     )
 
-    def _add(state: dict[str, object]) -> None:
-        rows = state["active"]
-        assert isinstance(rows, list)
-        rows.append({"name": "beta", "created_at": "2026-10-01T00:00:00Z", "repos": []})
-
-    mutate_plugin_state("workspace", _add)
+    state = read_state_dict(state_file)
+    state["active"].append({"name": "beta", "created_at": "2026-10-01T00:00:00Z", "repos": []})
+    write_state_dict(state, state_file)
 
     text = state_file.read_text(encoding="utf-8")
-    assert "    - name: alpha   # first\n" in text
+    assert "  - name: alpha   # first\n" in text
     assert text.startswith("# managed by untaped\n")
-    assert [row["name"] for row in read_state_dict(state_file)["workspace"]["active"]] == [
-        "alpha",
-        "beta",
-    ]
+    assert [row["name"] for row in read_state_dict(state_file)["active"]] == ["alpha", "beta"]
     assert cfg.read_text(encoding="utf-8") == COMMENTED  # config.yml untouched
 
 

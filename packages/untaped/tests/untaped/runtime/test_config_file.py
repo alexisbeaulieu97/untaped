@@ -9,9 +9,7 @@ import pytest
 
 from untaped.runtime.config_file import (
     mutate_config,
-    mutate_plugin_state,
     read_config_dict,
-    read_plugin_state,
     set_at_path,
     unset_at_path,
     write_config_dict,
@@ -382,16 +380,30 @@ def test_nested_config_write_is_refused(tmp_path: Path) -> None:
 
 
 def test_nested_write_to_another_file_goes_through(tmp_path: Path) -> None:
-    state = tmp_path / "state.yml"
+    other = tmp_path / "other.yml"
     config = tmp_path / "config.yml"
 
     def _outer(data: dict[str, Any]) -> None:
         data["a"] = 1
-        mutate_plugin_state("demo", lambda section: section.update(b=2), path=state)
+        mutate_config(lambda inner: inner.update(b=2), path=other)
 
     mutate_config(_outer, path=config)
     assert read_config_dict(config) == {"format_version": 2, "a": 1}
-    assert read_plugin_state("demo", path=state) == {"b": 2}
+    assert read_config_dict(other) == {"format_version": 2, "b": 2}
+
+
+def test_nested_write_to_the_same_file_through_a_symlink_is_refused(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+    link = tmp_path / "link.yml"
+    link.symlink_to(cfg)
+
+    def _outer(data: dict[str, Any]) -> None:
+        data["a"] = 1
+        mutate_config(lambda inner: inner.update(b=2), path=link)
+
+    with pytest.raises(UntapedError, match="inside another write"):
+        mutate_config(_outer, path=cfg)
+    assert not cfg.exists()
 
 
 def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(

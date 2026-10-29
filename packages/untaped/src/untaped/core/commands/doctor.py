@@ -32,14 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from untaped.core.commands import records
 from untaped.core.commands._render import emit_check_list, emit_isolated
 from untaped.core.commands.skills import composed_skills
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import SkillState, local_project_root, outdated_skills
-from untaped.runtime.config_file import read_config_dict, read_state_dict
+from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     current_pick,
@@ -55,8 +55,6 @@ from untaped.runtime.registry import (
     owns_contracts,
     run_deferred_factory,
     section_settings,
-    state_declarations,
-    state_model,
 )
 from untaped.runtime.run import child_run
 from untaped.runtime.settings import (
@@ -65,7 +63,6 @@ from untaped.runtime.settings import (
     check_settings_field,
     profile_section_models,
     resolve_config_path,
-    resolve_state_path,
     resolve_with_overlay,
     retired_env_vars,
     section_stabilities,
@@ -73,7 +70,7 @@ from untaped.runtime.settings import (
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
 from untaped.sdk._run import SettingsOverlay
-from untaped.sdk.errors import ConfigError, Failed, UntapedError, first_validation_error
+from untaped.sdk.errors import ConfigError, Failed, UntapedError
 from untaped.sdk.fields import Confirm, Output, table_row
 from untaped.sdk.health._setup_status import SETUP_CHECK, setup_result
 from untaped.sdk.health.deprecated_keys import scan_keys
@@ -116,7 +113,6 @@ class _SectionScope:
     plugin: str
     section: str
     settings_model: type[BaseModel] | None
-    state_model: type[BaseModel] | None
     checks: tuple[DoctorCheck, ...]
     rows: tuple[StateRows[Any] | ProjectStateRows[Any], ...] = ()
     """The section's typed rows, each read by its own rules."""
@@ -340,16 +336,8 @@ def _plugin_scope(
         plugin=spec.name,
         section=spec.name,
         settings_model=section_settings(spec) if settings else None,
-        state_model=state_model(spec),
         checks=tuple(spec.doctor_checks),
-        rows=(
-            *(
-                each
-                for each in state_declarations(spec)
-                if isinstance(each, StateRows | ProjectStateRows)
-            ),
-            *held,
-        ),
+        rows=held,
     )
 
 
@@ -369,8 +357,6 @@ def collect_doctor_rows(
     rows.append(config_row)
     if raw is not None:
         rows.append(_deprecated_keys_row(raw))
-    state, state_file_row = _state_file_row()
-    rows.append(state_file_row)
     settings_error: str | None = None
     effective: Mapping[str, Any] | None = None
     if raw is None:
@@ -390,8 +376,8 @@ def collect_doctor_rows(
         settings = _settings_row(scope, effective, settings_error, rows)
         contexts.append((scope, settings))
         rows.extend(_setup_rows(scope, settings, profile=profile))
-        if scope.state_model is not None or scope.rows:
-            rows.append(_state_row(scope, scope.state_model, state))
+        if scope.rows:
+            rows.append(_state_row(scope))
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
     rows.append(_skills_row(result))
@@ -834,19 +820,9 @@ def _config_row() -> tuple[dict[str, Any] | None, dict[str, object]]:
     try:
         raw = read_config_dict(path)
     except ConfigError as exc:
-        return None, _row("config", NAME, _FAIL, "load config file", str(exc))
+        detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
+        return None, _row("config", NAME, _FAIL, "load config file", detail)
     return raw, _row("config", NAME, _PASS, "load config file", str(path))
-
-
-def _state_file_row() -> tuple[tuple[dict[str, Any], Path] | None, dict[str, object]]:
-    """Load ``state.yml``; return ``((raw, path), row)`` or ``(None, failed row)``."""
-    title = "load state file"
-    try:
-        path = resolve_state_path()
-        raw = read_state_dict(path)
-    except ConfigError as exc:
-        return None, _row("config", NAME, _FAIL, title, str(exc))
-    return (raw, path), _row("config", NAME, _PASS, title, str(path))
 
 
 def _profile_row(settings_error: str | None) -> dict[str, object]:
@@ -891,37 +867,18 @@ def _core_row(
     return _row("settings", NAME, _PASS, title, "settings OK")
 
 
-def _state_row(
-    scope: _SectionScope,
-    state_model: type[BaseModel] | None,
-    state: tuple[dict[str, Any], Path] | None,
-) -> dict[str, object]:
-    """Validate a plugin's state section in ``state.yml`` (profile-independent).
+def _state_row(scope: _SectionScope) -> dict[str, object]:
+    """Read a plugin's state rows, each by its own rules (profile-independent).
 
-    Typed rows are read by their own rules (a damaged row fails with its
-    fix); inside a project, so are that project's rows.
+    A damaged row fails with its fix; inside a project, so do that project's rows.
     """
     title = "validate state"
-    if state is None:
-        return _row("state", scope.plugin, _FAIL, title, "state file could not be read")
-    state_raw, source = state
-    node = state_raw.get(scope.section)
-    if node is not None and not isinstance(node, dict):
-        detail = f"state section {scope.section!r} in {source} must be a mapping"
-        return _row("state", scope.plugin, _FAIL, title, detail)
-    owned = {rows.name for rows in scope.rows}
-    try:
-        if state_model is not None:  # None: only a project's rows, checked below
-            state_model.model_validate({k: v for k, v in (node or {}).items() if k not in owned})
-    except ValidationError as exc:
-        detail = f"invalid {scope.section} state in {source}: {first_validation_error(exc)}"
-        return _row("state", scope.plugin, _FAIL, title, detail)
     try:
         counts = _row_counts(scope.rows)
     except ConfigError as exc:
         detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
         return _row("state", scope.plugin, _FAIL, title, detail)
-    if node is None and not counts:
+    if not counts:
         return _row("state", scope.plugin, _PASS, title, "no state")
     return _row("state", scope.plugin, _PASS, title, "; ".join(["state OK", *counts]))
 

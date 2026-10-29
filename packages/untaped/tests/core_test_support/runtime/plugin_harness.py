@@ -61,7 +61,6 @@ def make_check(
 def make_spec(
     name: str = "alpha",
     settings: type[BaseModel] | None = Profile,
-    state: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     checks: tuple[DoctorCheck, ...] = (),
     factory: Callable[[], App] | None = None,
@@ -71,7 +70,6 @@ def make_spec(
         name=name,
         app_factory=factory or nullary_app(f"{name}-app"),
         settings=settings,
-        state=state,
         skills=skills,
         doctor_checks=checks,
         stability=stability,

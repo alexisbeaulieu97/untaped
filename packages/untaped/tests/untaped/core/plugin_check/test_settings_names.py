@@ -44,12 +44,7 @@ _SETTINGS = dedent('''\
 
     class AcmeSettings(BaseModel):
         model_config = ConfigDict(frozen=True)
-    {fields}
-
-    class AcmeState(BaseModel):
-        model_config = ConfigDict(frozen=True)
-        cache: Path = Path("x")
-    ''')
+    {fields}    ''')
 
 
 def _settings(fields: str) -> str:
@@ -70,7 +65,6 @@ def _violations(install: Install, body: str) -> list[str]:
         name="acme",
         app_factory=App,
         settings=settings.AcmeSettings,
-        state=settings.AcmeState,
     )
     source_dir = site / "acme"
     return structure_class_violations(spec, "acme", source_dir)

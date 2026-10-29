@@ -2,43 +2,73 @@
 
 State is data a plugin keeps as the only copy: what a user created through its
 commands (a workspace, a saved source, an alias), which no upstream can give
-back. It lives in the [state file](./configuration.md#file-and-layout)
-(`~/.untaped/state.yml`), under the plugin's own section, outside profiles, and
-is never a user setting. Data your plugin can fetch again is a
-[cache](./caches.md) instead.
+back. Each plugin keeps it in its own file, `~/.untaped/plugins/<plugin>/state.yml`,
+outside profiles; it is never a user setting. Data your plugin can fetch again
+is a [cache](./caches.md) instead.
 
 ## Typed rows
 
-`StateRows` (experimental) keeps rows of one pydantic model, one per key:
+`StateRows` (experimental) keeps rows of one pydantic model. Your plugin class
+holds it, and the attribute names the rows:
 
 ```python
-from untaped.sdk import PluginSpec, StateRows
+from typing import Annotated
 
-ITEMS = StateRows(
-    "acme",
-    "items",
-    model=Item,
-    key_field="name",
-    remove_hint="untaped acme remove {key}",
-)
-SPEC = PluginSpec(name="acme", stores=(ITEMS,))
+from pydantic import BaseModel, Field
 
+from untaped.sdk import Command, Key, Plugin, StateRows
+from untaped.sdk.fields import Positional
+
+
+class AcmeSettings(BaseModel):
+    pass
+
+
+class Item(BaseModel):
+    name: Annotated[str, Key]
+    label: str = ""
+
+
+ITEMS = StateRows[Item]()
+
+
+class Remove(Command):
+    """Remove an item."""
+
+    removes = ITEMS
+
+    name: Positional[str] = Field(description="The item to remove.")
+
+    def run(self) -> None:
+        ITEMS.delete(self.name)
+
+
+class Acme(Plugin):
+    """Keep items."""
+
+    settings = AcmeSettings
+    commands = (Remove,)
+    items = ITEMS
+
+
+# inside a command, or any code its run reaches:
 ITEMS.add(Item(name="one"))                       # RowExists (exit 1) when "one" has a row
 ITEMS.get("one")                                  # the row, or None
 ITEMS.update("one", lambda item: item.model_copy(update={"label": "First"}))
 ITEMS.delete("one")
 ```
 
-The rows are `acme.items` in `state.yml`, a list of mappings. `model` is the
-class, or a function of no arguments returning it when importing the class
-would load more than a declaration should. `key_field` names a required `str`
-field. A row is written `mode="json"`, by alias; `omit_none=True` leaves its
-`None` fields out.
+The rows are `items` in `plugins/acme/state.yml`, a list of mappings; the file
+keeps its stamp under `untaped:`, so no rows may take that name. The row's key
+is its one required `str` field marked `Key`. A model with no field marked
+`Key` makes the rows a list: `all()`, `append(row)` and `replace_all(change)`,
+with no key to look a row up by. A row is written `mode="json"`, by alias;
+`StateRows[Item](omit_none=True)` leaves its `None` fields out.
 
 - `get(key)`, `all()` (file order) and `keys()` read; `add`, `put` (replace in
   place, or append), `update(key, change)`, `replace_all(change)` and
-  `delete(key)` write, each under the state file's lock. Change a row with
-  `update`, never `get` then `put`: another process may write in between.
+  `delete(key)` write, each under the file's lock. Change a row with `update`,
+  never `get` then `put`: another process may write in between.
 - A write from inside `update`'s or `replace_all`'s `change` is refused and
   nothing is written: read first, then write once.
 - A full disk is an error (exit 4), and the file stays as it was.
@@ -58,48 +88,38 @@ a nested model's fields aren't listed, so give each new one a default too.
 
 **A damaged row stops the command.** A row that fails the model, has no key,
 or shares its key with another is never guessed at: reading it, `all()` and a
-change to it stop with exit 4, naming the file, the row and the fix (the
-`remove_hint` command, when you give one). `keys()`, the other rows and
-`delete` keep working, so the user can remove it. `untaped doctor` checks every
-row in the home, and the current project's.
+change to it stop with exit 4, naming the file, the row and the fix. `keys()`,
+the other rows and `delete` keep working, so the user can remove it.
+`untaped doctor` checks every row in the home, and the current project's.
+
+## Removing a row
+
+The command that removes rows marks itself `removes = ITEMS`; a damaged row's
+error then offers it with the row's key (`untaped acme remove one`). It takes
+the key under the `Key` field's name, as its first positional or as an option
+(`--name KEY`); composition quarantines any other remover (`remover-key`).
+One command removes a plugin's rows: a second one is `duplicate-remover`, and a
+`removes` naming rows the plugin class doesn't hold is refused too.
 
 ## A project's rows
 
-Rows a project keeps live in its own `.untaped/state.yml` and move with its
-folder:
+Rows a project keeps live in its own `.untaped/plugins/<plugin>/state.yml` and
+move with its folder:
 
 ```python
-CHECKOUTS = StateRows.per_project("acme", "checkouts", model=Checkout, key_field="key")
-SPEC = PluginSpec(name="acme", stores=(CHECKOUTS,))
+class Acme(Plugin):
+    checkouts = StateRows[Checkout].per_project()
 
-CHECKOUTS.of(project).put(Checkout(key="api", ...))
+Acme.checkouts.of(project).put(Checkout(key="api", ...))
 ```
 
 `per_project` returns the declaration; `.of(project)` opens one project's
-rows, with every method above. `project remove` deletes the project's
-`state.yml`. A string map takes `StateMap("acme", "aliases", project=project)`.
-
-## String maps and dict rows
-
-`StateMap(section, key)` keeps a flat `str → str` map; `StateCollection(section,
-key, id_field=)` keeps rows as the dicts you pass, a row without its id field
-never matched. Both are stable; prefer `StateRows` for new rows.
-
-## Declaring state
-
-List every state declaration on `PluginSpec.stores`: each one's name is a key
-of your state section, so no setting may take it, and `untaped config get` and
-`set` refuse it. A `StateRows` made in the module that makes your spec, or in
-the package whose `__init__` makes it, but not listed quarantines the plugin
-(`unlisted-state`), as does a declaration of another plugin's state
-(`foreign-store`) or a name listed twice (`duplicate-store`).
-
-A plugin may also declare its whole section as a model, `PluginSpec(state=)`;
-the config reference and `doctor` read both. A key a declaration owns is read
-only through it, never with the section's model.
+rows, with every method above. `project remove` deletes them with the rest of
+what untaped wrote in the project's `.untaped` folder.
 
 ## Tests
 
 `untaped.sdk.testing` writes and reads rows unchecked: `write_rows(ITEMS, [...])`
 stores what a newer install or a damaged file would, `read_rows(ITEMS)` returns
-what is stored, and `damage(ITEMS, "one")` damages one row.
+what is stored, and `damage(ITEMS, "one")` damages one row. Each needs a run of
+the plugin: `with install(Acme).running():`.

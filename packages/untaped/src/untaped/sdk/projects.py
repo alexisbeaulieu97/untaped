@@ -84,14 +84,13 @@ if TYPE_CHECKING:
 DIRECTORY = ".untaped"
 #: The file that makes a folder a project.
 MARKER = "project.json"
-#: The lock files core's locked writes leave beside the state and config files.
-CORE_LOCKS = ("state.yml.lock", "config.yml.lock")
+#: The lock file core's locked writes leave beside the config file.
+CORE_LOCKS = ("config.yml.lock",)
 #: What ``init`` keeps out of version control: the id and machine records, never config.
 #: Each is anchored at ``.untaped/``'s top level and named (core's lock files too), so a
 #: plugin's committed files (``recipe.lock``, ``awx/plugins/``) stay tracked.
 GITIGNORE = (
     "/project.json",
-    "/state.yml",
     f"/{PLUGINS_FOLDER}/",
     *(f"/{name}" for name in CORE_LOCKS),
 )

@@ -337,10 +337,9 @@ re-declare it as `target_path: AbsolutePath` so it leads the output.
 ## Managed state
 
 A plugin keeps what only it holds (what users created through its commands)
-through the state helpers, listed on `PluginSpec.stores`: typed rows in a
-`StateRows`, strings in a `StateMap` ([Plugin state](../state.md)). Their names
-are disjoint from its `settings`. The helpers keep other plugins' sections
-intact under the shared lock, so never read or write the state file directly.
+as typed rows in a `StateRows` its plugin class holds
+([Plugin state](../state.md)), in its own `state.yml`. The rows keep the
+file's stamp and lock, so never read or write the state file directly.
 
 A file under `plugin_dir(SPEC)` an older release could not open is a [store](../caches.md#stores),
 opened through `Store.open()`; files people commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped),

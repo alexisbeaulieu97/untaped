@@ -38,7 +38,7 @@ def package_of(spec: PluginSpec, target: object = None) -> tuple[str, Path]:
     ``target`` when it declares none of them, when it is a package, else the
     module's parent package.
     """
-    declared = spec.app_factory or spec.settings or spec.state
+    declared = spec.app_factory or spec.settings
     if declared is not None:
         module = getattr(declared, "__module__", None) or ""
     elif isinstance(target, str) and ":" in target:

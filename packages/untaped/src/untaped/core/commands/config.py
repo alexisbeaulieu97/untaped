@@ -2,9 +2,8 @@
 
 Key resolution is direct: a fully qualified ``section.key``
 selects its schema by ``section``. A renamed key resolves to its new name
-with a warning and a retired one is rejected; the section's own state fields
-raise the "managed by" error, and anything else passes through to the
-schema. Bare keys are never implicitly expanded to a plugin section.
+with a warning and a retired one is rejected; anything else passes through
+to the schema. Bare keys are never implicitly expanded to a plugin section.
 
 The commands call the config use cases; :class:`RootConfigContext` is the
 key-resolution rule, built from the run's composition. There is
@@ -38,7 +37,6 @@ from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import (
     CompositionResult,
     settings_model,
-    state_keys,
 )
 from untaped.runtime.settings import (
     active_settings_layout,
@@ -63,12 +61,6 @@ from untaped.sdk.words import hint, plural
 class RootSectionScope:
     """One section's key-resolution scope for the root config command."""
 
-    plugin: str
-    """Owning plugin name (``untaped`` for core's own section)."""
-
-    state_fields: frozenset[str]
-    """Tool-managed field names of the section's state model (never settable)."""
-
     mappings: KeyMappings = NO_KEY_MAPPINGS
     """The section model's renamed, retired and deprecated keys."""
 
@@ -78,8 +70,8 @@ class RootConfigContext:
     """Root key-resolution rule.
 
     A fully qualified ``section.key`` resolves against that section's scope:
-    a renamed key becomes its new key (with a warning), a retired key and a
-    state field are rejected; bare keys and unknown sections pass through
+    a renamed key becomes its new key (with a warning), a retired key is
+    rejected; bare keys and unknown sections pass through
     untouched so the schema reports them.
     """
 
@@ -112,17 +104,7 @@ class RootConfigContext:
                 f"unknown setting: {key!r} (retired; now {new})\n{hint('config migrate')}",
                 category="invalid",
             )
-        state_first, _ = _split_first(rest)
-        if state_first in scope.state_fields:
-            raise self._state_error(first, key)
         return key
-
-    def _state_error(self, section: str, key: str) -> ConfigError:
-        scope = self.sections[section]
-        return ConfigError(
-            f"{key!r} is managed by untaped {scope.plugin} and is not a configurable setting",
-            category="invalid",
-        )
 
 
 def _warned_from_file(section: str, old: str) -> bool:
@@ -151,11 +133,7 @@ def _split_first(key: str) -> tuple[str, str | None]:
 def section_scopes(result: CompositionResult) -> dict[str, RootSectionScope]:
     """Build the root resolution scopes of every composed plugin, core's included."""
     return {
-        spec.name: RootSectionScope(
-            plugin=spec.name,
-            state_fields=state_keys(spec),
-            mappings=key_mappings(settings_model(spec)),
-        )
+        spec.name: RootSectionScope(mappings=key_mappings(settings_model(spec)))
         for spec in (registered.spec for registered in result.plugins)
     }
 

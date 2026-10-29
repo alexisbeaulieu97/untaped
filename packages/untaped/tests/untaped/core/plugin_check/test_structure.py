@@ -36,12 +36,6 @@ _SETTINGS = dedent('''
         """Acme profile settings."""
 
         model_config = ConfigDict(frozen=True)
-
-
-    class AcmeState(BaseModel):
-        """Acme state."""
-
-        model_config = ConfigDict(frozen=True)
     ''')
 _CLEAN = {
     "acme/__init__.py": '"""Acme plugin."""\n',
@@ -69,7 +63,6 @@ def _violations(install: Install, files: dict[str, str]) -> list[str]:
         name="acme",
         app_factory=App,
         settings=settings.AcmeSettings,
-        state=settings.AcmeState,
     )
     return structure_class_violations(spec, "acme", site / "acme")
 
@@ -152,8 +145,7 @@ def test_a_port_and_an_adapter_sharing_a_name_are_flagged(install: Install) -> N
 def test_mutable_settings_models_are_flagged(install: Install) -> None:
     mutable = _SETTINGS.replace("model_config = ConfigDict(frozen=True)", "pass")
     assert _violations(install, {**_CLEAN, "acme/settings.py": mutable}) == [
-        "acme.settings.AcmeSettings::settings-not-frozen::settings",
-        "acme.settings.AcmeState::settings-not-frozen::state",
+        "acme.settings.AcmeSettings::settings-not-frozen::settings"
     ]
 
 

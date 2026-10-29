@@ -17,7 +17,7 @@ import ast
 from repo.support import PACKAGES
 from untaped.core.config.fields import shape
 from untaped.runtime import bootstrap
-from untaped.runtime.settings import get_profile_settings_model
+from untaped.runtime.settings import get_settings_model
 from untaped.sdk._schema import walk_settings
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
@@ -104,7 +104,7 @@ def _strings(tree: ast.Module) -> set[str]:
 def _setting_names() -> set[str]:
     bootstrap.compose_root()
     names: set[str] = set()
-    for descriptor in walk_settings(get_profile_settings_model(), include_collections=True):
+    for descriptor in walk_settings(get_settings_model(), include_collections=True):
         names |= {descriptor.key, *descriptor.path, ".".join(descriptor.path[1:])}
     return names
 
@@ -168,7 +168,7 @@ def test_every_first_party_setting_gets_a_field_of_its_shape() -> None:
     bootstrap.compose_root()
     found = [
         descriptor.key
-        for descriptor in walk_settings(get_profile_settings_model(), include_collections=True)
+        for descriptor in walk_settings(get_settings_model(), include_collections=True)
         if shape(descriptor) == "json"
     ]
     assert not found, (

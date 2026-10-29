@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, SecretStr
 
 from untaped.core.config import (
     ListAllProfilesSettings,
@@ -9,10 +9,7 @@ from untaped.core.config import (
     SettingsFileRepository,
     Source,
 )
-from untaped.runtime.settings import (
-    register_profile_settings,
-    register_state_settings,
-)
+from untaped.runtime.settings import register_profile_settings
 
 
 class DemoProfileSettings(BaseModel):
@@ -24,15 +21,10 @@ class DemoProfileSettings(BaseModel):
     default_token: SecretStr = SecretStr("default-secret")
 
 
-class DemoStateSettings(BaseModel):
-    entries: list[str] = Field(default_factory=list)
-
-
 @pytest.fixture(autouse=True)
 def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     register_profile_settings("demo", DemoProfileSettings)
-    register_state_settings("demo", DemoStateSettings)
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
@@ -114,10 +106,8 @@ def test_list_secrets_follow_the_reveal_gate(_isolate_settings: Path, reveal: bo
     assert default_token.value == default_token.default == ("default-secret" if reveal else "***")
 
 
-def test_collection_fields_skipped() -> None:
+def test_scalar_fields_are_listed() -> None:
     entries = {e.key for e in ListSettings(SettingsFileRepository())()}
-    # ``demo.entries`` is a list — collections are skipped, scalar siblings are not.
-    assert "demo.entries" not in entries
     assert {"demo.directory", "demo.default_scope", "demo.page_size"} <= entries
 
 
