@@ -21,7 +21,7 @@ from untaped_recipe.application.targets import Target
 from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.domain.plan import FileChange, HookDebugResult, Verdict
 from untaped_recipe.domain.testcase import CaseSpec, VerdictExpectation
-from untaped_recipe.errors import RecipeError
+from untaped_recipe.errors import RecipeError, raise_environment
 
 CaseStatus = Literal["pass", "fail", "error", "updated"]
 
@@ -296,6 +296,7 @@ def _plan_case(
     try:
         recipe = read_recipe_file(case.recipe_path)
     except (UntapedError, ValueError) as exc:
+        raise_environment(exc)
         return None, exc
     with tempfile.TemporaryDirectory() as temp_root:
         target_dir = Path(temp_root) / case.case_name
@@ -311,9 +312,11 @@ def _plan_case(
                 inputs=dict(spec.inputs),
             )
         except (UntapedError, ValueError) as exc:
+            raise_environment(exc)
             return None, exc
         plan = plans[0]
         if plan.status == "error":
+            raise_environment(plan.failure)
             return None, plan.failure or RecipeError(plan.error)
         return _Trees(base=base, result=_materialize(base, plan.changes)), None
 

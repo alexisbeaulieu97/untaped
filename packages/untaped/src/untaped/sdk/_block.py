@@ -107,9 +107,16 @@ class Block:
     def binding(self) -> Binding:
         """The one plugin class attribute holding the block.
 
-        Raises :class:`UnboundBlockError` naming the block and its module when
-        no plugin class holds it yet.
+        A block read before its owner's class is imported (a dependent plugin
+        reading a dependency's credential through its ``api``) has the run
+        import that class, which binds it. Raises :class:`UnboundBlockError`
+        naming the block and its module when no plugin class holds it then.
         """
+        if not self._bindings:
+            from untaped.sdk._run import run_or_none  # noqa: PLC0415 - the run imports the SDK
+
+            if (run := run_or_none()) is not None:
+                run.composition.load_owner(self._module)
         if not self._bindings:
             raise UnboundBlockError(
                 f"{type(self).__name__} created in {self._module} is held by no plugin "

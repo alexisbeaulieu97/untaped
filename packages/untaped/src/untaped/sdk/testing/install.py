@@ -206,7 +206,7 @@ class Install:
 
         with (
             recording() as shown,
-            entered(build_run(self._mount.declaration, self._mount.settings)),
+            entered(build_run(self._mount.declaration, self._mount.settings, self._mount.plugins)),
         ):
             yield Running(shown)
 

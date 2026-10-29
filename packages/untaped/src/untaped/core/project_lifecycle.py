@@ -72,7 +72,7 @@ from untaped.sdk.storage.holds import (
     preview_rows,
     view,
 )
-from untaped.sdk.words import shown_path
+from untaped.sdk.words import not_found, shown_path
 
 #: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
 _CORE_FILES = (MARKER,)
@@ -286,7 +286,8 @@ def find_project(target: str) -> Project | Reference:
 
     A folder that exists is looked up by walking up from it; a gone one, or
     a name, is matched against the records (a name by its folder's name).
-    Raises :class:`UsageError` when nothing or more than one record matches.
+    Raises :class:`UsageError` when more than one record matches, and a
+    ``not_found`` :class:`UntapedError` when none does.
     """
     path = Path(target).expanduser()
     by_path = os.sep in target or target.startswith(("~", "."))
@@ -309,10 +310,12 @@ def find_project(target: str) -> Project | Reference:
         and (ref.anchor == wanted if by_path else ref.anchor.name == target)
     ]
     if not matches:
-        raise UsageError(
+        names = sorted({ref.anchor.name for ref in project_references() if ref.anchor})
+        raise UntapedError(
             f"no project recorded at {shown_path(wanted)}"
             if by_path
-            else f"no project named {target!r}",
+            else not_found("project", target, known=names),
+            category="not_found",
             hint="`untaped project list` shows the projects this home records",
         )
     if len(matches) > 1:
@@ -552,8 +555,9 @@ def _recorded_at(old: Path, new: Path) -> Project:
     pending = [ref for ref in refs if real in ref.moved_from]
     holder, anchor = (pending[0].holder, pending[0].anchor) if pending else (None, None)
     if holder is None or anchor is None:
-        raise UsageError(
+        raise UntapedError(
             f"no project recorded at {shown_path(old)}",
+            category="not_found",
             hint="`untaped project list` shows the projects this home records",
         )
     recorded = os.path.lexists(new) and _situation(new.resolve(), holder.name).kind in {

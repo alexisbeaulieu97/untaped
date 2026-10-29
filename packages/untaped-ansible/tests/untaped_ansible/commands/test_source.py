@@ -730,3 +730,18 @@ def test_source_status_table_shows_its_default_columns(tmp_path: Path, monkeypat
     header, _ = table(run("source", "status"))
 
     assert header == ["source", "state", "repos", "refs", "refreshed_at"]
+
+
+def test_source_remove_clears_a_damaged_row_and_is_not_stopped_by_one(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A row failing its model is what the damaged error tells the user to remove.
+    sources = [{"name": "good", "repos": ["acme/site"]}, {"name": "bad", "repos": ["not a repo"]}]
+    use_config(tmp_path, monkeypatch, {"sources": sources})
+
+    good = run("source", "remove", "good", "--yes", "--format", "json")
+    assert good.exit_code == 0, good.output
+    bad = run("source", "remove", "bad", "--yes", "--format", "json")
+    assert bad.exit_code == 0, bad.output
+    assert json.loads(bad.stdout)["action"] == "deleted"
+    assert "sources" not in read_state()

@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from recipe_test_support import library_dir, run, run_root
+from untaped_recipe.application.apply_recipe import ApplyRecipe
+from untaped_recipe.errors import UvMissingError
 from untaped_recipe.infrastructure.pack_store import PackLibrary
 
 _COPY_RECIPE = (
@@ -284,3 +286,22 @@ def test_test_table_names_the_pack_only_when_several_run(tmp_path: Path) -> None
     assert one.exit_code == 0, one.output
     assert _default_columns(one.stderr) == {"recipe", "case", "status", "detail"}
     assert _default_columns(every.stderr) == {"pack", "recipe", "case", "status", "detail"}
+
+
+def test_test_without_uv_exits_as_setup_not_as_failed_cases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine problem would fail every case (or pass an `expect: error` one).
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="demo")
+    _write_passing_case(source)
+    _install(source)
+
+    def no_uv(self: ApplyRecipe, **kwargs: object) -> object:
+        raise UvMissingError("uv executable not found for hook project execution")
+
+    monkeypatch.setattr(ApplyRecipe, "__call__", no_uv)
+    result = run(["test", "demo", "--format", "json"])
+
+    assert result.exit_code == 4, result.output
+    assert "uv executable not found" in result.stderr

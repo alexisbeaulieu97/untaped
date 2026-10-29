@@ -548,7 +548,7 @@ def test_remove_finds_a_project_by_its_name(tmp_path: Path) -> None:
     result = _cli("project", "remove", "PROJ-7", "--dry-run", "-f", "json")
     assert result.exit_code == 0, result.output
     assert _rows(result)[-1]["item"] == str(project.root)
-    assert _cli("project", "remove", "nope", "--dry-run").exit_code == 2
+    assert _cli("project", "remove", "nope", "--dry-run").exit_code == 1
 
 
 def test_release_lets_go_of_one_owners_holds_without_a_prompt(tmp_path: Path) -> None:
@@ -783,7 +783,7 @@ def test_the_removal_preview_of_a_copy_holds_nothing(tmp_path: Path) -> None:
     [
         (("PROJ", "PROJ"), 2, "OLD and NEW are the same folder"),
         (("PROJ/sub", "x"), 2, "is not a project's folder"),
-        (("gone", "also-gone"), 2, "no project recorded at"),
+        (("gone", "also-gone"), 1, "no project recorded at"),
         (("PROJ", "PROJ/inner"), 2, "is inside"),
         (("PROJ", "OUTER/inner"), 2, "is a project; projects don't nest"),
     ],
@@ -830,7 +830,8 @@ def test_remove_finds_a_missing_project_by_name_and_refuses_ambiguity(tmp_path: 
     outside = tmp_path / "plain"
     outside.mkdir()
     assert "is not a project's folder" in _cli("project", "remove", str(outside)).stderr
-    assert "no project recorded at" in _cli("project", "remove", "./nope", "--dry-run").stderr
+    unknown = _cli("project", "remove", "./nope", "--dry-run")
+    assert unknown.exit_code == 1 and "no project recorded at" in unknown.stderr
 
 
 def test_a_preview_refuses_what_the_real_run_would(tmp_path: Path) -> None:

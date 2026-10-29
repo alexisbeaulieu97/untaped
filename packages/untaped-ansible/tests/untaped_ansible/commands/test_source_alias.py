@@ -40,3 +40,14 @@ def test_the_refresh_hint_quotes_a_source_name_a_shell_would_split(
 
     assert result.exit_code == 0, result.output
     assert "run `untaped ansible source refresh 'my prod'`" in result.stderr
+
+
+def test_source_alias_remove_clears_a_damaged_row(tmp_path: Path, monkeypatch) -> None:
+    aliases = [{"alias": "common", "repo": "acme/common"}, {"alias": "broken"}]
+    use_config(tmp_path, monkeypatch, {"aliases": aliases})
+
+    result = run("source-alias", "remove", "broken", "--yes", "--format", "json")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {"action": "deleted", "alias": "broken", "repo": None}
+    assert read_state()["aliases"] == {"common": "acme/common"}

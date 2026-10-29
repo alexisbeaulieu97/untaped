@@ -128,6 +128,18 @@ def run(
     raw = [*findings, *_conventions(subjects, candidates)]
     marked: list[tuple[Finding, Path]] = []
     with _composed(repo, report, candidates) as (providers, loaded):
+        # Built before anything is read: a --select naming no rule stops here.
+        resolver = Resolver(providers.rules)
+        selection = Selection.build(
+            resolver,
+            select=options.select,
+            ignore=options.ignore,
+            paths=options.paths,
+            only=options.only,
+            exact=options.exact,
+            locations=options.locations,
+            unchecked=UNCHECKED,
+        )
         if repo is not None:
             marked.extend((public(KEY, each), repo.root) for each in loaded.findings)
         tree = None
@@ -150,18 +162,7 @@ def run(
             else "nothing to lint here: no installed rule reads the repository's files; "
             f"write one with `{new_line()}`"
         )
-    resolver = Resolver(providers.rules)
     raw.extend(each for each, root in marked if not _allowed(each, root, resolver))
-    selection = Selection.build(
-        resolver,
-        select=options.select,
-        ignore=options.ignore,
-        paths=options.paths,
-        only=options.only,
-        exact=options.exact,
-        locations=options.locations,
-        unchecked=UNCHECKED,
-    )
     report.warnings.extend(resolver.warnings)
     report.findings.extend(each for each in raw if selection.keeps(each))
     return report

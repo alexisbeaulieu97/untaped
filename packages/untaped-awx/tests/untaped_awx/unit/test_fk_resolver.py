@@ -63,7 +63,7 @@ class _StubRepo:
         for record in self.store.get(spec.kind, []):
             if record["id"] == id_:
                 return record
-        raise KeyError(id_)
+        raise ResourceNotFoundError(spec.kind, {"id": id_})
 
     def list(
         self,

@@ -174,10 +174,7 @@ class HttpFkResolver:
         if isinstance(id_, bool) or not isinstance(id_, int) or id_ <= 0:
             raise BadRequestError(f"foreign key {kind} requires a positive integer ID")
         spec = self._catalog.get(kind)
-        try:
-            record = self._repo.get(spec, id_)
-        except KeyError as exc:
-            raise ResourceNotFoundError(kind, {"id": id_}) from exc
+        record = self._repo.get(spec, id_)
         if record.get("id") != id_:
             raise ResourceNotFoundError(kind, {"id": id_})
         if scope:

@@ -36,7 +36,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from untaped.sdk import ConfigError, attribution
+from untaped.sdk import ConfigError, HttpError, attribution
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.domain.outcomes import DeleteReceipt
 from untaped_awx.errors import (
@@ -44,6 +44,7 @@ from untaped_awx.errors import (
     AwxApiError,
     BadRequestError,
     PartialWriteError,
+    ResourceNotFoundError,
 )
 from untaped_awx.infrastructure.awx_client import AwxClient
 from untaped_awx.infrastructure.errors import map_awx_errors
@@ -103,8 +104,14 @@ class ResourceRepository:
             )
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+        """The ``spec`` record with ``id_``; :class:`ResourceNotFoundError` when AWX has none."""
         with map_awx_errors():
-            raw = self._client.get_json(f"{awx_api_path(spec)}/{id_}/")
+            try:
+                raw = self._client.get_json(f"{awx_api_path(spec)}/{id_}/")
+            except HttpError as exc:
+                if exc.status_code == 404:
+                    raise ResourceNotFoundError(spec.kind, {"id": id_}, url=exc.url) from exc
+                raise
             # The base Inventory serializer omits constructed source settings.
             # A detail read still refers to this exact ID when hydrating the proxy.
             if (

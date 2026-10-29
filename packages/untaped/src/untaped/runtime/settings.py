@@ -749,13 +749,17 @@ def load_state_yaml(yaml_file: Path) -> dict[str, Any]:
 
 
 def _read_yaml(yaml_file: Path) -> dict[str, Any]:
-    if not yaml_file.is_file():
+    if not yaml_file.exists():
         return {}
+    if not yaml_file.is_file():
+        raise ConfigError(f"could not read {yaml_file}: not a file")
     try:
-        with yaml_file.open() as f:
+        with yaml_file.open(encoding="utf-8") as f:
             raw = yaml.safe_load(f)
     except yaml.YAMLError as exc:
         raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"could not read {yaml_file}: not UTF-8 text ({exc.reason})") from exc
     except OSError as exc:
         raise ConfigError(f"could not read {yaml_file}: {exc.strerror or exc}") from exc
     return _checked_root(raw, yaml_file)

@@ -146,7 +146,8 @@ def _attach(run: Run, result: CompositionResult) -> None:
     """
     from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
 
-    run.attach(composition_of(result.mount.declaration, result.mount.settings))
+    mount = result.mount
+    run.attach(composition_of(mount.declaration, mount.settings, mount.plugins))
     for record in result.quarantine:
         run.diag.warning(
             f"plugin {record.name!r} from {record.distribution!r} quarantined "
@@ -227,11 +228,13 @@ def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[Composition
         declaration, settings = result.mount.declaration, result.mount.settings
         run = run_or_none()
         if run is None:
-            with entered(build_run(declaration, settings)):
+            with entered(build_run(declaration, settings, result.mount.plugins)):
                 yield result
             return
         child = replace(
-            run, composition=composition_of(declaration, settings), picks=_section_reader()
+            run,
+            composition=composition_of(declaration, settings, result.mount.plugins),
+            picks=_section_reader(),
         )
         with run_scope(child):
             yield result

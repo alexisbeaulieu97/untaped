@@ -6,7 +6,17 @@ from collections.abc import Iterator
 
 from pydantic import Field
 
-from untaped.sdk import Confirm, Group, Output, Positional, UsageError, command_line, not_found, q
+from untaped.sdk import (
+    ConfigError,
+    Confirm,
+    Group,
+    Output,
+    Positional,
+    UsageError,
+    command_line,
+    not_found,
+    q,
+)
 from untaped_ansible.commands._ansible import AnsibleCommand
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.records import SourceAlias, SourceAliasOutcome
@@ -69,13 +79,19 @@ class Remove(AnsibleCommand):
     output: Output[SourceAliasOutcome]
 
     def run(self) -> SourceAliasOutcome:
-        entries = alias_map()
-        repo = entries.get(self.alias)
-        if repo is None:
+        # Keys, not rows: a damaged row is removed here too.
+        names = ALIASES.keys()
+        if self.alias not in names:
             raise AnsibleError(
-                not_found("source alias", self.alias, known=sorted(entries)), category="not_found"
+                not_found("source alias", self.alias, known=sorted(names)), category="not_found"
             )
-        if not self.confirm(f"Remove source alias {q(self.alias)} -> {repo}?"):
+        try:
+            found = ALIASES.get(self.alias)
+        except ConfigError:
+            found = None
+        repo = None if found is None else found.repo
+        target = "damaged" if repo is None else f"-> {repo}"
+        if not self.confirm(f"Remove source alias {q(self.alias)} {target}?"):
             return SourceAliasOutcome(action="planned", alias=self.alias, repo=repo)
         ALIASES.delete(self.alias)
         self.warn_saved_sources_need_refresh()

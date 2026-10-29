@@ -7,9 +7,10 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from untaped.sdk import ConfigError, Positional, Stdin
+from untaped.sdk import Positional, Stdin
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.errors import AwxError
 from untaped_awx.records import JobRecord, JobRelaunchOutcome, LaunchOutcome, SyncOutcome
 
 JOB_KIND_HELP = (
@@ -69,10 +70,11 @@ def job_targets(job_ids: Sequence[str], stdin: Stdin[Any]) -> tuple[list[str], d
 def as_job_id(value: str) -> int:
     """Parse a stdin/positional job id; surface bad input as a per-id error.
 
-    A :class:`ConfigError` (not a raw ``ValueError``) lets a batch go on and
-    report the bad value as its own failure beside the good ones.
+    An :class:`AwxError` (not a raw ``ValueError``) lets a batch go on and
+    report the bad value as its own failure beside the good ones; the
+    failure line names the value.
     """
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ConfigError(f"not a numeric job id: {value!r}", category="invalid") from exc
+    job_id = int(value) if value.isascii() and value.isdigit() else 0
+    if job_id <= 0:
+        raise AwxError("not a job id (a positive integer)", category="invalid")
+    return job_id

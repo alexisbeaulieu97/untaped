@@ -30,7 +30,7 @@ def check(install: Install) -> None:
     with (
         bootstrap.composed_with(found) as result,
         # the live rows ask providers as a command of the install would, under its run
-        entered(build_run(result.mount.declaration, result.mount.settings)),
+        entered(build_run(result.mount.declaration, result.mount.settings, result.mount.plugins)),
     ):
         rows = [row for candidate in found for row in check_plugins(result, found, candidate.name)]
     failed = [row for row in rows if row.status in ("fail", "error")]
