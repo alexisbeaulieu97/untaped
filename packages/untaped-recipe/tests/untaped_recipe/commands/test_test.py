@@ -201,7 +201,7 @@ def test_test_missing_explicit_recipe_path_reports_guard(
     result = run(["test", "./nope.yml", "--format", "json"])
 
     assert result.exit_code == 1
-    assert "recipe file not found: nope.yml" in result.stderr
+    assert "recipe file not found: 'nope.yml'" in result.stderr
     assert "test requires a pack directory or ref" not in result.stderr
     assert "Traceback" not in result.output
 

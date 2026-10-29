@@ -262,10 +262,10 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
         ("a/b/c", "qualified refs must use <pack>/<name>"),
         (
             "demo/probe",
-            "pack not found: demo (a directory named 'demo' exists — use ./demo/probe, "
+            "pack not found: 'demo' (a directory named 'demo' exists — use ./demo/probe, "
             "or install it with packs add ./demo)",
         ),
-        ("missing/probe", "pack not found: missing\n"),
+        ("missing/probe", "pack not found: 'missing'\n"),
     ],
 )
 def test_new_hook_rejects_unresolvable_refs(

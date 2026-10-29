@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue
 
-from untaped.sdk import Absent, Found, OtherVersion, read_data_file, write_data_file
+from untaped.sdk import Absent, Found, OtherVersion, not_found, read_data_file, write_data_file
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped_recipe.errors import BackupNotFoundError, LocalChangesError
@@ -252,8 +252,11 @@ class BackupStore:
         """Delete one backup bundle by exact id."""
         bundle_dir = self._root / backup_id
         if not (bundle_dir / METADATA_FILE).is_file():
-            raise BackupNotFoundError(f"backup not found: {backup_id}")
+            raise BackupNotFoundError(not_found("backup", backup_id, known=self._ids()))
         shutil.rmtree(bundle_dir)
+
+    def _ids(self) -> tuple[str, ...]:
+        return tuple(bundle.id for bundle in self.list())
 
     def metadata(self, backup_id: str) -> BackupMetadata:
         """Read a backup bundle's metadata."""
@@ -264,14 +267,15 @@ class BackupStore:
         bundles = self.list()
         if backup_id == "latest":
             if not bundles:
-                raise BackupNotFoundError("backup not found: latest")
+                raise BackupNotFoundError(not_found("backup", "latest", known=()))
             return bundles[-1]
         exact = [bundle for bundle in bundles if bundle.id == backup_id]
         if exact:
             return exact[0]
         matches = [bundle for bundle in bundles if bundle.id.startswith(backup_id)]
         if not matches:
-            raise BackupNotFoundError(f"backup not found: {backup_id}")
+            known = [bundle.id for bundle in bundles]
+            raise BackupNotFoundError(not_found("backup", backup_id, known=known))
         if len(matches) > 1:
             raise ValueError(f"backup id prefix is ambiguous: {backup_id}")
         return matches[0]

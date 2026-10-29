@@ -160,7 +160,7 @@ def test_sync_reports_a_missing_source_and_continues(tmp_path: Path) -> None:
     result = run(["packs", "sync", "--all", "--yes", "--format", "json"])
 
     assert result.exit_code == 1, result.output
-    message = f"pack source not found: {tmp_path / 'alpha'}"
+    message = f"pack source not found: '{tmp_path / 'alpha'}'"
     assert result.failures == [("alpha", message)]
     rows = json.loads(result.stdout)
     assert [(row["name"], row["action"]) for row in rows] == [

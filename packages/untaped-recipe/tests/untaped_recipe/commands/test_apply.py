@@ -1936,10 +1936,10 @@ def test_apply_pack_with_several_recipes_asks_for_one(tmp_path: Path, installed:
     ("ref", "installed", "expected", "hinted"),
     [
         ("./demo", True, "recipe file not found", True),
-        ("./demo.yml", True, "recipe file not found: demo.yml", True),
+        ("./demo.yml", True, "recipe file not found: 'demo.yml'", True),
         ("./demo", False, "recipe file not found", False),
-        ("./my recipe.yml", True, "recipe file not found: my recipe.yml", False),
-        ("./nope.yml", False, "recipe file not found: nope.yml", False),
+        ("./my recipe.yml", True, "recipe file not found: 'my recipe.yml'", False),
+        ("./nope.yml", False, "recipe file not found: 'nope.yml'", False),
     ],
 )
 def test_explicit_path_miss_hints_at_matching_library_ref(

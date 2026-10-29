@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import UntapedError
+from untaped.sdk import UntapedError, not_found
 from untaped_recipe.application.files import read_recipe_file
 from untaped_recipe.application.harness import orphaned_test_dirs
 from untaped_recipe.application.inputs import validate_recipe_input_sources
@@ -25,7 +25,7 @@ from untaped_recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
-from untaped_recipe.errors import RecipeNotFoundError, raise_environment
+from untaped_recipe.errors import PathNotFoundError, RecipeNotFoundError, raise_environment
 from untaped_recipe.records import Check
 
 
@@ -140,13 +140,13 @@ def _check_asset(recipe_dir: Path, relative: Path, *, field: str, noun: str) -> 
     templated = next((index for index, part in enumerate(parts) if "{{" in part), None)
     if templated is None:
         if not confined_path(recipe_dir, relative, field=field).is_file():
-            raise ValueError(f"{noun} not found: {relative}")
+            raise PathNotFoundError(not_found(noun, str(relative)))
         return
     if templated == 0:
         return
     prefix = Path(*parts[:templated])
     if not confined_path(recipe_dir, prefix, field=field).is_dir():
-        raise ValueError(f"{noun} not found: {relative} (no directory {prefix})")
+        raise PathNotFoundError(f"{not_found(noun, str(relative))} (no directory {prefix})")
 
 
 def _check_local_hook_project(

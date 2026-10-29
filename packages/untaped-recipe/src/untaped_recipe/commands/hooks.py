@@ -19,6 +19,7 @@ from untaped.sdk import (
     TextOrStdin,
     UsageError,
     Verbatim,
+    not_found,
     run_editor,
     unified_diff_text,
 )
@@ -320,7 +321,7 @@ def _local_project(project: Path | None) -> Path | None:
         return None
     resolved = project.expanduser().resolve()
     if not resolved.is_dir():
-        raise PathNotFoundError(f"hook project not found: {project}")
+        raise PathNotFoundError(not_found("hook project", project))
     if not (resolved / "pyproject.toml").is_file():
         raise RecipeError(f"hook project has no pyproject.toml: {project}")
     if not read_hook_project(resolved).hooks:

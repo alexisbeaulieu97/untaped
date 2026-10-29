@@ -109,7 +109,7 @@ def resolve_explicit_recipe(
 ) -> ResolvedRecipe:
     """Resolve an explicit path to a recipe file, pack recipe, or bare recipe.yml."""
     if not path.exists():
-        raise RecipeFileNotFoundError(f"recipe file not found: {path}")
+        raise RecipeFileNotFoundError(not_found("recipe file", str(path)))
     if path.is_dir():
         if recipe_id is not None:
             entry = library.local_pack(path).manifest.recipes.get(recipe_id)
@@ -124,7 +124,7 @@ def resolve_explicit_recipe(
         if not recipe_path.is_file() and (path / "pyproject.toml").is_file():
             return _only_recipe(library.local_pack(path), ref_prefix=_dir_name(path))
         if not recipe_path.is_file():
-            raise RecipeFileNotFoundError(f"recipe file not found: {recipe_path}")
+            raise RecipeFileNotFoundError(not_found("recipe file", str(recipe_path)))
         return ResolvedRecipe(
             path=recipe_path,
             ref=_dir_name(path),

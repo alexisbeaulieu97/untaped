@@ -13,6 +13,7 @@ from functools import cache
 from importlib.metadata import metadata, version
 from pathlib import Path
 
+from untaped.sdk import not_found
 from untaped_recipe.domain.hook_exports import hook_exports_from_source
 from untaped_recipe.domain.hook_project import (
     hook_module_file,
@@ -69,7 +70,7 @@ def check_hook_project(project_root: Path, manifest: PackManifest) -> None:
     for definition in manifest.hooks.values():
         module_file = hook_module_file(project_root, definition.module)
         if not module_file.is_file():
-            raise PathNotFoundError(f"hook module file not found: {module_file}")
+            raise PathNotFoundError(not_found("hook module file", module_file))
 
 
 class LockFreshness:

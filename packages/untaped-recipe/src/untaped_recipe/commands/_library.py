@@ -111,4 +111,4 @@ def pack_child(library: PackLibrary, ref_text: str) -> tuple[Path, str]:
             f" (a directory named '{ref.pack}' exists — use ./{ref.pack}/{ref.name}, "
             f"or install it with packs add ./{ref.pack})"
         )
-    raise PackNotFoundError(f"pack not found: {ref.pack}{there}")
+    raise PackNotFoundError(not_found("pack", ref.pack) + there)

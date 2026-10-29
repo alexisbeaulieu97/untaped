@@ -422,7 +422,7 @@ def test_pack_library_record_commit_fills_a_legacy_row_without_commit(tmp_path: 
     library.record_commit("ansible", "3" * 40)
 
     assert PackLibrary(library_dir=tmp_path / "library").packs()[0].commit == "3" * 40
-    with pytest.raises(ValueError, match="pack not found: ghost"):
+    with pytest.raises(ValueError, match="pack not found: 'ghost'"):
         library.record_commit("ghost", "3" * 40)
 
 

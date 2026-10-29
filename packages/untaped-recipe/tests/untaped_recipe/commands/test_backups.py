@@ -383,3 +383,11 @@ def _create_backup(
     draft = store.start(recipe_name=recipe_name, inputs=inputs)
     draft.commit(draft.stage(changes, inputs=inputs))
     return draft
+
+
+@pytest.mark.parametrize("ident", ["zzz", "latest"])
+def test_an_unknown_backup_is_not_found_naming_the_known_ones(ident: str) -> None:
+    result = run(["backups", "get", ident])
+
+    assert result.exit_code == 1, result.output
+    assert f"backup not found: '{ident}'; known: none" in result.stderr
