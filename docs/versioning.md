@@ -7,7 +7,7 @@
 A minor or patch release never breaks these. Anything new is added alongside
 them. For two installs that disagree about a renamed setting, see
 [Configuration](./configuration.md#renamed-settings).
-`config.yml` and `state.yml` carry an on-disk
+`config.yml` and each plugin's `state.yml` carry an on-disk
 [file format](./configuration.md#file-format) that changes only in a major.
 
 - Command and flag names, positional arguments, and what each means
@@ -20,7 +20,7 @@ them. For two installs that disagree about a renamed setting, see
   [output and pipes](./scripting.md#output-and-pipes).
 - JSON stderr diagnostics:
   [stderr diagnostics](./scripting.md#stderr-diagnostics).
-- `config.yml` and `state.yml` settings:
+- `config.yml` settings:
   [configuration reference](./reference/config.md).
 - Environment variables:
   [environment variables](./reference/environment.md).
@@ -121,8 +121,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - Operation locks and places: `Lock` and `Dir` in `untaped.sdk`. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
 - State rows: `StateRows`, `ProjectStateRows` and `RowExists` in
-  `untaped.sdk`, `StateMap`'s `project=` (it takes the experimental
-  `Project`), and `write_rows` and `read_rows` in `untaped.sdk.testing`. The rows
+  `untaped.sdk`, and `write_rows` and `read_rows` in `untaped.sdk.testing`. The rows
   they write are stable from the start: users keep them, and a stable
   plugin's row fields are `state` lines. See [Plugin state](./state.md).
 - Tree output: `TreeGraph` (with `cycle_edges`), `TreeGraphNode`,

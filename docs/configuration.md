@@ -1,7 +1,7 @@
 # Configuration
 
 Settings live in profiles in `config.yml`; data a plugin manages itself
-lives in `state.yml`. The [configuration reference](./reference/config.md)
+lives in its own `plugins/<name>/state.yml`. The [configuration reference](./reference/config.md)
 lists every setting, its default and its environment variable. Plugin
 settings live in their own sections (`github.default_org`, `awx.server.url`);
 their tokens live outside the file ([Tokens](#tokens)).
@@ -11,8 +11,8 @@ their tokens live outside the file ([Tokens](#tokens)).
 ```text
 ~/.untaped/                       # the home; $UNTAPED_HOME moves it
   config.yml                      # settings and profiles
-  state.yml                       # plugin state
   plugins/<name>/                 # each plugin's own files
+    state.yml                     # its state
 ```
 
 untaped keeps everything in one folder, the home: `~/.untaped`, or the
@@ -47,15 +47,16 @@ is format 2 and every write to it starts the file with `format_version: 2`. A
 non-empty `config.yml` without the key, or with `format_version: 1`, was
 written by untaped 11.x and is refused (exit 4): 12.0 has no upgrade path, so
 delete it and run `untaped setup`, or keep untaped 11.1 for that home.
-`state.yml` is format 1, with or without the key. A file with a newer format,
-or a `format_version` that is not a positive integer, is refused on read and
-on write (exit 4): upgrade untaped instead of letting an older release misread
-it. `config edit` refuses to open while `config.yml` or `state.yml` has a
+A `state.yml` at the top of the home was written by 11.x too, and is refused
+the same way: delete it, or keep untaped 11.1 for that home. A file with a
+newer format, or a `format_version` that is not a positive integer, is refused
+on read and on write (exit 4): upgrade untaped instead of letting an older
+release misread it. `config edit` refuses to open while `config.yml` has a
 newer format, but opens a config with an invalid `format_version`, or one
 written by 11.x, so you can fix it; the edit is saved only as format 2.
 
-`config` and `profile` commands write only `config.yml`; plugin state
-writes touch only `state.yml`.
+`config` and `profile` commands write only `config.yml`; a plugin's state
+writes touch only its own `state.yml`.
 
 The top level of `config.yml` is the base: one section per plugin, read by
 every run. Named profiles go under `profiles:` and each one overlays the base.
@@ -88,19 +89,23 @@ profiles:
       server: {url: https://aap.prod.example.com, verify_tls: ~/certs/aap-prod.pem}
 ```
 
-`state.yml` holds one section per plugin, outside profiles:
+A plugin's `state.yml` holds its rows, outside profiles, and a stamp naming
+the release that last wrote it ([Plugin state](./state.md)), as
+`plugins/workspace/state.yml` does:
 
 ```yaml
-workspace:
-  active:
-    - name: PROJ-123
-      created_at: '2026-10-01T09:00:00Z'
-      repos:
-        - url: https://github.com/acme/api.git
-          name: acme/api
-          dir: api
-          branch: PROJ-123
-          base: main
+untaped:
+  file: 1
+  by: 12.0.0
+workspaces:
+  - name: PROJ-123
+    created_at: '2026-10-01T09:00:00Z'
+    repos:
+      - url: https://github.com/acme/api.git
+        name: acme/api
+        dir: api
+        branch: PROJ-123
+        base: main
 ```
 
 Things that surprise people:
@@ -118,10 +123,10 @@ Things that surprise people:
   anything else, or an unreadable file, is a configuration error naming the
   file. An empty entry (`prod:` with nothing under it) is an empty profile.
 
-Both files are written atomically, owner-only (`0600`) and under a lock (see
-`UNTAPED_CONFIG_LOCK_TIMEOUT` in
-[Environment variables](./reference/environment.md)). A symlinked file stays a
-symlink. Writes rewrite only the keys they change and keep your comments, key
+Config and state files are written atomically, owner-only (`0600`) and under a
+lock: `config.yml` waits for it as long as `UNTAPED_CONFIG_LOCK_TIMEOUT` says
+([Environment variables](./reference/environment.md)), a plugin's `state.yml`
+up to 10 seconds. A symlinked file stays a symlink. Writes rewrite only the keys they change and keep your comments, key
 order, quoting and indentation.
 
 A setting's value comes from the first of these that has it: its
@@ -237,8 +242,7 @@ parsing it as YAML:
 else to the base; `UNTAPED_PROFILE` picks what runs read, never where they
 write, and `--profile a,b` is refused (exit 2). When a profile the run picks
 still hides a value written to the base, one line says so. Each prints an
-`untaped.setting_outcome` record that never echoes the value. Settings a
-plugin manages as state are refused; use the owning plugin's commands.
+`untaped.setting_outcome` record that never echoes the value.
 
 `config get` prints only the value (nothing when unset). Structured output
 adds its source (`profile:<name>`, `base`, `env`, `default` or `unset`),
@@ -256,8 +260,8 @@ save fails, `config.yml` is left as it was and the error names the copy that
 holds your edits. If the editor itself exits with an error, the edits are not
 checked: copy the file over `config.yml` yourself and run `untaped doctor`.
 
-`untaped doctor` checks offline, one row per check: the config and state
-files, the selected profile, every section, unknown keys, renamed, retired or
+`untaped doctor` checks offline, one row per check: the config file, each
+plugin's state, the selected profile, every section, unknown keys, renamed, retired or
 deprecated keys in any profile, a `pass` token command that gpg cannot serve
 here, installed skills, a `setup` row per service (`not set up`, what is
 still missing, or where its token comes from) and each plugin's own checks.

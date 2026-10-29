@@ -42,7 +42,7 @@ def home() -> Path:
     for name, instead in RETIRED_ENV.items():
         if os.environ.get(name, "").strip():
             raise ConfigError(
-                f"{name} is no longer read: config.yml and state.yml live in the home",
+                f"{name} is no longer read: config.yml and plugins/ live in the home",
                 hint=f"unset {name} and set {HOME_ENV} to {instead}",
             )
     spelled = os.environ.get(HOME_ENV, "").strip()

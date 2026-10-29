@@ -1,8 +1,8 @@
 """Registry-backed configuration loaded from the home's ``config.yml``.
 
 The unified composition root owns YAML/env loading and the in-process registry
-of typed plugin settings sections over the profiles layout. Plugin
-state lives in a separate ``state.yml`` (:func:`resolve_state_path`).
+of typed plugin settings sections over the profiles layout. A plugin's
+state lives in its own folder (:mod:`untaped.sdk.storage.state`).
 """
 
 from __future__ import annotations
@@ -76,9 +76,6 @@ def plugins_root() -> Path:
 #: does not bump it: a bump would make an older release refuse the whole file,
 #: and ``untaped config migrate`` renames keys only when the user runs it.
 FORMAT_VERSION = 2
-#: On-disk format of the top-level ``state.yml``, unstamped until it leaves
-#: the top of the home.
-STATE_FORMAT_VERSION = 1
 
 
 class HttpSettings(BaseModel):
@@ -119,16 +116,13 @@ class _ConfigRegistry:
 
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
-        self.state_sections: dict[str, type[BaseModel]] = {}
         self.section_stability: dict[str, Stability | None] = {}
 
     def reset(self) -> None:
         self.profile_sections = {}
-        self.state_sections = {}
         self.section_stability = {}
         get_settings.cache_clear()
         get_settings_model.cache_clear()
-        get_profile_settings_model.cache_clear()
 
     def register_profile_settings(
         self, section: str, model: type[BaseModel], stability: Stability | None = None
@@ -137,28 +131,10 @@ class _ConfigRegistry:
         existing = self.profile_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate profile settings section: {section}")
-        state_model = self.state_sections.get(section)
-        if state_model is not None:
-            validate_disjoint_settings_sections(section, model, state_model)
         self.profile_sections[section] = model
         self.section_stability[section] = stability
         get_settings.cache_clear()
         get_settings_model.cache_clear()
-        get_profile_settings_model.cache_clear()
-
-    def register_state_settings(self, section: str, model: type[BaseModel]) -> None:
-        _reject_reserved_section(section)
-        check_state_section_name(section)
-        existing = self.state_sections.get(section)
-        if existing is not None and existing is not model:
-            raise ConfigError(f"duplicate state settings section: {section}")
-        profile_model = self.profile_sections.get(section)
-        if profile_model is not None:
-            validate_disjoint_settings_sections(section, profile_model, model)
-        self.state_sections[section] = model
-        get_settings.cache_clear()
-        get_settings_model.cache_clear()
-        get_profile_settings_model.cache_clear()
 
 
 _CONFIG_REGISTRY = _ConfigRegistry()
@@ -231,8 +207,8 @@ class ExtensionSettings(BaseModel):
     )
 
 
-#: Keys the SDK injects into a plugin's section, so its own settings and
-#: state models may not declare them: ``extensions`` on every contract owner,
+#: Keys the SDK injects into a plugin's section, so its own settings model may
+#: not declare them: ``extensions`` on every contract owner,
 #: ``caches`` for the caches a plugin declares.
 RESERVED_SECTION_KEYS = frozenset({"extensions", "caches"})
 
@@ -429,7 +405,7 @@ def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
 
 def profile_section_models() -> SectionModels:
     """``section -> model`` for every profile section: core's and each plugin's."""
-    return model_sections(get_profile_settings_model())
+    return model_sections(get_settings_model())
 
 
 _PROFILES_LAYOUT = ProfilesSettingsLayout(sections=profile_section_models)
@@ -459,23 +435,6 @@ def section_stabilities() -> Mapping[str, Stability | None]:
 def registered_profile_model(section: str) -> type[BaseModel] | None:
     """The settings model registered for ``section``, if any."""
     return _CONFIG_REGISTRY.profile_sections.get(section)
-
-
-def register_state_settings(section: str, model: type[BaseModel]) -> None:
-    """Register a plugin's top-level state section spliced into the effective config."""
-    _CONFIG_REGISTRY.register_state_settings(section, model)
-
-
-def validate_disjoint_settings_sections(
-    section: str,
-    profile_model: type[BaseModel],
-    state_model: type[BaseModel],
-) -> None:
-    """Reject profile/state models whose fields would compete for precedence."""
-    overlap = sorted(profile_model.model_fields.keys() & state_model.model_fields.keys())
-    if overlap:
-        joined = ", ".join(overlap)
-        raise ConfigError(f"overlapping profile/state settings for section {section!r}: {joined}")
 
 
 def _reject_reserved_section(section: str) -> None:
@@ -564,10 +523,6 @@ class LayoutSettingsSource(InitSettingsSource):
             for section, uses in sections.items():
                 for use in uses:
                     notify_config_key(use, section=section)
-        # Only splice (and so only validate) the state sections this model
-        # actually declares: a broken state section must not block loading
-        # an unrelated one (see :func:`load_settings_section`).
-        splice_registered_state(effective, sections=settings_cls.model_fields)
         super().__init__(settings_cls, effective)
 
 
@@ -759,24 +714,38 @@ class _RenamingEnvSource(EnvSettingsSource):
 def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
     """Parse ``config.yml`` into a dict (``{}`` when absent or empty).
 
-    Unreadable files, YAML syntax errors, a non-mapping document root and a
-    file that is not format 2 (:func:`check_config_format`) all raise
-    :class:`ConfigError` naming the path.
+    Unreadable files, YAML syntax errors, a non-mapping document root, a
+    file that is not format 2 (:func:`check_config_format`) and an 11.x
+    ``state.yml`` beside it all raise :class:`ConfigError` naming the path.
     """
+    _check_no_shared_state(yaml_file.parent)
     raw = _read_yaml(yaml_file)
     check_config_format(raw, yaml_file)
     return raw
 
 
-def load_state_yaml(yaml_file: Path) -> dict[str, Any]:
-    """Parse the top-level ``state.yml`` into a dict (``{}`` when absent or empty).
+def _check_no_shared_state(folder: Path) -> None:
+    """Refuse a folder holding 11.x's shared ``state.yml`` beside the config read from it.
 
-    Raises as :func:`load_config_yaml` does, except that the file may be
-    unstamped (:data:`STATE_FORMAT_VERSION`).
+    12.0 keeps each plugin's state in its own ``plugins/<name>/state.yml``
+    and never reads the shared file, so it has no upgrade path either.
     """
-    raw = _read_yaml(yaml_file)
-    _check_stamp(raw, yaml_file, newest=STATE_FORMAT_VERSION)
-    return raw
+    shared = folder / STATE_FILE_NAME
+    if shared.exists():
+        raise OlderFormatError(
+            f"{shared} was written by untaped 11.x; this release keeps each plugin's state "
+            "under plugins/ and has no upgrade path",
+            hint="delete it, or keep untaped 11.1 for this home",
+        )
+
+
+def load_state_yaml(yaml_file: Path) -> dict[str, Any]:
+    """Parse a plugin's ``state.yml`` into a dict (``{}`` when absent or empty).
+
+    Raises as :func:`load_config_yaml` does for an unreadable file, a YAML
+    syntax error or a non-mapping root; its stamp is the state rows' to check.
+    """
+    return _read_yaml(yaml_file)
 
 
 def _read_yaml(yaml_file: Path) -> dict[str, Any]:
@@ -830,7 +799,7 @@ class NewerFormatError(FormatVersionError):
 
 
 class OlderFormatError(FormatVersionError):
-    """A ``config.yml`` an untaped 11.x wrote (format 1): 12.0 has no upgrade path."""
+    """A ``config.yml`` (format 1) or shared ``state.yml`` untaped 11.x wrote: no upgrade path."""
 
 
 def check_config_format(raw: dict[str, Any], path: Path) -> None:
@@ -884,69 +853,11 @@ def _check_stamp(raw: dict[str, Any], path: Path, *, newest: int) -> None:
         )
 
 
-def splice_registered_state(
-    effective: dict[str, Any], *, sections: Iterable[str] | None = None
-) -> None:
-    """Merge registered state sections from ``state.yml`` into an effective profile dict.
-
-    ``sections`` limits the splice to the named sections (default: all);
-    ``state.yml`` is only read when at least one registered state section is
-    wanted, so a broken state file never blocks loading a settings-only
-    section.
-    """
-    wanted = None if sections is None else set(sections)
-    targets = [
-        (section, model)
-        for section, model in _CONFIG_REGISTRY.state_sections.items()
-        if wanted is None or section in wanted
-    ]
-    if not targets:
-        return
-    state_path = resolve_state_path()
-    state_raw = load_state_yaml(state_path)
-    for section, model in targets:
-        state = state_raw.get(section)
-        if not isinstance(state, dict):
-            continue
-        try:
-            state_data = model.model_validate(state).model_dump(exclude_unset=True)
-        except ValidationError as exc:
-            raise ConfigError(
-                f"invalid state section {section!r} in {state_path}: {first_validation_error(exc)}"
-            ) from exc
-        merged = effective.setdefault(section, {})
-        if isinstance(merged, dict):
-            merged.update(state_data)
-        else:
-            effective[section] = state_data
-
-
-#: Top-level keys of ``state.yml`` that core owns (11.x's profile layout and
-#: the on-disk format stamp), never usable as plugin state names.
-RESERVED_STATE_SECTIONS = frozenset({"active", *FILE_KEYS})
-
-
-#: Config sections core owns: the top-level layout keys and the keys
-#: injected into plugin sections (:data:`RESERVED_SECTION_KEYS`).
-#: No plugin section or state section may take one, so a plugin named after
-#: one is quarantined (``duplicate-name``).
-RESERVED_SECTIONS = frozenset(
-    {
-        *RESERVED_SECTION_KEYS,
-        *RESERVED_STATE_SECTIONS,
-    }
-)
-
-
-def check_state_section_name(section: str) -> None:
-    """Reject a state section name that collides with ``config.yml``'s own keys."""
-    if not section or section in RESERVED_SECTIONS:
-        raise ConfigError(f"reserved or invalid state section name: {section!r}")
-
-
-def resolve_state_path() -> Path:
-    """``state.yml`` at the home's root (:func:`untaped.sdk.home`)."""
-    return home().expanduser() / STATE_FILE_NAME
+#: Config sections core owns: the top-level layout keys (``format_version``,
+#: ``profiles``, 11.x's ``active``) and the keys injected into plugin sections
+#: (:data:`RESERVED_SECTION_KEYS`). No plugin section may take one, so a plugin
+#: named after one is quarantined (``duplicate-name``).
+RESERVED_SECTIONS = frozenset({*RESERVED_SECTION_KEYS, "active", *FILE_KEYS})
 
 
 def resolve_config_path() -> Path:
@@ -957,13 +868,7 @@ def resolve_config_path() -> Path:
 @lru_cache(maxsize=1)
 def get_settings_model() -> type[Settings]:
     """Build the current aggregate settings model from registered sections."""
-    return _build_settings_model(_CONFIG_REGISTRY.profile_sections, _CONFIG_REGISTRY.state_sections)
-
-
-@lru_cache(maxsize=1)
-def get_profile_settings_model() -> type[Settings]:
-    """Build the user-tunable profile settings model without top-level state."""
-    return _build_settings_model(_CONFIG_REGISTRY.profile_sections, {})
+    return _build_settings_model(_CONFIG_REGISTRY.profile_sections)
 
 
 def _build_settings() -> Settings:
@@ -1015,8 +920,8 @@ get_settings = _SettingsGetter()
 def validate_config_file(candidate: Path) -> None:
     """Validate ``candidate`` as if it were the config file, without loading it.
 
-    Checks exactly what :func:`get_settings` would (environment overrides and
-    plugin state included) against the candidate's content instead of
+    Checks exactly what :func:`get_settings` would (environment overrides
+    included) against the candidate's content instead of
     the active config file's. Raises :class:`ConfigError`.
     """
 
@@ -1149,9 +1054,9 @@ def load_settings_section(name: str, settings_cls: type[Settings] | None = None)
     """Load one top-level settings field from the YAML layout + environment.
 
     Unlike :func:`get_settings`, invalid values in *other* sections do not
-    make this fail — only ``name`` (plus its own state section) is
-    validated. Raises :class:`ConfigError` naming the offending key, and the
-    environment variable when an ``UNTAPED_*`` override supplied it.
+    make this fail — only ``name`` is validated. Raises :class:`ConfigError`
+    naming the offending key, and the environment variable when an
+    ``UNTAPED_*`` override supplied it.
     """
     _, loader = _section_models(settings_cls or get_settings_model(), name)
     try:
@@ -1247,12 +1152,12 @@ def _readable_old_keys(settings_cls: type[BaseModel], section: str) -> dict[str,
 def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     """Return one typed settings section, building a one-off model if needed.
 
-    Only ``section`` (plus its own state section) is validated, so an invalid
-    sibling section never breaks an unrelated plugin.
+    Only ``section`` is validated, so an invalid sibling section never breaks
+    an unrelated plugin.
     """
     settings_cls: type[Settings] | None = None
     if section not in _CONFIG_REGISTRY.profile_sections:
-        settings_cls = _build_settings_model({section: model_cls}, _CONFIG_REGISTRY.state_sections)
+        settings_cls = _build_settings_model({section: model_cls})
     value = load_settings_section(section, settings_cls)
     if isinstance(value, model_cls):
         return value
@@ -1261,41 +1166,19 @@ def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
     return model_cls.model_validate(value)
 
 
-def _build_settings_model(
-    profile_sections: Mapping[str, type[BaseModel]],
-    state_sections: Mapping[str, type[BaseModel]],
-) -> type[Settings]:
+def _build_settings_model(profile_sections: Mapping[str, type[BaseModel]]) -> type[Settings]:
     from untaped.core.settings import NAME, CoreSettings  # noqa: PLC0415 - core imports this module
 
     # Core's section is there before composition registers it too (as a plugin's),
     # so a model built before composition (or for a test's own sections) has it.
     profile_sections = {NAME: CoreSettings, **profile_sections}
-    fields: dict[str, Any] = {}
-    for section in [*profile_sections, *state_sections]:
-        model = _section_model(section, profile_sections, state_sections)
-        fields.setdefault(section, (model, Field(default_factory=model)))
+    fields: dict[str, Any] = {
+        section: (model, Field(default_factory=model))
+        for section, model in profile_sections.items()
+    }
     return cast(
         "type[Settings]",
         create_model("UntapedSettings", __base__=Settings, **fields),
-    )
-
-
-def _section_model(
-    section: str,
-    profile_sections: Mapping[str, type[BaseModel]],
-    state_sections: Mapping[str, type[BaseModel]],
-) -> type[BaseModel]:
-    profile_model = profile_sections.get(section)
-    state_model = state_sections.get(section)
-    if profile_model is None:
-        if state_model is None:
-            raise ConfigError(f"config section {section!r} is not registered")
-        return state_model
-    if state_model is None or state_model is profile_model:
-        return profile_model
-    return cast(
-        "type[BaseModel]",
-        create_model(f"{section.title()}Settings", __base__=(profile_model, state_model)),
     )
 
 

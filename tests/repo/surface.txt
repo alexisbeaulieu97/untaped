@@ -7269,19 +7269,18 @@ sdk untaped.sdk.PluginHandle.dir
 sdk untaped.sdk.PluginHandle.home
 sdk untaped.sdk.PluginHandle.name
 sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
-sdk untaped.sdk.PluginSpec(caches@11=) default=[]
-sdk untaped.sdk.PluginSpec(contracts@9=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(credentials@13=) default=[]
-sdk untaped.sdk.PluginSpec(deprecations@14=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(doctor_checks@6=) default=[]
-sdk untaped.sdk.PluginSpec(help@7=) default=None
+sdk untaped.sdk.PluginSpec(caches@10=) default=[]
+sdk untaped.sdk.PluginSpec(contracts@8=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(credentials@12=) default=[]
+sdk untaped.sdk.PluginSpec(deprecations@13=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(doctor_checks@5=) default=[]
+sdk untaped.sdk.PluginSpec(help@6=) default=None
 sdk untaped.sdk.PluginSpec(name)
-sdk untaped.sdk.PluginSpec(provides@10=) default=<computed> callback(0)
+sdk untaped.sdk.PluginSpec(provides@9=) default=<computed> callback(0)
 sdk untaped.sdk.PluginSpec(settings@3=) default=None
-sdk untaped.sdk.PluginSpec(skills@5=) default=[]
-sdk untaped.sdk.PluginSpec(stability@8=) default=None
-sdk untaped.sdk.PluginSpec(state@4=) default=None
-sdk untaped.sdk.PluginSpec(stores@12=) default=[]
+sdk untaped.sdk.PluginSpec(skills@4=) default=[]
+sdk untaped.sdk.PluginSpec(stability@7=) default=None
+sdk untaped.sdk.PluginSpec(stores@11=) default=[]
 sdk untaped.sdk.PluginSpec.app_factory
 sdk untaped.sdk.PluginSpec.caches
 sdk untaped.sdk.PluginSpec.contracts()
@@ -7294,7 +7293,6 @@ sdk untaped.sdk.PluginSpec.provides
 sdk untaped.sdk.PluginSpec.settings
 sdk untaped.sdk.PluginSpec.skills
 sdk untaped.sdk.PluginSpec.stability
-sdk untaped.sdk.PluginSpec.state
 sdk untaped.sdk.PluginSpec.stores
 sdk untaped.sdk.Positional()
 sdk untaped.sdk.Pressed(id)  [experimental]
@@ -7334,17 +7332,12 @@ sdk untaped.sdk.Project.release(items=) default=None  [experimental]
 sdk untaped.sdk.Project.release(store)  [experimental]
 sdk untaped.sdk.Project.root  [experimental]
 sdk untaped.sdk.ProjectStateRows()  [experimental]
-sdk untaped.sdk.ProjectStateRows(key_field=) default=None  [experimental]
-sdk untaped.sdk.ProjectStateRows(model=) default=None callback(0)  [experimental]
-sdk untaped.sdk.ProjectStateRows(name@2=) default=None  [experimental]
+sdk untaped.sdk.ProjectStateRows(model=) default=None  [experimental]
 sdk untaped.sdk.ProjectStateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.ProjectStateRows(plugin@1=) default=None  [experimental]
-sdk untaped.sdk.ProjectStateRows(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.ProjectStateRows.binding  [experimental]
 sdk untaped.sdk.ProjectStateRows.bindings  [experimental]
 sdk untaped.sdk.ProjectStateRows.block_kind class  [experimental]
 sdk untaped.sdk.ProjectStateRows.derived_name(attribute)  [experimental]
-sdk untaped.sdk.ProjectStateRows.key_field  [experimental]
 sdk untaped.sdk.ProjectStateRows.model  [experimental]
 sdk untaped.sdk.ProjectStateRows.module  [experimental]
 sdk untaped.sdk.ProjectStateRows.name  [experimental]
@@ -7355,7 +7348,6 @@ sdk untaped.sdk.ProjectStateRows.omit_none  [experimental]
 sdk untaped.sdk.ProjectStateRows.plugin  [experimental]
 sdk untaped.sdk.ProjectStateRows.problems()  [experimental]
 sdk untaped.sdk.ProjectStateRows.qualified  [experimental]
-sdk untaped.sdk.ProjectStateRows.remove_hint  [experimental]
 sdk untaped.sdk.ProjectStateRows.spelled  [experimental]
 sdk untaped.sdk.ProjectStateRows.where  [experimental]
 sdk untaped.sdk.PromptChoice(description@3=) default=None
@@ -7602,27 +7594,8 @@ sdk untaped.sdk.Stale.partial
 sdk untaped.sdk.Stale.plugin
 sdk untaped.sdk.Stale.refreshed_at
 sdk untaped.sdk.Stale.retry_at
-sdk untaped.sdk.StateCollection(id_field=) default=name
-sdk untaped.sdk.StateCollection(section, key)
-sdk untaped.sdk.StateCollection.entries()
-sdk untaped.sdk.StateCollection.get(ident)
-sdk untaped.sdk.StateCollection.insert(record)
-sdk untaped.sdk.StateCollection.mutate(fn) callback(fn, 1)
-sdk untaped.sdk.StateCollection.remove(ident)
-sdk untaped.sdk.StateCollection.upsert(record)
-sdk untaped.sdk.StateMap(project=) default=None
-sdk untaped.sdk.StateMap(section, key)
-sdk untaped.sdk.StateMap.entries()
-sdk untaped.sdk.StateMap.get(key)
-sdk untaped.sdk.StateMap.remove(key)
-sdk untaped.sdk.StateMap.set(key, value)
 sdk untaped.sdk.StateRows()  [experimental]
-sdk untaped.sdk.StateRows(key_field=) default=None  [experimental]
-sdk untaped.sdk.StateRows(model=) default=None callback(0)  [experimental]
-sdk untaped.sdk.StateRows(name@2=) default=None  [experimental]
 sdk untaped.sdk.StateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows(plugin@1=) default=None  [experimental]
-sdk untaped.sdk.StateRows(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.StateRows.add(value)  [experimental]
 sdk untaped.sdk.StateRows.all()  [experimental]
 sdk untaped.sdk.StateRows.append(value)  [experimental]
@@ -7632,7 +7605,6 @@ sdk untaped.sdk.StateRows.block_kind class  [experimental]
 sdk untaped.sdk.StateRows.delete(key)  [experimental]
 sdk untaped.sdk.StateRows.derived_name(attribute)  [experimental]
 sdk untaped.sdk.StateRows.get(key)  [experimental]
-sdk untaped.sdk.StateRows.key_field  [experimental]
 sdk untaped.sdk.StateRows.keys()  [experimental]
 sdk untaped.sdk.StateRows.model  [experimental]
 sdk untaped.sdk.StateRows.module  [experimental]
@@ -7642,17 +7614,11 @@ sdk untaped.sdk.StateRows.name_style class  [experimental]
 sdk untaped.sdk.StateRows.omit_none  [experimental]
 sdk untaped.sdk.StateRows.path()  [experimental]
 sdk untaped.sdk.StateRows.per_project()  [experimental]
-sdk untaped.sdk.StateRows.per_project(key_field=) default=None  [experimental]
-sdk untaped.sdk.StateRows.per_project(model=) default=None callback(0)  [experimental]
-sdk untaped.sdk.StateRows.per_project(name@2=) default=None  [experimental]
 sdk untaped.sdk.StateRows.per_project(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows.per_project(plugin@1=) default=None  [experimental]
-sdk untaped.sdk.StateRows.per_project(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.StateRows.plugin  [experimental]
 sdk untaped.sdk.StateRows.problems()  [experimental]
 sdk untaped.sdk.StateRows.put(value)  [experimental]
 sdk untaped.sdk.StateRows.qualified  [experimental]
-sdk untaped.sdk.StateRows.remove_hint  [experimental]
 sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental]
 sdk untaped.sdk.StateRows.spelled  [experimental]
 sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
@@ -8662,12 +8628,7 @@ sdk untaped.sdk.storage.Served.freshness
 sdk untaped.sdk.storage.Served.stale
 sdk untaped.sdk.storage.Served.value
 sdk untaped.sdk.storage.StateRows()  [experimental]
-sdk untaped.sdk.storage.StateRows(key_field=) default=None  [experimental]
-sdk untaped.sdk.storage.StateRows(model=) default=None callback(0)  [experimental]
-sdk untaped.sdk.storage.StateRows(name@2=) default=None  [experimental]
 sdk untaped.sdk.storage.StateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.storage.StateRows(plugin@1=) default=None  [experimental]
-sdk untaped.sdk.storage.StateRows(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.storage.StateRows.add(value)  [experimental]
 sdk untaped.sdk.storage.StateRows.all()  [experimental]
 sdk untaped.sdk.storage.StateRows.append(value)  [experimental]
@@ -8677,7 +8638,6 @@ sdk untaped.sdk.storage.StateRows.block_kind class  [experimental]
 sdk untaped.sdk.storage.StateRows.delete(key)  [experimental]
 sdk untaped.sdk.storage.StateRows.derived_name(attribute)  [experimental]
 sdk untaped.sdk.storage.StateRows.get(key)  [experimental]
-sdk untaped.sdk.storage.StateRows.key_field  [experimental]
 sdk untaped.sdk.storage.StateRows.keys()  [experimental]
 sdk untaped.sdk.storage.StateRows.model  [experimental]
 sdk untaped.sdk.storage.StateRows.module  [experimental]
@@ -8687,17 +8647,11 @@ sdk untaped.sdk.storage.StateRows.name_style class  [experimental]
 sdk untaped.sdk.storage.StateRows.omit_none  [experimental]
 sdk untaped.sdk.storage.StateRows.path()  [experimental]
 sdk untaped.sdk.storage.StateRows.per_project()  [experimental]
-sdk untaped.sdk.storage.StateRows.per_project(key_field=) default=None  [experimental]
-sdk untaped.sdk.storage.StateRows.per_project(model=) default=None callback(0)  [experimental]
-sdk untaped.sdk.storage.StateRows.per_project(name@2=) default=None  [experimental]
 sdk untaped.sdk.storage.StateRows.per_project(omit_none=) default=false  [experimental]
-sdk untaped.sdk.storage.StateRows.per_project(plugin@1=) default=None  [experimental]
-sdk untaped.sdk.storage.StateRows.per_project(remove_hint=) default=None  [experimental]
 sdk untaped.sdk.storage.StateRows.plugin  [experimental]
 sdk untaped.sdk.storage.StateRows.problems()  [experimental]
 sdk untaped.sdk.storage.StateRows.put(value)  [experimental]
 sdk untaped.sdk.storage.StateRows.qualified  [experimental]
-sdk untaped.sdk.storage.StateRows.remove_hint  [experimental]
 sdk untaped.sdk.storage.StateRows.replace_all(change) callback(change, 1)  [experimental]
 sdk untaped.sdk.storage.StateRows.spelled  [experimental]
 sdk untaped.sdk.storage.StateRows.update(key, change) callback(change, 1)  [experimental]

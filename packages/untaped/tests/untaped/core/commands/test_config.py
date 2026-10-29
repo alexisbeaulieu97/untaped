@@ -211,28 +211,28 @@ def test_config_edit_never_opens_a_newer_config(
     assert not marker.exists()
 
 
-def test_config_edit_never_opens_with_a_newer_state_file(
-    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_config_set_is_refused_beside_11x_shared_state(_isolated_config: Path) -> None:
     config = "format_version: 2\n"
     write_config(_isolated_config, config)
     state = _isolated_config.with_name("state.yml")
-    state_text = f"format_version: {FORMAT_VERSION + 1}\n"
-    state.write_text(state_text)
-    marker = tmp_path / "editor-ran"
-    _scripted_editor(
-        tmp_path,
-        monkeypatch,
-        "format_version: 2\n",
-        code=f"pathlib.Path({str(marker)!r}).touch()",
-    )
-    result = CliInvoker().invoke(_config_app(), ["edit"])
+    state.write_text("github: {}\n")
+    result = CliInvoker().invoke(_config_app(), ["set", "github.token", "x"])  # type: ignore[arg-type]
     assert result.exit_code == 4, result.output
-    assert f"{state} was written by a newer untaped" in " ".join(result.stderr.split())
-    assert "newer than this release supports" not in result.stderr
-    assert not marker.exists()
+    assert f"{state} was written by untaped 11.x" in " ".join(result.stderr.split())
     assert _isolated_config.read_text() == config
-    assert state.read_text() == state_text
+    assert state.read_text() == "github: {}\n"
+
+
+def test_config_edit_still_opens_beside_11x_shared_state(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_config(_isolated_config, "format_version: 2\n")
+    _isolated_config.with_name("state.yml").write_text("github: {}\n")
+    edited = "format_version: 2\njira: {timeout: 5}\n"
+    _scripted_editor(tmp_path, monkeypatch, edited)
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text() == edited
 
 
 def test_config_edit_repairs_an_invalid_stamp(

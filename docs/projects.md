@@ -22,8 +22,8 @@ a project:
 - `.untaped/project.json` holds its id, twelve hex digits chosen at random.
   It is created only if it doesn't exist, so two `init`s at once make one
   project.
-- `.untaped/.gitignore` keeps `project.json`, `state.yml`, `plugins/` and
-  core's own lock files at `.untaped/`'s top level out of git, and itself
+- `.untaped/.gitignore` keeps `project.json`, `plugins/` and
+  core's own lock file at `.untaped/`'s top level out of git, and itself
   when `init` creates it; a plugin's committed files, such as `recipe.lock`,
   stay tracked. A repository can share its own `.untaped/` files, such as
   `lint.yml`, never a project's id.
@@ -70,7 +70,7 @@ $ untaped project remove ~/work/PROJ-123 --dry-run
 plugin     item                 action   detail
 workspace  github.com/acme/api  planned  removes worktree api; keeps the repo: project PROJ-200 holds it
 workspace  github.com/acme/web  refused  branch PROJ-123: 2 commits never pushed
-untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json, state.yml; keeps config.yml (yours)
+untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json; keeps config.yml (yours)
 ```
 
 - `project move OLD NEW` moves the folder on one filesystem; untaped never
@@ -90,8 +90,8 @@ untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json, state
   that item's refusal, and forgets a hold whose plugin isn't installed (never
   one whose plugin is broken: fix it instead); naming an item the project
   doesn't hold exits 2. Then
-  it deletes only what untaped wrote: `project.json`, `state.yml`,
-  `plugins/`, its own lock files and an untouched `.gitignore`. `config.yml` and
+  it deletes only what untaped wrote: `project.json`, `plugins/`, its own
+  lock file and an untouched `.gitignore`. `config.yml` and
   your own files stay, and so does the folder unless nothing else is in it.
 - `project prune` does the same for every project whose folder is gone, and
   skips the ones it can't read now.
@@ -102,8 +102,8 @@ All three preview with `--dry-run`; `remove` and `prune` exit 3 under
 ## A plugin's files in `.untaped/`
 
 Every name in `.untaped/` is core's (`project.json`, `config.yml`,
-`state.yml`, `plugins/`, `.gitignore`, and the lock files beside
-`config.yml` and `state.yml`) or one plugin's. A plugin names the
+`plugins/`, `.gitignore`, and the lock file beside `config.yml`) or one
+plugin's. A plugin names the
 files people write, and may commit, through its handle's `committed` in a
 run:
 
@@ -118,8 +118,9 @@ The name is the plugin's own: its name (`awx`), `<plugin>.<ext>`
 a `ValueError`. `project_at(path)` and `current_project()` find the project a
 folder is in (`current_project()` is a usage error, exit 2, outside one).
 
-A plugin's rows for one project go in the project's `state.yml` through
-`StateRows.per_project(...).of(project)` ([Plugin state](./state.md#a-projects-rows)).
+A plugin's rows for one project go in the project's
+`.untaped/plugins/<plugin>/state.yml` through
+`StateRows[Row].per_project().of(project)` ([Plugin state](./state.md#a-projects-rows)).
 
 `nearest_pyproject(start)` walks up to the farther of the checkout root and
 the project root, as `uv` finds a project from a worktree inside it.

@@ -40,7 +40,6 @@ from untaped.runtime.registry import (
     kept_declaration,
     run_deferred_factory,
     section_settings,
-    spliced_state,
 )
 from untaped.runtime.root_options import (
     RootLine,
@@ -53,7 +52,6 @@ from untaped.runtime.root_options import (
 )
 from untaped.runtime.settings import (
     register_profile_settings,
-    register_state_settings,
     reset_config_registry,
 )
 from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure
@@ -122,9 +120,6 @@ def _register_sections(result: CompositionResult) -> None:
         section = section_settings(spec)
         if section is not None:
             register_profile_settings(spec.name, section, spec.stability)
-        spliced = spliced_state(spec)
-        if spliced is not None:
-            register_state_settings(spec.name, spliced)
 
 
 def _attach(run: Run, result: CompositionResult) -> None:

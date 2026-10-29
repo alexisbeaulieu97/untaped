@@ -381,8 +381,7 @@ def _timed_caches(plugin: str, declared: Sequence[BlockDecl]) -> tuple[Cache[Any
 
 
 #: The ``PluginSpec`` field each owned block kind goes to; ``None`` for a kind
-#: no 11.x reader may see (a plugin class's state rows live in its own file,
-#: not the shared one ``PluginSpec.stores`` describes) or needs (a lock). A
+#: no spec reader needs (state rows, which their own readers find, or a lock). A
 #: ``Dir`` goes to ``stores`` when it is numbered (its layouts, which references
 #: name and doctor lists) or holds ``items=`` (its item store, which holds use).
 _SPEC_FIELDS: dict[str, str | None] = {

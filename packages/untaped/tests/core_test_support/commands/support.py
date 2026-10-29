@@ -47,12 +47,6 @@ class GithubProfile(BaseModel):
     mode: Literal["on", "off"] | None = None
 
 
-class GithubState(BaseModel):
-    """Fake plugin state model (section ``github``)."""
-
-    cursor: str | None = None
-
-
 class JiraProfile(BaseModel):
     """Fake plugin settings model (section ``jira``)."""
 
@@ -136,7 +130,6 @@ def make_spec(
     name: str,
     *,
     settings: type[BaseModel] = ExtProfile,
-    state: type[BaseModel] | None = None,
     skills: tuple[SkillAsset, ...] = (),
     doctor_checks: tuple[DoctorCheck, ...] = (),
     stability: Stability | None = None,
@@ -156,7 +149,6 @@ def make_spec(
         name=name,
         app_factory=_factory,
         settings=settings,
-        state=state,
         skills=skills,
         doctor_checks=doctor_checks,
         stability=stability,
@@ -300,7 +292,6 @@ __all__ = [
     "EnvProfile",
     "ExtProfile",
     "GithubProfile",
-    "GithubState",
     "JiraProfile",
     "StrictProfile",
     "WizProfile",

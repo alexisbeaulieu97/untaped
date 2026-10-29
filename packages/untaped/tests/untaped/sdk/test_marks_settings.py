@@ -139,17 +139,6 @@ def test_a_misplaced_mark_quarantines_its_provider() -> None:
     assert "sits inside its type" in record.detail
 
 
-class MarkedState(BaseModel):
-    last_run: Annotated[str, experimental] = ""
-
-
-def test_a_mark_on_a_state_field_is_refused() -> None:
-    assert mark_errors(MarkedState, state=True) == [
-        "setting 'last_run' is state: state fields take no stability marks"
-    ]
-    assert mark_errors(MarkedState) == []
-
-
 def test_the_lint_reports_a_misplaced_mark_with_its_file_and_line() -> None:
     root = Path(__file__).resolve().parents[5]
 
@@ -159,14 +148,6 @@ def test_the_lint_reports_a_misplaced_mark_with_its_file_and_line() -> None:
     assert location.startswith("packages/untaped/tests/untaped/sdk/test_marks_settings.py:")
     assert location.rsplit(":", 1)[1].isdigit()
     assert (rule, "sits inside its type" in detail) == ("settings-renames", True)
-
-
-def test_the_lint_checks_a_state_model_for_marks() -> None:
-    root = Path(__file__).resolve().parents[5]
-
-    [line] = settings_name_violations("svc", Section, root, state=MarkedState)
-
-    assert "::settings-renames::setting 'last_run' is state" in line
 
 
 def test_a_clean_marked_section_composes() -> None:

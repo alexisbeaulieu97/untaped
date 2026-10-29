@@ -3,14 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, SecretStr
 
 from untaped.runtime.settings import (
     get_config_section,
-    get_settings,
     get_settings_model,
     register_profile_settings,
-    register_state_settings,
 )
 from untaped.sdk._schema import secret_field_paths, walk_settings
 from untaped.sdk.errors import ConfigError
@@ -19,14 +17,6 @@ from untaped.sdk.errors import ConfigError
 class DemoSettings(BaseModel):
     token: SecretStr | None = None
     endpoint: str = "https://default.example"
-
-
-class DemoState(BaseModel):
-    entries: list[str] = Field(default_factory=list)
-
-
-class OverlappingDemoState(BaseModel):
-    endpoint: str = "https://state.example"
 
 
 @pytest.fixture(autouse=True)
@@ -64,70 +54,17 @@ def test_get_config_section_resolves_config_and_env(
     assert section.token.get_secret_value() == "from-env"
 
 
-def test_state_sections_are_spliced_from_the_state_file(_isolated_config: Path) -> None:
-    register_profile_settings("demo", DemoSettings)
-    register_state_settings("demo", DemoState)
-    _isolated_config.write_text(
-        "format_version: 2\ndemo:\n  endpoint: https://configured.example\n"
-    )
-    (_isolated_config.parent / "state.yml").write_text("demo:\n  entries:\n    - alpha\n")
-
-    settings = get_settings()
-
-    assert settings.demo.endpoint == "https://configured.example"
-    assert settings.demo.entries == ["alpha"]
-
-
-def test_state_settings_cannot_overlap_profile_settings() -> None:
-    register_profile_settings("demo", DemoSettings)
-
-    with pytest.raises(ConfigError, match="overlapping profile/state settings"):
-        register_state_settings("demo", OverlappingDemoState)
-
-
-def test_profile_settings_cannot_overlap_state_settings() -> None:
-    register_state_settings("demo", OverlappingDemoState)
-
-    with pytest.raises(ConfigError, match="overlapping profile/state settings"):
-        register_profile_settings("demo", DemoSettings)
-
-
-def test_state_splice_only_uses_registered_state_fields(_isolated_config: Path) -> None:
-    """The splice merges only the state model's set fields into the
-    effective dict — a non-state field in the state file must not clobber
-    the value the layout already resolved."""
-    from untaped.runtime.settings import splice_registered_state
-
-    register_profile_settings("demo", DemoSettings)
-    register_state_settings("demo", DemoState)
-    (_isolated_config.parent / "state.yml").write_text(
-        "demo:\n  endpoint: https://state.example\n  entries:\n    - alpha\n"
-    )
-    effective = {"demo": {"endpoint": "https://layout.example"}}
-
-    splice_registered_state(effective)
-
-    assert effective["demo"]["endpoint"] == "https://layout.example"
-    assert effective["demo"]["entries"] == ["alpha"]
-
-
 class PagedSettings(BaseModel):
     page_size: int = 10
-
-
-class BrokenState(BaseModel):
-    entries: list[str] = Field(default_factory=list)
 
 
 def test_get_config_section_ignores_invalid_sibling_sections(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
     register_profile_settings("paged", PagedSettings)
-    register_state_settings("paged_state", BrokenState)
     _isolated_config.write_text(
         "format_version: 2\n"
         "paged:\n  page_size: notanint\n"
         "demo:\n  endpoint: https://configured.example\n"
-        "paged_state:\n  entries: notalist\n"
     )
 
     assert get_config_section("demo", DemoSettings).endpoint == "https://configured.example"

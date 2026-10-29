@@ -13,7 +13,6 @@ stable surface from :mod:`untaped.sdk` instead.
 
 from __future__ import annotations
 
-import copy
 import functools
 import hashlib
 import logging
@@ -27,14 +26,14 @@ from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, TypeGuard, cast, overload
+from typing import TYPE_CHECKING, Any, TypeGuard, overload
 
 from cyclopts import App
 from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion
-from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
+from pydantic import BaseModel
 
 from untaped.runtime.declaration import (
     Declaration,
@@ -45,7 +44,6 @@ from untaped.runtime.declaration import (
 )
 from untaped.runtime.settings import (
     PLUGIN_NAME_PATTERN,
-    RESERVED_SECTION_KEYS,
     RESERVED_SECTIONS,
     plugins_root,
     reserved_section_keys,
@@ -61,7 +59,6 @@ from untaped.sdk.marks import (
     DeprecatedBehaviour,
     Stability,
     check_stability,
-    mark_errors,
 )
 from untaped.sdk.network.credentials import (
     Credential,
@@ -72,14 +69,6 @@ from untaped.sdk.network.credentials import (
 )
 from untaped.sdk.records import KindError
 from untaped.sdk.storage.cache import Cache, Filled
-from untaped.sdk.storage.state import (
-    ProjectStateRows,
-    StateCollection,
-    StateMap,
-    StateRows,
-    caller_home,
-    declared_rows,
-)
 from untaped.sdk.storage.store import Store
 
 if TYPE_CHECKING:
@@ -89,9 +78,6 @@ if TYPE_CHECKING:
     from untaped.sdk.plugin import Plugin
     from untaped.sdk.progress import ProgressHandle
     from untaped.sdk.storage.holds import ItemStore
-
-#: What a plugin lists on ``PluginSpec.stores`` for the data it keeps in ``state.yml``.
-type StateDeclaration = StateRows[Any] | ProjectStateRows[Any] | StateMap | StateCollection
 
 _LOG = logging.getLogger("untaped.registry")
 
@@ -153,8 +139,8 @@ class PluginSpec:
 
     ``name`` is also the plugin's config section and CLI group. Every part
     is optional: ``app_factory`` builds the commands mounted under the name
-    (none when it is ``None``), ``settings`` is the settings model of the
-    plugin's config section and ``state`` its ``state.yml`` model.
+    (none when it is ``None``) and ``settings`` is the settings model of the
+    plugin's config section.
 
     ``help`` is the one-line summary shown in the Plugins panel of root help. A
     plugin that declares it is mounted lazily: its ``app_factory`` (and
@@ -184,14 +170,7 @@ class PluginSpec:
     :class:`~untaped.sdk.storage.store.Store` objects, each file in a layout of its own
     (``doctor`` lists them), and the :class:`~untaped.sdk.storage.holds.ItemStore`
     objects whose items projects may hold (core asks the plugin how to
-    release them), which share one namespace; and its ``state.yml`` data
-    (:class:`~untaped.sdk.storage.state.StateRows`,
-    :class:`~untaped.sdk.storage.state.ProjectStateRows`,
-    :class:`~untaped.sdk.storage.state.StateMap`,
-    :class:`~untaped.sdk.storage.state.StateCollection`), named in a namespace of their
-    own: the keys of its state section. A ``StateRows`` the plugin declares
-    must be listed. ``state`` (a model of the whole section) is still read
-    alongside.
+    release them), which share one namespace.
 
     ``credentials`` are the :class:`~untaped.sdk.network.credentials.Credential` objects
     whose secrets the plugin needs: core keeps them outside configuration,
@@ -201,7 +180,6 @@ class PluginSpec:
     name: str
     app_factory: Callable[[], App] | None = None
     settings: type[BaseModel] | None = None
-    state: type[BaseModel] | None = None
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
     help: str | None = None
@@ -211,17 +189,13 @@ class PluginSpec:
         default_factory=lambda: MappingProxyType({}), hash=False
     )
     caches: tuple[Cache[Any], ...] = ()
-    stores: tuple[Store | ItemStore[Any] | StateDeclaration, ...] = ()
+    stores: tuple[Store | ItemStore[Any], ...] = ()
     credentials: tuple[Credential[Any], ...] = ()
     deprecations: Callable[[], Sequence[DeprecatedBehaviour]] = _no_deprecations
-    _home: str = field(default="", init=False, repr=False, compare=False, hash=False)
-    """The module that made the spec (``pkg.`` for a package): its own declarations live there."""
 
     def __post_init__(self) -> None:
         check_plugin_name(self.name)
-        object.__setattr__(self, "_home", caller_home(frozenset({__name__, "dataclasses"})))
         _check_model(self.settings, "settings", f"plugin {self.name!r}")
-        _check_model(self.state, "state", f"plugin {self.name!r}")
         if self.app_factory is not None and not callable(self.app_factory):
             raise ConfigError(f"plugin {self.name!r} app_factory must be callable or None")
         try:
@@ -249,12 +223,9 @@ class PluginSpec:
             raise ConfigError(f"plugin {self.name!r} {exc}") from None
         object.__setattr__(self, "stores", tuple(self.stores))
         for store in self.stores:
-            if _is_state(store):
-                _check_state_listing(self.name, store)
-            elif not isinstance(store, Store) and not _is_item_store(store):
+            if not isinstance(store, Store) and not _is_item_store(store):
                 raise ConfigError(
-                    f"plugin {self.name!r} stores holds {store!r}, not a Store, an ItemStore "
-                    "or a state declaration"
+                    f"plugin {self.name!r} stores holds {store!r}, not a Store or an ItemStore"
                 )
         object.__setattr__(self, "provides", MappingProxyType(dict(self.provides)))
 
@@ -416,7 +387,6 @@ class RegisteredPlugin:
 VALID_REASONS = frozenset(
     {
         "duplicate-name",
-        "settings-state-overlap",
         "duplicate-skill",
         "bad-skill-asset",
         "duplicate-doctor-check",
@@ -432,7 +402,6 @@ VALID_REASONS = frozenset(
         "duplicate-cache",
         "foreign-store",
         "duplicate-store",
-        "unlisted-state",
         "foreign-credential",
         "duplicate-credential",
         "bad-credential",
@@ -809,37 +778,12 @@ def _check_section_keys(spec: PluginSpec) -> None:
         ({"extensions"} if owns_contracts(spec) else set())
         | ({"caches"} if _timed_caches(spec) else set())
     )
-    for label, model, keys in (
-        ("settings", spec.settings, injected),
-        ("state", spec.state, frozenset[str]()),
-    ):
-        taken = [] if model is None else reserved_section_keys(model, injected=keys)
-        if label == "state":
-            taken += [
-                each.name
-                for each in state_declarations(spec)
-                if each.name in RESERVED_SECTION_KEYS and each.name not in taken
-            ]
-        if taken:
-            raise _Quarantine(
-                "bad-settings-keys",
-                f"plugin {spec.name!r} {label} declares {', '.join(taken)}, "
-                "which untaped reserves for its own section keys",
-            )
-
-
-def _check_state_model(spec: PluginSpec) -> None:
-    if spec.state is not None:
-        marked = mark_errors(spec.state, state=True)
-        if marked:
-            raise _Quarantine("bad-settings-keys", f"plugin {spec.name!r}: {marked[0]}")
-    if spec.settings is None:
-        return
-    overlap = sorted(set(spec.settings.model_fields) & state_keys(spec))
-    if overlap:
+    taken = [] if spec.settings is None else reserved_section_keys(spec.settings, injected=injected)
+    if taken:
         raise _Quarantine(
-            "settings-state-overlap",
-            f"overlapping profile/state settings for section {spec.name!r}: {', '.join(overlap)}",
+            "bad-settings-keys",
+            f"plugin {spec.name!r} settings declares {', '.join(taken)}, "
+            "which untaped reserves for its own section keys",
         )
 
 
@@ -959,164 +903,19 @@ def _check_credentials(spec: PluginSpec) -> None:
 
 
 def _check_stores(spec: PluginSpec) -> None:
-    files: set[str] = set()
-    state: set[str] = set()
+    seen: set[str] = set()
     for store in spec.stores:
-        what = "state" if _is_state(store) else "store"
         if store.plugin != spec.name:
             raise _Quarantine(
                 "foreign-store",
-                f"plugin {spec.name!r} declares the {what} '{store.plugin}.{store.name}' of "
+                f"plugin {spec.name!r} declares the store '{store.plugin}.{store.name}' of "
                 "another plugin",
             )
-        seen = state if _is_state(store) else files
         if store.name in seen:
             raise _Quarantine(
-                "duplicate-store", f"plugin {spec.name!r} declares the {what} {store.name!r} twice"
+                "duplicate-store", f"plugin {spec.name!r} declares the store {store.name!r} twice"
             )
         seen.add(store.name)
-    listed = state_declarations(spec)
-    for declared in declared_rows(spec.name, spec._home):
-        if declared not in listed:
-            raise _Quarantine(
-                "unlisted-state",
-                f"plugin {spec.name!r} declares the state rows {declared.qualified!r} but "
-                "doesn't list them on PluginSpec.stores",
-            )
-
-
-def state_declarations(spec: PluginSpec) -> tuple[StateDeclaration, ...]:
-    """The ``state.yml`` data ``spec`` lists on ``stores``."""
-    return tuple(store for store in spec.stores if _is_state(store))
-
-
-def state_keys(spec: PluginSpec) -> frozenset[str]:
-    """The keys of ``spec``'s state section: its state declarations' and its ``state`` model's.
-
-    Read from names only: no row model is imported.
-    """
-    keys = set() if spec.state is None else set(spec.state.model_fields)
-    keys.update(declared.name for declared in state_declarations(spec))
-    return frozenset(keys)
-
-
-def state_model(spec: PluginSpec) -> type[BaseModel] | None:
-    """One model of ``spec``'s whole state section in the home; ``None`` when it keeps none.
-
-    The ``state`` model's fields, then a field per state declaration it
-    doesn't cover: rows of the declaration's model, a string map, or a list
-    of mappings. A project's rows live in the project and are left out.
-    Resolves lazy row models: for the surface, the config reference and
-    ``doctor``, never on the startup path.
-    """
-    declarations = tuple(
-        each for each in state_declarations(spec) if not isinstance(each, ProjectStateRows)
-    )
-    covered = set() if spec.state is None else set(spec.state.model_fields)
-    extra: dict[str, Any] = {
-        each.name: (_declared_type(each), Field(default_factory=_EMPTY[type(each)]))
-        for each in declarations
-        if each.name not in covered
-    }
-    if not extra:
-        return spec.state
-    fields: dict[str, Any] = {
-        name: (info.annotation, info)
-        for name, info in (spec.state.model_fields.items() if spec.state is not None else ())
-    }
-    model: type[BaseModel] = create_model(f"{_title(spec.name)}State", **fields, **extra)
-    return model
-
-
-def spliced_state(spec: PluginSpec) -> type[BaseModel] | None:
-    """The ``state`` model as spliced into settings, less the keys a state declaration owns.
-
-    Declared state keeps its own rules (unknown fields kept, a damaged row
-    named), so it never fails the plugin's settings load.
-    """
-    if spec.state is None:
-        return None
-    owned = {each.name for each in state_declarations(spec)}
-    if not owned:
-        return spec.state
-    return _without(spec.state, frozenset(owned))
-
-
-@functools.cache
-def _without(model: type[BaseModel], keys: frozenset[str]) -> type[BaseModel]:
-    """A subclass of ``model`` that never reads ``keys``, one class per pair.
-
-    A subclass keeps the model's validators and methods. The keys are dropped
-    before validation, so their fields keep their defaults: registering the
-    class again is a no-op.
-    """
-    forbids = model.model_config.get("extra") == "forbid"
-
-    class Spliced(model):  # type: ignore[misc,valid-type]
-        # The dropped keys stay in the file: a model forbidding extra keys would refuse them.
-        if forbids:
-            model_config = ConfigDict(extra="ignore")
-
-        @model_validator(mode="before")
-        @classmethod
-        def _drop_declared(cls, data: object) -> object:
-            if isinstance(data, dict):
-                return {key: value for key, value in data.items() if key not in keys}
-            return data
-
-    # A declared field keeps its usual empty value; one with no default is None.
-    fields: dict[str, Any] = {}
-    for name, info in model.model_fields.items():
-        if name not in keys:
-            continue
-        if info.is_required():
-            fields[name] = (Any, Field(default=None, exclude=True))
-        else:
-            kept = copy.copy(info)
-            kept.exclude = True
-            fields[name] = (info.annotation, kept)
-    without = create_model(model.__name__, __base__=Spliced, __module__=model.__module__, **fields)
-    return cast("type[BaseModel]", without)
-
-
-_EMPTY: dict[type, Callable[[], object]] = {
-    StateRows: list,
-    ProjectStateRows: list,
-    StateMap: dict,
-    StateCollection: list,
-}
-
-
-def _declared_type(declared: StateDeclaration) -> Any:
-    if isinstance(declared, StateRows | ProjectStateRows):
-        if declared.model is None:  # a plugin class's rows, never on a spec
-            return list[Any]
-        model = declared.model if isinstance(declared.model, type) else declared.model()
-        return list[model]  # type: ignore[valid-type]
-    if isinstance(declared, StateMap):
-        return dict[str, str]
-    return list[dict[str, Any]]
-
-
-def _title(name: str) -> str:
-    return "".join(part.capitalize() for part in name.split("-"))
-
-
-def _is_state(value: object) -> TypeGuard[StateDeclaration]:
-    return isinstance(value, StateRows | ProjectStateRows | StateMap | StateCollection)
-
-
-def _check_state_listing(plugin: str, declared: StateDeclaration) -> None:
-    """A state declaration is listed as declared: never one project's rows or map."""
-    bound = (declared._file._path if isinstance(declared, StateRows) else None) or (
-        declared._path if isinstance(declared, StateMap) else None
-    )
-    if bound is not None:
-        raise ConfigError(
-            f"plugin {plugin!r} stores lists {declared.plugin}.{declared.name} of one project; "
-            "list the "
-            "declaration (StateRows.per_project, StateMap without project=)"
-        )
 
 
 def _check_composed_mappings(spec: PluginSpec) -> None:
@@ -1149,7 +948,6 @@ def _check_own_declaration(spec: PluginSpec) -> None:
     _check_section_keys(spec)
     _check_key_mappings(spec)
     _check_composed_mappings(spec)
-    _check_state_model(spec)
 
 
 def _check_factory(factory: Callable[[], App]) -> App:

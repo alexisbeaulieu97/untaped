@@ -189,7 +189,7 @@ class Remove(Command[CoreSettings]):
     Each plugin the project holds items of says how it lets go (a repo
     another project holds is kept), shown first. One refused hold applies
     nothing (exit 1); --force ITEM overrides that item's refusal. Then
-    project.json, state.yml, plugins/ and its own lock files go; config.yml and
+    project.json, plugins/ and its own lock file go; config.yml and
     your own files stay, and so does the folder unless nothing else is in
     it. Always confirms; without a terminal it needs --yes (else exit 2).
 

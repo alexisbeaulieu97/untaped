@@ -11,7 +11,6 @@ from untaped.runtime.redaction import redact_url_password
 from untaped.runtime.settings import (
     get_settings_model,
     register_profile_settings,
-    register_state_settings,
 )
 from untaped.sdk._schema import (
     Choices,
@@ -27,9 +26,6 @@ from untaped.sdk._schema import (
 class DemoProfileSettings(BaseModel):
     directory: Path = Path("~/.demo")
     token: SecretStr | None = None
-
-
-class DemoStateSettings(BaseModel):
     entries: list[str] = Field(default_factory=list)
 
 
@@ -50,9 +46,6 @@ def test_walks_nested_models() -> None:
 
 
 def test_skips_collection_fields() -> None:
-    register_profile_settings("demo", DemoProfileSettings)
-    register_state_settings("demo", DemoStateSettings)
-
     descriptors = walk_settings(get_settings_model())
     keys = {d.key for d in descriptors}
     # ``demo.entries`` is a list — should not appear. The sibling scalar

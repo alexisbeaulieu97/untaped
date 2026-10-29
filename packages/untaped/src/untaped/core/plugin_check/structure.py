@@ -110,9 +110,9 @@ def _unattributed_base(cls: type, package: str) -> bool:
 
 
 def _settings_violations(spec: PluginSpec) -> Iterator[str]:
-    for label, model in (("settings", spec.settings), ("state", spec.state)):
-        if model is not None and not model.model_config.get("frozen", False):
-            yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::{label}"
+    model = spec.settings
+    if model is not None and not model.model_config.get("frozen", False):
+        yield f"{model.__module__}.{model.__qualname__}::settings-not-frozen::settings"
 
 
 def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path) -> list[str]:
@@ -120,7 +120,5 @@ def structure_class_violations(spec: PluginSpec, package: str, source_dir: Path)
     return [
         *_runtime_violations(package),
         *_settings_violations(spec),
-        *settings_name_violations(
-            spec.name, settings_model(spec), source_dir.parent, state=spec.state
-        ),
+        *settings_name_violations(spec.name, settings_model(spec), source_dir.parent),
     ]

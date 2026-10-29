@@ -172,9 +172,7 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
     assert (root / ".untaped" / ".gitignore").read_text(encoding="utf-8").splitlines() == [
         "/.gitignore",
         "/project.json",
-        "/state.yml",
         "/plugins/",
-        "/state.yml.lock",
         "/config.yml.lock",
     ]
     ref = _reference(done.project)
@@ -192,9 +190,7 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
         "state.yml",
         "notes/",
         "/project.json",
-        "/state.yml",
         "/plugins/",
-        "/state.yml.lock",
         "/config.yml.lock",
     ]
     assert (folder / "lint.yml").read_text(encoding="utf-8") == "version: 1\n"
@@ -207,9 +203,7 @@ def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -
     cores = [
         ".gitignore",
         "project.json",
-        "state.yml",
         "plugins/x.json",
-        "state.yml.lock",
         "config.yml.lock",
     ]
     plugins = [  # a plugin's committed files, at any depth

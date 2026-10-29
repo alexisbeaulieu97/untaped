@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
@@ -333,6 +333,21 @@ def test_a_failed_write_is_a_config_error(tmp_path: Path, monkeypatch: pytest.Mo
         Demo.items.add(Item(name="ada"))
 
 
+def test_rows_that_are_not_a_list_are_never_overwritten(tmp_path: Path) -> None:
+    folder = tmp_path / "plugins" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "state.yml").write_text("items: {name: ada}\n")
+    with pytest.raises(ConfigError, match="`items` must be a list of mappings"):
+        Demo.items.add(Item(name="bob"))
+    assert (folder / "state.yml").read_text() == "items: {name: ada}\n"
+
+
+def test_a_write_creates_the_plugins_folder(tmp_path: Path) -> None:
+    assert not (tmp_path / "plugins").exists()
+    Demo.items.add(Item(name="ada"))
+    assert (tmp_path / "plugins" / "demo" / "state.yml").is_file()
+
+
 def test_a_newer_untapeds_file_is_never_overwritten(tmp_path: Path) -> None:
     folder = tmp_path / "plugins" / "demo"
     folder.mkdir(parents=True)
@@ -379,6 +394,27 @@ def test_composition_refuses_rows_it_cannot_key() -> None:
     assert any("name the rows' model" in detail for _, detail in problems)
 
 
+class Optional_(BaseModel):
+    name: Annotated[str | None, Key] = None
+
+
+class Numbered(BaseModel):
+    number: Annotated[int, Key]
+
+
+def test_the_key_is_a_required_str_field() -> None:
+    class Unkeyable(Plugin):
+        """Unkeyable."""
+
+        settings = Settings
+        optional = StateRows[Optional_]()
+        numbered = StateRows[Numbered]()
+
+    problems = _shape_problems(Unkeyable)
+    assert ("block-shape", "Optional_.name, marked Key, must be a required str field") in problems
+    assert ("block-shape", "Numbered.number, marked Key, must be a required str field") in problems
+
+
 def test_state_rows_cannot_be_named_after_the_stamp() -> None:
     class Stamped(Plugin):
         """Stamped."""
@@ -401,39 +437,10 @@ def test_a_damaged_project_row_offers_its_remover(tmp_path: Path) -> None:
     )
 
 
-def test_the_11x_spelling_keeps_its_repr_and_compares_by_name() -> None:
-    first = StateRows("acme", "spelled_things", model=Item, key_field="name")
-    again = StateRows("acme", "spelled_things", model=Item, key_field="name")
-    assert repr(first) == "StateRows('acme', 'spelled_things')"
-    assert first == again
-
-
-def test_a_subscripted_11x_per_project_keeps_its_spelling() -> None:
-    rows = StateRows[Item].per_project("acme", "spelled_checkouts", model=Item, key_field="name")
-    assert rows.spelled
-    assert repr(rows) == "ProjectStateRows('acme', 'spelled_checkouts')"
-
-
 def test_the_state_file_stamps_as_every_data_file_does() -> None:
     from untaped.sdk.storage import data_file, state
 
     assert state.STAMP == data_file.STAMP
-
-
-@pytest.mark.parametrize(
-    ("build", "match"),
-    [
-        (lambda: StateRows(key_field="name"), "not key_field= or remove_hint="),
-        (lambda: StateRows("acme", "x", model=Item), "the 11.x spelling takes"),
-        (lambda: StateRows(model="Item"), "model takes a model class"),  # type: ignore[arg-type]
-        (lambda: StateRows.per_project(remove_hint="rm {key}"), "not key_field="),
-        (lambda: StateRows.per_project("acme", "x"), "the 11.x spelling takes"),
-        (lambda: StateRows.per_project(model="Item"), "model takes a model class"),  # type: ignore[arg-type]
-    ],
-)
-def test_a_misspelled_declaration_is_refused(build: Callable[[], object], match: str) -> None:
-    with pytest.raises(ConfigError, match=match):
-        build()
 
 
 def test_rows_a_plugin_class_holds_are_named_where_they_were_made() -> None:
@@ -444,21 +451,16 @@ def test_rows_a_plugin_class_holds_are_named_where_they_were_made() -> None:
 
 
 def test_composition_refuses_rows_per_project_it_cannot_key() -> None:
-    def refusing() -> type[Item]:
-        raise ConfigError("no model today")
-
     class Broken(Plugin):
         """Broken."""
 
         settings = Settings
         twice = StateRows[Twice].per_project()
-        notmodel = StateRows(model=lambda: int)  # type: ignore[arg-type,return-value]
-        refused = StateRows(model=refusing)
+        notmodel = StateRows[int]()  # type: ignore[type-var]
 
     problems = _shape_problems(Broken)
     assert ("block-shape", "Twice marks a and b Key; a row has one key") in problems
     assert ("block-shape", "model is not a pydantic model: <class 'int'>") in problems
-    assert ("block-shape", "no model today") in problems
 
 
 def test_list_rows_have_one_remover_too() -> None:

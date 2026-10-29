@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.runtime.settings import plugins_root, resolve_state_path
+from untaped.runtime.settings import plugins_root
 from untaped.sdk import home, plugin_path
 from untaped.sdk._home import config_path
 from untaped.sdk.errors import ConfigError
@@ -30,7 +30,6 @@ def test_untaped_home_moves_everything(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("UNTAPED_HOME", str(tmp_path))
     assert home() == tmp_path
     assert config_path() == tmp_path / "config.yml"
-    assert resolve_state_path() == tmp_path / "state.yml"
     assert plugins_root() == tmp_path / "plugins"
     assert plugin_path("acme") == tmp_path / "plugins" / "acme"
 

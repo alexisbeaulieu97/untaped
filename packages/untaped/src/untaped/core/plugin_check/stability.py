@@ -65,7 +65,7 @@ from untaped.core.plugin_check.help_tree import as_groups
 from untaped.core.surface._sdk import foreign
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec
 from untaped.runtime.root_options import resolve_command
-from untaped.runtime.settings import get_profile_settings_model, profile_section_models
+from untaped.runtime.settings import get_settings_model, profile_section_models
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.marks import (
     COMMAND_TEXT,
@@ -332,7 +332,7 @@ def _bad_text(root: App, text: str, plugin: str | None) -> Iterator[str]:
     elif KEY_TEXT.match(text):
         keys = {
             ".".join(descriptor.path)
-            for descriptor in walk_settings(get_profile_settings_model(), include_collections=True)
+            for descriptor in walk_settings(get_settings_model(), include_collections=True)
         }
         if text not in keys:
             yield f"`{text}` is not a current setting"

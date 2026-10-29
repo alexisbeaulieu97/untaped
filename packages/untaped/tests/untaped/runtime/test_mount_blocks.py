@@ -128,7 +128,7 @@ def test_credentials_and_behaviours_reach_the_spec_named_and_compose_again() -> 
     assert token.qualified == "keeper.token"
     assert token is first.plugins[1].spec.credentials[0]
     assert [each.name for each in plugin.spec.deprecations()] == ["plain-notes"]
-    assert not plugin.spec.stores  # its rows live in its own file, not the shared one
+    assert not plugin.spec.stores  # its rows are read from the class, not the spec
     assert _run("keeper", "show").exit_code == 0
 
 

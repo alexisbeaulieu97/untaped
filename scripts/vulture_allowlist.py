@@ -132,7 +132,6 @@ _typed_options_are_supported
 # SDK and repo checks that only tests call.
 StateRows.per_project  # documented SDK: projects PR 6's workspace rows are the first caller
 StateRows.replace_all  # documented SDK
-StateCollection.upsert  # 11.x SDK, removed with the 11.x state helpers in the sweep
 _.parent_app  # cyclopts' resolve() signature, overridden by the lazy 11.x mount
 DataFile.copy_to  # documented SDK: the plugins' move PRs are the first callers
 Lock.try_locked  # documented SDK: dotfiles' move PR is the first caller

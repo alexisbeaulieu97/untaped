@@ -727,24 +727,20 @@ def pydantic_deprecated_fields(model: type[BaseModel]) -> list[str]:
     return [path for path, field, _ in _section_fields(model) if field.deprecated]
 
 
-def mark_errors(model: type[BaseModel], *, state: bool = False) -> list[str]:
+def mark_errors(model: type[BaseModel]) -> list[str]:
     """One sentence per mark on ``model`` that would not take effect; ``[]`` when none.
 
     A mark must sit in the outermost ``Annotated`` of a leaf field of a profile
     model (``Annotated[int | None, experimental]``), never inside a union or
-    generic argument, on a model-typed field, on a state model's field
-    (``state=True``). A field with pydantic's own ``deprecated=`` is a style
-    problem for ``check_plugin`` (:func:`pydantic_deprecated_fields`), not
-    one that stops a provider loading.
+    generic argument, or on a model-typed field. A field with pydantic's own
+    ``deprecated=`` is a style problem for ``check_plugin``
+    (:func:`pydantic_deprecated_fields`), not one that stops a provider
+    loading.
     """
     errors: list[str] = []
     for path, field, is_model in _section_fields(model):
         marks_here = _own_marks(field)
         inside = _mark_inside_type(field.annotation)
-        if state:
-            if marks_here or inside:
-                errors.append(f"setting {path!r} is state: state fields take no stability marks")
-            continue
         if inside:
             errors.append(
                 f"the mark on setting {path!r} sits inside its type, where pydantic drops it; "

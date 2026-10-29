@@ -1,35 +1,27 @@
-"""config.yml reads only format 2; config.yml and state.yml refuse a newer format.
+"""config.yml reads only format 2 and refuses a newer format.
 
-An 11.x config.yml (unstamped, or stamped 1) is refused on read and on write:
-12.0 has no upgrade path. The top-level state.yml keeps its own, unstamped
-format until it leaves the top of the home.
+An 11.x config.yml (unstamped, or stamped 1) is refused on read and on write,
+and so is a home holding 11.x's top-level state.yml: 12.0 has no upgrade path.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
-from pydantic import BaseModel
 
 from core_test_support.commands.support import write_config
 from untaped.runtime.config_file import (
     mutate_config,
-    mutate_plugin_state,
-    read_plugin_state,
     write_config_dict,
 )
 from untaped.runtime.settings import (
     FORMAT_VERSION,
-    STATE_FORMAT_VERSION,
     get_settings,
     load_config_yaml,
-    register_state_settings,
 )
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.storage.state import StateCollection, StateMap
 
 
 @pytest.mark.parametrize("text", ["", "# nothing yet\n", "{}\n"])
@@ -100,11 +92,6 @@ STAMPS = [
     ("'2'", "invalid format_version"),
     ("true", "invalid format_version"),
 ]
-STATE_STAMPS = [
-    (str(STATE_FORMAT_VERSION + 1), "newer untaped"),
-    ("'1'", "invalid format_version"),
-    ("true", "invalid format_version"),
-]
 
 
 def _replace_config(path: Path) -> None:
@@ -129,26 +116,6 @@ def test_writes_never_touch_a_refused_config(
     assert path.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize(("stamp", "match"), STATE_STAMPS)
-def test_state_writes_never_touch_a_refused_state_file(
-    _isolated_config: Path, stamp: str, match: str
-) -> None:
-    state = _isolated_config.with_name("state.yml")
-    text = f"format_version: {stamp}\ndemo:\n  items: []\n"
-    write_config(state, text)
-    with pytest.raises(ConfigError, match=match):
-        StateCollection("demo", "items", id_field="id").upsert({"id": "a"})
-    with pytest.raises(ConfigError, match=match):
-        StateMap("demo", "aliases").set("web", "org/web")
-    with pytest.raises(ConfigError, match=match):
-        mutate_plugin_state("demo", lambda section: section.update(items=[]))
-    assert state.read_text(encoding="utf-8") == text
-
-
-class _DemoState(BaseModel):
-    items: list[dict[str, Any]] = []
-
-
 def _refused(read: Callable[[], object], match: str) -> None:
     with pytest.raises(ConfigError, match=match) as refused:
         read()
@@ -161,24 +128,15 @@ def test_settings_refuse_a_stamped_config(_isolated_config: Path, stamp: str, ma
     _refused(get_settings, match)
 
 
-@pytest.mark.parametrize(("stamp", "match"), STATE_STAMPS)
-def test_reads_refuse_a_stamped_state_file(_isolated_config: Path, stamp: str, match: str) -> None:
+def test_a_home_holding_11x_shared_state_is_refused(_isolated_config: Path) -> None:
     write_config(_isolated_config, f"format_version: {FORMAT_VERSION}\n")
     state = _isolated_config.with_name("state.yml")
-    write_config(state, f"format_version: {stamp}\ndemo:\n  items: []\n")
-    register_state_settings("demo", _DemoState)
-    _refused(get_settings, match)
-    _refused(lambda: read_plugin_state("demo"), match)
-    _refused(StateCollection("demo", "items", id_field="id").entries, match)
-    _refused(lambda: StateCollection("demo", "items", id_field="id").get("a"), match)
-    _refused(StateMap("demo", "aliases").entries, match)
-    _refused(lambda: StateMap("demo", "aliases").get("web"), match)
-
-
-def test_a_state_file_may_be_unstamped(_isolated_config: Path) -> None:
-    state = _isolated_config.with_name("state.yml")
-    write_config(state, "demo:\n  items: [{id: a}]\n")
-    assert StateCollection("demo", "items", id_field="id").entries() == [{"id": "a"}]
+    write_config(state, "demo:\n  items: []\n")
+    with pytest.raises(ConfigError, match=r"written by untaped 11\.x") as refused:
+        get_settings()
+    assert refused.value.exit_code == 4
+    assert refused.value.hint == "delete it, or keep untaped 11.1 for this home"
+    assert state.read_text(encoding="utf-8") == "demo:\n  items: []\n"
 
 
 def test_stamps_survive_writes(_isolated_config: Path) -> None:
@@ -186,9 +144,3 @@ def test_stamps_survive_writes(_isolated_config: Path) -> None:
     write_config(path, f"format_version: {FORMAT_VERSION}\nprofiles:\n  work: {{}}\n")
     mutate_config(lambda data: data["profiles"].update(other={}), path)
     assert path.read_text(encoding="utf-8").startswith(f"format_version: {FORMAT_VERSION}\n")
-    state = path.with_name("state.yml")
-    write_config(state, f"format_version: {STATE_FORMAT_VERSION}\ndemo:\n  items: []\n")
-    collection = StateCollection("demo", "items", id_field="id")
-    collection.upsert({"id": "a"})
-    assert state.read_text(encoding="utf-8").startswith(f"format_version: {STATE_FORMAT_VERSION}\n")
-    assert collection.entries() == [{"id": "a"}]

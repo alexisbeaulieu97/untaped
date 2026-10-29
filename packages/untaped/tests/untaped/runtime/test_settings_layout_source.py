@@ -1,8 +1,8 @@
 """Tests for ``LayoutSettingsSource`` — the YAML-through-layout settings source.
 
 These exercise ``Settings`` against the default profiles layout and registered
-plugin sections: profile-scoped key loading (under ``profiles.default``), YAML
-error translation, and generic plugin state splicing from ``state.yml``.
+plugin sections: profile-scoped key loading (under ``profiles.default``) and YAML error
+translation.
 """
 
 from __future__ import annotations
@@ -10,14 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, SecretStr
 
 from untaped.runtime.settings import (
     LayoutSettingsSource,
     get_settings,
     get_settings_model,
     register_profile_settings,
-    register_state_settings,
 )
 from untaped.sdk.errors import ConfigError
 
@@ -27,10 +26,6 @@ class DemoProfileSettings(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
     api_prefix: str = "/api/demo/v1/"
-
-
-class DemoStateSettings(BaseModel):
-    entries: list[str] = Field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
@@ -57,65 +52,6 @@ def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert s.demo.base_url == "https://aap.local"
     assert s.demo.token is not None
     assert s.demo.token.get_secret_value() == "secret-value"
-
-
-def test_registered_state_lives_in_the_state_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    register_profile_settings("demo", DemoProfileSettings)
-    register_state_settings("demo", DemoStateSettings)
-    cfg = tmp_path / "config.yml"
-    (tmp_path / "state.yml").write_text(
-        """
-        demo:
-          entries:
-            - prod
-            - stage
-        """
-    )
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    s = get_settings()
-    assert s.demo.entries == ["prod", "stage"]
-
-
-def test_state_and_profile_fields_share_one_section(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Profiles layout: a section's user-tunable fields live under
-    ``profiles.default.<section>`` while its app state lives in ``state.yml``
-    under ``<section>``; the state splice must merge, not clobber."""
-    register_profile_settings("demo", DemoProfileSettings)
-    register_state_settings("demo", DemoStateSettings)
-    cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        """
-        format_version: 2
-        demo:
-          cache_dir: /from/config
-        """
-    )
-    (tmp_path / "state.yml").write_text("demo:\n  entries:\n    - prod\n")
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    s = get_settings()
-    assert s.demo.cache_dir == Path("/from/config")
-    assert s.demo.entries == ["prod"]
-
-
-def test_invalid_state_section_raises_config_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    register_profile_settings("demo", DemoProfileSettings)
-    register_state_settings("demo", DemoStateSettings)
-    cfg = tmp_path / "config.yml"
-    (tmp_path / "state.yml").write_text(
-        """
-        demo:
-          entries: not-a-list
-        """
-    )
-    monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
-    with pytest.raises(ConfigError, match="demo"):
-        get_settings_model()()
 
 
 def test_empty_config_file_yields_schema_defaults(

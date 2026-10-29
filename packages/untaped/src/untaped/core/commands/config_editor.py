@@ -13,9 +13,7 @@ from untaped.runtime.settings import (
     NewerFormatError,
     OlderFormatError,
     check_config_text,
-    load_state_yaml,
     resolve_config_path,
-    resolve_state_path,
     validate_config_file,
 )
 from untaped.runtime.sink import Diagnostics
@@ -43,7 +41,6 @@ def run_config_editor() -> None:
         original = read_config_text(path)
         if original is not None:
             _refuse_a_newer_format(lambda: check_config_text(original, path))
-        _refuse_a_newer_format(lambda: load_state_yaml(resolve_state_path()))
         workdir = Path(tempfile.mkdtemp(prefix="untaped-config-edit-"))
         draft = workdir / path.name
         edited_by_user = False
@@ -60,8 +57,6 @@ def run_config_editor() -> None:
             try:
                 validate_config_file(draft)
             except NewerFormatError as exc:
-                if exc.path != draft:
-                    raise  # state.yml, not the edit: keep its own message and path
                 raise ConfigError(
                     f"format_version {exc.version} is newer than this release supports "
                     f"(format {FORMAT_VERSION})",

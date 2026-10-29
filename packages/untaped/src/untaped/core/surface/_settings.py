@@ -98,12 +98,7 @@ def sections(
     ``settings_only`` leaves the state sections out, so a plugin class's
     state rows, which import the class, are not read.
     """
-    from untaped.runtime.registry import (  # noqa: PLC0415
-        section_settings,
-        state_declarations,
-        state_model,
-    )
-    from untaped.sdk.storage.state import ProjectStateRows, StateRows  # noqa: PLC0415
+    from untaped.runtime.registry import section_settings  # noqa: PLC0415
 
     found: list[Section] = []
     ordered = sorted(result.plugins, key=lambda each: (not each.root, each.spec.name))
@@ -113,24 +108,17 @@ def sections(
             found.append(Section(f"`{spec.name}`", spec.name, settings, False, spec.stability))
         if settings_only:
             continue
-        state = state_model(spec)
-        rows = tuple(
-            each
-            for each in state_declarations(spec)
-            if isinstance(each, StateRows | ProjectStateRows)
-        )
-        held = _held_rows(result, spec.name)
-        file = None
-        if held:  # a plugin class's rows, in its own state file
-            state, rows = _rows_model(spec.name, held), held
-            if state is not None:
-                file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
-        if state is None and rows:  # only a project's rows: no section in the home
+        rows = _held_rows(result, spec.name)
+        if not rows:
+            continue
+        state, file = _rows_model(spec.name, rows), None
+        if state is not None:  # rows in the home, in the plugin's own state file
+            file = f"~/.untaped/{PLUGINS_FOLDER}/{spec.name}/state.yml"
+        else:  # only a project's rows: no section in the home
             state = create_model(spec.name.title().replace("-", "") + "State")
-        if state is not None:
-            found.append(
-                Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows, file)
-            )
+        found.append(
+            Section(f"`{spec.name}` state", spec.name, state, True, spec.stability, rows, file)
+        )
     return found
 
 

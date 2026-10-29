@@ -20,7 +20,7 @@ from typing import Any
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import base_sections, profile_entries
 from untaped.runtime.settings import (
-    get_profile_settings_model,
+    get_settings_model,
     profile_section_models,
     resolve_config_path,
 )
@@ -64,7 +64,7 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
     raw = _raw()
     if raw is None:
         return DoctorResult(ok=True, detail=_NOT_CHECKED)
-    model = get_profile_settings_model()
+    model = get_settings_model()
     leaves = {d.path for d in walk_settings(model, include_collections=True)}
     # Old keys are the deprecated-keys row's to report; deleted ones are listed below.
     leaves |= {
