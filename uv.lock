@@ -911,19 +911,12 @@ dependencies = [
     { name = "untaped-lint" },
 ]
 
-[package.optional-dependencies]
-lint = [
-    { name = "untaped-lint" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-lint", editable = "packages/untaped-lint" },
-    { name = "untaped-lint", marker = "extra == 'lint'", editable = "packages/untaped-lint" },
 ]
-provides-extras = ["lint"]
 
 [[package]]
 name = "untaped-dotfiles"
@@ -954,13 +947,6 @@ source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
     { name = "untaped-git" },
-]
-
-[package.optional-dependencies]
-git = [
-    { name = "untaped-git" },
-]
-workspace = [
     { name = "untaped-workspace" },
 ]
 
@@ -968,10 +954,8 @@ workspace = [
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
-    { name = "untaped-git", marker = "extra == 'git'", editable = "packages/untaped-git" },
-    { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
+    { name = "untaped-workspace", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["git", "workspace"]
 
 [[package]]
 name = "untaped-jira"

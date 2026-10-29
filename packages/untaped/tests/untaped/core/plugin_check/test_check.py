@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 from pathlib import Path
 
 import pytest
 
 from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
+from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.check import PluginCheck, check_plugins
 from untaped.runtime import bootstrap
-from untaped.runtime.registry import PluginCandidate, PluginSpec
+from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
@@ -63,15 +66,20 @@ def test_failures_are_reported(contract_plugins_site: Path) -> None:
     assert not [row for row in rows if row[0] in {"fills", "schema"}]
 
 
-def test_an_owner_that_is_not_installed_skips_the_offer(contract_plugins_site: Path) -> None:
+def test_a_fill_whose_owner_is_not_installed_fails_registration(
+    contract_plugins_site: Path,
+) -> None:
     rows = _rows(_check(rack=False))
-    assert rows[-1][0] == "registration"
-    assert rows[-1][2] == "pass"
-    assert rows[-1][3].startswith("skipped: ")
+    assert rows[-1] == (
+        "registration",
+        "ItemSource",
+        "fail",
+        "fills untaped_rack._contract:ItemSource, which no installed plugin offers",
+    )
 
 
 def test_an_owner_out_of_range_fails_registration(contract_plugins_site: Path) -> None:
-    rows = _rows(_check(bin_requires=(CORE_RANGE, "untaped-rack>=2,<3; extra == 'rack'")))
+    rows = _rows(_check(bin_requires=(CORE_RANGE, "untaped-rack>=2,<3")))
     assert (
         "registration",
         "rack",
@@ -113,12 +121,6 @@ def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) ->
     assert (row.check, row.status) == ("registration", "fail")
 
 
-def test_an_owner_whose_contracts_fail_is_reported(contract_plugins_site: Path) -> None:
-    importlib.import_module("untaped_rack").BROKEN = True
-    rows = _rows(_check("rack"))
-    assert ("contracts", "rack", "fail", "its contracts function fails; see doctor") in rows
-
-
 def test_assert_fills_finds_the_installed_plugin_and_its_owner(
     contract_plugins_site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -130,21 +132,19 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
     assert not (contract_plugins_site / "untaped_bin" / "fills.json").exists()
 
 
-def test_a_provider_fails_when_its_owner_cannot_be_read(contract_plugins_site: Path) -> None:
-    importlib.import_module("untaped_rack").BROKEN = True
-    rows = _rows(_check())
-    assert ("registration", "rack", "fail", "rack's contracts function fails; see doctor") in rows
-    assert not [row for row in rows if row[0] == "live"]
-
-
-def test_a_provider_fails_when_its_owner_is_quarantined(contract_plugins_site: Path) -> None:
+@pytest.mark.parametrize("by_class", [False, True], ids=["entry-point", "class"])
+def test_a_provider_fails_when_its_owner_is_quarantined(
+    contract_plugins_site: Path, by_class: bool
+) -> None:
+    """Once, named by the owner, whether its candidate names the class or holds it."""
+    rack = importlib.import_module("untaped_rack.plugin").Rack if by_class else None
     found = [
         candidate
         if candidate.name != "rack"
         else PluginCandidate(
             distribution="untaped-rack",
             name="rack",
-            target="untaped_rack:SPEC",
+            target=rack or "untaped_rack.plugin:Rack",
             distribution_version="1.4",
             requires_dist=("untaped>=99",),
         )
@@ -152,8 +152,32 @@ def test_a_provider_fails_when_its_owner_is_quarantined(contract_plugins_site: P
     ]
     result = bootstrap.compose_root(candidates=found)
     [registration] = [row for row in check_plugins(result, found, "bin") if row.title == "rack"]
+    assert not [row for row in check_plugins(result, found, "bin") if "offers" in row.detail]
     assert registration.status == "fail"
     assert registration.detail.startswith("rack is quarantined (")
+
+
+def test_two_fills_of_a_quarantined_owner_give_one_row(contract_plugins_site: Path) -> None:
+    api = importlib.import_module("untaped_rack.api")
+
+    class Left(api.ItemSource, Provider):  # type: ignore[misc,name-defined]
+        def items(self) -> list[object]:
+            return []
+
+    class Right(api.ItemSource, Provider):  # type: ignore[misc,name-defined]
+        def items(self) -> list[object]:
+            return []
+
+    duo = make_plugin("duo", fills=(Left, Right))
+    found = [
+        candidate
+        if candidate.name != "rack"
+        else dataclasses.replace(candidate, requires_dist=("untaped>=99",))
+        for candidate in [*candidates(), plugin_candidate(duo)]
+    ]
+    result = bootstrap.compose_root(candidates=found)
+    rows = [row for row in check_plugins(result, found, "duo") if row.check == "registration"]
+    assert [(row.title, row.status) for row in rows] == [("rack", "fail")]
 
 
 def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
@@ -161,22 +185,12 @@ def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
 ) -> None:
     api = importlib.import_module("untaped_rack.api")
 
-    class Shelf(api.ItemSource):  # type: ignore[misc,name-defined]
+    class Shelf(api.ItemSource, Provider):  # type: ignore[misc,name-defined]
         def items(self) -> list[object]:
             return [api.Item(name="cup")]
 
-    shelf = PluginSpec(name="shelf", provides={"rack": lambda: (Shelf(),)})
+    shelf = make_plugin("shelf", fills=(Shelf,))
     found = [*candidates(), plugin_candidate(shelf)]
     result = bootstrap.compose_root(candidates=found)
     rows = _rows(check_plugins(result, found, "shelf"))
     assert ("live", "rack.item_source.items", "pass", "1 item") in rows
-
-
-def test_assert_fills_names_an_owner_whose_contracts_fail(contract_plugins_site: Path) -> None:
-    importlib.import_module("untaped_rack").BROKEN = True
-    box = importlib.import_module("untaped_bin.providers.rack").Box
-    with (
-        compose_with(*candidates()),
-        pytest.raises(LookupError, match="whose owner may be rack: its contracts function fails"),
-    ):
-        assert_fills(_bin(), samples=[box(id=3, label="pens")])

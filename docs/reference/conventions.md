@@ -258,8 +258,8 @@ except the stability rules, the settings rules, and the command, option and pane
 
 A plugin may import another only through that plugin's public
 module, `<package>.api` (for example `untaped_github.api`), never its other
-internals, and only when its distribution depends on the other's (under an
-extra only for an owner it provides for, the extra named like the owner). Dependencies are one-way, and
+internals, and only when its distribution depends on the other's (an owner
+it fills a contract of too, since a fill subclasses it). Dependencies are one-way, and
 imports of another plugin stay lazy on CLI paths; a settings model that
 validates against the other plugin may import it at module top. An `api`
 module keeps a closed `__all__`. Logic two plugins need lives in exactly

@@ -5,8 +5,9 @@ included). The conventions read the plugin's package; the contract checks compos
 plugin and the owners it provides for, so nothing else installed changes the
 verdict:
 
-- ``registration``: an offer the registry quarantined fails (one waiting for
-  an owner that isn't installed passes, skipped);
+- ``registration``: an offer the registry quarantined fails (an 11.x one
+  waiting for an owner that isn't installed passes, skipped), and so does a
+  plugin class's fill whose owner is quarantined or not installed;
 - ``conformance``: the owner's own checks, a ``conformance(provider)``
   function in its ``testing`` module, on each ready provider;
 - ``live``: one live call of each filled method taking no required
@@ -26,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel, ValidationError
 
 from untaped.core.commands.records import PluginCheck
+from untaped.runtime.declaration import target_of
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate, PluginSpec, owns_contracts
 from untaped.sdk.errors import UsageError, first_validation_error
@@ -73,7 +75,7 @@ def _check(
         rows += _contracts(name, candidates, row)
     if spec.provides:
         rows += _offers(spec, candidates, row)
-    return rows
+    return rows + _unowned(name, result, candidates, row)
 
 
 type _Row = Callable[..., PluginCheck]
@@ -143,6 +145,65 @@ def _offers(
                     )
                 continue
             rows += _provider(entry, composed, candidates, row)
+    return rows
+
+
+def fill_owners(
+    name: str, result: CompositionResult, candidates: Sequence[PluginCandidate]
+) -> list[tuple[str, PluginCandidate | None]]:
+    """Each contract plugin class ``name`` fills, and the installed plugin that owns it.
+
+    The owner is the composed plugin offering the contract, or a quarantined
+    one whose entry point is in the contract's package; ``None`` when no
+    installed plugin owns it.
+    """
+    declaration = result.mount.declaration
+    if not any(plugin.name == name for plugin in declaration.plugins):
+        return []
+    by_name = {candidate.name: candidate for candidate in candidates}
+    offering = {target: plugin.name for plugin in declaration.plugins for target in plugin.offers}
+    quarantined = {record.name for record in result.quarantine}
+    entry_points = {
+        _package(target if isinstance(target := candidate.target, str) else target_of(target)): (
+            candidate
+        )
+        for candidate in candidates
+        if candidate.name in quarantined
+    }
+    found: list[tuple[str, PluginCandidate | None]] = []
+    for fill in declaration.plugin(name).fills:
+        owner = offering.get(fill.contract)
+        candidate = by_name.get(owner) if owner else entry_points.get(_package(fill.contract))
+        found.append((fill.contract, candidate))
+    return found
+
+
+def _package(target: str) -> str:
+    return target.partition(":")[0].partition(".")[0]
+
+
+def _unowned(
+    name: str, result: CompositionResult, candidates: Sequence[PluginCandidate], row: _Row
+) -> list[PluginCheck]:
+    """A plugin class's fills no composed plugin offers: its owner is quarantined, or none is.
+
+    A fill subclasses its owner's contract, so the owner is a dependency: one
+    that isn't installed can't be waited for.
+    """
+    quarantined = {record.name: record for record in result.quarantine}
+    rows: list[PluginCheck] = []
+    seen: set[str] = set()
+    for contract, owner in fill_owners(name, result, candidates):
+        if owner is not None and owner.name in seen:
+            continue  # one row per quarantined owner, however many fills it has
+        if owner is None:
+            why = f"fills {contract}, which no installed plugin offers"
+            rows.append(row("registration", contract.rpartition(":")[2], "fail", why))
+        elif owner.name in quarantined:
+            seen.add(owner.name)
+            record = quarantined[owner.name]
+            why = f"{owner.name} is quarantined ({record.reason}): {record.detail}"
+            rows.append(row("registration", owner.name, "fail", why))
     return rows
 
 

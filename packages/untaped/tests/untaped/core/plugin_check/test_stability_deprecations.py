@@ -99,8 +99,9 @@ _API = '''
 '''
 
 _PLUGIN = {
-    "untaped_acme/__init__.py": '''
-        """Acme."""
+    "untaped_acme/__init__.py": '"""Acme."""\n',
+    "untaped_acme/plugin.py": '''
+        """The ``acme`` plugin class."""
 
         from collections.abc import Mapping
         from datetime import timedelta
@@ -108,35 +109,44 @@ _PLUGIN = {
 
         from pydantic import BaseModel, ConfigDict
 
-        from untaped.sdk import Cache, PluginSpec, create_app, deprecated, deprecated_alias
+        from untaped.sdk import Cache, Command, Plugin, deprecated
+        from untaped.sdk.marks import Deprecated
 
-        def _app():
-            app = create_app(name="acme", help="Acme.")
 
-            @app.command(name="put")
-            @deprecated()
-            def put() -> None:
-                """Put it."""
+        class Put(Command):
+            """Put it."""
 
-            @app.command(name="set")
-            def set_() -> None:
-                """Set it."""
+            stability = deprecated()
 
-            deprecated_alias(app, "store", "set")
-            return app
+            def run(self) -> None:
+                return None
+
+
+        class Set(Command):
+            """Set it."""
+
+            aliases = (Deprecated(replacement="store"),)
+
+            def run(self) -> None:
+                return None
+
 
         class AcmeSettings(BaseModel):
+            """Acme settings."""
+
             model_config = ConfigDict(frozen=True)
             renamed_keys: ClassVar[Mapping[str, object]] = {"old_wait": "wait"}
 
             wait: int = 5
             old_mode: Annotated[bool, deprecated()] = False
 
-        INDEX = Cache(
-            "acme", "index", label="index", max_age=timedelta(hours=1), renamed_from=("stale",)
-        )
 
-        SPEC = PluginSpec(name="acme", app_factory=_app, settings=AcmeSettings, caches=(INDEX,))
+        class Acme(Plugin):
+            """Acme."""
+
+            settings = AcmeSettings
+            commands = (Put, Set)
+            index = Cache(label="index", max_age=timedelta(hours=1), renamed_from=("stale",))
         ''',
     "acme_lib/__init__.py": '''
         """Another library's deprecation, re-exported by acme's API."""
@@ -166,7 +176,7 @@ _UNREADABLE = '''
 def _rows(install: Install, plugin: dict[str, str] = _PLUGIN) -> list[str]:
     install(plugin)
     candidate = PluginCandidate(
-        distribution="untaped-acme", name="acme", target="untaped_acme:SPEC"
+        distribution="untaped-acme", name="acme", target="untaped_acme.plugin:Acme"
     )
     rules = ("undated-deprecation", "untyped-deprecation", "deprecation-text", "unwarned-parameter")
     found = plugin_violations("acme", candidates=[candidate])

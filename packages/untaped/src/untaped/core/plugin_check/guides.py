@@ -4,7 +4,10 @@ See ``docs/reference/docs.md#guides``.
 
 Checks the guide files of one composed plugin (``PluginSpec.guides``, the
 11.x shape, whose pages ``untaped docs PLUGIN guides NAME`` serves until the
-plugin moves) and the lines it puts on the overview (``untaped docs``):
+plugin moves), a plugin class's guides (the docstrings of the bundles and
+enums it defines, where ``guide-link``, ``guide-command`` and ``guide-yaml``
+apply, named by the class's target) and the lines it puts on the overview
+(``untaped docs``):
 
 - ``guide-name`` — a guide's name (its file stem) is not kebab-case;
 - ``guide-description`` — a guide has no readable front matter with a
@@ -51,6 +54,7 @@ from untaped.sdk.errors import UsageError, first_validation_error
 
 if TYPE_CHECKING:
     from untaped.core.docs._guide_files import Guide
+    from untaped.runtime.declaration import GuideDecl
 
 MAP_LINE_LIMIT = 120
 """The longest line the overview shows: each plugin adds a bounded cost to every session."""
@@ -71,7 +75,24 @@ def guide_violations(root: App, result: CompositionResult, spec: PluginSpec) -> 
         found += [
             f"{where}::{rule}::{detail}" for rule, detail in _guide(root, result, spec, guide)
         ]
+    for decl in _guide_decls(result, spec.name):
+        quoted = [*_quoted(root, result, spec, decl.doc), *_yaml_blocks(result, decl.doc)]
+        found += [f"{decl.target}::{rule}::{detail}" for rule, detail in quoted]
     return found
+
+
+def _guide_decls(result: CompositionResult, name: str) -> tuple[GuideDecl, ...]:
+    """The guides plugin class ``name`` defines: its bundles' and enums' docstrings.
+
+    A guide is recorded under each plugin whose commands use it, so one
+    defined in ``name``'s package and used only by another plugin is found there.
+    """
+    found: dict[str, GuideDecl] = {}
+    for plugin in result.mount.declaration.plugins:
+        for guide in plugin.guides:
+            if guide.plugin == name:
+                found.setdefault(guide.target, guide)
+    return tuple(found.values())
 
 
 def _guide(

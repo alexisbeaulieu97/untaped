@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from typing import Annotated
 
 import pytest
-from cyclopts import App, Group, Parameter
+from cyclopts import App, Parameter
+from pydantic import Field
 
-from core_test_support.runtime.plugin_harness import make_spec
+from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.help_tree import command_violations, help_tree_violations
 from untaped.runtime import bootstrap
-from untaped.sdk import create_app, experimental, writes
+from untaped.sdk import Command, Group, create_app, experimental, writes
 from untaped.sdk.marks import Experimental
 from untaped.sdk.testing import plugin_candidate
 
@@ -182,103 +182,28 @@ def test_declared_commands_with_all_their_flags_are_clean() -> None:
 # --- panels -------------------------------------------------------------------
 
 
-def _composed(factory: Callable[[], App], *, stability: Experimental | None = None) -> list[str]:
-    """The help-tree violations of ``factory``'s app, composed as plugin ``svc`` by core."""
-    spec = replace(make_spec(name="svc", factory=factory), stability=stability)
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(spec)])
-    return [line for line in help_tree_violations(root, ["svc"]) if "-panel::" in line]
+class _Set(Command):
+    """Set it."""
+
+    fast: bool = Field(False, description="Go fast.")
+
+    def run(self) -> None:
+        return None
 
 
-def _option_in(group: Group) -> Callable[..., None]:
-    """A command whose ``--fast`` option lists in ``group``."""
+class _Lab(Group):
+    """Try things."""
 
-    def command(*, fast: bool = False) -> None:
-        """Do it."""
-
-    # A closure variable can't appear in a postponed annotation, so set the real one.
-    command.__annotations__["fast"] = Annotated[
-        bool, Parameter(name="--fast", negative="", help="F.", group=group)
-    ]
-    return command
+    stability = experimental
+    commands = (_Set,)
 
 
-def test_reserved_panel_for_any_group_named_like_a_core_panel() -> None:
-    def factory() -> App:
-        app = create_app(name="svc", help="Service.")
-        app.group = (Group("Plugins"),)  # core replaces the top app's group: passes
-        app.command(_clean, name="set")
-        app["set"].group = "Experimental"
-        other = create_app(name="other", help="Other.")
-        other.group = (Group("Deprecated"),)
-        other.command(_clean, name="x")
-        app.command(other)
-        app.command(_option_in(Group("Global options")), name="opt")
-        app.command(_option_in(Group("Deprecated")), name="dep")
-        lab = create_app(name="lab", help="Lab.")
-        lab.group_commands = Group("Plugins")
-        lab.command(_clean, name="y")
-        app.command(lab)
-        return app
-
-    assert sorted(_composed(factory)) == [
-        "svc dep::reserved-panel::Deprecated",
-        "svc lab::reserved-panel::Plugins",
-        "svc opt::reserved-panel::Global options",
-        "svc other::reserved-panel::Deprecated",
-        "svc set::reserved-panel::Experimental",
-    ]
-
-
-def test_core_panels_pass_for_a_marked_plugin_and_its_marks() -> None:
-    def factory() -> App:
-        app = create_app(name="svc", help="Service.")
-        app.command(_clean, name="set")
-        lab = create_app(name="lab", help="Lab.", stability=experimental)
-        lab.command(_clean, name="y")
-        app.command(lab)
-        return app
-
-    assert _composed(factory) == []
-    assert _composed(factory, stability=experimental) == []
-
-
-@pytest.mark.parametrize(
-    ("group", "flagged"),
-    [
-        (Group("Extra"), True),
-        (Group("Late", sort_key=100), True),
-        (Group("Named", sort_key="a"), True),
-        (Group("Early", sort_key=10), False),
-        (Group.create_ordered("Ordered", sort_key=5), True),
-        (Group("Tuple", sort_key=(1, 2)), True),
-        (Group("Hidden", show=False), False),
-    ],
-    ids=["unkeyed", "key-100", "text-key", "key-10", "ordered", "tuple-key", "hidden"],
-)
-def test_unkeyed_panel_for_a_plugin_group_not_keyed_below_100(group: Group, flagged: bool) -> None:
-    def factory() -> App:
-        app = create_app(name="svc", help="Service.")
-        app.command(_option_in(group), name="opt")
-        return app
-
-    expected = (
-        [
-            f"svc opt::unkeyed-panel::{group.name}: give it a sort_key below 100 "
-            "so Global options stays the last panel"
-        ]
-        if flagged
-        else []
-    )
-    assert _composed(factory) == expected
-
-
-def test_unkeyed_panel_covers_command_groups() -> None:
-    def factory() -> App:
-        app = create_app(name="svc", help="Service.")
-        app.command(_clean, name="set", group=Group("Admin"))
-        return app
-
-    assert [line.split("::")[:2] for line in _composed(factory)] == [["svc set", "unkeyed-panel"]]
+@pytest.mark.parametrize("stability", [None, experimental], ids=["stable", "experimental"])
+def test_a_plugin_class_s_panels_are_core_s_and_pass(stability: Experimental | None) -> None:
+    svc = make_plugin("svc", stability=stability, commands=(_Set, _Lab))
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(svc)])
+    assert not bootstrap.composition().quarantine
+    assert [line for line in help_tree_violations(root, ["svc"]) if "-panel::" in line] == []
 
 
 def _examples(*, fmt: Format = "table") -> None:
