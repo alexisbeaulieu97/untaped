@@ -30,7 +30,7 @@ from untaped.sdk.storage.cache import Cache
 
 
 def _cache(name: str) -> Cache:
-    return Cache("shelf", name, label="rows", max_age=timedelta(minutes=5))
+    return Cache(label="rows", max_age=timedelta(minutes=5))._spelled_as("shelf", name)
 
 
 def test_a_contract_is_declared_with_its_name_methods_and_owner_model() -> None:

@@ -24,7 +24,7 @@ from untaped.sdk.storage.cache import Cache
 #: The credential index is core's state rows, read under a run like every block.
 pytestmark = pytest.mark.usefixtures("home_run")
 
-ITEMS = Cache("toy", "items", label="toy items", max_age=timedelta(hours=1))
+ITEMS = Cache(label="toy items", max_age=timedelta(hours=1))._spelled_as("toy", "items")
 
 
 class Limits(BaseModel):
@@ -43,7 +43,7 @@ class ToySettings(BaseModel):
     limits: Limits = Field(default_factory=Limits)
 
 
-TOKEN = Credential("toy", "token", key=ToyServer, env=("TOY_TOKEN",))
+TOKEN = Credential(key=ToyServer, env=("TOY_TOKEN",))._spelled_as("toy", "token")
 _SERVER = "server: {url: https://a.example.com}"
 
 
@@ -192,7 +192,9 @@ def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch)
     assert ITEMS._paths("k").dir == folder
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
     assert ITEMS._paths("k").dir == folder
-    shared = Cache("toy", "shared", label="shared", max_age=timedelta(hours=1), split="none")
+    shared = Cache(label="shared", max_age=timedelta(hours=1), split="none")._spelled_as(
+        "toy", "shared"
+    )
     assert shared._paths("k").dir.name == "shared"
 
 

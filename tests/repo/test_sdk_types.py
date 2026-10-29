@@ -110,8 +110,8 @@ def _model() -> type[Snapshot]:
     return Snapshot
 
 
-TYPED = Cache("acme", "snapshots", label="x", max_age=timedelta(hours=1), model=_model)
-PLAIN = Cache("acme", "plain", label="x", max_age=timedelta(hours=1))
+TYPED = Cache(label="x", max_age=timedelta(hours=1), model=_model)
+PLAIN = Cache(label="x", max_age=timedelta(hours=1))
 
 
 def fill(key: str, task: ProgressHandle) -> Filled[Snapshot]:

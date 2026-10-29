@@ -87,7 +87,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("import-boundary", "error", "A plugin imports core and other plugins only by public modules."),
     ("terminal-boundary", "error", "No prompt_toolkit import: build screens with the SDK."),
     ("blob-reader", "error", "Repo store blobs are read through store.prefetched(...).run()."),
-    ("store-format", "error", "A database under plugin_dir() is opened through a Store."),
+    ("store-format", "error", "A database under plugin_dir() is a numbered Dir."),
     ("unreadable-file", "error", "Every file a rule reads is UTF-8; a plugin's Python parses."),
     # The contract checks and the plugin itself.
     ("plugin-not-installed", "error", "A plugin its pyproject.toml declares is installed."),

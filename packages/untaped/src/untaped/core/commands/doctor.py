@@ -665,8 +665,8 @@ def _layout_text(
 ) -> tuple[str, set[str]]:
     """One layout as the ``stores`` row says it, and the codes of what it warns about.
 
-    A damaged in-use lock is said even when ``keep`` or unknown holders are
-    the reason the cleanup keeps the layout.
+    A damaged in-use lock is said even when unknown holders are the reason
+    the cleanup keeps the layout.
     """
     from untaped.sdk.storage._fs import dir_bytes  # noqa: PLC0415 - runs only in doctor
     from untaped.sdk.storage._refs import this_install  # noqa: PLC0415
@@ -693,7 +693,7 @@ def _layout_text(
         found.append(damaged)
     if found:
         text += ": " + ", and ".join(kept.text for kept in found)
-    return text, {kept.code for kept in found if kept.warns}
+    return text, {kept.code for kept in found}
 
 
 def _stores_fix(reasons: set[str]) -> list[str] | None:

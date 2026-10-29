@@ -118,24 +118,12 @@ class Block:
         return self._bindings[0]
 
 
-def spelled_id(id: str | None) -> tuple[str, str] | tuple[()]:
-    """The plugin and name an 11.x id spells, or nothing for a block a plugin class names.
-
-    An id with no dot (the 11.x spelling allows one) is all plugin part, with an empty name.
-    """
-    if id is None:
-        return ()
-    plugin, _, name = id.partition(".")
-    return plugin, name
-
-
 class OwnedBlock(Block):
     """A block that knows its plugin and its name, which make its ids, keys and folders.
 
     A plugin class holding it names it: ``motd = Cache(...)`` is the plugin's
     block ``motd``, and the plugin's name is the one this run composed for
-    the package defining that class, so it is read inside a run. The 11.x
-    spelling passes both (``Cache("hello", "motd", ...)``) and needs no run.
+    the package defining that class, so it is read inside a run.
     A block read where its owner's class is deliberately not imported is bound
     where it is declared instead (:meth:`_bound_to`), or named there with its
     plugin read from the run (:meth:`_declared`).

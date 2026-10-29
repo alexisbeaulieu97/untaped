@@ -10,7 +10,7 @@ import sys
 import textwrap
 from collections.abc import Iterator
 from contextlib import redirect_stderr
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -19,12 +19,11 @@ from core_test_support.runtime.run import quiet
 from untaped.runtime.registry import named_plugin_dir
 from untaped.runtime.run import entered, invocation, start_run
 from untaped.sdk._run import recording
-from untaped.sdk.diagnostic import Failure, Pruned
-from untaped.sdk.errors import UntapedError
+from untaped.sdk.diagnostic import Pruned
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage import store as store_module
 from untaped.sdk.storage._refs import RefHolder, RefTarget
-from untaped.sdk.storage.cache import Cache, Filled
+from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.store import Store, _FileInUse, _forget_opened, _SqliteInUse
 from untaped.sdk.testing import write_reference
 
@@ -91,7 +90,7 @@ def test_a_registered_install_removes_a_layout_nothing_holds(
     (folder / "default").mkdir(parents=True)
     (folder / "default" / "k.json").write_text("{}")
     store = _store(base)
-    Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)
+    store._follow(Cache(label="items", max_age=timedelta(hours=1))._spelled_as("acme", "items"))
     store.open()
 
     [line] = _prune(store)
@@ -424,35 +423,6 @@ def test_an_opener_waiting_while_its_lock_moved_aside_takes_the_new_one(
         _forget_opened()
 
 
-def test_a_layout_the_store_keeps_stays(base: Path, composed: list[RefTarget]) -> None:
-    _registered(composed)
-    old = _layout(base, 4)
-    seen: list[Path] = []
-
-    def keep(path: Path) -> str | None:
-        seen.append(path)
-        return "a profile points there"
-
-    store = Store("acme", "data", base=lambda: base, layout=5, keep=keep)
-    store.open()
-    assert _prune(store) == []
-    assert old.exists() and seen == [old]
-
-
-def test_a_keep_check_that_raises_keeps(base: Path, composed: list[RefTarget]) -> None:
-    _registered(composed)
-    old = _layout(base, 4)
-
-    def broken(_path: Path) -> str | None:
-        raise RuntimeError("no config")
-
-    store = Store("acme", "data", base=lambda: base, layout=5, keep=broken)
-    store.open()
-    assert _prune(store) == []
-    assert old.exists()
-    assert store.kept(old) == "its keep check failed (RuntimeError: no config)"
-
-
 def test_an_unlistable_refs_folder_stops_the_cleanup(
     base: Path, composed: list[RefTarget], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -502,52 +472,3 @@ def test_an_anchor_that_cannot_be_listed_counts_as_live(
     monkeypatch.setattr(os, "scandir", scandir)
     assert _prune(store) == []
     assert held.exists()
-
-
-# --- the cache link -----------------------------------------------------------------
-
-
-def _serve(cache: Cache, *, fill_result: Filled | None = None, error: bool = False) -> None:
-    def fill(_key: str, _task: object) -> Filled:
-        if error:
-            raise UntapedError("upstream down")
-        return fill_result or Filled()
-
-    with invocation():
-        cache.serve({"k": "key"}, refresh=True, fill=fill, read=lambda: None)
-
-
-@pytest.fixture
-def cached_store(base: Path, composed: list[RefTarget]) -> tuple[Store, Cache, Path]:
-    _registered(composed)
-    store = _store(base)
-    cache = Cache("acme", "items", label="items", max_age=timedelta(hours=1), store=store)
-    store.open()
-    return store, cache, _layout(base, 4)
-
-
-def test_a_complete_fill_prunes(cached_store: tuple[Store, Cache, Path]) -> None:
-    _, cache, old = cached_store
-    _serve(cache)
-    assert not old.exists()
-
-
-def test_a_partial_fill_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _, cache, old = cached_store
-    _serve(cache, fill_result=Filled(partial=Failure.plain("3 repos left out")))
-    assert old.exists()
-
-
-def test_a_failed_fill_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _, cache, old = cached_store
-    with pytest.raises(UntapedError):
-        _serve(cache, error=True)
-    assert old.exists()
-
-
-def test_a_cached_read_prunes_nothing(cached_store: tuple[Store, Cache, Path]) -> None:
-    _, cache, old = cached_store
-    cache.seed("k", refreshed_at=datetime.now(UTC))
-    with invocation():
-        cache.serve({"k": "key"}, refresh=False, fill=lambda *_: Filled(), read=lambda: None)
-    assert old.exists()

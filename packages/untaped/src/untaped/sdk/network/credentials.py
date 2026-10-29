@@ -363,11 +363,9 @@ class Credential[K: CredentialKey](OwnedBlock):
 
     A plugin class holding it names it: ``token = Credential(key=AwxServer,
     env=("CONTROLLER_OAUTH_TOKEN",))`` is the plugin's credential ``token``.
-    The 11.x spelling passes the plugin and name first and is listed in
-    ``PluginSpec(credentials=)``: ``TOKEN = Credential("awx", "token",
-    key=AwxServer, env=("CONTROLLER_OAUTH_TOKEN",))``. ``env`` names the
-    variables tried last, in order; ``suggest`` is a command that prints the
-    secret, which ``setup plan`` offers when its program is on ``PATH``.
+    ``env`` names the variables tried last, in order; ``suggest`` is a command
+    that prints the secret, which ``setup plan`` offers when its program is on
+    ``PATH``.
 
     :meth:`get` returns the secret for a key or raises :class:`NoCredential`;
     :meth:`store` files one (what ``untaped auth login`` runs); :meth:`forget`
@@ -384,8 +382,6 @@ class Credential[K: CredentialKey](OwnedBlock):
 
     def __init__(
         self,
-        plugin: str | None = None,
-        name: str | None = None,
         *,
         key: type[K],
         env: Sequence[str] = (),
@@ -393,11 +389,7 @@ class Credential[K: CredentialKey](OwnedBlock):
     ) -> None:
         from untaped.sdk.health.marks import Suggest  # noqa: PLC0415 - marks import settings
 
-        if plugin is not None and (not isinstance(plugin, str) or not _NAME.match(plugin)):
-            raise TypeError(f"Credential plugin must be a plugin name, not {plugin!r}")
-        if name is not None and (problem := self.name_problem(name)) is not None:
-            raise TypeError(problem)
-        super().__init__(plugin, name)
+        super().__init__()
         env = tuple(env)
         if not all(isinstance(each, str) and each.strip() for each in env):
             raise TypeError(f"Credential(env=...) takes variable names, not {env!r}")

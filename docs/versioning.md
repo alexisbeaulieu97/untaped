@@ -96,8 +96,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo store.
 - `untaped.sdk.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
-- Stores: `Store`, `holders`, `RefHolder` and `RefTarget` in
-  `untaped.sdk`, `Cache(store=)`, and
+- Stores: `Dir(layout=)`, `holders`, `RefHolder` and `RefTarget` in
+  `untaped.sdk`, `Cache(follows=)`, and
   `assert_schema_pinned` and `write_reference` in `untaped.sdk.testing`. The
   files a store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).

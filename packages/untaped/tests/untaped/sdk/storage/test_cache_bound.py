@@ -13,7 +13,6 @@ from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.sdk import Cache, ConfigError, Plugin
 from untaped.sdk._run import Run, run_scope
-from untaped.sdk.storage.store import Store
 
 
 class DemoSettings(BaseModel):
@@ -44,18 +43,11 @@ def test_a_bound_cache_is_itself_and_says_so() -> None:
     assert twin != Demo.motd
     assert len({twin, Demo.motd}) == 2
     assert repr(twin) == "Cache(label='message of the day')"
-    assert Cache("demo", "motd", label="x", max_age=timedelta(0)) == Cache(
-        "demo", "motd", label="x", max_age=timedelta(0)
-    )
 
 
 def test_a_bound_cache_is_checked_without_its_name() -> None:
     with pytest.raises(ConfigError, match=r"cache Cache created in .*: max_age must be whole"):
         Cache(label="x", max_age=timedelta(milliseconds=5))
-    with pytest.raises(ConfigError, match="store goes with the plugin and name"):
-        Cache(
-            label="x", max_age=timedelta(0), store=Store("demo", "index", base=lambda: Path("i.db"))
-        )
 
 
 def test_a_cache_bound_where_it_is_declared_needs_no_plugin_class() -> None:

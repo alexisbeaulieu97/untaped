@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
@@ -33,10 +32,3 @@ def test_a_plugin_classs_credential_takes_its_attribute_and_plugin(tmp_path: Pat
         assert Demo.api_token.label == "demo api token"
     assert repr(Demo.api_token) == "Credential(key=DemoServer)"
     assert Demo.api_token.module == __name__
-
-
-def test_a_credential_takes_its_plugin_and_name_together() -> None:
-    with pytest.raises(TypeError, match="its plugin and its name together"):
-        Credential("demo", key=DemoServer)
-    with pytest.raises(TypeError, match="lower case letters"):
-        Credential("demo", "Token", key=DemoServer)

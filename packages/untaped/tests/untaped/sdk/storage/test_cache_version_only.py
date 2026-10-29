@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
@@ -21,8 +20,8 @@ from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.progress import ProgressHandle
-from untaped.sdk.storage.cache import Cache, Filled, NeverRefreshed, refresh_option
-from untaped.sdk.storage.store import Store
+from untaped.sdk.storage.cache import Cache, Filled, NeverRefreshed
+from untaped.sdk.storage.dir import Dir
 from untaped.sdk.testing import CacheClock, cache_clock, damage, plugin_candidate
 
 START = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
@@ -37,14 +36,12 @@ class Composed(BaseModel):
 
 CODE = {"version": "1"}
 COMPOSED = Cache(
-    "toy",
-    "composed",
     label="composed toys",
     max_age=None,
     model=Composed,
     version=lambda: CODE["version"],
     split="none",
-)
+)._spelled_as("toy", "composed")
 
 
 @dataclass
@@ -236,8 +233,8 @@ def test_a_plugin_with_only_version_only_caches_may_retire_an_old_caches_key() -
             "no setting to rename",
         ),
         (
-            {"model": Composed, "version": lambda: "1", "store": Store("toy", "repos", base=Path)},
-            "follows no place or store",
+            {"model": Composed, "version": lambda: "1", "follows": Dir(layout=2)},
+            "follows no place",
         ),
     ],
 )
@@ -245,9 +242,4 @@ def test_a_version_only_declaration_needs_its_model_and_version(
     options: dict[str, Any], message: str
 ) -> None:
     with pytest.raises(ConfigError, match=message):
-        Cache("toy", "bad", label="bad", max_age=None, **({"split": "none"} | options))
-
-
-def test_refresh_flags_refuse_a_version_only_cache() -> None:
-    with pytest.raises(ConfigError, match="version-only"):
-        refresh_option(COMPOSED)
+        Cache(label="bad", max_age=None, **({"split": "none"} | options))._spelled_as("toy", "bad")

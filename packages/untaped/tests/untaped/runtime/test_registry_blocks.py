@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from core_test_support.runtime.run import run_owning
 from untaped.sdk import DoctorCheck, DoctorResult, Plugin
 from untaped.sdk._run import run_scope
-from untaped.sdk.health.doctor import executable_check
+from untaped.sdk.health.doctor import ExecutableCheck
 
 
 class DemoSettings(BaseModel):
@@ -35,11 +35,4 @@ def test_a_plugin_classs_check_takes_a_kebab_id(tmp_path: Path) -> None:
 
 def test_a_check_records_the_module_creating_it() -> None:
     assert Demo.repo_store.module == __name__
-    assert executable_check("demo.git", "git", purpose="cloning").module == __name__
-
-
-def test_the_11x_spelling_keeps_its_id() -> None:
-    assert DoctorCheck("git.repo-store", title="git store", run=_fine).id == "git.repo-store"
-    dotless = DoctorCheck("config", title="config", run=_fine)
-    assert (dotless.id, repr(dotless)) == ("config", "DoctorCheck('config', title='config')")
-    assert DoctorCheck("a.", title="t", run=_fine).id == "a."
+    assert ExecutableCheck("git", purpose="cloning").module == __name__

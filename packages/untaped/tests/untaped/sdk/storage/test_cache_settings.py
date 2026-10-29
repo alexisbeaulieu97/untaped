@@ -145,7 +145,7 @@ def test_an_uncomposed_cache_reads_its_declared_default() -> None:
 
 def test_a_cache_left_off_the_class_reads_its_declared_default() -> None:
     _write(_config("caches:\n  motd:\n    max_age_seconds: 5"))
-    news = Cache("hello", "news", label="news", max_age=timedelta(minutes=2))
+    news = Cache(label="news", max_age=timedelta(minutes=2))._spelled_as("hello", "news")
     _run("config", "list")
     assert news.max_age() == timedelta(minutes=2)
 
@@ -189,7 +189,7 @@ def test_a_typo_under_a_cache_loads_and_doctor_names_it() -> None:
     assert "hello.caches.motd.max_age" in row["detail"]
 
 
-def test_the_refresh_option_names_a_setting_config_get_accepts() -> None:
+def test_the_refresh_flags_name_a_setting_config_get_accepts() -> None:
     help_text = _run("hello", "show", "--help").stdout
     assert SETTING in help_text.replace("\n", "").replace(" ", "")
     assert _run("config", "get", SETTING).exit_code == 0

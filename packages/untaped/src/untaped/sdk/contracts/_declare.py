@@ -195,8 +195,7 @@ def cached[F: Callable[..., Any]](
     setting ``<owner>.caches.<name>.max_age_seconds``. The SDK keeps one
     entry per provider, method, profile and arguments. A live call that
     fails while an entry exists serves the entry, marked stale.
-    ``@cached(CACHE)`` takes a cache an 11.x owner declares and lists on
-    ``PluginSpec.caches``; it goes with the last 11.x owner.
+    ``@cached(CACHE)`` takes a cache the owner's plugin class holds.
     """
     if cache is None:
         if max_age is None or label is None:
@@ -206,10 +205,10 @@ def cached[F: Callable[..., Any]](
         raise TypeError("@cached takes a Cache or max_age= and label=, not both")
     if not isinstance(cache, Cache):
         raise TypeError("@cached takes max_age= and label=: @cached(max_age=..., label=...)")
-    if cache.store is not None or cache.follows is not None:
+    if cache.follows is not None:
         raise TypeError(
-            f"@cached({cache.qualified}): an answer cache follows no store; its entries "
-            "are read tolerantly whatever wrote them, so declare it without store= or follows="
+            f"@cached({cache.qualified}): an answer cache follows no place; its entries "
+            "are read tolerantly whatever wrote them, so declare it without follows="
         )
     if cache.model is not None:
         raise TypeError(

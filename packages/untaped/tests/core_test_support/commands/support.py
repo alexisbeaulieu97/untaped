@@ -82,7 +82,7 @@ class WizProfile(BaseModel):
 
 
 #: The ``wiz`` token, read last from ``$WIZ_TOKEN``.
-WIZ_TOKEN = Credential("wiz", "token", key=WizServer, env=("WIZ_TOKEN",))
+WIZ_TOKEN = Credential(key=WizServer, env=("WIZ_TOKEN",))._spelled_as("wiz", "token")
 
 
 class EnvyServer(CredentialKey):
@@ -98,7 +98,7 @@ class EnvProfile(BaseModel):
 
 
 #: The ``envy`` token, read last from ``$ENVY_TOKEN``.
-ENVY_TOKEN = Credential("envy", "token", key=EnvyServer, env=("ENVY_TOKEN",))
+ENVY_TOKEN = Credential(key=EnvyServer, env=("ENVY_TOKEN",))._spelled_as("envy", "token")
 
 #: The credentials :func:`make_spec` declares for a settings double.
 CREDENTIALS: dict[type[BaseModel], tuple[Credential[Any], ...]] = {
@@ -263,24 +263,18 @@ def asset(name: str) -> SkillAsset:
 
 
 def check(
-    check_id: str | None = None,
     *,
     ok: bool = True,
     warn: bool = False,
     detail: str = "all good",
     title: str = "check",
 ) -> DoctorCheck:
-    """Return a doctor-check double reporting a fixed outcome.
-
-    Without ``check_id`` it is a plugin class's check, named by its attribute.
-    """
+    """Return a plugin class's doctor-check double, reporting a fixed outcome."""
 
     def _run(_ctx: object) -> DoctorResult:
-        return DoctorResult(id=check_id, ok=ok, detail=detail, warn=warn)
+        return DoctorResult(ok=ok, detail=detail, warn=warn)
 
-    if check_id is None:
-        return DoctorCheck(title=title, run=_run)  # type: ignore[arg-type]
-    return DoctorCheck(id=check_id, title=title, run=_run)  # type: ignore[arg-type]
+    return DoctorCheck(title=title, run=_run)  # type: ignore[arg-type]
 
 
 __all__ = [

@@ -22,7 +22,7 @@ from untaped.sdk import Plugin
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage.cache import Cache
 
-MOTD = Cache("hello", "motd", label="message of the day", max_age=timedelta(hours=1))
+MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))._spelled_as("hello", "motd")
 
 
 class HelloSettings(BaseModel):
@@ -74,7 +74,7 @@ def test_an_owner_with_caches_gets_extensions_and_caches() -> None:
     assert list(section.model_fields) == ["greeting", "extensions", "caches"]
 
 
-SHELF = Cache("shelf", "books", label="books", max_age=timedelta(days=1))
+SHELF = Cache(label="books", max_age=timedelta(days=1))._spelled_as("shelf", "books")
 
 
 class OwnOldKeyUnderCaches(BaseModel):
@@ -93,8 +93,8 @@ def test_an_own_old_key_under_caches_collides_once_caches_are_injected() -> None
 
 def _renamed(*old: str, settings: type[BaseModel] = HelloSettings) -> PluginSpec:
     cache = Cache(
-        "hello", "motd", label="message of the day", max_age=timedelta(hours=1), renamed_from=old
-    )
+        label="message of the day", max_age=timedelta(hours=1), renamed_from=old
+    )._spelled_as("hello", "motd")
     return PluginSpec(name="hello", settings=settings, caches=(cache,))
 
 
@@ -162,14 +162,17 @@ def test_renamed_from_is_a_sequence_of_distinct_keys(
     old: str | Sequence[str], problem: str
 ) -> None:
     with pytest.raises(ConfigError, match=problem):
-        Cache("hello", "motd", label="m", max_age=timedelta(0), renamed_from=old)
+        Cache(label="m", max_age=timedelta(0), renamed_from=old)._spelled_as("hello", "motd")
 
 
 def test_max_age_is_whole_seconds() -> None:
     with pytest.raises(ConfigError, match="whole seconds"):
-        Cache("hello", "motd", label="m", max_age=timedelta(milliseconds=1500))
+        Cache(label="m", max_age=timedelta(milliseconds=1500))._spelled_as("hello", "motd")
 
 
-def test_renamed_from_takes_part_in_equality() -> None:
-    assert _renamed("old").caches[0] != MOTD
-    assert _renamed("old").caches[0] == _renamed("old").caches[0]
+def test_each_composition_hands_over_the_same_cache_and_settings_model() -> None:
+    """Caches hash by identity and key the settings model, so a recomposition reuses both."""
+    hello = make_plugin("hello", settings=HelloSettings, motd=_motd())
+    first, second = (_compose(hello).plugins[1].spec for _ in range(2))
+    assert first.caches[0] is second.caches[0]
+    assert section_settings(first) is section_settings(second)

@@ -1,10 +1,9 @@
-"""A cache's ``--refresh``/``--cached`` comes from ``refresh_option(CACHE)``, never by hand.
+"""A cache's ``--refresh``/``--cached`` comes from a ``Refresh(CACHE)`` field, never by hand.
 
-``refresh_option`` writes the help from the cache's declaration, so the
-setting it names and its default cannot drift from the code, and every
-command says the directive the same way. A hand-declared ``Parameter``
-spelling ``--refresh`` or ``--cached`` (as ``name`` or ``negative``) in a
-shipped module fails here.
+``Refresh`` writes the help from the caches' declarations, so the setting it
+names and its default cannot drift from the code, and every command says the
+directive the same way. A hand-declared ``Parameter`` spelling ``--refresh``
+or ``--cached`` (as ``name`` or ``negative``) in a shipped module fails here.
 """
 
 from __future__ import annotations
@@ -50,8 +49,6 @@ def _found() -> dict[tuple[str, str], list[int]]:
     for root in roots:
         for path in sorted(Path(root).rglob("*.py")):
             module = path.relative_to(root).as_posix()
-            if module == "untaped/sdk/storage/cache.py":  # refresh_option itself
-                continue
             for line, flag in hand_declared(path.read_text(encoding="utf-8")):
                 found.setdefault((module, flag), []).append(line)
     return found
@@ -65,8 +62,8 @@ def test_no_command_declares_the_directive_by_hand() -> None:
     ]
     assert not stray, (
         f"{stray}: declare a cache's directive as "
-        "`Annotated[bool | None, refresh_option(CACHE)] = None` (untaped.sdk), so its help "
-        "names the cache's setting and default; see docs/caches.md"
+        "a `refresh: Refresh = Refresh(CACHE)` field (untaped.sdk), so its help names the "
+        "cache's setting and default; see docs/caches.md"
     )
 
 
@@ -84,7 +81,7 @@ c: Annotated[bool, cyclopts.Parameter("--refresh")] = False
         (5, "--refresh"),
     ]
     good = """
-a: Annotated[bool | None, refresh_option(INDEX)] = None
+a: Refresh = Refresh(INDEX)
 b: Annotated[bool, Parameter(name="--refreshed", negative="")] = False
 c = Parameter(help="--refresh checks upstream now")
 """

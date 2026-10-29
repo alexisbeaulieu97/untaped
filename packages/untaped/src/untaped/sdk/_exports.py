@@ -120,15 +120,13 @@ from untaped.sdk.git import (
     run_git,
     safe_path_segment,
 )
-from untaped.sdk.health.deprecated_keys import Renamed, Retired, retired_values
+from untaped.sdk.health.deprecated_keys import Renamed, Retired
 from untaped.sdk.health.doctor import (
     DoctorCheck,
     DoctorResult,
     ExecutableCheck,
     OnlineCheck,
     PluginContext,
-    executable_check,
-    online_check,
 )
 from untaped.sdk.health.marks import NeedsSetup, Suggest
 from untaped.sdk.marks import (
@@ -201,7 +199,6 @@ from untaped.sdk.storage.cache import (
     NeverRefreshed,
     Served,
     code_version,
-    refresh_option,
 )
 from untaped.sdk.storage.holds import (
     HolderState,
@@ -218,7 +215,6 @@ from untaped.sdk.storage.state import (
     RowExists,
     StateRows,
 )
-from untaped.sdk.storage.store import Store, setting_guard
 from untaped.sdk.tree import TreeGraph, TreeGraphEdge, TreeGraphNode, tree_text
 from untaped.sdk.words import (
     ago_text,
@@ -524,13 +520,10 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "RefHolder",
     "RefTarget",
     "Served",
-    "Store",
     "code_version",
     "dir_bytes",
     "holders",
     "installed_code",
-    "refresh_option",
-    "setting_guard",
     # data files
     "Absent",
     "DataFile",
@@ -553,8 +546,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Terminal",
     "run_editor",
     # doctor checks
-    "executable_check",
-    "online_check",
     # conventions
     "DEPRECATED_OPTIONS",
     "Deprecated",
@@ -571,7 +562,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "experimental",
     "plural",
     "q",
-    "retired_values",
     "shown_path",
     "size_text",
     # screens (experimental)

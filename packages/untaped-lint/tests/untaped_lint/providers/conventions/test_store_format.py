@@ -21,9 +21,9 @@ def _violations(tmp_path: Path, source: str) -> list[str]:
 
 def _line(number: int, opener: str = "sqlite3.connect", under: str = "plugin_dir()") -> str:
     return (
-        f"acme/db.py:{number}::store-format::{opener}() on a path under {under} that no Store "
-        "governs; two versions of acme sharing a home would rebuild or refuse each other's "
-        "file; declare a Store and open Store.open() (waive with "
+        f"acme/db.py:{number}::store-format::{opener}() on a path under {under} that no "
+        "numbered Dir governs; two versions of acme sharing a home would rebuild or refuse "
+        "each other's file; declare a Dir(layout=N) and open it with its open() (waive with "
         "`# untaped: allow store-format` when the file's layout is version-neutral)"
     )
 
